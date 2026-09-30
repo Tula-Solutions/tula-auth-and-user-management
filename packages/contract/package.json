@@ -1,0 +1,22 @@
+{
+  "name": "@tula/contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's public, language-neutral contract: schemas, flow protocol, error codes, token claims, password policy.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./openapi.json": "./openapi.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tula/tsconfig": "workspace:*"
+  }
+}
