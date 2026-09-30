@@ -17,6 +17,10 @@
     {
       "name": "Keys",
       "description": "Access-token signing keys and the public JWKS."
+    },
+    {
+      "name": "Passwords",
+      "description": "Password rules for the live checklist."
     }
   ],
   "components": {
@@ -520,6 +524,115 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "PasswordPolicy": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "type": "string",
+            "enum": [
+              "recommended",
+              "strict",
+              "legacy",
+              "custom"
+            ]
+          },
+          "minLength": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 256
+          },
+          "maxLength": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 1024
+          },
+          "requireLowercase": {
+            "type": "boolean"
+          },
+          "requireUppercase": {
+            "type": "boolean"
+          },
+          "requireNumber": {
+            "type": "boolean"
+          },
+          "requireSpecial": {
+            "type": "boolean"
+          },
+          "minCharacterClasses": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "specialChars": {
+            "type": "string",
+            "minLength": 1
+          },
+          "disallowUserInfo": {
+            "type": "boolean"
+          },
+          "disallowCommon": {
+            "type": "boolean"
+          },
+          "breachCheck": {
+            "type": "string",
+            "enum": [
+              "off",
+              "warn",
+              "block"
+            ]
+          },
+          "maxRepeatedChars": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blockSequences": {
+            "type": "boolean"
+          },
+          "history": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "expiryDays": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "preset",
+          "minLength",
+          "maxLength",
+          "requireLowercase",
+          "requireUppercase",
+          "requireNumber",
+          "requireSpecial",
+          "minCharacterClasses",
+          "specialChars",
+          "disallowUserInfo",
+          "disallowCommon",
+          "breachCheck",
+          "maxRepeatedChars",
+          "blockSequences",
+          "history",
+          "expiryDays"
         ]
       }
     }
@@ -1133,6 +1246,63 @@
           },
           "409": {
             "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/password-policy": {
+      "get": {
+        "operationId": "getPasswordPolicy",
+        "tags": [
+          "Passwords"
+        ],
+        "summary": "Password policy",
+        "description": "The rules a new password must meet in this environment. SDKs evaluate them locally with `evaluatePassword` from `@tula/contract` to render a live checklist; the server enforces the same rules plus the breached-password check when a password is set.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The active policy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordPolicy"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
             "content": {
               "application/json": {
                 "schema": {

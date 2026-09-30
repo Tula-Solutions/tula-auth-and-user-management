@@ -1,4 +1,7 @@
+import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import { createDatabase } from '@tula/db'
+import { HibpBreachChecker } from '~/adapters/breach/hibp'
+import { offlineBreachChecker } from '~/adapters/breach/offline'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
@@ -37,6 +40,7 @@ export function createContainer(env: Env): Container {
       publicUrl: env.PUBLIC_URL,
       corsOrigins: env.CORS_ORIGINS,
       trustProxy: env.TRUST_PROXY,
+      passwordPolicy: PASSWORD_POLICY_PRESETS[env.PASSWORD_POLICY],
     },
     clock,
     ids: uuidV7Ids,
@@ -48,6 +52,7 @@ export function createContainer(env: Env): Container {
       SIGNING_KEY_CACHE_TTL_MS
     ),
     rateLimiter: new MemoryRateLimiter(clock),
+    breachChecker: env.BREACH_CHECK === 'hibp' ? new HibpBreachChecker() : offlineBreachChecker,
     secretBox: createSecretBox(env.TULA_MASTER_KEY),
     probes: [databaseProbe(database.db)],
   }

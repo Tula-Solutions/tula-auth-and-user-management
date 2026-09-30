@@ -164,6 +164,7 @@ describe('documentation routes', () => {
       '/v1/environments/{environmentId}/.well-known/jwks.json',
       '/v1/admin/signing-keys',
       '/v1/admin/signing-keys/rotate',
+      '/v1/client/password-policy',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',

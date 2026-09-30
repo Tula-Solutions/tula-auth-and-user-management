@@ -76,3 +76,17 @@ export const ADMIN_RATE_LIMIT = 300
 export function adminRateLimit() {
   return rateLimit({ name: 'admin', limit: ADMIN_RATE_LIMIT, window: '1m', key: byIp })
 }
+
+/** Requests per minute one IP may make to client routes, counted before the key is checked. */
+export const CLIENT_RATE_LIMIT = 600
+
+/**
+ * Per-IP limit for `/v1/client/*`. Mount it **before** `publishableKey()` so failed key guesses
+ * count too. It is a coarse ceiling (higher than admin because many users can share one NAT'd
+ * IP); credential endpoints add tighter per-route, per-identifier limits.
+ *
+ * @returns The middleware (one shared `client` bucket per IP across all client routes).
+ */
+export function clientRateLimit() {
+  return rateLimit({ name: 'client', limit: CLIENT_RATE_LIMIT, window: '1m', key: byIp })
+}

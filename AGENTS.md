@@ -186,7 +186,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - Access tokens are issued per environment: `iss` is `environmentIssuer(PUBLIC_URL, environmentId)`
   and keys are published at `jwksUrl(iss)`. Private signing keys are sealed with `~/lib/secret-box`
   (AES-256-GCM, key derived from `TULA_MASTER_KEY`, bound to key id + environment). See
-  [ADR 0004](docs/adr/0004-signing-keys-and-issuer.md); API keys: [ADR 0005](docs/adr/0005-api-keys.md).
+  [ADR 0004](docs/adr/0004-signing-keys-and-issuer.md); API keys: [ADR 0005](docs/adr/0005-api-keys.md);
+  passwords: [ADR 0006](docs/adr/0006-passwords.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment).
@@ -248,7 +249,7 @@ apps/api/src/
 ├── testing.ts        # createTestDeps(): memory adapters + FixedClock
 ├── lib/              # logger, crypto, cors, client-ip
 ├── ports/            # interfaces the domain depends on
-├── adapters/         # memory/, postgres/, system/, cache/ (mail/, breach/ arrive in Step 5)
+├── adapters/         # memory/, postgres/, system/, cache/, breach/ (mail/ arrives in Step 5)
 ├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, request-log
 └── modules/          # flow, password, session, jwks, verification, user, project, status
 ```
