@@ -1,0 +1,268 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Tula Auth API",
+    "description": "Self-hostable authentication and user management. Client routes (`/v1/client/*`) take a publishable key; admin routes (`/v1/admin/*`) take a secret key. Every error body is an `ErrorEnvelope` with a stable `code`.",
+    "version": "0.0.0"
+  },
+  "tags": [
+    {
+      "name": "Status",
+      "description": "Liveness and readiness."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "publishableKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-tula-publishable-key",
+        "description": "Publishable key `tula_pk_<env>_…`. Safe to embed in apps."
+      },
+      "accessToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "EdDSA access token from a Tula session."
+      },
+      "secretKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Secret key `tula_sk_<env>_…`. Server-side only."
+      }
+    },
+    "schemas": {
+      "StatusResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ]
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "auth.invalid_credentials",
+          "auth.unauthenticated",
+          "auth.invalid_key",
+          "auth.forbidden",
+          "auth.user_banned",
+          "flow.not_found",
+          "flow.invalid_step",
+          "email.invalid",
+          "password.too_short",
+          "password.too_long",
+          "password.missing_lowercase",
+          "password.missing_uppercase",
+          "password.missing_number",
+          "password.missing_special",
+          "password.too_few_character_classes",
+          "password.contains_user_info",
+          "password.common",
+          "password.breached",
+          "password.repeated_characters",
+          "password.sequence",
+          "verification.invalid_code",
+          "verification.expired",
+          "verification.too_many_attempts",
+          "session.invalid_token",
+          "session.expired",
+          "session.revoked",
+          "session.reuse_detected",
+          "rate_limited",
+          "request.malformed",
+          "request.too_large",
+          "validation.failed",
+          "resource.not_found",
+          "resource.conflict",
+          "not_implemented",
+          "internal"
+        ]
+      },
+      "ErrorParams": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        }
+      },
+      "FieldError": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ErrorParams"
+          }
+        },
+        "required": [
+          "field",
+          "code",
+          "message"
+        ]
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ErrorParams"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "code",
+          "detail"
+        ]
+      },
+      "CheckResult": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "fail"
+        ]
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_ready"
+            ]
+          },
+          "checks": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CheckResult"
+            }
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/v1/status": {
+      "get": {
+        "operationId": "getStatus",
+        "tags": [
+          "Status"
+        ],
+        "summary": "Liveness check",
+        "description": "Returns 200 while the process is running. Does not check dependencies.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The API is running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "tags": [
+          "Status"
+        ],
+        "summary": "Readiness check",
+        "description": "Returns 200 when every dependency is reachable, 503 otherwise.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready to take traffic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

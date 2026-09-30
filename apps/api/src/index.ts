@@ -1,0 +1,71 @@
+import { Scalar } from '@scalar/hono-api-reference'
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { requestId } from 'hono/request-id'
+import { secureHeaders } from 'hono/secure-headers'
+import { openAPIRouteHandler } from 'hono-openapi'
+import type { AppEnv, Deps } from '~/dependencies'
+import { notFound, onError } from '~/handlers'
+import { allowedOrigin } from '~/lib/cors'
+import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
+import { requestLog } from '~/middleware/request-log'
+import { documentation } from '~/openapi'
+
+/** Where the OpenAPI document is served. */
+export const OPENAPI_PATH = '/v1/openapi.json'
+
+// Routers never capture deps (they read `c.get('deps')`), so they are loaded once here and shared
+// by every app `createApp` builds. That keeps createApp synchronous for tests.
+const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
+  ['/v1', (await import('~/modules/status/router')).default],
+]
+
+/**
+ * Build the Tula API app without listening.
+ *
+ * `server.ts` serves it; tests call `createApp(createTestDeps()).request(...)`; embedded mode
+ * mounts it inside a host app.
+ *
+ * @param deps - Adapters and config for this app instance.
+ * @returns The Hono app.
+ *
+ * @example
+ * ```ts
+ * const res = await createApp(createTestDeps()).request('/v1/status')
+ * ```
+ */
+export function createApp(deps: Deps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>()
+
+  app.use(requestId())
+  app.use(requestLog())
+  app.use(secureHeaders())
+  app.use(
+    cors({
+      origin: (origin) => allowedOrigin(origin, deps.config),
+      credentials: true,
+      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowHeaders: ['Content-Type', 'Authorization', PUBLISHABLE_KEY_HEADER],
+      exposeHeaders: ['Retry-After', 'X-Request-Id'],
+      maxAge: 600,
+    })
+  )
+  app.use(async (c, next) => {
+    c.set('deps', deps)
+    await next()
+  })
+  app.onError(onError)
+  app.notFound(notFound)
+
+  for (const [path, router] of routes) {
+    app.route(path, router)
+  }
+
+  app.get(
+    OPENAPI_PATH,
+    openAPIRouteHandler(app, { documentation, exclude: [OPENAPI_PATH, '/v1/docs'] })
+  )
+  app.get('/v1/docs', Scalar({ url: OPENAPI_PATH, pageTitle: 'Tula API' }))
+
+  return app
+}

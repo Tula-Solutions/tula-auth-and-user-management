@@ -207,8 +207,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 
 A change is done only when all of these hold:
 
-1. **`bun run verify` is green** — Biome, harness tests, typecheck, tests with coverage and
-   `db:check` (plus `contract:check` once the API exists).
+1. **`bun run verify` is green** — Biome, harness tests, typecheck, tests with coverage,
+   `db:check` and `contract:check`.
 2. **An otterbot-review pass reports no blocking findings.** Run the `otterbot-review` skill
    (github.com/otternaut/otterbot, installed globally) in local mode on the change. In Claude Code
    use `/review-loop`, which runs it on Sonnet 5.5 through the `ollie-reviewer` subagent. Fix every
@@ -235,27 +235,26 @@ apps/api/src/
 ├── server.ts         # Bun.serve entrypoint (loads env, builds container)
 ├── env.ts            # Zod env schema — fails fast at boot
 ├── container.ts      # composition root: env → adapters → Deps
-├── dependencies.ts   # Hono context Variables
+├── dependencies.ts   # Deps, AppConfig and Hono context Variables
 ├── exceptions.ts     # ServiceException hierarchy + AuthError
 ├── handlers.ts       # onError + validation hook → contract error envelope
-├── openapi.ts        # shared OpenAPI response definitions
-├── lib/              # logger, crypto, time helpers
+├── openapi.ts        # shared OpenAPI responses, security requirements, document info
+├── testing.ts        # createTestDeps(): memory adapters + FixedClock
+├── lib/              # logger, crypto, cors, client-ip
 ├── ports/            # interfaces the domain depends on
-├── adapters/         # memory/, postgres/, mail/, breach/, rate-limit/
-├── middleware/       # publishable-key, secret-key, session-auth, rate-limit
+├── adapters/         # memory/, postgres/, system/, cache/ (mail/, breach/ arrive in Step 5)
+├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, request-log
 └── modules/          # flow, password, session, jwks, verification, user, project, status
 ```
 
 ## Common commands
-
-Commands marked † arrive with `apps/api` (Phase 0, Step 4) and fail until then.
 
 ```bash
 bun install
 docker compose up -d        # postgres, redis, mailpit (http://localhost:8025)
                             # roles come from docker/postgres/init.sql on a FRESH volume only;
                             # after changing it: docker compose down -v (wipes local data)
-bun run dev                 # † API on http://localhost:3003, docs at /v1/docs
+bun run dev                 # API on http://localhost:3003, docs at /v1/docs
 bun run verify              # full quality gate (what CI runs)
 bun run verify:changed      # affected packages only (what the Stop hook runs)
 bun run check               # Biome lint + format check
@@ -264,7 +263,8 @@ bun run typecheck
 bun run test
 bun run test:coverage
 bun run test:harness        # tests for the .claude hooks and repo guardrails
-bun run contract:generate   # † regenerate packages/contract/openapi.json from the API
+bun run contract:generate   # regenerate packages/contract/openapi.json from the API
+bun run contract:check      # fail if openapi.json is out of date (part of verify)
 bun run db:generate         # generate a migration from schema changes (then read the SQL)
 bun run db:check            # fail if src/schema changed without a migration
 bun run db:migrate          # apply migrations as the schema owner (DATABASE_MIGRATION_URL)

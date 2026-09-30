@@ -1,0 +1,65 @@
+import { durationToMs } from '@tula/contract'
+import type { Context } from 'hono'
+import { createMiddleware } from 'hono/factory'
+import type { AppEnv, TenantVariables } from '~/dependencies'
+import { RateLimitError } from '~/exceptions'
+import { clientIp } from '~/lib/client-ip'
+
+/** One rate-limit bucket family. */
+export interface RateLimitRule {
+  /** Namespace for the bucket, e.g. `sign_in`. */
+  name: string
+  /** Maximum requests per window. */
+  limit: number
+  /** Window length, e.g. `'1m'`. */
+  window: string
+  /**
+   * The bucket key for this request, e.g. the client IP. Return `null` to skip the rule.
+   */
+  key: (c: Context<AppEnv>) => string | null
+}
+
+/**
+ * Bucket by client IP.
+ *
+ * @param c - The request context.
+ * @returns `ip:<address>`.
+ */
+export function byIp(c: Context<AppEnv>): string {
+  return `ip:${clientIp(c, c.get('deps').config.trustProxy)}`
+}
+
+/**
+ * Bucket by the resolved environment (mount after a key middleware).
+ *
+ * @param c - The request context.
+ * @returns `env:<id>`, or `null` when no tenant is resolved.
+ */
+export function byEnvironment(c: Context<AppEnv>): string | null {
+  const { tenant } = c.var as Partial<TenantVariables>
+  return tenant ? `env:${tenant.environmentId}` : null
+}
+
+/**
+ * Enforce a fixed-window rate limit. Stack one per dimension (IP, environment, …); per-identifier
+ * limits need the parsed body and are applied in services through `deps.rateLimiter`.
+ *
+ * @param rule - Name, limit, window and key function.
+ * @returns The middleware.
+ * @throws RateLimitError (429 with `Retry-After`) once the limit is exceeded.
+ */
+export function rateLimit(rule: RateLimitRule) {
+  const windowMs = durationToMs(rule.window)
+  return createMiddleware<AppEnv>(async (c, next) => {
+    const key = rule.key(c)
+    if (key !== null) {
+      const decision = await c
+        .get('deps')
+        .rateLimiter.hit(`${rule.name}:${key}`, rule.limit, windowMs)
+      if (!decision.allowed) {
+        throw new RateLimitError(decision.retryAfterMs)
+      }
+    }
+    await next()
+  })
+}
