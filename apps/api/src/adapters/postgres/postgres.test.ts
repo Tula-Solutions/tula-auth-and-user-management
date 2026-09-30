@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { apiKeys, signingKeys, withTenant } from '@tula/db'
+import { environments, signingKeys, withTenant } from '@tula/db'
 import {
   createTestDatabase,
   createTestTenant,
@@ -7,6 +7,7 @@ import {
   type TestTenant,
 } from '@tula/db/testing'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
+import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { databaseProbe } from '~/adapters/postgres/health'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { RETIRED_KEY_RETENTION_MS } from '~/ports/signing-key-store'
@@ -54,32 +55,98 @@ beforeAll(async () => {
 afterAll(() => testDb.close())
 
 describe('PostgresApiKeyRepository', () => {
-  test('finds a key by hash, including revoked keys', async () => {
-    const revokedAt = new Date('2026-01-02T00:00:00Z')
-    const [row] = await testDb.db
-      .insert(apiKeys)
-      .values({
-        projectId: a.projectId,
-        environmentId: a.environmentId,
-        kind: 'secret',
-        name: 'Server',
-        keyHash: 'h'.repeat(64),
-        lastFour: 'abcd',
-        revokedAt,
-      })
-      .returning({ id: apiKeys.id })
-    if (!row) {
-      throw new Error('api key insert returned no row')
+  const repo = () => new PostgresApiKeyRepository(testDb.db)
+  let counter = 0
+  function newKey(tenant: TestTenant, createdAt: Date) {
+    counter += 1
+    return {
+      id: Bun.randomUUIDv7(),
+      kind: 'secret' as const,
+      name: `Server ${counter}`,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      lastFour: 'abcd',
+      createdAt,
+      keyHash: counter.toString(16).padStart(64, '0'),
     }
+  }
+
+  test('inserts and finds a key by hash without returning the hash', async () => {
+    const input = newKey(a, now)
+    const stored = await repo().insert(input)
+    const { keyHash: _hash, ...expected } = input
+    expect(stored).toEqual({ ...expected, lastUsedAt: null, revokedAt: null })
+    expect(await repo().findByHash(input.keyHash)).toEqual(stored)
+    expect(await repo().findByHash('f'.repeat(64))).toBeNull()
+  })
+
+  test('rejects a duplicate hash', async () => {
+    const input = newKey(a, now)
+    await repo().insert(input)
+    await expect(repo().insert({ ...input, id: Bun.randomUUIDv7() })).rejects.toThrow()
+  })
+
+  test('lists only the given environment, newest first', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const older = await repo().insert(newKey(tenant, now))
+    const newer = await repo().insert(newKey(tenant, new Date(now.getTime() + 1000)))
+    await repo().insert(newKey(b, new Date(now.getTime() + 2000)))
+    expect((await repo().listByEnvironment(tenant.environmentId)).map((key) => key.id)).toEqual([
+      newer.id,
+      older.id,
+    ])
+  })
+
+  test('revokes only inside the given environment, keeping the first revocation time', async () => {
+    const key = await repo().insert(newKey(a, now))
+    expect(await repo().revoke(b.environmentId, key.id, now)).toBeNull()
+    expect((await repo().findByHash(newKey(a, now).keyHash))?.revokedAt ?? null).toBeNull()
+
+    const first = await repo().revoke(a.environmentId, key.id, now)
+    expect(first?.revokedAt).toEqual(now)
+    const again = await repo().revoke(a.environmentId, key.id, new Date(now.getTime() + 5000))
+    expect(again?.revokedAt).toEqual(now)
+    expect(await repo().revoke(a.environmentId, Bun.randomUUIDv7(), now)).toBeNull()
+  })
+})
+
+describe('PostgresApiKeyRepository.touch', () => {
+  test('records the last use time', async () => {
     const repo = new PostgresApiKeyRepository(testDb.db)
-    expect(await repo.findByHash('h'.repeat(64))).toEqual({
-      id: row.id,
-      kind: 'secret',
+    const key = await repo.insert({
+      id: Bun.randomUUIDv7(),
+      kind: 'publishable',
+      name: 'touched',
       projectId: a.projectId,
       environmentId: a.environmentId,
-      revokedAt,
+      lastFour: 'abcd',
+      createdAt: now,
+      keyHash: 'e'.repeat(64),
     })
-    expect(await repo.findByHash('0'.repeat(64))).toBeNull()
+    const used = new Date(now.getTime() + 60_000)
+    await repo.touch(key.id, used)
+    expect((await repo.findByHash('e'.repeat(64)))?.lastUsedAt).toEqual(used)
+  })
+})
+
+describe('PostgresEnvironmentRepository', () => {
+  test('finds by id and lists a project development-first', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const [prod] = await testDb.db
+      .insert(environments)
+      .values({ projectId: tenant.projectId, kind: 'production' })
+      .returning({ id: environments.id })
+    const repo = new PostgresEnvironmentRepository(testDb.db)
+    expect(await repo.findById(tenant.environmentId)).toMatchObject({
+      id: tenant.environmentId,
+      projectId: tenant.projectId,
+      kind: 'development',
+    })
+    expect(await repo.findById(Bun.randomUUIDv7())).toBeNull()
+    expect((await repo.listByProject(tenant.projectId)).map((env) => env.id)).toEqual([
+      tenant.environmentId,
+      prod?.id ?? 'missing',
+    ])
   })
 })
 

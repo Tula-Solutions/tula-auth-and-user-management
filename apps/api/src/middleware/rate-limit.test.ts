@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { createApp } from '~/index'
-import { sha256Hex } from '~/lib/crypto'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'
 import { byEnvironment, byIp, rateLimit } from '~/middleware/rate-limit'
-import { createTestDeps, TEST_CONFIG } from '~/testing'
+import { createTestDeps, seedApiKey, TEST_CONFIG } from '~/testing'
 
 describe('rateLimit', () => {
   test('returns 429 with Retry-After once the limit is exceeded, then recovers', async () => {
@@ -43,13 +42,7 @@ describe('rateLimit', () => {
   test('buckets by environment after key resolution and skips when there is none', async () => {
     const deps = createTestDeps()
     const key = 'tula_pk_dev_publishable0000000000000000000'
-    deps.apiKeys.insert(sha256Hex(key), {
-      id: 'pk1',
-      kind: 'publishable',
-      projectId: 'p1',
-      environmentId: 'e1',
-      revokedAt: null,
-    })
+    await seedApiKey(deps, key)
     const app = createApp(deps)
     const limit = rateLimit({ name: 'env', limit: 1, window: '1m', key: byEnvironment })
     app.get('/test/keyed', publishableKey(), limit, (c) => c.text('ok'))

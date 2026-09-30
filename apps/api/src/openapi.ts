@@ -56,7 +56,10 @@ export const documentation: GenerateSpecOptions['documentation'] = {
       'publishable key; admin routes (`/v1/admin/*`) take a secret key. Every error body is an ' +
       '`ErrorEnvelope` with a stable `code`.',
   },
-  tags: [{ name: 'Status', description: 'Liveness and readiness.' }],
+  tags: [
+    { name: 'Status', description: 'Liveness and readiness.' },
+    { name: 'Project', description: 'Environments and API keys (admin).' },
+  ],
   components: {
     securitySchemes: {
       publishableKey: {

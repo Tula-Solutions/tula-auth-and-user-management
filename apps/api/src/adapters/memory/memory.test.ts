@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { Jwk } from '@tula/contract'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { FixedClock, TEST_EPOCH } from '~/adapters/memory/clock'
+import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
@@ -49,23 +50,74 @@ describe('id generators', () => {
   })
 })
 
+function newKey(id: string, environmentId: string, createdAt: Date, keyHash = `hash-${id}`) {
+  return {
+    id,
+    kind: 'publishable' as const,
+    name: id,
+    projectId: 'p1',
+    environmentId,
+    lastFour: 'abcd',
+    createdAt,
+    keyHash,
+  }
+}
+
 describe('MemoryApiKeyRepository', () => {
-  test('finds, copies and revokes by hash', async () => {
+  test('finds by hash without exposing the hash', async () => {
     const repo = new MemoryApiKeyRepository()
-    const key = {
-      id: 'k1',
-      kind: 'publishable' as const,
-      projectId: 'p1',
-      environmentId: 'e1',
-      revokedAt: null,
-    }
-    repo.insert('hash', key)
-    expect(await repo.findByHash('hash')).toEqual(key)
+    const stored = await repo.insert(newKey('k1', 'e1', TEST_EPOCH))
+    expect(stored).not.toHaveProperty('keyHash')
+    expect(stored).toMatchObject({ id: 'k1', lastUsedAt: null, revokedAt: null })
+    expect(await repo.findByHash('hash-k1')).toEqual(stored)
     expect(await repo.findByHash('other')).toBeNull()
-    repo.revoke('hash', TEST_EPOCH)
-    repo.revoke('missing', TEST_EPOCH)
-    expect((await repo.findByHash('hash'))?.revokedAt).toEqual(TEST_EPOCH)
-    expect(key.revokedAt).toBeNull()
+  })
+
+  test('rejects a duplicate hash like the unique index does', async () => {
+    const repo = new MemoryApiKeyRepository()
+    await repo.insert(newKey('k1', 'e1', TEST_EPOCH, 'same'))
+    await expect(repo.insert(newKey('k2', 'e1', TEST_EPOCH, 'same'))).rejects.toThrow()
+  })
+
+  test('lists one environment newest first', async () => {
+    const repo = new MemoryApiKeyRepository()
+    const later = new Date(TEST_EPOCH.getTime() + 1000)
+    await repo.insert(newKey('old', 'e1', TEST_EPOCH))
+    await repo.insert(newKey('new', 'e1', later))
+    await repo.insert(newKey('tie', 'e1', TEST_EPOCH))
+    await repo.insert(newKey('elsewhere', 'e2', later))
+    expect((await repo.listByEnvironment('e1')).map((key) => key.id)).toEqual(['new', 'tie', 'old'])
+  })
+
+  test('revokes only within the given environment and keeps the first time', async () => {
+    const repo = new MemoryApiKeyRepository()
+    await repo.insert(newKey('k1', 'e1', TEST_EPOCH))
+    expect(await repo.revoke('e2', 'k1', TEST_EPOCH)).toBeNull()
+    expect((await repo.revoke('e1', 'k1', TEST_EPOCH))?.revokedAt).toEqual(TEST_EPOCH)
+    const later = new Date(TEST_EPOCH.getTime() + 5000)
+    expect((await repo.revoke('e1', 'k1', later))?.revokedAt).toEqual(TEST_EPOCH)
+  })
+})
+
+describe('MemoryApiKeyRepository.touch', () => {
+  test('sets the last used time of an existing key', async () => {
+    const repo = new MemoryApiKeyRepository()
+    await repo.insert(newKey('k1', 'e1', TEST_EPOCH))
+    await repo.touch('k1', TEST_EPOCH)
+    await repo.touch('missing', TEST_EPOCH)
+    expect((await repo.findByHash('hash-k1'))?.lastUsedAt).toEqual(TEST_EPOCH)
+  })
+})
+
+describe('MemoryEnvironmentRepository', () => {
+  test('finds by id and lists a project development-first', async () => {
+    const repo = new MemoryEnvironmentRepository()
+    repo.add({ id: 'prod', projectId: 'p1', kind: 'production', createdAt: TEST_EPOCH })
+    repo.add({ id: 'dev', projectId: 'p1', kind: 'development', createdAt: TEST_EPOCH })
+    repo.add({ id: 'other', projectId: 'p2', kind: 'development', createdAt: TEST_EPOCH })
+    expect((await repo.findById('prod'))?.kind).toBe('production')
+    expect(await repo.findById('missing')).toBeNull()
+    expect((await repo.listByProject('p1')).map((env) => env.id)).toEqual(['dev', 'prod'])
   })
 })
 

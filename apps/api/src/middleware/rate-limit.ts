@@ -63,3 +63,16 @@ export function rateLimit(rule: RateLimitRule) {
     await next()
   })
 }
+
+/** Requests per minute one IP may make to admin routes, counted before the key is checked. */
+export const ADMIN_RATE_LIMIT = 300
+
+/**
+ * Per-IP limit for `/v1/admin/*`. Mount it **before** `secretKey()` so failed key guesses count
+ * too: key resolution is an unauthenticated database lookup.
+ *
+ * @returns The middleware (one shared `admin` bucket per IP across all admin routes).
+ */
+export function adminRateLimit() {
+  return rateLimit({ name: 'admin', limit: ADMIN_RATE_LIMIT, window: '1m', key: byIp })
+}
