@@ -4,6 +4,13 @@ import type { BreachChecker, BreachStatus } from '~/ports/breach-checker'
 /** How long a lookup may take before it counts as `unknown`; sign-up waits on it. */
 export const HIBP_TIMEOUT_MS = 2_000
 
+/**
+ * Largest `Content-Length` we accept from the range API. Real responses are ~30 KB even with
+ * padding; anything much bigger means a misconfigured proxy or base URL, so the result counts as
+ * `unknown`. (A chunked body without the header is still bounded by the timeout.)
+ */
+export const HIBP_MAX_RESPONSE_BYTES = 1024 * 1024
+
 /** Options for {@link HibpBreachChecker}. */
 export interface HibpOptions {
   /** Injected for tests; defaults to the global `fetch`. */
@@ -43,8 +50,9 @@ export class HibpBreachChecker implements BreachChecker {
         headers: { 'Add-Padding': 'true', 'User-Agent': 'tula-auth' },
         signal: AbortSignal.timeout(this.#timeoutMs),
       })
-      if (!res.ok) {
-        logger.warn('breach check unavailable', { status: res.status })
+      const declared = Number(res.headers.get('content-length') ?? 0)
+      if (!res.ok || declared > HIBP_MAX_RESPONSE_BYTES) {
+        logger.warn('breach check unavailable', { status: res.status, bytes: declared })
         return 'unknown'
       }
       for (const line of (await res.text()).split('\n')) {

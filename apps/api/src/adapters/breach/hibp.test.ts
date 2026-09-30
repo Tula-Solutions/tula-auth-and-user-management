@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { HIBP_TIMEOUT_MS, HibpBreachChecker } from '~/adapters/breach/hibp'
+import { HIBP_MAX_RESPONSE_BYTES, HIBP_TIMEOUT_MS, HibpBreachChecker } from '~/adapters/breach/hibp'
 
 // SHA-1('password') = 5BAA6 1E4C9B93F3F0682250B6CF8331B7EE68FD8
 const SUFFIX = '1E4C9B93F3F0682250B6CF8331B7EE68FD8'
@@ -80,6 +80,17 @@ describe('HibpBreachChecker', () => {
     ],
   ])('reports unknown on %s instead of throwing', async (_name, respond) => {
     const { fetch } = fakeFetch(respond)
+    expect(await new HibpBreachChecker({ fetch }).check('password')).toBe('unknown')
+  })
+
+  test('reports unknown for an implausibly large response instead of reading it', async () => {
+    // Real range responses are ~30 KB even padded; anything huge is a misconfigured proxy.
+    const { fetch } = fakeFetch(
+      () =>
+        new Response(`${SUFFIX}:5`, {
+          headers: { 'content-length': String(HIBP_MAX_RESPONSE_BYTES + 1) },
+        })
+    )
     expect(await new HibpBreachChecker({ fetch }).check('password')).toBe('unknown')
   })
 

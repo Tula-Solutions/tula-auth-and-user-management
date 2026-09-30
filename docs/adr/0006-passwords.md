@@ -20,8 +20,9 @@ password, and sign-in that doesn't reveal which accounts exist.
   same parameters (argon2 reads its cost from the hash, so a cheaper dummy would answer faster).
   It always returns false, so the dummy's password is not a secret.
 - **Hard length cap** of 1024 code points on hash and verify, whatever the policy, so a
-  multi-megabyte body can't be fed to argon2. Over-long input is rejected before hashing; no
-  stored password can be that long, so this reveals nothing about the account.
+  multi-megabyte body can't be fed to argon2. Over-long input is rejected before normalizing or
+  hashing; no stored password can be that long, so this reveals nothing about the account. The
+  app also refuses request bodies over 64 KiB (`MAX_BODY_BYTES`).
 - **One policy object, evaluated everywhere.** `evaluatePassword` in `@tula/contract` is pure;
   the server enforces it and SDKs fetch `GET /v1/client/password-policy` to render the same live
   checklist. Setting a password returns the first failed rule as `code` and every failed rule in

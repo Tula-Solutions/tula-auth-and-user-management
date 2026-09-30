@@ -33,8 +33,20 @@ const DUMMY_HASH =
 
 const CURRENT_PREFIX = `$argon2id$v=19$m=${HASH_OPTIONS.memoryCost},t=${HASH_OPTIONS.timeCost},p=1$`
 
-function tooLong(normalized: string): boolean {
-  return [...normalized].length > MAX_PASSWORD_LENGTH
+/**
+ * Raw UTF-16 length above which input can't normalize to {@link MAX_PASSWORD_LENGTH} code points.
+ * NFC merges at most 4 code points into one and a code point is at most 2 UTF-16 units; 16x
+ * leaves margin. Checked first so huge inputs are refused before any O(n) normalization.
+ */
+const MAX_RAW_LENGTH = MAX_PASSWORD_LENGTH * 16
+
+/** @returns The NFC-normalized password, or `null` when it is over the hard cap. */
+function normalizeCapped(password: string): string | null {
+  if (password.length > MAX_RAW_LENGTH) {
+    return null
+  }
+  const normalized = normalizePassword(password)
+  return [...normalized].length > MAX_PASSWORD_LENGTH ? null : normalized
 }
 
 /**
@@ -47,8 +59,8 @@ function tooLong(normalized: string): boolean {
  * @throws AuthError `password.too_long` above {@link MAX_PASSWORD_LENGTH} code points.
  */
 export async function hash(password: string): Promise<string> {
-  const normalized = normalizePassword(password)
-  if (tooLong(normalized)) {
+  const normalized = normalizeCapped(password)
+  if (normalized === null) {
     throw new AuthError('password.too_long', { max: MAX_PASSWORD_LENGTH })
   }
   return Bun.password.hash(normalized, HASH_OPTIONS)
@@ -65,9 +77,9 @@ export async function hash(password: string): Promise<string> {
  * @returns `true` only when a real hash matches.
  */
 export async function verify(storedHash: string | null, password: string): Promise<boolean> {
-  const normalized = normalizePassword(password)
+  const normalized = normalizeCapped(password)
   // No stored password can be this long, so rejecting early leaks nothing about the account.
-  if (tooLong(normalized)) {
+  if (normalized === null) {
     return false
   }
   const matches = await Bun.password.verify(normalized, storedHash ?? DUMMY_HASH)

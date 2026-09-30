@@ -91,6 +91,25 @@ describe('verify', () => {
     expect(verifySpy).not.toHaveBeenCalled()
   })
 
+  test('rejects a multi-megabyte password before normalizing or hashing it', async () => {
+    const stored = await Passwords.hash(STRONG)
+    const normalizeSpy = spyOn(String.prototype, 'normalize')
+    verifySpy = spyOn(Bun.password, 'verify')
+    const hashSpy = spyOn(Bun.password, 'hash')
+    try {
+      const huge = 'a'.repeat(5 * 1024 * 1024)
+      expect(await Passwords.verify(stored, huge)).toBe(false)
+      expect(await Passwords.verify(null, huge)).toBe(false)
+      expect((await rejection(Passwords.hash(huge))).code).toBe('password.too_long')
+      expect(normalizeSpy).not.toHaveBeenCalled()
+      expect(verifySpy).not.toHaveBeenCalled()
+      expect(hashSpy).not.toHaveBeenCalled()
+    } finally {
+      normalizeSpy.mockRestore()
+      hashSpy.mockRestore()
+    }
+  })
+
   test('the length cap counts code points, not UTF-16 units', async () => {
     const stored = await Passwords.hash('🔒'.repeat(Passwords.MAX_PASSWORD_LENGTH))
     expect(await Passwords.verify(stored, '🔒'.repeat(Passwords.MAX_PASSWORD_LENGTH))).toBe(true)
