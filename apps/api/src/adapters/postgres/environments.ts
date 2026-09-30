@@ -25,6 +25,11 @@ export class PostgresEnvironmentRepository implements EnvironmentRepository {
   }
 
   /** @inheritdoc */
+  async listAll(): Promise<EnvironmentRecord[]> {
+    return this.db.select(columns).from(environments).orderBy(asc(environments.createdAt))
+  }
+
+  /** @inheritdoc */
   async listByProject(projectId: string): Promise<EnvironmentRecord[]> {
     // 'development' < 'production' alphabetically, matching the dashboard's order.
     return this.db

@@ -29,6 +29,13 @@
       "when": 1790742984795,
       "tag": "0003_least_privilege_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790795361588,
+      "tag": "0004_one_active_signing_key",
+      "breakpoints": true
     }
   ]
 }

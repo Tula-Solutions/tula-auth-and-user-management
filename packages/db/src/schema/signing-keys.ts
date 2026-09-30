@@ -1,4 +1,5 @@
-import { index, jsonb, text, timestamp } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { index, jsonb, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints } from '../tenant-columns'
 import { tula } from './pg-schema'
@@ -26,6 +27,14 @@ export const signingKeys = tula.table(
   },
   (t) => [
     index('signing_keys_environment_status_idx').on(t.environmentId, t.status),
+    // At most one signing key and one pre-published key per environment. Instances racing to
+    // bootstrap or rotate lose with a unique violation instead of leaving two active keys.
+    uniqueIndex('signing_keys_one_active_per_environment')
+      .on(t.environmentId)
+      .where(sql`${t.status} = 'active'`),
+    uniqueIndex('signing_keys_one_next_per_environment')
+      .on(t.environmentId)
+      .where(sql`${t.status} = 'next'`),
     ...tenantConstraints('signing_keys', t),
   ]
 )
