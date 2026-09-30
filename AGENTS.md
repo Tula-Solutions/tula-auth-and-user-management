@@ -269,5 +269,7 @@ bun run db:generate         # generate a migration from schema changes (then rea
 bun run db:check            # fail if src/schema changed without a migration
 bun run db:migrate          # apply migrations as the schema owner (DATABASE_MIGRATION_URL)
 bun run seed                # local workspace, default project, dev + prod environments
+bun run api-key:create --environment <id> [--kind secret|publishable]
+                            # mint a key (printed once); bootstraps the first secret key
 bun run test:integration    # Postgres tests against docker compose (needs .env)
 ```

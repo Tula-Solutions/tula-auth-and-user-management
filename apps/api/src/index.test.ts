@@ -155,7 +155,13 @@ describe('documentation routes', () => {
       components: { securitySchemes: Record<string, unknown>; schemas: Record<string, unknown> }
     }
     expect(doc.openapi).toBe('3.1.0')
-    expect(Object.keys(doc.paths)).toEqual(['/v1/status', '/v1/ready'])
+    expect(Object.keys(doc.paths)).toEqual([
+      '/v1/status',
+      '/v1/ready',
+      '/v1/admin/environments',
+      '/v1/admin/api-keys',
+      '/v1/admin/api-keys/{id}',
+    ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',
       'accessToken',

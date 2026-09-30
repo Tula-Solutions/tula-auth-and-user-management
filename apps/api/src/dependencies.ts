@@ -2,6 +2,7 @@ import type { AccessTokenClaims } from '@tula/contract'
 import type { Tier } from '~/env'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { Clock } from '~/ports/clock'
+import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { HealthProbe } from '~/ports/health-probe'
 import type { IdGenerator } from '~/ports/id-generator'
 import type { RateLimiter } from '~/ports/rate-limiter'
@@ -27,6 +28,7 @@ export interface Deps {
   clock: Clock
   ids: IdGenerator
   apiKeys: ApiKeyRepository
+  environments: EnvironmentRepository
   signingKeys: SigningKeyStore
   rateLimiter: RateLimiter
   /** Dependencies checked by `/v1/ready`. */

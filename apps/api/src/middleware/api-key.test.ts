@@ -4,23 +4,20 @@ import { sha256Hex } from '~/lib/crypto'
 import { bearerToken } from '~/middleware/api-key'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'
 import { secretKey } from '~/middleware/secret-key'
-import type { ApiKeyKind } from '~/ports/api-key-repository'
-import { createTestDeps } from '~/testing'
+import { createTestDeps, seedApiKey } from '~/testing'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
 const SK = 'tula_sk_dev_secret00000000000000000000000000'
 const TENANT = { projectId: 'p1', environmentId: 'e1' }
 
-function setup() {
+async function setup() {
   const deps = createTestDeps()
-  const add = (key: string, kind: ApiKeyKind, id: string) =>
-    deps.apiKeys.insert(sha256Hex(key), { id, kind, ...TENANT, revokedAt: null })
-  add(PK, 'publishable', 'pk1')
-  add(SK, 'secret', 'sk1')
+  const pk = await seedApiKey(deps, PK, { id: 'pk1', ...TENANT })
+  await seedApiKey(deps, SK, { id: 'sk1', ...TENANT })
   const app = createApp(deps)
   app.get('/test/client', publishableKey(), (c) => c.json(c.get('tenant')))
   app.get('/test/admin', secretKey(), (c) => c.json(c.get('tenant')))
-  return { deps, app }
+  return { deps, app, pk }
 }
 
 async function expectInvalidKey(res: Response) {
@@ -34,7 +31,7 @@ async function expectInvalidKey(res: Response) {
 
 describe('publishableKey', () => {
   test('resolves the tenant from a valid key', async () => {
-    const { app } = setup()
+    const { app } = await setup()
     const res = await app.request('/test/client', { headers: { [PUBLISHABLE_KEY_HEADER]: PK } })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ...TENANT, apiKeyId: 'pk1' })
@@ -47,37 +44,69 @@ describe('publishableKey', () => {
     ['a secret key', SK],
     ['oversized', `tula_pk_${'a'.repeat(300)}`],
   ])('rejects a %s key with the same generic error', async (_, key) => {
-    const { app } = setup()
+    const { app } = await setup()
     const headers: Record<string, string> = key ? { [PUBLISHABLE_KEY_HEADER]: key } : {}
     await expectInvalidKey(await app.request('/test/client', { headers }))
   })
 
   test('rejects a revoked key', async () => {
-    const { app, deps } = setup()
-    deps.apiKeys.revoke(sha256Hex(PK), deps.clock.now())
+    const { app, deps, pk } = await setup()
+    await deps.apiKeys.revoke(TENANT.environmentId, pk.id, deps.clock.now())
     await expectInvalidKey(
       await app.request('/test/client', { headers: { [PUBLISHABLE_KEY_HEADER]: PK } })
     )
   })
 })
 
+describe('last used tracking', () => {
+  test('records when a key was last used, at most once a minute', async () => {
+    const { app, deps, pk } = await setup()
+    const use = () => app.request('/test/client', { headers: { [PUBLISHABLE_KEY_HEADER]: PK } })
+    const lastUsed = async () => (await deps.apiKeys.findByHash(sha256Hex(PK)))?.lastUsedAt
+    expect(pk.lastUsedAt).toBeNull()
+
+    await use()
+    const first = deps.clock.now()
+    expect(await lastUsed()).toEqual(first)
+
+    deps.clock.advance('30s')
+    await use()
+    expect(await lastUsed()).toEqual(first)
+
+    deps.clock.advance('31s')
+    await use()
+    expect(await lastUsed()).toEqual(deps.clock.now())
+  })
+
+  test('a failure to record usage does not fail the request', async () => {
+    const { app, deps } = await setup()
+    deps.apiKeys.touch = async () => {
+      throw new Error('database write failed')
+    }
+    const res = await app.request('/test/client', { headers: { [PUBLISHABLE_KEY_HEADER]: PK } })
+    expect(res.status).toBe(200)
+  })
+
+  test('failed resolutions do not record usage', async () => {
+    const { app, deps, pk } = await setup()
+    await deps.apiKeys.revoke(TENANT.environmentId, pk.id, deps.clock.now())
+    await app.request('/test/client', { headers: { [PUBLISHABLE_KEY_HEADER]: PK } })
+    expect((await deps.apiKeys.findByHash(sha256Hex(PK)))?.lastUsedAt).toBeNull()
+  })
+})
+
 describe('secretKey', () => {
   test('resolves the tenant from a Bearer secret key', async () => {
-    const { app } = setup()
+    const { app } = await setup()
     const res = await app.request('/test/admin', { headers: { authorization: `Bearer ${SK}` } })
     expect(await res.json()).toEqual({ ...TENANT, apiKeyId: 'sk1' })
   })
 
   test('rejects a publishable key even when stored under a secret prefix', async () => {
-    const { app, deps } = setup()
+    const { app, deps } = await setup()
     // A mis-issued key: secret-looking prefix but publishable in the database.
     const misissued = 'tula_sk_dev_actuallypublishable000000000000'
-    deps.apiKeys.insert(sha256Hex(misissued), {
-      id: 'x',
-      kind: 'publishable',
-      ...TENANT,
-      revokedAt: null,
-    })
+    await seedApiKey(deps, misissued, { id: 'x', kind: 'publishable', ...TENANT })
     await expectInvalidKey(
       await app.request('/test/admin', { headers: { authorization: `Bearer ${misissued}` } })
     )
@@ -89,7 +118,7 @@ describe('secretKey', () => {
     ['the key without Bearer', { authorization: SK }],
     ['the key in the publishable header', { [PUBLISHABLE_KEY_HEADER]: SK }],
   ])('rejects %s', async (_, headers) => {
-    const { app } = setup()
+    const { app } = await setup()
     await expectInvalidKey(await app.request('/test/admin', { headers }))
   })
 })

@@ -2,6 +2,7 @@ import { createDatabase } from '@tula/db'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
+import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { databaseProbe } from '~/adapters/postgres/health'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { systemClock } from '~/adapters/system/clock'
@@ -39,6 +40,7 @@ export function createContainer(env: Env): Container {
     clock,
     ids: uuidV7Ids,
     apiKeys: new PostgresApiKeyRepository(database.db),
+    environments: new PostgresEnvironmentRepository(database.db),
     signingKeys: cacheSigningKeys(
       new PostgresSigningKeyStore(database.db),
       clock,

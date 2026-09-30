@@ -28,7 +28,8 @@
     "seed": "bun run --filter @tula/db seed",
     "test:integration": "turbo run test:integration",
     "contract:generate": "bun run --filter @tula/api contract:generate",
-    "contract:check": "bun run --filter @tula/api contract:check"
+    "contract:check": "bun run --filter @tula/api contract:check",
+    "api-key:create": "bun --env-file=.env run apps/api/src/scripts/create-api-key.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

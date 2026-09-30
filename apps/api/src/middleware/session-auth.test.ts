@@ -5,11 +5,10 @@ import { exportJWK, generateKeyPair, type JWTPayload, SignJWT } from 'jose'
 import type { AppEnv } from '~/dependencies'
 import { onError } from '~/handlers'
 import { createApp } from '~/index'
-import { sha256Hex } from '~/lib/crypto'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'
 import { sessionAuth } from '~/middleware/session-auth'
 import { RETIRED_KEY_RETENTION_MS } from '~/ports/signing-key-store'
-import { createTestDeps, TEST_CONFIG } from '~/testing'
+import { createTestDeps, seedApiKey, TEST_CONFIG } from '~/testing'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
 const TENANT = { projectId: 'p1', environmentId: 'e1' }
@@ -47,9 +46,9 @@ function sign(
   return new SignJWT(payload).setProtectedHeader(header as { alg: string }).sign(key)
 }
 
-function setup() {
+async function setup() {
   const deps = createTestDeps()
-  deps.apiKeys.insert(sha256Hex(PK), { id: 'pk1', kind: 'publishable', ...TENANT, revokedAt: null })
+  await seedApiKey(deps, PK, TENANT)
   deps.signingKeys.add({ environmentId: TENANT.environmentId, jwk: active.jwk, status: 'active' })
   const app = createApp(deps)
   app.get('/test/me', publishableKey(), sessionAuth(), (c) => c.json(c.get('session')))
@@ -74,19 +73,19 @@ function b64(value: object) {
 
 describe('sessionAuth', () => {
   test('accepts a valid token and exposes its claims', async () => {
-    const { deps, call } = setup()
+    const { deps, call } = await setup()
     const res = await call(await sign(claims(deps)))
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ sub: 'user-1', sid: 'session-1' })
   })
 
   test('requires a token', async () => {
-    const { call } = setup()
+    const { call } = await setup()
     await expectCode(await call(), 'auth.unauthenticated')
   })
 
   test('reports an expired token as session.expired', async () => {
-    const { deps, call } = setup()
+    const { deps, call } = await setup()
     const token = await sign(claims(deps))
     deps.clock.advance('61s')
     await expectCode(await call(token), 'session.expired')
@@ -94,12 +93,7 @@ describe('sessionAuth', () => {
 
   test('accepts a token signed by a key retired within the retention window', async () => {
     const deps = createTestDeps()
-    deps.apiKeys.insert(sha256Hex(PK), {
-      id: 'pk1',
-      kind: 'publishable',
-      ...TENANT,
-      revokedAt: null,
-    })
+    await seedApiKey(deps, PK, TENANT)
     deps.signingKeys.add({
       environmentId: TENANT.environmentId,
       jwk: active.jwk,
@@ -147,12 +141,12 @@ describe('sessionAuth', () => {
     ['garbage', async () => 'not.a.jwt'],
     ['a non-JSON header', async () => 'e30.e30.e30x'],
   ])('rejects %s as session.invalid_token', async (_, makeToken) => {
-    const { deps, call } = setup()
+    const { deps, call } = await setup()
     await expectCode(await call(await makeToken(deps)), 'session.invalid_token')
   })
 
   test('surfaces key-store outages as a 500, not an auth failure', async () => {
-    const { deps, call } = setup()
+    const { deps, call } = await setup()
     const token = await sign(claims(deps))
     deps.signingKeys.verificationKeys = async () => {
       throw new Error('database down')
