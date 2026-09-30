@@ -31,5 +31,8 @@ Before finishing any change here, confirm each item holds and has a test:
 8. **Tenancy:** every read and write is scoped to the resolved environment. A key or session from
    environment A can never touch environment B.
 9. **Logging:** nothing sensitive in logs, errors or responses (`internalMessage` is logs-only).
-10. **JWT:** verify algorithm (`EdDSA` only), `iss`, `aud`, `exp`, and `kid` against the environment's
-    JWKS. Reject `alg: none` and unknown `kid`.
+10. **JWT:** verify algorithm (`EdDSA` only), `iss` (the per-environment `environmentIssuer`), `aud`,
+    `exp`, and `kid` against the environment's JWKS. Reject `alg: none`, unknown `kid` and missing `kid`.
+11. **Signing keys:** a key is published as `next` for at least `NEXT_KEY_MIN_AGE_MS` before it signs;
+    private keys only ever leave the database sealed (`~/lib/secret-box`) and live in memory as
+    non-extractable `CryptoKey`s.

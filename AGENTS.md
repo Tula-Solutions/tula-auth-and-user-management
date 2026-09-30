@@ -182,7 +182,11 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   whole family. The **only** exception is the profile's `refresh.reuseGracePeriod` (default 10s,
   defined and documented in `packages/contract/src/session-profile.ts`): re-presenting a token
   rotated within that window returns the *same* child refresh token (derived as
-  `HMAC(key, parent id)`, never stored) with a fresh access token — never a new refresh token. Private signing keys are encrypted at rest with `TULA_MASTER_KEY`.
+  `HMAC(key, parent id)`, never stored) with a fresh access token — never a new refresh token.
+- Access tokens are issued per environment: `iss` is `environmentIssuer(PUBLIC_URL, environmentId)`
+  and keys are published at `jwksUrl(iss)`. Private signing keys are sealed with `~/lib/secret-box`
+  (AES-256-GCM, key derived from `TULA_MASTER_KEY`, bound to key id + environment). See
+  [ADR 0004](docs/adr/0004-signing-keys-and-issuer.md); API keys: [ADR 0005](docs/adr/0005-api-keys.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment).
