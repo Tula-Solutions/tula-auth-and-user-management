@@ -24,8 +24,9 @@ export const SessionProfileSchema = z
       reuseDetection: z.boolean(),
       /**
        * Concurrent-refresh grace window. If a refresh token that was rotated less than this long
-       * ago is presented again, the server returns the **same child tokens** it already issued
-       * (an idempotent retry for racing tabs/requests) instead of treating it as theft. Any reuse
+       * ago is presented again, the server returns the **same child refresh token** it already
+       * issued (derived from the parent, never stored) plus a freshly signed access token: an
+       * idempotent retry for racing tabs/requests instead of treating it as theft. Any reuse
        * after the window, or reuse of a token whose child was itself rotated, revokes the whole
        * family. This is the only exception to reuse detection.
        */

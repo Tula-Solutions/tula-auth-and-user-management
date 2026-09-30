@@ -158,8 +158,13 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 
 - Tables live in `packages/db/src/schema/<kebab-plural>.ts` using the mixins (`primaryKey()` uuid
   v7, `timestamps()`, `tenantColumns()`).
-- **Every tenant table carries `project_id` and `environment_id`** and is covered by the RLS
-  policy in the migrations. Tenant queries go through `withTenant(db, environmentId, fn)`.
+- **Every tenant table carries `project_id` and `environment_id`** (via `tenantColumns()` +
+  `tenantConstraints()`), which adds the composite FK and the fail-closed RLS policy. Tenant
+  queries go through `withTenant(db, environmentId, fn)` from `@tula/db`.
+- The API connects as `tula_api` (member of `tula_app`), never the schema owner: owners and
+  superusers bypass RLS. Migrations run as the owner via `DATABASE_MIGRATION_URL`.
+- `api_keys` is the one table with tenant columns but no RLS: resolving a key is what determines
+  the tenant. Only key-resolution code may read it.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 
@@ -167,13 +172,15 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 
 - Passwords: `Bun.password.hash(pw, { algorithm: 'argon2id' })` / `Bun.password.verify`. Unknown
   users still run a verify against a dummy hash so timing does not reveal account existence.
-- Tokens, codes and API keys are **stored hashed** (SHA-256) and compared with
+- High-entropy tokens and API keys are **stored hashed** (SHA-256). Low-entropy secrets
+  (6-digit codes) use a **keyed** hash (HMAC-SHA256 with a key derived from `TULA_MASTER_KEY`),
+  because a plain hash of 10^6 values is trivially reversible. Compare with
   `~/lib/crypto.timingSafeEqual`. Generate them with `~/lib/crypto.randomToken` (CSPRNG only).
 - Access tokens: EdDSA JWTs, ~60s. Refresh tokens: opaque, single-use, rotating; reuse revokes the
   whole family. The **only** exception is the profile's `refresh.reuseGracePeriod` (default 10s,
   defined and documented in `packages/contract/src/session-profile.ts`): re-presenting a token
-  rotated within that window returns the *same* child tokens (idempotent retry for racing
-  requests) — never new ones. Private signing keys are encrypted at rest with `TULA_MASTER_KEY`.
+  rotated within that window returns the *same* child refresh token (derived as
+  `HMAC(key, parent id)`, never stored) with a fresh access token — never a new refresh token. Private signing keys are encrypted at rest with `TULA_MASTER_KEY`.
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment).
@@ -185,7 +192,7 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 
 - `bun test` (`import { describe, test, expect, spyOn } from 'bun:test'`), colocated `*.test.ts`.
 - Unit tests use `createTestDeps()` (memory adapters, fixed clock) — no network, no Docker.
-- Tests that need Postgres are named `*.integration.test.ts` and run with the docker-compose
+- Tests that need Postgres are named `*.integration.ts` and run with the docker-compose
   database (`bun run test:integration`).
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
@@ -200,8 +207,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 
 A change is done only when all of these hold:
 
-1. **`bun run verify` is green** — Biome, typecheck, tests with coverage (and, once those packages
-   exist, `contract:check` and `db:check`).
+1. **`bun run verify` is green** — Biome, harness tests, typecheck, tests with coverage and
+   `db:check` (plus `contract:check` once the API exists).
 2. **An otterbot-review pass reports no blocking findings.** Run the `otterbot-review` skill
    (github.com/otternaut/otterbot, installed globally) in local mode on the change. In Claude Code
    use `/review-loop`, which runs it on Sonnet 5.5 through the `ollie-reviewer` subagent. Fix every
@@ -241,11 +248,13 @@ apps/api/src/
 
 ## Common commands
 
-Commands marked † arrive with `apps/api` / `packages/db` (Phase 0, Steps 3–4) and fail until then.
+Commands marked † arrive with `apps/api` (Phase 0, Step 4) and fail until then.
 
 ```bash
 bun install
 docker compose up -d        # postgres, redis, mailpit (http://localhost:8025)
+                            # roles come from docker/postgres/init.sql on a FRESH volume only;
+                            # after changing it: docker compose down -v (wipes local data)
 bun run dev                 # † API on http://localhost:3003, docs at /v1/docs
 bun run verify              # full quality gate (what CI runs)
 bun run verify:changed      # affected packages only (what the Stop hook runs)
@@ -256,5 +265,9 @@ bun run test
 bun run test:coverage
 bun run test:harness        # tests for the .claude hooks and repo guardrails
 bun run contract:generate   # † regenerate packages/contract/openapi.json from the API
-bun run db:generate         # † generate a migration from schema changes
+bun run db:generate         # generate a migration from schema changes (then read the SQL)
+bun run db:check            # fail if src/schema changed without a migration
+bun run db:migrate          # apply migrations as the schema owner (DATABASE_MIGRATION_URL)
+bun run seed                # local workspace, default project, dev + prod environments
+bun run test:integration    # Postgres tests against docker compose (needs .env)
 ```

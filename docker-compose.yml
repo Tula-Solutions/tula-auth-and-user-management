@@ -9,7 +9,9 @@ services:
       POSTGRES_PASSWORD: tula
       POSTGRES_DB: tula
     ports: ['127.0.0.1:5432:5432']
-    volumes: ['postgres-data:/var/lib/postgresql/data']
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U tula -d tula']
       interval: 5s
