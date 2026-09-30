@@ -52,14 +52,6 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   app.use(requestLog())
   app.use(secureHeaders())
   app.use(
-    bodyLimit({
-      maxSize: MAX_BODY_BYTES,
-      onError: () => {
-        throw new ServiceException('request.too_large')
-      },
-    })
-  )
-  app.use(
     cors({
       origin: (origin) => allowedOrigin(origin, deps.config),
       credentials: true,
@@ -67,6 +59,15 @@ export function createApp(deps: Deps): Hono<AppEnv> {
       allowHeaders: ['Content-Type', 'Authorization', PUBLISHABLE_KEY_HEADER],
       exposeHeaders: ['Retry-After', 'X-Request-Id'],
       maxAge: 600,
+    })
+  )
+  // After cors() so a 413 still carries CORS headers and browsers can read the error code.
+  app.use(
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: () => {
+        throw new ServiceException('request.too_large')
+      },
     })
   )
   app.use(async (c, next) => {

@@ -111,6 +111,20 @@ describe('error envelope', () => {
     expect(await res.json()).toMatchObject({ status: 413, code: 'request.too_large' })
   })
 
+  test('an oversized body from an allowed origin still gets CORS headers, so browsers see the code', async () => {
+    const app = createApp(
+      createTestDeps({ config: { ...TEST_CONFIG, corsOrigins: ['https://app.test'] } })
+    )
+    const res = await app.request('/v1/admin/api-keys', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.test' },
+      body: JSON.stringify({ name: 'x'.repeat(MAX_BODY_BYTES) }),
+    })
+    expect(res.status).toBe(413)
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://app.test')
+    expect(await res.json()).toMatchObject({ code: 'request.too_large' })
+  })
+
   test('a body over the size limit keeps its 413 status', async () => {
     const res = await appWithTestRoutes().request('/test/http/413')
     expect(res.status).toBe(413)
