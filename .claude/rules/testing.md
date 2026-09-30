@@ -11,7 +11,7 @@ paths:
 - Build dependencies with `createTestDeps(overrides?)`: memory adapters + a fixed, advanceable
   clock. Advance time with `deps.clock.advance('10m')` instead of sleeping.
 - No network, no Docker, no real SMTP in unit tests. Postgres-backed tests are
-  `*.integration.test.ts`.
+  `*.integration.ts`.
 - Prefer `spyOn(obj, 'fn')` + `mockRestore()` over `mock.module` (process-global in Bun).
 - Test behaviour through the public function or HTTP route (`app.request`), not private helpers.
 - Security-sensitive modules test the **failure paths**: expired, reused, wrong environment,

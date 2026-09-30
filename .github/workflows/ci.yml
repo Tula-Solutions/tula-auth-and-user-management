@@ -28,7 +28,8 @@ jobs:
           --health-cmd "pg_isready -U tula -d tula"
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
-      DATABASE_URL: postgres://tula:tula@localhost:5432/tula
+      DATABASE_URL: postgres://tula_api:tula_api@localhost:5432/tula
+      DATABASE_MIGRATION_URL: postgres://tula:tula@localhost:5432/tula
       TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || 'HEAD~1' }}
     steps:
       - uses: actions/checkout@v4
@@ -37,3 +38,7 @@ jobs:
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
       - run: bun run verify
+      - name: Create database roles (mirrors docker/postgres/init.sql)
+        run: psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
+      - run: bun run db:migrate
+      - run: bun run test:integration

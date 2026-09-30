@@ -15,8 +15,9 @@ Before finishing any change here, confirm each item holds and has a test:
 
 1. **Enumeration:** sign-in with an unknown identifier behaves exactly like a known one: same flow
    step, same error code, comparable timing (dummy-hash verify).
-2. **Secrets at rest:** tokens, codes, API keys are stored as SHA-256 hashes; signing keys and TOTP
-   seeds are encrypted with `TULA_MASTER_KEY`.
+2. **Secrets at rest:** high-entropy tokens and API keys as SHA-256; 6-digit codes as HMAC-SHA256
+   (keyed, bound to the token id); signing keys and TOTP seeds encrypted with `TULA_MASTER_KEY`.
+   Refresh-token children are derived (`HMAC(key, parent id)`), never stored recoverably.
 3. **Comparison:** secrets are compared with `timingSafeEqual` on equal-length buffers.
 4. **Randomness:** only `randomToken()` / `crypto.getRandomValues`. Never `Math.random`.
 5. **Refresh rotation:** a used refresh token presented again revokes the entire family and emits
