@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "signing_keys_one_active_per_environment" ON "tula"."signing_keys" USING btree ("environment_id") WHERE "tula"."signing_keys"."status" = 'active';--> statement-breakpoint
+CREATE UNIQUE INDEX "signing_keys_one_next_per_environment" ON "tula"."signing_keys" USING btree ("environment_id") WHERE "tula"."signing_keys"."status" = 'next';

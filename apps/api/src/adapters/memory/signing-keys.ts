@@ -1,41 +1,95 @@
 import type { Jwk } from '@tula/contract'
-import { canVerify, type SigningKeyStatus, type SigningKeyStore } from '~/ports/signing-key-store'
+import {
+  canVerify,
+  type NewSigningKey,
+  type RotationPlan,
+  type SigningKeyRecord,
+  type SigningKeyStore,
+} from '~/ports/signing-key-store'
 
-interface StoredKey {
-  environmentId: string
-  jwk: Jwk
-  status: SigningKeyStatus
-  retiredAt: Date | null
+function copy(record: SigningKeyRecord): SigningKeyRecord {
+  return { ...record, publicJwk: { ...record.publicJwk } }
 }
 
-/** In-memory public signing keys. Tests add keys with {@link MemorySigningKeyStore.add}. */
+/** In-memory signing keys, mirroring the Postgres one-active / one-next constraints. */
 export class MemorySigningKeyStore implements SigningKeyStore {
-  readonly #keys: StoredKey[]
+  readonly #keys: SigningKeyRecord[]
 
-  // Assigned in the constructor, not as a field initializer: Bun's coverage counts a class with
-  // initializers but no constructor as having an uncalled function, failing the per-file threshold.
+  // Constructor assignment for Bun coverage; see MemoryApiKeyRepository.
   constructor() {
     this.#keys = []
   }
 
   /**
-   * Publish a public key for an environment.
+   * Store a key directly (test seeding), bypassing the lifecycle constraints.
    *
-   * @param key - The environment, public JWK, lifecycle status and retirement time.
+   * @param key - Environment, public JWK, status and optional retirement time.
    */
   add(key: {
     environmentId: string
     jwk: Jwk
-    status: SigningKeyStatus
+    status: SigningKeyRecord['status']
     retiredAt?: Date | null
   }): void {
-    this.#keys.push({ ...key, retiredAt: key.retiredAt ?? null })
+    this.#keys.push({
+      id: key.jwk.kid,
+      projectId: 'seeded',
+      environmentId: key.environmentId,
+      status: key.status,
+      publicJwk: key.jwk,
+      privateKeyCiphertext: 'seeded',
+      createdAt: new Date(0),
+      activatedAt: null,
+      retiredAt: key.retiredAt ?? null,
+    })
   }
 
   /** @inheritdoc */
   async verificationKeys(environmentId: string, now: Date): Promise<Jwk[]> {
     return this.#keys
       .filter((key) => key.environmentId === environmentId && canVerify(key, now))
-      .map((key) => key.jwk)
+      .map((key) => ({ ...key.publicJwk, kid: key.id }))
+  }
+
+  /** @inheritdoc */
+  async list(environmentId: string): Promise<SigningKeyRecord[]> {
+    return this.#keys
+      .filter((key) => key.environmentId === environmentId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id))
+      .map(copy)
+  }
+
+  /** @inheritdoc */
+  async insert(environmentId: string, keys: NewSigningKey[]): Promise<boolean> {
+    const taken = (status: string) =>
+      this.#keys.some((key) => key.environmentId === environmentId && key.status === status)
+    const statuses = keys.map((key) => key.status)
+    const clash =
+      statuses.some((status) => status !== 'retired' && taken(status)) ||
+      new Set(statuses).size !== statuses.length
+    if (clash) {
+      return false
+    }
+    for (const key of keys) {
+      this.#keys.push(copy({ ...key, environmentId, retiredAt: null }))
+    }
+    return true
+  }
+
+  /** @inheritdoc */
+  async rotate(environmentId: string, plan: RotationPlan, at: Date): Promise<boolean> {
+    const find = (id: string) =>
+      this.#keys.find((key) => key.id === id && key.environmentId === environmentId)
+    const retiring = find(plan.retireId)
+    const activating = find(plan.activateId)
+    if (retiring?.status !== 'active' || activating?.status !== 'next') {
+      return false
+    }
+    retiring.status = 'retired'
+    retiring.retiredAt = at
+    activating.status = 'active'
+    activating.activatedAt = at
+    this.#keys.push(copy({ ...plan.next, environmentId, retiredAt: null }))
+    return true
   }
 }

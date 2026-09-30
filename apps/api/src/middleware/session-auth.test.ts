@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { ACCESS_TOKEN_VERSION, type Jwk } from '@tula/contract'
+import { ACCESS_TOKEN_VERSION, environmentIssuer, type Jwk } from '@tula/contract'
 import { Hono } from 'hono'
 import { exportJWK, generateKeyPair, type JWTPayload, SignJWT } from 'jose'
 import type { AppEnv } from '~/dependencies'
@@ -25,7 +25,7 @@ const stranger = await signingKey('kid-stranger')
 function claims(deps: ReturnType<typeof createTestDeps>, overrides: JWTPayload = {}): JWTPayload {
   const iat = Math.floor(deps.clock.now().getTime() / 1000)
   return {
-    iss: TEST_CONFIG.publicUrl,
+    iss: environmentIssuer(TEST_CONFIG.publicUrl, TENANT.environmentId),
     sub: 'user-1',
     aud: TENANT.environmentId,
     sid: 'session-1',
@@ -122,6 +122,11 @@ describe('sessionAuth', () => {
     ],
     ['a missing kid', (deps) => sign(claims(deps), active.privateKey, { alg: 'EdDSA' })],
     ['another issuer', (deps) => sign(claims(deps, { iss: 'https://evil.test' }))],
+    [
+      'another environment’s issuer',
+      (deps) => sign(claims(deps, { iss: environmentIssuer(TEST_CONFIG.publicUrl, 'e2') })),
+    ],
+    ['the bare API URL as issuer', (deps) => sign(claims(deps, { iss: TEST_CONFIG.publicUrl }))],
     ['another audience', (deps) => sign(claims(deps, { aud: 'e2' }))],
     ['another environment', (deps) => sign(claims(deps, { eid: 'e2' }))],
     ['another project', (deps) => sign(claims(deps, { pid: 'p2' }))],

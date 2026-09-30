@@ -6,6 +6,7 @@ import {
   type TestDatabase,
   type TestTenant,
 } from '@tula/db/testing'
+import { eq } from 'drizzle-orm'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { databaseProbe } from '~/adapters/postgres/health'
@@ -175,12 +176,109 @@ describe('PostgresSigningKeyStore', () => {
   test('skips malformed stored keys instead of failing every request', async () => {
     const tenant = await createTestTenant(testDb.db)
     await insertKey(tenant, { status: 'active', jwk: { kty: 'RSA', n: 'x', e: 'AQAB' } })
-    const good = await insertKey(tenant, { status: 'active', x: 'good' })
+    const good = await insertKey(tenant, { status: 'next', x: 'good' })
     const keys = await new PostgresSigningKeyStore(testDb.db).verificationKeys(
       tenant.environmentId,
       now
     )
     expect(keys.map((key) => key.kid)).toEqual([good])
+  })
+})
+
+describe('PostgresSigningKeyStore writes', () => {
+  function newKey(tenant: TestTenant, status: 'active' | 'next', createdAt = now) {
+    const id = Bun.randomUUIDv7()
+    return {
+      id,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      status,
+      publicJwk: {
+        kty: 'OKP' as const,
+        crv: 'Ed25519' as const,
+        x: `x-${status}`,
+        kid: id,
+        alg: 'EdDSA' as const,
+        use: 'sig' as const,
+      },
+      privateKeyCiphertext: 'v1.iv.ct',
+      createdAt,
+      activatedAt: status === 'active' ? createdAt : null,
+    }
+  }
+  const store = () => new PostgresSigningKeyStore(testDb.db)
+
+  test('bootstrap inserts atomically and reports a lost race instead of throwing', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    expect(
+      await store().insert(tenant.environmentId, [newKey(tenant, 'active'), newKey(tenant, 'next')])
+    ).toBe(true)
+    // A second instance racing to bootstrap: both slots are taken, nothing is inserted.
+    const late = [newKey(tenant, 'active'), newKey(tenant, 'next')]
+    expect(await store().insert(tenant.environmentId, late)).toBe(false)
+    const keys = await store().list(tenant.environmentId)
+    expect(keys.map((key) => key.status).sort()).toEqual(['active', 'next'])
+    expect(keys.every((key) => key.publicJwk.kid === key.id)).toBe(true)
+  })
+
+  test('rotate applies all three steps, or none when the state moved on', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const active = newKey(tenant, 'active')
+    const next = newKey(tenant, 'next', new Date(now.getTime() + 1))
+    await store().insert(tenant.environmentId, [active, next])
+    const at = new Date(now.getTime() + 60_000)
+    const plan = { retireId: active.id, activateId: next.id, next: newKey(tenant, 'next', at) }
+    expect(await store().rotate(tenant.environmentId, plan, at)).toBe(true)
+    const after = await store().list(tenant.environmentId)
+    expect(after.map((key) => [key.id, key.status])).toEqual([
+      [plan.next.id, 'next'],
+      [next.id, 'active'],
+      [active.id, 'retired'],
+    ])
+    expect(after.find((key) => key.id === active.id)?.retiredAt).toEqual(at)
+    expect(after.find((key) => key.id === next.id)?.activatedAt).toEqual(at)
+
+    // Replaying the same plan (a concurrent rotation that lost) changes nothing.
+    const stale = { ...plan, next: newKey(tenant, 'next', at) }
+    expect(await store().rotate(tenant.environmentId, stale, at)).toBe(false)
+    expect((await store().list(tenant.environmentId)).length).toBe(3)
+  })
+
+  test('a stale rotation cannot re-retire a key and extend its verification window', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const retiredAt = new Date(now.getTime() - 1000)
+    const retired = { ...newKey(tenant, 'active'), status: 'retired' as const }
+    const active = newKey(tenant, 'active')
+    await store().insert(tenant.environmentId, [retired, active])
+    await withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.update(signingKeys).set({ retiredAt }).where(eq(signingKeys.id, retired.id))
+    )
+    // The next slot is empty, so only the status guards stop this replay.
+    const stale = { retireId: retired.id, activateId: active.id, next: newKey(tenant, 'next') }
+    expect(await store().rotate(tenant.environmentId, stale, now)).toBe(false)
+    const after = await store().list(tenant.environmentId)
+    expect(after.find((key) => key.id === retired.id)?.retiredAt).toEqual(retiredAt)
+    expect(after.map((key) => key.status).sort()).toEqual(['active', 'retired'])
+  })
+
+  test('rotate cannot touch another environment’s keys', async () => {
+    const mine = await createTestTenant(testDb.db)
+    const theirs = await createTestTenant(testDb.db)
+    const active = newKey(theirs, 'active')
+    const next = newKey(theirs, 'next')
+    await store().insert(theirs.environmentId, [active, next])
+    const plan = { retireId: active.id, activateId: next.id, next: newKey(mine, 'next') }
+    expect(await store().rotate(mine.environmentId, plan, now)).toBe(false)
+    expect((await store().list(theirs.environmentId)).map((key) => key.status).sort()).toEqual([
+      'active',
+      'next',
+    ])
+  })
+
+  test('unexpected write errors still propagate', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const orphan = { ...newKey(tenant, 'active'), projectId: Bun.randomUUIDv7() }
+    await expect(store().insert(tenant.environmentId, [orphan])).rejects.toThrow()
   })
 })
 

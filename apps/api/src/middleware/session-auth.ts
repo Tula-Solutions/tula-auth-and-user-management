@@ -2,6 +2,7 @@ import {
   ACCESS_TOKEN_ALGORITHM,
   type AccessTokenClaims,
   AccessTokenClaimsSchema,
+  environmentIssuer,
   type Jwk,
 } from '@tula/contract'
 import { createMiddleware } from 'hono/factory'
@@ -57,7 +58,7 @@ export async function verifyAccessToken(
     const keys = await deps.signingKeys.verificationKeys(tenant.environmentId, now)
     ;({ payload } = await jwtVerify(token, keySet(keys), {
       algorithms: [ACCESS_TOKEN_ALGORITHM],
-      issuer: deps.config.publicUrl,
+      issuer: environmentIssuer(deps.config.publicUrl, tenant.environmentId),
       audience: tenant.environmentId,
       currentDate: now,
       requiredClaims: ['exp', 'iat', 'sub', 'sid'],

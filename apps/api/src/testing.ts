@@ -6,6 +6,7 @@ import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import type { AppConfig, Deps } from '~/dependencies'
 import { sha256Hex } from '~/lib/crypto'
+import { createSecretBox } from '~/lib/secret-box'
 import type { ApiKeyKind, ApiKeyRecord } from '~/ports/api-key-repository'
 
 /** `Deps` with the concrete memory adapters exposed, so tests can seed and advance them. */
@@ -17,6 +18,9 @@ export interface TestDeps extends Deps {
   signingKeys: MemorySigningKeyStore
   rateLimiter: MemoryRateLimiter
 }
+
+/** Master key for test secret boxes. Never use outside tests. */
+export const TEST_MASTER_KEY = 'ab'.repeat(32)
 
 /** Config used by tests unless overridden. */
 export const TEST_CONFIG: AppConfig = {
@@ -47,6 +51,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     environments: new MemoryEnvironmentRepository(),
     signingKeys: new MemorySigningKeyStore(),
     rateLimiter: new MemoryRateLimiter(clock),
+    secretBox: createSecretBox(TEST_MASTER_KEY),
     probes: [],
     ...overrides,
     clock,

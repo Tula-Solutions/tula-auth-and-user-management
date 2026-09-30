@@ -18,6 +18,13 @@ export interface EnvironmentRepository {
   findById(id: string): Promise<EnvironmentRecord | null>
 
   /**
+   * Every environment, for boot-time maintenance such as signing-key bootstrap.
+   *
+   * @returns All environments, oldest first.
+   */
+  listAll(): Promise<EnvironmentRecord[]>
+
+  /**
    * @param projectId - Project id.
    * @returns The project's environments, development first.
    */

@@ -23,6 +23,11 @@ export class MemoryEnvironmentRepository implements EnvironmentRepository {
   }
 
   /** @inheritdoc */
+  async listAll(): Promise<EnvironmentRecord[]> {
+    return this.#environments.map((environment) => ({ ...environment }))
+  }
+
+  /** @inheritdoc */
   async listByProject(projectId: string): Promise<EnvironmentRecord[]> {
     return this.#environments
       .filter((environment) => environment.projectId === projectId)

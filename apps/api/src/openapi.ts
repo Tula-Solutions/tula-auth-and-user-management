@@ -59,6 +59,7 @@ export const documentation: GenerateSpecOptions['documentation'] = {
   tags: [
     { name: 'Status', description: 'Liveness and readiness.' },
     { name: 'Project', description: 'Environments and API keys (admin).' },
+    { name: 'Keys', description: 'Access-token signing keys and the public JWKS.' },
   ],
   components: {
     securitySchemes: {

@@ -19,6 +19,7 @@ export const OPENAPI_PATH = '/v1/openapi.json'
 const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/status/router')).default],
   ['/v1/admin', (await import('~/modules/project/router')).default],
+  ['/v1', (await import('~/modules/jwks/router')).default],
 ]
 
 /**

@@ -123,7 +123,9 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
   (`tula_pk_<env>_…`, header `x-tula-publishable-key`). Resolves project + environment.
 - `/v1/admin/*` — server-to-server and the dashboard with a **secret key**
   (`Authorization: Bearer tula_sk_<env>_…`).
-- `/.well-known/jwks.json`, `/v1/status`, `/v1/ready`, `/v1/openapi.json`, `/v1/docs` — public.
+- `/v1/environments/:id/.well-known/jwks.json` (the token `iss` + `/.well-known/jwks.json`; see
+  `environmentIssuer` in `@tula/contract`), `/v1/status`, `/v1/ready`, `/v1/openapi.json`,
+  `/v1/docs` — public.
 
 ### Server-driven flows
 

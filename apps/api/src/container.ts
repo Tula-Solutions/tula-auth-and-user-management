@@ -9,6 +9,7 @@ import { systemClock } from '~/adapters/system/clock'
 import { uuidV7Ids } from '~/adapters/system/ids'
 import type { Deps } from '~/dependencies'
 import type { Env } from '~/env'
+import { createSecretBox } from '~/lib/secret-box'
 
 /** How long verification keys are cached per instance. See the rotation invariant. */
 export const SIGNING_KEY_CACHE_TTL_MS = 60_000
@@ -47,6 +48,7 @@ export function createContainer(env: Env): Container {
       SIGNING_KEY_CACHE_TTL_MS
     ),
     rateLimiter: new MemoryRateLimiter(clock),
+    secretBox: createSecretBox(env.TULA_MASTER_KEY),
     probes: [databaseProbe(database.db)],
   }
   return { deps, close: database.close }

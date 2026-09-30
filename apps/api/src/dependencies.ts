@@ -1,5 +1,6 @@
 import type { AccessTokenClaims } from '@tula/contract'
 import type { Tier } from '~/env'
+import type { SecretBox } from '~/lib/secret-box'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { Clock } from '~/ports/clock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
@@ -11,7 +12,7 @@ import type { SigningKeyStore } from '~/ports/signing-key-store'
 /** Settings the app reads at request time. Built from `Env` in the container. */
 export interface AppConfig {
   tier: Tier
-  /** Public base URL; the `iss` of every access token. */
+  /** Public base URL; each environment's token issuer lives under it (`environmentIssuer`). */
   publicUrl: string
   /** Exact browser origins allowed to make credentialed requests. */
   corsOrigins: readonly string[]
@@ -31,6 +32,8 @@ export interface Deps {
   environments: EnvironmentRepository
   signingKeys: SigningKeyStore
   rateLimiter: RateLimiter
+  /** Encrypts secrets at rest with keys derived from `TULA_MASTER_KEY`. */
+  secretBox: SecretBox
   /** Dependencies checked by `/v1/ready`. */
   probes: readonly HealthProbe[]
 }

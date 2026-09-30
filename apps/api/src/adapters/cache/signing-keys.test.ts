@@ -13,6 +13,9 @@ function countingStore(impl: () => Promise<Jwk[]> = async () => [key]) {
       calls.push(environmentId)
       return impl()
     },
+    list: async () => [],
+    insert: async () => true,
+    rotate: async () => true,
   }
   return { store, calls }
 }
@@ -64,6 +67,36 @@ describe('cacheSigningKeys', () => {
     await expect(cached.verificationKeys('e1', clock.now())).rejects.toThrow('database down')
     fail = false
     expect(await cached.verificationKeys('e1', clock.now())).toEqual([key])
+    expect(calls).toHaveLength(2)
+  })
+
+  test('writes pass through and drop the environment’s cached keys', async () => {
+    const clock = new FixedClock()
+    const { store, calls } = countingStore()
+    const cached = cacheSigningKeys(store, clock, 60_000)
+    await cached.verificationKeys('e1', clock.now())
+    await cached.verificationKeys('e2', clock.now())
+    expect(await cached.list('e1')).toEqual([])
+    expect(await cached.insert('e1', [])).toBe(true)
+    await cached.verificationKeys('e1', clock.now())
+    await cached.verificationKeys('e2', clock.now())
+    expect(calls).toEqual(['e1', 'e2', 'e1'])
+    const plan = { retireId: 'a', activateId: 'b', next: {} as never }
+    expect(await cached.rotate('e2', plan, clock.now())).toBe(true)
+    await cached.verificationKeys('e2', clock.now())
+    expect(calls).toEqual(['e1', 'e2', 'e1', 'e2'])
+  })
+
+  test('never caches an empty key set, which only exists before bootstrap', async () => {
+    const clock = new FixedClock()
+    let keys: Jwk[] = []
+    const { store, calls } = countingStore(async () => keys)
+    const cached = cacheSigningKeys(store, clock, 60_000)
+    expect(await cached.verificationKeys('e1', clock.now())).toEqual([])
+    keys = [key]
+    // Another instance bootstrapped: the very next lookup must see the key.
+    expect(await cached.verificationKeys('e1', clock.now())).toEqual([key])
+    await cached.verificationKeys('e1', clock.now())
     expect(calls).toHaveLength(2)
   })
 })
