@@ -18,7 +18,7 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "check": "biome check .",
-    "verify": "bun run check && bun run test:harness && turbo run typecheck test:coverage && bun run db:check",
+    "verify": "bun run check && bun run test:harness && turbo run typecheck test:coverage && bun run db:check && bun run contract:check",
     "verify:changed": "biome check --changed --no-errors-on-unmatched && turbo run typecheck test --affected",
     "reset:lock": "bun pm cache rm && bun x -y rimraf -g **/bun.lock* **/node_modules; bun install --force;",
     "test:harness": "bun test ./.claude/hooks",
@@ -26,7 +26,9 @@
     "db:check": "bun run --filter @tula/db db:check",
     "db:migrate": "bun run --filter @tula/db db:migrate",
     "seed": "bun run --filter @tula/db seed",
-    "test:integration": "turbo run test:integration"
+    "test:integration": "turbo run test:integration",
+    "contract:generate": "bun run --filter @tula/api contract:generate",
+    "contract:check": "bun run --filter @tula/api contract:check"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

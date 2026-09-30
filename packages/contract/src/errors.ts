@@ -73,6 +73,8 @@ export const ERROR_DEFINITIONS = {
   },
 
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
+  'request.malformed': { status: 400, message: 'The request could not be read.' },
+  'request.too_large': { status: 413, message: 'The request body is too large.' },
   'validation.failed': { status: 422, message: 'Some fields are invalid.' },
   'resource.not_found': { status: 404, message: 'The requested resource does not exist.' },
   'resource.conflict': { status: 409, message: 'The resource conflicts with existing data.' },
