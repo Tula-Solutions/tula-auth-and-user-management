@@ -1,0 +1,33 @@
+{
+  "name": "tula-auth",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "prepare": "husky || true",
+    "dev": "turbo run dev --filter=@tula/api",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
+    "typecheck": "turbo run typecheck",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check .",
+    "verify": "bun run check && bun run test:harness && turbo run typecheck test:coverage",
+    "verify:changed": "biome check --changed --no-errors-on-unmatched && turbo run typecheck test --affected",
+    "reset:lock": "bun pm cache rm && bun x -y rimraf -g **/bun.lock* **/node_modules; bun install --force;",
+    "test:harness": "bun test ./.claude/hooks"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "bun-types": "^1.4.2",
+    "husky": "^9.1.7",
+    "turbo": "^2.11.4",
+    "typescript": "^7.0.2"
+  }
+}

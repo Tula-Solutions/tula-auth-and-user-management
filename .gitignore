@@ -1,0 +1,21 @@
+# dependencies & build output
+node_modules/
+dist/
+out/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# env — only the example is committed
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+*.log
+
+# Claude Code — shared harness is committed; personal + runtime state is not
+.claude/settings.local.json
+.claude/.state/
+.claude/worktrees/

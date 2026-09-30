@@ -1,0 +1,11 @@
+# Conventional commits (same types as payhub CONTRIBUTING.md). Git-generated subjects (merges,
+# reverts, autosquash fixups) are allowed through because git-flow merges produce them.
+subject=$(head -1 "$1")
+conventional='^(feat|fix|refactor|perf|build|ci|docs|test|chore|revert)(\([a-z0-9-]+\))?!?: .+'
+generated='^(Merge |Revert "|fixup! |squash! |amend! )'
+if printf '%s\n' "$subject" | grep -qE "$conventional|$generated"; then
+  exit 0
+fi
+echo "commit-msg: subject must match '<type>(<scope>)?: <summary>'" >&2
+echo "  types: feat fix refactor perf build ci docs test chore revert" >&2
+exit 1
