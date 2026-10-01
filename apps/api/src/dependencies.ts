@@ -1,7 +1,8 @@
-import type { AccessTokenClaims } from '@tula/contract'
+import type { AccessTokenClaims, PasswordPolicy } from '@tula/contract'
 import type { Tier } from '~/env'
 import type { SecretBox } from '~/lib/secret-box'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
+import type { BreachChecker } from '~/ports/breach-checker'
 import type { Clock } from '~/ports/clock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { HealthProbe } from '~/ports/health-probe'
@@ -18,6 +19,8 @@ export interface AppConfig {
   corsOrigins: readonly string[]
   /** Whether to take the client IP from `X-Forwarded-For`. */
   trustProxy: boolean
+  /** Password rules applied to every environment (read through `Passwords.policy`). */
+  passwordPolicy: PasswordPolicy
 }
 
 /**
@@ -32,6 +35,8 @@ export interface Deps {
   environments: EnvironmentRepository
   signingKeys: SigningKeyStore
   rateLimiter: RateLimiter
+  /** Breached-password lookups for the password policy's `breachCheck`. */
+  breachChecker: BreachChecker
   /** Encrypts secrets at rest with keys derived from `TULA_MASTER_KEY`. */
   secretBox: SecretBox
   /** Dependencies checked by `/v1/ready`. */

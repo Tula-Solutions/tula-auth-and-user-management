@@ -52,6 +52,11 @@ const fields = z.object({
   PUBLIC_URL: z.url({ protocol: /^https?$/ }).default('http://localhost:3003'),
   /** `hibp` queries Have I Been Pwned (k-anonymity); `offline` uses the bundled common list. */
   BREACH_CHECK: z.enum(['hibp', 'offline']).default('offline'),
+  /**
+   * Password rules preset for every environment. Phase 0 has one policy per deployment;
+   * per-environment policies arrive with the dashboard (Phase 1).
+   */
+  PASSWORD_POLICY: z.enum(['recommended', 'strict', 'legacy']).default('recommended'),
   /** Browser origins allowed to call the API with credentials, comma-separated. */
   CORS_ORIGINS: list,
   /**

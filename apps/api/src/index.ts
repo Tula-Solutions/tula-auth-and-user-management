@@ -1,15 +1,23 @@
 import { Scalar } from '@scalar/hono-api-reference'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
 import { openAPIRouteHandler } from 'hono-openapi'
 import type { AppEnv, Deps } from '~/dependencies'
+import { ServiceException } from '~/exceptions'
 import { notFound, onError } from '~/handlers'
 import { allowedOrigin } from '~/lib/cors'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
 import { requestLog } from '~/middleware/request-log'
 import { documentation } from '~/openapi'
+
+/**
+ * Largest request body the API reads. Auth payloads are a few hundred bytes; the cap stops a
+ * client streaming megabytes into JSON parsing or password normalization.
+ */
+export const MAX_BODY_BYTES = 64 * 1024
 
 /** Where the OpenAPI document is served. */
 export const OPENAPI_PATH = '/v1/openapi.json'
@@ -20,6 +28,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/status/router')).default],
   ['/v1/admin', (await import('~/modules/project/router')).default],
   ['/v1', (await import('~/modules/jwks/router')).default],
+  ['/v1/client', (await import('~/modules/password/router')).default],
 ]
 
 /**
@@ -50,6 +59,15 @@ export function createApp(deps: Deps): Hono<AppEnv> {
       allowHeaders: ['Content-Type', 'Authorization', PUBLISHABLE_KEY_HEADER],
       exposeHeaders: ['Retry-After', 'X-Request-Id'],
       maxAge: 600,
+    })
+  )
+  // After cors() so a 413 still carries CORS headers and browsers can read the error code.
+  app.use(
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: () => {
+        throw new ServiceException('request.too_large')
+      },
     })
   )
   app.use(async (c, next) => {

@@ -1,4 +1,6 @@
+import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
+import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { SequentialIds } from '~/adapters/memory/ids'
@@ -17,6 +19,7 @@ export interface TestDeps extends Deps {
   environments: MemoryEnvironmentRepository
   signingKeys: MemorySigningKeyStore
   rateLimiter: MemoryRateLimiter
+  breachChecker: MemoryBreachChecker
 }
 
 /** Master key for test secret boxes. Never use outside tests. */
@@ -28,6 +31,7 @@ export const TEST_CONFIG: AppConfig = {
   publicUrl: 'http://localhost:3003',
   corsOrigins: [],
   trustProxy: false,
+  passwordPolicy: PASSWORD_POLICY_PRESETS.recommended,
 }
 
 /**
@@ -51,6 +55,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     environments: new MemoryEnvironmentRepository(),
     signingKeys: new MemorySigningKeyStore(),
     rateLimiter: new MemoryRateLimiter(clock),
+    breachChecker: new MemoryBreachChecker(),
     secretBox: createSecretBox(TEST_MASTER_KEY),
     probes: [],
     ...overrides,

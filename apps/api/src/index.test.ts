@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception'
 import { validator } from 'hono-openapi'
 import { z } from 'zod'
 import { validationHook } from '~/handlers'
-import { createApp, OPENAPI_PATH } from '~/index'
+import { createApp, MAX_BODY_BYTES, OPENAPI_PATH } from '~/index'
 import { createTestDeps, TEST_CONFIG } from '~/testing'
 
 function appWithTestRoutes(config = TEST_CONFIG) {
@@ -101,6 +101,30 @@ describe('error envelope', () => {
     expect(body.detail).not.toContain('framework detail')
   })
 
+  test('rejects request bodies over MAX_BODY_BYTES before auth runs', async () => {
+    const res = await createApp(createTestDeps()).request('/v1/admin/api-keys', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'x'.repeat(MAX_BODY_BYTES) }),
+    })
+    expect(res.status).toBe(413)
+    expect(await res.json()).toMatchObject({ status: 413, code: 'request.too_large' })
+  })
+
+  test('an oversized body from an allowed origin still gets CORS headers, so browsers see the code', async () => {
+    const app = createApp(
+      createTestDeps({ config: { ...TEST_CONFIG, corsOrigins: ['https://app.test'] } })
+    )
+    const res = await app.request('/v1/admin/api-keys', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://app.test' },
+      body: JSON.stringify({ name: 'x'.repeat(MAX_BODY_BYTES) }),
+    })
+    expect(res.status).toBe(413)
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://app.test')
+    expect(await res.json()).toMatchObject({ code: 'request.too_large' })
+  })
+
   test('a body over the size limit keeps its 413 status', async () => {
     const res = await appWithTestRoutes().request('/test/http/413')
     expect(res.status).toBe(413)
@@ -164,6 +188,7 @@ describe('documentation routes', () => {
       '/v1/environments/{environmentId}/.well-known/jwks.json',
       '/v1/admin/signing-keys',
       '/v1/admin/signing-keys/rotate',
+      '/v1/client/password-policy',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',
