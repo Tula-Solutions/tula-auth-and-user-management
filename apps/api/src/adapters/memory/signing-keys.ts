@@ -1,4 +1,6 @@
 import type { Jwk } from '@tula/contract'
+import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { Activity } from '~/ports/activity-log'
 import {
   canVerify,
   type NewSigningKey,
@@ -14,10 +16,16 @@ function copy(record: SigningKeyRecord): SigningKeyRecord {
 /** In-memory signing keys, mirroring the Postgres one-active / one-next constraints. */
 export class MemorySigningKeyStore implements SigningKeyStore {
   readonly #keys: SigningKeyRecord[]
+  readonly #activityLog: MemoryActivityLog
 
-  // Constructor assignment for Bun coverage; see MemoryApiKeyRepository.
-  constructor() {
+  /**
+   * Fields are assigned here for Bun coverage; see MemoryApiKeyRepository.
+   *
+   * @param activityLog - Where activity is recorded; shared with the other memory stores.
+   */
+  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
     this.#keys = []
+    this.#activityLog = activityLog
   }
 
   /**
@@ -77,7 +85,12 @@ export class MemorySigningKeyStore implements SigningKeyStore {
   }
 
   /** @inheritdoc */
-  async rotate(environmentId: string, plan: RotationPlan, at: Date): Promise<boolean> {
+  async rotate(
+    environmentId: string,
+    plan: RotationPlan,
+    at: Date,
+    activity?: Activity
+  ): Promise<boolean> {
     const find = (id: string) =>
       this.#keys.find((key) => key.id === id && key.environmentId === environmentId)
     const retiring = find(plan.retireId)
@@ -90,6 +103,7 @@ export class MemorySigningKeyStore implements SigningKeyStore {
     activating.status = 'active'
     activating.activatedAt = at
     this.#keys.push(copy({ ...plan.next, environmentId, retiredAt: null }))
+    this.#activityLog.record(activity ? [activity] : [])
     return true
   }
 }

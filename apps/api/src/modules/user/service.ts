@@ -14,7 +14,9 @@ import {
   NotFoundError,
   RateLimitError,
 } from '~/exceptions'
+import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
+import * as Audit from '~/modules/audit/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
@@ -124,13 +126,15 @@ export async function me(
  * @param deps - Users, password policy, breach checker, clock and ids.
  * @param scope - The project and environment.
  * @param input - Email, password, names and whether the email is already verified.
+ * @param actor - Who is creating the user, for the audit log.
  * @returns The created user.
  * @throws InvalidEmailError, a `password.*` ServiceException, or ConflictError.
  */
 export async function create(
   deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'config' | 'breachChecker'>,
   scope: Scope,
-  input: CreateUserRequest
+  input: CreateUserRequest,
+  actor: Actor
 ): Promise<User> {
   const parsed = parseEmail(input.email)
   if (!parsed) {
@@ -157,19 +161,27 @@ export async function create(
     lastSignInAt: null,
     createdAt: now,
   }
-  const created = await deps.users.createWithPassword({
-    ...record,
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: await Passwords.hash(input.password),
-  })
+  const created = await deps.users.createWithPassword(
+    {
+      ...record,
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: await Passwords.hash(input.password),
+    },
+    Audit.entry(deps, scope, {
+      type: 'user.created',
+      actor,
+      target: { type: 'user', id: record.id },
+      data: { method: 'admin', emailVerified: record.emailVerifiedAt !== null },
+    })
+  )
   if (!created) {
     throw new ConflictError({ message: 'A user with this email already exists.' })
   }
   return toUser(record)
 }
 
-type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock'>
+type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
 
 /**
  * Ban a user: they can no longer sign in or refresh, and every session ends now.
@@ -177,23 +189,31 @@ type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clo
  * The ban is recorded before the sessions are revoked, so a sign-in racing the ban is stopped
  * either by the flow's ban check or, at the latest, by the ban check on its first refresh.
  *
- * @param deps - Users, sessions, denylist and clock.
- * @param scope - The environment.
+ * @param deps - Users, sessions, denylist, ids and clock.
+ * @param scope - The project and environment.
  * @param userId - The user.
+ * @param actor - Who is banning them, for the audit log.
  * @returns The banned user. Banning again keeps the original ban time.
  * @throws NotFoundError when they do not exist in this environment.
  */
 export async function ban(
   deps: RevocationDeps,
-  scope: Pick<Tenant, 'environmentId'>,
-  userId: string
+  scope: Scope,
+  userId: string,
+  actor: Actor
 ): Promise<User> {
   const now = deps.clock.now()
-  const user = await deps.users.setBanned(scope.environmentId, userId, now, now)
+  const user = await deps.users.setBanned(
+    scope.environmentId,
+    userId,
+    now,
+    now,
+    Audit.entry(deps, scope, { type: 'user.banned', actor, target: { type: 'user', id: userId } })
+  )
   if (!user) {
     throw new NotFoundError()
   }
-  await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned')
+  await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned', actor)
   return toUser(user)
 }
 
@@ -203,24 +223,32 @@ export async function ban(
  * Sessions are revoked once more before the ban is cleared: a sign-in that raced the ban may
  * have created one after the ban's own revocation, and it must not come back to life here.
  *
- * @param deps - Users, sessions, denylist and clock.
- * @param scope - The environment.
+ * @param deps - Users, sessions, denylist, ids and clock.
+ * @param scope - The project and environment.
  * @param userId - The user.
+ * @param actor - Who is lifting the ban, for the audit log.
  * @returns The user.
  * @throws NotFoundError when they do not exist in this environment.
  */
 export async function unban(
   deps: RevocationDeps,
-  scope: Pick<Tenant, 'environmentId'>,
-  userId: string
+  scope: Scope,
+  userId: string,
+  actor: Actor
 ): Promise<User> {
   const current = await requireUser(deps, scope, userId)
   if (current.bannedAt === null) {
     // Not banned: nothing to lift, and no reason to sign them out.
     return toUser(current)
   }
-  await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned')
-  const user = await deps.users.setBanned(scope.environmentId, userId, null, deps.clock.now())
+  await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned', actor)
+  const user = await deps.users.setBanned(
+    scope.environmentId,
+    userId,
+    null,
+    deps.clock.now(),
+    Audit.entry(deps, scope, { type: 'user.unbanned', actor, target: { type: 'user', id: userId } })
+  )
   if (!user) {
     throw new NotFoundError()
   }
@@ -233,19 +261,28 @@ export async function unban(
  * Their sessions are revoked through the session service first, so their access tokens are
  * denylisted before the rows disappear.
  *
- * @param deps - Users, sessions, denylist and clock.
- * @param scope - The environment.
+ * The audit entries about the user outlive them: the log names them by id only.
+ *
+ * @param deps - Users, sessions, denylist, ids and clock.
+ * @param scope - The project and environment.
  * @param userId - The user.
+ * @param actor - Who is deleting them, for the audit log.
  * @throws NotFoundError when they do not exist in this environment.
  */
 export async function remove(
   deps: RevocationDeps,
-  scope: Pick<Tenant, 'environmentId'>,
-  userId: string
+  scope: Scope,
+  userId: string,
+  actor: Actor
 ): Promise<void> {
   await requireUser(deps, scope, userId)
-  await Sessions.revokeAllForUser(deps, scope, userId, 'revoked_by_admin')
-  if (!(await deps.users.delete(scope.environmentId, userId))) {
+  await Sessions.revokeAllForUser(deps, scope, userId, 'revoked_by_admin', actor)
+  const deleted = await deps.users.delete(
+    scope.environmentId,
+    userId,
+    Audit.entry(deps, scope, { type: 'user.deleted', actor, target: { type: 'user', id: userId } })
+  )
+  if (!deleted) {
     throw new NotFoundError()
   }
 }
@@ -254,9 +291,11 @@ type PasswordDeps = RevocationDeps & Pick<Deps, 'config' | 'breachChecker'>
 
 async function replacePassword(
   deps: PasswordDeps,
-  scope: Pick<Tenant, 'environmentId'>,
+  scope: Scope,
   user: UserRecord,
-  password: string
+  password: string,
+  actor: Actor,
+  method: 'admin_reset' | 'self'
 ): Promise<void> {
   await Passwords.assess(deps, scope, password, {
     email: user.email,
@@ -267,7 +306,13 @@ async function replacePassword(
     scope.environmentId,
     user.id,
     await Passwords.hash(password),
-    deps.clock.now()
+    deps.clock.now(),
+    Audit.entry(deps, scope, {
+      type: 'user.password_changed',
+      actor,
+      target: { type: 'user', id: user.id },
+      data: { method },
+    })
   )
   if (!replaced) {
     // Every user is created with a password today; when passwordless users exist (Phase 1)
@@ -284,22 +329,24 @@ async function replacePassword(
  *
  * Every session of the user ends: whoever knew the old password is signed out everywhere.
  *
- * @param deps - Users, password policy, sessions, denylist and clock.
- * @param scope - The environment.
+ * @param deps - Users, password policy, sessions, denylist, ids and clock.
+ * @param scope - The project and environment.
  * @param userId - The user.
  * @param password - The new password; must meet the policy.
+ * @param actor - Who is resetting it, for the audit log.
  * @throws NotFoundError, a `password.*` ServiceException with per-field `errors`, or
  *   ConflictError when the user has no password credential.
  */
 export async function setPassword(
   deps: PasswordDeps,
-  scope: Pick<Tenant, 'environmentId'>,
+  scope: Scope,
   userId: string,
-  password: string
+  password: string,
+  actor: Actor
 ): Promise<void> {
   const user = await requireUser(deps, scope, userId)
-  await replacePassword(deps, scope, user, password)
-  await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed')
+  await replacePassword(deps, scope, user, password, actor, 'admin_reset')
+  await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
 }
 
 /**
@@ -310,28 +357,31 @@ export async function setPassword(
  * clears them. On success every *other* session ends and the
  * device making the change stays signed in.
  *
- * @param deps - Users, password policy, sessions, denylist, lockout and clock.
- * @param scope - The environment.
- * @param actor - The signed-in user and their current session.
+ * @param deps - Users, password policy, sessions, denylist, lockout, ids and clock.
+ * @param scope - The project and environment.
+ * @param self - The signed-in user and their current session.
  * @param input - Current and new password.
+ * @param origin - Where the request came from, for the audit log.
  * @throws AuthError `auth.invalid_credentials` when the current password is wrong.
  * @throws RateLimitError while the user is locked out after repeated wrong guesses.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
  */
 export async function changePassword(
   deps: PasswordDeps & Pick<Deps, 'lockout'>,
-  scope: Pick<Tenant, 'environmentId'>,
-  actor: { userId: string; sessionId: string },
-  input: ChangePasswordRequest
+  scope: Scope,
+  self: { userId: string; sessionId: string },
+  input: ChangePasswordRequest,
+  origin: Partial<Origin> = {}
 ): Promise<void> {
+  const actor: Actor = { type: 'user', id: self.userId, ...cleanOrigin(origin) }
   // Counted as a failure up front and cleared once the current password checks out, so only
   // wrong guesses add up and parallel guesses can't slip through.
-  const lockKey = `password_change:${scope.environmentId}:${actor.userId}`
+  const lockKey = `password_change:${scope.environmentId}:${self.userId}`
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
   }
-  const user = await deps.users.findById(scope.environmentId, actor.userId)
+  const user = await deps.users.findById(scope.environmentId, self.userId)
   const found = user
     ? await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
     : null
@@ -339,10 +389,11 @@ export async function changePassword(
     throw new AuthError('auth.invalid_credentials')
   }
   await deps.lockout.clear(lockKey)
-  await replacePassword(deps, scope, found.user, input.newPassword)
+  await replacePassword(deps, scope, found.user, input.newPassword, actor, 'self')
   await Sessions.revokeOthers(deps, scope, {
-    userId: actor.userId,
-    currentSessionId: actor.sessionId,
+    userId: self.userId,
+    currentSessionId: self.sessionId,
     reason: 'password_changed',
+    actor,
   })
 }

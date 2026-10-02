@@ -191,7 +191,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   passwords: [ADR 0006](docs/adr/0006-passwords.md); verification codes:
   [ADR 0007](docs/adr/0007-verification-codes.md); sessions: [ADR 0008](docs/adr/0008-sessions.md);
   flows: [ADR 0009](docs/adr/0009-flows.md); users: [ADR 0010](docs/adr/0010-user-management.md);
-  rate limits and lockout: [ADR 0011](docs/adr/0011-rate-limits-and-lockout.md).
+  rate limits and lockout: [ADR 0011](docs/adr/0011-rate-limits-and-lockout.md); events and the
+  audit log: [ADR 0012](docs/adr/0012-events-and-audit-log.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
@@ -202,6 +203,11 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - Revoking a session must go through `~/modules/session/service` so its id is denylisted:
   `sessionAuth` verifies access tokens without a database hit, and only the denylist stops a
   revoked session's token before it expires.
+- **Every state change is recorded, in the same transaction.** A store method that changes a
+  user, session, API key or signing key takes an `Activity` (built with `Audit.entry` from
+  `~/modules/audit/service`) and writes it with the change; services pass the `Actor` their
+  router built with `adminActor(c)` / `userActor(c)` (`~/lib/actor`). Never write an audit entry
+  as a separate step, and never put a secret or an email address in one.
 - Treat every change under `modules/{flow,session,password,jwks,verification}` or `lib/crypto.ts`
   as security-sensitive: it needs tests for the failure paths, not just the happy path.
 
@@ -257,11 +263,11 @@ apps/api/src/
 ├── handlers.ts       # onError + validation hook → contract error envelope
 ├── openapi.ts        # shared OpenAPI responses, security requirements, document info
 ├── testing.ts        # createTestDeps(): memory adapters + FixedClock
-├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip
+├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, system/, cache/, breach/, mail/
 ├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, request-log
-└── modules/          # flow, password, session, jwks, verification, user, project, status
+└── modules/          # flow, password, session, jwks, verification, user, audit, project, status
 ```
 
 ## Common commands

@@ -1,3 +1,5 @@
+import type { Activity } from '~/ports/activity-log'
+
 /** Publishable keys identify an environment from apps; secret keys authorize server calls. */
 export type ApiKeyKind = 'publishable' | 'secret'
 
@@ -40,9 +42,10 @@ export interface ApiKeyRepository {
    * Store a new key.
    *
    * @param key - The record and the key's hash.
+   * @param activity - Recorded in the same transaction.
    * @returns The stored record.
    */
-  insert(key: NewApiKey): Promise<ApiKeyRecord>
+  insert(key: NewApiKey, activity?: Activity): Promise<ApiKeyRecord>
 
   /**
    * List an environment's keys, newest first, including revoked ones.
@@ -67,7 +70,13 @@ export interface ApiKeyRepository {
    * @param environmentId - The environment the key must belong to.
    * @param id - The key id.
    * @param at - Revocation time.
+   * @param activity - Recorded in the same transaction, only if the key was not revoked before.
    * @returns The revoked key, or `null` if no key with that id exists in the environment.
    */
-  revoke(environmentId: string, id: string, at: Date): Promise<ApiKeyRecord | null>
+  revoke(
+    environmentId: string,
+    id: string,
+    at: Date,
+    activity?: Activity
+  ): Promise<ApiKeyRecord | null>
 }

@@ -237,7 +237,7 @@ export function describeSessionStore(
         userId,
         'revoked_by_user',
         later(1_000),
-        keep.session.id
+        { exceptSessionId: keep.session.id }
       )
       expect(revoked.sort()).toEqual([first.session.id, second.session.id].sort())
       expect((await ctx.store.findById(ctx.a.environmentId, keep.session.id))?.revokedAt).toBeNull()

@@ -49,7 +49,8 @@ the caller has just proven they know the password. An admin reset still ends all
 - There is no self-service "forgot password" flow yet. The pieces exist (`password_reset`
   verification tokens, `Sessions.revokeAllForUser`, the flow engine), but the plan's step list
   does not include it; until it lands, a reset goes through an admin.
-- Admin actions are not audited yet; the audit log arrives with Step 5.9.
+- Every action here is recorded in the audit log with the secret key (or user) that performed
+  it (ADR 0012).
 - The refresh-time ban check costs one user lookup per refresh (about once a minute per
   session).
 - Someone holding a stolen access token can fail the current-password check on purpose and

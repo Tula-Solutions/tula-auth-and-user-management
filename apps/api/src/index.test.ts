@@ -208,6 +208,7 @@ describe('documentation routes', () => {
       '/v1/admin/users/{userId}/password',
       '/v1/client/me',
       '/v1/client/me/password',
+      '/v1/admin/audit-logs',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',

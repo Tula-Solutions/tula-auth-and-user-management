@@ -1,3 +1,5 @@
+import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { Activity } from '~/ports/activity-log'
 import type { ApiKeyRecord, ApiKeyRepository, NewApiKey } from '~/ports/api-key-repository'
 
 interface Stored extends ApiKeyRecord {
@@ -11,11 +13,14 @@ function toRecord({ keyHash: _keyHash, ...record }: Stored): ApiKeyRecord {
 /** In-memory API keys. */
 export class MemoryApiKeyRepository implements ApiKeyRepository {
   readonly #keys: Stored[]
+  readonly #activityLog: MemoryActivityLog
 
   // Assigned in the constructor, not as a field initializer: Bun's coverage counts a class with
   // initializers but no constructor as having an uncalled function, failing the per-file threshold.
-  constructor() {
+  /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
+  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
     this.#keys = []
+    this.#activityLog = activityLog
   }
 
   /** @inheritdoc */
@@ -25,12 +30,13 @@ export class MemoryApiKeyRepository implements ApiKeyRepository {
   }
 
   /** @inheritdoc */
-  async insert(key: NewApiKey): Promise<ApiKeyRecord> {
+  async insert(key: NewApiKey, activity?: Activity): Promise<ApiKeyRecord> {
     if (this.#keys.some((existing) => existing.keyHash === key.keyHash)) {
       throw new Error('api_keys_key_hash_key: duplicate key hash')
     }
     const stored: Stored = { ...key, lastUsedAt: null, revokedAt: null }
     this.#keys.push(stored)
+    this.#activityLog.record(activity ? [activity] : [])
     return toRecord(stored)
   }
 
@@ -51,14 +57,22 @@ export class MemoryApiKeyRepository implements ApiKeyRepository {
   }
 
   /** @inheritdoc */
-  async revoke(environmentId: string, id: string, at: Date): Promise<ApiKeyRecord | null> {
+  async revoke(
+    environmentId: string,
+    id: string,
+    at: Date,
+    activity?: Activity
+  ): Promise<ApiKeyRecord | null> {
     const key = this.#keys.find(
       (candidate) => candidate.id === id && candidate.environmentId === environmentId
     )
     if (!key) {
       return null
     }
-    key.revokedAt ??= at
+    if (key.revokedAt === null) {
+      key.revokedAt = at
+      this.#activityLog.record(activity ? [activity] : [])
+    }
     return toRecord(key)
   }
 }

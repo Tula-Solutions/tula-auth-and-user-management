@@ -15,6 +15,7 @@ import { AuthError, InvalidEmailError, RateLimitError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
+import * as Audit from '~/modules/audit/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Verification from '~/modules/verification/service'
@@ -459,7 +460,16 @@ export async function verifyEmail(
     if (user.bannedAt !== null) {
       throw new AuthError('auth.user_banned')
     }
-    await deps.users.markEmailVerified(tenant.environmentId, user.id, now)
+    await deps.users.markEmailVerified(
+      tenant.environmentId,
+      user.id,
+      now,
+      Audit.entry(deps, tenant, {
+        type: 'user.email_verified',
+        actor: { type: 'user', id: user.id, ...context },
+        target: { type: 'user', id: user.id },
+      })
+    )
     return finish(deps, tenant, attempt, state, user.id, context)
   }
 
@@ -469,20 +479,29 @@ export async function verifyEmail(
     throw new AuthError('verification.invalid_code', { attemptsRemaining: 0 })
   }
   const userId = deps.ids.next()
-  const created = await deps.users.createWithPassword({
-    id: userId,
-    projectId: tenant.projectId,
-    environmentId: tenant.environmentId,
-    email: state.email ?? attempt.identifier,
-    emailNormalized: attempt.identifier,
-    emailVerifiedAt: now,
-    firstName: state.firstName ?? null,
-    lastName: state.lastName ?? null,
-    createdAt: now,
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: state.passwordHash,
-  })
+  const created = await deps.users.createWithPassword(
+    {
+      id: userId,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: state.email ?? attempt.identifier,
+      emailNormalized: attempt.identifier,
+      emailVerifiedAt: now,
+      firstName: state.firstName ?? null,
+      lastName: state.lastName ?? null,
+      createdAt: now,
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: state.passwordHash,
+    },
+    Audit.entry(deps, tenant, {
+      type: 'user.created',
+      // They created the account themselves, so the new user is the actor.
+      actor: { type: 'user', id: userId, ...context },
+      target: { type: 'user', id: userId },
+      data: { method: 'sign_up', emailVerified: true },
+    })
+  )
   if (!created) {
     // Another sign-up for the same address was verified first.
     throw new AuthError('flow.invalid_step')

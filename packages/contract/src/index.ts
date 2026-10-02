@@ -1,3 +1,4 @@
+export * from './audit'
 export * from './common-passwords'
 export * from './duration'
 export * from './errors'

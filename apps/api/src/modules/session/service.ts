@@ -1,4 +1,3 @@
-import { isIP } from 'node:net'
 import {
   ACCESS_TOKEN_ALGORITHM,
   ACCESS_TOKEN_VERSION,
@@ -14,8 +13,10 @@ import {
 import { SignJWT } from 'jose'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InternalError, NotFoundError } from '~/exceptions'
+import { type Actor, cleanOrigin, type Origin, systemActor } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
+import * as Audit from '~/modules/audit/service'
 import * as Jwks from '~/modules/jwks/service'
 import {
   isActive,
@@ -33,8 +34,6 @@ export const PROFILE_NAME = 'web'
  * room for offices behind one address while bounding unauthenticated database lookups.
  */
 export const REFRESH_RATE_LIMIT = 300
-/** Longest user agent stored with a session; longer values are cut, not rejected. */
-export const MAX_USER_AGENT_LENGTH = 512
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 type TokenDeps = Pick<
@@ -94,6 +93,26 @@ async function signAccessToken(
   return { accessToken, accessTokenExpiresAt: new Date(expiresAt * 1000).toISOString() }
 }
 
+/**
+ * The record of one session ending: who ended it, and why. A replayed refresh token gets its
+ * own type, `session.reuse_detected`, so it can be alerted on; every other ending is
+ * `session.revoked`.
+ */
+function revoked(
+  deps: Pick<Deps, 'ids' | 'clock'>,
+  scope: Scope,
+  session: { id: string; userId: string },
+  reason: SessionRevokeReason,
+  actor: Actor
+) {
+  return Audit.entry(deps, scope, {
+    type: reason === 'reuse_detected' ? 'session.reuse_detected' : 'session.revoked',
+    actor,
+    target: { type: 'session', id: session.id },
+    data: { userId: session.userId, reason },
+  })
+}
+
 /** `now + idle timeout`, never past the session's absolute limit. */
 function idleExpiry(now: Date, absoluteExpiresAt: Date | null): Date {
   const idle = now.getTime() + durationToMs(profile().idleTimeout)
@@ -150,6 +169,7 @@ export async function create(
   const idleExpiresAt = idleExpiry(now, absoluteExpiresAt)
   const sessionId = deps.ids.next()
   const refreshToken = await deriveToken(deps, { sessionId })
+  const origin = cleanOrigin(input)
 
   await deps.sessions.create(
     {
@@ -159,8 +179,7 @@ export async function create(
       userId: input.userId,
       profile: PROFILE_NAME,
       client: input.client,
-      userAgent: input.userAgent?.slice(0, MAX_USER_AGENT_LENGTH) ?? null,
-      ipAddress: input.ipAddress && isIP(input.ipAddress) ? input.ipAddress : null,
+      ...origin,
       lastActiveAt: now,
       idleExpiresAt,
       absoluteExpiresAt,
@@ -173,7 +192,13 @@ export async function create(
       parentId: null,
       expiresAt: idleExpiresAt,
       createdAt: now,
-    }
+    },
+    Audit.entry(deps, scope, {
+      type: 'session.created',
+      actor: { type: 'user', id: input.userId, ...origin },
+      target: { type: 'session', id: sessionId },
+      data: { userId: input.userId, client: input.client },
+    })
   )
   const access = await signAccessToken(deps, scope, { id: sessionId, userId: input.userId }, now)
   return { sessionId, ...access, refreshToken }
@@ -203,15 +228,22 @@ function rejectEnded(session: SessionRecord, now: Date): void {
  * between the ban and that revocation, so a banned user can never keep one alive.
  */
 async function rejectBanned(
-  deps: Pick<Deps, 'users' | 'sessions' | 'revokedSessions'>,
+  deps: Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'ids' | 'clock'>,
   scope: Scope,
   session: SessionRecord,
-  now: Date
+  now: Date,
+  origin: Partial<Origin>
 ): Promise<void> {
   const user = await deps.users.findById(scope.environmentId, session.userId)
   if (user?.bannedAt) {
     await denylist(deps, [session.id], now)
-    await deps.sessions.revoke(scope.environmentId, session.id, 'user_banned', now)
+    await deps.sessions.revoke(
+      scope.environmentId,
+      session.id,
+      'user_banned',
+      now,
+      revoked(deps, scope, session, 'user_banned', systemActor(origin))
+    )
     throw new AuthError('auth.user_banned')
   }
 }
@@ -232,6 +264,7 @@ async function rejectBanned(
  * @param deps - Session store, keyed hash, signing keys, clock and ids.
  * @param scope - The environment the request resolved to.
  * @param refreshToken - The token the client presented.
+ * @param origin - Where the request came from, recorded if the session has to be revoked.
  * @returns The session id, a new access token and the current refresh token.
  * @throws AuthError `session.invalid_token`, `session.revoked`, `session.expired`,
  *   `session.reuse_detected` or `auth.user_banned`.
@@ -239,7 +272,8 @@ async function rejectBanned(
 export async function refresh(
   deps: SessionDeps,
   scope: Scope,
-  refreshToken: string
+  refreshToken: string,
+  origin: Partial<Origin> = {}
 ): Promise<SessionTokens> {
   const tokenHash = sha256Hex(refreshToken)
   // A second pass only happens when a concurrent request won the rotation between our read and
@@ -252,12 +286,12 @@ export async function refresh(
     }
     const { token, session } = found
     rejectEnded(session, now)
-    await rejectBanned(deps, scope, session, now)
+    await rejectBanned(deps, scope, session, now, origin)
 
     // Reuse is judged before the token's own expiry: a rotated token replayed on a live session
     // is theft however old it is, and must not be waved through as merely "expired".
     if (token.usedAt !== null) {
-      return replayOrRevoke(deps, scope, session, token, token.usedAt, now)
+      return replayOrRevoke(deps, scope, session, token, token.usedAt, now, origin)
     }
     if (token.expiresAt.getTime() <= now.getTime()) {
       throw new AuthError('session.expired')
@@ -292,7 +326,8 @@ async function replayOrRevoke(
   session: SessionRecord,
   token: RefreshTokenRecord,
   usedAt: Date,
-  now: Date
+  now: Date,
+  origin: Partial<Origin>
 ): Promise<SessionTokens> {
   const withinGrace =
     now.getTime() - usedAt.getTime() < durationToMs(profile().refresh.reuseGracePeriod)
@@ -309,7 +344,15 @@ async function replayOrRevoke(
     }
   }
   await denylist(deps, [session.id], now)
-  await deps.sessions.revoke(scope.environmentId, session.id, 'reuse_detected', now)
+  // The actor is the system: whoever replayed the token is unknown, and it was the server that
+  // decided to end the session. The replay's origin is kept, as it may be the thief's.
+  await deps.sessions.revoke(
+    scope.environmentId,
+    session.id,
+    'reuse_detected',
+    now,
+    revoked(deps, scope, session, 'reuse_detected', systemActor(origin))
+  )
   logger.warn('refresh token reuse detected; session revoked', {
     environmentId: scope.environmentId,
     sessionId: session.id,
@@ -352,6 +395,8 @@ export async function list(
   return records.map((record) => toSession(record, input.currentSessionId))
 }
 
+type RevokeDeps = Pick<Deps, 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
+
 /** Which session to revoke, and for whom. */
 export interface RevokeInput {
   /** The user asking; the session must be theirs. */
@@ -359,63 +404,66 @@ export interface RevokeInput {
   sessionId: string
   /** Defaults to `revoked_by_user`. */
   reason?: SessionRevokeReason
+  /** Who is ending the session, for the audit log. */
+  actor: Actor
 }
 
 /**
  * End one of a user's sessions. Idempotent: revoking an already-revoked session is a no-op.
  *
- * @param deps - Session store, denylist and clock.
- * @param scope - The environment.
- * @param input - The user, the session and the reason.
+ * @param deps - Session store, denylist, ids and clock.
+ * @param scope - The project and environment.
+ * @param input - The user, the session, the reason and who is asking.
  * @throws NotFoundError when the session does not exist or belongs to someone else (the two are
  *   indistinguishable, so session ids can't be probed).
  */
-export async function revoke(
-  deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'clock'>,
-  scope: Pick<Tenant, 'environmentId'>,
-  input: RevokeInput
-): Promise<void> {
+export async function revoke(deps: RevokeDeps, scope: Scope, input: RevokeInput): Promise<void> {
   const session = await deps.sessions.findById(scope.environmentId, input.sessionId)
   if (!session || session.userId !== input.userId) {
     throw new NotFoundError()
   }
   const now = deps.clock.now()
+  const reason = input.reason ?? 'revoked_by_user'
   await denylist(deps, [session.id], now)
   await deps.sessions.revoke(
     scope.environmentId,
     session.id,
-    input.reason ?? 'revoked_by_user',
-    now
+    reason,
+    now,
+    revoked(deps, scope, session, reason, input.actor)
   )
 }
 
 /**
  * Sign the user out everywhere except the device they are using.
  *
- * @param deps - Session store, denylist and clock.
- * @param scope - The environment.
- * @param input - The user, the session to keep, and the reason (default `revoked_by_user`).
+ * @param deps - Session store, denylist, ids and clock.
+ * @param scope - The project and environment.
+ * @param input - The user, the session to keep, the reason (default `revoked_by_user`) and
+ *   who is asking.
  * @returns How many sessions were revoked.
  */
 export async function revokeOthers(
-  deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'clock'>,
-  scope: Pick<Tenant, 'environmentId'>,
-  input: { userId: string; currentSessionId: string; reason?: SessionRevokeReason }
+  deps: RevokeDeps,
+  scope: Scope,
+  input: { userId: string; currentSessionId: string; reason?: SessionRevokeReason; actor: Actor }
 ): Promise<number> {
   return revokeForUser(
     deps,
     scope,
     input.userId,
     input.reason ?? 'revoked_by_user',
+    input.actor,
     input.currentSessionId
   )
 }
 
 async function revokeForUser(
-  deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'clock'>,
-  scope: Pick<Tenant, 'environmentId'>,
+  deps: RevokeDeps,
+  scope: Scope,
   userId: string,
   reason: SessionRevokeReason,
+  actor: Actor,
   exceptSessionId?: string
 ): Promise<number> {
   const now = deps.clock.now()
@@ -426,34 +474,33 @@ async function revokeForUser(
     active.map((session) => session.id).filter((id) => id !== exceptSessionId),
     now
   )
-  const revoked = await deps.sessions.revokeByUser(
-    scope.environmentId,
-    userId,
-    reason,
-    now,
-    exceptSessionId
-  )
+  const ended = await deps.sessions.revokeByUser(scope.environmentId, userId, reason, now, {
+    exceptSessionId,
+    activity: (sessionId) => revoked(deps, scope, { id: sessionId, userId }, reason, actor),
+  })
   // Covers a session created between the list and the update.
-  await denylist(deps, revoked, now)
-  return revoked.length
+  await denylist(deps, ended, now)
+  return ended.length
 }
 
 /**
  * End every session of a user, e.g. after a password change, reset or ban.
  *
- * @param deps - Session store, denylist and clock.
- * @param scope - The environment.
+ * @param deps - Session store, denylist, ids and clock.
+ * @param scope - The project and environment.
  * @param userId - The user.
  * @param reason - Why the sessions end.
+ * @param actor - Who is ending them, for the audit log.
  * @returns How many sessions were revoked.
  */
 export async function revokeAllForUser(
-  deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'clock'>,
-  scope: Pick<Tenant, 'environmentId'>,
+  deps: RevokeDeps,
+  scope: Scope,
   userId: string,
-  reason: SessionRevokeReason
+  reason: SessionRevokeReason,
+  actor: Actor
 ): Promise<number> {
-  return revokeForUser(deps, scope, userId, reason)
+  return revokeForUser(deps, scope, userId, reason, actor)
 }
 
 /**
@@ -463,14 +510,16 @@ export async function revokeAllForUser(
  * the client's point of view and reveals nothing about which tokens exist. Any token of the
  * chain works, including an already-rotated one.
  *
- * @param deps - Session store, denylist and clock.
- * @param scope - The environment.
+ * @param deps - Session store, denylist, ids and clock.
+ * @param scope - The project and environment.
  * @param refreshToken - The presented token, if any.
+ * @param origin - Where the request came from, for the audit log.
  */
 export async function signOut(
-  deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'clock'>,
-  scope: Pick<Tenant, 'environmentId'>,
-  refreshToken: string | undefined
+  deps: RevokeDeps,
+  scope: Scope,
+  refreshToken: string | undefined,
+  origin: Partial<Origin> = {}
 ): Promise<void> {
   if (!refreshToken) {
     return
@@ -480,6 +529,18 @@ export async function signOut(
     return
   }
   const now = deps.clock.now()
-  await denylist(deps, [found.session.id], now)
-  await deps.sessions.revoke(scope.environmentId, found.session.id, 'sign_out', now)
+  const { session } = found
+  await denylist(deps, [session.id], now)
+  await deps.sessions.revoke(
+    scope.environmentId,
+    session.id,
+    'sign_out',
+    now,
+    // Holding the refresh token is what proves this is the session's user.
+    revoked(deps, scope, session, 'sign_out', {
+      type: 'user',
+      id: session.userId,
+      ...cleanOrigin(origin),
+    })
+  )
 }

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
+import { adminActor } from '~/lib/actor'
 import { adminRateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
 import * as Project from '~/modules/project/service'
@@ -93,7 +94,12 @@ router.post(
   secretKey(),
   validator('json', CreateApiKeyRequestSchema, validationHook),
   async (c) => {
-    const created = await Project.createApiKey(c.get('deps'), c.get('tenant'), c.req.valid('json'))
+    const created = await Project.createApiKey(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('json'),
+      adminActor(c)
+    )
     // Never let an intermediary cache the one response that contains the key.
     c.header('Cache-Control', 'no-store')
     return c.json(CreatedApiKeySchema.parse(created), 201)
@@ -126,7 +132,8 @@ router.delete(
     const revoked = await Project.revokeApiKey(
       c.get('deps'),
       c.get('tenant'),
-      c.req.valid('param').id
+      c.req.valid('param').id,
+      adminActor(c)
     )
     return c.json(ApiKeySchema.parse(revoked))
   }

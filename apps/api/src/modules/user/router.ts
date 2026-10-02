@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
+import { adminActor, requestOrigin } from '~/lib/actor'
 import { publishableKey } from '~/middleware/publishable-key'
 import { adminRateLimit, byIp, rateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
@@ -81,7 +82,9 @@ router.post(
   validator('json', CreateUserRequestSchema, validationHook),
   async (c) =>
     c.json(
-      UserSchema.parse(await Users.create(c.get('deps'), c.get('tenant'), c.req.valid('json'))),
+      UserSchema.parse(
+        await Users.create(c.get('deps'), c.get('tenant'), c.req.valid('json'), adminActor(c))
+      ),
       201
     )
 )
@@ -128,7 +131,7 @@ router.delete(
   secretKey(),
   validator('param', UserIdParamSchema, validationHook),
   async (c) => {
-    await Users.remove(c.get('deps'), c.get('tenant'), c.req.valid('param').userId)
+    await Users.remove(c.get('deps'), c.get('tenant'), c.req.valid('param').userId, adminActor(c))
     return c.body(null, 204)
   }
 )
@@ -163,7 +166,12 @@ for (const [action, operationId, summary, description] of [
     async (c) =>
       c.json(
         UserSchema.parse(
-          await Users[action](c.get('deps'), c.get('tenant'), c.req.valid('param').userId)
+          await Users[action](
+            c.get('deps'),
+            c.get('tenant'),
+            c.req.valid('param').userId,
+            adminActor(c)
+          )
         )
       )
   )
@@ -194,7 +202,8 @@ router.put(
       c.get('deps'),
       c.get('tenant'),
       c.req.valid('param').userId,
-      c.req.valid('json').password
+      c.req.valid('json').password,
+      adminActor(c)
     )
     return c.body(null, 204)
   }
@@ -258,7 +267,8 @@ router.post(
       c.get('deps'),
       c.get('tenant'),
       { userId: sub, sessionId: sid },
-      c.req.valid('json')
+      c.req.valid('json'),
+      requestOrigin(c)
     )
     return c.body(null, 204)
   }

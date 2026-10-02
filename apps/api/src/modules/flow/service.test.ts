@@ -798,3 +798,107 @@ describe('per-environment ceilings', () => {
     expect((await rejection(password(attempt.id))).code).toBe('auth.invalid_credentials')
   })
 })
+
+describe('activity', () => {
+  const recorded = () => deps.activityLog.entries.map((entry) => entry.type)
+
+  test('nothing is recorded until a sign-up is verified; then the account and its session are', async () => {
+    const started = await signUp()
+    await rejection(
+      Flows.verifyEmail(deps, tenant, 'sign_up', started.attempt.id, wrong(sentCode()), web)
+    )
+    expect(recorded()).toEqual([])
+
+    const done = await Flows.verifyEmail(
+      deps,
+      tenant,
+      'sign_up',
+      started.attempt.id,
+      sentCode(),
+      web
+    )
+    if (done.attempt.step.status !== 'complete') {
+      throw new Error('sign-up did not complete')
+    }
+    const { userId, sessionId } = done.attempt.step
+    expect(deps.activityLog.entries).toMatchObject([
+      {
+        type: 'user.created',
+        actor: { type: 'user', id: userId },
+        target: { type: 'user', id: userId },
+        ipAddress: '203.0.113.7',
+        userAgent: 'Mozilla/5.0',
+        data: { method: 'sign_up', emailVerified: true },
+      },
+      {
+        type: 'session.created',
+        actor: { type: 'user', id: userId },
+        target: { type: 'session', id: sessionId },
+        ipAddress: '203.0.113.7',
+        data: { userId, client: 'web' },
+      },
+    ])
+  })
+
+  test('a sign-up for an existing address records nothing, even if its decoy code is guessed', async () => {
+    await registered()
+    const before = recorded()
+    const decoy = await signUp()
+    spy = spyOn(Verification, 'verifyCode').mockResolvedValue(undefined as never)
+    await rejection(Flows.verifyEmail(deps, tenant, 'sign_up', decoy.attempt.id, '123456', web))
+    expect(recorded()).toEqual(before)
+  })
+
+  test('a failed password records nothing; a sign-in records its session', async () => {
+    const { userId } = await registered()
+    const before = recorded()
+    await rejection(password((await startSignIn()).id, 'wrong password'))
+    expect(recorded()).toEqual(before)
+
+    const done = await password((await startSignIn(EMAIL, ios)).id, PASSWORD, ios)
+    expect(deps.activityLog.entries.at(-1)).toMatchObject({
+      type: 'session.created',
+      actor: { type: 'user', id: userId },
+      ipAddress: null,
+      userAgent: 'TulaSDK/1 iOS',
+      data: { userId, client: 'ios' },
+    })
+    expect(done.tokens).toBeDefined()
+  })
+
+  test('verifying an existing user’s email during sign-in is recorded once', async () => {
+    const userId = await seedUser({ verified: false })
+    const attempt = await startSignIn()
+    await password(attempt.id)
+    await Flows.verifyEmail(deps, tenant, 'sign_in', attempt.id, sentCode(), web)
+    expect(recorded()).toEqual(['user.email_verified', 'session.created'])
+    expect(deps.activityLog.ofType('user.email_verified')).toMatchObject([
+      {
+        actor: { type: 'user', id: userId },
+        target: { type: 'user', id: userId },
+        ipAddress: '203.0.113.7',
+      },
+    ])
+  })
+
+  test('upgrading a weak hash after sign-in is not a password change', async () => {
+    const weak = await Bun.password.hash(PASSWORD, {
+      algorithm: 'argon2id',
+      memoryCost: 8,
+      timeCost: 1,
+    })
+    await seedUser({ passwordHash: weak })
+    await password((await startSignIn()).id)
+    expect(recorded()).toEqual(['session.created'])
+  })
+
+  test('no code, password, hash or email address ever reaches the record', async () => {
+    const started = await signUp({ firstName: 'Maya' })
+    const code = sentCode()
+    await Flows.verifyEmail(deps, tenant, 'sign_up', started.attempt.id, code, web)
+    const written = JSON.stringify(deps.activityLog.entries).toLowerCase()
+    for (const secret of [PASSWORD, code, 'northline', 'maya', '$argon2']) {
+      expect(written).not.toContain(secret.toLowerCase())
+    }
+  })
+})

@@ -85,7 +85,7 @@ Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
 - [x] Server-driven sign-up / sign-in flows
 - [x] Email verification (codes; magic links in Phase 1)
 - [x] Sessions with rotating refresh tokens and reuse detection
-- [ ] User admin, rate limiting and lockout, audit log
+- [x] User admin, rate limiting and lockout, audit log
 - [ ] Conformance suite and self-host packaging
 
 Phases 1 to 3 add social sign-in, passkeys, MFA, the web and native SDKs, the dashboard,

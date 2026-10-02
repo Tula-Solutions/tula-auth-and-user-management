@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util'
 import { createContainer } from '~/container'
 import { loadEnv } from '~/env'
+import { systemActor } from '~/lib/actor'
 import * as Project from '~/modules/project/service'
 
 // Bootstrap: admin routes need a secret key, and keys are minted by admin routes. This mints the
@@ -42,7 +43,9 @@ try {
   const created = await Project.createApiKey(
     container.deps,
     { projectId: environment.projectId, environmentId: environment.id },
-    { kind: values.kind, name }
+    { kind: values.kind, name },
+    // Run by an operator with database access, not through the API: there is no key to name.
+    systemActor()
   )
   process.stderr.write(
     `api-key:create: ${created.kind} key "${created.name}" (${created.id}) for the ${environment.kind} environment. It is shown only once:\n`

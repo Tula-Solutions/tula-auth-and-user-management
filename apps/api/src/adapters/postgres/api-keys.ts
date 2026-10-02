@@ -1,5 +1,7 @@
-import { apiKeys, type Database } from '@tula/db'
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { apiKeys, type Database, withTenant } from '@tula/db'
+import { and, desc, eq, isNull } from 'drizzle-orm'
+import { recordActivity } from '~/adapters/postgres/activity'
+import type { Activity } from '~/ports/activity-log'
 import type { ApiKeyRecord, ApiKeyRepository, NewApiKey } from '~/ports/api-key-repository'
 
 // Every column except key_hash: the hash never leaves this adapter.
@@ -34,15 +36,19 @@ export class PostgresApiKeyRepository implements ApiKeyRepository {
   }
 
   /** @inheritdoc */
-  async insert(key: NewApiKey): Promise<ApiKeyRecord> {
-    const [row] = await this.db
-      .insert(apiKeys)
-      .values({ ...key, updatedAt: key.createdAt })
-      .returning(columns)
-    if (!row) {
-      throw new Error('api key insert returned no row')
-    }
-    return row
+  async insert(key: NewApiKey, activity?: Activity): Promise<ApiKeyRecord> {
+    // `api_keys` has no RLS, but the activity tables do: the tenant scope is for them.
+    return withTenant(this.db, key.environmentId, async (tx) => {
+      const [row] = await tx
+        .insert(apiKeys)
+        .values({ ...key, updatedAt: key.createdAt })
+        .returning(columns)
+      if (!row) {
+        throw new Error('api key insert returned no row')
+      }
+      await recordActivity(tx, activity ? [activity] : [])
+      return row
+    })
   }
 
   /** @inheritdoc */
@@ -61,16 +67,26 @@ export class PostgresApiKeyRepository implements ApiKeyRepository {
   }
 
   /** @inheritdoc */
-  async revoke(environmentId: string, id: string, at: Date): Promise<ApiKeyRecord | null> {
-    const [row] = await this.db
-      .update(apiKeys)
-      // coalesce keeps the first revocation time, so revoking twice is idempotent.
-      .set({
-        revokedAt: sql`coalesce(${apiKeys.revokedAt}, ${at.toISOString()}::timestamptz)`,
-        updatedAt: at,
-      })
-      .where(and(eq(apiKeys.id, id), eq(apiKeys.environmentId, environmentId)))
-      .returning(columns)
-    return row ?? null
+  async revoke(
+    environmentId: string,
+    id: string,
+    at: Date,
+    activity?: Activity
+  ): Promise<ApiKeyRecord | null> {
+    const isKey = and(eq(apiKeys.id, id), eq(apiKeys.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      // Guarded so revoking twice keeps the first revocation time and is recorded once.
+      const [revoked] = await tx
+        .update(apiKeys)
+        .set({ revokedAt: at, updatedAt: at })
+        .where(and(isKey, isNull(apiKeys.revokedAt)))
+        .returning(columns)
+      if (revoked) {
+        await recordActivity(tx, activity ? [activity] : [])
+        return revoked
+      }
+      const [existing] = await tx.select(columns).from(apiKeys).where(isKey).limit(1)
+      return existing ?? null
+    })
   }
 }

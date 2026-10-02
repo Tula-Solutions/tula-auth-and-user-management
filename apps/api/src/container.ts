@@ -7,6 +7,7 @@ import { SmtpMailer } from '~/adapters/mail/smtp'
 import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
+import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
@@ -67,6 +68,7 @@ export function createContainer(env: Env): Container {
     sessions: new PostgresSessionStore(database.db),
     users: new PostgresUserRepository(database.db),
     flowAttempts: new PostgresFlowAttemptStore(database.db),
+    activityLog: new PostgresActivityLog(database.db),
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer,
     secretBox: createSecretBox(env.TULA_MASTER_KEY),

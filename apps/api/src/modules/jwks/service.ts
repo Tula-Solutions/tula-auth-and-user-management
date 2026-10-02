@@ -1,7 +1,9 @@
 import { ACCESS_TOKEN_ALGORITHM, type Jwk, type Jwks } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { ConflictError, InternalError, NotFoundError } from '~/exceptions'
+import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
+import * as Audit from '~/modules/audit/service'
 import type { SigningKey } from '~/modules/jwks/schema'
 import type { NewSigningKey, SigningKeyStatus } from '~/ports/signing-key-store'
 
@@ -208,11 +210,12 @@ export async function listKeys(
  *
  * @param deps - Stores, secret box, ids and clock.
  * @param tenant - The resolved tenant.
+ * @param actor - Who is rotating the keys, for the audit log.
  * @returns The keys after rotation, newest first.
  * @throws ConflictError while the next key is too new (`params.retryAfter` in seconds) or when a
  *   concurrent rotation won.
  */
-export async function rotate(deps: KeyDeps, tenant: Tenant): Promise<SigningKey[]> {
+export async function rotate(deps: KeyDeps, tenant: Tenant, actor: Actor): Promise<SigningKey[]> {
   await ensureKeys(deps, tenant.environmentId)
   const environment = await requireEnvironment(deps, tenant.environmentId)
   const keys = await deps.signingKeys.list(tenant.environmentId)
@@ -229,14 +232,17 @@ export async function rotate(deps: KeyDeps, tenant: Tenant): Promise<SigningKey[
       params: { retryAfter: Math.ceil(waitMs / 1000) },
     })
   }
+  const upcoming = await generate(deps, environment, 'next', now)
   const rotated = await deps.signingKeys.rotate(
     tenant.environmentId,
-    {
-      retireId: active.id,
-      activateId: next.id,
-      next: await generate(deps, environment, 'next', now),
-    },
-    now
+    { retireId: active.id, activateId: next.id, next: upcoming },
+    now,
+    Audit.entry(deps, tenant, {
+      type: 'signing_key.rotated',
+      actor,
+      target: { type: 'signing_key', id: next.id },
+      data: { retiredKeyId: active.id, nextKeyId: upcoming.id },
+    })
   )
   if (!rotated) {
     throw new ConflictError({ message: 'Another rotation happened at the same time. Try again.' })

@@ -58,7 +58,7 @@ access tokens are still unexpired.
   token that does not match its stored hash; affected clients sign in again.
 - A client that retries a refresh more than 10 seconds late is signed out. That is the intended
   trade-off: beyond the window a retry is indistinguishable from theft.
-- Reuse is logged (`refresh token reuse detected`); the `session.reuse_detected` event for
-  webhooks arrives with the events outbox (Step 5.9).
+- Reuse is logged (`refresh token reuse detected`) and recorded as a `session.reuse_detected`
+  event and audit entry, in the same transaction as the revocation (ADR 0012).
 - Expired and revoked sessions are not pruned yet; a cleanup job deletes them by session, and
   the cascade removes their token chains.

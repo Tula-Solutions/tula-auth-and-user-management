@@ -7,10 +7,11 @@ import {
 } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
+import { MAX_USER_AGENT_LENGTH } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Sessions from '~/modules/session/service'
-import { createTestDeps, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
+import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const DAY = 86_400_000
 const tenant: Tenant = {
@@ -122,7 +123,7 @@ describe('create', () => {
     const tokens = await create({ ipAddress: 'unknown', userAgent: 'x'.repeat(5_000) })
     const stored = await session(tokens.sessionId)
     expect(stored?.ipAddress).toBeNull()
-    expect(stored?.userAgent?.length).toBe(Sessions.MAX_USER_AGENT_LENGTH)
+    expect(stored?.userAgent?.length).toBe(MAX_USER_AGENT_LENGTH)
     const v6 = await create({ ipAddress: '2001:db8::1' })
     expect((await session(v6.sessionId))?.ipAddress).toBe('2001:db8::1')
   })
@@ -302,7 +303,11 @@ describe('refresh', () => {
 
   test('a revoked session cannot be refreshed', async () => {
     const first = await create()
-    await Sessions.revoke(deps, tenant, { userId: USER, sessionId: first.sessionId })
+    await Sessions.revoke(deps, tenant, {
+      userId: USER,
+      sessionId: first.sessionId,
+      actor: TEST_ACTOR,
+    })
     const err = await rejection(refresh(rt(first)))
     expect(err.status).toBe(401)
     expect(err.code).toBe('session.revoked')
@@ -315,7 +320,11 @@ describe('list', () => {
     deps.clock.advance('1h')
     const second = await create({ client: 'ios', userAgent: null, ipAddress: null })
     const revoked = await create()
-    await Sessions.revoke(deps, tenant, { userId: USER, sessionId: revoked.sessionId })
+    await Sessions.revoke(deps, tenant, {
+      userId: USER,
+      sessionId: revoked.sessionId,
+      actor: TEST_ACTOR,
+    })
     await create({ userId: OTHER_USER })
 
     const list = await Sessions.list(deps, tenant, {
@@ -343,7 +352,11 @@ describe('list', () => {
 describe('revoke', () => {
   test('ends the session and denylists it until its access token would expire', async () => {
     const tokens = await create()
-    await Sessions.revoke(deps, tenant, { userId: USER, sessionId: tokens.sessionId })
+    await Sessions.revoke(deps, tenant, {
+      userId: USER,
+      sessionId: tokens.sessionId,
+      actor: TEST_ACTOR,
+    })
     expect(await session(tokens.sessionId)).toMatchObject({
       revokedAt: deps.clock.now(),
       revokeReason: 'revoked_by_user',
@@ -354,12 +367,24 @@ describe('revoke', () => {
   })
 
   test.each([
-    ['revoke', (id: string) => Sessions.revoke(deps, tenant, { userId: USER, sessionId: id })],
+    [
+      'revoke',
+      (id: string) =>
+        Sessions.revoke(deps, tenant, { userId: USER, sessionId: id, actor: TEST_ACTOR }),
+    ],
     [
       'revokeOthers',
-      () => Sessions.revokeOthers(deps, tenant, { userId: USER, currentSessionId: 'none' }),
+      () =>
+        Sessions.revokeOthers(deps, tenant, {
+          userId: USER,
+          currentSessionId: 'none',
+          actor: TEST_ACTOR,
+        }),
     ],
-    ['revokeAllForUser', () => Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned')],
+    [
+      'revokeAllForUser',
+      () => Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned', TEST_ACTOR),
+    ],
   ])('%s: a denylist failure never leaves a revoked session un-denylisted', async (_name, run) => {
     const tokens = await create()
     const add = deps.revokedSessions.add.bind(deps.revokedSessions)
@@ -397,9 +422,17 @@ describe('revoke', () => {
 
   test('is idempotent and records the given reason', async () => {
     const tokens = await create()
-    const input = { userId: USER, sessionId: tokens.sessionId, reason: 'sign_out' as const }
+    const input = {
+      userId: USER,
+      sessionId: tokens.sessionId,
+      reason: 'sign_out' as const,
+      actor: TEST_ACTOR,
+    }
     await Sessions.revoke(deps, tenant, input)
-    await Sessions.revoke(deps, tenant, { ...input, reason: 'revoked_by_user' })
+    await Sessions.revoke(deps, tenant, {
+      ...input,
+      reason: 'revoked_by_user',
+    })
     expect((await session(tokens.sessionId))?.revokeReason).toBe('sign_out')
   })
 
@@ -412,6 +445,7 @@ describe('revoke', () => {
     const { tenant: t = tenant, ...input } = {
       userId: USER,
       sessionId: tokens.sessionId,
+      actor: TEST_ACTOR,
       ...(change() as { userId?: string; sessionId?: string; tenant?: Tenant }),
     }
     const err = await rejection(Sessions.revoke(deps, t, input))
@@ -429,6 +463,7 @@ describe('revokeOthers / revokeAllForUser', () => {
     const count = await Sessions.revokeOthers(deps, tenant, {
       userId: USER,
       currentSessionId: current.sessionId,
+      actor: TEST_ACTOR,
     })
     expect(count).toBe(2)
     expect((await session(current.sessionId))?.revokedAt).toBeNull()
@@ -443,7 +478,11 @@ describe('revokeOthers / revokeAllForUser', () => {
   test('revokeOthers never denylists the session that asked', async () => {
     const current = await create()
     await create()
-    await Sessions.revokeOthers(deps, tenant, { userId: USER, currentSessionId: current.sessionId })
+    await Sessions.revokeOthers(deps, tenant, {
+      userId: USER,
+      currentSessionId: current.sessionId,
+      actor: TEST_ACTOR,
+    })
     expect(await deps.revokedSessions.has(current.sessionId, deps.clock.now())).toBe(false)
     await verifyAccessToken(deps, current.accessToken, tenant)
   })
@@ -460,24 +499,28 @@ describe('revokeOthers / revokeAllForUser', () => {
       }
       return revokeByUser(...args)
     }
-    await expect(Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned')).rejects.toThrow(
-      'database unavailable'
-    )
+    await expect(
+      Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned', TEST_ACTOR)
+    ).rejects.toThrow('database unavailable')
     expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
     expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
 
-    expect(await Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned')).toBe(1)
+    expect(await Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned', TEST_ACTOR)).toBe(1)
     expect((await session(tokens.sessionId))?.revokeReason).toBe('user_banned')
   })
 
   test('revokeAllForUser ends every session with the given reason', async () => {
     const all = [await create(), await create()]
-    expect(await Sessions.revokeAllForUser(deps, tenant, USER, 'password_changed')).toBe(2)
+    expect(
+      await Sessions.revokeAllForUser(deps, tenant, USER, 'password_changed', TEST_ACTOR)
+    ).toBe(2)
     for (const tokens of all) {
       expect((await session(tokens.sessionId))?.revokeReason).toBe('password_changed')
       expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
     }
-    expect(await Sessions.revokeAllForUser(deps, tenant, USER, 'password_changed')).toBe(0)
+    expect(
+      await Sessions.revokeAllForUser(deps, tenant, USER, 'password_changed', TEST_ACTOR)
+    ).toBe(0)
   })
 })
 
@@ -510,5 +553,175 @@ describe('signOut', () => {
     const tokens = await create()
     await Sessions.signOut(deps, otherTenant, rt(tokens))
     expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
+  })
+})
+
+describe('activity', () => {
+  const user = (origin = {}) => ({
+    type: 'user' as const,
+    id: USER,
+    ipAddress: '198.51.100.4',
+    userAgent: 'Mozilla/5.0',
+    ...origin,
+  })
+  const recorded = () => deps.activityLog.entries.map((entry) => entry.type)
+
+  test('a new session is recorded with the user as actor and a cleaned origin', async () => {
+    const tokens = await create({ ipAddress: 'unknown', userAgent: 'x'.repeat(5_000) })
+    expect(deps.activityLog.entries).toEqual([
+      {
+        id: expect.any(String),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        type: 'session.created',
+        actor: { type: 'user', id: USER },
+        target: { type: 'session', id: tokens.sessionId },
+        ipAddress: null,
+        userAgent: 'x'.repeat(MAX_USER_AGENT_LENGTH),
+        data: { userId: USER, client: 'web' },
+        occurredAt: deps.clock.now(),
+      },
+    ])
+  })
+
+  test('refreshing, and a retry inside the grace window, record nothing', async () => {
+    const tokens = await create()
+    await refresh(rt(tokens))
+    await refresh(rt(tokens))
+    expect(recorded()).toEqual(['session.created'])
+  })
+
+  test('a replayed token is recorded as session.reuse_detected by the system, from the replay’s origin', async () => {
+    const tokens = await create()
+    await refresh(rt(tokens))
+    deps.clock.advance('11s')
+    const replay = Sessions.refresh(deps, tenant, rt(tokens), {
+      ipAddress: '198.51.100.66',
+      userAgent: 'curl/8',
+    })
+    expect((await rejection(replay)).code).toBe('session.reuse_detected')
+    expect(deps.activityLog.ofType('session.reuse_detected')).toEqual([
+      {
+        id: expect.any(String),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        type: 'session.reuse_detected',
+        actor: { type: 'system', id: null },
+        target: { type: 'session', id: tokens.sessionId },
+        ipAddress: '198.51.100.66',
+        userAgent: 'curl/8',
+        data: { userId: USER, reason: 'reuse_detected' },
+        occurredAt: deps.clock.now(),
+      },
+    ])
+    // Presenting it yet again finds the session already revoked: nothing more is recorded.
+    await rejection(refresh(rt(tokens)))
+    expect(recorded()).toEqual(['session.created', 'session.reuse_detected'])
+  })
+
+  test('a banned user’s refresh records the revocation as the system’s', async () => {
+    await deps.users.createWithPassword({
+      id: USER,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: 'maya@northline.app',
+      emailNormalized: 'maya@northline.app',
+      emailVerifiedAt: null,
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: 'hash',
+    })
+    const tokens = await create()
+    await deps.users.setBanned(tenant.environmentId, USER, deps.clock.now(), deps.clock.now())
+    expect((await rejection(refresh(rt(tokens)))).code).toBe('auth.user_banned')
+    expect(deps.activityLog.ofType('session.revoked')).toMatchObject([
+      {
+        actor: { type: 'system', id: null },
+        target: { type: 'session', id: tokens.sessionId },
+        data: { userId: USER, reason: 'user_banned' },
+      },
+    ])
+  })
+
+  test('revoking records who ended the session and why, once', async () => {
+    const tokens = await create()
+    const input = { userId: USER, sessionId: tokens.sessionId, actor: user() }
+    await Sessions.revoke(deps, tenant, input)
+    await Sessions.revoke(deps, tenant, input)
+    expect(deps.activityLog.ofType('session.revoked')).toMatchObject([
+      {
+        actor: { type: 'user', id: USER },
+        target: { type: 'session', id: tokens.sessionId },
+        ipAddress: '198.51.100.4',
+        userAgent: 'Mozilla/5.0',
+        data: { userId: USER, reason: 'revoked_by_user' },
+      },
+    ])
+    // Someone else's session is not found, and trying leaves no record.
+    const theirs = await create({ userId: OTHER_USER })
+    await rejection(Sessions.revoke(deps, tenant, { ...input, sessionId: theirs.sessionId }))
+    expect(deps.activityLog.ofType('session.revoked')).toHaveLength(1)
+  })
+
+  test('ending a user’s sessions records one entry per session that ended', async () => {
+    const current = await create()
+    const others = [await create(), await create()]
+    const bystander = await create({ userId: OTHER_USER })
+    await Sessions.revokeOthers(deps, tenant, {
+      userId: USER,
+      currentSessionId: current.sessionId,
+      actor: user(),
+    })
+    const ended = deps.activityLog.ofType('session.revoked')
+    expect(ended.map((entry) => entry.target.id).sort()).toEqual(
+      others.map((tokens) => tokens.sessionId).sort()
+    )
+    expect(new Set(ended.map((entry) => entry.id)).size).toBe(2)
+
+    await Sessions.revokeAllForUser(deps, tenant, USER, 'password_changed', TEST_ACTOR)
+    const last = deps.activityLog.ofType('session.revoked').at(-1)
+    expect(last).toMatchObject({
+      actor: { type: 'admin', id: TEST_ACTOR.id },
+      target: { type: 'session', id: current.sessionId },
+      ipAddress: TEST_ACTOR.ipAddress,
+      data: { userId: USER, reason: 'password_changed' },
+    })
+    expect(
+      deps.activityLog.entries.some(
+        (entry) => entry.type !== 'session.created' && entry.target.id === bystander.sessionId
+      )
+    ).toBe(false)
+  })
+
+  test('signing out records the session’s user; an unknown token records nothing', async () => {
+    const tokens = await create()
+    await Sessions.signOut(deps, tenant, 'tula_rt_unknown', { ipAddress: '198.51.100.4' })
+    await Sessions.signOut(deps, tenant, undefined)
+    expect(recorded()).toEqual(['session.created'])
+    await Sessions.signOut(deps, tenant, rt(tokens), {
+      ipAddress: '198.51.100.4',
+      userAgent: 'Mozilla/5.0',
+    })
+    expect(deps.activityLog.ofType('session.revoked')).toMatchObject([
+      {
+        actor: { type: 'user', id: USER },
+        ipAddress: '198.51.100.4',
+        userAgent: 'Mozilla/5.0',
+        data: { userId: USER, reason: 'sign_out' },
+      },
+    ])
+  })
+
+  test('no token ever reaches the record', async () => {
+    const tokens = await create()
+    const next = await refresh(rt(tokens))
+    await Sessions.signOut(deps, tenant, rt(next))
+    const written = JSON.stringify(deps.activityLog.entries)
+    for (const secret of [rt(tokens), rt(next), tokens.accessToken, sha256Hex(rt(tokens))]) {
+      expect(written).not.toContain(secret)
+    }
   })
 })

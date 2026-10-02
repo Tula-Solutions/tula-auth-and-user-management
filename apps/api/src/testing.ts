@@ -1,4 +1,5 @@
 import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
+import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
@@ -14,6 +15,7 @@ import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
 import type { AppConfig, Deps } from '~/dependencies'
+import type { Actor } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import { createSecretBox } from '~/lib/secret-box'
@@ -30,6 +32,7 @@ export interface TestDeps extends Deps {
   sessions: MemorySessionStore
   users: MemoryUserRepository
   flowAttempts: MemoryFlowAttemptStore
+  activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
   mailer: MemoryMailer
   rateLimiter: MemoryRateLimiter
@@ -63,15 +66,17 @@ export const TEST_CONFIG: AppConfig = {
  */
 export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   const clock = overrides.clock ?? new FixedClock()
+  // One log shared by every store, as the Postgres stores share the two activity tables.
+  const activityLog = overrides.activityLog ?? new MemoryActivityLog()
   return {
     config: TEST_CONFIG,
     ids: new SequentialIds(),
-    apiKeys: new MemoryApiKeyRepository(),
+    apiKeys: new MemoryApiKeyRepository(activityLog),
     environments: new MemoryEnvironmentRepository(),
-    signingKeys: new MemorySigningKeyStore(),
+    signingKeys: new MemorySigningKeyStore(activityLog),
     verificationTokens: new MemoryVerificationTokenStore(),
-    sessions: new MemorySessionStore(),
-    users: new MemoryUserRepository(),
+    sessions: new MemorySessionStore(activityLog),
+    users: new MemoryUserRepository(activityLog),
     flowAttempts: new MemoryFlowAttemptStore(),
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer: new MemoryMailer(),
@@ -83,7 +88,16 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     probes: [],
     ...overrides,
     clock,
+    activityLog,
   }
+}
+
+/** Who performs actions in tests unless a test cares: an admin with a valid origin. */
+export const TEST_ACTOR: Actor = {
+  type: 'admin',
+  id: '00000000-0000-7000-8000-0000000000ad',
+  ipAddress: '203.0.113.9',
+  userAgent: 'tula-tests/1.0',
 }
 
 /** The default project and environments tests act in. */

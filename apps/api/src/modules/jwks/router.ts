@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
+import { adminActor } from '~/lib/actor'
 import { adminRateLimit, byIp, rateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
 import * as Jwks from '~/modules/jwks/service'
@@ -92,7 +93,7 @@ router.post(
   adminRateLimit(),
   secretKey(),
   async (c) => {
-    const data = await Jwks.rotate(c.get('deps'), c.get('tenant'))
+    const data = await Jwks.rotate(c.get('deps'), c.get('tenant'), adminActor(c))
     return c.json(SigningKeyListSchema.parse({ data }))
   }
 )
