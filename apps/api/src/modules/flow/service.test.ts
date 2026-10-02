@@ -650,4 +650,21 @@ describe('purgeExpired', () => {
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other.id)).toBeNull()
     expect(await deps.flowAttempts.findById(tenant.environmentId, live.id)).not.toBeNull()
   })
+  test('one failing environment does not stop the others from being purged', async () => {
+    await signUp()
+    const other = (await Flows.signUp(deps, otherTenant, { email: EMAIL, password: PASSWORD }, web))
+      .attempt
+    deps.clock.advance('10m')
+    const deleteExpired = deps.flowAttempts.deleteExpired.bind(deps.flowAttempts)
+    spy = spyOn(deps.flowAttempts, 'deleteExpired').mockImplementation(
+      async (environmentId, now) => {
+        if (environmentId === tenant.environmentId) {
+          throw new Error('database unavailable')
+        }
+        return deleteExpired(environmentId, now)
+      }
+    )
+    expect(await Flows.purgeExpired(deps)).toBe(1)
+    expect(await deps.flowAttempts.findById(otherTenant.environmentId, other.id)).toBeNull()
+  })
 })
