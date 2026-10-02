@@ -3,10 +3,11 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InternalError, RateLimitError } from '~/exceptions'
 import { randomDigits, randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail } from '~/lib/email'
-import type {
-  VerificationPurpose,
-  VerificationSubject,
-  VerificationTokenRecord,
+import {
+  subjectOf,
+  type VerificationPurpose,
+  type VerificationSubject,
+  type VerificationTokenRecord,
 } from '~/ports/verification-token-store'
 import { sendCode } from './mailer'
 
@@ -70,11 +71,29 @@ async function enforceSendLimits(
 }
 
 /**
+ * Summarize a relay failure for logs without its message, which routinely quotes the recipient
+ * (`550 <user@example.com>: rejected`). Error name, Node/nodemailer code and SMTP status are
+ * enough to diagnose and contain no personal data.
+ */
+function describeMailFailure(error: unknown): string {
+  const { name, code, responseCode } = (error ?? {}) as {
+    name?: unknown
+    code?: unknown
+    responseCode?: unknown
+  }
+  return [name, code, responseCode]
+    .filter((part) => typeof part === 'string' || typeof part === 'number')
+    .join(' ')
+}
+
+/**
  * Email a fresh 6-digit code (and optionally a magic link), replacing any earlier one.
  *
  * Only hashes are stored: the code as `HMAC(key, "<token id>:<code>")`, because a plain hash of
  * 10^6 values is reversible, and the link token as SHA-256. Sends are limited per destination so
- * the endpoint can't be used to flood an inbox or to farm fresh codes to guess.
+ * the endpoint can't be used to flood an inbox or to farm fresh codes to guess. A failed send
+ * still counts against those limits (the relay needs the breathing room) but leaves the
+ * previous code valid.
  *
  * @param deps - Clock, ids, keyed hash, token store, mailer and rate limiter.
  * @param scope - The project and environment.
@@ -100,6 +119,21 @@ export async function issue(
   const linkToken = input.linkUrl ? randomToken() : null
   const expiresAt = new Date(now.getTime() + durationToMs(TOKEN_TTL))
 
+  // Send first: if the relay fails, nothing is stored and the previous code keeps working.
+  try {
+    await sendCode(deps, {
+      purpose: input.purpose,
+      to: input.destination.trim(),
+      code,
+      linkUrl: linkToken && input.linkUrl ? input.linkUrl(linkToken) : undefined,
+      ttlMinutes: durationToMs(TOKEN_TTL) / 60_000,
+    })
+  } catch (error) {
+    throw new InternalError({
+      internalMessage: `verification email could not be sent (${describeMailFailure(error)})`,
+    })
+  }
+
   await deps.verificationTokens.replace(
     {
       id,
@@ -117,19 +151,6 @@ export async function issue(
     },
     now
   )
-
-  try {
-    await sendCode(deps, {
-      purpose: input.purpose,
-      to: input.destination.trim(),
-      code,
-      linkUrl: linkToken && input.linkUrl ? input.linkUrl(linkToken) : undefined,
-      ttlMinutes: durationToMs(TOKEN_TTL) / 60_000,
-    })
-  } catch (cause) {
-    // The relay's error can quote the recipient; keep it in logs only.
-    throw new InternalError({ internalMessage: 'verification email could not be sent', cause })
-  }
   return { id, destination: maskEmail(input.destination.trim()), expiresAt }
 }
 
@@ -214,9 +235,18 @@ export async function verifyLink(
     scope.environmentId,
     sha256Hex(input.linkToken)
   )
+  if (!token || token.purpose !== input.purpose) {
+    throw new AuthError('verification.expired')
+  }
+  // Two concurrent issues can both commit before either consumes the other's token; only the
+  // newest token for the subject is ever honoured, exactly as for codes.
+  const latest = await deps.verificationTokens.findLatest(
+    scope.environmentId,
+    token.purpose,
+    subjectOf(token)
+  )
   if (
-    !token ||
-    token.purpose !== input.purpose ||
+    latest?.id !== token.id ||
     !(await deps.verificationTokens.consume(scope.environmentId, token.id, now))
   ) {
     throw new AuthError('verification.expired')

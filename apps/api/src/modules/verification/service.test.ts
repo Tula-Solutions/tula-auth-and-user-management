@@ -157,6 +157,34 @@ describe('issue', () => {
     expect(JSON.stringify(err.toJSON())).not.toContain('northline')
   })
 
+  test('a relay error that quotes the recipient never reaches the logs or the response', async () => {
+    const relayError = Object.assign(
+      new Error(`550 5.1.1 <${EMAIL}>: Recipient address rejected`),
+      {
+        code: 'EENVELOPE',
+        responseCode: 550,
+      }
+    )
+    deps.mailer.send = async () => {
+      throw relayError
+    }
+    const err = await rejection(issue())
+    // handlers.ts logs `internalMessage` and the cause's message and stack for 5xx errors.
+    const logged = JSON.stringify([err.internalMessage, (err.cause as Error | undefined)?.message])
+    expect(logged.toLowerCase()).not.toContain('northline')
+    expect(err.internalMessage).toContain('EENVELOPE')
+    expect(err.internalMessage).toContain('550')
+  })
+
+  test('a failed send leaves the previous code working', async () => {
+    await issue()
+    const first = sentCode()
+    deps.clock.advance(Verification.RESEND_COOLDOWN)
+    deps.mailer.failing = true
+    await rejection(issue())
+    expect((await verify(first)).flowAttemptId).toBe(FLOW)
+  })
+
   test('requires a flow attempt or a user', async () => {
     const err = await rejection(issue({ flowAttemptId: undefined }))
     expect(err.status).toBe(500)
@@ -284,6 +312,37 @@ describe('verifyLink', () => {
     const linkToken = await issueLink()
     await verify(sentCode())
     expect((await rejection(open(linkToken))).code).toBe('verification.expired')
+  })
+
+  test('a link from a token that is no longer the newest is refused even if unconsumed', async () => {
+    // Two concurrent issues can both commit before either consumes the other's token.
+    const linkToken = await issueLink()
+    const stale = await deps.verificationTokens.findByLinkHash(
+      tenant.environmentId,
+      sha256Hex(linkToken)
+    )
+    if (!stale) {
+      throw new Error('token not stored')
+    }
+    const store = deps.verificationTokens
+    const raced = {
+      ...deps,
+      verificationTokens: {
+        replace: store.replace.bind(store),
+        findByLinkHash: store.findByLinkHash.bind(store),
+        recordAttempt: store.recordAttempt.bind(store),
+        consume: store.consume.bind(store),
+        findLatest: async () => ({ ...stale, id: '00000000-0000-7000-8000-0000000000ff' }),
+      },
+    }
+    const err = await rejection(
+      Verification.verifyLink(raced, tenant, { purpose: 'email_verification', linkToken })
+    )
+    expect(err.code).toBe('verification.expired')
+    // It was refused before being consumed.
+    expect(
+      (await store.findByLinkHash(tenant.environmentId, sha256Hex(linkToken)))?.consumedAt
+    ).toBeNull()
   })
 
   test('rejects unknown, expired, foreign-environment and wrong-purpose links alike', async () => {

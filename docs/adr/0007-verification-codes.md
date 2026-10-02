@@ -23,7 +23,10 @@ no routes of its own.
   behaviour suite runs against the memory and Postgres stores.
 - **Single use, newest only.** Verifying consumes the token; issuing a new code consumes earlier
   ones for the same subject and purpose in the same transaction. Using the link also ends the
-  code, and the reverse.
+  code, and the reverse. Codes and links are honoured only for the newest token of a subject, so
+  two concurrent issues can never leave an older link usable.
+- **Send, then store.** The email goes out before the token is stored, so a relay failure leaves
+  the previous code working. A failed send still counts against the send limits.
 - **One generic failure.** Unknown, used, replaced, expired, foreign-environment and
   wrong-purpose tokens all report `verification.expired`. Only a wrong guess on a live token
   reports `verification.invalid_code` (with `attemptsRemaining`), and an exhausted one
@@ -32,8 +35,8 @@ no routes of its own.
   by a hash of the normalized address. This bounds inbox flooding and how many fresh codes an
   attacker can request to guess at (5 codes x 5 guesses per hour against 10^6 values).
 - **Email goes through a `Mailer` port:** SMTP (nodemailer) in every tier, pointed at Mailpit
-  locally; live tiers must set a real relay and `MAIL_FROM`. A relay failure is a 500 whose
-  details stay in logs.
+  locally; live tiers must set a real relay and `MAIL_FROM`. A relay failure is a 500; only the
+  error name, code and SMTP status are logged, because relay messages quote the recipient.
 - **The magic-link URL is supplied by the caller** (`linkUrl`), because the route that accepts
   the link belongs to the flow that issued it. Without it, only a code is sent.
 
