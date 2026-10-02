@@ -51,4 +51,23 @@ export class MemoryFlowAttemptStore implements FlowAttemptStore {
     attempt.completedAt = change.completedAt ?? null
     return true
   }
+
+  /** @inheritdoc */
+  async delete(environmentId: string, id: string): Promise<void> {
+    if (this.#attempts.get(id)?.environmentId === environmentId) {
+      this.#attempts.delete(id)
+    }
+  }
+
+  /** @inheritdoc */
+  async deleteExpired(environmentId: string, now: Date): Promise<number> {
+    let removed = 0
+    for (const [id, attempt] of this.#attempts) {
+      if (attempt.environmentId === environmentId && attempt.expiresAt.getTime() <= now.getTime()) {
+        this.#attempts.delete(id)
+        removed += 1
+      }
+    }
+    return removed
+  }
 }

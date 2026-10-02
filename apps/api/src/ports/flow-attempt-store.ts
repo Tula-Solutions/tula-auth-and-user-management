@@ -62,4 +62,22 @@ export interface FlowAttemptStore {
     change: FlowAttemptChange,
     at: Date
   ): Promise<boolean>
+
+  /**
+   * Remove one attempt (and, by cascade, its verification tokens). A no-op if it is not there.
+   *
+   * @param environmentId - The attempt's environment.
+   * @param id - Attempt id.
+   */
+  delete(environmentId: string, id: string): Promise<void>
+
+  /**
+   * Remove every attempt in an environment whose lifetime is over, completed or not. Abandoned
+   * sign-ups hold a pending password hash, so they must not be kept.
+   *
+   * @param environmentId - The environment to purge.
+   * @param now - Current time; attempts with `expiresAt <= now` go.
+   * @returns How many attempts were removed.
+   */
+  deleteExpired(environmentId: string, now: Date): Promise<number>
 }

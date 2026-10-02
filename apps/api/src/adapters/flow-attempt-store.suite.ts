@@ -183,6 +183,42 @@ export function describeFlowAttemptStore(
       ).toBe(true)
     })
 
+    test('deletes one attempt, and only within its environment', async () => {
+      const input = attempt(ctx.a)
+      await ctx.store.create(input)
+      await ctx.store.delete(ctx.b.environmentId, input.id)
+      expect(await ctx.store.findById(ctx.a.environmentId, input.id)).not.toBeNull()
+      await ctx.store.delete(ctx.a.environmentId, input.id)
+      expect(await ctx.store.findById(ctx.a.environmentId, input.id)).toBeNull()
+      await ctx.store.delete(ctx.a.environmentId, input.id)
+    })
+
+    test('purges attempts past their expiry, open or completed, and nothing else', async () => {
+      // Times earlier than any other test's, because a shared database keeps their rows.
+      const past = -3_600_000
+      const expired = attempt(ctx.a, { expiresAt: later(past) })
+      const completed = attempt(ctx.a, { expiresAt: later(past) })
+      const live = attempt(ctx.a, { expiresAt: later(past + 5_000) })
+      const foreign = attempt(ctx.b, { expiresAt: later(past) })
+      for (const input of [expired, completed, live, foreign]) {
+        await ctx.store.create(input)
+      }
+      await ctx.store.transition(
+        ctx.a.environmentId,
+        completed.id,
+        'needs_password',
+        { status: 'complete', completedAt: later(past - 500) },
+        later(past - 500)
+      )
+
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past - 1))).toBe(0)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past))).toBe(2)
+      expect(await ctx.store.findById(ctx.a.environmentId, expired.id)).toBeNull()
+      expect(await ctx.store.findById(ctx.a.environmentId, completed.id)).toBeNull()
+      expect(await ctx.store.findById(ctx.a.environmentId, live.id)).not.toBeNull()
+      expect(await ctx.store.findById(ctx.b.environmentId, foreign.id)).not.toBeNull()
+    })
+
     test('one environment cannot read or move another’s attempts', async () => {
       const input = attempt(ctx.a)
       await ctx.store.create(input)

@@ -231,6 +231,24 @@ describe('signUp', () => {
     })
   })
 
+  test('a refused send leaves no attempt (and no password hash) behind', async () => {
+    const create = spyOn(deps.flowAttempts, 'create')
+    await signUp()
+    expect(await signUp().catch((err) => err)).toBeInstanceOf(RateLimitError)
+    deps.mailer.failing = true
+    deps.clock.advance(Verification.RESEND_COOLDOWN)
+    expect((await rejection(signUp())).status).toBe(500)
+
+    expect(create).toHaveBeenCalledTimes(3)
+    const ids = create.mock.calls.map(([attempt]) => attempt.id)
+    const stored = await Promise.all(
+      ids.map((id) => deps.flowAttempts.findById(tenant.environmentId, id))
+    )
+    // Only the first, successful sign-up still has a row.
+    expect(stored.map((attempt) => attempt !== null)).toEqual([true, false, false])
+    create.mockRestore()
+  })
+
   test('is limited per address for new and existing emails alike', async () => {
     await signUp()
     expect(await signUp().catch((err) => err)).toBeInstanceOf(RateLimitError)
@@ -281,6 +299,14 @@ describe('verifyEmail (sign-up)', () => {
     const stored = await deps.flowAttempts.findById(tenant.environmentId, attempt.id)
     expect(stored).toMatchObject({ status: 'complete', completedAt: deps.clock.now() })
     expect(stored?.state).toEqual({ client: 'web' })
+  })
+
+  test('a failure to record the sign-in time does not discard the issued tokens', async () => {
+    const { attempt } = await signUp()
+    spy = spyOn(deps.users, 'recordSignIn').mockRejectedValue(new Error('database unavailable'))
+    const done = await verify(attempt.id, sentCode())
+    expect(done.attempt.step.status).toBe('complete')
+    await verifyAccessToken(deps, done.tokens?.accessToken ?? '', tenant)
   })
 
   test('a wrong code leaves the attempt open for the right one', async () => {
@@ -490,6 +516,27 @@ describe('submitPassword', () => {
     )
   })
 
+  test('if the code cannot be sent, the password step stays retryable', async () => {
+    const userId = await seedUser({ verified: false })
+    // Someone else just triggered an email to this address, so the cooldown is spent.
+    await Verification.issue(deps, tenant, {
+      purpose: 'password_reset',
+      destination: EMAIL,
+      userId,
+    })
+    const attempt = await startSignIn()
+    expect(await password(attempt.id).catch((err) => err)).toBeInstanceOf(RateLimitError)
+    expect((await deps.flowAttempts.findById(tenant.environmentId, attempt.id))?.status).toBe(
+      'needs_password'
+    )
+
+    deps.clock.advance(Verification.RESEND_COOLDOWN)
+    const pending = await password(attempt.id)
+    expect(pending.attempt.step.status).toBe('needs_email_verification')
+    const done = await Flows.verifyEmail(deps, tenant, 'sign_in', attempt.id, sentCode(), web)
+    expect(done.attempt.step.status).toBe('complete')
+  })
+
   test('a user banned while verifying their email is not signed in', async () => {
     const userId = await seedUser({ verified: false })
     const attempt = await startSignIn()
@@ -585,5 +632,22 @@ describe('resendVerification', () => {
     expect(
       (await rejection(Flows.resendVerification(deps, tenant, 'sign_up', attempt.id))).code
     ).toBe('flow.not_found')
+  })
+})
+
+describe('purgeExpired', () => {
+  test('removes expired attempts in every environment, with their pending password hashes', async () => {
+    const abandoned = await signUp()
+    const other = (await Flows.signUp(deps, otherTenant, { email: EMAIL, password: PASSWORD }, web))
+      .attempt
+    deps.clock.advance('5m')
+    const live = await startSignIn()
+
+    expect(await Flows.purgeExpired(deps)).toBe(0)
+    deps.clock.advance('5m')
+    expect(await Flows.purgeExpired(deps)).toBe(2)
+    expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned.attempt.id)).toBeNull()
+    expect(await deps.flowAttempts.findById(otherTenant.environmentId, other.id)).toBeNull()
+    expect(await deps.flowAttempts.findById(tenant.environmentId, live.id)).not.toBeNull()
   })
 })

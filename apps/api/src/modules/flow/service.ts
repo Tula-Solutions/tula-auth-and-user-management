@@ -15,6 +15,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import { maskEmail, normalizeEmail } from '~/lib/email'
+import * as logger from '~/lib/logger'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Verification from '~/modules/verification/service'
@@ -162,7 +163,15 @@ async function finish(
     userAgent: context.userAgent,
     ipAddress: context.ipAddress,
   })
-  await deps.users.recordSignIn(tenant.environmentId, userId, now)
+  try {
+    await deps.users.recordSignIn(tenant.environmentId, userId, now)
+  } catch (error) {
+    // Bookkeeping only: the session exists, so failing here would throw its tokens away.
+    logger.warn('could not record the sign-in time', {
+      environmentId: tenant.environmentId,
+      err: error instanceof Error ? error.name : 'unknown',
+    })
+  }
   return {
     attempt: toAttempt(attempt, { status: 'complete', userId, sessionId: tokens.sessionId }),
     tokens,
@@ -225,7 +234,13 @@ export async function signUp(
     identifier,
     state,
   })
-  await issueCode(deps, tenant, attempt, state)
+  try {
+    await issueCode(deps, tenant, attempt, state)
+  } catch (error) {
+    // No email went out, so the attempt can never be completed: don't keep its password hash.
+    await deps.flowAttempts.delete(tenant.environmentId, attempt.id)
+    throw error
+  }
   return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
 }
 
@@ -337,19 +352,20 @@ export async function submitPassword(
   }
 
   const pending: State = { ...state, email: user.email }
-  const now = deps.clock.now()
+  const waiting = { ...attempt, status: next, userId: user.id }
+  // Send the code before moving the attempt: if the send is refused (e.g. the address is on
+  // its cooldown) the attempt stays on the password step and can simply be retried.
+  await issueCode(deps, tenant, waiting, pending, user.id)
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,
     attempt.status,
     { status: next, userId: user.id, state: pending },
-    now
+    deps.clock.now()
   )
   if (!moved) {
     throw new AuthError('flow.invalid_step')
   }
-  const waiting = { ...attempt, status: next, userId: user.id }
-  await issueCode(deps, tenant, waiting, pending, user.id)
   return { attempt: toAttempt(waiting, stepFor(waiting, pending)), client: state.client }
 }
 
@@ -455,4 +471,24 @@ export async function resendVerification(
   }
   await issueCode(deps, tenant, attempt, state, attempt.userId ?? undefined)
   return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
+}
+
+/**
+ * Delete every expired attempt in every environment.
+ *
+ * Abandoned sign-ups hold the hash of a password that was never used; nothing else removes
+ * them. Run on boot and on a timer by `server.ts`.
+ *
+ * @param deps - Environments, flow attempt store and clock.
+ * @returns How many attempts were removed.
+ */
+export async function purgeExpired(
+  deps: Pick<Deps, 'environments' | 'flowAttempts' | 'clock'>
+): Promise<number> {
+  const now = deps.clock.now()
+  let removed = 0
+  for (const environment of await deps.environments.listAll()) {
+    removed += await deps.flowAttempts.deleteExpired(environment.id, now)
+  }
+  return removed
 }

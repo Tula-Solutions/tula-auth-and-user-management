@@ -1,6 +1,6 @@
 import type { FlowKind, FlowStatus } from '@tula/contract'
 import { type Database, flowAttempts, withTenant } from '@tula/db'
-import { and, eq, gt, isNull } from 'drizzle-orm'
+import { and, eq, gt, isNull, lte } from 'drizzle-orm'
 import type {
   FlowAttemptChange,
   FlowAttemptRecord,
@@ -83,5 +83,25 @@ export class PostgresFlowAttemptStore implements FlowAttemptStore {
         .returning({ id: flowAttempts.id })
     )
     return rows.length === 1
+  }
+
+  /** @inheritdoc */
+  async delete(environmentId: string, id: string): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(flowAttempts)
+        .where(and(eq(flowAttempts.id, id), eq(flowAttempts.environmentId, environmentId)))
+    )
+  }
+
+  /** @inheritdoc */
+  async deleteExpired(environmentId: string, now: Date): Promise<number> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(flowAttempts)
+        .where(and(eq(flowAttempts.environmentId, environmentId), lte(flowAttempts.expiresAt, now)))
+        .returning({ id: flowAttempts.id })
+    )
+    return rows.length
   }
 }

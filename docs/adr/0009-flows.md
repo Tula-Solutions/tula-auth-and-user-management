@@ -22,8 +22,10 @@ claim an address they don't control, and must be safe when requests race.
 - **Every step change is a compare-and-set** in the store (one guarded `UPDATE`), so of two
   racing requests only one completes an attempt and creates a session.
 - **Sign-up creates the account only after the email is verified.** Until then the names and
-  the argon2id hash of the password live in the attempt's state, and are dropped from it on
-  completion. Nobody can squat on an address they don't control.
+  the argon2id hash of the password live in the attempt's state. They are dropped from it on
+  completion; an attempt whose email could not be sent is deleted at once; and the server
+  deletes every expired attempt on boot and every ten minutes. Nobody can squat on an address
+  they don't control.
 - **Sign-up does not enumerate accounts.** If the address already has an account the response
   is identical. The owner is emailed a notice instead of a code, and the attempt is a *decoy*:
   it holds a real token whose code nobody was sent, so guesses, attempt counts and send limits
@@ -41,6 +43,11 @@ claim an address they don't control, and must be safe when requests race.
   default `web`): browsers get the refresh token as an httpOnly cookie, other clients in the
   body (ADR 0008).
 - **Weak password hashes are upgraded** after a successful sign-in (`needsRehash`).
+- **Failure ordering.** A code is sent before the attempt moves to `needs_email_verification`,
+  so a refused send leaves the previous step retryable. An attempt is marked `complete` before
+  its session is created (so two racing requests can't both create one); if session creation
+  then fails, the client gets a 500 and signs in again. Recording the last sign-in time is
+  best-effort and never discards issued tokens.
 
 ## Deviation from the plan
 
