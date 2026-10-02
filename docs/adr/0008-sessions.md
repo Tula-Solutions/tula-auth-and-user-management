@@ -21,7 +21,8 @@ access tokens are still unexpired.
   rows; revoking the session invalidates every token at once.
 - **Rotation is one guarded transaction:** lock the session row, insert the child, mark the
   parent used only if it is still unused. Of several concurrent refreshes exactly one rotates.
-- **Reuse detection.** Presenting a used token revokes the session (`session.reuse_detected`).
+- **Reuse detection.** Presenting a used token revokes the session (`session.reuse_detected`),
+  however old that token is: reuse is judged before the token's own expiry.
   The session keeps answering with that code, so the legitimate holder of the newest token
   learns why they were signed out.
 - **One exception: the reuse grace period (10 s).** A used token presented again within the
@@ -35,7 +36,8 @@ access tokens are still unexpired.
 - **Revocation reaches access tokens through a denylist.** `sessionAuth` verifies tokens with
   cached keys and no database hit, then checks the token's `sid` against a `RevokedSessions`
   port. Entries live for one access-token TTL. Every revocation path goes through the session
-  service, which adds the entry.
+  service, which adds the entry *before* updating the database, so a failure between the two
+  steps can never leave a revoked session with a working access token.
 - **Delivery.** Native and server clients send and receive the refresh token in the body.
   Browsers use a cookie: `HttpOnly`, `SameSite=Lax`, `Secure` over https (with the `__Secure-`
   prefix), path `/v1/client/sessions`, named per environment because one API host can serve

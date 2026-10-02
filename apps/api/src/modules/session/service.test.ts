@@ -205,6 +205,20 @@ describe('refresh', () => {
     expect(await deps.revokedSessions.has(first.sessionId, deps.clock.now())).toBe(true)
   })
 
+  test('replaying a rotated token is reuse even after that token’s own expiry date', async () => {
+    // The stolen root token "expires" on day 7, but the session is kept alive by its owner.
+    const first = await create()
+    let live = first
+    for (let i = 0; i < 2; i++) {
+      deps.clock.advance('6d')
+      live = await refresh(rt(live))
+    }
+    const err = await rejection(refresh(rt(first)))
+    expect(err.code).toBe('session.reuse_detected')
+    expect((await session(first.sessionId))?.revokeReason).toBe('reuse_detected')
+    expect((await rejection(refresh(rt(live)))).code).toBe('session.reuse_detected')
+  })
+
   test('within the grace window a retry gets the same child token, never a new one', async () => {
     const first = await create()
     const second = await refresh(rt(first))
@@ -310,6 +324,48 @@ describe('revoke', () => {
     expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
     deps.clock.advance('60s')
     expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(false)
+  })
+
+  test.each([
+    ['revoke', (id: string) => Sessions.revoke(deps, tenant, { userId: USER, sessionId: id })],
+    [
+      'revokeOthers',
+      () => Sessions.revokeOthers(deps, tenant, { userId: USER, currentSessionId: 'none' }),
+    ],
+    ['revokeAllForUser', () => Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned')],
+  ])('%s: a denylist failure never leaves a revoked session un-denylisted', async (_name, run) => {
+    const tokens = await create()
+    const add = deps.revokedSessions.add.bind(deps.revokedSessions)
+    let failures = 1
+    deps.revokedSessions.add = async (id, until) => {
+      if (failures > 0) {
+        failures -= 1
+        throw new Error('denylist unavailable')
+      }
+      await add(id, until)
+    }
+    await expect(run(tokens.sessionId)).rejects.toThrow('denylist unavailable')
+    // Whatever state the failure left behind, the retry ends with both halves done.
+    await run(tokens.sessionId)
+    expect((await session(tokens.sessionId))?.revokedAt).not.toBeNull()
+    expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
+  })
+
+  test('signOut: a denylist failure never leaves a revoked session un-denylisted', async () => {
+    const tokens = await create()
+    const add = deps.revokedSessions.add.bind(deps.revokedSessions)
+    let failures = 1
+    deps.revokedSessions.add = async (id, until) => {
+      if (failures > 0) {
+        failures -= 1
+        throw new Error('denylist unavailable')
+      }
+      await add(id, until)
+    }
+    await expect(Sessions.signOut(deps, tenant, rt(tokens))).rejects.toThrow('denylist unavailable')
+    await Sessions.signOut(deps, tenant, rt(tokens))
+    expect((await session(tokens.sessionId))?.revokeReason).toBe('sign_out')
+    expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
   })
 
   test('is idempotent and records the given reason', async () => {

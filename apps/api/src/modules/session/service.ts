@@ -100,7 +100,14 @@ function idleExpiry(now: Date, absoluteExpiresAt: Date | null): Date {
   return new Date(absoluteExpiresAt ? Math.min(idle, absoluteExpiresAt.getTime()) : idle)
 }
 
-/** Keep a revoked session's still-unexpired access tokens from being accepted. */
+/**
+ * Keep a revoked session's still-unexpired access tokens from being accepted.
+ *
+ * Every revocation calls this **before** the store update, and whether or not the session was
+ * already revoked. If the two steps were the other way round, a failure between them would
+ * leave a revoked session whose access token still works, and a retry (which finds nothing left
+ * to revoke) would never repair it. Adding an entry twice is harmless.
+ */
 async function denylist(
   deps: Pick<Deps, 'revokedSessions'>,
   sessionIds: readonly string[],
@@ -173,18 +180,18 @@ export async function create(
 }
 
 /**
- * Why a presented refresh token can't be used, as the error the client should see.
+ * Refuse a session that has ended, with the error the client should see.
  *
  * A session revoked for reuse keeps answering `session.reuse_detected`, so the legitimate
  * holder of the newest token learns why they were signed out.
  */
-function rejectUnusable(session: SessionRecord, token: RefreshTokenRecord, now: Date): void {
+function rejectEnded(session: SessionRecord, now: Date): void {
   if (session.revokedAt !== null) {
     throw new AuthError(
       session.revokeReason === 'reuse_detected' ? 'session.reuse_detected' : 'session.revoked'
     )
   }
-  if (!isActive(session, now) || token.expiresAt.getTime() <= now.getTime()) {
+  if (!isActive(session, now)) {
     throw new AuthError('session.expired')
   }
 }
@@ -224,10 +231,15 @@ export async function refresh(
       throw new AuthError('session.invalid_token')
     }
     const { token, session } = found
-    rejectUnusable(session, token, now)
+    rejectEnded(session, now)
 
+    // Reuse is judged before the token's own expiry: a rotated token replayed on a live session
+    // is theft however old it is, and must not be waved through as merely "expired".
     if (token.usedAt !== null) {
       return replayOrRevoke(deps, scope, session, token, token.usedAt, now)
+    }
+    if (token.expiresAt.getTime() <= now.getTime()) {
+      throw new AuthError('session.expired')
     }
 
     const idleExpiresAt = idleExpiry(now, session.absoluteExpiresAt)
@@ -275,8 +287,8 @@ async function replayOrRevoke(
       refreshToken: await deriveToken(deps, { parentId: token.id }),
     }
   }
-  await deps.sessions.revoke(scope.environmentId, session.id, 'reuse_detected', now)
   await denylist(deps, [session.id], now)
+  await deps.sessions.revoke(scope.environmentId, session.id, 'reuse_detected', now)
   logger.warn('refresh token reuse detected; session revoked', {
     environmentId: scope.environmentId,
     sessionId: session.id,
@@ -347,10 +359,13 @@ export async function revoke(
     throw new NotFoundError()
   }
   const now = deps.clock.now()
-  const reason = input.reason ?? 'revoked_by_user'
-  if (await deps.sessions.revoke(scope.environmentId, session.id, reason, now)) {
-    await denylist(deps, [session.id], now)
-  }
+  await denylist(deps, [session.id], now)
+  await deps.sessions.revoke(
+    scope.environmentId,
+    session.id,
+    input.reason ?? 'revoked_by_user',
+    now
+  )
 }
 
 /**
@@ -366,14 +381,32 @@ export async function revokeOthers(
   scope: Pick<Tenant, 'environmentId'>,
   input: { userId: string; currentSessionId: string }
 ): Promise<number> {
+  return revokeForUser(deps, scope, input.userId, 'revoked_by_user', input.currentSessionId)
+}
+
+async function revokeForUser(
+  deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'clock'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  userId: string,
+  reason: SessionRevokeReason,
+  exceptSessionId?: string
+): Promise<number> {
   const now = deps.clock.now()
+  // Only active sessions can have unexpired access tokens, so those are denylisted up front.
+  const active = await deps.sessions.listActiveByUser(scope.environmentId, userId, now)
+  await denylist(
+    deps,
+    active.map((session) => session.id).filter((id) => id !== exceptSessionId),
+    now
+  )
   const revoked = await deps.sessions.revokeByUser(
     scope.environmentId,
-    input.userId,
-    'revoked_by_user',
+    userId,
+    reason,
     now,
-    input.currentSessionId
+    exceptSessionId
   )
+  // Covers a session created between the list and the update.
   await denylist(deps, revoked, now)
   return revoked.length
 }
@@ -393,10 +426,7 @@ export async function revokeAllForUser(
   userId: string,
   reason: SessionRevokeReason
 ): Promise<number> {
-  const now = deps.clock.now()
-  const revoked = await deps.sessions.revokeByUser(scope.environmentId, userId, reason, now)
-  await denylist(deps, revoked, now)
-  return revoked.length
+  return revokeForUser(deps, scope, userId, reason)
 }
 
 /**
@@ -423,7 +453,6 @@ export async function signOut(
     return
   }
   const now = deps.clock.now()
-  if (await deps.sessions.revoke(scope.environmentId, found.session.id, 'sign_out', now)) {
-    await denylist(deps, [found.session.id], now)
-  }
+  await denylist(deps, [found.session.id], now)
+  await deps.sessions.revoke(scope.environmentId, found.session.id, 'sign_out', now)
 }
