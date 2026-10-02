@@ -63,7 +63,9 @@ use, and refresh tokens are 256-bit, so per-IP limits are enough.
   waits short, and only wrong guesses count, so a user who knows their password is delayed, not
   blocked. Keying by identifier *and* IP, or a CAPTCHA step, can soften this later.
 - **A per-environment ceiling can be hit by an attack**, at which point real users of that
-  environment are throttled on that step too. That is the intended trade: one tenant's attack
+  environment are throttled on that step too. A password try refused by a saturated ceiling
+  still counts as a lockout failure (the lockout is checked first), so retrying during an
+  attack adds to that identifier's backoff. That is the intended trade: one tenant's attack
   must not take the server down for every tenant.
 - **All of it is in process memory in Phase 0.** With several API instances each counts
   separately, which multiplies every limit by the instance count, and a restart forgets

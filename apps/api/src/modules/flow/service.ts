@@ -365,7 +365,8 @@ export async function submitPassword(
   }
   // After the lockout, so a locked-out identifier's refused tries (which hash nothing) can't
   // use the environment's ceiling up. A try the ceiling refuses has already been counted by the
-  // lockout; that costs the identifier one free try, never a guess.
+  // lockout as a failure: no password is checked, so it never grants a guess, but while the
+  // ceiling is saturated repeated tries do add to that identifier's backoff.
   await chargeEnvironment(deps, tenant, 'password')
 
   const found = await deps.users.findByEmailWithPassword(tenant.environmentId, attempt.identifier)
