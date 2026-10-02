@@ -40,6 +40,7 @@ router.post(
     responses: {
       200: { description: 'New tokens.', content: json(SessionTokensSchema) },
       401: openapi.responses[401],
+      403: openapi.responses[403],
       422: openapi.responses[422],
       429: openapi.responses[429],
       500: openapi.responses[500],

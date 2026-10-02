@@ -431,7 +431,7 @@ describe('submitPassword', () => {
 
   test('a banned user learns it only with the right password', async () => {
     const { userId } = await registered()
-    deps.users.setBanned(userId, deps.clock.now())
+    await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
     const wrongPassword = await rejection(password((await startSignIn()).id, 'not the password'))
     expect(wrongPassword.code).toBe('auth.invalid_credentials')
     const banned = await rejection(password((await startSignIn()).id))
@@ -541,7 +541,7 @@ describe('submitPassword', () => {
     const userId = await seedUser({ verified: false })
     const attempt = await startSignIn()
     await password(attempt.id)
-    deps.users.setBanned(userId, deps.clock.now())
+    await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
     const err = await rejection(
       Flows.verifyEmail(deps, tenant, 'sign_in', attempt.id, sentCode(), web)
     )
@@ -650,6 +650,7 @@ describe('purgeExpired', () => {
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other.id)).toBeNull()
     expect(await deps.flowAttempts.findById(tenant.environmentId, live.id)).not.toBeNull()
   })
+
   test('one failing environment does not stop the others from being purged', async () => {
     await signUp()
     const other = (await Flows.signUp(deps, otherTenant, { email: EMAIL, password: PASSWORD }, web))

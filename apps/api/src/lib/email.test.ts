@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { maskEmail, normalizeEmail } from '~/lib/email'
+import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 
 describe('normalizeEmail', () => {
   test.each([
@@ -26,4 +26,20 @@ describe('maskEmail', () => {
   test('never reveals more than the first character of the local part', () => {
     expect(maskEmail('averyveryverylongname@example.com')).toBe('a***@example.com')
   })
+})
+
+describe('parseEmail', () => {
+  test('returns the trimmed and the normalized form', () => {
+    expect(parseEmail(' Maya@Northline.app ')).toEqual({
+      email: 'Maya@Northline.app',
+      normalized: 'maya@northline.app',
+    })
+  })
+
+  test.each(['', 'nope', 'maya@', '@northline.app', `${'a'.repeat(320)}@northline.app`])(
+    'rejects %p',
+    (input) => {
+      expect(parseEmail(input)).toBeNull()
+    }
+  )
 })

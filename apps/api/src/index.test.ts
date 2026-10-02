@@ -201,6 +201,13 @@ describe('documentation routes', () => {
       '/v1/client/sign-ups/{attemptId}/resend-code',
       '/v1/client/sign-ins/{attemptId}/verify-email',
       '/v1/client/sign-ins/{attemptId}/resend-code',
+      '/v1/admin/users',
+      '/v1/admin/users/{userId}',
+      '/v1/admin/users/{userId}/ban',
+      '/v1/admin/users/{userId}/unban',
+      '/v1/admin/users/{userId}/password',
+      '/v1/client/me',
+      '/v1/client/me/password',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',
