@@ -6,6 +6,7 @@ import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { BreachChecker } from '~/ports/breach-checker'
 import type { Clock } from '~/ports/clock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
+import type { FlowAttemptStore } from '~/ports/flow-attempt-store'
 import type { HealthProbe } from '~/ports/health-probe'
 import type { IdGenerator } from '~/ports/id-generator'
 import type { Mailer } from '~/ports/mailer'
@@ -13,6 +14,7 @@ import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
 import type { SessionStore } from '~/ports/session-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
+import type { UserRepository } from '~/ports/user-repository'
 import type { VerificationTokenStore } from '~/ports/verification-token-store'
 
 /** Settings the app reads at request time. Built from `Env` in the container. */
@@ -41,6 +43,8 @@ export interface Deps {
   signingKeys: SigningKeyStore
   verificationTokens: VerificationTokenStore
   sessions: SessionStore
+  users: UserRepository
+  flowAttempts: FlowAttemptStore
   /** Revoked session ids whose access tokens may still be unexpired. */
   revokedSessions: RevokedSessions
   mailer: Mailer

@@ -1,0 +1,205 @@
+import { beforeEach, describe, expect, test } from 'bun:test'
+import type { FlowAttemptStore, NewFlowAttempt } from '~/ports/flow-attempt-store'
+
+/** A tenant plus the rows the store's foreign keys need. */
+export interface FlowSuiteTenant {
+  projectId: string
+  environmentId: string
+  /** Create a user (a real row for Postgres) and return its id. */
+  user: () => Promise<string>
+}
+
+/** What a store under test provides. */
+export interface FlowSuiteContext {
+  store: FlowAttemptStore
+  a: FlowSuiteTenant
+  b: FlowSuiteTenant
+}
+
+/**
+ * Behaviour every `FlowAttemptStore` must have. Run against each adapter so the memory store
+ * used by unit tests can't drift from Postgres.
+ *
+ * @param name - Adapter name for the report.
+ * @param setup - Builds a fresh context; called before each test.
+ */
+export function describeFlowAttemptStore(
+  name: string,
+  setup: () => Promise<FlowSuiteContext>
+): void {
+  describe(`${name} (FlowAttemptStore)`, () => {
+    const now = new Date('2026-01-01T00:00:00.000Z')
+    const later = (ms: number) => new Date(now.getTime() + ms)
+    let ctx: FlowSuiteContext
+
+    beforeEach(async () => {
+      ctx = await setup()
+    })
+
+    function attempt(
+      tenant: FlowSuiteTenant,
+      overrides: Partial<NewFlowAttempt> = {}
+    ): NewFlowAttempt {
+      return {
+        id: Bun.randomUUIDv7(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        kind: 'sign_in',
+        status: 'needs_password',
+        userId: null,
+        identifier: 'maya@northline.app',
+        state: { client: 'web' },
+        expiresAt: later(600_000),
+        createdAt: now,
+        ...overrides,
+      }
+    }
+
+    test('stores an attempt and finds it with its server state', async () => {
+      const input = attempt(ctx.a, {
+        kind: 'sign_up',
+        status: 'needs_email_verification',
+        state: { client: 'ios', passwordHash: '$argon2id$x', nested: { a: [1, 2] } },
+      })
+      await ctx.store.create(input)
+      expect(await ctx.store.findById(ctx.a.environmentId, input.id)).toEqual({
+        ...input,
+        completedAt: null,
+      })
+      expect(await ctx.store.findById(ctx.a.environmentId, Bun.randomUUIDv7())).toBeNull()
+    })
+
+    test('a transition changes the step and only the fields it names', async () => {
+      const userId = await ctx.a.user()
+      const input = attempt(ctx.a)
+      await ctx.store.create(input)
+      expect(
+        await ctx.store.transition(
+          ctx.a.environmentId,
+          input.id,
+          'needs_password',
+          { status: 'needs_email_verification', userId },
+          later(1_000)
+        )
+      ).toBe(true)
+      expect(await ctx.store.findById(ctx.a.environmentId, input.id)).toMatchObject({
+        status: 'needs_email_verification',
+        userId,
+        state: { client: 'web' },
+        completedAt: null,
+      })
+
+      expect(
+        await ctx.store.transition(
+          ctx.a.environmentId,
+          input.id,
+          'needs_email_verification',
+          { status: 'complete', state: { client: 'web', done: true }, completedAt: later(2_000) },
+          later(2_000)
+        )
+      ).toBe(true)
+      expect(await ctx.store.findById(ctx.a.environmentId, input.id)).toMatchObject({
+        status: 'complete',
+        userId,
+        state: { client: 'web', done: true },
+        completedAt: later(2_000),
+      })
+    })
+
+    test('a transition from the wrong step writes nothing', async () => {
+      const input = attempt(ctx.a)
+      await ctx.store.create(input)
+      expect(
+        await ctx.store.transition(
+          ctx.a.environmentId,
+          input.id,
+          'needs_email_verification',
+          { status: 'complete', completedAt: later(1) },
+          later(1)
+        )
+      ).toBe(false)
+      expect((await ctx.store.findById(ctx.a.environmentId, input.id))?.status).toBe(
+        'needs_password'
+      )
+    })
+
+    test('of concurrent transitions from one step exactly one wins', async () => {
+      const input = attempt(ctx.a)
+      await ctx.store.create(input)
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () =>
+          ctx.store.transition(
+            ctx.a.environmentId,
+            input.id,
+            'needs_password',
+            { status: 'complete', completedAt: later(1) },
+            later(1)
+          )
+        )
+      )
+      expect(results.filter(Boolean)).toHaveLength(1)
+    })
+
+    test('a completed or expired attempt cannot transition again', async () => {
+      const done = attempt(ctx.a)
+      await ctx.store.create(done)
+      await ctx.store.transition(
+        ctx.a.environmentId,
+        done.id,
+        'needs_password',
+        { status: 'complete', completedAt: later(1) },
+        later(1)
+      )
+      expect(
+        await ctx.store.transition(
+          ctx.a.environmentId,
+          done.id,
+          'complete',
+          { status: 'needs_password' },
+          later(2)
+        )
+      ).toBe(false)
+
+      const expiring = attempt(ctx.a, { expiresAt: later(1_000) })
+      await ctx.store.create(expiring)
+      const change = { status: 'complete' as const, completedAt: later(1_000) }
+      expect(
+        await ctx.store.transition(
+          ctx.a.environmentId,
+          expiring.id,
+          'needs_password',
+          change,
+          later(1_000)
+        )
+      ).toBe(false)
+      expect(
+        await ctx.store.transition(
+          ctx.a.environmentId,
+          expiring.id,
+          'needs_password',
+          change,
+          later(999)
+        )
+      ).toBe(true)
+    })
+
+    test('one environment cannot read or move another’s attempts', async () => {
+      const input = attempt(ctx.a)
+      await ctx.store.create(input)
+      const foreign = ctx.b.environmentId
+      expect(await ctx.store.findById(foreign, input.id)).toBeNull()
+      expect(
+        await ctx.store.transition(
+          foreign,
+          input.id,
+          'needs_password',
+          { status: 'complete', completedAt: later(1) },
+          later(1)
+        )
+      ).toBe(false)
+      expect((await ctx.store.findById(ctx.a.environmentId, input.id))?.status).toBe(
+        'needs_password'
+      )
+    })
+  })
+}

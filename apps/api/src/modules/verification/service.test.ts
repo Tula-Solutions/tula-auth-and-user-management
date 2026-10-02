@@ -219,6 +219,22 @@ describe('issue', () => {
     }
   })
 
+  test('a custom delivery replaces the code email but keeps the token and the send limits', async () => {
+    const delivered: Verification.Delivery[] = []
+    await issue({
+      deliver: async (delivery) => {
+        delivered.push(delivery)
+      },
+    })
+    expect(deps.mailer.outbox).toHaveLength(0)
+    expect(delivered).toEqual([
+      { to: EMAIL, code: expect.stringMatching(/^\d{6}$/), linkUrl: undefined, ttlMinutes: 10 },
+    ])
+    // The token is real: the code it was given verifies, and the cooldown was charged.
+    expect((await verify(delivered[0]?.code ?? '')).flowAttemptId).toBe(FLOW)
+    expect(await issue().catch((err) => err)).toBeInstanceOf(RateLimitError)
+  })
+
   test('requires a flow attempt or a user', async () => {
     const err = await rejection(issue({ flowAttemptId: undefined }))
     expect(err.status).toBe(500)

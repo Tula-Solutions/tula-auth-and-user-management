@@ -59,6 +59,8 @@ makes them unreadable.
 | `GET, POST /v1/admin/api-keys`, `DELETE /v1/admin/api-keys/:id` | secret key | Manage API keys |
 | `GET /v1/admin/signing-keys`, `POST /v1/admin/signing-keys/rotate` | secret key | Signing-key lifecycle |
 | `GET /v1/client/password-policy` | publishable key | Password rules for the live checklist |
+| `POST /v1/client/sign-ups`, `…/sign-ups/:id/verify-email`, `…/sign-ups/:id/resend-code` | publishable key | Sign up with email and password, verified by an emailed code |
+| `POST /v1/client/sign-ins`, `…/sign-ins/:id/password`, `…/sign-ins/:id/verify-email`, `…/sign-ins/:id/resend-code` | publishable key | Sign in; each call returns the next step |
 | `POST /v1/client/sessions/refresh`, `POST /v1/client/sessions/sign-out` | publishable key + refresh token | Rotate tokens; sign out |
 | `GET /v1/client/sessions`, `DELETE /v1/client/sessions/:id`, `POST /v1/client/sessions/revoke-others` | publishable key + access token | The user's devices |
 
@@ -78,8 +80,8 @@ Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
 - [x] Environments and API keys
 - [x] Ed25519 signing keys, rotation and JWKS
 - [x] Passwords (argon2id, policy, breach checks)
-- [ ] Server-driven sign-up / sign-in flows
-- [ ] Email verification
+- [x] Server-driven sign-up / sign-in flows
+- [x] Email verification (codes; magic links in Phase 1)
 - [x] Sessions with rotating refresh tokens and reuse detection
 - [ ] User admin, rate limiting and lockout, audit log
 - [ ] Conformance suite and self-host packaging

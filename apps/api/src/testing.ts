@@ -3,12 +3,14 @@ import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
+import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
 import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryMailer } from '~/adapters/memory/mailer'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
+import { MemoryUserRepository } from '~/adapters/memory/users'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
 import type { AppConfig, Deps } from '~/dependencies'
 import { sha256Hex } from '~/lib/crypto'
@@ -25,6 +27,8 @@ export interface TestDeps extends Deps {
   signingKeys: MemorySigningKeyStore
   verificationTokens: MemoryVerificationTokenStore
   sessions: MemorySessionStore
+  users: MemoryUserRepository
+  flowAttempts: MemoryFlowAttemptStore
   revokedSessions: MemoryRevokedSessions
   mailer: MemoryMailer
   rateLimiter: MemoryRateLimiter
@@ -65,6 +69,8 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     signingKeys: new MemorySigningKeyStore(),
     verificationTokens: new MemoryVerificationTokenStore(),
     sessions: new MemorySessionStore(),
+    users: new MemoryUserRepository(),
+    flowAttempts: new MemoryFlowAttemptStore(),
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer: new MemoryMailer(),
     rateLimiter: new MemoryRateLimiter(clock),

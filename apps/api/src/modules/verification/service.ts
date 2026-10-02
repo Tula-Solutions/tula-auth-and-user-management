@@ -41,6 +41,21 @@ export interface IssueInput {
    * accepts links belongs to the calling flow, so the flow decides the URL.
    */
   linkUrl?: (linkToken: string) => string
+  /**
+   * Replaces the standard code email. A flow uses it to send something else to the same
+   * address (e.g. an "account already exists" notice) while everything a caller can observe,
+   * the stored token, the send limits and the timing of one email, stays the same.
+   */
+  deliver?: (delivery: Delivery) => Promise<void>
+}
+
+/** What a custom {@link IssueInput.deliver} receives. */
+export interface Delivery {
+  /** Recipient, as the user entered it (trimmed). */
+  to: string
+  code: string
+  linkUrl: string | undefined
+  ttlMinutes: number
 }
 
 /** What `issue` reports back. Never the code or link token. */
@@ -117,14 +132,16 @@ export async function issue(
   const linkToken = input.linkUrl ? randomToken() : null
 
   // Send first: if the relay fails, nothing is stored and the previous code keeps working.
+  const delivery: Delivery = {
+    to: input.destination.trim(),
+    code,
+    linkUrl: linkToken && input.linkUrl ? input.linkUrl(linkToken) : undefined,
+    ttlMinutes: durationToMs(TOKEN_TTL) / 60_000,
+  }
   try {
-    await sendCode(deps, {
-      purpose: input.purpose,
-      to: input.destination.trim(),
-      code,
-      linkUrl: linkToken && input.linkUrl ? input.linkUrl(linkToken) : undefined,
-      ttlMinutes: durationToMs(TOKEN_TTL) / 60_000,
-    })
+    await (input.deliver
+      ? input.deliver(delivery)
+      : sendCode(deps, { purpose: input.purpose, ...delivery }))
   } catch (error) {
     throw new InternalError({
       internalMessage: `verification email could not be sent (${describeMailFailure(error)})`,

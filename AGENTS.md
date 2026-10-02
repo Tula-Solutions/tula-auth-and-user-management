@@ -189,7 +189,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   (AES-256-GCM, key derived from `TULA_MASTER_KEY`, bound to key id + environment). See
   [ADR 0004](docs/adr/0004-signing-keys-and-issuer.md); API keys: [ADR 0005](docs/adr/0005-api-keys.md);
   passwords: [ADR 0006](docs/adr/0006-passwords.md); verification codes:
-  [ADR 0007](docs/adr/0007-verification-codes.md); sessions: [ADR 0008](docs/adr/0008-sessions.md).
+  [ADR 0007](docs/adr/0007-verification-codes.md); sessions: [ADR 0008](docs/adr/0008-sessions.md);
+  flows: [ADR 0009](docs/adr/0009-flows.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment).

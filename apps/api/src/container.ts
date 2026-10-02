@@ -8,9 +8,11 @@ import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
+import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
 import { databaseProbe } from '~/adapters/postgres/health'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
+import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import { systemClock } from '~/adapters/system/clock'
 import { uuidV7Ids } from '~/adapters/system/ids'
@@ -61,6 +63,8 @@ export function createContainer(env: Env): Container {
     breachChecker: env.BREACH_CHECK === 'hibp' ? new HibpBreachChecker() : offlineBreachChecker,
     verificationTokens: new PostgresVerificationTokenStore(database.db),
     sessions: new PostgresSessionStore(database.db),
+    users: new PostgresUserRepository(database.db),
+    flowAttempts: new PostgresFlowAttemptStore(database.db),
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer,
     secretBox: createSecretBox(env.TULA_MASTER_KEY),

@@ -1,0 +1,63 @@
+# ADR 0009 — Server-driven sign-up and sign-in flows
+
+- Status: accepted
+- Date: 2026-10-01
+
+## Context
+
+The API decides the next step of every sign-in and sign-up; clients only render it (business
+plan §5.2). The flows must not reveal which email addresses have accounts, must not let anyone
+claim an address they don't control, and must be safe when requests race.
+
+## Decision
+
+- **An attempt is a row** (`flow_attempts`) with a kind, the step it is waiting on, server-only
+  state and a 10-minute lifetime. Unknown, foreign-environment, wrong-kind, completed and
+  expired attempts all answer `flow.not_found`.
+- **Transitions are one pure function** (`nextStatus`), table-tested. Phase 0:
+  `sign_up: needs_email_verification → complete`;
+  `sign_in: needs_password → complete`, or `→ needs_email_verification → complete` for a user
+  whose email is not verified. An event that is not valid at the current step is
+  `flow.invalid_step`.
+- **Every step change is a compare-and-set** in the store (one guarded `UPDATE`), so of two
+  racing requests only one completes an attempt and creates a session.
+- **Sign-up creates the account only after the email is verified.** Until then the names and
+  the argon2id hash of the password live in the attempt's state, and are dropped from it on
+  completion. Nobody can squat on an address they don't control.
+- **Sign-up does not enumerate accounts.** If the address already has an account the response
+  is identical. The owner is emailed a notice instead of a code, and the attempt is a *decoy*:
+  it holds a real token whose code nobody was sent, so guesses, attempt counts and send limits
+  behave exactly as for a new address. A decoy can never complete, even if its code is guessed.
+  The password is hashed in both cases so they take the same time.
+- **Sign-in does not enumerate accounts.** Starting a sign-in always answers `needs_password`
+  and does not look the identifier up. The password step returns one error,
+  `auth.invalid_credentials`, for an unknown identifier, a user with no password and a wrong
+  password; unknown users still cost one argon2id verify. A ban is revealed only to someone who
+  submitted the right password.
+- **Limits.** Per IP on every route; password submissions per identifier and environment
+  (10 per 15 minutes, keyed by a hash of the identifier, so it follows the account across
+  attempts and IPs); emails per address (ADR 0007).
+- **Token delivery follows the client kind** given when the attempt starts (`x-tula-client`,
+  default `web`): browsers get the refresh token as an httpOnly cookie, other clients in the
+  body (ADR 0008).
+- **Weak password hashes are upgraded** after a successful sign-in (`needsRehash`).
+
+## Deviation from the plan
+
+The plan lists email codes *and* magic links. Phase 0 ships **codes only**. With a link, the
+device that started the attempt receives the session after the link is opened elsewhere, which
+makes the attempt id a credential on its own; that needs the attempt bound to a client-held
+secret first. The verification service already issues and verifies links (ADR 0007), so this is
+a flow change only, planned for Phase 1.
+
+## Consequences
+
+- A sign-up for an existing address sends that owner an email. The per-address send limits
+  (one a minute, five an hour) bound how much an attacker can use this to annoy someone.
+- Two sign-ups for one new address can both be verified; the second gets `flow.invalid_step`
+  and the account keeps the first password.
+- The per-identifier password limit lets an attacker lock a known address out of password
+  sign-in for 15 minutes. Step 5.8 replaces the fixed window with backoff and adds
+  per-environment ceilings.
+- Password reset, password change and banning (which must call `Sessions.revokeAllForUser`)
+  arrive with the user module (Step 5.7).
