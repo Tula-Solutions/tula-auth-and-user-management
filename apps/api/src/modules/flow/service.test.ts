@@ -6,6 +6,7 @@ import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Flows from '~/modules/flow/service'
 import * as Passwords from '~/modules/password/service'
 import * as Verification from '~/modules/verification/service'
+import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
 
 const tenant: Tenant = {
@@ -455,23 +456,65 @@ describe('submitPassword', () => {
     )
   })
 
-  test('locks the identifier out after too many failures, even for the right password', async () => {
+  test('after the free tries, each failure makes the identifier wait longer', async () => {
     await registered()
     const attempt = await startSignIn()
-    for (let i = 0; i < Flows.PASSWORD_ATTEMPTS; i++) {
-      expect((await rejection(password(attempt.id, 'not the password'))).code).toBe(
-        'auth.invalid_credentials'
-      )
+    const guess = () => rejection(password(attempt.id, 'not the password'))
+    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+      expect((await guess()).code).toBe('auth.invalid_credentials')
     }
-    const err = await rejection(password(attempt.id))
-    expect(err).toBeInstanceOf(RateLimitError)
+    // The next failure is still answered, and starts the first wait.
+    expect((await guess()).code).toBe('auth.invalid_credentials')
+    const locked = await rejection(password(attempt.id))
+    expect(locked).toBeInstanceOf(RateLimitError)
+    expect(locked.params).toEqual({ retryAfter: 30 })
+
     // A fresh attempt for the same identifier is locked too; another identifier is not.
     expect(await rejection(password((await startSignIn()).id))).toBeInstanceOf(RateLimitError)
     expect((await rejection(password((await startSignIn('other@northline.app')).id))).code).toBe(
       'auth.invalid_credentials'
     )
-    deps.clock.advance(Flows.PASSWORD_ATTEMPTS_WINDOW)
-    expect((await password((await startSignIn()).id)).attempt.step.status).toBe('complete')
+
+    deps.clock.advance('30s')
+    expect((await guess()).code).toBe('auth.invalid_credentials')
+    expect((await rejection(password(attempt.id))).params).toEqual({ retryAfter: 60 })
+    deps.clock.advance('60s')
+    expect((await password(attempt.id)).attempt.step.status).toBe('complete')
+  })
+
+  test('a successful sign-in clears the failures', async () => {
+    await registered()
+    for (let round = 0; round < 3; round++) {
+      const attempt = await startSignIn()
+      for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts - 1; i++) {
+        expect((await rejection(password(attempt.id, 'not the password'))).code).toBe(
+          'auth.invalid_credentials'
+        )
+      }
+      expect((await password(attempt.id)).attempt.step.status).toBe('complete')
+    }
+  })
+
+  test('parallel guesses cannot exceed the free tries plus one', async () => {
+    await registered()
+    const attempt = await startSignIn()
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => rejection(password(attempt.id, 'not the password')))
+    )
+    expect(results.filter((err) => err.code === 'auth.invalid_credentials')).toHaveLength(
+      CREDENTIAL_LOCKOUT.freeAttempts + 1
+    )
+    expect(results.filter((err) => err instanceof RateLimitError)).toHaveLength(
+      20 - CREDENTIAL_LOCKOUT.freeAttempts - 1
+    )
+  })
+
+  test('unknown identifiers are locked out the same way, so lockout reveals nothing', async () => {
+    const attempt = await startSignIn('nobody@northline.app')
+    for (let i = 0; i <= CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+      expect((await rejection(password(attempt.id))).code).toBe('auth.invalid_credentials')
+    }
+    expect(await rejection(password(attempt.id))).toBeInstanceOf(RateLimitError)
   })
 
   test('upgrades a hash made with weaker parameters after a successful sign-in', async () => {

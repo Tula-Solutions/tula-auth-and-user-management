@@ -32,8 +32,8 @@ to read their own record and change their password. Every action that takes acce
   and flow attempts go by cascade.
 - **Admin set-password** ends *every* session of the user (`password_changed`).
 - **A user changing their own password** must give the current one, so a stolen access token
-  alone cannot take the account over. Guesses are limited to 5 per user per 15 minutes, on top
-  of a per-IP limit. On success every *other* session ends and the device making the change
+  alone cannot take the account over. Wrong guesses back off exponentially per user (ADR 0011),
+  on top of a per-IP limit; a correct one clears them. On success every *other* session ends and the device making the change
   stays signed in.
 - **Every session-ending path goes through `~/modules/session/service`,** which denylists
   before it revokes (ADR 0008).
@@ -52,9 +52,8 @@ the caller has just proven they know the password. An admin reset still ends all
 - Admin actions are not audited yet; the audit log arrives with Step 5.9.
 - The refresh-time ban check costs one user lookup per refresh (about once a minute per
   session).
-- The per-user password-change limit counts every try, successful or not. Someone holding a
-  stolen access token can use it up and delay the real user's change by up to 15 minutes; the
-  same cap is what bounds guessing the current password.
+- Someone holding a stolen access token can fail the current-password check on purpose and
+  make the real user wait before changing their password (ADR 0011).
 - Setting a password for a user with no password credential answers 409. No such user can exist
   yet; when passwordless users arrive (Phase 1) this path must create the credential.
 - Offset paging gets slow on very large user tables; cursor paging can be added without

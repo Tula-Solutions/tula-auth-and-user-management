@@ -272,4 +272,33 @@ describe('sign-in over HTTP', () => {
       429
     )
   })
+
+  test('each environment has a ceiling across all IPs on the expensive steps', async () => {
+    deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true } })
+    deps.environments.add({
+      id: TEST_TENANT.environmentId,
+      projectId: TEST_TENANT.projectId,
+      kind: 'development',
+      createdAt: deps.clock.now(),
+    })
+    await seedApiKey(deps, PK)
+    app = createApp(deps)
+    const signUp = (i: number) =>
+      app.request('/v1/client/sign-ups', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tula-publishable-key': PK,
+          // A different address every time, so the per-IP limits never trigger.
+          'x-forwarded-for': `203.0.${Math.floor(i / 250)}.${i % 250}`,
+        },
+        body: JSON.stringify({ email: 'nope', password: PASSWORD }),
+      })
+    for (let i = 0; i < Flows.ENVIRONMENT_RATE_LIMITS.signUp; i++) {
+      await signUp(i)
+    }
+    const res = await signUp(Flows.ENVIRONMENT_RATE_LIMITS.signUp)
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).not.toBeNull()
+  })
 })

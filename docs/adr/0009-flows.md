@@ -36,9 +36,10 @@ claim an address they don't control, and must be safe when requests race.
   `auth.invalid_credentials`, for an unknown identifier, a user with no password and a wrong
   password; unknown users still cost one argon2id verify. A ban is revealed only to someone who
   submitted the right password.
-- **Limits.** Per IP on every route; password submissions per identifier and environment
-  (10 per 15 minutes, keyed by a hash of the identifier, so it follows the account across
-  attempts and IPs); emails per address (ADR 0007).
+- **Limits.** Per IP on every route; a per-environment ceiling on the expensive steps;
+  exponential lockout on failed passwords per identifier, keyed by a hash of the identifier so
+  it follows the account across attempts and IPs; emails per address (ADR 0007). ADR 0011 has
+  the full table.
 - **Token delivery follows the client kind** given when the attempt starts (`x-tula-client`,
   default `web`): browsers get the refresh token as an httpOnly cookie, other clients in the
   body (ADR 0008).
@@ -63,8 +64,7 @@ a flow change only, planned for Phase 1.
   (one a minute, five an hour) bound how much an attacker can use this to annoy someone.
 - Two sign-ups for one new address can both be verified; the second gets `flow.invalid_step`
   and the account keeps the first password.
-- The per-identifier password limit lets an attacker lock a known address out of password
-  sign-in for 15 minutes. Step 5.8 replaces the fixed window with backoff and adds
-  per-environment ceilings.
+- Lockout is per identifier, so someone who keeps failing on purpose can make a known address
+  wait before it can sign in with a password (ADR 0011 weighs this).
 - Password reset, password change and banning (which must call `Sessions.revokeAllForUser`)
   arrive with the user module (Step 5.7).

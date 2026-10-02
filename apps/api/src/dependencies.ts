@@ -9,6 +9,7 @@ import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { FlowAttemptStore } from '~/ports/flow-attempt-store'
 import type { HealthProbe } from '~/ports/health-probe'
 import type { IdGenerator } from '~/ports/id-generator'
+import type { Lockout } from '~/ports/lockout'
 import type { Mailer } from '~/ports/mailer'
 import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
@@ -49,6 +50,8 @@ export interface Deps {
   revokedSessions: RevokedSessions
   mailer: Mailer
   rateLimiter: RateLimiter
+  /** Exponential backoff for failed attempts at guessing a secret. */
+  lockout: Lockout
   /** Breached-password lookups for the password policy's `breachCheck`. */
   breachChecker: BreachChecker
   /** Encrypts secrets at rest with keys derived from `TULA_MASTER_KEY`. */

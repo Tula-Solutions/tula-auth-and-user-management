@@ -19,16 +19,12 @@ import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
+import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { sendAccountExistsNotice } from './mailer'
 import { nextStatus } from './transitions'
 
 /** How long a sign-in or sign-up attempt can be continued. */
 export const ATTEMPT_TTL = '10m'
-/** Password submissions allowed per identifier and environment in {@link PASSWORD_ATTEMPTS_WINDOW}. */
-export const PASSWORD_ATTEMPTS = 10
-/** Window for {@link PASSWORD_ATTEMPTS}. */
-export const PASSWORD_ATTEMPTS_WINDOW = '15m'
-
 /** The device a flow request comes from. Captured when the attempt starts. */
 export interface ClientContext {
   /** Decides how the refresh token is delivered when the flow completes. */
@@ -281,8 +277,9 @@ export async function signIn(
  *
  * Every failure is the same `auth.invalid_credentials`: unknown identifier, no password set,
  * wrong password. Unknown users still cost one argon2id verify. A ban is only revealed to
- * someone who knows the password. Submissions are limited per identifier, so the limit follows
- * the account across attempts and IPs.
+ * someone who knows the password. Failures back off exponentially per identifier
+ * (`CREDENTIAL_LOCKOUT`), so the lockout follows the account across attempts and IPs; a
+ * successful sign-in clears it.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -292,7 +289,7 @@ export async function signIn(
  * @returns `complete` with tokens, or `needs_email_verification` for an unverified email.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.invalid_credentials` or
  *   `auth.user_banned`.
- * @throws RateLimitError after too many submissions for the identifier.
+ * @throws RateLimitError while the identifier is locked out after repeated failures.
  */
 export async function submitPassword(
   deps: Deps,
@@ -305,20 +302,20 @@ export async function submitPassword(
   if (attempt.status !== 'needs_password') {
     throw new AuthError('flow.invalid_step')
   }
-  // Hash the identifier so limiter keys (which may live in Redis) hold no email.
-  const limit = await deps.rateLimiter.hit(
-    `sign_in_password:${tenant.environmentId}:${sha256Hex(attempt.identifier)}`,
-    PASSWORD_ATTEMPTS,
-    durationToMs(PASSWORD_ATTEMPTS_WINDOW)
-  )
-  if (!limit.allowed) {
-    throw new RateLimitError(limit.retryAfterMs)
+  // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
+  // counted as a failure up front and cleared on success, so parallel guesses can't all slip
+  // through; it happens before the lookup, so unknown identifiers lock out exactly the same.
+  const lockKey = `sign_in:${tenant.environmentId}:${sha256Hex(attempt.identifier)}`
+  const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
+  if (!lock.allowed) {
+    throw new RateLimitError(lock.retryAfterMs)
   }
 
   const found = await deps.users.findByEmailWithPassword(tenant.environmentId, attempt.identifier)
   if (!(await Passwords.verify(found?.passwordHash ?? null, password)) || !found) {
     throw new AuthError('auth.invalid_credentials')
   }
+  await deps.lockout.clear(lockKey)
   const { user } = found
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')

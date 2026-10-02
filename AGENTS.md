@@ -190,10 +190,13 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0004](docs/adr/0004-signing-keys-and-issuer.md); API keys: [ADR 0005](docs/adr/0005-api-keys.md);
   passwords: [ADR 0006](docs/adr/0006-passwords.md); verification codes:
   [ADR 0007](docs/adr/0007-verification-codes.md); sessions: [ADR 0008](docs/adr/0008-sessions.md);
-  flows: [ADR 0009](docs/adr/0009-flows.md); users: [ADR 0010](docs/adr/0010-user-management.md).
+  flows: [ADR 0009](docs/adr/0009-flows.md); users: [ADR 0010](docs/adr/0010-user-management.md);
+  rate limits and lockout: [ADR 0011](docs/adr/0011-rate-limits-and-lockout.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
-- Rate-limit every credential-accepting endpoint (per IP, identifier and environment).
+- Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
+  that checks a guessable secret (a password) also goes through `deps.lockout` with
+  `CREDENTIAL_LOCKOUT`: count the attempt first, clear it on success.
 - Cookies: `HttpOnly`, `Secure`, `SameSite=Lax` (or stricter), scoped path. Use the helpers in
   `~/modules/session/cookies`; never set the refresh cookie by hand.
 - Revoking a session must go through `~/modules/session/service` so its id is denylisted:

@@ -5,6 +5,7 @@ import { FixedClock } from '~/adapters/memory/clock'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
 import { SequentialIds } from '~/adapters/memory/ids'
+import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryMailer } from '~/adapters/memory/mailer'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
@@ -32,6 +33,7 @@ export interface TestDeps extends Deps {
   revokedSessions: MemoryRevokedSessions
   mailer: MemoryMailer
   rateLimiter: MemoryRateLimiter
+  lockout: MemoryLockout
   breachChecker: MemoryBreachChecker
 }
 
@@ -74,6 +76,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer: new MemoryMailer(),
     rateLimiter: new MemoryRateLimiter(clock),
+    lockout: new MemoryLockout(clock),
     breachChecker: new MemoryBreachChecker(),
     secretBox: createSecretBox(TEST_MASTER_KEY),
     keyedHash: createKeyedHash(TEST_MASTER_KEY),

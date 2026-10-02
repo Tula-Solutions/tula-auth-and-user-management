@@ -6,7 +6,7 @@ import type { AppEnv, TenantVariables } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { clientIp } from '~/lib/client-ip'
 import { publishableKey } from '~/middleware/publishable-key'
-import { byIp, rateLimit } from '~/middleware/rate-limit'
+import { byIp, environmentRateLimit, rateLimit } from '~/middleware/rate-limit'
 import * as Flows from '~/modules/flow/service'
 import { setRefreshCookie } from '~/modules/session/cookies'
 import * as openapi from '~/openapi'
@@ -28,6 +28,14 @@ export const SIGN_UP_RATE_LIMIT = 10
  * resend). The service adds per-identifier and per-address limits on top.
  */
 export const CREDENTIAL_RATE_LIMIT = 30
+
+/**
+ * Requests per minute for a whole environment, across all IPs, on the steps that cost an
+ * argon2id hash or an email. Generous for real traffic (ten sign-ups a second), tight enough
+ * that a botnet aimed at one tenant can't monopolise the server. Refresh has no ceiling: every
+ * active user refreshes about once a minute, so one would throttle a large app in normal use.
+ */
+export const ENVIRONMENT_RATE_LIMITS = { signUp: 600, password: 3_000, verify: 3_000 } as const
 
 const router = new Hono<AppEnv>()
 
@@ -93,6 +101,7 @@ router.post(
   }),
   limited('sign_up', SIGN_UP_RATE_LIMIT),
   publishableKey(),
+  environmentRateLimit('sign_up', ENVIRONMENT_RATE_LIMITS.signUp),
   validator('header', ClientHeaderSchema, validationHook),
   validator('json', SignUpRequestSchema, validationHook),
   async (c) => {
@@ -150,6 +159,7 @@ router.post(
   }),
   limited('sign_in_password'),
   publishableKey(),
+  environmentRateLimit('password', ENVIRONMENT_RATE_LIMITS.password),
   validator('param', AttemptIdParamSchema, validationHook),
   validator('json', PasswordAttemptRequestSchema, validationHook),
   async (c) =>
@@ -191,6 +201,7 @@ for (const [kind, path, tag] of [
     }),
     limited(`${kind}_verify`),
     publishableKey(),
+    environmentRateLimit('verify', ENVIRONMENT_RATE_LIMITS.verify),
     validator('param', AttemptIdParamSchema, validationHook),
     validator('json', VerifyEmailRequestSchema, validationHook),
     async (c) =>
@@ -226,6 +237,7 @@ for (const [kind, path, tag] of [
     }),
     limited(`${kind}_resend`, SIGN_UP_RATE_LIMIT),
     publishableKey(),
+    environmentRateLimit('sign_up', ENVIRONMENT_RATE_LIMITS.signUp),
     validator('param', AttemptIdParamSchema, validationHook),
     async (c) =>
       respond(
