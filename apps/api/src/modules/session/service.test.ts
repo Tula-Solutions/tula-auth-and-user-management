@@ -413,6 +413,36 @@ describe('revokeOthers / revokeAllForUser', () => {
     }
   })
 
+  test('revokeOthers never denylists the session that asked', async () => {
+    const current = await create()
+    await create()
+    await Sessions.revokeOthers(deps, tenant, { userId: USER, currentSessionId: current.sessionId })
+    expect(await deps.revokedSessions.has(current.sessionId, deps.clock.now())).toBe(false)
+    await verifyAccessToken(deps, current.accessToken, tenant)
+  })
+
+  test('if the store fails after the denylist write, the error surfaces and a retry completes', async () => {
+    // Fail-safe direction: the session is briefly denied, never left revoked-but-usable.
+    const tokens = await create()
+    const revokeByUser = deps.sessions.revokeByUser.bind(deps.sessions)
+    let failures = 1
+    deps.sessions.revokeByUser = async (...args) => {
+      if (failures > 0) {
+        failures -= 1
+        throw new Error('database unavailable')
+      }
+      return revokeByUser(...args)
+    }
+    await expect(Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned')).rejects.toThrow(
+      'database unavailable'
+    )
+    expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
+    expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
+
+    expect(await Sessions.revokeAllForUser(deps, tenant, USER, 'user_banned')).toBe(1)
+    expect((await session(tokens.sessionId))?.revokeReason).toBe('user_banned')
+  })
+
   test('revokeAllForUser ends every session with the given reason', async () => {
     const all = [await create(), await create()]
     expect(await Sessions.revokeAllForUser(deps, tenant, USER, 'password_changed')).toBe(2)
