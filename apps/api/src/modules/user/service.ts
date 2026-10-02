@@ -219,7 +219,11 @@ export async function unban(
   scope: Pick<Tenant, 'environmentId'>,
   userId: string
 ): Promise<User> {
-  await requireUser(deps, scope, userId)
+  const current = await requireUser(deps, scope, userId)
+  if (current.bannedAt === null) {
+    // Not banned: nothing to lift, and no reason to sign them out.
+    return toUser(current)
+  }
   await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned')
   const user = await deps.users.setBanned(scope.environmentId, userId, null, deps.clock.now())
   if (!user) {

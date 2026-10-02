@@ -195,6 +195,14 @@ describe('ban / unban', () => {
     )
   })
 
+  test('unbanning a user who is not banned leaves their sessions alone', async () => {
+    const user = await create()
+    const tokens = await signIn(user.id)
+    expect((await Users.unban(deps, tenant, user.id)).bannedAt).toBeNull()
+    expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
+    expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(false)
+  })
+
   test('a session that slipped in during the ban does not survive an unban', async () => {
     const user = await create()
     await Users.ban(deps, tenant, user.id)
