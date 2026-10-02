@@ -194,6 +194,13 @@ describe('documentation routes', () => {
       '/v1/client/sessions',
       '/v1/client/sessions/revoke-others',
       '/v1/client/sessions/{sessionId}',
+      '/v1/client/sign-ups',
+      '/v1/client/sign-ins',
+      '/v1/client/sign-ins/{attemptId}/password',
+      '/v1/client/sign-ups/{attemptId}/verify-email',
+      '/v1/client/sign-ups/{attemptId}/resend-code',
+      '/v1/client/sign-ins/{attemptId}/verify-email',
+      '/v1/client/sign-ins/{attemptId}/resend-code',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',

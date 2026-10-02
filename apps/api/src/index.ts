@@ -12,6 +12,7 @@ import { allowedOrigin } from '~/lib/cors'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
 import { clientRateLimit } from '~/middleware/rate-limit'
 import { requestLog } from '~/middleware/request-log'
+import { CLIENT_HEADER } from '~/modules/flow/schema'
 import { documentation } from '~/openapi'
 
 /**
@@ -31,6 +32,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/jwks/router')).default],
   ['/v1/client', (await import('~/modules/password/router')).default],
   ['/v1/client', (await import('~/modules/session/router')).default],
+  ['/v1/client', (await import('~/modules/flow/router')).default],
 ]
 
 /**
@@ -58,7 +60,7 @@ export function createApp(deps: Deps): Hono<AppEnv> {
       origin: (origin) => allowedOrigin(origin, deps.config),
       credentials: true,
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization', PUBLISHABLE_KEY_HEADER],
+      allowHeaders: ['Content-Type', 'Authorization', PUBLISHABLE_KEY_HEADER, CLIENT_HEADER],
       exposeHeaders: ['Retry-After', 'X-Request-Id'],
       maxAge: 600,
     })

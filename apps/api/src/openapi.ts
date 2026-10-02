@@ -24,6 +24,7 @@ export const responses = {
   403: errorResponse('Authenticated but not allowed.'),
   404: errorResponse('The resource does not exist in this environment.'),
   409: errorResponse('The change conflicts with existing data.'),
+  410: errorResponse('The code or link has expired; request a new one.'),
   422: errorResponse('The input is invalid; `errors` lists each field.'),
   429: errorResponse('Rate limited; retry after `params.retryAfter` seconds.'),
   500: errorResponse('Unexpected server error.'),
@@ -61,6 +62,11 @@ export const documentation: GenerateSpecOptions['documentation'] = {
     { name: 'Project', description: 'Environments and API keys (admin).' },
     { name: 'Keys', description: 'Access-token signing keys and the public JWKS.' },
     { name: 'Passwords', description: 'Password rules for the live checklist.' },
+    {
+      name: 'Flows',
+      description:
+        'Server-driven sign-up and sign-in. Each call returns the next step; clients render it.',
+    },
     { name: 'Sessions', description: 'Refresh, sign-out and the signed-in user’s devices.' },
   ],
   components: {
