@@ -21,7 +21,7 @@ export interface LockoutDecision {
  * Lockout for guessing secrets: 5 free tries, then 30s, 1m, 2m… up to 15 minutes per further
  * failure, forgotten after an hour of quiet.
  *
- * An attacker gets 5 guesses, then about 4 more in the first 15 minutes and 4 an hour after
+ * An attacker gets 5 guesses at once, 5 more within the first 15 minutes and 4 an hour after
  * that, instead of the unlimited stream a per-IP limit alone allows from many addresses.
  */
 export const CREDENTIAL_LOCKOUT: LockoutPolicy = {

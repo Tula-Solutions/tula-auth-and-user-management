@@ -712,3 +712,65 @@ describe('purgeExpired', () => {
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other.id)).toBeNull()
   })
 })
+
+describe('per-environment ceilings', () => {
+  test('sign-ups are capped per environment across all callers', async () => {
+    // Hashing 600 passwords for real would take most of a minute.
+    spy = spyOn(Bun.password, 'hash').mockResolvedValue(
+      '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA'
+    )
+    for (let i = 0; i < Flows.ENVIRONMENT_RATE_LIMITS.signUp; i++) {
+      await signUp({ email: `user-${i}@northline.app` })
+    }
+    const err = await rejection(signUp({ email: 'one-too-many@northline.app' }))
+    expect(err).toBeInstanceOf(RateLimitError)
+    expect(err.params?.retryAfter).toBeGreaterThan(0)
+    // Another environment has its own ceiling.
+    const other = await Flows.signUp(
+      deps,
+      otherTenant,
+      { email: 'elsewhere@northline.app', password: PASSWORD },
+      web
+    )
+    expect(other.attempt.step.status).toBe('needs_email_verification')
+  })
+
+  test('requests that never reach the expensive step do not use the ceiling up', async () => {
+    await registered()
+    const junk = Math.max(
+      Flows.ENVIRONMENT_RATE_LIMITS.signUp,
+      Flows.ENVIRONMENT_RATE_LIMITS.password,
+      Flows.ENVIRONMENT_RATE_LIMITS.verify
+    )
+    for (let i = 0; i <= junk; i++) {
+      const missing = `00000000-0000-7000-8000-${i.toString(16).padStart(12, '0')}`
+      await rejection(signUp({ email: 'not-an-email' }))
+      await rejection(password(missing))
+      await rejection(Flows.verifyEmail(deps, tenant, 'sign_up', missing, '123456', web))
+      await rejection(Flows.resendVerification(deps, tenant, 'sign_up', missing))
+    }
+    // Real requests still go through.
+    expect((await password((await startSignIn()).id)).attempt.step.status).toBe('complete')
+    const started = await signUp({ email: 'real@northline.app' })
+    const done = await Flows.verifyEmail(
+      deps,
+      tenant,
+      'sign_up',
+      started.attempt.id,
+      sentCode(),
+      web
+    )
+    expect(done.attempt.step.status).toBe('complete')
+  })
+
+  test('password submissions are capped per environment', async () => {
+    const attempt = await startSignIn('nobody@northline.app')
+    // Fill the bucket directly: 3,000 argon2id verifies would take minutes.
+    for (let i = 0; i < Flows.ENVIRONMENT_RATE_LIMITS.password; i++) {
+      await deps.rateLimiter.hit(Flows.environmentKey('password', tenant), 1e9, 60_000)
+    }
+    expect(await rejection(password(attempt.id))).toBeInstanceOf(RateLimitError)
+    deps.clock.advance('1m')
+    expect((await rejection(password(attempt.id))).code).toBe('auth.invalid_credentials')
+  })
+})

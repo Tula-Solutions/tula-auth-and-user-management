@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type { FlowAttempt } from '@tula/contract'
 import { createApp } from '~/index'
 import * as Flows from '~/modules/flow/router'
+import { ENVIRONMENT_RATE_LIMITS } from '~/modules/flow/service'
 import { refreshCookieName } from '~/modules/session/cookies'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -273,7 +274,7 @@ describe('sign-in over HTTP', () => {
     )
   })
 
-  test('each environment has a ceiling across all IPs on the expensive steps', async () => {
+  test('malformed requests from many IPs cannot use up an environment’s ceiling', async () => {
     deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true } })
     deps.environments.add({
       id: TEST_TENANT.environmentId,
@@ -283,7 +284,7 @@ describe('sign-in over HTTP', () => {
     })
     await seedApiKey(deps, PK)
     app = createApp(deps)
-    const signUp = (i: number) =>
+    const signUp = (i: number, body: unknown) =>
       app.request('/v1/client/sign-ups', {
         method: 'POST',
         headers: {
@@ -292,13 +293,13 @@ describe('sign-in over HTTP', () => {
           // A different address every time, so the per-IP limits never trigger.
           'x-forwarded-for': `203.0.${Math.floor(i / 250)}.${i % 250}`,
         },
-        body: JSON.stringify({ email: 'nope', password: PASSWORD }),
+        body: JSON.stringify(body),
       })
-    for (let i = 0; i < Flows.ENVIRONMENT_RATE_LIMITS.signUp; i++) {
-      await signUp(i)
+    for (let i = 0; i <= ENVIRONMENT_RATE_LIMITS.signUp; i++) {
+      // Fails validation: no password, so nothing is hashed and no email is sent.
+      expect((await signUp(i, { email: EMAIL })).status).toBe(422)
     }
-    const res = await signUp(Flows.ENVIRONMENT_RATE_LIMITS.signUp)
-    expect(res.status).toBe(429)
-    expect(res.headers.get('retry-after')).not.toBeNull()
+    const real = await signUp(60_000, { email: EMAIL, password: PASSWORD })
+    expect(real.status).toBe(200)
   })
 })

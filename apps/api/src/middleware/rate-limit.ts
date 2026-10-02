@@ -90,16 +90,3 @@ export const CLIENT_RATE_LIMIT = 600
 export function clientRateLimit() {
   return rateLimit({ name: 'client', limit: CLIENT_RATE_LIMIT, window: '1m', key: byIp })
 }
-
-/**
- * A ceiling for one environment across every IP, for steps that cost real resources (an
- * argon2id hash, an email). It bounds what a distributed attack on one tenant can make the
- * server do. Mount it **after** a key middleware, which resolves the environment.
- *
- * @param name - The step, e.g. `sign_up`.
- * @param limit - Requests per minute for the whole environment.
- * @returns The middleware.
- */
-export function environmentRateLimit(name: string, limit: number) {
-  return rateLimit({ name: `environment_${name}`, limit, window: '1m', key: byEnvironment })
-}

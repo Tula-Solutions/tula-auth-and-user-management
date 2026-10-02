@@ -27,9 +27,12 @@ limited too.
 | Change my password | 10 |
 | Public JWKS | 600 |
 
-**2. Per environment** (`environmentRateLimit`), across all IPs, on steps that cost an argon2id
-hash or an email: sign-up and resend 600, password 3,000, verify code 3,000 per minute. This
-bounds what a distributed attack on one tenant can make the server do. Refresh has no ceiling:
+**2. Per environment**, across all callers, on steps that cost an argon2id hash or an email:
+sign-up and resend 600, password 3,000, verify code 3,000 per minute. This bounds what a
+distributed attack on one tenant can make the server do. The ceiling is counted **inside the
+flow service**, after the request is validated and its attempt found and just before the
+expensive work, so malformed requests and made-up attempt ids, which cost nothing, can't use it
+up. Refresh has no ceiling:
 every active user refreshes about once a minute, so one would throttle a large app in normal
 use, and refresh tokens are 256-bit, so per-IP limits are enough.
 
@@ -38,8 +41,8 @@ use, and refresh tokens are 256-bit, so per-IP limits are enough.
 - *Passwords* use the `Lockout` port with `CREDENTIAL_LOCKOUT`: 5 free tries, then each further
   failure imposes a wait of 30s, 1m, 2m… capped at 15 minutes, forgotten after an hour of quiet.
   Sign-in is keyed by environment + a hash of the identifier; changing your own password by
-  environment + user id. An attacker gets 5 guesses, about 4 more in the first 15 minutes and 4
-  an hour after that.
+  environment + user id. An attacker gets 5 guesses at once, 5 more within the first 15 minutes
+  and 4 an hour after that.
 - The attempt is **counted as a failure before the password is compared and cleared on
   success**. Counting first is atomic, so parallel guesses can't all slip through while
   unlocked (at most free tries + 1 are answered). Only failures accumulate; a refused attempt

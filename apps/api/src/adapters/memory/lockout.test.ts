@@ -31,6 +31,26 @@ describe('lockoutDelayMs', () => {
     expect(lockoutDelayMs(policy, failures)).toBe(expected)
   })
 
+  test('the credential policy answers 5 guesses at once, 5 more within 15 minutes, then 4 an hour', async () => {
+    const clock = new FixedClock()
+    const lockout = new MemoryLockout(clock)
+    const start = clock.now().getTime()
+    const answeredAt: number[] = []
+    // Guess as fast as the lockout allows for two hours.
+    while (clock.now().getTime() - start < 2 * 3_600_000) {
+      const decision = await lockout.attempt('k', CREDENTIAL_LOCKOUT, clock.now())
+      if (decision.allowed) {
+        answeredAt.push((clock.now().getTime() - start) / 1000)
+      } else {
+        clock.advance(decision.retryAfterMs)
+      }
+    }
+    expect(answeredAt.slice(0, 10)).toEqual([0, 0, 0, 0, 0, 0, 30, 90, 210, 450])
+    expect(answeredAt.filter((t) => t < 900)).toHaveLength(CREDENTIAL_LOCKOUT.freeAttempts + 5)
+    const lastHour = answeredAt.filter((t) => t >= 3_600)
+    expect(lastHour).toHaveLength(4)
+  })
+
   test('the credential policy gives 5 free tries, then 30s doubling to 15 minutes', () => {
     const delays = [5, 6, 7, 8, 9, 10, 11, 12].map((n) => lockoutDelayMs(CREDENTIAL_LOCKOUT, n))
     expect(delays).toEqual([0, 30_000, 60_000, 120_000, 240_000, 480_000, 900_000, 900_000])

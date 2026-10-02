@@ -25,6 +25,50 @@ import { nextStatus } from './transitions'
 
 /** How long a sign-in or sign-up attempt can be continued. */
 export const ATTEMPT_TTL = '10m'
+/**
+ * Requests per minute for a whole environment, across all callers, on the steps that cost an
+ * argon2id hash or an email. Generous for real traffic (ten sign-ups a second), tight enough
+ * that a botnet aimed at one tenant can't monopolise the server. Refresh has no ceiling: every
+ * active user refreshes about once a minute, so one would throttle a large app in normal use.
+ */
+export const ENVIRONMENT_RATE_LIMITS = { signUp: 600, password: 3_000, verify: 3_000 } as const
+
+type CeilingStep = keyof typeof ENVIRONMENT_RATE_LIMITS
+
+/**
+ * Rate-limiter key of an environment's ceiling for a step.
+ *
+ * @param step - The step.
+ * @param tenant - The environment.
+ * @returns The bucket key.
+ */
+export function environmentKey(step: CeilingStep, tenant: Pick<Tenant, 'environmentId'>): string {
+  return `environment_${step}:${tenant.environmentId}`
+}
+
+/**
+ * Count a request against its environment's ceiling.
+ *
+ * Called from inside each step, **after** the request has been validated and its attempt
+ * found, and just before the expensive work. A ceiling counted in middleware would also count
+ * malformed requests and made-up attempt ids, letting junk that costs the server nothing
+ * throttle every real user of the environment.
+ */
+async function chargeEnvironment(
+  deps: Pick<Deps, 'rateLimiter'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  step: CeilingStep
+): Promise<void> {
+  const decision = await deps.rateLimiter.hit(
+    environmentKey(step, tenant),
+    ENVIRONMENT_RATE_LIMITS[step],
+    60_000
+  )
+  if (!decision.allowed) {
+    throw new RateLimitError(decision.retryAfterMs)
+  }
+}
+
 /** The device a flow request comes from. Captured when the attempt starts. */
 export interface ClientContext {
   /** Decides how the refresh token is delivered when the flow completes. */
@@ -200,6 +244,7 @@ export async function signUp(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  await chargeEnvironment(deps, tenant, 'signUp')
   const firstName = input.firstName?.trim() || null
   const lastName = input.lastName?.trim() || null
   await Passwords.assess(deps, tenant, input.password, {
@@ -302,6 +347,7 @@ export async function submitPassword(
   if (attempt.status !== 'needs_password') {
     throw new AuthError('flow.invalid_step')
   }
+  await chargeEnvironment(deps, tenant, 'password')
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
   // through; it happens before the lookup, so unknown identifiers lock out exactly the same.
@@ -382,6 +428,7 @@ export async function verifyEmail(
   const { attempt, state } = await load(deps, tenant, kind, attemptId)
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
   nextStatus(attempt.kind, attempt.status, { type: 'email_verified' })
+  await chargeEnvironment(deps, tenant, 'verify')
 
   await Verification.verifyCode(deps, tenant, {
     purpose: 'email_verification',
@@ -455,6 +502,7 @@ export async function resendVerification(
   if (attempt.status !== 'needs_email_verification') {
     throw new AuthError('flow.invalid_step')
   }
+  await chargeEnvironment(deps, tenant, 'signUp')
   await issueCode(deps, tenant, attempt, state, attempt.userId ?? undefined)
   return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
 }
