@@ -205,17 +205,22 @@ export async function ban(
 /**
  * Lift a ban. The user has to sign in again; their old sessions stay revoked.
  *
- * @param deps - Users and clock.
+ * Sessions are revoked once more before the ban is cleared: a sign-in that raced the ban may
+ * have created one after the ban's own revocation, and it must not come back to life here.
+ *
+ * @param deps - Users, sessions, denylist and clock.
  * @param scope - The environment.
  * @param userId - The user.
  * @returns The user.
  * @throws NotFoundError when they do not exist in this environment.
  */
 export async function unban(
-  deps: Pick<Deps, 'users' | 'clock'>,
+  deps: RevocationDeps,
   scope: Pick<Tenant, 'environmentId'>,
   userId: string
 ): Promise<User> {
+  await requireUser(deps, scope, userId)
+  await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned')
   const user = await deps.users.setBanned(scope.environmentId, userId, null, deps.clock.now())
   if (!user) {
     throw new NotFoundError()
@@ -259,12 +264,20 @@ async function replacePassword(
     firstName: user.firstName ?? undefined,
     lastName: user.lastName ?? undefined,
   })
-  await deps.users.setPasswordHash(
+  const replaced = await deps.users.setPasswordHash(
     scope.environmentId,
     user.id,
     await Passwords.hash(password),
     deps.clock.now()
   )
+  if (!replaced) {
+    // Every user is created with a password today; when passwordless users exist (Phase 1)
+    // this must create the credential instead. Never report success for a password not stored.
+    throw new ConflictError({
+      message: 'This user has no password to replace.',
+      internalMessage: 'setPasswordHash matched no password credential',
+    })
+  }
 }
 
 /**
@@ -276,7 +289,8 @@ async function replacePassword(
  * @param scope - The environment.
  * @param userId - The user.
  * @param password - The new password; must meet the policy.
- * @throws NotFoundError, or a `password.*` ServiceException with per-field `errors`.
+ * @throws NotFoundError, a `password.*` ServiceException with per-field `errors`, or
+ *   ConflictError when the user has no password credential.
  */
 export async function setPassword(
   deps: PasswordDeps,

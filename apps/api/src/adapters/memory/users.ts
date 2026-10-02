@@ -57,10 +57,12 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     passwordHash: string,
     _at: Date
-  ): Promise<void> {
-    if (this.#user(environmentId, userId)) {
-      this.#passwords.set(userId, passwordHash)
+  ): Promise<boolean> {
+    if (!this.#user(environmentId, userId) || !this.#passwords.has(userId)) {
+      return false
     }
+    this.#passwords.set(userId, passwordHash)
+    return true
   }
 
   /** @inheritdoc */
@@ -100,11 +102,13 @@ export class MemoryUserRepository implements UserRepository {
       )
       .sort((x, y) => {
         const [a, b] = [key(x), key(y)]
-        // Like Postgres with NULLS LAST: users without a value sort after the rest.
-        if (a === null || b === null) {
-          return a === b ? 0 : a === null ? 1 : -1
+        // Like Postgres with NULLS LAST: users without a value sort after the rest, whatever
+        // the direction. Ties (including two missing values) fall back to the id.
+        if (a !== b && (a === null || b === null)) {
+          return a === null ? 1 : -1
         }
-        const order = a < b ? -1 : a > b ? 1 : x.id < y.id ? -1 : 1
+        const byId = x.id < y.id ? -1 : 1
+        const order = a === null || b === null || a === b ? byId : a < b ? -1 : 1
         return descending ? -order : order
       })
     const start = (criteria.page - 1) * criteria.size

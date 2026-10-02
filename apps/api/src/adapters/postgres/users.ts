@@ -143,8 +143,8 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     passwordHash: string,
     at: Date
-  ): Promise<void> {
-    await withTenant(this.db, environmentId, (tx) =>
+  ): Promise<boolean> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
       tx
         .update(credentials)
         .set({ secret: passwordHash, updatedAt: at })
@@ -155,7 +155,9 @@ export class PostgresUserRepository implements UserRepository {
             eq(credentials.type, 'password')
           )
         )
+        .returning({ id: credentials.id })
     )
+    return rows.length === 1
   }
 
   /** @inheritdoc */

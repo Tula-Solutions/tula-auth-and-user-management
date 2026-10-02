@@ -82,13 +82,14 @@ export interface UserRepository {
    * @param userId - The user.
    * @param passwordHash - The new argon2id hash.
    * @param at - Update time.
+   * @returns `false` when the user has no password credential to replace (nothing is written).
    */
   setPasswordHash(
     environmentId: string,
     userId: string,
     passwordHash: string,
     at: Date
-  ): Promise<void>
+  ): Promise<boolean>
 
   /**
    * Record that the user proved control of their email. Keeps the first verification time.

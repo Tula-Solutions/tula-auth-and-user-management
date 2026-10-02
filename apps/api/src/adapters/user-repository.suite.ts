@@ -116,10 +116,20 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       )
     })
 
-    test('replaces the password hash', async () => {
+    test('replaces the password hash, reporting whether there was one to replace', async () => {
       const input = user(ctx.a)
       await ctx.users.createWithPassword(input)
-      await ctx.users.setPasswordHash(ctx.a.environmentId, input.id, '$argon2id$new', later(1_000))
+      expect(
+        await ctx.users.setPasswordHash(
+          ctx.a.environmentId,
+          input.id,
+          '$argon2id$new',
+          later(1_000)
+        )
+      ).toBe(true)
+      expect(
+        await ctx.users.setPasswordHash(ctx.a.environmentId, Bun.randomUUIDv7(), 'x', later(1))
+      ).toBe(false)
       expect(
         (await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized))
           ?.passwordHash
@@ -178,6 +188,23 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       // Users who never signed in sort last either way.
       expect(await ids('-lastSignInAt')).toEqual([a.id, c.id, b.id])
       expect(await ids('lastSignInAt')).toEqual([c.id, a.id, b.id])
+    })
+
+    test('users without a sort value are ordered by id, so paging stays stable', async () => {
+      const tag = Bun.randomUUIDv7()
+      const never = [0, 1, 2].map(() =>
+        user(ctx.a, { emailNormalized: `${Bun.randomUUIDv7()}-${tag}@never.test` })
+      )
+      for (const input of never) {
+        await ctx.users.createWithPassword(input)
+      }
+      const sorted = never.map((u) => u.id).sort()
+      const ids = async (sort: Parameters<UserRepository['list']>[1]['sort']) =>
+        (await ctx.users.list(ctx.a.environmentId, { q: tag, sort, page: 1, size: 10 })).users.map(
+          (u) => u.id
+        )
+      expect(await ids('lastSignInAt')).toEqual(sorted)
+      expect(await ids('-lastSignInAt')).toEqual([...sorted].reverse())
     })
 
     test('searches email and names case-insensitively, treating wildcards literally', async () => {

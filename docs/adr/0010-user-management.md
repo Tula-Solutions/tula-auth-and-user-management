@@ -24,7 +24,9 @@ to read their own record and change their password. Every action that takes acce
   unless `emailVerified` is set (for imports).
 - **Ban** records the ban first, then revokes every session (`user_banned`). Sign-in already
   refuses banned users, and **refresh now checks the ban too**, so a session created in the
-  instant between the ban and the revocation dies on its first refresh.
+  instant between the ban and the revocation dies on its first refresh. **Unban** revokes the
+  user's sessions once more before clearing the ban, so such a session can't outlive a quick
+  unban either.
 - **Delete** revokes the user's sessions through the session service (so their access tokens
   are denylisted) and then deletes the user; identities, credentials, sessions, refresh tokens
   and flow attempts go by cascade.
@@ -50,5 +52,10 @@ the caller has just proven they know the password. An admin reset still ends all
 - Admin actions are not audited yet; the audit log arrives with Step 5.9.
 - The refresh-time ban check costs one user lookup per refresh (about once a minute per
   session).
+- The per-user password-change limit counts every try, successful or not. Someone holding a
+  stolen access token can use it up and delay the real user's change by up to 15 minutes; the
+  same cap is what bounds guessing the current password.
+- Setting a password for a user with no password credential answers 409. No such user can exist
+  yet; when passwordless users arrive (Phase 1) this path must create the credential.
 - Offset paging gets slow on very large user tables; cursor paging can be added without
   changing the response shape.

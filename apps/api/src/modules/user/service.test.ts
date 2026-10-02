@@ -195,6 +195,17 @@ describe('ban / unban', () => {
     )
   })
 
+  test('a session that slipped in during the ban does not survive an unban', async () => {
+    const user = await create()
+    await Users.ban(deps, tenant, user.id)
+    // A sign-in that passed its ban check just before the ban landed creates its session now.
+    const stray = await signIn(user.id)
+    await Users.unban(deps, tenant, user.id)
+    const err = await rejection(Sessions.refresh(deps, tenant, stray.refreshToken ?? ''))
+    expect(err.code).toBe('session.revoked')
+    expect(await deps.revokedSessions.has(stray.sessionId, deps.clock.now())).toBe(true)
+  })
+
   test.each([
     ['ban', (id: string, t: Tenant) => Users.ban(deps, t, id)],
     ['unban', (id: string, t: Tenant) => Users.unban(deps, t, id)],
@@ -247,6 +258,15 @@ describe('setPassword (admin)', () => {
     const err = await rejection(Users.setPassword(deps, tenant, user.id, 'okafor-okafor-okafor'))
     expect(err.code).toBe('password.contains_user_info')
     expect(await Passwords.verify(await storedPassword(), PASSWORD)).toBe(true)
+    expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
+  })
+
+  test('does not report success, or end sessions, when no password was stored', async () => {
+    const user = await create()
+    const tokens = await signIn(user.id)
+    deps.users.setPasswordHash = async () => false
+    const err = await rejection(Users.setPassword(deps, tenant, user.id, NEW_PASSWORD))
+    expect(err.status).toBe(409)
     expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
   })
 
