@@ -274,20 +274,28 @@ export async function signUp(
   return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
 }
 
-/** Email the attempt's verification code, or the notice for a decoy sign-up. */
+/**
+ * Email the attempt's verification code, or the notice for a decoy sign-up.
+ *
+ * @param options.userId - The user the code is for, once known.
+ * @param options.charge - Count the email against the environment's sign-up ceiling, but only
+ *   once the per-address send limits have allowed it: a resend refused by the cooldown sends
+ *   nothing and must not use the ceiling up.
+ */
 async function issueCode(
   deps: Deps,
   tenant: Tenant,
   attempt: FlowAttemptRecord,
   state: State,
-  userId?: string
+  options: { userId?: string; charge?: boolean } = {}
 ): Promise<void> {
   await Verification.issue(deps, tenant, {
     purpose: 'email_verification',
     destination: state.email ?? attempt.identifier,
     flowAttemptId: attempt.id,
-    userId,
+    userId: options.userId,
     ...(state.decoy && { deliver: ({ to }) => sendAccountExistsNotice(deps, to) }),
+    ...(options.charge && { onAllowed: () => chargeEnvironment(deps, tenant, 'signUp') }),
   })
 }
 
@@ -347,7 +355,6 @@ export async function submitPassword(
   if (attempt.status !== 'needs_password') {
     throw new AuthError('flow.invalid_step')
   }
-  await chargeEnvironment(deps, tenant, 'password')
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
   // through; it happens before the lookup, so unknown identifiers lock out exactly the same.
@@ -356,6 +363,10 @@ export async function submitPassword(
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
   }
+  // After the lockout, so a locked-out identifier's refused tries (which hash nothing) can't
+  // use the environment's ceiling up. A try the ceiling refuses has already been counted by the
+  // lockout; that costs the identifier one free try, never a guess.
+  await chargeEnvironment(deps, tenant, 'password')
 
   const found = await deps.users.findByEmailWithPassword(tenant.environmentId, attempt.identifier)
   if (!(await Passwords.verify(found?.passwordHash ?? null, password)) || !found) {
@@ -387,7 +398,7 @@ export async function submitPassword(
   const waiting = { ...attempt, status: next, userId: user.id }
   // Send the code before moving the attempt: if the send is refused (e.g. the address is on
   // its cooldown) the attempt stays on the password step and can simply be retried.
-  await issueCode(deps, tenant, waiting, pending, user.id)
+  await issueCode(deps, tenant, waiting, pending, { userId: user.id })
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,
@@ -502,8 +513,10 @@ export async function resendVerification(
   if (attempt.status !== 'needs_email_verification') {
     throw new AuthError('flow.invalid_step')
   }
-  await chargeEnvironment(deps, tenant, 'signUp')
-  await issueCode(deps, tenant, attempt, state, attempt.userId ?? undefined)
+  await issueCode(deps, tenant, attempt, state, {
+    userId: attempt.userId ?? undefined,
+    charge: true,
+  })
   return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
 }
 

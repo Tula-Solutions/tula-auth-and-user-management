@@ -31,8 +31,10 @@ limited too.
 sign-up and resend 600, password 3,000, verify code 3,000 per minute. This bounds what a
 distributed attack on one tenant can make the server do. The ceiling is counted **inside the
 flow service**, after the request is validated and its attempt found and just before the
-expensive work, so malformed requests and made-up attempt ids, which cost nothing, can't use it
-up. Refresh has no ceiling:
+expensive work, so requests that cost nothing can't use it up: malformed requests, made-up
+attempt ids, password tries refused by the lockout, and resends refused by the per-address
+cooldown. A sign-up is counted before its password is checked against the policy, because that
+check can include the breached-password lookup, an outbound call. Refresh has no ceiling:
 every active user refreshes about once a minute, so one would throttle a large app in normal
 use, and refresh tokens are 256-bit, so per-IP limits are enough.
 

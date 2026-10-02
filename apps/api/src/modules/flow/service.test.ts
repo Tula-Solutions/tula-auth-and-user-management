@@ -763,6 +763,30 @@ describe('per-environment ceilings', () => {
     expect(done.attempt.step.status).toBe('complete')
   })
 
+  test('refused tries on a locked-out identifier do not use the ceiling up', async () => {
+    await registered()
+    const locked = await startSignIn('victim@northline.app')
+    for (let i = 0; i <= CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+      await rejection(password(locked.id, 'not the password'))
+    }
+    for (let i = 0; i <= Flows.ENVIRONMENT_RATE_LIMITS.password; i++) {
+      expect(await rejection(password(locked.id))).toBeInstanceOf(RateLimitError)
+    }
+    // Everyone else in the environment can still sign in.
+    expect((await password((await startSignIn()).id)).attempt.step.status).toBe('complete')
+  })
+
+  test('resends refused by the address cooldown do not use the ceiling up', async () => {
+    const { attempt } = await signUp()
+    for (let i = 0; i <= Flows.ENVIRONMENT_RATE_LIMITS.signUp; i++) {
+      expect(
+        await Flows.resendVerification(deps, tenant, 'sign_up', attempt.id).catch((err) => err)
+      ).toBeInstanceOf(RateLimitError)
+    }
+    const other = await signUp({ email: 'someone-else@northline.app' })
+    expect(other.attempt.step.status).toBe('needs_email_verification')
+  })
+
   test('password submissions are capped per environment', async () => {
     const attempt = await startSignIn('nobody@northline.app')
     // Fill the bucket directly: 3,000 argon2id verifies would take minutes.
