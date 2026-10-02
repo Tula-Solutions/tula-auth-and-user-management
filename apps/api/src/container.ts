@@ -3,15 +3,18 @@ import { createDatabase } from '@tula/db'
 import { HibpBreachChecker } from '~/adapters/breach/hibp'
 import { offlineBreachChecker } from '~/adapters/breach/offline'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
+import { SmtpMailer } from '~/adapters/mail/smtp'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { databaseProbe } from '~/adapters/postgres/health'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
+import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import { systemClock } from '~/adapters/system/clock'
 import { uuidV7Ids } from '~/adapters/system/ids'
 import type { Deps } from '~/dependencies'
 import type { Env } from '~/env'
+import { createKeyedHash } from '~/lib/keyed-hash'
 import { createSecretBox } from '~/lib/secret-box'
 
 /** How long verification keys are cached per instance. See the rotation invariant. */
@@ -34,6 +37,7 @@ export interface Container {
 export function createContainer(env: Env): Container {
   const database = createDatabase(env.DATABASE_URL)
   const clock = systemClock
+  const mailer = new SmtpMailer({ url: env.SMTP_URL, from: env.MAIL_FROM })
   const deps: Deps = {
     config: {
       tier: env.ENVIRONMENT,
@@ -53,8 +57,17 @@ export function createContainer(env: Env): Container {
     ),
     rateLimiter: new MemoryRateLimiter(clock),
     breachChecker: env.BREACH_CHECK === 'hibp' ? new HibpBreachChecker() : offlineBreachChecker,
+    verificationTokens: new PostgresVerificationTokenStore(database.db),
+    mailer,
     secretBox: createSecretBox(env.TULA_MASTER_KEY),
+    keyedHash: createKeyedHash(env.TULA_MASTER_KEY),
     probes: [databaseProbe(database.db)],
   }
-  return { deps, close: database.close }
+  return {
+    deps,
+    close: async () => {
+      mailer.close()
+      await database.close()
+    },
+  }
 }

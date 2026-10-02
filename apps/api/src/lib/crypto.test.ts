@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
+import { randomDigits, randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 
 describe('randomToken', () => {
   test('returns base64url with the requested entropy', () => {
@@ -38,5 +38,37 @@ describe('timingSafeEqual', () => {
   test('compares byte arrays', () => {
     expect(timingSafeEqual(new Uint8Array([1, 2]), new Uint8Array([1, 2]))).toBe(true)
     expect(timingSafeEqual(new Uint8Array([1, 2]), 'ab')).toBe(false)
+  })
+})
+
+describe('randomDigits', () => {
+  test('returns exactly the requested number of digits, keeping leading zeros', () => {
+    for (let i = 0; i < 200; i++) {
+      expect(randomDigits(6)).toMatch(/^\d{6}$/)
+    }
+  })
+
+  test('uses every digit roughly equally', () => {
+    const counts = new Array<number>(10).fill(0)
+    for (let i = 0; i < 5_000; i++) {
+      for (const digit of randomDigits(6)) {
+        counts[Number(digit)] = (counts[Number(digit)] ?? 0) + 1
+      }
+    }
+    // 30,000 digits: each expects 3,000. This catches gross bias (a stuck or missing digit),
+    // not the ~4% skew of `byte % 10`; the rejection threshold itself is reviewed in the code.
+    for (const count of counts) {
+      expect(count).toBeGreaterThan(2_700)
+      expect(count).toBeLessThan(3_300)
+    }
+  })
+
+  test('does not repeat codes in practice', () => {
+    const codes = new Set(Array.from({ length: 50 }, () => randomDigits(12)))
+    expect(codes.size).toBe(50)
+  })
+
+  test.each([3, 13, 6.5, Number.NaN])('rejects length %p', (length) => {
+    expect(() => randomDigits(length)).toThrow(RangeError)
   })
 })

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import { HibpBreachChecker } from '~/adapters/breach/hibp'
 import { offlineBreachChecker } from '~/adapters/breach/offline'
+import { SmtpMailer } from '~/adapters/mail/smtp'
+import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import { createContainer } from '~/container'
 import { parseEnv } from '~/env'
 
@@ -30,6 +32,9 @@ describe('createContainer', () => {
       passwordPolicy: PASSWORD_POLICY_PRESETS.strict,
     })
     expect(deps.breachChecker).toBeInstanceOf(HibpBreachChecker)
+    expect(deps.mailer).toBeInstanceOf(SmtpMailer)
+    expect(deps.verificationTokens).toBeInstanceOf(PostgresVerificationTokenStore)
+    expect(await deps.keyedHash.hmac('test', 'x')).toMatch(/^[0-9a-f]{64}$/)
     expect(deps.probes.map((probe) => probe.name)).toEqual(['database'])
     expect(deps.ids.next()).toMatch(/^[0-9a-f-]{36}$/)
     await close()

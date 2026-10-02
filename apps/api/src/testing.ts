@@ -4,10 +4,13 @@ import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { SequentialIds } from '~/adapters/memory/ids'
+import { MemoryMailer } from '~/adapters/memory/mailer'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
+import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
 import type { AppConfig, Deps } from '~/dependencies'
 import { sha256Hex } from '~/lib/crypto'
+import { createKeyedHash } from '~/lib/keyed-hash'
 import { createSecretBox } from '~/lib/secret-box'
 import type { ApiKeyKind, ApiKeyRecord } from '~/ports/api-key-repository'
 
@@ -18,6 +21,8 @@ export interface TestDeps extends Deps {
   apiKeys: MemoryApiKeyRepository
   environments: MemoryEnvironmentRepository
   signingKeys: MemorySigningKeyStore
+  verificationTokens: MemoryVerificationTokenStore
+  mailer: MemoryMailer
   rateLimiter: MemoryRateLimiter
   breachChecker: MemoryBreachChecker
 }
@@ -54,9 +59,12 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     apiKeys: new MemoryApiKeyRepository(),
     environments: new MemoryEnvironmentRepository(),
     signingKeys: new MemorySigningKeyStore(),
+    verificationTokens: new MemoryVerificationTokenStore(),
+    mailer: new MemoryMailer(),
     rateLimiter: new MemoryRateLimiter(clock),
     breachChecker: new MemoryBreachChecker(),
     secretBox: createSecretBox(TEST_MASTER_KEY),
+    keyedHash: createKeyedHash(TEST_MASTER_KEY),
     probes: [],
     ...overrides,
     clock,

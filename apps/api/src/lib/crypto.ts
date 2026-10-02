@@ -51,3 +51,34 @@ export function timingSafeEqual(a: string | Uint8Array, b: string | Uint8Array):
   }
   return nodeTimingSafeEqual(left, right)
 }
+
+/**
+ * Generate a numeric code from the CSPRNG, e.g. a 6-digit email verification code.
+ *
+ * Uses rejection sampling so every digit is uniformly distributed (a plain `% 10` on a byte
+ * would favour 0–5). Such codes are low-entropy: store them with a keyed hash and cap attempts.
+ *
+ * @param length - Number of digits, 4 to 12.
+ * @returns The code, zero-padded (leading zeros are valid).
+ * @throws RangeError when `length` is not an integer from 4 to 12.
+ *
+ * @example
+ * ```ts
+ * const code = randomDigits(6) // '049213'
+ * ```
+ */
+export function randomDigits(length: number): string {
+  if (!Number.isInteger(length) || length < 4 || length > 12) {
+    throw new RangeError('randomDigits: length must be an integer from 4 to 12')
+  }
+  let digits = ''
+  while (digits.length < length) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(length * 2))) {
+      // 250 is the largest multiple of 10 that fits in a byte; larger values would bias the result.
+      if (byte < 250 && digits.length < length) {
+        digits += String(byte % 10)
+      }
+    }
+  }
+  return digits
+}

@@ -1,5 +1,6 @@
 import type { AccessTokenClaims, PasswordPolicy } from '@tula/contract'
 import type { Tier } from '~/env'
+import type { KeyedHash } from '~/lib/keyed-hash'
 import type { SecretBox } from '~/lib/secret-box'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { BreachChecker } from '~/ports/breach-checker'
@@ -7,8 +8,10 @@ import type { Clock } from '~/ports/clock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { HealthProbe } from '~/ports/health-probe'
 import type { IdGenerator } from '~/ports/id-generator'
+import type { Mailer } from '~/ports/mailer'
 import type { RateLimiter } from '~/ports/rate-limiter'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
+import type { VerificationTokenStore } from '~/ports/verification-token-store'
 
 /** Settings the app reads at request time. Built from `Env` in the container. */
 export interface AppConfig {
@@ -34,11 +37,15 @@ export interface Deps {
   apiKeys: ApiKeyRepository
   environments: EnvironmentRepository
   signingKeys: SigningKeyStore
+  verificationTokens: VerificationTokenStore
+  mailer: Mailer
   rateLimiter: RateLimiter
   /** Breached-password lookups for the password policy's `breachCheck`. */
   breachChecker: BreachChecker
   /** Encrypts secrets at rest with keys derived from `TULA_MASTER_KEY`. */
   secretBox: SecretBox
+  /** HMACs for low-entropy secrets (codes), with keys derived from `TULA_MASTER_KEY`. */
+  keyedHash: KeyedHash
   /** Dependencies checked by `/v1/ready`. */
   probes: readonly HealthProbe[]
 }
