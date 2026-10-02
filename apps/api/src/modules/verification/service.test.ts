@@ -235,6 +235,27 @@ describe('issue', () => {
     expect(await issue().catch((err) => err)).toBeInstanceOf(RateLimitError)
   })
 
+  test('onAllowed runs only when the send limits allow the email, and can refuse it', async () => {
+    let calls = 0
+    const onAllowed = async () => {
+      calls += 1
+    }
+    await issue({ onAllowed })
+    expect(await issue({ onAllowed }).catch((err) => err)).toBeInstanceOf(RateLimitError)
+    expect(calls).toBe(1)
+
+    deps.clock.advance(Verification.RESEND_COOLDOWN)
+    const refusal = new RateLimitError(5_000)
+    expect(
+      await issue({
+        onAllowed: async () => {
+          throw refusal
+        },
+      }).catch((err) => err)
+    ).toBe(refusal)
+    expect(deps.mailer.outbox).toHaveLength(1)
+  })
+
   test('requires a flow attempt or a user', async () => {
     const err = await rejection(issue({ flowAttemptId: undefined }))
     expect(err.status).toBe(500)

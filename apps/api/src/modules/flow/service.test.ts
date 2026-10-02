@@ -6,6 +6,7 @@ import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Flows from '~/modules/flow/service'
 import * as Passwords from '~/modules/password/service'
 import * as Verification from '~/modules/verification/service'
+import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
 
 const tenant: Tenant = {
@@ -455,23 +456,65 @@ describe('submitPassword', () => {
     )
   })
 
-  test('locks the identifier out after too many failures, even for the right password', async () => {
+  test('after the free tries, each failure makes the identifier wait longer', async () => {
     await registered()
     const attempt = await startSignIn()
-    for (let i = 0; i < Flows.PASSWORD_ATTEMPTS; i++) {
-      expect((await rejection(password(attempt.id, 'not the password'))).code).toBe(
-        'auth.invalid_credentials'
-      )
+    const guess = () => rejection(password(attempt.id, 'not the password'))
+    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+      expect((await guess()).code).toBe('auth.invalid_credentials')
     }
-    const err = await rejection(password(attempt.id))
-    expect(err).toBeInstanceOf(RateLimitError)
+    // The next failure is still answered, and starts the first wait.
+    expect((await guess()).code).toBe('auth.invalid_credentials')
+    const locked = await rejection(password(attempt.id))
+    expect(locked).toBeInstanceOf(RateLimitError)
+    expect(locked.params).toEqual({ retryAfter: 30 })
+
     // A fresh attempt for the same identifier is locked too; another identifier is not.
     expect(await rejection(password((await startSignIn()).id))).toBeInstanceOf(RateLimitError)
     expect((await rejection(password((await startSignIn('other@northline.app')).id))).code).toBe(
       'auth.invalid_credentials'
     )
-    deps.clock.advance(Flows.PASSWORD_ATTEMPTS_WINDOW)
-    expect((await password((await startSignIn()).id)).attempt.step.status).toBe('complete')
+
+    deps.clock.advance('30s')
+    expect((await guess()).code).toBe('auth.invalid_credentials')
+    expect((await rejection(password(attempt.id))).params).toEqual({ retryAfter: 60 })
+    deps.clock.advance('60s')
+    expect((await password(attempt.id)).attempt.step.status).toBe('complete')
+  })
+
+  test('a successful sign-in clears the failures', async () => {
+    await registered()
+    for (let round = 0; round < 3; round++) {
+      const attempt = await startSignIn()
+      for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts - 1; i++) {
+        expect((await rejection(password(attempt.id, 'not the password'))).code).toBe(
+          'auth.invalid_credentials'
+        )
+      }
+      expect((await password(attempt.id)).attempt.step.status).toBe('complete')
+    }
+  })
+
+  test('parallel guesses cannot exceed the free tries plus one', async () => {
+    await registered()
+    const attempt = await startSignIn()
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => rejection(password(attempt.id, 'not the password')))
+    )
+    expect(results.filter((err) => err.code === 'auth.invalid_credentials')).toHaveLength(
+      CREDENTIAL_LOCKOUT.freeAttempts + 1
+    )
+    expect(results.filter((err) => err instanceof RateLimitError)).toHaveLength(
+      20 - CREDENTIAL_LOCKOUT.freeAttempts - 1
+    )
+  })
+
+  test('unknown identifiers are locked out the same way, so lockout reveals nothing', async () => {
+    const attempt = await startSignIn('nobody@northline.app')
+    for (let i = 0; i <= CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+      expect((await rejection(password(attempt.id))).code).toBe('auth.invalid_credentials')
+    }
+    expect(await rejection(password(attempt.id))).toBeInstanceOf(RateLimitError)
   })
 
   test('upgrades a hash made with weaker parameters after a successful sign-in', async () => {
@@ -667,5 +710,91 @@ describe('purgeExpired', () => {
     )
     expect(await Flows.purgeExpired(deps)).toBe(1)
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other.id)).toBeNull()
+  })
+})
+
+describe('per-environment ceilings', () => {
+  test('sign-ups are capped per environment across all callers', async () => {
+    // Hashing 600 passwords for real would take most of a minute.
+    spy = spyOn(Bun.password, 'hash').mockResolvedValue(
+      '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA'
+    )
+    for (let i = 0; i < Flows.ENVIRONMENT_RATE_LIMITS.signUp; i++) {
+      await signUp({ email: `user-${i}@northline.app` })
+    }
+    const err = await rejection(signUp({ email: 'one-too-many@northline.app' }))
+    expect(err).toBeInstanceOf(RateLimitError)
+    expect(err.params?.retryAfter).toBeGreaterThan(0)
+    // Another environment has its own ceiling.
+    const other = await Flows.signUp(
+      deps,
+      otherTenant,
+      { email: 'elsewhere@northline.app', password: PASSWORD },
+      web
+    )
+    expect(other.attempt.step.status).toBe('needs_email_verification')
+  })
+
+  test('requests that never reach the expensive step do not use the ceiling up', async () => {
+    await registered()
+    const junk = Math.max(
+      Flows.ENVIRONMENT_RATE_LIMITS.signUp,
+      Flows.ENVIRONMENT_RATE_LIMITS.password,
+      Flows.ENVIRONMENT_RATE_LIMITS.verify
+    )
+    for (let i = 0; i <= junk; i++) {
+      const missing = `00000000-0000-7000-8000-${i.toString(16).padStart(12, '0')}`
+      await rejection(signUp({ email: 'not-an-email' }))
+      await rejection(password(missing))
+      await rejection(Flows.verifyEmail(deps, tenant, 'sign_up', missing, '123456', web))
+      await rejection(Flows.resendVerification(deps, tenant, 'sign_up', missing))
+    }
+    // Real requests still go through.
+    expect((await password((await startSignIn()).id)).attempt.step.status).toBe('complete')
+    const started = await signUp({ email: 'real@northline.app' })
+    const done = await Flows.verifyEmail(
+      deps,
+      tenant,
+      'sign_up',
+      started.attempt.id,
+      sentCode(),
+      web
+    )
+    expect(done.attempt.step.status).toBe('complete')
+  })
+
+  test('refused tries on a locked-out identifier do not use the ceiling up', async () => {
+    await registered()
+    const locked = await startSignIn('victim@northline.app')
+    for (let i = 0; i <= CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+      await rejection(password(locked.id, 'not the password'))
+    }
+    for (let i = 0; i <= Flows.ENVIRONMENT_RATE_LIMITS.password; i++) {
+      expect(await rejection(password(locked.id))).toBeInstanceOf(RateLimitError)
+    }
+    // Everyone else in the environment can still sign in.
+    expect((await password((await startSignIn()).id)).attempt.step.status).toBe('complete')
+  })
+
+  test('resends refused by the address cooldown do not use the ceiling up', async () => {
+    const { attempt } = await signUp()
+    for (let i = 0; i <= Flows.ENVIRONMENT_RATE_LIMITS.signUp; i++) {
+      expect(
+        await Flows.resendVerification(deps, tenant, 'sign_up', attempt.id).catch((err) => err)
+      ).toBeInstanceOf(RateLimitError)
+    }
+    const other = await signUp({ email: 'someone-else@northline.app' })
+    expect(other.attempt.step.status).toBe('needs_email_verification')
+  })
+
+  test('password submissions are capped per environment', async () => {
+    const attempt = await startSignIn('nobody@northline.app')
+    // Fill the bucket directly: 3,000 argon2id verifies would take minutes.
+    for (let i = 0; i < Flows.ENVIRONMENT_RATE_LIMITS.password; i++) {
+      await deps.rateLimiter.hit(Flows.environmentKey('password', tenant), 1e9, 60_000)
+    }
+    expect(await rejection(password(attempt.id))).toBeInstanceOf(RateLimitError)
+    deps.clock.advance('1m')
+    expect((await rejection(password(attempt.id))).code).toBe('auth.invalid_credentials')
   })
 })

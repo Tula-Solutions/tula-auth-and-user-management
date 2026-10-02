@@ -4,6 +4,7 @@ import { RateLimitError, ServiceException } from '~/exceptions'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Users from '~/modules/user/service'
+import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
 
 const tenant: Tenant = {
@@ -332,17 +333,37 @@ describe('changePassword (own)', () => {
     expect((await session(other.sessionId))?.revokedAt).toBeNull()
   })
 
-  test('guesses at the current password are limited per user', async () => {
+  test('wrong guesses at the current password back off, per user', async () => {
     const { change } = await setup()
-    for (let i = 0; i < Users.PASSWORD_CHANGE_ATTEMPTS; i++) {
+    for (let i = 0; i <= CREDENTIAL_LOCKOUT.freeAttempts; i++) {
       expect((await rejection(change('not my password', NEW_PASSWORD))).code).toBe(
         'auth.invalid_credentials'
       )
     }
-    expect(await change(PASSWORD, NEW_PASSWORD).catch((err) => err)).toBeInstanceOf(RateLimitError)
-    deps.clock.advance(Users.PASSWORD_CHANGE_WINDOW)
+    const locked = await rejection(change(PASSWORD, NEW_PASSWORD))
+    expect(locked).toBeInstanceOf(RateLimitError)
+    expect(locked.params).toEqual({ retryAfter: 30 })
+    deps.clock.advance('30s')
     await change(PASSWORD, NEW_PASSWORD)
     expect(await Passwords.verify(await storedPassword(), NEW_PASSWORD)).toBe(true)
+  })
+
+  test('successful changes do not use up the tries', async () => {
+    const { change } = await setup()
+    let current = PASSWORD
+    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts + 3; i++) {
+      const next = `a brand new passphrase number ${i}`
+      await change(current, next)
+      current = next
+    }
+    expect(await Passwords.verify(await storedPassword(), current)).toBe(true)
+  })
+
+  test('a weak new password does not count as a wrong guess', async () => {
+    const { change } = await setup()
+    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts + 3; i++) {
+      expect((await rejection(change(PASSWORD, 'short'))).code).toBe('password.too_short')
+    }
   })
 
   test('a user who no longer exists gets the generic failure', async () => {

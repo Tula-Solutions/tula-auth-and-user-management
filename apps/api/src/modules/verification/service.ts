@@ -47,6 +47,12 @@ export interface IssueInput {
    * the stored token, the send limits and the timing of one email, stays the same.
    */
   deliver?: (delivery: Delivery) => Promise<void>
+  /**
+   * Runs once the per-address send limits have allowed the email, and before anything is sent.
+   * Throw to refuse. Lets a caller apply a wider limit (e.g. per environment) that a send
+   * already refused by the address cooldown should not count against.
+   */
+  onAllowed?: () => Promise<void>
 }
 
 /** What a custom {@link IssueInput.deliver} receives. */
@@ -127,6 +133,7 @@ export async function issue(
   }
   const destination = normalizeEmail(input.destination)
   await enforceSendLimits(deps, scope, destination)
+  await input.onAllowed?.()
 
   const code = randomDigits(CODE_LENGTH)
   const linkToken = input.linkUrl ? randomToken() : null

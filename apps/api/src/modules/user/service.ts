@@ -2,7 +2,6 @@ import {
   type ChangePasswordRequest,
   type CreateUserRequest,
   DEFAULT_PAGE_SIZE,
-  durationToMs,
   type User,
   type UserList,
   type UserSort,
@@ -18,12 +17,8 @@ import {
 import { parseEmail } from '~/lib/email'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
+import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import type { UserRecord } from '~/ports/user-repository'
-
-/** Current-password checks allowed per user in {@link PASSWORD_CHANGE_WINDOW}. */
-export const PASSWORD_CHANGE_ATTEMPTS = 5
-/** Window for {@link PASSWORD_CHANGE_ATTEMPTS}. */
-export const PASSWORD_CHANGE_WINDOW = '15m'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
@@ -311,30 +306,30 @@ export async function setPassword(
  * Change the signed-in user's own password.
  *
  * The current password must be given, so a stolen access token alone cannot take the account
- * over; guesses at it are limited per user. On success every *other* session ends and the
+ * over; wrong guesses back off exponentially per user (`CREDENTIAL_LOCKOUT`), and a correct one
+ * clears them. On success every *other* session ends and the
  * device making the change stays signed in.
  *
- * @param deps - Users, password policy, sessions, denylist, rate limiter and clock.
+ * @param deps - Users, password policy, sessions, denylist, lockout and clock.
  * @param scope - The environment.
  * @param actor - The signed-in user and their current session.
  * @param input - Current and new password.
  * @throws AuthError `auth.invalid_credentials` when the current password is wrong.
- * @throws RateLimitError after too many wrong guesses.
+ * @throws RateLimitError while the user is locked out after repeated wrong guesses.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
  */
 export async function changePassword(
-  deps: PasswordDeps & Pick<Deps, 'rateLimiter'>,
+  deps: PasswordDeps & Pick<Deps, 'lockout'>,
   scope: Pick<Tenant, 'environmentId'>,
   actor: { userId: string; sessionId: string },
   input: ChangePasswordRequest
 ): Promise<void> {
-  const limit = await deps.rateLimiter.hit(
-    `password_change:${scope.environmentId}:${actor.userId}`,
-    PASSWORD_CHANGE_ATTEMPTS,
-    durationToMs(PASSWORD_CHANGE_WINDOW)
-  )
-  if (!limit.allowed) {
-    throw new RateLimitError(limit.retryAfterMs)
+  // Counted as a failure up front and cleared once the current password checks out, so only
+  // wrong guesses add up and parallel guesses can't slip through.
+  const lockKey = `password_change:${scope.environmentId}:${actor.userId}`
+  const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
+  if (!lock.allowed) {
+    throw new RateLimitError(lock.retryAfterMs)
   }
   const user = await deps.users.findById(scope.environmentId, actor.userId)
   const found = user
@@ -343,6 +338,7 @@ export async function changePassword(
   if (!(await Passwords.verify(found?.passwordHash ?? null, input.currentPassword)) || !found) {
     throw new AuthError('auth.invalid_credentials')
   }
+  await deps.lockout.clear(lockKey)
   await replacePassword(deps, scope, found.user, input.newPassword)
   await Sessions.revokeOthers(deps, scope, {
     userId: actor.userId,

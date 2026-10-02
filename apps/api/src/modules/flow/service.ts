@@ -19,15 +19,55 @@ import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
+import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { sendAccountExistsNotice } from './mailer'
 import { nextStatus } from './transitions'
 
 /** How long a sign-in or sign-up attempt can be continued. */
 export const ATTEMPT_TTL = '10m'
-/** Password submissions allowed per identifier and environment in {@link PASSWORD_ATTEMPTS_WINDOW}. */
-export const PASSWORD_ATTEMPTS = 10
-/** Window for {@link PASSWORD_ATTEMPTS}. */
-export const PASSWORD_ATTEMPTS_WINDOW = '15m'
+/**
+ * Requests per minute for a whole environment, across all callers, on the steps that cost an
+ * argon2id hash or an email. Generous for real traffic (ten sign-ups a second), tight enough
+ * that a botnet aimed at one tenant can't monopolise the server. Refresh has no ceiling: every
+ * active user refreshes about once a minute, so one would throttle a large app in normal use.
+ */
+export const ENVIRONMENT_RATE_LIMITS = { signUp: 600, password: 3_000, verify: 3_000 } as const
+
+type CeilingStep = keyof typeof ENVIRONMENT_RATE_LIMITS
+
+/**
+ * Rate-limiter key of an environment's ceiling for a step.
+ *
+ * @param step - The step.
+ * @param tenant - The environment.
+ * @returns The bucket key.
+ */
+export function environmentKey(step: CeilingStep, tenant: Pick<Tenant, 'environmentId'>): string {
+  return `environment_${step}:${tenant.environmentId}`
+}
+
+/**
+ * Count a request against its environment's ceiling.
+ *
+ * Called from inside each step, **after** the request has been validated and its attempt
+ * found, and just before the expensive work. A ceiling counted in middleware would also count
+ * malformed requests and made-up attempt ids, letting junk that costs the server nothing
+ * throttle every real user of the environment.
+ */
+async function chargeEnvironment(
+  deps: Pick<Deps, 'rateLimiter'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  step: CeilingStep
+): Promise<void> {
+  const decision = await deps.rateLimiter.hit(
+    environmentKey(step, tenant),
+    ENVIRONMENT_RATE_LIMITS[step],
+    60_000
+  )
+  if (!decision.allowed) {
+    throw new RateLimitError(decision.retryAfterMs)
+  }
+}
 
 /** The device a flow request comes from. Captured when the attempt starts. */
 export interface ClientContext {
@@ -204,6 +244,7 @@ export async function signUp(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  await chargeEnvironment(deps, tenant, 'signUp')
   const firstName = input.firstName?.trim() || null
   const lastName = input.lastName?.trim() || null
   await Passwords.assess(deps, tenant, input.password, {
@@ -233,20 +274,28 @@ export async function signUp(
   return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
 }
 
-/** Email the attempt's verification code, or the notice for a decoy sign-up. */
+/**
+ * Email the attempt's verification code, or the notice for a decoy sign-up.
+ *
+ * @param options.userId - The user the code is for, once known.
+ * @param options.charge - Count the email against the environment's sign-up ceiling, but only
+ *   once the per-address send limits have allowed it: a resend refused by the cooldown sends
+ *   nothing and must not use the ceiling up.
+ */
 async function issueCode(
   deps: Deps,
   tenant: Tenant,
   attempt: FlowAttemptRecord,
   state: State,
-  userId?: string
+  options: { userId?: string; charge?: boolean } = {}
 ): Promise<void> {
   await Verification.issue(deps, tenant, {
     purpose: 'email_verification',
     destination: state.email ?? attempt.identifier,
     flowAttemptId: attempt.id,
-    userId,
+    userId: options.userId,
     ...(state.decoy && { deliver: ({ to }) => sendAccountExistsNotice(deps, to) }),
+    ...(options.charge && { onAllowed: () => chargeEnvironment(deps, tenant, 'signUp') }),
   })
 }
 
@@ -281,8 +330,9 @@ export async function signIn(
  *
  * Every failure is the same `auth.invalid_credentials`: unknown identifier, no password set,
  * wrong password. Unknown users still cost one argon2id verify. A ban is only revealed to
- * someone who knows the password. Submissions are limited per identifier, so the limit follows
- * the account across attempts and IPs.
+ * someone who knows the password. Failures back off exponentially per identifier
+ * (`CREDENTIAL_LOCKOUT`), so the lockout follows the account across attempts and IPs; a
+ * successful sign-in clears it.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -292,7 +342,7 @@ export async function signIn(
  * @returns `complete` with tokens, or `needs_email_verification` for an unverified email.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.invalid_credentials` or
  *   `auth.user_banned`.
- * @throws RateLimitError after too many submissions for the identifier.
+ * @throws RateLimitError while the identifier is locked out after repeated failures.
  */
 export async function submitPassword(
   deps: Deps,
@@ -305,20 +355,25 @@ export async function submitPassword(
   if (attempt.status !== 'needs_password') {
     throw new AuthError('flow.invalid_step')
   }
-  // Hash the identifier so limiter keys (which may live in Redis) hold no email.
-  const limit = await deps.rateLimiter.hit(
-    `sign_in_password:${tenant.environmentId}:${sha256Hex(attempt.identifier)}`,
-    PASSWORD_ATTEMPTS,
-    durationToMs(PASSWORD_ATTEMPTS_WINDOW)
-  )
-  if (!limit.allowed) {
-    throw new RateLimitError(limit.retryAfterMs)
+  // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
+  // counted as a failure up front and cleared on success, so parallel guesses can't all slip
+  // through; it happens before the lookup, so unknown identifiers lock out exactly the same.
+  const lockKey = `sign_in:${tenant.environmentId}:${sha256Hex(attempt.identifier)}`
+  const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
+  if (!lock.allowed) {
+    throw new RateLimitError(lock.retryAfterMs)
   }
+  // After the lockout, so a locked-out identifier's refused tries (which hash nothing) can't
+  // use the environment's ceiling up. A try the ceiling refuses has already been counted by the
+  // lockout as a failure: no password is checked, so it never grants a guess, but while the
+  // ceiling is saturated repeated tries do add to that identifier's backoff.
+  await chargeEnvironment(deps, tenant, 'password')
 
   const found = await deps.users.findByEmailWithPassword(tenant.environmentId, attempt.identifier)
   if (!(await Passwords.verify(found?.passwordHash ?? null, password)) || !found) {
     throw new AuthError('auth.invalid_credentials')
   }
+  await deps.lockout.clear(lockKey)
   const { user } = found
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
@@ -344,7 +399,7 @@ export async function submitPassword(
   const waiting = { ...attempt, status: next, userId: user.id }
   // Send the code before moving the attempt: if the send is refused (e.g. the address is on
   // its cooldown) the attempt stays on the password step and can simply be retried.
-  await issueCode(deps, tenant, waiting, pending, user.id)
+  await issueCode(deps, tenant, waiting, pending, { userId: user.id })
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,
@@ -385,6 +440,7 @@ export async function verifyEmail(
   const { attempt, state } = await load(deps, tenant, kind, attemptId)
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
   nextStatus(attempt.kind, attempt.status, { type: 'email_verified' })
+  await chargeEnvironment(deps, tenant, 'verify')
 
   await Verification.verifyCode(deps, tenant, {
     purpose: 'email_verification',
@@ -458,7 +514,10 @@ export async function resendVerification(
   if (attempt.status !== 'needs_email_verification') {
     throw new AuthError('flow.invalid_step')
   }
-  await issueCode(deps, tenant, attempt, state, attempt.userId ?? undefined)
+  await issueCode(deps, tenant, attempt, state, {
+    userId: attempt.userId ?? undefined,
+    charge: true,
+  })
   return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
 }
 

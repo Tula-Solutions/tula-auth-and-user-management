@@ -4,6 +4,7 @@ import { HibpBreachChecker } from '~/adapters/breach/hibp'
 import { offlineBreachChecker } from '~/adapters/breach/offline'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { SmtpMailer } from '~/adapters/mail/smtp'
+import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
@@ -60,6 +61,7 @@ export function createContainer(env: Env): Container {
       SIGNING_KEY_CACHE_TTL_MS
     ),
     rateLimiter: new MemoryRateLimiter(clock),
+    lockout: new MemoryLockout(clock),
     breachChecker: env.BREACH_CHECK === 'hibp' ? new HibpBreachChecker() : offlineBreachChecker,
     verificationTokens: new PostgresVerificationTokenStore(database.db),
     sessions: new PostgresSessionStore(database.db),

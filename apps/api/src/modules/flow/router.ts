@@ -25,7 +25,8 @@ import {
 export const SIGN_UP_RATE_LIMIT = 10
 /**
  * Requests per minute from one IP to each credential step (sign-in start, password, code,
- * resend). The service adds per-identifier and per-address limits on top.
+ * resend). The service adds per-environment ceilings, per-identifier lockout and per-address
+ * email limits on top.
  */
 export const CREDENTIAL_RATE_LIMIT = 30
 
