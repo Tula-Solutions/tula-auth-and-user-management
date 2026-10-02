@@ -59,6 +59,8 @@ makes them unreadable.
 | `GET, POST /v1/admin/api-keys`, `DELETE /v1/admin/api-keys/:id` | secret key | Manage API keys |
 | `GET /v1/admin/signing-keys`, `POST /v1/admin/signing-keys/rotate` | secret key | Signing-key lifecycle |
 | `GET /v1/client/password-policy` | publishable key | Password rules for the live checklist |
+| `POST /v1/client/sessions/refresh`, `POST /v1/client/sessions/sign-out` | publishable key + refresh token | Rotate tokens; sign out |
+| `GET /v1/client/sessions`, `DELETE /v1/client/sessions/:id`, `POST /v1/client/sessions/revoke-others` | publishable key + access token | The user's devices |
 
 Browsers and apps call `/v1/client/*` with a publishable key (`tula_pk_…`) in the
 `x-tula-publishable-key` header. Servers call `/v1/admin/*` with a secret key (`tula_sk_…`) as a
@@ -78,7 +80,7 @@ Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
 - [x] Passwords (argon2id, policy, breach checks)
 - [ ] Server-driven sign-up / sign-in flows
 - [ ] Email verification
-- [ ] Sessions with rotating refresh tokens and reuse detection
+- [x] Sessions with rotating refresh tokens and reuse detection
 - [ ] User admin, rate limiting and lockout, audit log
 - [ ] Conformance suite and self-host packaging
 

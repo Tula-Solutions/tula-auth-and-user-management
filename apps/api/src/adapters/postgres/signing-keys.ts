@@ -1,6 +1,7 @@
 import { type Jwk, JwkSchema } from '@tula/contract'
 import { type Database, signingKeys, withTenant } from '@tula/db'
 import { and, desc, eq } from 'drizzle-orm'
+import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
 import * as logger from '~/lib/logger'
 import {
   canVerify,
@@ -20,19 +21,6 @@ const columns = {
   createdAt: signingKeys.createdAt,
   activatedAt: signingKeys.activatedAt,
   retiredAt: signingKeys.retiredAt,
-}
-
-/** Thrown inside a transaction to roll it back when a guarded update matched nothing. */
-class LostRace extends Error {}
-
-/** Postgres unique-violation, whether raw (pg / PGlite) or wrapped by Drizzle in `cause`. */
-function isUniqueViolation(error: unknown): boolean {
-  for (let current = error; current instanceof Object; current = (current as Error).cause) {
-    if ((current as { code?: unknown }).code === '23505') {
-      return true
-    }
-  }
-  return false
 }
 
 function toValues(environmentId: string, key: NewSigningKey) {

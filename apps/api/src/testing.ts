@@ -6,6 +6,8 @@ import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryMailer } from '~/adapters/memory/mailer'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
+import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
+import { MemorySessionStore } from '~/adapters/memory/sessions'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
 import type { AppConfig, Deps } from '~/dependencies'
@@ -22,6 +24,8 @@ export interface TestDeps extends Deps {
   environments: MemoryEnvironmentRepository
   signingKeys: MemorySigningKeyStore
   verificationTokens: MemoryVerificationTokenStore
+  sessions: MemorySessionStore
+  revokedSessions: MemoryRevokedSessions
   mailer: MemoryMailer
   rateLimiter: MemoryRateLimiter
   breachChecker: MemoryBreachChecker
@@ -60,6 +64,8 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     environments: new MemoryEnvironmentRepository(),
     signingKeys: new MemorySigningKeyStore(),
     verificationTokens: new MemoryVerificationTokenStore(),
+    sessions: new MemorySessionStore(),
+    revokedSessions: new MemoryRevokedSessions(clock),
     mailer: new MemoryMailer(),
     rateLimiter: new MemoryRateLimiter(clock),
     breachChecker: new MemoryBreachChecker(),

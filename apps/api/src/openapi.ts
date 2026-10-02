@@ -61,6 +61,7 @@ export const documentation: GenerateSpecOptions['documentation'] = {
     { name: 'Project', description: 'Environments and API keys (admin).' },
     { name: 'Keys', description: 'Access-token signing keys and the public JWKS.' },
     { name: 'Passwords', description: 'Password rules for the live checklist.' },
+    { name: 'Sessions', description: 'Refresh, sign-out and the signed-in user’s devices.' },
   ],
   components: {
     securitySchemes: {

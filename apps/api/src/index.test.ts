@@ -189,6 +189,11 @@ describe('documentation routes', () => {
       '/v1/admin/signing-keys',
       '/v1/admin/signing-keys/rotate',
       '/v1/client/password-policy',
+      '/v1/client/sessions/refresh',
+      '/v1/client/sessions/sign-out',
+      '/v1/client/sessions',
+      '/v1/client/sessions/revoke-others',
+      '/v1/client/sessions/{sessionId}',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',

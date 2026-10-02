@@ -10,6 +10,7 @@ import { ServiceException } from '~/exceptions'
 import { notFound, onError } from '~/handlers'
 import { allowedOrigin } from '~/lib/cors'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
+import { clientRateLimit } from '~/middleware/rate-limit'
 import { requestLog } from '~/middleware/request-log'
 import { documentation } from '~/openapi'
 
@@ -29,6 +30,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1/admin', (await import('~/modules/project/router')).default],
   ['/v1', (await import('~/modules/jwks/router')).default],
   ['/v1/client', (await import('~/modules/password/router')).default],
+  ['/v1/client', (await import('~/modules/session/router')).default],
 ]
 
 /**
@@ -76,6 +78,10 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   })
   app.onError(onError)
   app.notFound(notFound)
+
+  // One per-IP ceiling for every client route, counted before the publishable key is resolved
+  // so key guessing is limited too. Mounted here so a new client router cannot forget it.
+  app.use('/v1/client/*', clientRateLimit())
 
   for (const [path, router] of routes) {
     app.route(path, router)
