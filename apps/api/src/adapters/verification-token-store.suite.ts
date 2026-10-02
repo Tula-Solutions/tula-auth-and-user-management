@@ -106,6 +106,36 @@ export function describeVerificationTokenStore(
       expect(await ctx.store.consume(ctx.a.environmentId, first.id, later(2_000))).toBe(false)
     })
 
+    test('"latest" means the newest createdAt (then id), not the last one written', async () => {
+      const flowAttemptId = await ctx.a.flowAttempt()
+      const newer = token(ctx.a, { flowAttemptId, createdAt: later(60_000) })
+      const older = token(ctx.a, { flowAttemptId, createdAt: later(30_000) })
+      await ctx.store.replace(newer, later(60_000))
+      await ctx.store.replace(older, later(61_000))
+      const latest = () =>
+        ctx.store.findLatest(ctx.a.environmentId, 'email_verification', { flowAttemptId })
+      expect((await latest())?.id).toBe(newer.id)
+
+      const [low, high] = [Bun.randomUUIDv7(), Bun.randomUUIDv7()].sort()
+      const tieFlow = await ctx.a.flowAttempt()
+      const sameTime = later(90_000)
+      await ctx.store.replace(
+        token(ctx.a, { id: high, flowAttemptId: tieFlow, createdAt: sameTime }),
+        sameTime
+      )
+      await ctx.store.replace(
+        token(ctx.a, { id: low, flowAttemptId: tieFlow, createdAt: sameTime }),
+        sameTime
+      )
+      expect(
+        (
+          await ctx.store.findLatest(ctx.a.environmentId, 'email_verification', {
+            flowAttemptId: tieFlow,
+          })
+        )?.id
+      ).toBe(high)
+    })
+
     test('counts attempts up to the maximum and never past it, even concurrently', async () => {
       const flowAttemptId = await ctx.a.flowAttempt()
       const input = token(ctx.a, { flowAttemptId })

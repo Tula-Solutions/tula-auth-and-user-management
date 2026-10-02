@@ -113,11 +113,8 @@ export async function issue(
   const destination = normalizeEmail(input.destination)
   await enforceSendLimits(deps, scope, destination)
 
-  const now = deps.clock.now()
-  const id = deps.ids.next()
   const code = randomDigits(CODE_LENGTH)
   const linkToken = input.linkUrl ? randomToken() : null
-  const expiresAt = new Date(now.getTime() + durationToMs(TOKEN_TTL))
 
   // Send first: if the relay fails, nothing is stored and the previous code keeps working.
   try {
@@ -134,6 +131,11 @@ export async function issue(
     })
   }
 
+  // Stamp the token only now. "Newest" is decided by createdAt, so a send that hung in the
+  // relay must not store a token that looks older than one issued while it was waiting.
+  const now = deps.clock.now()
+  const id = deps.ids.next()
+  const expiresAt = new Date(now.getTime() + durationToMs(TOKEN_TTL))
   await deps.verificationTokens.replace(
     {
       id,

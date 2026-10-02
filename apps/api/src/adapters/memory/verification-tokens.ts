@@ -45,12 +45,19 @@ export class MemoryVerificationTokenStore implements VerificationTokenStore {
     purpose: VerificationPurpose,
     subject: VerificationSubject
   ): Promise<VerificationTokenRecord | null> {
-    const found = this.#tokens.findLast(
-      (token) =>
-        token.environmentId === environmentId &&
-        token.purpose === purpose &&
-        matches(token, subject)
-    )
+    // Same order as Postgres (created_at desc, id desc), not insertion order, so races that
+    // store an older token last behave identically in unit tests.
+    const [found] = this.#tokens
+      .filter(
+        (token) =>
+          token.environmentId === environmentId &&
+          token.purpose === purpose &&
+          matches(token, subject)
+      )
+      .sort(
+        (x, y) =>
+          y.createdAt.getTime() - x.createdAt.getTime() || (y.id > x.id ? 1 : y.id < x.id ? -1 : 0)
+      )
     return found ? { ...found } : null
   }
 

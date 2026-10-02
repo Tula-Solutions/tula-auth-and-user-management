@@ -185,6 +185,40 @@ describe('issue', () => {
     expect((await verify(first)).flowAttemptId).toBe(FLOW)
   })
 
+  test('when two sends for one subject overlap, the one stored last is the one that works', async () => {
+    const codeFor = (to: string) => {
+      const mail = deps.mailer.outbox.find((message) => message.to === to)
+      return /\b(\d{6})\b/.exec(mail?.text ?? '')?.[1] ?? ''
+    }
+    // The first send hangs in the relay while a second issue starts and finishes.
+    let release = () => {}
+    const relaySlow = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const send = deps.mailer.send.bind(deps.mailer)
+    let calls = 0
+    deps.mailer.send = async (message) => {
+      calls += 1
+      if (calls === 1) {
+        await relaySlow
+      }
+      await send(message)
+    }
+
+    const slow = issue({ destination: 'slow@northline.app' })
+    deps.clock.advance(1_000)
+    await issue({ destination: 'fast@northline.app' })
+    deps.clock.advance(1_000)
+    release()
+    await slow
+
+    expect((await verify(codeFor('slow@northline.app'))).destination).toBe('slow@northline.app')
+    const fast = codeFor('fast@northline.app')
+    if (fast !== codeFor('slow@northline.app')) {
+      expect((await rejection(verify(fast))).code).toBe('verification.expired')
+    }
+  })
+
   test('requires a flow attempt or a user', async () => {
     const err = await rejection(issue({ flowAttemptId: undefined }))
     expect(err.status).toBe(500)
