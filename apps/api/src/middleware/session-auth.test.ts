@@ -79,6 +79,16 @@ describe('sessionAuth', () => {
     expect(await res.json()).toMatchObject({ sub: 'user-1', sid: 'session-1' })
   })
 
+  test('rejects a still-unexpired token once its session was revoked', async () => {
+    const { deps, call } = await setup()
+    const token = await sign(claims(deps))
+    await deps.revokedSessions.add('session-1', new Date(deps.clock.now().getTime() + 60_000))
+    await expectCode(await call(token), 'session.revoked')
+    // Another session of the same user is unaffected.
+    const other = await sign(claims(deps, { sid: 'session-2' }))
+    expect((await call(other)).status).toBe(200)
+  })
+
   test('requires a token', async () => {
     const { call } = await setup()
     await expectCode(await call(), 'auth.unauthenticated')

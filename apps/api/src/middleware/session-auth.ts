@@ -94,10 +94,12 @@ export async function verifyAccessToken(
  * `c.var.session`.
  *
  * Must run after `publishableKey()`, which resolves the tenant the token has to belong to.
- * Revoked-session (`sid`) denylist checks land with the session module (Step 5.6).
+ * The token is verified with cached keys (no database hit), then its `sid` is checked against
+ * the revoked-session denylist so a revoked session stops working before its token expires.
  *
  * @returns The middleware.
- * @throws AuthError `auth.unauthenticated`, `session.expired` or `session.invalid_token`.
+ * @throws AuthError `auth.unauthenticated`, `session.expired`, `session.invalid_token` or
+ *   `session.revoked`.
  */
 export function sessionAuth() {
   return createMiddleware<AppEnv & { Variables: TenantVariables & SessionVariables }>(
@@ -110,7 +112,13 @@ export function sessionAuth() {
       if (!token) {
         throw new AuthError('auth.unauthenticated')
       }
-      c.set('session', await verifyAccessToken(c.get('deps'), token, tenant))
+      const deps = c.get('deps')
+      const claims = await verifyAccessToken(deps, token, tenant)
+      // The token itself is valid until `exp`; this catches sessions revoked since it was issued.
+      if (await deps.revokedSessions.has(claims.sid, deps.clock.now())) {
+        throw new AuthError('session.revoked')
+      }
+      c.set('session', claims)
       await next()
     }
   )

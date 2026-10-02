@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { describeRoute, resolver } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'
-import { clientRateLimit } from '~/middleware/rate-limit'
 import * as Passwords from '~/modules/password/service'
 import * as openapi from '~/openapi'
 import { PasswordPolicySchema } from './schema'
@@ -33,7 +32,6 @@ router.get(
       500: openapi.responses[500],
     },
   }),
-  clientRateLimit(),
   publishableKey(),
   async (c) => {
     const policy = await Passwords.policy(c.get('deps'), c.get('tenant'))

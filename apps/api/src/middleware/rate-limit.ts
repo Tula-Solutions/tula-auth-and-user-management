@@ -81,8 +81,8 @@ export function adminRateLimit() {
 export const CLIENT_RATE_LIMIT = 600
 
 /**
- * Per-IP limit for `/v1/client/*`. Mount it **before** `publishableKey()` so failed key guesses
- * count too. It is a coarse ceiling (higher than admin because many users can share one NAT'd
+ * Per-IP limit for `/v1/client/*`, mounted once for the whole group in `createApp` so it runs
+ * before any route's `publishableKey()` and failed key guesses count too. It is a coarse ceiling (higher than admin because many users can share one NAT'd
  * IP); credential endpoints add tighter per-route, per-identifier limits.
  *
  * @returns The middleware (one shared `client` bucket per IP across all client routes).

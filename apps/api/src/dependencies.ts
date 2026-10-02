@@ -10,6 +10,8 @@ import type { HealthProbe } from '~/ports/health-probe'
 import type { IdGenerator } from '~/ports/id-generator'
 import type { Mailer } from '~/ports/mailer'
 import type { RateLimiter } from '~/ports/rate-limiter'
+import type { RevokedSessions } from '~/ports/revoked-sessions'
+import type { SessionStore } from '~/ports/session-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 import type { VerificationTokenStore } from '~/ports/verification-token-store'
 
@@ -38,6 +40,9 @@ export interface Deps {
   environments: EnvironmentRepository
   signingKeys: SigningKeyStore
   verificationTokens: VerificationTokenStore
+  sessions: SessionStore
+  /** Revoked session ids whose access tokens may still be unexpired. */
+  revokedSessions: RevokedSessions
   mailer: Mailer
   rateLimiter: RateLimiter
   /** Breached-password lookups for the password policy's `breachCheck`. */

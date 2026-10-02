@@ -5,9 +5,11 @@ import { offlineBreachChecker } from '~/adapters/breach/offline'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { SmtpMailer } from '~/adapters/mail/smtp'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
+import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { databaseProbe } from '~/adapters/postgres/health'
+import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import { systemClock } from '~/adapters/system/clock'
@@ -58,6 +60,8 @@ export function createContainer(env: Env): Container {
     rateLimiter: new MemoryRateLimiter(clock),
     breachChecker: env.BREACH_CHECK === 'hibp' ? new HibpBreachChecker() : offlineBreachChecker,
     verificationTokens: new PostgresVerificationTokenStore(database.db),
+    sessions: new PostgresSessionStore(database.db),
+    revokedSessions: new MemoryRevokedSessions(clock),
     mailer,
     secretBox: createSecretBox(env.TULA_MASTER_KEY),
     keyedHash: createKeyedHash(env.TULA_MASTER_KEY),
