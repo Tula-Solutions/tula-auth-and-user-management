@@ -41,7 +41,7 @@ type TokenDeps = Pick<
   Deps,
   'clock' | 'ids' | 'config' | 'signingKeys' | 'environments' | 'secretBox'
 >
-type SessionDeps = TokenDeps & Pick<Deps, 'sessions' | 'revokedSessions' | 'keyedHash'>
+type SessionDeps = TokenDeps & Pick<Deps, 'sessions' | 'revokedSessions' | 'keyedHash' | 'users'>
 
 /**
  * The session profile in force.
@@ -197,6 +197,26 @@ function rejectEnded(session: SessionRecord, now: Date): void {
 }
 
 /**
+ * End the session of a user who has been banned since it was issued.
+ *
+ * Banning already revokes a user's sessions; this also catches a session created in the instant
+ * between the ban and that revocation, so a banned user can never keep one alive.
+ */
+async function rejectBanned(
+  deps: Pick<Deps, 'users' | 'sessions' | 'revokedSessions'>,
+  scope: Scope,
+  session: SessionRecord,
+  now: Date
+): Promise<void> {
+  const user = await deps.users.findById(scope.environmentId, session.userId)
+  if (user?.bannedAt) {
+    await denylist(deps, [session.id], now)
+    await deps.sessions.revoke(scope.environmentId, session.id, 'user_banned', now)
+    throw new AuthError('auth.user_banned')
+  }
+}
+
+/**
  * Exchange a refresh token for a new access token and the next refresh token.
  *
  * Refresh tokens are single-use. Presenting one that was already rotated revokes the whole
@@ -213,8 +233,8 @@ function rejectEnded(session: SessionRecord, now: Date): void {
  * @param scope - The environment the request resolved to.
  * @param refreshToken - The token the client presented.
  * @returns The session id, a new access token and the current refresh token.
- * @throws AuthError `session.invalid_token`, `session.revoked`, `session.expired` or
- *   `session.reuse_detected`.
+ * @throws AuthError `session.invalid_token`, `session.revoked`, `session.expired`,
+ *   `session.reuse_detected` or `auth.user_banned`.
  */
 export async function refresh(
   deps: SessionDeps,
@@ -232,6 +252,7 @@ export async function refresh(
     }
     const { token, session } = found
     rejectEnded(session, now)
+    await rejectBanned(deps, scope, session, now)
 
     // Reuse is judged before the token's own expiry: a rotated token replayed on a live session
     // is theft however old it is, and must not be waved through as merely "expired".
@@ -373,15 +394,21 @@ export async function revoke(
  *
  * @param deps - Session store, denylist and clock.
  * @param scope - The environment.
- * @param input - The user and the session to keep.
+ * @param input - The user, the session to keep, and the reason (default `revoked_by_user`).
  * @returns How many sessions were revoked.
  */
 export async function revokeOthers(
   deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'clock'>,
   scope: Pick<Tenant, 'environmentId'>,
-  input: { userId: string; currentSessionId: string }
+  input: { userId: string; currentSessionId: string; reason?: SessionRevokeReason }
 ): Promise<number> {
-  return revokeForUser(deps, scope, input.userId, 'revoked_by_user', input.currentSessionId)
+  return revokeForUser(
+    deps,
+    scope,
+    input.userId,
+    input.reason ?? 'revoked_by_user',
+    input.currentSessionId
+  )
 }
 
 async function revokeForUser(

@@ -1,6 +1,5 @@
 import {
   durationToMs,
-  errorDefinition,
   type FlowAttempt,
   type FlowKind,
   type FlowStep,
@@ -12,9 +11,9 @@ import {
 } from '@tula/contract'
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
+import { AuthError, InvalidEmailError, RateLimitError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
-import { maskEmail, normalizeEmail } from '~/lib/email'
+import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
@@ -60,8 +59,6 @@ const StateSchema = z.object({
   decoy: z.boolean().optional(),
 })
 type State = z.infer<typeof StateSchema>
-
-const EmailSchema = z.email().max(320)
 
 function stepFor(
   attempt: Pick<FlowAttemptRecord, 'status' | 'identifier'>,
@@ -193,7 +190,7 @@ async function finish(
  * @param input - Email, password and optional names.
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_email_verification`.
- * @throws ServiceException `email.invalid` or a `password.*` code, with per-field `errors`.
+ * @throws InvalidEmailError, or a `password.*` ServiceException with per-field `errors`.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function signUp(
@@ -202,19 +199,11 @@ export async function signUp(
   input: SignUpRequest,
   context: ClientContext
 ): Promise<FlowResult> {
-  const email = input.email.trim()
-  const identifier = normalizeEmail(email)
-  if (!EmailSchema.safeParse(identifier).success) {
-    throw new ServiceException('email.invalid', {
-      errors: [
-        {
-          field: 'email',
-          code: 'email.invalid',
-          message: errorDefinition('email.invalid').message,
-        },
-      ],
-    })
+  const parsed = parseEmail(input.email)
+  if (!parsed) {
+    throw new InvalidEmailError()
   }
+  const { email, normalized: identifier } = parsed
   const firstName = input.firstName?.trim() || null
   const lastName = input.lastName?.trim() || null
   await Passwords.assess(deps, tenant, input.password, {

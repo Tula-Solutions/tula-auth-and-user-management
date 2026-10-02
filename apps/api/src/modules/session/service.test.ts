@@ -273,6 +273,33 @@ describe('refresh', () => {
     expect((await refresh(rt(first))).sessionId).toBe(first.sessionId)
   })
 
+  test('a banned user cannot refresh, and the attempt ends their session', async () => {
+    await deps.users.createWithPassword({
+      id: USER,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: 'maya@northline.app',
+      emailNormalized: 'maya@northline.app',
+      emailVerifiedAt: deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: 'i1',
+      credentialId: 'c1',
+      passwordHash: 'hash',
+    })
+    const first = await create()
+    expect((await refresh(rt(first))).sessionId).toBe(first.sessionId)
+
+    const second = await create()
+    await deps.users.setBanned(tenant.environmentId, USER, deps.clock.now(), deps.clock.now())
+    const err = await rejection(refresh(rt(second)))
+    expect(err.status).toBe(403)
+    expect(err.code).toBe('auth.user_banned')
+    expect(await session(second.sessionId)).toMatchObject({ revokeReason: 'user_banned' })
+    expect(await deps.revokedSessions.has(second.sessionId, deps.clock.now())).toBe(true)
+  })
+
   test('a revoked session cannot be refreshed', async () => {
     const first = await create()
     await Sessions.revoke(deps, tenant, { userId: USER, sessionId: first.sessionId })

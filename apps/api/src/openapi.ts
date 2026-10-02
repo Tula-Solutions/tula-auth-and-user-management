@@ -67,6 +67,7 @@ export const documentation: GenerateSpecOptions['documentation'] = {
       description:
         'Server-driven sign-up and sign-in. Each call returns the next step; clients render it.',
     },
+    { name: 'Users', description: 'Manage users (admin) and the signed-in user’s own account.' },
     { name: 'Sessions', description: 'Refresh, sign-out and the signed-in user’s devices.' },
   ],
   components: {

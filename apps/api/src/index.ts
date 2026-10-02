@@ -33,6 +33,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1/client', (await import('~/modules/password/router')).default],
   ['/v1/client', (await import('~/modules/session/router')).default],
   ['/v1/client', (await import('~/modules/flow/router')).default],
+  ['/v1', (await import('~/modules/user/router')).default],
 ]
 
 /**

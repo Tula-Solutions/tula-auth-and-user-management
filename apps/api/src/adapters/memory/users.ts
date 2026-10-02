@@ -1,4 +1,9 @@
-import type { NewUserWithPassword, UserRecord, UserRepository } from '~/ports/user-repository'
+import type {
+  NewUserWithPassword,
+  UserListCriteria,
+  UserRecord,
+  UserRepository,
+} from '~/ports/user-repository'
 
 /** Users held in memory, for tests. */
 export class MemoryUserRepository implements UserRepository {
@@ -74,17 +79,63 @@ export class MemoryUserRepository implements UserRepository {
     }
   }
 
-  /**
-   * Ban or unban a user directly (tests only; the admin user module arrives in Step 5.7).
-   *
-   * @param userId - The user.
-   * @param at - Ban time, or `null` to unban.
-   */
-  setBanned(userId: string, at: Date | null): void {
-    const user = this.#users.get(userId)
-    if (user) {
-      user.bannedAt = at
+  /** @inheritdoc */
+  async list(
+    environmentId: string,
+    criteria: UserListCriteria
+  ): Promise<{ users: UserRecord[]; totalCount: number }> {
+    const q = criteria.q?.trim().toLowerCase()
+    const descending = criteria.sort.startsWith('-')
+    const field = criteria.sort.replace('-', '') as 'createdAt' | 'email' | 'lastSignInAt'
+    const key = (user: UserRecord): string | number | null =>
+      field === 'email' ? user.emailNormalized : (user[field]?.getTime() ?? null)
+    const matches = [...this.#users.values()]
+      .filter(
+        (user) =>
+          user.environmentId === environmentId &&
+          (!q ||
+            [user.emailNormalized, user.firstName, user.lastName].some((value) =>
+              value?.toLowerCase().includes(q)
+            ))
+      )
+      .sort((x, y) => {
+        const [a, b] = [key(x), key(y)]
+        // Like Postgres with NULLS LAST: users without a value sort after the rest.
+        if (a === null || b === null) {
+          return a === b ? 0 : a === null ? 1 : -1
+        }
+        const order = a < b ? -1 : a > b ? 1 : x.id < y.id ? -1 : 1
+        return descending ? -order : order
+      })
+    const start = (criteria.page - 1) * criteria.size
+    return {
+      users: matches.slice(start, start + criteria.size).map((user) => ({ ...user })),
+      totalCount: matches.length,
     }
+  }
+
+  /** @inheritdoc */
+  async setBanned(
+    environmentId: string,
+    userId: string,
+    bannedAt: Date | null,
+    _at: Date
+  ): Promise<UserRecord | null> {
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return null
+    }
+    user.bannedAt = bannedAt === null ? null : (user.bannedAt ?? bannedAt)
+    return { ...user }
+  }
+
+  /** @inheritdoc */
+  async delete(environmentId: string, userId: string): Promise<boolean> {
+    if (!this.#user(environmentId, userId)) {
+      return false
+    }
+    this.#passwords.delete(userId)
+    return this.#users.delete(userId)
   }
 
   #byEmail(environmentId: string, emailNormalized: string): UserRecord | undefined {

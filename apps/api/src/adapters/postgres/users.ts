@@ -1,7 +1,12 @@
 import { credentials, type Database, identities, users, withTenant } from '@tula/db'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, isNull, or, type SQL, sql } from 'drizzle-orm'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
-import type { NewUserWithPassword, UserRecord, UserRepository } from '~/ports/user-repository'
+import type {
+  NewUserWithPassword,
+  UserListCriteria,
+  UserRecord,
+  UserRepository,
+} from '~/ports/user-repository'
 
 const columns = {
   id: users.id,
@@ -15,6 +20,25 @@ const columns = {
   bannedAt: users.bannedAt,
   lastSignInAt: users.lastSignInAt,
   createdAt: users.createdAt,
+}
+
+/** Escape `LIKE` wildcards so a search term only ever matches literally. */
+function likePattern(term: string): string {
+  return `%${term.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+}
+
+function orderBy(sort: UserListCriteria['sort']): SQL[] {
+  const descending = sort.startsWith('-')
+  const column = {
+    createdAt: users.createdAt,
+    email: users.emailNormalized,
+    lastSignInAt: users.lastSignInAt,
+  }[sort.replace('-', '') as 'createdAt' | 'email' | 'lastSignInAt']
+  // NULLS LAST both ways, so users who never signed in don't lead a descending list. The id
+  // makes the order total, which paging needs.
+  return descending
+    ? [sql`${column} desc nulls last`, desc(users.id)]
+    : [sql`${column} asc nulls last`, asc(users.id)]
 }
 
 /**
@@ -158,5 +182,70 @@ export class PostgresUserRepository implements UserRepository {
         .set({ lastSignInAt: at, updatedAt: at })
         .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
     )
+  }
+
+  /** @inheritdoc */
+  async list(
+    environmentId: string,
+    criteria: UserListCriteria
+  ): Promise<{ users: UserRecord[]; totalCount: number }> {
+    const q = criteria.q?.trim()
+    const pattern = q ? likePattern(q) : null
+    const where = and(
+      eq(users.environmentId, environmentId),
+      pattern
+        ? or(
+            ilike(users.emailNormalized, pattern),
+            ilike(users.firstName, pattern),
+            ilike(users.lastName, pattern)
+          )
+        : undefined
+    )
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [total] = await tx.select({ value: count() }).from(users).where(where)
+      const rows = await tx
+        .select(columns)
+        .from(users)
+        .where(where)
+        .orderBy(...orderBy(criteria.sort))
+        .limit(criteria.size)
+        .offset((criteria.page - 1) * criteria.size)
+      return { users: rows, totalCount: total?.value ?? 0 }
+    })
+  }
+
+  /** @inheritdoc */
+  async setBanned(
+    environmentId: string,
+    userId: string,
+    bannedAt: Date | null,
+    at: Date
+  ): Promise<UserRecord | null> {
+    const [row] = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(users)
+        .set({
+          // Banning an already-banned user keeps the original ban time.
+          bannedAt:
+            bannedAt === null
+              ? null
+              : sql`coalesce(${users.bannedAt}, ${bannedAt.toISOString()}::timestamptz)`,
+          updatedAt: at,
+        })
+        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .returning(columns)
+    )
+    return row ?? null
+  }
+
+  /** @inheritdoc */
+  async delete(environmentId: string, userId: string): Promise<boolean> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(users)
+        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .returning({ id: users.id })
+    )
+    return rows.length === 1
   }
 }

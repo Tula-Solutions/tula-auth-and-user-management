@@ -1,3 +1,5 @@
+import type { UserSort } from '@tula/contract'
+
 /** An end user of a customer's app, scoped to one environment. */
 export interface UserRecord {
   id: string
@@ -23,6 +25,17 @@ export interface NewUserWithPassword extends Omit<UserRecord, 'bannedAt' | 'last
   credentialId: string
   /** argon2id hash of the password. */
   passwordHash: string
+}
+
+/** Which users to list. */
+export interface UserListCriteria {
+  /** Case-insensitive substring of the email or a name. Wildcards are matched literally. */
+  q?: string
+  /** 1-based page. */
+  page: number
+  /** Page size. */
+  size: number
+  sort: UserSort
 }
 
 /** Users with their identities and credentials, always inside one environment. */
@@ -92,4 +105,39 @@ export interface UserRepository {
    * @param at - Sign-in time.
    */
   recordSignIn(environmentId: string, userId: string, at: Date): Promise<void>
+
+  /**
+   * @param environmentId - The environment to list.
+   * @param criteria - Search, paging and sort.
+   * @returns One page of users and the total number that match.
+   */
+  list(
+    environmentId: string,
+    criteria: UserListCriteria
+  ): Promise<{ users: UserRecord[]; totalCount: number }>
+
+  /**
+   * Ban or unban a user. Banning keeps the first ban time if they are already banned.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param bannedAt - Ban time, or `null` to unban.
+   * @param at - Update time.
+   * @returns The updated user, or `null` when they do not exist.
+   */
+  setBanned(
+    environmentId: string,
+    userId: string,
+    bannedAt: Date | null,
+    at: Date
+  ): Promise<UserRecord | null>
+
+  /**
+   * Delete a user and, by cascade, their identities, credentials, sessions and attempts.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @returns `false` when they do not exist.
+   */
+  delete(environmentId: string, userId: string): Promise<boolean>
 }

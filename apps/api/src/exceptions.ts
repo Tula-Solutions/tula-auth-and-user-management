@@ -180,3 +180,27 @@ export class NotImplementedError extends ServiceException {
     this.name = 'NotImplementedError'
   }
 }
+
+/**
+ * 422 `email.invalid`, reported against the `email` field.
+ *
+ * @example
+ * ```ts
+ * const parsed = parseEmail(input.email)
+ * if (!parsed) throw new InvalidEmailError()
+ * ```
+ */
+export class InvalidEmailError extends ServiceException {
+  constructor() {
+    super('email.invalid', {
+      errors: [
+        {
+          field: 'email',
+          code: 'email.invalid',
+          message: errorDefinition('email.invalid').message,
+        },
+      ],
+    })
+    this.name = 'InvalidEmailError'
+  }
+}
