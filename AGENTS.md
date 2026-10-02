@@ -188,11 +188,16 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   and keys are published at `jwksUrl(iss)`. Private signing keys are sealed with `~/lib/secret-box`
   (AES-256-GCM, key derived from `TULA_MASTER_KEY`, bound to key id + environment). See
   [ADR 0004](docs/adr/0004-signing-keys-and-issuer.md); API keys: [ADR 0005](docs/adr/0005-api-keys.md);
-  passwords: [ADR 0006](docs/adr/0006-passwords.md); verification codes: [ADR 0007](docs/adr/0007-verification-codes.md).
+  passwords: [ADR 0006](docs/adr/0006-passwords.md); verification codes:
+  [ADR 0007](docs/adr/0007-verification-codes.md); sessions: [ADR 0008](docs/adr/0008-sessions.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment).
-- Cookies: `HttpOnly`, `Secure`, `SameSite=Lax` (or stricter), scoped path.
+- Cookies: `HttpOnly`, `Secure`, `SameSite=Lax` (or stricter), scoped path. Use the helpers in
+  `~/modules/session/cookies`; never set the refresh cookie by hand.
+- Revoking a session must go through `~/modules/session/service` so its id is denylisted:
+  `sessionAuth` verifies access tokens without a database hit, and only the denylist stops a
+  revoked session's token before it expires.
 - Treat every change under `modules/{flow,session,password,jwks,verification}` or `lib/crypto.ts`
   as security-sensitive: it needs tests for the failure paths, not just the happy path.
 
