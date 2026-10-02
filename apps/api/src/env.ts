@@ -39,6 +39,17 @@ const fields = z.object({
   /** Mailpit by default; live tiers must point at a real relay. */
   SMTP_URL: z.url({ protocol: /^smtps?$/ }).default('smtp://127.0.0.1:1025'),
   /**
+   * Sender of verification and security emails: `name@domain` or `Name <name@domain>`. Live
+   * tiers must set a real domain, or mail providers will reject or junk the messages.
+   */
+  MAIL_FROM: z
+    .string()
+    .regex(
+      /^(?:[^<>@]*<[^<>@\s]+@[^<>@\s]+>|[^<>@\s]+@[^<>@\s]+)$/,
+      'must be `name@domain` or `Name <name@domain>`'
+    )
+    .default('Tula Auth <no-reply@localhost>'),
+  /**
    * 32-byte key (64 hex chars) that encrypts signing keys at rest and derives the HMAC key for
    * verification codes. Losing it invalidates every stored secret, so there is no default.
    */
@@ -76,6 +87,13 @@ const schema = fields.superRefine((env, ctx) => {
       code: 'custom',
       path: ['SMTP_URL'],
       message: `must be a real mail relay in ${env.ENVIRONMENT}, not the local Mailpit`,
+    })
+  }
+  if (/@localhost>?$/i.test(env.MAIL_FROM)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['MAIL_FROM'],
+      message: `must be a real sender address in ${env.ENVIRONMENT}`,
     })
   }
   if (env.BREACH_CHECK !== 'hibp') {

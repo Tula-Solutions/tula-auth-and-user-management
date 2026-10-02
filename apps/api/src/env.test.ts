@@ -11,6 +11,7 @@ const live = {
   ...base,
   ENVIRONMENT: 'prod',
   SMTP_URL: 'smtps://relay.example.com:465',
+  MAIL_FROM: 'Example <no-reply@example.com>',
   BREACH_CHECK: 'hibp',
   PUBLIC_URL: 'https://auth.example.com',
 }
@@ -41,6 +42,7 @@ describe('parseEnv', () => {
       PORT: 3003,
       LOG_LEVEL: 'info',
       SMTP_URL: 'smtp://127.0.0.1:1025',
+      MAIL_FROM: 'Tula Auth <no-reply@localhost>',
       PUBLIC_URL: 'http://localhost:3003',
       BREACH_CHECK: 'offline',
       CORS_ORIGINS: [],
@@ -89,6 +91,7 @@ describe('parseEnv', () => {
   test.each(['staging', 'prod'])('%s refuses Mailpit, offline breach checks and http', (tier) => {
     expect(invalidVars({ ...base, ENVIRONMENT: tier })).toEqual([
       'SMTP_URL',
+      'MAIL_FROM',
       'BREACH_CHECK',
       'PUBLIC_URL',
     ])
@@ -96,6 +99,17 @@ describe('parseEnv', () => {
 
   test('the live-tier SMTP check also catches localhost', () => {
     expect(invalidVars({ ...live, SMTP_URL: 'smtp://localhost:25' })).toEqual(['SMTP_URL'])
+  })
+
+  test.each(['no-reply@localhost', 'Tula <no-reply@LOCALHOST>'])(
+    'a live tier refuses the localhost sender %p',
+    (from) => {
+      expect(invalidVars({ ...live, MAIL_FROM: from })).toEqual(['MAIL_FROM'])
+    }
+  )
+
+  test.each(['', 'not an address', 'Tula <no-reply>'])('rejects the sender %p', (from) => {
+    expect(invalidVars({ ...base, MAIL_FROM: from })).toEqual(['MAIL_FROM'])
   })
 
   test('dev tier may use local services', () => {

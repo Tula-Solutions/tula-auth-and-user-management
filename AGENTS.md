@@ -175,9 +175,10 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - Passwords: `Bun.password.hash(pw, { algorithm: 'argon2id' })` / `Bun.password.verify`. Unknown
   users still run a verify against a dummy hash so timing does not reveal account existence.
 - High-entropy tokens and API keys are **stored hashed** (SHA-256). Low-entropy secrets
-  (6-digit codes) use a **keyed** hash (HMAC-SHA256 with a key derived from `TULA_MASTER_KEY`),
-  because a plain hash of 10^6 values is trivially reversible. Compare with
-  `~/lib/crypto.timingSafeEqual`. Generate them with `~/lib/crypto.randomToken` (CSPRNG only).
+  (6-digit codes) use a **keyed** hash (`~/lib/keyed-hash`: HMAC-SHA256 with a key derived from
+  `TULA_MASTER_KEY`), because a plain hash of 10^6 values is trivially reversible. Compare with
+  `~/lib/crypto.timingSafeEqual`. Generate them with `~/lib/crypto.randomToken` or
+  `randomDigits` (CSPRNG only).
 - Access tokens: EdDSA JWTs, ~60s. Refresh tokens: opaque, single-use, rotating; reuse revokes the
   whole family. The **only** exception is the profile's `refresh.reuseGracePeriod` (default 10s,
   defined and documented in `packages/contract/src/session-profile.ts`): re-presenting a token
@@ -187,7 +188,7 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   and keys are published at `jwksUrl(iss)`. Private signing keys are sealed with `~/lib/secret-box`
   (AES-256-GCM, key derived from `TULA_MASTER_KEY`, bound to key id + environment). See
   [ADR 0004](docs/adr/0004-signing-keys-and-issuer.md); API keys: [ADR 0005](docs/adr/0005-api-keys.md);
-  passwords: [ADR 0006](docs/adr/0006-passwords.md).
+  passwords: [ADR 0006](docs/adr/0006-passwords.md); verification codes: [ADR 0007](docs/adr/0007-verification-codes.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment).
@@ -247,9 +248,9 @@ apps/api/src/
 ├── handlers.ts       # onError + validation hook → contract error envelope
 ├── openapi.ts        # shared OpenAPI responses, security requirements, document info
 ├── testing.ts        # createTestDeps(): memory adapters + FixedClock
-├── lib/              # logger, crypto, cors, client-ip
+├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip
 ├── ports/            # interfaces the domain depends on
-├── adapters/         # memory/, postgres/, system/, cache/, breach/ (mail/ arrives in Step 5)
+├── adapters/         # memory/, postgres/, system/, cache/, breach/, mail/
 ├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, request-log
 └── modules/          # flow, password, session, jwks, verification, user, project, status
 ```
