@@ -4,6 +4,8 @@
 #                 API image. See docs/self-host.md.
 # Host ports can be moved with POSTGRES_PORT, REDIS_PORT, MAILPIT_SMTP_PORT, MAILPIT_UI_PORT and
 # API_PORT, e.g. to run a second stack next to this one.
+# After using the profile, stop with it too: `docker compose --profile app down`. A plain
+# `docker compose down` leaves the API container running and holding the network.
 # Ports bind to 127.0.0.1 only: Docker bypasses host firewalls, and these services use dev
 # credentials (Redis and Mailpit have none), so they must not be reachable from the LAN.
 services:
@@ -64,8 +66,10 @@ services:
       DATABASE_URL: postgres://tula_api:tula_api@postgres:5432/tula
       # Required: 32 bytes as hex (`openssl rand -hex 32`). The API refuses to start without it.
       TULA_MASTER_KEY: ${TULA_MASTER_KEY:-}
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3003}
-      SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
+      # Not `SMTP_URL`: Compose also reads the repository's `.env`, where a developer's SMTP_URL
+      # points at 127.0.0.1, which inside this container is the container itself.
+      SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
       MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
       BREACH_CHECK: ${BREACH_CHECK:-offline}
       PASSWORD_POLICY: ${PASSWORD_POLICY:-recommended}

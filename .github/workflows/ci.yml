@@ -47,6 +47,7 @@ jobs:
   # run the conformance scenarios against it over HTTP.
   self-host:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       # Throwaway values for this job's own containers.
       TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
@@ -64,19 +65,38 @@ jobs:
             if curl -fsS http://localhost:3003/v1/ready > /dev/null; then exit 0; fi
             sleep 2
           done
-          docker compose --profile app logs api migrate
+          echo "the API did not become ready" >&2
           exit 1
       - name: Create an environment and its keys
         run: |
-          environment=$(docker compose --profile app run --rm -T api bun run ../../packages/db/src/scripts/seed.ts | awk '/development environment/ {print $NF}')
+          # Without pipefail a failed command before `| tail` would be swallowed, and an empty
+          # secret key would make the admin scenarios skip instead of fail.
+          set -euo pipefail
+          compose() { docker compose --profile app run --rm -T api "$@"; }
+          seed=$(compose bun run ../../packages/db/src/scripts/seed.ts)
+          environment=$(echo "$seed" | awk '/development environment/ {print $NF}')
+          if ! echo "$environment" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "seed did not print a development environment id" >&2
+            exit 1
+          fi
           for kind in publishable secret; do
-            key=$(docker compose --profile app run --rm -T api bun run src/scripts/create-api-key.ts --environment "$environment" --kind "$kind" | tail -1)
+            minted=$(compose bun run src/scripts/create-api-key.ts --environment "$environment" --kind "$kind")
+            key=$(echo "$minted" | tail -1)
+            case "$key" in
+              tula_pk_* | tula_sk_*) ;;
+              *) echo "could not create a $kind key" >&2; exit 1 ;;
+            esac
             echo "::add-mask::$key"
             name=$(echo "$kind" | tr '[:lower:]' '[:upper:]')
             echo "CONFORMANCE_${name}_KEY=$key" >> "$GITHUB_ENV"
           done
-      - run: bun run conformance
-      - name: Server logs
+      - name: Run the conformance scenarios
+        run: |
+          # Every scenario must run: a missing secret key would skip the admin ones.
+          test -n "$CONFORMANCE_PUBLISHABLE_KEY" && test -n "$CONFORMANCE_SECRET_KEY"
+          bun run conformance | tee conformance.log
+          ! grep -q '^SKIPPED' conformance.log
+        shell: bash -euo pipefail {0}
+      - name: Stack logs
         if: failure()
-        run: docker compose --profile app logs api
-
+        run: docker compose --profile app logs --no-color

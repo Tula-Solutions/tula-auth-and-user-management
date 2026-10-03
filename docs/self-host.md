@@ -23,11 +23,14 @@ migrations, and starts the API on http://localhost:3003. The API waits for the m
 finish. Keep the same `TULA_MASTER_KEY` for every later start: put it in a `.env` file next to
 `docker-compose.yml` (`TULA_MASTER_KEY=…`) rather than exporting it each time.
 
-Create the first project and its environments, then an API key for each kind:
+Create the first workspace (named `Local`), its default project and a development and a
+production environment. The command prints their ids; copy the development environment's:
 
 ```bash
 docker compose --profile app run --rm api bun run ../../packages/db/src/scripts/seed.ts
 ```
+
+Then create an API key of each kind for that environment:
 
 ```bash
 docker compose --profile app run --rm api bun run src/scripts/create-api-key.ts --environment <development environment id> --kind publishable
@@ -48,7 +51,22 @@ curl http://localhost:3003/v1/ready
 
 The API reference is at http://localhost:3003/v1/docs. Verification emails land in Mailpit.
 
-To stop it: `docker compose --profile app down`. Adding `-v` also deletes the database.
+To stop it: `docker compose --profile app down`. Adding `-v` also deletes the database. Always
+pass `--profile app`: a plain `docker compose down` leaves the API container running.
+
+Compose also reads a `.env` file next to `docker-compose.yml`. These variables change the
+packaged stack:
+
+| Variable | Default | |
+| --- | --- | --- |
+| `TULA_MASTER_KEY` | none | Required. |
+| `API_PORT` | `3003` | Host port of the API. `PUBLIC_URL` follows it unless set. |
+| `PUBLIC_URL` | `http://localhost:<API_PORT>` | |
+| `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
+| `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. |
+| `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `5432`, `6379`, `1025`, `8025` | Host ports of the other services. |
+
+The database addresses inside the stack are fixed; `DATABASE_URL` from `.env` is not used.
 
 ### Check it behaves like Tula
 
@@ -108,6 +126,21 @@ docker run --rm -e DATABASE_MIGRATION_URL=postgres://owner:…@db:5432/tula tula
 ```
 
 Migrations only move forward. Back up the database before upgrading.
+
+**First project and keys.** With your own database there is no Compose service to run the
+bootstrap scripts in; run them in the image with the runtime settings. The seed prints the
+environment ids, and each key is printed once:
+
+```bash
+docker run --rm -e DATABASE_URL=postgres://tula_api:…@db:5432/tula tula-api bun run ../../packages/db/src/scripts/seed.ts
+```
+
+```bash
+docker run --rm -e ENVIRONMENT=prod -e DATABASE_URL=postgres://tula_api:…@db:5432/tula -e TULA_MASTER_KEY=… -e PUBLIC_URL=https://auth.example.com -e SMTP_URL=smtps://… -e MAIL_FROM='Example <no-reply@example.com>' -e BREACH_CHECK=hibp tula-api bun run src/scripts/create-api-key.ts --environment <environment id> --kind secret
+```
+
+The key script validates the same settings as the server, so give it the ones your deployment
+uses. Create the roles first, then run the migrations, then these.
 
 **HTTPS and the proxy.** Put the API behind a TLS-terminating reverse proxy and set
 `PUBLIC_URL` to the public https address. Refresh cookies are `Secure` when `PUBLIC_URL` is
