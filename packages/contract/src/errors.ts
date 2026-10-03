@@ -59,6 +59,12 @@ export const ERROR_DEFINITIONS = {
     message: 'Avoid repeating the same character.',
   },
   'password.sequence': { status: 422, message: 'Avoid sequences like "abcd" or "1234".' },
+  // "Change my password" on an account that has none (it signs in another way). Only ever told
+  // to the signed-in user about their own account.
+  'password.not_set': {
+    status: 409,
+    message: 'This account has no password yet. Use "forgot password" to set one.',
+  },
 
   'verification.invalid_code': { status: 422, message: 'That code is incorrect.' },
   'verification.expired': { status: 410, message: 'That code has expired. Request a new one.' },
@@ -78,6 +84,13 @@ export const ERROR_DEFINITIONS = {
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },
   'request.too_large': { status: 413, message: 'The request body is too large.' },
+  // A browser flow (`x-tula-client: web`) called from a page whose origin the environment does
+  // not allow (`urls.allowedOrigins`). Refused before anything changes, so such a page can
+  // neither start a sign-in nor have a session cookie set by finishing one.
+  'request.origin_not_allowed': {
+    status: 403,
+    message: 'This origin is not allowed to sign in to this app.',
+  },
   'validation.failed': { status: 422, message: 'Some fields are invalid.' },
   'resource.not_found': { status: 404, message: 'The requested resource does not exist.' },
   'resource.conflict': { status: 409, message: 'The resource conflicts with existing data.' },

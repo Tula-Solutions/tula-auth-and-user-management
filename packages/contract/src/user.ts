@@ -46,11 +46,16 @@ export const UserSortSchema = z
   .enum(['createdAt', '-createdAt', 'email', '-email', 'lastSignInAt', '-lastSignInAt'])
   .meta({ ref: 'UserSort' })
 
-/** Create a user from a server or the dashboard. */
+/**
+ * Create a user from a server or the dashboard.
+ *
+ * `password` is optional: a user created without one has no password credential (they will sign
+ * in another way) and gets one through a password reset or an admin "set password".
+ */
 export const CreateUserRequestSchema = z
   .object({
     email: z.string().max(320),
-    password: z.string().max(1024),
+    password: z.string().max(1024).optional(),
     firstName: z.string().trim().max(100).optional(),
     lastName: z.string().trim().max(100).optional(),
     /** Mark the email as already verified (e.g. when importing users). Defaults to `false`. */

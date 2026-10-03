@@ -1,11 +1,19 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { Activity } from '~/ports/activity-log'
 import type {
-  NewUserWithPassword,
+  NewUser,
+  PasswordOutcome,
   UserListCriteria,
   UserRecord,
   UserRepository,
 } from '~/ports/user-repository'
+
+/** The activity as recorded: a first password is marked `created: true`. */
+function withOutcome(activity: Activity, outcome: PasswordOutcome): Activity {
+  return outcome === 'created'
+    ? { ...activity, data: { ...activity.data, created: true } }
+    : activity
+}
 
 /** Users held in memory, for tests. */
 export class MemoryUserRepository implements UserRepository {
@@ -44,7 +52,7 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async createWithPassword(user: NewUserWithPassword, activity?: Activity): Promise<boolean> {
+  async create(user: NewUser, activity?: Activity): Promise<boolean> {
     // Checked and written without an `await` in between, so concurrent creations behave like
     // the database's unique constraint: exactly one wins.
     if (this.#byEmail(user.environmentId, user.emailNormalized)) {
@@ -52,7 +60,9 @@ export class MemoryUserRepository implements UserRepository {
     }
     const { identityId: _identityId, credentialId: _credentialId, passwordHash, ...record } = user
     this.#users.set(user.id, { ...record, bannedAt: null, lastSignInAt: null })
-    this.#passwords.set(user.id, passwordHash)
+    if (passwordHash !== null) {
+      this.#passwords.set(user.id, passwordHash)
+    }
     this.#activityLog.record(activity ? [activity] : [])
     return true
   }
@@ -64,13 +74,15 @@ export class MemoryUserRepository implements UserRepository {
     passwordHash: string,
     _at: Date,
     activity?: Activity
-  ): Promise<boolean> {
-    if (!this.#user(environmentId, userId) || !this.#passwords.has(userId)) {
-      return false
+  ): Promise<PasswordOutcome | null> {
+    if (!this.#user(environmentId, userId)) {
+      return null
     }
+    // Checked and written without an `await` in between, like the database's single upsert.
+    const outcome: PasswordOutcome = this.#passwords.has(userId) ? 'replaced' : 'created'
     this.#passwords.set(userId, passwordHash)
-    this.#activityLog.record(activity ? [activity] : [])
-    return true
+    this.#activityLog.record(activity ? [withOutcome(activity, outcome)] : [])
+    return outcome
   }
 
   /** @inheritdoc */

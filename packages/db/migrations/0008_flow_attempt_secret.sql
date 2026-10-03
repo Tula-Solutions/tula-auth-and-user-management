@@ -1,0 +1,1 @@
+ALTER TABLE "tula"."flow_attempts" ADD COLUMN "secret_hash" text;

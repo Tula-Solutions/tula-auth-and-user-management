@@ -4,7 +4,7 @@ import type { AppEnv, Deps, Tenant, TenantVariables } from '~/dependencies'
 import { allowedOrigin } from '~/lib/cors'
 import * as logger from '~/lib/logger'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
-import { CLIENT_HEADER } from '~/modules/flow/schema'
+import { CLIENT_HEADER, FLOW_ATTEMPT_HEADER } from '~/modules/flow/schema'
 import * as Settings from '~/modules/settings/service'
 
 /** Methods a browser may use. Every method the API has routes for. */
@@ -17,6 +17,7 @@ export const CORS_REQUEST_HEADERS = [
   'If-Match',
   PUBLISHABLE_KEY_HEADER,
   CLIENT_HEADER,
+  FLOW_ATTEMPT_HEADER,
 ] as const
 
 /** Response headers a browser's JavaScript may read. */
@@ -74,13 +75,17 @@ export async function anyEnvironmentAllowsOrigin(
 }
 
 /**
- * Whether a request may be authenticated by the refresh cookie.
+ * Whether a request may use the refresh cookie: be authenticated by it, or have it set.
  *
  * A browser attaches cookies by itself, so a page on another origin of the same site could make
  * a signed-in user's browser refresh or sign out without asking (`SameSite=Lax` only stops
  * other *sites*). The cookie is therefore honoured only when the request has no `Origin` (not a
  * cross-origin browser request) or an origin the environment allows. A token in the request
  * body is never affected: JavaScript had to hold it.
+ *
+ * The flow routes apply the same rule to *setting* the cookie: a browser attempt is refused
+ * from any other origin, so a foreign page cannot sign the browser in to an account of its
+ * choosing (login CSRF; ADR 0019).
  *
  * @param c - A context `publishableKey()` has run on.
  * @returns `false` when the cookie must be ignored.

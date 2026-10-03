@@ -12,6 +12,12 @@ export interface FlowAttemptRecord {
   userId: string | null
   /** Normalized identifier (email) the attempt started with. */
   identifier: string
+  /**
+   * SHA-256 (hex) of the secret the client was given when the attempt started and must present
+   * on every later call. `null` only for an attempt stored before attempts were bound: it has
+   * no secret that could be presented, so it can never be continued.
+   */
+  secretHash: string | null
   /** Step-specific server state. Never sent to clients. */
   state: Record<string, unknown>
   expiresAt: Date

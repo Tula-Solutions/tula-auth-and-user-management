@@ -98,7 +98,7 @@ export function describeActivityLog(
 
     async function seedUser(tenant: ActivitySuiteTenant): Promise<string> {
       const user = newUser(tenant)
-      await ctx.users.createWithPassword(user)
+      await ctx.users.create(user)
       return user.id
     }
 
@@ -229,18 +229,39 @@ export function describeActivityLog(
     test('creating a user is recorded; a taken email is not', async () => {
       const user = newUser(ctx.a)
       const target = { type: 'user' as const, id: user.id }
-      expect(
-        await ctx.users.createWithPassword(user, activity(ctx.a, 'user.created', target))
-      ).toBe(true)
+      expect(await ctx.users.create(user, activity(ctx.a, 'user.created', target))).toBe(true)
       const twin = { ...newUser(ctx.a), email: user.email, emailNormalized: user.emailNormalized }
       expect(
-        await ctx.users.createWithPassword(
-          twin,
-          activity(ctx.a, 'user.created', { type: 'user', id: twin.id })
-        )
+        await ctx.users.create(twin, activity(ctx.a, 'user.created', { type: 'user', id: twin.id }))
       ).toBe(false)
       expect(await recorded(ctx.a, user.id)).toEqual(['user.created'])
       expect(await recorded(ctx.a, twin.id)).toEqual([])
+    })
+
+    test('a first password is recorded as created; a replacement is not', async () => {
+      const user = { ...newUser(ctx.a), passwordHash: null }
+      await ctx.users.create(user)
+      const target = { type: 'user' as const, id: user.id }
+      const change = () =>
+        ctx.users.setPasswordHash(
+          ctx.a.environmentId,
+          user.id,
+          '$argon2id$new',
+          later(1),
+          activity(ctx.a, 'user.password_changed', target, { data: { method: 'reset' } })
+        )
+      expect(await change()).toBe('created')
+      expect(await change()).toBe('replaced')
+      const { entries } = await ctx.log.listAudit(ctx.a.environmentId, {
+        targetId: user.id,
+        page: 1,
+        size: 100,
+      })
+      // Newest first.
+      expect(entries.map((entry) => entry.data)).toEqual([
+        { method: 'reset' },
+        { method: 'reset', created: true },
+      ])
     })
 
     test('a password change is recorded only when a password was replaced', async () => {
@@ -254,9 +275,9 @@ export function describeActivityLog(
           later(1),
           activity(tenant, 'user.password_changed', target)
         )
-      expect(await change(ctx.a)).toBe(true)
+      expect(await change(ctx.a)).toBe('replaced')
       // Unknown in the other environment: nothing replaced, nothing recorded.
-      expect(await change(ctx.b)).toBe(false)
+      expect(await change(ctx.b)).toBeNull()
       expect(await recorded(ctx.a, userId)).toEqual(['user.password_changed'])
       expect(await recorded(ctx.b, userId)).toEqual([])
     })

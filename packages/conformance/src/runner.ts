@@ -1,4 +1,4 @@
-import { durationToMs } from '@tula/contract'
+import { durationToMs, FLOW_ATTEMPT_HEADER } from '@tula/contract'
 import { match, pick } from './match'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
 import { expandJson, fill } from './template'
@@ -142,6 +142,9 @@ function buildRequest(target: Target, request: ScenarioRequest, origin: string):
   }
   if (request.client) {
     headers.set('x-tula-client', request.client)
+  }
+  if (request.attempt !== undefined) {
+    headers.set(FLOW_ATTEMPT_HEADER, request.attempt)
   }
   if (request.body !== undefined) {
     headers.set('content-type', 'application/json')

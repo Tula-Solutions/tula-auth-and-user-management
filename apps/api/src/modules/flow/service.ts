@@ -1,10 +1,12 @@
 import {
   durationToMs,
+  FirstFactorStrategySchema,
   type FlowAttempt,
   type FlowKind,
   type FlowStep,
   type PasswordResetRequest,
   type PasswordResetStartRequest,
+  SecondFactorMethodSchema,
   type SessionClient,
   SessionClientSchema,
   type SessionTokens,
@@ -15,9 +17,11 @@ import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InvalidEmailError, RateLimitError } from '~/exceptions'
 import { cleanOrigin } from '~/lib/actor'
+import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
+import * as Factors from '~/modules/factor/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
@@ -26,10 +30,15 @@ import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import { sendAccountExistsNotice, sendNoAccountNotice } from './mailer'
-import { nextStatus } from './transitions'
+import { assertAccepts, nextStatus } from './transitions'
 
 /** How long a sign-in or sign-up attempt can be continued. */
 export const ATTEMPT_TTL = '10m'
+/** Prefix of an attempt secret, so one is recognisable in a leak scan (like `tula_rt_`). */
+export const ATTEMPT_SECRET_PREFIX = 'tula_at_'
+// Stands in for the stored hash of an attempt that does not exist or has none. Not hex, so no
+// SHA-256 digest can ever equal it.
+const NO_SECRET_HASH = 'x'.repeat(64)
 /**
  * Requests per minute for a whole environment, across all callers, on the steps that cost an
  * argon2id hash or an email. Generous for real traffic (ten sign-ups a second), tight enough
@@ -97,12 +106,33 @@ function requirePasswordMethod(
   return Settings.requireMethod(deps, tenant, 'password')
 }
 
-/** The device a flow request comes from. Captured when the attempt starts. */
+/** The device a flow request comes from. */
 export interface ClientContext {
-  /** Decides how the refresh token is delivered when the flow completes. */
+  /**
+   * Decides how the refresh token is delivered when the flow completes. Read only when an
+   * attempt starts; later calls use the kind the attempt was started with.
+   */
   client: SessionClient
   userAgent: string | null
   ipAddress: string | null
+  /**
+   * Whether the request may set or use the environment's cookies: it has no `Origin` header (not
+   * a cross-origin browser request), or its origin is one the environment allows. The same rule
+   * the refresh cookie is read under (`originMayUseCookies`).
+   */
+  originAllowed: boolean
+}
+
+/**
+ * Which attempt a call is about: its id, and the secret the client was given when it started.
+ *
+ * Both are needed. The id travels in URL paths, which are logged; the secret travels only in
+ * the `x-tula-attempt` header.
+ */
+export interface AttemptRef {
+  id: string
+  /** The presented secret, if any. A missing one never matches. */
+  secret: string | undefined
 }
 
 /** The outcome of a flow call: the attempt's next step, plus tokens once it is `complete`. */
@@ -128,6 +158,10 @@ const StateSchema = z.object({
    * password reset for one that had none.
    */
   decoy: z.boolean().optional(),
+  /** The first factors a sign-in was offered when it started. */
+  strategies: z.array(FirstFactorStrategySchema).optional(),
+  /** The second factors the user may choose from, while the attempt waits on one. */
+  secondFactors: z.array(SecondFactorMethodSchema).optional(),
 })
 type State = z.infer<typeof StateSchema>
 
@@ -149,20 +183,62 @@ function stepFor(
       strategies: ['email_code'],
     }
   }
+  if (attempt.status === 'needs_first_factor') {
+    return { status: 'needs_first_factor', strategies: state.strategies ?? [] }
+  }
+  if (attempt.status === 'needs_second_factor') {
+    return { status: 'needs_second_factor', options: state.secondFactors ?? [] }
+  }
   // Open attempts are only ever stored on the steps above or `needs_password`; `complete` is
   // built by `finish` with its ids.
   return { status: 'needs_password' }
 }
 
-function toAttempt(attempt: FlowAttemptRecord, step: FlowStep): FlowAttempt {
+/**
+ * @param secret - Given only for the response that starts the attempt: the one time the client
+ *   is told its secret.
+ */
+function toAttempt(attempt: FlowAttemptRecord, step: FlowStep, secret?: string): FlowAttempt {
   return {
     id: attempt.id,
     kind: attempt.kind,
     expiresAt: attempt.expiresAt.toISOString(),
     step,
+    ...(secret !== undefined && { attemptSecret: secret }),
   }
 }
 
+/**
+ * Refuse a browser flow driven from a page the environment does not allow (login CSRF).
+ *
+ * A browser stores the session cookie a completed flow sets, whoever wrote the page that made
+ * the request. Without this, a page on another origin could finish an attacker's own sign-in in
+ * the victim's browser and leave the victim signed in to the attacker's account. So a `web`
+ * attempt is refused, at its start and at every later step, unless the request has no `Origin`
+ * or an allowed one: the same rule under which the cookie is later honoured. Other client
+ * kinds get their tokens in the response body, which a foreign page cannot read, and set no
+ * cookie.
+ *
+ * Always checked before anything is counted, spent, sent or stored.
+ *
+ * @throws AuthError `request.origin_not_allowed`.
+ */
+function requireAllowedOrigin(
+  client: SessionClient,
+  context: Pick<ClientContext, 'originAllowed'>
+): void {
+  if (client === 'web' && !context.originAllowed) {
+    throw new AuthError('request.origin_not_allowed')
+  }
+}
+
+/**
+ * Store a new attempt, bound to a fresh secret.
+ *
+ * The secret is 256 bits from the CSPRNG. Only its SHA-256 is stored; the caller returns the
+ * secret itself once, in the response that starts the attempt, and it is never logged, audited
+ * or sent again.
+ */
 async function start(
   deps: Pick<Deps, 'flowAttempts' | 'clock' | 'ids'>,
   tenant: Tenant,
@@ -170,44 +246,62 @@ async function start(
     state: State
     userId?: string
   }
-): Promise<FlowAttemptRecord> {
+): Promise<{ attempt: FlowAttemptRecord; secret: string }> {
   const now = deps.clock.now()
+  const secret = `${ATTEMPT_SECRET_PREFIX}${randomToken()}`
   const attempt: FlowAttemptRecord = {
     id: deps.ids.next(),
     projectId: tenant.projectId,
     environmentId: tenant.environmentId,
     userId: null,
+    secretHash: sha256Hex(secret),
     expiresAt: new Date(now.getTime() + durationToMs(ATTEMPT_TTL)),
     completedAt: null,
     createdAt: now,
     ...input,
   }
   await deps.flowAttempts.create(attempt)
-  return attempt
+  return { attempt, secret }
 }
 
 /**
- * Load an open attempt of the given kind.
+ * Load an open attempt of the given kind, for the client that started it.
  *
- * Unknown, foreign-environment, wrong-kind, completed and expired attempts are all the same
- * `flow.not_found`, so attempt ids reveal nothing.
+ * Every step of every flow goes through here, so none can forget either check:
+ *
+ * - **The attempt's secret.** Unknown, foreign-environment, wrong-kind, completed and expired
+ *   attempts, and any attempt presented without its secret, with a wrong one or with another
+ *   attempt's, are all the same `flow.not_found`: an attempt id alone reveals and does nothing.
+ *   Hashes are compared in constant time, and a comparison is made even when there is no
+ *   attempt. An attempt with no stored hash (written before attempts were bound) matches no
+ *   secret: it is never treated as "no secret needed".
+ * - **The origin**, for a browser attempt (see {@link requireAllowedOrigin}), after the secret
+ *   so that it says nothing to someone who does not hold the attempt.
  */
 async function load(
   deps: Pick<Deps, 'flowAttempts' | 'clock'>,
   tenant: Tenant,
   kind: FlowKind,
-  attemptId: string
+  ref: AttemptRef,
+  context: Pick<ClientContext, 'originAllowed'>
 ): Promise<{ attempt: FlowAttemptRecord; state: State }> {
-  const attempt = await deps.flowAttempts.findById(tenant.environmentId, attemptId)
+  const attempt = await deps.flowAttempts.findById(tenant.environmentId, ref.id)
+  const expected = attempt?.secretHash ?? null
+  const presented = timingSafeEqual(sha256Hex(ref.secret ?? ''), expected ?? NO_SECRET_HASH)
   if (
     !attempt ||
+    expected === null ||
+    ref.secret === undefined ||
+    !presented ||
     attempt.kind !== kind ||
     attempt.completedAt !== null ||
     attempt.expiresAt.getTime() <= deps.clock.now().getTime()
   ) {
     throw new AuthError('flow.not_found')
   }
-  return { attempt, state: StateSchema.parse(attempt.state) }
+  const state = StateSchema.parse(attempt.state)
+  requireAllowedOrigin(state.client, context)
+  return { attempt, state }
 }
 
 /**
@@ -258,6 +352,36 @@ async function finish(
 }
 
 /**
+ * Park an attempt on `needs_second_factor`: the first factor (or a reset's code and password)
+ * was accepted, and the user must now prove one of `secondFactors`.
+ *
+ * No session is created and no tokens are returned. The move is a compare-and-set, so of two
+ * racing requests only one gets here.
+ */
+async function awaitSecondFactor(
+  deps: Pick<Deps, 'flowAttempts' | 'clock'>,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  userId: string,
+  secondFactors: State['secondFactors']
+): Promise<FlowResult> {
+  const pending: State = { ...state, secondFactors }
+  const waiting = { ...attempt, status: 'needs_second_factor' as const, userId }
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: waiting.status, userId, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return { attempt: toAttempt(waiting, stepFor(waiting, pending)), client: state.client }
+}
+
+/**
  * Start a sign-up: check the email and password, then email a verification code.
  *
  * The account is created only when the email is verified, so nobody can squat on an address
@@ -272,7 +396,9 @@ async function finish(
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_email_verification`.
  * @throws InvalidEmailError, or a `password.*` ServiceException with per-field `errors`.
- * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
+ * @throws AuthError `auth.method_disabled` when the environment has switched passwords off, or
+ *   `request.origin_not_allowed` for a browser attempt from an origin the environment does not
+ *   allow.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function signUp(
@@ -281,6 +407,7 @@ export async function signUp(
   input: SignUpRequest,
   context: ClientContext
 ): Promise<FlowResult> {
+  requireAllowedOrigin(context.client, context)
   const parsed = parseEmail(input.email)
   if (!parsed) {
     throw new InvalidEmailError()
@@ -301,7 +428,7 @@ export async function signUp(
   const state: State = decoy
     ? { client: context.client, email, decoy: true }
     : { client: context.client, email, firstName, lastName, passwordHash }
-  const attempt = await start(deps, tenant, {
+  const { attempt, secret } = await start(deps, tenant, {
     kind: 'sign_up',
     status: 'needs_email_verification',
     identifier,
@@ -314,7 +441,7 @@ export async function signUp(
     await deps.flowAttempts.delete(tenant.environmentId, attempt.id)
     throw error
   }
-  return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
+  return { attempt: toAttempt(attempt, stepFor(attempt, state), secret), client: state.client }
 }
 
 /**
@@ -348,18 +475,23 @@ async function issueCode(
 }
 
 /**
- * Start a sign-in. Always answers `needs_password`, whoever the identifier belongs to and
- * whether or not it exists: the identifier is not looked up until a password is submitted.
+ * Start a sign-in: answer with the first factors the environment offers.
  *
- * Password is the only first factor today, so an environment that has switched it off refuses
- * the start. Step 1.3 turns this into the choice of first factor (`needs_first_factor`).
+ * `needs_password` when the password is the only enabled method (so the simplest client stays
+ * simple), `needs_first_factor` with the enabled strategies otherwise.
+ *
+ * **The answer depends only on the environment's settings, never on the identifier**, which is
+ * not looked up until a factor is submitted: whoever the address belongs to, whether it exists,
+ * and whether that account has a password or a passkey, the step is the same. The strategies
+ * are kept on the attempt, so a later step accepts exactly what this response offered.
  *
  * @param deps - Flow attempt store, clock, ids and settings.
  * @param tenant - The environment the publishable key resolved to.
  * @param input - The identifier (email).
  * @param context - The requesting device.
- * @returns The attempt, waiting on `needs_password`.
- * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
+ * @returns The attempt, waiting on `needs_password` or `needs_first_factor`, with its secret.
+ * @throws AuthError `auth.method_disabled` when the environment has every method switched off,
+ *   or `request.origin_not_allowed` for a browser attempt from an origin it does not allow.
  */
 export async function signIn(
   deps: Pick<Deps, 'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config'>,
@@ -367,15 +499,22 @@ export async function signIn(
   input: SignInStartRequest,
   context: ClientContext
 ): Promise<FlowResult> {
-  await requirePasswordMethod(deps, tenant)
-  const state: State = { client: context.client }
-  const attempt = await start(deps, tenant, {
+  requireAllowedOrigin(context.client, context)
+  const strategies = Factors.firstFactors(await Settings.current(deps, tenant))
+  if (strategies.length === 0) {
+    throw new AuthError('auth.method_disabled')
+  }
+  const state: State = { client: context.client, strategies }
+  const { attempt, secret } = await start(deps, tenant, {
     kind: 'sign_in',
-    status: 'needs_password',
+    status:
+      strategies.length === 1 && strategies[0] === 'password'
+        ? 'needs_password'
+        : 'needs_first_factor',
     identifier: normalizeEmail(input.identifier),
     state,
   })
-  return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
+  return { attempt: toAttempt(attempt, stepFor(attempt, state), secret), client: state.client }
 }
 
 /**
@@ -387,27 +526,31 @@ export async function signIn(
  * (`CREDENTIAL_LOCKOUT`), so the lockout follows the account across attempts and IPs; a
  * successful sign-in clears it.
  *
+ * Valid on `needs_password`, and on `needs_first_factor` when `password` is among the strategies
+ * the attempt was offered.
+ *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
- * @param attemptId - The sign-in attempt.
+ * @param ref - The sign-in attempt and its secret.
  * @param password - The submitted password.
  * @param context - The requesting device.
- * @returns `complete` with tokens, or `needs_email_verification` for an unverified email.
- * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`,
- *   `auth.invalid_credentials` or `auth.user_banned`.
+ * @returns `complete` with tokens; `needs_email_verification` for an unverified email; or
+ *   `needs_second_factor`, without tokens, for a user who has a second factor.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
+ *   `auth.method_disabled`, `auth.invalid_credentials` or `auth.user_banned`.
  * @throws RateLimitError while the identifier is locked out after repeated failures.
  */
 export async function submitPassword(
   deps: Deps,
   tenant: Tenant,
-  attemptId: string,
+  ref: AttemptRef,
   password: string,
   context: ClientContext
 ): Promise<FlowResult> {
-  const { attempt, state } = await load(deps, tenant, 'sign_in', attemptId)
-  if (attempt.status !== 'needs_password') {
-    throw new AuthError('flow.invalid_step')
-  }
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  const strategies = state.strategies ?? []
+  const event = { type: 'first_factor_verified', strategy: 'password' } as const
+  assertAccepts(attempt.kind, attempt.status, event, strategies)
   await requirePasswordMethod(deps, tenant)
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
@@ -444,12 +587,17 @@ export async function submitPassword(
     )
   }
 
-  const next = nextStatus(attempt.kind, attempt.status, {
-    type: 'password_verified',
+  const secondFactors = await Factors.requiredFor(deps, tenant, user.id)
+  const next = nextStatus(attempt.kind, attempt.status, event, {
+    strategies,
     emailVerified: user.emailVerifiedAt !== null,
+    secondFactors,
   })
   if (next === 'complete') {
     return finish(deps, tenant, attempt, state, user.id, context)
+  }
+  if (next === 'needs_second_factor') {
+    return awaitSecondFactor(deps, tenant, attempt, state, user.id, secondFactors)
   }
 
   const pending: State = { ...state, email: user.email }
@@ -474,29 +622,31 @@ export async function submitPassword(
  * Submit the emailed code for an attempt waiting on `needs_email_verification`.
  *
  * For a sign-up this creates the account (now that the address is proven) and signs the user
- * in. For a sign-in it marks the user's email verified and completes the sign-in.
+ * in. For a sign-in it marks the user's email verified and completes the sign-in, unless the
+ * user has a second factor: then the attempt moves to `needs_second_factor`, without tokens.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
  * @param kind - Which flow the route belongs to; an attempt of the other kind is not found.
- * @param attemptId - The attempt.
+ * @param ref - The attempt and its secret.
  * @param code - The 6-digit code.
  * @param context - The requesting device.
- * @returns `complete` with tokens.
- * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`, a
- *   `verification.*` code or `auth.user_banned`.
+ * @returns `complete` with tokens, or `needs_second_factor` without.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
+ *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`.
  */
 export async function verifyEmail(
   deps: Deps,
   tenant: Tenant,
   kind: FlowKind,
-  attemptId: string,
+  ref: AttemptRef,
   code: string,
   context: ClientContext
 ): Promise<FlowResult> {
-  const { attempt, state } = await load(deps, tenant, kind, attemptId)
+  const { attempt, state } = await load(deps, tenant, kind, ref, context)
+  const event = { type: 'email_verified' } as const
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
-  nextStatus(attempt.kind, attempt.status, { type: 'email_verified' })
+  assertAccepts(attempt.kind, attempt.status, event)
   await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'verify')
 
@@ -517,6 +667,7 @@ export async function verifyEmail(
     if (user.bannedAt !== null) {
       throw new AuthError('auth.user_banned')
     }
+    const secondFactors = await Factors.requiredFor(deps, tenant, user.id)
     await deps.users.markEmailVerified(
       tenant.environmentId,
       user.id,
@@ -527,7 +678,14 @@ export async function verifyEmail(
         target: { type: 'user', id: user.id },
       })
     )
-    return finish(deps, tenant, attempt, state, user.id, context)
+    const next = nextStatus(attempt.kind, attempt.status, event, {
+      strategies: state.strategies ?? [],
+      emailVerified: true,
+      secondFactors,
+    })
+    return next === 'complete'
+      ? finish(deps, tenant, attempt, state, user.id, context)
+      : awaitSecondFactor(deps, tenant, attempt, state, user.id, secondFactors)
   }
 
   if (state.decoy || !state.passwordHash) {
@@ -536,7 +694,7 @@ export async function verifyEmail(
     throw new AuthError('verification.invalid_code', { attemptsRemaining: 0 })
   }
   const userId = deps.ids.next()
-  const created = await deps.users.createWithPassword(
+  const created = await deps.users.create(
     {
       id: userId,
       projectId: tenant.projectId,
@@ -581,7 +739,9 @@ export async function verifyEmail(
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_new_password`.
  * @throws InvalidEmailError when the address is malformed.
- * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
+ * @throws AuthError `auth.method_disabled` when the environment has switched passwords off, or
+ *   `request.origin_not_allowed` for a browser attempt from an origin the environment does not
+ *   allow.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function startPasswordReset(
@@ -590,6 +750,7 @@ export async function startPasswordReset(
   input: PasswordResetStartRequest,
   context: ClientContext
 ): Promise<FlowResult> {
+  requireAllowedOrigin(context.client, context)
   const parsed = parseEmail(input.email)
   if (!parsed) {
     throw new InvalidEmailError()
@@ -599,7 +760,7 @@ export async function startPasswordReset(
   await chargeEnvironment(deps, tenant, 'passwordReset')
   const user = await deps.users.findByEmail(tenant.environmentId, identifier)
   const state: State = { client: context.client, email, ...(!user && { decoy: true }) }
-  const attempt = await start(deps, tenant, {
+  const { attempt, secret } = await start(deps, tenant, {
     kind: 'password_reset',
     status: 'needs_new_password',
     identifier,
@@ -613,7 +774,7 @@ export async function startPasswordReset(
     await deps.flowAttempts.delete(tenant.environmentId, attempt.id)
     throw error
   }
-  return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
+  return { attempt: toAttempt(attempt, stepFor(attempt, state), secret), client: state.client }
 }
 
 /**
@@ -627,26 +788,34 @@ export async function startPasswordReset(
  * cleared, and the email counts as verified, since the code proved control of it. If a step
  * fails after the code is spent, the user starts a new reset.
  *
+ * A user with a second factor is **not** signed in by the reset: once the password is stored
+ * the attempt moves to `needs_second_factor` and yields no tokens until one is proven, so an
+ * inbox alone never bypasses MFA. The stored password is not rolled back if the second factor
+ * is never proven: the user did prove the inbox, and the second factor gates the session, not
+ * the reset. The attempt cannot set a password again (its code is spent and it has left
+ * `needs_new_password`). A user with no password gets their first one this way.
+ *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
- * @param attemptId - The password-reset attempt.
+ * @param ref - The password-reset attempt and its secret.
  * @param input - The emailed code and the new password.
  * @param context - The requesting device.
- * @returns `complete` with tokens.
- * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`, a
- *   `verification.*` code or `auth.user_banned`.
+ * @returns `complete` with tokens, or `needs_second_factor` without.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
+ *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
  */
 export async function resetPassword(
   deps: Deps,
   tenant: Tenant,
-  attemptId: string,
+  ref: AttemptRef,
   input: PasswordResetRequest,
   context: ClientContext
 ): Promise<FlowResult> {
-  const { attempt, state } = await load(deps, tenant, 'password_reset', attemptId)
+  const { attempt, state } = await load(deps, tenant, 'password_reset', ref, context)
+  const event = { type: 'password_reset' } as const
   // Throws `flow.invalid_step` unless the attempt is waiting on the new password.
-  nextStatus(attempt.kind, attempt.status, { type: 'password_reset' })
+  assertAccepts(attempt.kind, attempt.status, event)
   await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'verify')
 
@@ -669,6 +838,14 @@ export async function resetPassword(
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
+  // Asked before anything is spent or stored, so a failure here leaves the reset retryable.
+  const secondFactors = await Factors.requiredFor(deps, tenant, user.id)
+  const next = nextStatus(attempt.kind, attempt.status, event, {
+    strategies: [],
+    // The code proves control of the address.
+    emailVerified: true,
+    secondFactors,
+  })
   const actor = { type: 'user', id: user.id, ...cleanOrigin(context) } as const
   await Users.resetPassword(deps, tenant, user.id, input.password, actor, () =>
     Verification.consume(deps, tenant, token.id)
@@ -694,6 +871,77 @@ export async function resetPassword(
       })
     }
   }
+  return next === 'complete'
+    ? finish(deps, tenant, attempt, state, user.id, context)
+    : awaitSecondFactor(deps, tenant, attempt, state, user.id, secondFactors)
+}
+
+/**
+ * Lockout key for second-factor guesses of one user in one environment.
+ *
+ * @param environmentId - The environment.
+ * @param userId - The user the attempt belongs to.
+ * @returns The key for `deps.lockout`.
+ */
+export function secondFactorLockKey(environmentId: string, userId: string): string {
+  return `second_factor:${environmentId}:${userId}`
+}
+
+/**
+ * Submit a second factor for an attempt waiting on `needs_second_factor`, and sign the user in.
+ *
+ * **The entry point every second factor uses.** The engine owns everything around the proof:
+ * the attempt's secret and origin, the step, that the method is one the attempt offered, the
+ * per-user lockout (`CREDENTIAL_LOCKOUT`: counted first, cleared on success, so parallel guesses
+ * cannot slip through), the environment's ceiling, the ban check and the compare-and-set that
+ * lets exactly one request create the session. The proof itself is checked by the verifier
+ * registered for its method (`Factors.verify`). Step 1.8 adds TOTP and backup codes by
+ * registering their verifiers and adding the route that calls this; nothing here changes.
+ *
+ * There is no HTTP route for it yet: no user can have a second factor until 1.8, so no attempt
+ * reaches `needs_second_factor` outside tests.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param kind - Which flow the route belongs to (`sign_in` or `password_reset`).
+ * @param ref - The attempt and its secret.
+ * @param proof - The method and what the client submitted for it.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` (wrong
+ *   step, or a method the attempt did not offer), `verification.invalid_code` for a proof that
+ *   does not verify, or `auth.user_banned`.
+ * @throws RateLimitError while the user is locked out after repeated wrong proofs.
+ */
+export async function submitSecondFactor(
+  deps: Deps,
+  tenant: Tenant,
+  kind: FlowKind,
+  ref: AttemptRef,
+  proof: Factors.SecondFactorProof,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, kind, ref, context)
+  assertAccepts(attempt.kind, attempt.status, { type: 'second_factor_verified' })
+  const userId = attempt.userId
+  if (!userId || !state.secondFactors?.includes(proof.method)) {
+    throw new AuthError('flow.invalid_step')
+  }
+  const lockKey = secondFactorLockKey(tenant.environmentId, userId)
+  const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
+  if (!lock.allowed) {
+    throw new RateLimitError(lock.retryAfterMs)
+  }
+  await chargeEnvironment(deps, tenant, 'verify')
+
+  const user = await deps.users.findById(tenant.environmentId, userId)
+  if (!user || !(await Factors.verify(deps, tenant, userId, proof))) {
+    throw new AuthError('verification.invalid_code')
+  }
+  await deps.lockout.clear(lockKey)
+  if (user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
   return finish(deps, tenant, attempt, state, user.id, context)
 }
 
@@ -707,18 +955,21 @@ export async function resetPassword(
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
  * @param kind - Which flow the route belongs to.
- * @param attemptId - The attempt.
+ * @param ref - The attempt and its secret.
+ * @param context - The requesting device.
  * @returns The attempt, still waiting on the same step.
- * @throws AuthError `flow.not_found`, `flow.invalid_step` or `auth.method_disabled`.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` or
+ *   `auth.method_disabled`.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function resendCode(
   deps: Deps,
   tenant: Tenant,
   kind: FlowKind,
-  attemptId: string
+  ref: AttemptRef,
+  context: ClientContext
 ): Promise<FlowResult> {
-  const { attempt, state } = await load(deps, tenant, kind, attemptId)
+  const { attempt, state } = await load(deps, tenant, kind, ref, context)
   const waitsOn = kind === 'password_reset' ? 'needs_new_password' : 'needs_email_verification'
   if (attempt.status !== waitsOn) {
     throw new AuthError('flow.invalid_step')

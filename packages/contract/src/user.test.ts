@@ -58,6 +58,11 @@ describe('user requests', () => {
     ).toEqual({ email: 'a@b.co', password: 'x', firstName: 'Maya' })
   })
 
+  test('create accepts a user without a password', () => {
+    expect(CreateUserRequestSchema.parse({ email: 'a@b.co' })).toEqual({ email: 'a@b.co' })
+    expect(CreateUserRequestSchema.safeParse({ password: 'x' }).success).toBe(false)
+  })
+
   test('create and change-password cap input lengths', () => {
     expect(
       CreateUserRequestSchema.safeParse({ email: 'a@b.co', password: 'x'.repeat(1025) }).success

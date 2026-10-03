@@ -1,0 +1,282 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "attempt binding",
+  "description": "An attempt id alone does nothing: starting an attempt returns a secret once, and every later call without it, with a wrong one or with another attempt's is answered exactly like an attempt that does not exist. Refused calls use up nothing, and the right secret then completes the attempt.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "starting a sign-up returns the attempt's secret",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification"
+          },
+          "attemptSecret": {
+            "$matches": "^tula_at_[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "an attempt that does not exist is flow.not_found",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/00000000-0000-7000-8000-00000000dead/verify-email",
+        "attempt": "tula_at_no-such-attempt",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "$any",
+          "params": "$absent",
+          "errors": "$absent"
+        }
+      },
+      "capture": {
+        "notFoundDetail": "detail"
+      }
+    },
+    {
+      "name": "the right code without the attempt's secret gets exactly the same answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "{{notFoundDetail}}",
+          "params": "$absent",
+          "errors": "$absent"
+        }
+      }
+    },
+    {
+      "name": "and so does a wrong secret",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}x",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "{{notFoundDetail}}",
+          "params": "$absent",
+          "errors": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a resend without the secret is refused too",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/resend-code"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "flow.not_found",
+          "detail": "{{notFoundDetail}}"
+        }
+      }
+    },
+    {
+      "name": "start a sign-in, which gets a secret of its own",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_password"
+          },
+          "attemptSecret": {
+            "$not": "{{signUpSecret}}"
+          }
+        }
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "another attempt's secret does not open the sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "{{notFoundDetail}}",
+          "params": "$absent",
+          "errors": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the refused calls used up nothing: the right secret and the same code complete the sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "attemptSecret": "$absent",
+          "session": {
+            "accessToken": "$any"
+          }
+        },
+        "bodyExcludes": ["{{signUpSecret}}", "tula_at_"]
+      },
+      "capture": {
+        "userId": "step.userId"
+      }
+    },
+    {
+      "name": "the right password without the sign-in's secret is refused like an unknown attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "{{notFoundDetail}}",
+          "params": "$absent",
+          "errors": "$absent"
+        }
+      }
+    },
+    {
+      "name": "and with the sign-up's secret",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "flow.not_found",
+          "detail": "{{notFoundDetail}}"
+        }
+      }
+    },
+    {
+      "name": "with its own secret the sign-in completes, and the secret is not repeated",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "attemptSecret": "$absent"
+        },
+        "bodyExcludes": ["{{signInSecret}}", "tula_at_"]
+      }
+    },
+    {
+      "name": "a completed attempt is gone, even with its secret",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "flow.not_found",
+          "detail": "{{notFoundDetail}}"
+        }
+      }
+    }
+  ]
+}

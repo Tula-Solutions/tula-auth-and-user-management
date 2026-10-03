@@ -104,6 +104,7 @@
           "password.breached",
           "password.repeated_characters",
           "password.sequence",
+          "password.not_set",
           "verification.invalid_code",
           "verification.expired",
           "verification.too_many_attempts",
@@ -114,6 +115,7 @@
           "rate_limited",
           "request.malformed",
           "request.too_large",
+          "request.origin_not_allowed",
           "validation.failed",
           "resource.not_found",
           "resource.conflict",
@@ -787,6 +789,18 @@
           "password_reset"
         ]
       },
+      "FirstFactorStrategy": {
+        "type": "string",
+        "enum": [
+          "password",
+          "email_code",
+          "email_link",
+          "passkey",
+          "oauth_google",
+          "oauth_github",
+          "oauth_apple"
+        ]
+      },
       "EmailVerificationStrategy": {
         "type": "string",
         "enum": [
@@ -827,6 +841,26 @@
             },
             "required": [
               "status"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "needs_first_factor"
+              },
+              "strategies": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FirstFactorStrategy"
+                }
+              }
+            },
+            "required": [
+              "status",
+              "strategies"
             ]
           },
           {
@@ -935,6 +969,9 @@
           },
           "step": {
             "$ref": "#/components/schemas/FlowStep"
+          },
+          "attemptSecret": {
+            "type": "string"
           },
           "session": {
             "$ref": "#/components/schemas/SessionTokens"
@@ -1220,8 +1257,7 @@
           }
         },
         "required": [
-          "email",
-          "password"
+          "email"
         ]
       },
       "SetPasswordRequest": {
@@ -2986,7 +3022,7 @@
           "Flows"
         ],
         "summary": "Start a sign-up",
-        "description": "Checks the email and password and emails a 6-digit code. The account is created when the code is verified. The response is the same whether or not the address already has an account. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how tokens are delivered when the flow completes.",
+        "description": "Checks the email and password and emails a 6-digit code. The account is created when the code is verified. The response is the same whether or not the address already has an account. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
         "security": [
           {
             "publishableKey": []
@@ -3130,7 +3166,7 @@
           "Flows"
         ],
         "summary": "Start a sign-in",
-        "description": "Always answers `needs_password`, whether or not the identifier belongs to an account. Send `x-tula-client` to choose how tokens are delivered when the flow completes.",
+        "description": "Answers with the first factors the environment offers: `needs_password` when the password is its only sign-in method, `needs_first_factor` with the enabled strategies otherwise. The answer depends only on the environment’s settings, never on the identifier: it is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
         "security": [
           {
             "publishableKey": []
@@ -3138,7 +3174,7 @@
         ],
         "responses": {
           "200": {
-            "description": "The attempt, waiting on a password.",
+            "description": "The attempt, waiting on a first factor.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3274,7 +3310,7 @@
           "Flows"
         ],
         "summary": "Submit the password",
-        "description": "Completes the sign-in, or moves it to `needs_email_verification` when the user’s email is not verified yet. Every failure is the same `auth.invalid_credentials`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "description": "For an attempt on `needs_password`, or on `needs_first_factor` with `password` among its strategies. Completes the sign-in, or moves it to `needs_email_verification` when the user’s email is not verified yet, or to `needs_second_factor` (no tokens) when the user has a second factor. Every failure is the same `auth.invalid_credentials`. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []
@@ -3420,6 +3456,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
           }
         ],
         "requestBody": {
@@ -3441,7 +3486,7 @@
           "Flows"
         ],
         "summary": "Submit the emailed code",
-        "description": "Verifies the 6-digit code for an attempt waiting on `needs_email_verification` and completes it. A code allows five guesses and lasts ten minutes. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "description": "Verifies the 6-digit code for an attempt waiting on `needs_email_verification` and completes it (a sign-in of a user with a second factor moves to `needs_second_factor` instead). A code allows five guesses and lasts ten minutes. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []
@@ -3597,6 +3642,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
           }
         ],
         "requestBody": {
@@ -3618,7 +3672,7 @@
           "Flows"
         ],
         "summary": "Submit the emailed code",
-        "description": "Verifies the 6-digit code for an attempt waiting on `needs_email_verification` and completes it. A code allows five guesses and lasts ten minutes. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "description": "Verifies the 6-digit code for an attempt waiting on `needs_email_verification` and completes it (a sign-in of a user with a second factor moves to `needs_second_factor` instead). A code allows five guesses and lasts ten minutes. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []
@@ -3774,6 +3828,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
           }
         ],
         "requestBody": {
@@ -3795,7 +3858,7 @@
           "Flows"
         ],
         "summary": "Start a password reset",
-        "description": "Emails a 6-digit code to the address. The response is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the reset completes.",
+        "description": "Emails a 6-digit code to the address. The response is the same whether or not the address has an account. Send `x-tula-client` to choose how tokens are delivered when the reset completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
         "security": [
           {
             "publishableKey": []
@@ -3939,7 +4002,7 @@
           "Flows"
         ],
         "summary": "Submit the emailed code and a new password",
-        "description": "Checks the 6-digit code, stores the new password, ends every existing session of the user and signs them in. A code allows five guesses and lasts ten minutes; a new password the policy rejects uses one guess but not the code. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "description": "Checks the 6-digit code, stores the new password, ends every existing session of the user and signs them in. A user with a second factor is not signed in: the attempt moves to `needs_second_factor` with the new password already stored. A user who had no password gets their first one. A code allows five guesses and lasts ten minutes; a new password the policy rejects uses one guess but not the code. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []
@@ -4095,6 +4158,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
           }
         ],
         "requestBody": {
@@ -4116,7 +4188,7 @@
           "Flows"
         ],
         "summary": "Resend the email code",
-        "description": "Emails a fresh code and retires the previous one. Limited to one email a minute and five an hour per address.",
+        "description": "Emails a fresh code and retires the previous one. Limited to one email a minute and five an hour per address. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`.",
         "security": [
           {
             "publishableKey": []
@@ -4252,6 +4324,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
           }
         ]
       }
@@ -4263,7 +4344,7 @@
           "Flows"
         ],
         "summary": "Resend the email code",
-        "description": "Emails a fresh code and retires the previous one. Limited to one email a minute and five an hour per address.",
+        "description": "Emails a fresh code and retires the previous one. Limited to one email a minute and five an hour per address. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`.",
         "security": [
           {
             "publishableKey": []
@@ -4399,6 +4480,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
           }
         ]
       }
@@ -4410,7 +4500,7 @@
           "Flows"
         ],
         "summary": "Resend the email code",
-        "description": "Emails a fresh code and retires the previous one. Limited to one email a minute and five an hour per address.",
+        "description": "Emails a fresh code and retires the previous one. Limited to one email a minute and five an hour per address. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`.",
         "security": [
           {
             "publishableKey": []
@@ -4546,6 +4636,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
           }
         ]
       }
@@ -4697,7 +4796,7 @@
           "Users"
         ],
         "summary": "Create a user",
-        "description": "Creates a user with a password that must meet the environment’s policy. The email is unverified unless `emailVerified` is true. A taken email answers 409.",
+        "description": "Creates a user. A `password`, when given, must meet the environment’s policy; without one the user has no password and gets one through a password reset or the admin \"set password\". The email is unverified unless `emailVerified` is true. A taken email answers 409.",
         "security": [
           {
             "secretKey": []
@@ -5330,7 +5429,7 @@
           "Users"
         ],
         "summary": "Set a user’s password",
-        "description": "Replaces the password (it must meet the policy) and ends every session of the user.",
+        "description": "Replaces the password (it must meet the policy), or creates it for a user who has none, and ends every session of the user.",
         "security": [
           {
             "secretKey": []
@@ -5557,7 +5656,7 @@
           "Users"
         ],
         "summary": "Change my password",
-        "description": "Requires the current password. On success the user’s other sessions end and this device stays signed in. A wrong current password answers `auth.invalid_credentials`.",
+        "description": "Requires the current password. On success the user’s other sessions end and this device stays signed in. A wrong current password answers `auth.invalid_credentials`. An account that has no password answers `password.not_set` (409): a first password is set through a password reset.",
         "security": [
           {
             "publishableKey": [],
@@ -5598,6 +5697,16 @@
           },
           "401": {
             "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
             "content": {
               "application/json": {
                 "schema": {

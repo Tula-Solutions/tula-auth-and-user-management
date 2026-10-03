@@ -37,7 +37,8 @@
         }
       },
       "capture": {
-        "signUpId": "id"
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
       }
     },
     {
@@ -53,6 +54,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
         "body": {
           "code": "{{code}}"
         }
@@ -107,7 +109,8 @@
         }
       },
       "capture": {
-        "signInId": "id"
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
       }
     },
     {
@@ -134,7 +137,8 @@
         }
       },
       "capture": {
-        "strangerSignInId": "id"
+        "strangerSignInId": "id",
+        "strangerSignInSecret": "attemptSecret"
       }
     },
     {
@@ -142,6 +146,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
         "body": {
           "password": "{{password}}-wrong"
         }
@@ -165,6 +170,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ins/{{strangerSignInId}}/password",
+        "attempt": "{{strangerSignInSecret}}",
         "body": {
           "password": "{{password}}"
         }
@@ -185,6 +191,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
         "body": {
           "password": "{{password}}"
         }

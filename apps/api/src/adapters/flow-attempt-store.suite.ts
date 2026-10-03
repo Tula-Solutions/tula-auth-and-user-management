@@ -48,6 +48,7 @@ export function describeFlowAttemptStore(
         status: 'needs_password',
         userId: null,
         identifier: 'maya@northline.app',
+        secretHash: 'a'.repeat(64),
         state: { client: 'web' },
         expiresAt: later(600_000),
         createdAt: now,
@@ -67,6 +68,24 @@ export function describeFlowAttemptStore(
         completedAt: null,
       })
       expect(await ctx.store.findById(ctx.a.environmentId, Bun.randomUUIDv7())).toBeNull()
+    })
+
+    test('keeps the hash of the attempt’s secret through every transition, and may hold none', async () => {
+      const bound = attempt(ctx.a, { secretHash: 'b'.repeat(64) })
+      const unbound = attempt(ctx.a, { secretHash: null })
+      await ctx.store.create(bound)
+      await ctx.store.create(unbound)
+      await ctx.store.transition(
+        ctx.a.environmentId,
+        bound.id,
+        'needs_password',
+        { status: 'needs_second_factor', state: { client: 'web' } },
+        later(1)
+      )
+      expect((await ctx.store.findById(ctx.a.environmentId, bound.id))?.secretHash).toBe(
+        'b'.repeat(64)
+      )
+      expect((await ctx.store.findById(ctx.a.environmentId, unbound.id))?.secretHash).toBeNull()
     })
 
     test('a transition changes the step and only the fields it names', async () => {

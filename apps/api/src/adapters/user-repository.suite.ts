@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { NewUserWithPassword, UserRepository } from '~/ports/user-repository'
+import type { NewUser, UserRepository } from '~/ports/user-repository'
 
 /** A tenant for the suite. */
 export interface UserSuiteTenant {
@@ -31,10 +31,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       ctx = await setup()
     })
 
-    function user(
-      tenant: UserSuiteTenant,
-      overrides: Partial<NewUserWithPassword> = {}
-    ): NewUserWithPassword {
+    function user(tenant: UserSuiteTenant, overrides: Partial<NewUser> = {}): NewUser {
       const id = Bun.randomUUIDv7()
       return {
         id,
@@ -53,14 +50,14 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       }
     }
 
-    function record(input: NewUserWithPassword) {
+    function record(input: NewUser) {
       const { identityId: _i, credentialId: _c, passwordHash: _p, ...rest } = input
       return { ...rest, bannedAt: null, lastSignInAt: null }
     }
 
     test('creates a user and finds them by id and by normalized email', async () => {
       const input = user(ctx.a)
-      expect(await ctx.users.createWithPassword(input)).toBe(true)
+      expect(await ctx.users.create(input)).toBe(true)
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
       expect(await ctx.users.findByEmail(ctx.a.environmentId, input.emailNormalized)).toEqual(
         record(input)
@@ -71,7 +68,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
     test('stores optional fields as null', async () => {
       const input = user(ctx.a, { firstName: null, lastName: null, emailVerifiedAt: null })
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
         firstName: null,
         lastName: null,
@@ -81,7 +78,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
     test('returns the password hash with the user for sign-in', async () => {
       const input = user(ctx.a, { passwordHash: '$argon2id$original' })
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
       ).toEqual({ user: record(input), passwordHash: '$argon2id$original' })
@@ -93,15 +90,13 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
     test('refuses a duplicate email in the same environment and writes nothing', async () => {
       const first = user(ctx.a)
       const second = user(ctx.a, { emailNormalized: first.emailNormalized })
-      expect(await ctx.users.createWithPassword(first)).toBe(true)
-      expect(await ctx.users.createWithPassword(second)).toBe(false)
+      expect(await ctx.users.create(first)).toBe(true)
+      expect(await ctx.users.create(second)).toBe(false)
       expect(await ctx.users.findById(ctx.a.environmentId, second.id)).toBeNull()
       // Of concurrent creations for one email, exactly one wins.
       const email = `race-${Bun.randomUUIDv7()}@northline.app`
       const results = await Promise.all(
-        Array.from({ length: 4 }, () =>
-          ctx.users.createWithPassword(user(ctx.a, { emailNormalized: email }))
-        )
+        Array.from({ length: 4 }, () => ctx.users.create(user(ctx.a, { emailNormalized: email })))
       )
       expect(results.filter(Boolean)).toHaveLength(1)
     })
@@ -109,16 +104,16 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
     test('the same email can exist in another environment', async () => {
       const first = user(ctx.a)
       const twin = user(ctx.b, { email: first.email, emailNormalized: first.emailNormalized })
-      expect(await ctx.users.createWithPassword(first)).toBe(true)
-      expect(await ctx.users.createWithPassword(twin)).toBe(true)
+      expect(await ctx.users.create(first)).toBe(true)
+      expect(await ctx.users.create(twin)).toBe(true)
       expect((await ctx.users.findByEmail(ctx.b.environmentId, first.emailNormalized))?.id).toBe(
         twin.id
       )
     })
 
-    test('replaces the password hash, reporting whether there was one to replace', async () => {
+    test('replaces the password hash, and stores nothing for a user who does not exist', async () => {
       const input = user(ctx.a)
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       expect(
         await ctx.users.setPasswordHash(
           ctx.a.environmentId,
@@ -126,19 +121,70 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           '$argon2id$new',
           later(1_000)
         )
-      ).toBe(true)
+      ).toBe('replaced')
       expect(
         await ctx.users.setPasswordHash(ctx.a.environmentId, Bun.randomUUIDv7(), 'x', later(1))
-      ).toBe(false)
+      ).toBeNull()
       expect(
         (await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized))
           ?.passwordHash
       ).toBe('$argon2id$new')
     })
 
+    test('a user can be created without a password, and found with none', async () => {
+      const input = user(ctx.a, { passwordHash: null })
+      expect(await ctx.users.create(input)).toBe(true)
+      expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
+      expect(
+        await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
+      ).toEqual({ user: record(input), passwordHash: null })
+      // Nothing to upgrade: a hash upgrade never creates a password.
+      expect(
+        await ctx.users.upgradePasswordHash(ctx.a.environmentId, input.id, 'a', 'b', later(1))
+      ).toBe(false)
+    })
+
+    test('a first password creates the credential; the next one replaces it', async () => {
+      const input = user(ctx.a, { passwordHash: null })
+      await ctx.users.create(input)
+      const env = ctx.a.environmentId
+      const stored = async () =>
+        (await ctx.users.findByEmailWithPassword(env, input.emailNormalized))?.passwordHash
+      // Another environment cannot give this user a password.
+      expect(
+        await ctx.users.setPasswordHash(ctx.b.environmentId, input.id, '$argon2id$x', later(1))
+      ).toBeNull()
+      expect(await stored()).toBeNull()
+
+      expect(await ctx.users.setPasswordHash(env, input.id, '$argon2id$first', later(1))).toBe(
+        'created'
+      )
+      expect(await stored()).toBe('$argon2id$first')
+      expect(await ctx.users.setPasswordHash(env, input.id, '$argon2id$second', later(2))).toBe(
+        'replaced'
+      )
+      expect(await stored()).toBe('$argon2id$second')
+    })
+
+    test('of concurrent first passwords exactly one creates the credential', async () => {
+      const input = user(ctx.a, { passwordHash: null })
+      await ctx.users.create(input)
+      const outcomes = await Promise.all(
+        [1, 2, 3, 4].map((n) =>
+          ctx.users.setPasswordHash(ctx.a.environmentId, input.id, `$argon2id$${n}`, later(n))
+        )
+      )
+      expect(outcomes.filter((outcome) => outcome === 'created')).toHaveLength(1)
+      expect(outcomes.filter((outcome) => outcome === 'replaced')).toHaveLength(3)
+      expect(
+        (await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized))
+          ?.passwordHash
+      ).toMatch(/^\$argon2id\$[1-4]$/)
+    })
+
     test('marks the email verified once and records sign-ins', async () => {
       const input = user(ctx.a, { emailVerifiedAt: null })
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       await ctx.users.markEmailVerified(ctx.a.environmentId, input.id, later(1_000))
       await ctx.users.markEmailVerified(ctx.a.environmentId, input.id, later(9_000))
       await ctx.users.recordSignIn(ctx.a.environmentId, input.id, later(2_000))
@@ -153,9 +199,9 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         user(ctx.a, { createdAt: later(i * 1_000), emailNormalized: `list-${i}@page.test` })
       )
       for (const input of inputs) {
-        await ctx.users.createWithPassword(input)
+        await ctx.users.create(input)
       }
-      await ctx.users.createWithPassword(user(ctx.b, { emailNormalized: 'list-9@page.test' }))
+      await ctx.users.create(user(ctx.b, { emailNormalized: 'list-9@page.test' }))
       const criteria = { q: '@page.test', sort: '-createdAt' as const, size: 2 }
 
       const first = await ctx.users.list(ctx.a.environmentId, { ...criteria, page: 1 })
@@ -163,7 +209,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(first.users.map((u) => u.id)).toEqual([inputs[4]?.id, inputs[3]?.id] as string[])
       const last = await ctx.users.list(ctx.a.environmentId, { ...criteria, page: 3 })
       expect(last.users.map((u) => u.id)).toEqual([inputs[0]?.id] as string[])
-      expect(first.users[0]).toEqual(record(inputs[4] as NewUserWithPassword))
+      expect(first.users[0]).toEqual(record(inputs[4] as NewUser))
       expect((await ctx.users.list(ctx.a.environmentId, { ...criteria, page: 4 })).users).toEqual(
         []
       )
@@ -173,9 +219,9 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       const tag = Bun.randomUUIDv7()
       const [b, a, c] = ['b', 'a', 'c'].map((letter) =>
         user(ctx.a, { emailNormalized: `${letter}-${tag}@sort.test` })
-      ) as [NewUserWithPassword, NewUserWithPassword, NewUserWithPassword]
+      ) as [NewUser, NewUser, NewUser]
       for (const input of [b, a, c]) {
-        await ctx.users.createWithPassword(input)
+        await ctx.users.create(input)
       }
       await ctx.users.recordSignIn(ctx.a.environmentId, a.id, later(2_000))
       await ctx.users.recordSignIn(ctx.a.environmentId, c.id, later(1_000))
@@ -196,7 +242,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         user(ctx.a, { emailNormalized: `${Bun.randomUUIDv7()}-${tag}@never.test` })
       )
       for (const input of never) {
-        await ctx.users.createWithPassword(input)
+        await ctx.users.create(input)
       }
       const sorted = never.map((u) => u.id).sort()
       const ids = async (sort: Parameters<UserRepository['list']>[1]['sort']) =>
@@ -219,8 +265,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         firstName: '100%_real',
         lastName: null,
       })
-      await ctx.users.createWithPassword(maya)
-      await ctx.users.createWithPassword(percent)
+      await ctx.users.create(maya)
+      await ctx.users.create(percent)
       const search = async (q: string) =>
         (
           await ctx.users.list(ctx.a.environmentId, { q, sort: 'email', page: 1, size: 10 })
@@ -236,7 +282,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
     test('bans keep the first ban time, and unbans clear it', async () => {
       const input = user(ctx.a)
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       expect(
         (await ctx.users.setBanned(ctx.a.environmentId, input.id, later(1_000), later(1_000)))
           ?.bannedAt
@@ -255,21 +301,21 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
     test('deletes a user and frees their email', async () => {
       const input = user(ctx.a)
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       expect(await ctx.users.delete(ctx.a.environmentId, input.id)).toBe(true)
       expect(await ctx.users.delete(ctx.a.environmentId, input.id)).toBe(false)
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toBeNull()
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
       ).toBeNull()
-      expect(
-        await ctx.users.createWithPassword(user(ctx.a, { emailNormalized: input.emailNormalized }))
-      ).toBe(true)
+      expect(await ctx.users.create(user(ctx.a, { emailNormalized: input.emailNormalized }))).toBe(
+        true
+      )
     })
 
     test('one environment cannot list, ban or delete another’s users', async () => {
       const input = user(ctx.a)
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       const foreign = ctx.b.environmentId
       const listed = await ctx.users.list(foreign, {
         q: input.emailNormalized,
@@ -285,7 +331,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
     test('one environment cannot read or change another’s users', async () => {
       const input = user(ctx.a, { emailVerifiedAt: null })
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       const foreign = ctx.b.environmentId
       expect(await ctx.users.findById(foreign, input.id)).toBeNull()
       expect(await ctx.users.findByEmail(foreign, input.emailNormalized)).toBeNull()
@@ -300,7 +346,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
     test('a hash upgrade replaces the hash only if it is still the one that was verified', async () => {
       const input = user(ctx.a, { passwordHash: '$argon2id$weak' })
-      await ctx.users.createWithPassword(input)
+      await ctx.users.create(input)
       const env = ctx.a.environmentId
       const stored = async () =>
         (await ctx.users.findByEmailWithPassword(env, input.emailNormalized))?.passwordHash

@@ -78,6 +78,9 @@
                     "type": "string",
                     "enum": ["web", "ios", "android", "server"]
                   },
+                  "attempt": {
+                    "type": "string"
+                  },
                   "body": {},
                   "headers": {
                     "type": "object",

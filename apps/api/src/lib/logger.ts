@@ -24,6 +24,9 @@ export const REDACTED_KEYS = [
   'cookie',
   'set-cookie',
   'x-tula-publishable-key',
+  'x-tula-attempt',
+  'attemptSecret',
+  'secretHash',
 ] as const
 
 const REDACT_PATHS = REDACTED_KEYS.flatMap((key) => [`["${key}"]`, `*["${key}"]`])

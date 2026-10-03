@@ -86,6 +86,8 @@ test.each([
   ['authorization'],
   ['X-Tula-Publishable-Key'],
   ['x-tula-client'],
+  ['X-Tula-Attempt'],
+  ['x-tula-attempt'],
   ['X-Forwarded-For'],
   ['Content-Type'],
   ['User-Agent'],

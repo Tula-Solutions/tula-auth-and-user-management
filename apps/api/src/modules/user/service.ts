@@ -120,13 +120,15 @@ export async function me(
 /**
  * Create a user from a server or the dashboard.
  *
- * The password must meet the environment's policy, exactly as at sign-up. Unlike sign-up, a
- * taken email is reported (`resource.conflict`): the caller holds a secret key, so there is
- * nothing to hide from them.
+ * A password, when given, must meet the environment's policy, exactly as at sign-up. Without
+ * one the user is created with no password credential: they sign in another way, and get a
+ * password through a password reset or {@link setPassword}. Unlike sign-up, a taken email is
+ * reported (`resource.conflict`): the caller holds a secret key, so there is nothing to hide
+ * from them.
  *
  * @param deps - Users, password policy, breach checker, clock and ids.
  * @param scope - The project and environment.
- * @param input - Email, password, names and whether the email is already verified.
+ * @param input - Email, optional password, names and whether the email is already verified.
  * @param actor - Who is creating the user, for the audit log.
  * @returns The created user.
  * @throws InvalidEmailError, a `password.*` ServiceException, or ConflictError.
@@ -143,11 +145,13 @@ export async function create(
   }
   const firstName = input.firstName?.trim() || null
   const lastName = input.lastName?.trim() || null
-  await Passwords.assess(deps, scope, input.password, {
-    email: parsed.email,
-    firstName: firstName ?? undefined,
-    lastName: lastName ?? undefined,
-  })
+  if (input.password !== undefined) {
+    await Passwords.assess(deps, scope, input.password, {
+      email: parsed.email,
+      firstName: firstName ?? undefined,
+      lastName: lastName ?? undefined,
+    })
+  }
   const now = deps.clock.now()
   const record: UserRecord = {
     id: deps.ids.next(),
@@ -162,18 +166,22 @@ export async function create(
     lastSignInAt: null,
     createdAt: now,
   }
-  const created = await deps.users.createWithPassword(
+  const created = await deps.users.create(
     {
       ...record,
       identityId: deps.ids.next(),
       credentialId: deps.ids.next(),
-      passwordHash: await Passwords.hash(input.password),
+      passwordHash: input.password === undefined ? null : await Passwords.hash(input.password),
     },
     Audit.entry(deps, scope, {
       type: 'user.created',
       actor,
       target: { type: 'user', id: record.id },
-      data: { method: 'admin', emailVerified: record.emailVerifiedAt !== null },
+      data: {
+        method: 'admin',
+        emailVerified: record.emailVerifiedAt !== null,
+        ...(input.password === undefined && { passwordless: true }),
+      },
     })
   )
   if (!created) {
@@ -290,6 +298,13 @@ export async function remove(
 
 type PasswordDeps = RevocationDeps & Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker'>
 
+/**
+ * Check, hash and store a user's password: a replacement, or their first one.
+ *
+ * A user with no password credential gets one created (the store reports which happened and
+ * marks the audit entry `created: true`), so an admin "set password" and a password reset both
+ * work for someone who signed up another way.
+ */
 async function replacePassword(
   deps: PasswordDeps,
   scope: Scope,
@@ -307,7 +322,7 @@ async function replacePassword(
   // Hash first: a failure here must leave whatever `beforeStore` spends untouched.
   const passwordHash = await Passwords.hash(password)
   await beforeStore?.()
-  const replaced = await deps.users.setPasswordHash(
+  const outcome = await deps.users.setPasswordHash(
     scope.environmentId,
     user.id,
     passwordHash,
@@ -319,18 +334,16 @@ async function replacePassword(
       data: { method },
     })
   )
-  if (!replaced) {
-    // Every user is created with a password today; when passwordless users exist (Phase 1)
-    // this must create the credential instead. Never report success for a password not stored.
-    throw new ConflictError({
-      message: 'This user has no password to replace.',
-      internalMessage: 'setPasswordHash matched no password credential',
-    })
+  if (outcome === null) {
+    // The user was deleted after the caller loaded them. Never report success for a password
+    // that was not stored.
+    throw new NotFoundError()
   }
 }
 
 /**
- * Set a user's password from a server or the dashboard (an admin reset).
+ * Set a user's password from a server or the dashboard (an admin reset). A user who has no
+ * password gets their first one.
  *
  * Every session of the user ends: whoever knew the old password is signed out everywhere. The
  * sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
@@ -340,8 +353,7 @@ async function replacePassword(
  * @param userId - The user.
  * @param password - The new password; must meet the policy.
  * @param actor - Who is resetting it, for the audit log.
- * @throws NotFoundError, a `password.*` ServiceException with per-field `errors`, or
- *   ConflictError when the user has no password credential.
+ * @throws NotFoundError, or a `password.*` ServiceException with per-field `errors`.
  */
 export async function setPassword(
   deps: PasswordDeps & Pick<Deps, 'lockout'>,
@@ -358,7 +370,9 @@ export async function setPassword(
 }
 
 /**
- * Replace a user's password after they proved control of their email (a forgotten password).
+ * Replace a user's password after they proved control of their email (a forgotten password),
+ * or create it for a user who has none: this is how someone who signed up another way sets
+ * their first password.
  *
  * Like {@link setPassword}, every session ends and the sign-in lockout is cleared. The caller's
  * proof is spent by `claim`, which runs once the new password has passed the policy and been
@@ -377,8 +391,8 @@ export async function setPassword(
  * @param password - The new password; must meet the policy.
  * @param actor - The user themselves, with the request's origin, for the audit log.
  * @param claim - Spends the proof; throw to refuse.
- * @throws NotFoundError, a `password.*` ServiceException with per-field `errors`, whatever
- *   `claim` throws, or ConflictError when the user has no password credential.
+ * @throws NotFoundError, a `password.*` ServiceException with per-field `errors`, or whatever
+ *   `claim` throws.
  */
 export async function resetPassword(
   deps: PasswordDeps & Pick<Deps, 'lockout'>,
@@ -415,12 +429,21 @@ export async function resetPassword(
  * clears them. On success every *other* session ends and the
  * device making the change stays signed in.
  *
+ * An account with no password (it signs in another way) answers `password.not_set`: there is no
+ * current password to prove, and a first password is **not** set through this route, because an
+ * access token alone would then be enough to add a credential to the account. A first password
+ * is set through the password reset flow, which proves the inbox, or by an admin. The answer is
+ * about the caller's own account only (the user id comes from their access token), so it tells
+ * nobody anything about anyone else; it is given before the lockout is counted, since nothing
+ * was guessed.
+ *
  * @param deps - Users, password policy, sessions, denylist, lockout, ids and clock.
  * @param scope - The project and environment.
  * @param self - The signed-in user and their current session.
  * @param input - Current and new password.
  * @param origin - Where the request came from, for the audit log.
- * @throws AuthError `auth.invalid_credentials` when the current password is wrong.
+ * @throws AuthError `auth.invalid_credentials` when the current password is wrong, or
+ *   `password.not_set` (409) when the account has no password.
  * @throws RateLimitError while the user is locked out after repeated wrong guesses.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
  */
@@ -432,6 +455,13 @@ export async function changePassword(
   origin: Partial<Origin> = {}
 ): Promise<void> {
   const actor: Actor = { type: 'user', id: self.userId, ...cleanOrigin(origin) }
+  const user = await deps.users.findById(scope.environmentId, self.userId)
+  const found = user
+    ? await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+    : null
+  if (found && found.passwordHash === null) {
+    throw new AuthError('password.not_set')
+  }
   // Counted as a failure up front and cleared once the current password checks out, so only
   // wrong guesses add up and parallel guesses can't slip through.
   const lockKey = `password_change:${scope.environmentId}:${self.userId}`
@@ -439,10 +469,6 @@ export async function changePassword(
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
   }
-  const user = await deps.users.findById(scope.environmentId, self.userId)
-  const found = user
-    ? await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
-    : null
   if (!(await Passwords.verify(found?.passwordHash ?? null, input.currentPassword)) || !found) {
     throw new AuthError('auth.invalid_credentials')
   }

@@ -16,6 +16,7 @@ const columns = {
   status: flowAttempts.status,
   userId: flowAttempts.userId,
   identifier: flowAttempts.identifier,
+  secretHash: flowAttempts.secretHash,
   state: flowAttempts.state,
   expiresAt: flowAttempts.expiresAt,
   completedAt: flowAttempts.completedAt,

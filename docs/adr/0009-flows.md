@@ -1,7 +1,13 @@
 # ADR 0009 — Server-driven sign-up and sign-in flows
 
-- Status: accepted
+- Status: accepted; partly superseded by [ADR 0019](0019-flow-engine-v2.md)
 - Date: 2026-10-01
+
+> **Superseded in part (ADR 0019).** An attempt is no longer identified by its id alone: every
+> call after the start presents the attempt's secret. A sign-in start answers
+> `needs_first_factor` when more than one method is enabled. `nextStatus` takes a context and
+> can lead to `needs_second_factor`. A browser attempt is bound to an allowed origin. The rest
+> of this record stands.
 
 ## Context
 

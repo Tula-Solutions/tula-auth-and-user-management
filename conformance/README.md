@@ -49,7 +49,8 @@ A scenario is one JSON file in `scenarios/`, validated against
 `packages/conformance/src/scenario.ts`; do not edit it by hand). The JSON Schema describes the
 shape only. The loader also enforces three rules it cannot express: a scenario with an
 `auth: "secret"` step must set `needsSecretKey: true`, such a request cannot also carry an
-`accessToken`, and `headers` cannot name a header the runner sets itself.
+`accessToken`, and `headers` cannot name a header the runner sets itself (`x-tula-attempt`
+included: use `attempt`).
 
 ```json
 {
@@ -66,9 +67,19 @@ shape only. The loader also enforces three rules it cannot express: a scenario w
         "body": { "email": "{{email}}", "password": "{{password}}" }
       },
       "expect": { "status": 200, "body": { "step": { "status": "needs_email_verification" } } },
-      "capture": { "signUpId": "id" }
+      "capture": { "signUpId": "id", "signUpSecret": "attemptSecret" }
     },
     { "name": "read the emailed code", "emailCode": { "to": "{{email}}", "capture": "code" } },
+    {
+      "name": "verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": { "code": "{{code}}" }
+      },
+      "expect": { "status": 200, "body": { "step": { "status": "complete" } } }
+    },
     { "name": "let the grace period pass", "wait": "11s" }
   ]
 }
@@ -78,7 +89,10 @@ shape only. The loader also enforces three rules it cannot express: a scenario w
   a generated value (`email`: a unique address; `password`: a long random password that passes
   every built-in policy), or a value an earlier step captured.
 - **Request steps.** `auth` is `publishable` (the default), `secret` or `none`; `accessToken`
-  adds `Authorization: Bearer …`; `client` sets `x-tula-client`. `headers` adds any other
+  adds `Authorization: Bearer …`; `client` sets `x-tula-client`; `attempt` sets
+  `x-tula-attempt`, the secret of the attempt the request continues (capture `attemptSecret`
+  from the step that starts the attempt and send `"attempt": "{{signInSecret}}"` on every later
+  call for it; without it the server answers `flow.not_found`). `headers` adds any other
   header (`{ "If-Match": "{{etag}}" }`); the ones the runner sets itself cannot be replaced.
   `times` repeats the request.
   `instance` is `first` (the default) or `second`: which API instance of the deployment gets
@@ -115,6 +129,7 @@ Steps run in order and a scenario stops at its first failing step.
 | `10-password-reset` | A forgotten password is replaced with an emailed code, and the old sessions end. |
 | `11-two-instances` | Two instances behave as one server: a token from one is accepted by the other, a sign-out on one is refused by the other at once, and wrong passwords sent to either share one lockout. |
 | `12-environment-settings` | Settings are replaced through the admin API, guarded by `If-Match` (428 without it, 412 when stale); the new password policy is enforced at sign-up and shown by `/v1/client/config` on both instances; the audit entry lists keys, not values (needs a secret key). |
+| `13-attempt-binding` | An attempt id alone does nothing: a call without the attempt's secret, with a wrong one or with another attempt's is answered exactly like an unknown attempt and uses up nothing; the right secret then completes it, and no later response repeats the secret. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
@@ -123,7 +138,11 @@ and puts the original document back in its last steps; if it fails before that, 
 settings stay until you restore them with `PUT /v1/admin/settings`. An environment that had
 never saved settings ends the run with a saved copy of its defaults (the same behaviour, but
 `PASSWORD_POLICY` and `CORS_ORIGINS` no longer apply to it). Browser cookie delivery is not covered yet; scenarios use a native client
-kind so tokens arrive in the response body.
+kind so tokens arrive in the response body. For the same reason the origin rule for browser
+attempts (`request.origin_not_allowed`) is covered by the API's own tests, not by a scenario:
+which origins a deployment allows is not something a scenario can assume. `needs_first_factor`
+and `needs_second_factor` cannot be reached over HTTP until a second sign-in method or factor
+exists (steps 1.7 and 1.8).
 
 ## Adding a scenario
 

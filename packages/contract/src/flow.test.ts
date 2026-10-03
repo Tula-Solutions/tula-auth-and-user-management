@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { FlowAttemptSchema, FlowStepSchema, VerifyEmailRequestSchema } from './flow'
+import {
+  FirstFactorStrategySchema,
+  FLOW_ATTEMPT_HEADER,
+  FlowAttemptSchema,
+  FlowStepSchema,
+  VerifyEmailRequestSchema,
+} from './flow'
 import { DEFAULT_WEB_SESSION_PROFILE, SessionProfileSchema } from './session-profile'
 import { AccessTokenClaimsSchema, JwksSchema } from './tokens'
 
@@ -7,6 +13,7 @@ describe('FlowStep', () => {
   test.each([
     { status: 'needs_identifier' },
     { status: 'needs_password' },
+    { status: 'needs_first_factor', strategies: ['password', 'email_code', 'oauth_google'] },
     {
       status: 'needs_email_verification',
       destination: 'm***@northline.app',
@@ -28,6 +35,38 @@ describe('FlowStep', () => {
     expect(FlowStepSchema.safeParse({ status: 'needs_second_factor', options: [] }).success).toBe(
       false
     )
+    expect(FlowStepSchema.safeParse({ status: 'needs_first_factor', strategies: [] }).success).toBe(
+      false
+    )
+    expect(
+      FlowStepSchema.safeParse({ status: 'needs_first_factor', strategies: ['sms_code'] }).success
+    ).toBe(false)
+  })
+
+  test('first factors are the password, email, passkeys and the three OAuth providers', () => {
+    expect(FirstFactorStrategySchema.options).toEqual([
+      'password',
+      'email_code',
+      'email_link',
+      'passkey',
+      'oauth_google',
+      'oauth_github',
+      'oauth_apple',
+    ])
+  })
+
+  test('an attempt may carry its secret, and the header that presents it has a fixed name', () => {
+    const attempt = {
+      id: 'fa_1',
+      kind: 'sign_in',
+      expiresAt: '2026-09-29T12:00:00.000Z',
+      step: { status: 'needs_password' },
+    }
+    expect(FlowAttemptSchema.parse(attempt).attemptSecret).toBeUndefined()
+    expect(FlowAttemptSchema.parse({ ...attempt, attemptSecret: 'tula_at_x' }).attemptSecret).toBe(
+      'tula_at_x'
+    )
+    expect(FLOW_ATTEMPT_HEADER).toBe('x-tula-attempt')
   })
 
   test('attempt carries session tokens only alongside the step', () => {

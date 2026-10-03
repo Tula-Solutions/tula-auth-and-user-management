@@ -70,6 +70,7 @@ makes them unreadable.
 | `GET /v1/client/password-policy` | publishable key | Password rules for the live checklist |
 | `POST /v1/client/sign-ups`, `…/sign-ups/:id/verify-email`, `…/sign-ups/:id/resend-code` | publishable key | Sign up with email and password, verified by an emailed code |
 | `POST /v1/client/sign-ins`, `…/sign-ins/:id/password`, `…/sign-ins/:id/verify-email`, `…/sign-ins/:id/resend-code` | publishable key | Sign in; each call returns the next step |
+| `POST /v1/client/password-resets`, `…/password-resets/:id/password`, `…/password-resets/:id/resend-code` | publishable key | Replace a forgotten password (or set a first one) with an emailed code |
 | `POST /v1/client/sessions/refresh`, `POST /v1/client/sessions/sign-out` | publishable key + refresh token | Rotate tokens; sign out |
 | `GET /v1/client/sessions`, `DELETE /v1/client/sessions/:id`, `POST /v1/client/sessions/revoke-others` | publishable key + access token | The user's devices |
 | `GET /v1/client/me`, `POST /v1/client/me/password` | publishable key + access token | The signed-in user; change my password |
@@ -78,6 +79,10 @@ Browsers and apps call `/v1/client/*` with a publishable key (`tula_pk_…`) in 
 `x-tula-publishable-key` header. Servers call `/v1/admin/*` with a secret key (`tula_sk_…`) as a
 Bearer token. Every error has the same shape (`{ status, code, detail, params?, errors? }`) with a
 stable, machine-readable `code`.
+
+Starting a sign-up, sign-in or password reset returns an `attemptSecret` once. Every later call
+on that attempt (`…/:id/…`) sends it in the `x-tula-attempt` header; without it the attempt
+answers `flow.not_found`, so an attempt id seen in a URL or a log is useless on its own.
 
 ## Roadmap
 

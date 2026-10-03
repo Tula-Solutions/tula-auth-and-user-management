@@ -10,7 +10,12 @@ const tenant = {
   apiKeyId: 'key_1',
 }
 const other = { ...tenant, environmentId: TEST_TENANT.productionEnvironmentId }
-const ios: Flows.ClientContext = { client: 'ios', userAgent: 'TulaSDK/1 iOS', ipAddress: null }
+const ios: Flows.ClientContext = {
+  client: 'ios',
+  userAgent: 'TulaSDK/1 iOS',
+  ipAddress: null,
+  originAllowed: true,
+}
 let deps: TestDeps
 
 function name(environmentId: string, appName: string, supportEmail: string | null = null) {
@@ -80,7 +85,14 @@ describe('every email a flow sends names the app', () => {
     expect(deps.mailer.last().subject).toMatch(/^\d{6} is your Northline verification code$/)
 
     const code = /^(\d{6})/.exec(deps.mailer.last().subject)?.[1] ?? ''
-    await Flows.verifyEmail(deps, tenant, 'sign_up', attempt.id, code, ios)
+    await Flows.verifyEmail(
+      deps,
+      tenant,
+      'sign_up',
+      { id: attempt.id, secret: attempt.attemptSecret },
+      code,
+      ios
+    )
     deps.clock.advance('2m')
     await signUp()
     expect(deps.mailer.last().subject).toBe('Your Northline account already exists')
