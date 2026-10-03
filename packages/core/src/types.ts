@@ -133,3 +133,97 @@ export type AuthState =
  * ```
  */
 export type FetchLike = (request: Request) => Promise<Response>
+
+/**
+ * Whether the environment offers two-step verification: `off` (hide it), `optional` (a user
+ * may turn it on) or `required` (everyone enrols, at sign-in if they have not).
+ *
+ * @example
+ * ```ts
+ * const policy: MfaPolicy = (await tula.config.get()).mfa?.policy ?? 'off'
+ * ```
+ */
+export type MfaPolicy = Schemas['MfaPolicy']
+
+/**
+ * What a `needs_factor_enrolment` step lets the user enrol.
+ *
+ * @example
+ * ```ts
+ * if (flow.step.status === 'needs_factor_enrolment') {
+ *   const methods: FactorEnrolmentMethod[] = flow.step.methods // ['totp']
+ * }
+ * ```
+ */
+export type FactorEnrolmentMethod = Schemas['FactorEnrolmentMethod']
+
+/**
+ * What the signed-in user has enrolled as a second factor. Never contains a secret.
+ *
+ * @example
+ * ```ts
+ * const factors: Factors = await tula.mfa.get()
+ * factors.totp.enabled // true once an authenticator app was confirmed
+ * factors.backupCodes.remaining // unused backup codes
+ * ```
+ */
+export type Factors = Schemas['Factors']
+
+/**
+ * A started authenticator enrolment: the Base32 `secret` for typing by hand and the same
+ * secret as an `otpauth://` `uri` for a QR code. Both are secrets, returned once: show them
+ * and keep them nowhere. The client keeps no copy.
+ *
+ * @example
+ * ```ts
+ * const { secret, uri }: TotpEnrolment = await tula.mfa.startTotp()
+ * drawQrCode(uri)
+ * ```
+ */
+export type TotpEnrolment = Schemas['TotpEnrolment']
+
+/**
+ * A fresh set of backup codes, returned once. The client keeps no copy: show them to the user
+ * and let them go.
+ *
+ * @example
+ * ```ts
+ * const { codes }: BackupCodes = await tula.mfa.regenerateBackupCodes()
+ * ```
+ */
+export type BackupCodes = Schemas['BackupCodes']
+
+/**
+ * The proof of a second factor: the 6-digit code an authenticator app shows now, or an unused
+ * backup code.
+ *
+ * @example
+ * ```ts
+ * const proof: SecondFactorProof = { method: 'totp', code: '123456' }
+ * await flow.submitSecondFactor(proof)
+ * ```
+ */
+export type SecondFactorProof = Schemas['SecondFactorRequest']
+
+/**
+ * The proof of a step-up: the password for a user without two-step verification, otherwise an
+ * authenticator code or a backup code.
+ *
+ * @example
+ * ```ts
+ * const proof: StepUpProof = { method: 'totp', code: '123456' }
+ * await tula.session.stepUp(proof)
+ * ```
+ */
+export type StepUpProof = Schemas['StepUpRequest']
+
+/**
+ * A way to step up. An `auth.step_up_required` error says which ones the user may use; see
+ * `stepUpMethods`.
+ *
+ * @example
+ * ```ts
+ * const methods: StepUpMethod[] = stepUpMethods(error) // ['totp', 'backup_code']
+ * ```
+ */
+export type StepUpMethod = StepUpProof['method']

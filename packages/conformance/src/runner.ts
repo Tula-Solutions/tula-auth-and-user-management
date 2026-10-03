@@ -4,9 +4,10 @@ import {
   EMAIL_LINK_TOKEN_PARAM,
   FLOW_ATTEMPT_HEADER,
 } from '@tula/contract'
-import { match, pick } from './match'
+import { jwtClaims, match, pick } from './match'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
 import { expandJson, fill } from './template'
+import { base32Decode, totp, wrongTotp } from './totp'
 
 /** Header carrying the publishable key. */
 export const PUBLISHABLE_KEY_HEADER = 'x-tula-publishable-key'
@@ -56,6 +57,13 @@ export interface Target {
    * @param ms - How long.
    */
   wait: (ms: number) => Promise<void>
+  /**
+   * The time on the server, for `totp` steps: the same clock {@link Target.wait} moves. Left out
+   * for a live server, where it is the wall clock; an in-process target gives its test clock.
+   *
+   * @returns Milliseconds since the Unix epoch.
+   */
+  now?: () => number
 }
 
 /** How one step went. */
@@ -209,6 +217,15 @@ async function runStep(
     readEmailLink(await linkFor(target, fill(step.emailLink.to, variables)), step, variables)
     return
   }
+  if ('totp' in step) {
+    const secret = base32Decode(fill(step.totp.secret, variables))
+    const now = target.now ? target.now() : Date.now()
+    variables[step.totp.capture] = await totp(secret, now)
+    if (step.totp.captureWrong) {
+      variables[step.totp.captureWrong] = await wrongTotp(secret, now)
+    }
+    return
+  }
   const request = fill(step.request, variables)
   const expected = fill(step.expect, variables)
   for (let attempt = 1; attempt <= (step.times ?? 1); attempt++) {
@@ -225,6 +242,14 @@ async function runStep(
         // Named by position: the value is what must not be printed.
         problems.push(`the response contains a value it must not (bodyExcludes[${index}])`)
       }
+    }
+    for (const [path, claims] of Object.entries(expected.claims ?? {})) {
+      const payload = jwtClaims(pick(body, path))
+      problems.push(
+        ...(payload === undefined
+          ? [`expected a JWT at ${path}`]
+          : match(claims, payload, `claims(${path})`).map((mismatch) => mismatch.message))
+      )
     }
     if (response.status !== expected.status) {
       // The error code says far more than the status alone; never print the whole body, which

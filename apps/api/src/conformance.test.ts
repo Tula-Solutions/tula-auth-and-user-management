@@ -65,6 +65,8 @@ async function inProcessTarget(): Promise<Target> {
     wait: async (ms) => {
       deps.clock.advance(ms)
     },
+    // Authenticator codes are computed for the clock the server reads, not the wall clock.
+    now: () => deps.clock.now().getTime(),
   }
 }
 
@@ -89,6 +91,14 @@ describe('conformance scenarios, in process', () => {
       'email code sign-in',
       'email link sign-in',
       'passwordless sign-up',
+      'two-step enrolment and sign-in',
+      'second factor lockout',
+      'authenticator code replay',
+      'backup codes',
+      'password reset with a second factor',
+      'step-up',
+      'admin second factor reset',
+      'required second factor',
     ])
   })
 

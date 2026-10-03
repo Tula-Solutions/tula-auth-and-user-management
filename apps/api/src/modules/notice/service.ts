@@ -4,7 +4,11 @@ import { deviceFamily } from '~/lib/device'
 import * as logger from '~/lib/logger'
 import { describeMailFailure } from '~/lib/safe-error'
 import * as Email from '~/modules/email/service'
-import type { PasswordChangedMessage, SecurityNoticeMessage } from '~/modules/email/templates'
+import type {
+  MfaChangedMessage,
+  PasswordChangedMessage,
+  SecurityNoticeMessage,
+} from '~/modules/email/templates'
 import * as Settings from '~/modules/settings/service'
 import type { UserRecord } from '~/ports/user-repository'
 
@@ -36,6 +40,7 @@ type SendDeps = Pick<Deps, 'mailer' | 'environmentSettings' | 'config' | 'rateLi
 const SWITCHES: Record<NoticeKind, keyof EnvironmentSettings['notifications']> = {
   password_changed: 'passwordChanged',
   new_sign_in: 'newSignIn',
+  mfa_changed: 'mfaChanged',
 }
 
 // Notices still on their way to the relay. Module state, not a dependency: a notice outlives
@@ -154,6 +159,37 @@ export function passwordChanged(
   dispatch('password_changed', scope, user.id, async () => {
     if (await enabled(deps, scope, 'password_changed')) {
       await deliver(deps, scope, user, { type: 'password_changed', ...change })
+    }
+  })
+}
+
+/**
+ * Tell an account's owner that its two-step verification changed: turned on, turned off, reset
+ * by an administrator, backup codes replaced, or a backup code used to sign in (ADR 0025).
+ *
+ * Call it **after the change is stored**. It returns at once and never throws: the email is
+ * sent in the background, at most {@link NOTICES_PER_HOUR} an hour per user, and only when the
+ * environment has `notifications.mfaChanged` on. The email never carries a secret or a code.
+ *
+ * @param deps - Mailer, settings store, config and rate limiter.
+ * @param scope - The environment.
+ * @param user - The account.
+ * @param change - What happened, when, and (for a used backup code) how many are left.
+ *
+ * @example
+ * ```ts
+ * Notices.mfaChanged(deps, scope, user, { change: 'enabled', at: deps.clock.now() })
+ * ```
+ */
+export function mfaChanged(
+  deps: SendDeps,
+  scope: Scope,
+  user: Pick<UserRecord, 'id' | 'email'>,
+  change: Pick<MfaChangedMessage, 'change' | 'at' | 'remaining'>
+): void {
+  dispatch('mfa_changed', scope, user.id, async () => {
+    if (await enabled(deps, scope, 'mfa_changed')) {
+      await deliver(deps, scope, user, { type: 'mfa_changed', ...change })
     }
   })
 }

@@ -32,6 +32,7 @@ const EVENTS = {
   email_verified: { type: 'email_verified' },
   password_reset: { type: 'password_reset' },
   second_factor: { type: 'second_factor_verified' },
+  enrolled: { type: 'factor_enrolled' },
 } as const satisfies Record<string, FlowEvent>
 type EventName = keyof typeof EVENTS
 
@@ -40,6 +41,7 @@ const SAMPLED: Record<FlowEventType, readonly EventName[]> = {
   email_verified: ['email_verified'],
   password_reset: ['password_reset'],
   second_factor_verified: ['second_factor'],
+  factor_enrolled: ['enrolled'],
 }
 
 /** The strategies an attempt was offered. */
@@ -53,41 +55,60 @@ const OFFERS = {
 } as const satisfies Record<string, readonly FirstFactorStrategy[]>
 type OfferName = keyof typeof OFFERS
 
-/** What is known about the user: email verified (V) or not (U), with (2) or without (0) a second factor. */
+/**
+ * What is known about the user: email verified (V) or not (U); with a second factor (2),
+ * without one (0), or without one in an environment that requires one (E: must enrol).
+ */
 const USERS = {
-  V0: { emailVerified: true, secondFactors: [] },
-  V2: { emailVerified: true, secondFactors: ['totp'] },
-  U0: { emailVerified: false, secondFactors: [] },
-  U2: { emailVerified: false, secondFactors: ['totp', 'backup_code'] },
+  V0: { emailVerified: true, secondFactors: [], enrolmentRequired: false },
+  V2: { emailVerified: true, secondFactors: ['totp'], enrolmentRequired: false },
+  VE: { emailVerified: true, secondFactors: [], enrolmentRequired: true },
+  U0: { emailVerified: false, secondFactors: [], enrolmentRequired: false },
+  U2: { emailVerified: false, secondFactors: ['totp', 'backup_code'], enrolmentRequired: false },
+  UE: { emailVerified: false, secondFactors: [], enrolmentRequired: true },
 } as const satisfies Record<string, Omit<FlowContext, 'strategies'>>
 type UserName = keyof typeof USERS
 
 const ANY_OFFER = Object.keys(OFFERS) as OfferName[]
 const ANY_USER = Object.keys(USERS) as UserName[]
+/** Users with an unverified email: the address is verified before anything about factors. */
+const UNVERIFIED: UserName[] = ['U0', 'U2', 'UE']
+const ENROL = 'needs_factor_enrolment'
 
 /**
  * Every allowed transition. Whatever is not listed here must be refused: the test below walks
  * the whole cross product and asserts one or the other for each combination.
  */
 const ALLOWED: readonly [FlowKind, FlowStatus, EventName, OfferName[], UserName[], FlowStatus][] = [
-  // Sign-up: the account is created when the email is verified; nothing about a user matters.
-  ['sign_up', 'needs_email_verification', 'email_verified', ANY_OFFER, ANY_USER, 'complete'],
+  // Sign-up: the account is created when the email is verified, so it has no factor to ask for;
+  // where the environment requires one it must enrol before completing.
+  [
+    'sign_up',
+    'needs_email_verification',
+    'email_verified',
+    ANY_OFFER,
+    ['V0', 'V2', 'U0', 'U2'],
+    'complete',
+  ],
+  ['sign_up', 'needs_email_verification', 'email_verified', ANY_OFFER, ['VE', 'UE'], ENROL],
 
   // Sign-in on the password step accepts only the password.
   ['sign_in', 'needs_password', 'password', ANY_OFFER, ['V0'], 'complete'],
   ['sign_in', 'needs_password', 'password', ANY_OFFER, ['V2'], 'needs_second_factor'],
+  ['sign_in', 'needs_password', 'password', ANY_OFFER, ['VE'], ENROL],
   // An unverified email comes before the second factor.
-  ['sign_in', 'needs_password', 'password', ANY_OFFER, ['U0', 'U2'], 'needs_email_verification'],
+  ['sign_in', 'needs_password', 'password', ANY_OFFER, UNVERIFIED, 'needs_email_verification'],
 
   // Sign-in with a choice accepts exactly the strategies the attempt was offered.
   ['sign_in', 'needs_first_factor', 'password', ['P', 'PE', 'PEL'], ['V0'], 'complete'],
   ['sign_in', 'needs_first_factor', 'password', ['P', 'PE', 'PEL'], ['V2'], 'needs_second_factor'],
+  ['sign_in', 'needs_first_factor', 'password', ['P', 'PE', 'PEL'], ['VE'], ENROL],
   [
     'sign_in',
     'needs_first_factor',
     'password',
     ['P', 'PE', 'PEL'],
-    ['U0', 'U2'],
+    UNVERIFIED,
     'needs_email_verification',
   ],
   ['sign_in', 'needs_first_factor', 'email_code', ['PE', 'E', 'PEL', 'EL'], ['V0'], 'complete'],
@@ -99,6 +120,7 @@ const ALLOWED: readonly [FlowKind, FlowStatus, EventName, OfferName[], UserName[
     ['V2'],
     'needs_second_factor',
   ],
+  ['sign_in', 'needs_first_factor', 'email_code', ['PE', 'E', 'PEL', 'EL'], ['VE'], ENROL],
   // The function is asked with `emailVerified: true` after an email factor (the email is the
   // proof), so the engine never takes these two rows; the table still has to classify them.
   [
@@ -106,18 +128,19 @@ const ALLOWED: readonly [FlowKind, FlowStatus, EventName, OfferName[], UserName[
     'needs_first_factor',
     'email_code',
     ['PE', 'E', 'PEL', 'EL'],
-    ['U0', 'U2'],
+    UNVERIFIED,
     'needs_email_verification',
   ],
   // An emailed link is a first factor like the code, where the attempt was offered it.
   ['sign_in', 'needs_first_factor', 'email_link', ['PEL', 'EL'], ['V0'], 'complete'],
   ['sign_in', 'needs_first_factor', 'email_link', ['PEL', 'EL'], ['V2'], 'needs_second_factor'],
+  ['sign_in', 'needs_first_factor', 'email_link', ['PEL', 'EL'], ['VE'], ENROL],
   [
     'sign_in',
     'needs_first_factor',
     'email_link',
     ['PEL', 'EL'],
-    ['U0', 'U2'],
+    UNVERIFIED,
     'needs_email_verification',
   ],
 
@@ -131,6 +154,7 @@ const ALLOWED: readonly [FlowKind, FlowStatus, EventName, OfferName[], UserName[
     ['V2', 'U2'],
     'needs_second_factor',
   ],
+  ['sign_in', 'needs_email_verification', 'email_verified', ANY_OFFER, ['VE', 'UE'], ENROL],
   ['sign_in', 'needs_second_factor', 'second_factor', ANY_OFFER, ANY_USER, 'complete'],
 
   // A reset: an inbox alone does not bypass the second factor.
@@ -143,7 +167,14 @@ const ALLOWED: readonly [FlowKind, FlowStatus, EventName, OfferName[], UserName[
     ['V2', 'U2'],
     'needs_second_factor',
   ],
+  ['password_reset', 'needs_new_password', 'password_reset', ANY_OFFER, ['VE', 'UE'], ENROL],
   ['password_reset', 'needs_second_factor', 'second_factor', ANY_OFFER, ANY_USER, 'complete'],
+
+  // Where the environment requires a second factor, enrolling one is what completes an attempt
+  // of any kind. Nothing else leaves that step.
+  ['sign_in', ENROL, 'enrolled', ANY_OFFER, ANY_USER, 'complete'],
+  ['sign_up', ENROL, 'enrolled', ANY_OFFER, ANY_USER, 'complete'],
+  ['password_reset', ENROL, 'enrolled', ANY_OFFER, ANY_USER, 'complete'],
 ]
 
 function expected(
@@ -197,9 +228,10 @@ describe('nextStatus', () => {
       'needs_email_verification',
       'needs_new_password',
       'needs_second_factor',
+      'needs_factor_enrolment',
       'complete',
     ])
-    expect(combinations).toHaveLength(KINDS.length * STATUSES.length * 6)
+    expect(combinations).toHaveLength(KINDS.length * STATUSES.length * 7)
   })
 
   // One test per kind × step × event; each asserts every offer and every kind of user.
@@ -233,7 +265,12 @@ describe('nextStatus', () => {
 
   test('no path reaches `complete` past a required second factor without proving it', () => {
     for (const [, , event, , users, to] of ALLOWED) {
-      if (to === 'complete' && event !== 'second_factor' && event !== 'email_verified') {
+      if (
+        to === 'complete' &&
+        event !== 'second_factor' &&
+        event !== 'email_verified' &&
+        event !== 'enrolled'
+      ) {
         expect(users.some((user) => USERS[user].secondFactors.length > 0)).toBe(false)
       }
     }
@@ -247,6 +284,17 @@ describe('nextStatus', () => {
           kind !== 'sign_up'
       )
     ).toEqual([])
+  })
+
+  test('no path reaches `complete` for a user who must enrol, except by enrolling', () => {
+    for (const [, from, event, , users, to] of ALLOWED) {
+      if (to === 'complete' && event !== 'enrolled' && from !== 'needs_second_factor') {
+        expect(users.some((user) => USERS[user].enrolmentRequired)).toBe(false)
+      }
+    }
+    // Enrolment is only ever accepted on its own step.
+    expect(ALLOWED.filter(([, from, event]) => event === 'enrolled' && from !== ENROL)).toEqual([])
+    expect(ALLOWED.filter(([, from, event]) => from === ENROL && event !== 'enrolled')).toEqual([])
   })
 })
 
@@ -267,6 +315,8 @@ describe('assertAccepts', () => {
       () => assertAccepts('sign_in', 'needs_first_factor', EVENTS.password),
       () => assertAccepts('sign_in', 'needs_first_factor', EVENTS.password, ['email_code']),
       () => assertAccepts('sign_up', 'needs_second_factor', EVENTS.second_factor),
+      () => assertAccepts('sign_in', 'needs_second_factor', EVENTS.enrolled),
+      () => assertAccepts('sign_in', 'needs_factor_enrolment', EVENTS.second_factor),
     ]) {
       expect(refuse).toThrow(ServiceException)
     }

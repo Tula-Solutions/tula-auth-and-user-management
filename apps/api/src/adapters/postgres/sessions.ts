@@ -3,16 +3,18 @@ import { and, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from 'd
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
 import type { Activity } from '~/ports/activity-log'
-import type {
-  NewRefreshToken,
-  NewSession,
-  RefreshTokenRecord,
-  RevokeByUserOptions,
-  Rotation,
-  SessionDevice,
-  SessionRecord,
-  SessionRevokeReason,
-  SessionStore,
+import {
+  type Authentication,
+  mergeAuthMethods,
+  type NewRefreshToken,
+  type NewSession,
+  type RefreshTokenRecord,
+  type RevokeByUserOptions,
+  type Rotation,
+  type SessionDevice,
+  type SessionRecord,
+  type SessionRevokeReason,
+  type SessionStore,
 } from '~/ports/session-store'
 
 const sessionColumns = {
@@ -27,6 +29,8 @@ const sessionColumns = {
   lastActiveAt: sessions.lastActiveAt,
   idleExpiresAt: sessions.idleExpiresAt,
   absoluteExpiresAt: sessions.absoluteExpiresAt,
+  factorVerifiedAt: sessions.factorVerifiedAt,
+  authMethods: sessions.authMethods,
   revokedAt: sessions.revokedAt,
   revokeReason: sessions.revokeReason,
   createdAt: sessions.createdAt,
@@ -248,6 +252,47 @@ export class PostgresSessionStore implements SessionStore {
       const revoked = rows.length === 1
       await recordActivity(tx, revoked && activity ? [activity] : [])
       return revoked
+    })
+  }
+
+  /** @inheritdoc */
+  async recordAuthentication(
+    environmentId: string,
+    id: string,
+    authentication: Authentication,
+    activity?: Activity
+  ): Promise<SessionRecord | null> {
+    const { at } = authentication
+    return withTenant(this.db, environmentId, async (tx) => {
+      // Locked, so two step-ups of one session merge their methods instead of one overwriting
+      // the other's.
+      const [current] = await tx
+        .select({ authMethods: sessions.authMethods })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.id, id),
+            eq(sessions.environmentId, environmentId),
+            isNull(sessions.revokedAt),
+            gt(sessions.idleExpiresAt, at),
+            or(isNull(sessions.absoluteExpiresAt), gt(sessions.absoluteExpiresAt, at))
+          )
+        )
+        .for('update')
+      if (!current) {
+        return null
+      }
+      const [updated] = await tx
+        .update(sessions)
+        .set({
+          factorVerifiedAt: at,
+          authMethods: mergeAuthMethods(current.authMethods, authentication.methods),
+          updatedAt: at,
+        })
+        .where(and(eq(sessions.id, id), eq(sessions.environmentId, environmentId)))
+        .returning(sessionColumns)
+      await recordActivity(tx, updated && activity ? [activity] : [])
+      return updated ?? null
     })
   }
 

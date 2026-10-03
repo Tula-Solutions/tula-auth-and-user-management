@@ -308,6 +308,29 @@ The changes every new method needs, made once.
 - **Policy** per environment: `off | optional | required`; `required` forces enrolment at the
   next sign-in through a `needs_factor_enrolment` step.
 - React: the second-factor screen, enrolment with a QR code, backup-code download.
+  *As built ([ADR 0025](../adr/0025-mfa.md)):* TOTP is RFC 6238 with the parameters every app
+  honours (SHA-1, 6 digits, 30 s), one step of drift, and **a time step is accepted once**
+  (`user_factors.last_used_step`, a compare-and-set). Factors got their own table
+  (`user_factors`: pending → confirmed, sealed secret bound to environment, user and factor)
+  rather than a `credentials` row; `backup_codes` holds keyed hashes; migration `0009_mfa`.
+  The module is `modules/mfa`; the 1.3 hooks were filled, not changed
+  (`…/:attemptId/second-factor`; a wrong proof is the new `mfa.invalid_code`). One per-user
+  lockout budget covers every place a code is checked. The session records how it was
+  authenticated (`factor_verified_at`, `auth_methods`) and the access token carries it as
+  `auth_time` and `amr`; `POST /v1/client/sessions/step-up` re-proves a factor and
+  `requireRecentAuth()` (ten minutes, from the claims) guards MFA changes and an MFA user's
+  password change. A user with a second factor cannot step up with the password alone.
+  Differences from the sketch: step-up does **not** cover "change password" for users without
+  a second factor (the current password already does) nor "sign out other devices" (a
+  defensive action); passkey changes and account deletion get it when they exist. A
+  passwordless user without MFA has no step-up method yet (a recent sign-in counts; an emailed
+  step-up code is left for later). `mfa.policy: 'off'` hides enrolment but **still asks
+  enrolled users for their factor**. Under `required`, enrolment happens inside the attempt
+  (`needs_factor_enrolment`, routes under all three flows) and returns the session and the
+  backup codes together. Recovery from losing everything is the admin reset only. Notices:
+  `notifications.mfaChanged`. The conformance format gained a way to compute a TOTP code from
+  a captured secret. `@tula/react` draws its QR code with its own encoder (no runtime
+  dependency), proven in tests by decoding with `jsqr`.
 
 ### 1.9 OAuth: Google, GitHub, Apple
 

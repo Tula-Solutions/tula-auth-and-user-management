@@ -159,3 +159,43 @@ test.each([
     ).success
   ).toBe(false)
 })
+
+test('a totp step names the secret and where the code goes, and nothing unknown', () => {
+  const scenario = (totp: object, extra: object = {}) => ({
+    name: 'n',
+    description: 'd',
+    steps: [{ name: 'compute', totp, ...extra }],
+  })
+  expect(
+    ScenarioSchema.safeParse(scenario({ secret: '{{secret}}', capture: 'code' })).success
+  ).toBe(true)
+  expect(
+    ScenarioSchema.safeParse(
+      scenario({ secret: '{{secret}}', capture: 'code', captureWrong: 'wrongCode' })
+    ).success
+  ).toBe(true)
+  expect(ScenarioSchema.safeParse(scenario({ secret: '{{secret}}' })).success).toBe(false)
+  expect(ScenarioSchema.safeParse(scenario({ capture: 'code' })).success).toBe(false)
+  expect(
+    ScenarioSchema.safeParse(scenario({ secret: 's', capture: 'code' }, { wait: '30s' })).success
+  ).toBe(false)
+})
+
+test('expected claims are keyed by the path of the token in the body', () => {
+  const scenario = (claims: unknown) => ({
+    name: 'n',
+    description: 'd',
+    steps: [
+      {
+        name: 'sign in',
+        request: { method: 'POST', path: '/x' },
+        expect: { status: 200, claims },
+      },
+    ],
+  })
+  expect(
+    ScenarioSchema.safeParse(scenario({ 'session.accessToken': { amr: ['pwd', 'otp', 'mfa'] } }))
+      .success
+  ).toBe(true)
+  expect(ScenarioSchema.safeParse(scenario(['session.accessToken'])).success).toBe(false)
+})

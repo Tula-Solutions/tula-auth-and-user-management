@@ -74,6 +74,29 @@ describe('PostgresEnvironmentSettingsStore', () => {
     )
   })
 
+  test('a document stored before two-step verification existed reads as `optional`, with its notice on', async () => {
+    const { mfa: _mfa, notifications, ...before } = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
+    const tenant = await storeRaw({
+      ...before,
+      notifications: { passwordChanged: false, newSignIn: notifications.newSignIn },
+    })
+    const read = await new PostgresEnvironmentSettingsStore(testDb.db).get(tenant.environmentId)
+    expect(read?.settings.mfa).toEqual({ policy: 'optional' })
+    expect(read?.settings.notifications).toEqual({
+      passwordChanged: false,
+      newSignIn: true,
+      mfaChanged: true,
+    })
+  })
+
+  test('a stored MFA policy is read back, and a key another version added under it is dropped', async () => {
+    const tenant = await storeRaw({ mfa: { policy: 'required', methods: ['sms'] } })
+    expect(
+      (await new PostgresEnvironmentSettingsStore(testDb.db).get(tenant.environmentId))?.settings
+        .mfa
+    ).toEqual({ policy: 'required' })
+  })
+
   test('the origin list survives documents of any shape', async () => {
     await storeRaw({ urls: { allowedOrigins: ['https://odd-shape.test', 7, null] } })
     await storeRaw({ urls: { allowedOrigins: 'https://not-a-list.test' } })

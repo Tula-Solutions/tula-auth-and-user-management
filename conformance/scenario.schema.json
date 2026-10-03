@@ -115,6 +115,13 @@
                       "type": "string",
                       "minLength": 1
                     }
+                  },
+                  "claims": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
                   }
                 },
                 "required": ["status"],
@@ -214,6 +221,33 @@
             "required": ["name", "emailLink"],
             "additionalProperties": false,
             "ref": "ConformanceEmailLinkStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "totp": {
+                "type": "object",
+                "properties": {
+                  "secret": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  }
+                },
+                "required": ["secret", "capture"]
+              }
+            },
+            "required": ["name", "totp"],
+            "additionalProperties": false,
+            "ref": "ConformanceTotpStep"
           },
           {
             "type": "object",
@@ -309,6 +343,13 @@
                       "type": "string",
                       "minLength": 1
                     }
+                  },
+                  "claims": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
                   }
                 },
                 "required": ["status"],
@@ -408,6 +449,33 @@
             "required": ["name", "emailLink"],
             "additionalProperties": false,
             "ref": "ConformanceEmailLinkStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "totp": {
+                "type": "object",
+                "properties": {
+                  "secret": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  }
+                },
+                "required": ["secret", "capture"]
+              }
+            },
+            "required": ["name", "totp"],
+            "additionalProperties": false,
+            "ref": "ConformanceTotpStep"
           },
           {
             "type": "object",

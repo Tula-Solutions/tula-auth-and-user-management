@@ -83,6 +83,10 @@ export const RequestSchema = z
  * - `{ "$matches": "regex" }`: a string matching the pattern
  *
  * `$not` and `$matches` need the value to be present.
+ *
+ * `claims` checks what a JWT in the body says: each key is the dot path of a token
+ * (`session.accessToken`), each value is matched, as `body` is, against the token's decoded
+ * payload. The signature is not verified: a scenario states what a client reads from the token.
  */
 export const ExpectSchema = z
   .object({
@@ -90,6 +94,11 @@ export const ExpectSchema = z
     body: z.unknown().optional(),
     /** Strings the raw response must not contain anywhere, e.g. `{{email}}` in an audit entry. */
     bodyExcludes: z.array(z.string().min(1)).optional(),
+    /**
+     * Claims of JWTs in the response, by the token's dot path in the body:
+     * `{ "session.accessToken": { "amr": ["pwd", "otp", "mfa"], "auth_time": "$any" } }`.
+     */
+    claims: z.record(z.string(), z.unknown()).optional(),
   })
   .meta({ ref: 'ConformanceExpect' })
 
@@ -154,6 +163,29 @@ export const EmailLinkStepSchema = z
   .strict()
   .meta({ ref: 'ConformanceEmailLinkStep' })
 
+/**
+ * Compute the code an authenticator app shows now for a secret the API returned (RFC 6238:
+ * HMAC-SHA-1, six digits, 30-second steps). "Now" is the target's clock: the wall clock against
+ * a live server, the test clock (which `wait` steps advance) in process.
+ *
+ * A server accepts a time step once, so two uses of one secret need a `wait` of at least one
+ * step (`30s`) between them.
+ */
+export const TotpStepSchema = z
+  .object({
+    name: z.string().min(1),
+    totp: z.object({
+      /** The Base32 secret, e.g. `{{secret}}` captured from the enrolment. */
+      secret: z.string(),
+      /** Variable to store the code in. */
+      capture: z.string(),
+      /** Variable to store a code that is guaranteed to be wrong in. */
+      captureWrong: z.string().optional(),
+    }),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceTotpStep' })
+
 /** Let time pass, e.g. past the refresh reuse grace period. */
 export const WaitStepSchema = z
   .object({ name: z.string().min(1), wait: DurationSchema })
@@ -162,7 +194,13 @@ export const WaitStepSchema = z
 
 /** One step of a scenario. */
 export const StepSchema = z
-  .union([RequestStepSchema, EmailCodeStepSchema, EmailLinkStepSchema, WaitStepSchema])
+  .union([
+    RequestStepSchema,
+    EmailCodeStepSchema,
+    EmailLinkStepSchema,
+    TotpStepSchema,
+    WaitStepSchema,
+  ])
   .meta({ ref: 'ConformanceStep' })
 
 /**

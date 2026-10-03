@@ -1,6 +1,6 @@
 import { createLinkStore, type EmailLinkOutcome, handleEmailLink } from './email-link'
 import { type Environment, runtimeEnvironment } from './environment'
-import type { Messages } from './errors'
+import { clientError, type Messages } from './errors'
 import {
   type PasswordResetFlow,
   passwordResetFlow,
@@ -9,6 +9,7 @@ import {
   signInFlow,
   signUpFlow,
 } from './flows'
+import { isBackupCodes, isFactors, isTotpEnrolment } from './mfa'
 import {
   createSessionManager,
   LOCK_WAIT_MARGIN_MS,
@@ -17,7 +18,18 @@ import {
 } from './session'
 import { memoryStorage, type TokenStorage } from './storage'
 import { createTransport } from './transport'
-import type { AuthState, ClientConfig, ClientKind, FetchLike, Session, User } from './types'
+import type {
+  AuthState,
+  BackupCodes,
+  ClientConfig,
+  ClientKind,
+  Factors,
+  FetchLike,
+  Session,
+  StepUpProof,
+  TotpEnrolment,
+  User,
+} from './types'
 
 /**
  * How long one request may take before it fails with `network.timeout`, unless the client is
@@ -221,6 +233,35 @@ export interface TulaClient {
     revoke(sessionId: string): Promise<void>
     /** @returns How many other sessions were ended. This one stays signed in. */
     revokeOthers(): Promise<number>
+    /**
+     * Prove who the user is again, for this session, after a sensitive call answered
+     * `auth.step_up_required` (see `isStepUpRequired` and `stepUpMethods`). The client never
+     * calls this by itself: ask the user, call it, then repeat the action.
+     *
+     * A user with two-step verification proves it with `totp` or `backup_code` (their password
+     * alone is refused); a user without it with `password`. The proof holds for ten minutes.
+     * Only the access token changes: the refresh token (or cookie) is untouched, and the
+     * state does not change.
+     *
+     * @param proof - The method and its proof.
+     * @throws TulaError `auth.invalid_credentials` (wrong password), `mfa.invalid_code` (wrong
+     *   or already used code), `auth.step_up_required` (a method this user may not use),
+     *   `rate_limited` after repeated wrong proofs, `auth.unauthenticated` when nobody is
+     *   signed in or the session ended meanwhile.
+     *
+     * @example
+     * ```ts
+     * try {
+     *   await tula.mfa.regenerateBackupCodes()
+     * } catch (error) {
+     *   if (isStepUpRequired(error) && stepUpMethods(error).includes('totp')) {
+     *     await tula.session.stepUp({ method: 'totp', code: await askForCode() })
+     *     await tula.mfa.regenerateBackupCodes()
+     *   }
+     * }
+     * ```
+     */
+    stepUp(proof: StepUpProof): Promise<void>
   }
   /** The signed-in user. */
   readonly user: {
@@ -237,15 +278,73 @@ export interface TulaClient {
      * @param input - The current and the new password.
      * @throws TulaError `auth.invalid_credentials` for a wrong current password, a `password.*`
      *   code with field errors for a new one the policy rejects, `password.not_set` for an
-     *   account without a password.
+     *   account without a password, and, for a user with two-step verification whose session
+     *   has not proven it recently, `auth.step_up_required` (see `session.stepUp`).
      */
     changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
+  }
+  /**
+   * Two-step verification of the signed-in user: an authenticator app (TOTP) and backup codes.
+   *
+   * The secret, its URI and the backup codes are returned to the caller once and kept nowhere
+   * in the client: not in memory, not in storage, not in an error. Every call but `get` and
+   * `confirmTotp` may answer `auth.step_up_required`; see `session.stepUp`.
+   *
+   * @example
+   * ```ts
+   * const { secret, uri } = await tula.mfa.startTotp() // show the QR code of `uri`
+   * const { codes } = await tula.mfa.confirmTotp({ code: '123456' }) // show the codes once
+   * ```
+   */
+  readonly mfa: {
+    /**
+     * @returns Whether an authenticator app is confirmed, since when, and how many backup
+     *   codes are unused. Never a secret.
+     * @throws TulaError `auth.unauthenticated` when nobody is signed in.
+     */
+    get(): Promise<Factors>
+    /**
+     * Start enrolling an authenticator app. It counts for nothing until confirmed, and lapses
+     * after ten minutes; calling it again replaces the pending secret.
+     *
+     * @returns The Base32 secret and its `otpauth://` URI, once.
+     * @throws TulaError `mfa.not_available` where the environment has it off,
+     *   `mfa.already_enabled` for a user who has one, `auth.step_up_required`.
+     */
+    startTotp(): Promise<TotpEnrolment>
+    /**
+     * Confirm the authenticator with the 6-digit code it shows now: two-step verification is
+     * on, and the user's other sessions end. The client then refreshes this session, so that
+     * its next access token says the second factor was proven; if that refresh cannot be
+     * made, the codes are returned all the same and the next `getToken()` tries again.
+     *
+     * @param input - The code.
+     * @returns Ten backup codes, once.
+     * @throws TulaError `mfa.invalid_code`, `mfa.enrolment_expired` (nothing pending, or
+     *   started more than ten minutes ago), `rate_limited` after repeated wrong codes.
+     */
+    confirmTotp(input: { code: string }): Promise<BackupCodes>
+    /**
+     * Turn two-step verification off: removes the authenticator and every backup code.
+     *
+     * @throws TulaError `mfa.not_enabled`, `mfa.required_by_policy` where the environment
+     *   requires it, `auth.step_up_required`.
+     */
+    disableTotp(): Promise<void>
+    /**
+     * Replace the user's backup codes. The earlier ones stop working.
+     *
+     * @returns Ten new backup codes, once.
+     * @throws TulaError `mfa.not_enabled`, `auth.step_up_required`.
+     */
+    regenerateBackupCodes(): Promise<BackupCodes>
   }
   /** The environment's public configuration. */
   readonly config: {
     /**
-     * The app's name, the enabled sign-in methods and the password policy. Fetched once and
-     * kept; pass `force` to fetch it again.
+     * The app's name, the enabled sign-in methods, the password policy and whether two-step
+     * verification is offered (`mfa.policy`; an API that does not say means `off`). Fetched
+     * once and kept; pass `force` to fetch it again.
      *
      * @param options - `force`: ignore the cached answer.
      * @returns The configuration.
@@ -335,6 +434,14 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   const links = createLinkStore(environment, scope)
   const flows = { transport, session, messages: currentMessages, environment, links, scope }
   let config: Promise<ClientConfig> | null = null
+
+  /** A 200 that is not what the operation answers is not this API: nothing is built from it. */
+  function checked<T>(answer: unknown, guard: (value: unknown) => value is T): T {
+    if (!guard(answer)) {
+      throw clientError('response.invalid', messages)
+    }
+    return answer
+  }
   let handlingLink: Promise<EmailLinkOutcome> | null = null
 
   return {
@@ -383,6 +490,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         await session.ended(sessionId)
       },
       revokeOthers: async () => (await session.authorized('revokeOtherSessions', {})).revoked,
+      stepUp: (proof) => session.stepUp(proof),
     },
     user: {
       async get() {
@@ -405,6 +513,48 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       },
       async changePassword(input) {
         await session.authorized('changeMyPassword', { body: input })
+      },
+    },
+    mfa: {
+      get: async () => checked(await session.authorized('getMyFactors', {}), isFactors),
+      async startTotp() {
+        const { secret, uri } = checked(
+          await session.authorized('startTotpEnrolment', {}),
+          isTotpEnrolment
+        )
+        return { secret, uri }
+      },
+      async confirmTotp({ code }) {
+        await session.getToken()
+        const asked = session.state()
+        const { codes } = checked(
+          await session.authorized('confirmTotpEnrolment', { body: { code } }),
+          isBackupCodes
+        )
+        // The server now holds this session to have proven the factor, but the access token
+        // in hand was issued before: the next sensitive call would answer
+        // `auth.step_up_required`. A refresh brings a token that says so. It is made only for
+        // the session that asked (a client signed out meanwhile stays signed out), and its
+        // failure is not the caller's: the codes exist nowhere else and must reach them.
+        const now = session.state()
+        if (
+          asked.status === 'signed-in' &&
+          now.status === 'signed-in' &&
+          now.sessionId === asked.sessionId
+        ) {
+          await session.refresh().catch(() => session.expire())
+        }
+        return { codes }
+      },
+      async disableTotp() {
+        await session.authorized('disableTotp', {})
+      },
+      regenerateBackupCodes: async () => {
+        const { codes } = checked(
+          await session.authorized('regenerateBackupCodes', {}),
+          isBackupCodes
+        )
+        return { codes }
       },
     },
     config: {

@@ -139,6 +139,61 @@ describe('PUT /v1/admin/settings', () => {
     expect((await (await read()).json()) as State).toEqual(saved)
   })
 
+  test.each<['off' | 'optional' | 'required']>([['off'], ['optional'], ['required']])(
+    'accepts the MFA policy `%s`, returns it, and the client config shows it',
+    async (policy) => {
+      const res = await put({ mfa: { policy } }, '"0"')
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as State).settings.mfa).toEqual({ policy })
+      expect(((await (await read()).json()) as State).settings.mfa).toEqual({ policy })
+      expect(ClientConfigSchema.parse(await (await config()).json()).mfa).toEqual({ policy })
+      // The other environment keeps its own.
+      expect(ClientConfigSchema.parse(await (await config(PROD_PK)).json()).mfa).toEqual({
+        policy: 'optional',
+      })
+    }
+  )
+
+  test('a document without `mfa` stores the default policy, and the notice switch is its own key', async () => {
+    const res = await put({ notifications: { mfaChanged: false } }, '"0"')
+    expect(res.status).toBe(200)
+    const { settings } = (await res.json()) as State
+    expect(settings.mfa).toEqual({ policy: 'optional' })
+    expect(settings.notifications).toEqual({
+      passwordChanged: true,
+      newSignIn: true,
+      mfaChanged: false,
+    })
+    expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
+      revision: 1,
+      changed: ['notifications.mfaChanged'],
+      weakened: true,
+    })
+  })
+
+  test.each<[string, unknown]>([
+    ['a policy that does not exist', { mfa: { policy: 'mandatory' } }],
+    ['a policy that is not a string', { mfa: { policy: true } }],
+    ['an unknown key under mfa', { mfa: { policy: 'required', methods: ['sms'] } }],
+    ['a notice switch that is not a boolean', { notifications: { mfaChanged: 'no' } }],
+  ])('refuses %s, and nothing changes', async (_, body) => {
+    const res = await put(body, '"0"')
+    expect(res.status).toBe(422)
+    const failure = (await res.json()) as Failure
+    expect(failure.code).toBe('validation.failed')
+    expect(((await (await read()).json()) as State).revision).toBe(0)
+  })
+
+  test('relaxing the MFA policy is recorded as a weakening', async () => {
+    await put({ mfa: { policy: 'required' } }, '"0"')
+    await put({ mfa: { policy: 'optional' } }, '"1"')
+    expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
+      revision: 2,
+      changed: ['mfa.policy'],
+      weakened: true,
+    })
+  })
+
   test('a section left out goes back to its default: the document is replaced, not merged', async () => {
     await put({ app: { name: 'Acme' }, audit: { retentionDays: 90 } }, '"0"')
     const res = await put({ app: { name: 'Acme' } }, '"1"')
@@ -299,6 +354,7 @@ describe('GET /v1/client/config', () => {
       signIn: { methods: ['password'] },
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
+      mfa: { policy: 'optional' },
     })
   })
 
@@ -321,6 +377,7 @@ describe('GET /v1/client/config', () => {
       signIn: { methods: ['password'] },
       signUp: { password: 'required' },
       password: strictPolicy,
+      mfa: { policy: 'optional' },
     })
     expect(text).not.toContain('https://acme.test')
     expect(text).not.toContain('retentionDays')

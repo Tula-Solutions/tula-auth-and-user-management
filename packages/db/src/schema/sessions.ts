@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import { index, inet, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import {
@@ -20,6 +21,7 @@ export const SESSION_REVOKE_REASONS = [
   'password_changed',
   'reuse_detected',
   'user_banned',
+  'mfa_changed',
 ] as const
 
 /**
@@ -41,6 +43,14 @@ export const sessions = tula.table(
     idleExpiresAt: timestamp('idle_expires_at', { withTimezone: true }).notNull(),
     /** `null` when the profile has no absolute cap. */
     absoluteExpiresAt: timestamp('absolute_expires_at', { withTimezone: true }),
+    /**
+     * When the user last actively proved a factor for this session: its sign-in, or the last
+     * step-up. The access token's `auth_time`. `null` only on rows written before the column
+     * existed, which are read as "at creation".
+     */
+    factorVerifiedAt: timestamp('factor_verified_at', { withTimezone: true }),
+    /** Every method proven for this session so far: the access token's `amr`. */
+    authMethods: text('auth_methods').array().notNull().default(sql`'{}'::text[]`),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokeReason: text('revoke_reason', { enum: SESSION_REVOKE_REASONS }),
     ...timestamps(),

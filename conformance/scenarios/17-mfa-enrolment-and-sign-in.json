@@ -1,0 +1,347 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "two-step enrolment and sign-in",
+  "description": "A signed-in user turns two-step verification on with an authenticator app: the secret and its otpauth URI are returned once, an enrolment that is not confirmed counts for nothing, a wrong code does not confirm it, and the right one returns ten backup codes. From then on the password alone yields needs_second_factor and no tokens; the authenticator's code completes the sign-in, and the access token says how the user signed in (amr) and when (auth_time).",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "no second factor yet",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/factors",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totp": {
+            "enabled": false,
+            "confirmedAt": "$absent"
+          },
+          "backupCodes": {
+            "remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "start an authenticator enrolment: the secret and its URI, once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{accessToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "secret": {
+            "$matches": "^[A-Z2-7]{32}$"
+          },
+          "uri": {
+            "$matches": "^otpauth://totp/[^?]+\\?secret=[A-Z2-7]{32}&issuer=[^&]+&algorithm=SHA1&digits=6&period=30$"
+          }
+        }
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "an enrolment that is not confirmed does not count",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/factors",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totp": {
+            "enabled": false,
+            "confirmedAt": "$absent"
+          },
+          "backupCodes": {
+            "remaining": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "compute the code the authenticator shows",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "enrolCode",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "a wrong code does not confirm it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "code": "{{wrongCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "mfa.invalid_code"
+        }
+      }
+    },
+    {
+      "name": "the right code turns two-step verification on and returns ten backup codes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "code": "{{enrolCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "codes": [
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the factor is enabled, with ten backup codes left",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/factors",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totp": {
+            "enabled": true,
+            "confirmedAt": "$any"
+          },
+          "backupCodes": {
+            "remaining": 10
+          }
+        }
+      }
+    },
+    {
+      "name": "let the authenticator move to its next code",
+      "wait": "30s"
+    },
+    {
+      "name": "start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_password"
+          }
+        }
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the password alone yields needs_second_factor and no tokens",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_second_factor",
+            "options": ["totp", "backup_code"]
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "compute the code the authenticator shows now",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the code completes the sign-in; the token says password, authenticator, two factors",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/second-factor",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "method": "totp",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          },
+          "backupCodesRemaining": "$absent"
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "amr": ["pwd", "otp", "mfa"],
+            "auth_time": "$any"
+          }
+        }
+      },
+      "capture": {
+        "newAccessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the new session reads the same factors",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/factors",
+        "accessToken": "{{newAccessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totp": {
+            "enabled": true,
+            "confirmedAt": "$any"
+          },
+          "backupCodes": {
+            "remaining": 10
+          }
+        }
+      }
+    }
+  ]
+}

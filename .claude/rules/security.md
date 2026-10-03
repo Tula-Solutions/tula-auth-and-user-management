@@ -1,6 +1,9 @@
 ---
 paths:
   - "apps/api/src/modules/flow/**"
+  - "apps/api/src/modules/mfa/**"
+  - "apps/api/src/modules/factor/**"
+  - "apps/api/src/lib/totp.ts"
   - "apps/api/src/modules/session/**"
   - "apps/api/src/modules/password/**"
   - "apps/api/src/modules/jwks/**"
@@ -67,3 +70,26 @@ Before finishing any change here, confirm each item holds and has a test:
     exactly (`Settings.requireRedirectUrl`); loopback `http` only in the `local` tier. Test a
     longer path, an added query or fragment, another case, a look-alike host and credentials in
     front of an allowed host. A link's token goes in the URL fragment, never the query.
+19. **TOTP:** RFC 6238, SHA-1, 6 digits, 30 s; the current step ± 1 only, every candidate
+    compared in constant time. A step is accepted **once** (`FactorStore.useTotpStep`, strictly
+    greater than the last used step, a compare-and-set): test the same code twice sequentially
+    and concurrently, and an earlier step's code after a later one. The secret is stored sealed
+    (`secret-box`, bound to environment + user + factor id): test that a ciphertext copied to
+    another user's or environment's row does not verify. A pending (unconfirmed) or lapsed
+    enrolment never satisfies a sign-in or a step-up.
+20. **Backup codes:** stored only as a keyed hash bound to the user; input normalised (case,
+    spaces, dashes); single use under concurrency; another user's code is refused; all replaced
+    on regeneration and deleted when MFA is turned off or reset.
+21. **Second-factor guesses:** every route that checks a TOTP or backup code (sign-in, reset,
+    enrolment confirmation, step-up) counts the guess under `Mfa.secondFactorLockKey` before
+    the check: one budget across methods and routes. No tokens and no session exist at
+    `needs_second_factor` or `needs_factor_enrolment`.
+22. **Step-up:** a route that changes how an account is protected has `requireRecentAuth()`.
+    Test a stale `auth_time` (refused), a fresh one (accepted), a refreshed token (claims
+    unchanged), and that a user with a second factor cannot step up with the password alone.
+    `auth_time` and `amr` come from the session row, never from the request.
+23. **MFA secrets never leak:** no Base32 secret, `otpauth://` URI, backup code or TOTP code in
+    a log line, audit entry, email or error body. Only the responses that return them (start,
+    confirm, regenerate, in-flow confirm) carry them, with `Cache-Control: no-store`.
+24. **Recovery:** a password reset never removes or bypasses a second factor; only the owner
+    (after a step-up) or an admin reset removes one, and the admin reset ends every session.

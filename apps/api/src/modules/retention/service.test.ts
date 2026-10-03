@@ -141,6 +141,7 @@ describe('purge', () => {
       flowAttempts: 2,
       verificationTokens: 0,
       sessions: 0,
+      pendingFactors: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -166,6 +167,106 @@ describe('purge', () => {
     expect(await hasToken(tenant, used)).toBe(false)
     expect(await hasToken(tenant, unused)).toBe(false)
     expect(await hasToken(otherTenant, later)).toBe(true)
+  })
+
+  test('removes authenticator enrolments an hour after they lapse, and never a confirmed one', async () => {
+    const pending = async (scope: Tenant, userId: string, expiresAt: Date) => {
+      const id = deps.ids.next()
+      expect(
+        await deps.factors.startTotp({
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          userId,
+          type: 'totp',
+          secret: `sealed-${id}`,
+          createdAt: deps.clock.now(),
+          expiresAt,
+        })
+      ).toBe(true)
+      return id
+    }
+    const [abandoned, foreign, valid, confirmed] = [
+      '00000000-0000-7000-8000-0000000000c1',
+      '00000000-0000-7000-8000-0000000000c2',
+      '00000000-0000-7000-8000-0000000000c3',
+      '00000000-0000-7000-8000-0000000000c4',
+    ] as const
+    await pending(tenant, abandoned, from(10 * 60_000))
+    await pending(otherTenant, foreign, from(10 * 60_000))
+    await pending(tenant, valid, from(2 * HOUR))
+    const factorId = await pending(tenant, confirmed, from(10 * 60_000))
+    expect(
+      await deps.factors.confirmTotp(tenant.environmentId, factorId, {
+        step: 1,
+        at: from(1),
+        backupCodes: [{ id: deps.ids.next(), codeHash: 'hash-1' }],
+      })
+    ).toBe(true)
+    const has = async (scope: Tenant, userId: string) =>
+      (await deps.factors.findTotp(scope.environmentId, userId)) !== null
+
+    // Lapsed, but inside the hour of grace: a confirmation in flight still finds its row.
+    deps.clock.advance(10 * 60_000 + HOUR - 1)
+    expect((await Retention.purge(deps)).pendingFactors).toBe(0)
+    expect(await has(tenant, abandoned)).toBe(true)
+
+    deps.clock.advance(1)
+    expect(await Retention.purge(deps)).toEqual({
+      environments: 2,
+      failed: 0,
+      flowAttempts: 0,
+      verificationTokens: 0,
+      sessions: 0,
+      pendingFactors: 2,
+    })
+    expect(await has(tenant, abandoned)).toBe(false)
+    expect(await has(otherTenant, foreign)).toBe(false)
+    // Not lapsed yet, or confirmed: kept, the backup codes included.
+    expect(await has(tenant, valid)).toBe(true)
+    expect(await deps.factors.findTotp(tenant.environmentId, confirmed)).toMatchObject({
+      id: factorId,
+      confirmedAt: expect.any(Date),
+    })
+    expect(await deps.factors.countBackupCodes(tenant.environmentId, confirmed)).toBe(1)
+    // Nothing more to do on the next run; a confirmed factor survives every one.
+    deps.clock.advance(365 * DAY)
+    expect((await Retention.purge(deps)).pendingFactors).toBe(1)
+    expect(await has(tenant, valid)).toBe(false)
+    expect(await has(tenant, confirmed)).toBe(true)
+  })
+
+  test('a run that removed only lapsed enrolments is worth a log line, with the count', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    spies.push(info)
+    await deps.factors.startTotp({
+      id: deps.ids.next(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      userId: USER,
+      type: 'totp',
+      secret: 'sealed',
+      createdAt: deps.clock.now(),
+      expiresAt: from(1),
+    })
+    deps.clock.advance(2 * HOUR)
+    await Retention.run(deps)
+    expect(info.mock.calls).toEqual([
+      [
+        'retention run finished',
+        {
+          environments: 2,
+          failed: 0,
+          flowAttempts: 0,
+          verificationTokens: 0,
+          sessions: 0,
+          pendingFactors: 1,
+        },
+      ],
+    ])
+    // The line has counts only: nothing about the user or the secret.
+    expect(JSON.stringify(info.mock.calls)).not.toContain('sealed')
+    expect(JSON.stringify(info.mock.calls)).not.toContain(USER)
   })
 
   test('an abandoned email sign-in leaves nothing behind: its attempt, binding hash and sign-in token all go', async () => {
@@ -336,6 +437,7 @@ describe('purge', () => {
       flowAttempts: 1,
       verificationTokens: 0,
       sessions: 1,
+      pendingFactors: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -425,7 +527,14 @@ describe('run', () => {
     expect(info.mock.calls).toEqual([
       [
         'retention run finished',
-        { environments: 2, failed: 0, flowAttempts: 1, verificationTokens: 0, sessions: 0 },
+        {
+          environments: 2,
+          failed: 0,
+          flowAttempts: 1,
+          verificationTokens: 0,
+          sessions: 0,
+          pendingFactors: 0,
+        },
       ],
     ])
     expect(info.mock.calls[0]?.[1]).toEqual({ ...report })
@@ -444,7 +553,14 @@ describe('run', () => {
     expect(await Retention.run(deps)).toMatchObject({ environments: 2, failed: 2 })
     expect(warn.mock.calls.at(-1)).toEqual([
       'retention run finished',
-      { environments: 2, failed: 2, flowAttempts: 0, verificationTokens: 0, sessions: 0 },
+      {
+        environments: 2,
+        failed: 2,
+        flowAttempts: 0,
+        verificationTokens: 0,
+        sessions: 0,
+        pendingFactors: 0,
+      },
     ])
   })
 

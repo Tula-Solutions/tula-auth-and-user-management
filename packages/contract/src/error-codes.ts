@@ -32,6 +32,14 @@ export const ERROR_DEFINITIONS = {
   // The environment's settings switch this sign-in method off (`signIn.methods`). It says
   // nothing about any account, so it is safe to report before an identifier is looked up.
   'auth.method_disabled': { status: 403, message: 'This sign-in method is not available.' },
+  // A sensitive action by a signed-in user whose last proof of identity is too old (or, for a
+  // user with two-step verification, did not include the second factor). `params.methods` is a
+  // comma-separated list of what `POST /v1/client/sessions/step-up` accepts from this user
+  // (`password`, `totp`, `backup_code`); empty when the only way is to sign in again.
+  'auth.step_up_required': {
+    status: 403,
+    message: 'Confirm it is you to continue.',
+  },
 
   'flow.not_found': { status: 404, message: 'This attempt does not exist or has expired.' },
   'flow.invalid_step': {
@@ -85,6 +93,34 @@ export const ERROR_DEFINITIONS = {
     status: 409,
     message:
       'Open this link in the browser where you started signing in, or enter the code from the email there.',
+  },
+
+  // A wrong authenticator or backup code. Deliberately not `verification.invalid_code`: that one
+  // is about an emailed code, which can be resent; this one cannot.
+  'mfa.invalid_code': { status: 422, message: 'That code is incorrect.' },
+  'mfa.already_enabled': {
+    status: 409,
+    message: 'Two-step verification is already on for this account.',
+  },
+  'mfa.not_enabled': {
+    status: 409,
+    message: 'Two-step verification is not on for this account.',
+  },
+  // Confirming an enrolment that was never started, was already confirmed, or was started more
+  // than ten minutes ago.
+  'mfa.enrolment_expired': {
+    status: 410,
+    message: 'This setup has expired. Start again.',
+  },
+  // The environment's `mfa.policy` is `off`: nobody can enrol.
+  'mfa.not_available': {
+    status: 403,
+    message: 'Two-step verification is not available for this app.',
+  },
+  // The environment's `mfa.policy` is `required`: a user cannot turn their second factor off.
+  'mfa.required_by_policy': {
+    status: 403,
+    message: 'This app requires two-step verification. It cannot be turned off.',
   },
 
   'session.invalid_token': { status: 401, message: 'Your session is invalid. Sign in again.' },

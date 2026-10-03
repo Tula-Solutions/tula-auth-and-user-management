@@ -571,6 +571,7 @@ describe('signing in with an emailed code', () => {
       client: 'web',
       strategies: ['password', 'email_code', 'email_link'],
       secondFactors: ['totp'],
+      amr: ['email'],
     })
   })
 

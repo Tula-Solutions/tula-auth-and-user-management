@@ -139,3 +139,32 @@ export function pick(body: unknown, path: string): unknown {
   }
   return current
 }
+
+/**
+ * Read the claims of a JWT without verifying it, as a client does to learn when its token
+ * expires or how the user signed in.
+ *
+ * @param token - A compact JWT (`header.payload.signature`).
+ * @returns The payload object, or `undefined` when `token` is not a JWT with a JSON object
+ *   payload.
+ *
+ * @example
+ * ```ts
+ * jwtClaims(body.session.accessToken) // { sub: '…', amr: ['pwd', 'otp', 'mfa'], … }
+ * ```
+ */
+export function jwtClaims(token: unknown): Record<string, unknown> | undefined {
+  const parts = typeof token === 'string' ? token.split('.') : []
+  if (parts.length !== 3 || !parts[1]) {
+    return undefined
+  }
+  try {
+    const binary = atob(parts[1].replaceAll('-', '+').replaceAll('_', '/'))
+    const payload: unknown = JSON.parse(
+      new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))
+    )
+    return isRecord(payload) ? payload : undefined
+  } catch {
+    return undefined
+  }
+}

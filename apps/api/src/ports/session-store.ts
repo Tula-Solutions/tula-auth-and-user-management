@@ -9,6 +9,7 @@ export type SessionRevokeReason =
   | 'password_changed'
   | 'reuse_detected'
   | 'user_banned'
+  | 'mfa_changed'
 
 /** A signed-in device. A session is also the refresh-token family. */
 export interface SessionRecord {
@@ -25,6 +26,14 @@ export interface SessionRecord {
   /** When the session ends if not refreshed (never later than `absoluteExpiresAt`). */
   idleExpiresAt: Date
   absoluteExpiresAt: Date | null
+  /**
+   * When the user last actively proved a factor for this session: its sign-in, or the last
+   * step-up. `null` only for a session stored before this was recorded; read it through
+   * {@link authenticatedAt}.
+   */
+  factorVerifiedAt: Date | null
+  /** Every method proven for this session so far (the access token's `amr`). */
+  authMethods: string[]
   revokedAt: Date | null
   revokeReason: SessionRevokeReason | null
   createdAt: Date
@@ -43,8 +52,45 @@ export interface RefreshTokenRecord {
   createdAt: Date
 }
 
-/** A session to store. */
-export type NewSession = Omit<SessionRecord, 'revokedAt' | 'revokeReason'>
+/** A session to store. Without `factorVerifiedAt` and `authMethods` it has proven nothing. */
+export type NewSession = Omit<
+  SessionRecord,
+  'revokedAt' | 'revokeReason' | 'factorVerifiedAt' | 'authMethods'
+> &
+  Partial<Pick<SessionRecord, 'factorVerifiedAt' | 'authMethods'>>
+
+/** A factor proven again for a session: a step-up, or a factor confirmed while signed in. */
+export interface Authentication {
+  /** When it was proven: the session's new `factorVerifiedAt`. */
+  at: Date
+  /** What was proven; added to the session's `authMethods` (no duplicates, order kept). */
+  methods: readonly string[]
+}
+
+/**
+ * When the user last proved a factor for a session: the recorded time, or the session's
+ * creation for one stored before it was recorded (a session is created by a sign-in).
+ *
+ * @param session - The session.
+ * @returns The moment the access token's `auth_time` is taken from.
+ */
+export function authenticatedAt(
+  session: Pick<SessionRecord, 'factorVerifiedAt' | 'createdAt'>
+): Date {
+  return session.factorVerifiedAt ?? session.createdAt
+}
+
+/**
+ * A session's methods with newly proven ones added: no duplicates, earlier ones first. Shared
+ * by every adapter so they agree.
+ *
+ * @param current - The session's methods so far.
+ * @param added - What was just proven.
+ * @returns The combined list.
+ */
+export function mergeAuthMethods(current: readonly string[], added: readonly string[]): string[] {
+  return [...new Set([...current, ...added])]
+}
 
 /** A refresh token to store. */
 export type NewRefreshToken = Omit<RefreshTokenRecord, 'replacedById' | 'usedAt'>
@@ -226,6 +272,24 @@ export interface SessionStore {
     at: Date,
     activity?: Activity
   ): Promise<boolean>
+
+  /**
+   * Record that the user proved a factor again for a session: move `factorVerifiedAt` to
+   * `authentication.at` and add its methods ({@link mergeAuthMethods}). Guarded: only a session
+   * that is still active at that moment is changed.
+   *
+   * @param environmentId - The session's environment.
+   * @param id - Session id.
+   * @param authentication - When, and what was proven.
+   * @param activity - Recorded in the same transaction, only if the session was changed.
+   * @returns The updated session, or `null` when it does not exist or has ended.
+   */
+  recordAuthentication(
+    environmentId: string,
+    id: string,
+    authentication: Authentication,
+    activity?: Activity
+  ): Promise<SessionRecord | null>
 
   /**
    * Revoke every unrevoked session of a user, optionally keeping one.

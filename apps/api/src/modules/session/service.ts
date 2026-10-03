@@ -19,7 +19,9 @@ import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Jwks from '~/modules/jwks/service'
 import {
+  authenticatedAt,
   isActive,
+  mergeAuthMethods,
   type RefreshTokenRecord,
   type SessionRecord,
   type SessionRevokeReason,
@@ -80,7 +82,7 @@ type SigningKey = Awaited<ReturnType<typeof Jwks.activeSigningKey>>
 async function signAccessToken(
   deps: Pick<Deps, 'config'>,
   scope: Scope,
-  session: { id: string; userId: string },
+  session: Pick<SessionRecord, 'id' | 'userId' | 'factorVerifiedAt' | 'authMethods' | 'createdAt'>,
   now: Date,
   { kid, privateKey }: SigningKey
 ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
@@ -91,6 +93,10 @@ async function signAccessToken(
     pid: scope.projectId,
     eid: scope.environmentId,
     v: ACCESS_TOKEN_VERSION,
+    // From the session row, never from "now": a refresh must not make an old sign-in look
+    // recent (ADR 0025).
+    auth_time: Math.floor(authenticatedAt(session).getTime() / 1000),
+    amr: session.authMethods,
   })
     .setProtectedHeader({ alg: ACCESS_TOKEN_ALGORITHM, kid, typ: 'JWT' })
     .setIssuer(environmentIssuer(deps.config.publicUrl, scope.environmentId))
@@ -152,6 +158,11 @@ export interface CreateInput {
   userAgent?: string | null
   /** Client IP; anything that is not a valid address is stored as `null`. */
   ipAddress?: string | null
+  /**
+   * What the user proved to get this session (the access token's `amr`), e.g. `['pwd']` or
+   * `['pwd', 'otp', 'mfa']`. Defaults to none.
+   */
+  authMethods?: readonly string[]
 }
 
 /**
@@ -180,6 +191,7 @@ export async function create(
   const refreshToken = await deriveToken(deps, { sessionId })
   const origin = cleanOrigin(input)
   const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
+  const authMethods = mergeAuthMethods([], input.authMethods ?? [])
 
   await deps.sessions.create(
     {
@@ -193,6 +205,9 @@ export async function create(
       lastActiveAt: now,
       idleExpiresAt,
       absoluteExpiresAt,
+      // A session begins with a sign-in: that is its first proof.
+      factorVerifiedAt: now,
+      authMethods,
       createdAt: now,
     },
     {
@@ -213,11 +228,59 @@ export async function create(
   const access = await signAccessToken(
     deps,
     scope,
-    { id: sessionId, userId: input.userId },
+    { id: sessionId, userId: input.userId, factorVerifiedAt: now, authMethods, createdAt: now },
     now,
     signingKey
   )
   return { sessionId, ...access, refreshToken }
+}
+
+/**
+ * Record that a signed-in user proved a factor again for their session, and issue an access
+ * token that says so.
+ *
+ * The session's `factorVerifiedAt` moves to now and `methods` are added to what it has proven;
+ * the returned access token carries them as `auth_time` and `amr`. The refresh token is
+ * untouched: a step-up is not a rotation. This function **does not check any proof**: the
+ * caller (`Mfa.stepUp`, or the confirmation of a new factor) has done that.
+ *
+ * @param deps - Session store, signing keys, clock and ids.
+ * @param scope - The project and environment.
+ * @param self - The signed-in user and their session, from the access token.
+ * @param methods - What was just proven, e.g. `['otp', 'mfa']`.
+ * @param actor - The user, for the audit log.
+ * @returns The session id and a fresh access token. No refresh token.
+ * @throws AuthError `session.revoked` when the session has ended or is not this user's.
+ */
+export async function recordAuthentication(
+  deps: TokenDeps & Pick<Deps, 'sessions'>,
+  scope: Scope,
+  self: { userId: string; sessionId: string },
+  methods: readonly string[],
+  actor: Actor
+): Promise<SessionTokens> {
+  const now = deps.clock.now()
+  const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
+  const current = await deps.sessions.findById(scope.environmentId, self.sessionId)
+  const session =
+    current && current.userId === self.userId
+      ? await deps.sessions.recordAuthentication(
+          scope.environmentId,
+          self.sessionId,
+          { at: now, methods },
+          Audit.entry(deps, scope, {
+            type: 'session.stepped_up',
+            actor,
+            target: { type: 'session', id: self.sessionId },
+            data: { userId: self.userId, methods: [...methods] },
+          })
+        )
+      : null
+  if (!session) {
+    throw new AuthError('session.revoked')
+  }
+  const access = await signAccessToken(deps, scope, session, now, signingKey)
+  return { sessionId: session.id, ...access }
 }
 
 /**

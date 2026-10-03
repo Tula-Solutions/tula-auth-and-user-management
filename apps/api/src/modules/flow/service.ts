@@ -13,12 +13,14 @@ import {
   type FlowStep,
   type PasswordResetRequest,
   type PasswordResetStartRequest,
+  type SecondFactorMethod,
   SecondFactorMethodSchema,
   type SessionClient,
   SessionClientSchema,
   type SessionTokens,
   type SignInStartRequest,
   type SignUpRequest,
+  type TotpEnrolment,
 } from '@tula/contract'
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
@@ -29,6 +31,7 @@ import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
+import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
@@ -216,6 +219,11 @@ const StateSchema = z.object({
    * and the client holding the attempt's secret may complete the sign-in.
    */
   linkVerified: z.boolean().optional(),
+  /**
+   * What the attempt has proven so far, as `amr` values (`pwd`, `email`, `otp`, …). Becomes the
+   * session's `authMethods` when the attempt completes.
+   */
+  amr: z.array(z.string()).optional(),
 })
 type State = z.infer<typeof StateSchema>
 
@@ -250,6 +258,9 @@ function stepFor(
   if (attempt.status === 'needs_second_factor') {
     return { status: 'needs_second_factor', options: state.secondFactors ?? [] }
   }
+  if (attempt.status === 'needs_factor_enrolment') {
+    return { status: 'needs_factor_enrolment', methods: [...Factors.ENROLMENT_METHODS] }
+  }
   // Open attempts are only ever stored on the steps above or `needs_password`; `complete` is
   // built by `finish` with its ids.
   return { status: 'needs_password' }
@@ -264,7 +275,8 @@ function toAttempt(
   attempt: FlowAttemptRecord,
   step: FlowStep,
   secret?: string,
-  linkBinding?: string
+  linkBinding?: string,
+  once: CompletionExtras = {}
 ): FlowAttempt {
   return {
     id: attempt.id,
@@ -273,6 +285,36 @@ function toAttempt(
     step,
     ...(secret !== undefined && { attemptSecret: secret }),
     ...(linkBinding !== undefined && { linkBinding }),
+    ...once,
+  }
+}
+
+/** What only the response that completes an attempt may carry, once. */
+type CompletionExtras = Pick<FlowAttempt, 'backupCodes' | 'backupCodesRemaining'>
+
+/** An attempt's state with newly proven methods added to what it has proven so far. */
+function proven(state: State, ...methods: string[]): State {
+  return { ...state, amr: [...new Set([...(state.amr ?? []), ...methods])] }
+}
+
+/** What stands between a user who has passed everything else and their session. */
+interface Requirement {
+  /** The second factors the user must prove one of. */
+  secondFactors: SecondFactorMethod[]
+  /** The environment requires a second factor and the user has none to prove. */
+  enrolmentRequired: boolean
+}
+
+/** Ask what a user still has to do: prove a second factor, enrol one, or nothing. */
+async function requirement(
+  deps: Pick<Deps, 'factors' | 'environmentSettings' | 'config'>,
+  tenant: Tenant,
+  userId: string
+): Promise<Requirement> {
+  const secondFactors = await Factors.requiredFor(deps, tenant, userId)
+  return {
+    secondFactors,
+    enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, secondFactors),
   }
 }
 
@@ -390,7 +432,8 @@ async function finish(
   attempt: FlowAttemptRecord,
   state: State,
   userId: string,
-  context: ClientContext
+  context: ClientContext,
+  once: CompletionExtras = {}
 ): Promise<FlowResult> {
   const now = deps.clock.now()
   const moved = await deps.flowAttempts.transition(
@@ -408,6 +451,7 @@ async function finish(
     client: state.client,
     userAgent: context.userAgent,
     ipAddress: context.ipAddress,
+    authMethods: state.amr ?? [],
   })
   if (attempt.kind === 'sign_in') {
     // Not awaited and cannot throw: the notice must neither delay nor fail the sign-in.
@@ -423,40 +467,69 @@ async function finish(
     })
   }
   return {
-    attempt: toAttempt(attempt, { status: 'complete', userId, sessionId: tokens.sessionId }),
+    attempt: toAttempt(
+      attempt,
+      { status: 'complete', userId, sessionId: tokens.sessionId },
+      undefined,
+      undefined,
+      once
+    ),
     tokens,
     client: state.client,
   }
 }
 
 /**
- * Park an attempt on `needs_second_factor`: the first factor (or a reset's code and password)
- * was accepted, and the user must now prove one of `secondFactors`.
+ * Park an attempt on `needs_second_factor` or `needs_factor_enrolment`: everything before it was
+ * accepted, and the user must now prove one of `secondFactors`, or enrol a factor.
  *
  * No session is created and no tokens are returned. The move is a compare-and-set, so of two
- * racing requests only one gets here.
+ * racing requests only one gets here. Only what the next step needs is kept on the attempt:
+ * never a sign-up's password hash.
  */
-async function awaitSecondFactor(
+async function park(
   deps: Pick<Deps, 'flowAttempts' | 'clock'>,
   tenant: Tenant,
   attempt: FlowAttemptRecord,
   state: State,
   userId: string,
+  status: 'needs_second_factor' | 'needs_factor_enrolment',
   secondFactors: State['secondFactors']
 ): Promise<FlowResult> {
-  const pending: State = { ...state, secondFactors }
-  const waiting = { ...attempt, status: 'needs_second_factor' as const, userId }
+  const { passwordHash: _hash, secondFactors: _earlier, ...kept } = state
+  const pending: State = status === 'needs_second_factor' ? { ...kept, secondFactors } : { ...kept }
+  const waiting = { ...attempt, status, userId }
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,
     attempt.status,
-    { status: waiting.status, userId, state: pending },
+    { status, userId, state: pending },
     deps.clock.now()
   )
   if (!moved) {
     throw new AuthError('flow.invalid_step')
   }
   return { attempt: toAttempt(waiting, stepFor(waiting, pending)), client: state.client }
+}
+
+/**
+ * Take an attempt past its last proof: to a session, or to the second factor or the enrolment
+ * that still stands in the way.
+ */
+function advance(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  userId: string,
+  next: FlowStep['status'],
+  required: Requirement,
+  context: ClientContext
+): Promise<FlowResult> {
+  if (next === 'needs_second_factor' || next === 'needs_factor_enrolment') {
+    return park(deps, tenant, attempt, state, userId, next, required.secondFactors)
+  }
+  return finish(deps, tenant, attempt, state, userId, context)
 }
 
 /**
@@ -682,20 +755,17 @@ export async function submitPassword(
     )
   }
 
-  const secondFactors = await Factors.requiredFor(deps, tenant, user.id)
+  const required = await requirement(deps, tenant, user.id)
   const next = nextStatus(attempt.kind, attempt.status, event, {
     strategies,
     emailVerified: user.emailVerifiedAt !== null,
-    secondFactors,
+    ...required,
   })
-  if (next === 'complete') {
-    return finish(deps, tenant, attempt, state, user.id, context)
-  }
-  if (next === 'needs_second_factor') {
-    return awaitSecondFactor(deps, tenant, attempt, state, user.id, secondFactors)
+  if (next !== 'needs_email_verification') {
+    return advance(deps, tenant, attempt, proven(state, 'pwd'), user.id, next, required, context)
   }
 
-  const pending: State = { ...state, email: user.email }
+  const pending: State = { ...proven(state, 'pwd'), email: user.email }
   const waiting = { ...attempt, status: next, userId: user.id }
   // Send the code before moving the attempt: if the send is refused (e.g. the address is on
   // its cooldown) the attempt stays on the password step and can simply be retried.
@@ -739,12 +809,12 @@ async function completeEmailFactor(
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  const secondFactors = await Factors.requiredFor(deps, tenant, user.id)
+  const required = await requirement(deps, tenant, user.id)
   const next = nextStatus(
     attempt.kind,
     attempt.status,
     { type: 'first_factor_verified', strategy },
-    { strategies: state.strategies ?? [], emailVerified: true, secondFactors }
+    { strategies: state.strategies ?? [], emailVerified: true, ...required }
   )
   await spend()
   if (user.emailVerifiedAt === null) {
@@ -775,9 +845,7 @@ async function completeEmailFactor(
     linkVerified: _linkVerified,
     ...rest
   } = state
-  return next === 'complete'
-    ? finish(deps, tenant, attempt, rest, user.id, context)
-    : awaitSecondFactor(deps, tenant, attempt, rest, user.id, secondFactors)
+  return advance(deps, tenant, attempt, proven(rest, 'email'), user.id, next, required, context)
 }
 
 /**
@@ -1102,7 +1170,7 @@ export async function verifyEmail(
     if (user.bannedAt !== null) {
       throw new AuthError('auth.user_banned')
     }
-    const secondFactors = await Factors.requiredFor(deps, tenant, user.id)
+    const required = await requirement(deps, tenant, user.id)
     await deps.users.markEmailVerified(
       tenant.environmentId,
       user.id,
@@ -1116,11 +1184,9 @@ export async function verifyEmail(
     const next = nextStatus(attempt.kind, attempt.status, event, {
       strategies: state.strategies ?? [],
       emailVerified: true,
-      secondFactors,
+      ...required,
     })
-    return next === 'complete'
-      ? finish(deps, tenant, attempt, state, user.id, context)
-      : awaitSecondFactor(deps, tenant, attempt, state, user.id, secondFactors)
+    return advance(deps, tenant, attempt, proven(state, 'email'), user.id, next, required, context)
   }
 
   if (state.decoy || (!state.passwordHash && !state.passwordless)) {
@@ -1160,7 +1226,17 @@ export async function verifyEmail(
     // Another sign-up for the same address was verified first.
     throw new AuthError('flow.invalid_step')
   }
-  return finish(deps, tenant, attempt, state, userId, context)
+  // The account is seconds old: it has no factor to prove, but the environment may require one.
+  const required: Requirement = {
+    secondFactors: [],
+    enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, []),
+  }
+  const next = nextStatus(attempt.kind, attempt.status, event, {
+    strategies: [],
+    emailVerified: true,
+    ...required,
+  })
+  return advance(deps, tenant, attempt, proven(state, 'email'), userId, next, required, context)
 }
 
 /**
@@ -1278,12 +1354,12 @@ export async function resetPassword(
     throw new AuthError('auth.user_banned')
   }
   // Asked before anything is spent or stored, so a failure here leaves the reset retryable.
-  const secondFactors = await Factors.requiredFor(deps, tenant, user.id)
+  const required = await requirement(deps, tenant, user.id)
   const next = nextStatus(attempt.kind, attempt.status, event, {
     strategies: [],
     // The code proves control of the address.
     emailVerified: true,
-    secondFactors,
+    ...required,
   })
   const actor = { type: 'user', id: user.id, ...cleanOrigin(context) } as const
   await Users.resetPassword(deps, tenant, user.id, input.password, actor, () =>
@@ -1310,20 +1386,20 @@ export async function resetPassword(
       })
     }
   }
-  return next === 'complete'
-    ? finish(deps, tenant, attempt, state, user.id, context)
-    : awaitSecondFactor(deps, tenant, attempt, state, user.id, secondFactors)
+  // What the reset proved is the emailed code: the inbox.
+  return advance(deps, tenant, attempt, proven(state, 'email'), user.id, next, required, context)
 }
 
 /**
- * Lockout key for second-factor guesses of one user in one environment.
+ * Lockout key for second-factor guesses of one user in one environment: the one budget shared by
+ * every place a TOTP or backup code is checked (`Mfa.secondFactorLockKey`).
  *
  * @param environmentId - The environment.
  * @param userId - The user the attempt belongs to.
  * @returns The key for `deps.lockout`.
  */
 export function secondFactorLockKey(environmentId: string, userId: string): string {
-  return `second_factor:${environmentId}:${userId}`
+  return Mfa.secondFactorLockKey(environmentId, userId)
 }
 
 /**
@@ -1334,11 +1410,9 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * per-user lockout (`CREDENTIAL_LOCKOUT`: counted first, cleared on success, so parallel guesses
  * cannot slip through), the environment's ceiling, the ban check and the compare-and-set that
  * lets exactly one request create the session. The proof itself is checked by the verifier
- * registered for its method (`Factors.verify`). Step 1.8 adds TOTP and backup codes by
- * registering their verifiers and adding the route that calls this; nothing here changes.
- *
- * There is no HTTP route for it yet: no user can have a second factor until 1.8, so no attempt
- * reaches `needs_second_factor` outside tests.
+ * registered for its method (`Factors.verify`): an authenticator code (accepted once per time
+ * step) or a backup code (spent, recorded, and the owner told how many are left; the response
+ * says so too, as `backupCodesRemaining`).
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -1348,8 +1422,8 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * @param context - The requesting device.
  * @returns `complete` with tokens.
  * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` (wrong
- *   step, or a method the attempt did not offer), `verification.invalid_code` for a proof that
- *   does not verify, or `auth.user_banned`.
+ *   step, or a method the attempt did not offer), `mfa.invalid_code` for a proof that does not
+ *   verify, or `auth.user_banned`.
  * @throws RateLimitError while the user is locked out after repeated wrong proofs.
  */
 export async function submitSecondFactor(
@@ -1374,14 +1448,118 @@ export async function submitSecondFactor(
   await chargeEnvironment(deps, tenant, 'verify')
 
   const user = await deps.users.findById(tenant.environmentId, userId)
-  if (!user || !(await Factors.verify(deps, tenant, userId, proof))) {
-    throw new AuthError('verification.invalid_code')
+  const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
+  const outcome = user ? await Factors.verify(deps, tenant, userId, proof, actor) : null
+  if (!user || !outcome) {
+    throw new AuthError('mfa.invalid_code')
   }
   await deps.lockout.clear(lockKey)
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  return finish(deps, tenant, attempt, state, user.id, context)
+  return finish(
+    deps,
+    tenant,
+    attempt,
+    proven(state, ...outcome.methods, 'mfa'),
+    user.id,
+    context,
+    outcome.backupCodesRemaining === undefined
+      ? {}
+      : { backupCodesRemaining: outcome.backupCodesRemaining }
+  )
+}
+
+/** The attempt of an enrolment step, and the user it belongs to. */
+async function loadEnrolment(
+  deps: Deps,
+  tenant: Tenant,
+  kind: FlowKind,
+  ref: AttemptRef,
+  context: ClientContext
+): Promise<{ attempt: FlowAttemptRecord; state: State; userId: string }> {
+  const { attempt, state } = await load(deps, tenant, kind, ref, context)
+  // Throws `flow.invalid_step` unless the attempt is waiting on an enrolment.
+  assertAccepts(attempt.kind, attempt.status, { type: 'factor_enrolled' })
+  if (!attempt.userId) {
+    throw new AuthError('flow.invalid_step')
+  }
+  await chargeEnvironment(deps, tenant, 'verify')
+  return { attempt, state, userId: attempt.userId }
+}
+
+/**
+ * Start enrolling an authenticator app inside an attempt waiting on `needs_factor_enrolment`
+ * (the environment requires a second factor and the user has none).
+ *
+ * The same pending-factor mechanics as enrolling from a profile (`Mfa.startTotp`), authorized
+ * by the attempt's secret instead of a session: the user has passed their first factor but has
+ * no session yet. Calling it again replaces the pending secret.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param kind - Which flow the route belongs to.
+ * @param ref - The attempt and its secret.
+ * @param context - The requesting device.
+ * @returns The secret and its `otpauth://` URI, once.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step`,
+ *   `mfa.not_available` or `mfa.already_enabled`.
+ */
+export async function startFactorEnrolment(
+  deps: Deps,
+  tenant: Tenant,
+  kind: FlowKind,
+  ref: AttemptRef,
+  context: ClientContext
+): Promise<TotpEnrolment> {
+  const { userId } = await loadEnrolment(deps, tenant, kind, ref, context)
+  return Mfa.startTotp(deps, tenant, userId)
+}
+
+/**
+ * Confirm the authenticator enrolled inside an attempt, and complete the attempt.
+ *
+ * The code is checked exactly as from a profile (`Mfa.confirmTotp`: the user's second-factor
+ * lockout, one confirmation wins, backup codes stored as keyed hashes, `user.mfa_enabled`
+ * recorded, every existing session of the user ended, the owner emailed). Then the attempt
+ * completes: the response carries the session **and the ten backup codes, once**.
+ *
+ * If the attempt cannot complete after the factor was confirmed (it expired in between), the
+ * factor stays on and the codes are lost with the response: the user signs in with their
+ * authenticator and makes new ones.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param kind - Which flow the route belongs to.
+ * @param ref - The attempt and its secret.
+ * @param code - The 6-digit code the app shows.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens and `backupCodes`.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step`,
+ *   `mfa.enrolment_expired`, `mfa.already_enabled`, `mfa.invalid_code` or `auth.user_banned`.
+ * @throws RateLimitError while the user is locked out after repeated wrong codes.
+ */
+export async function confirmFactorEnrolment(
+  deps: Deps,
+  tenant: Tenant,
+  kind: FlowKind,
+  ref: AttemptRef,
+  code: string,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state, userId } = await loadEnrolment(deps, tenant, kind, ref, context)
+  const user = await deps.users.findById(tenant.environmentId, userId)
+  if (!user) {
+    throw new AuthError('flow.invalid_step')
+  }
+  if (user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
+  const { codes } = await Mfa.confirmTotp(deps, tenant, { userId }, code, actor)
+  return finish(deps, tenant, attempt, proven(state, 'otp', 'mfa'), userId, context, {
+    backupCodes: codes,
+  })
 }
 
 /**

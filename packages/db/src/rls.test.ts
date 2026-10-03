@@ -121,3 +121,151 @@ describe('tenant isolation (as the tula_app runtime role)', () => {
     ).rejects.toThrow()
   })
 })
+
+describe('second factors and backup codes (as the tula_app runtime role)', () => {
+  // Tenants of its own, so the tests above see exactly the rows they made.
+  let a: TestTenant
+  let b: TestTenant
+
+  beforeAll(async () => {
+    a = await createTestTenant(testDb.db)
+    b = await createTestTenant(testDb.db)
+  })
+
+  const factorsOf = (tenant: TestTenant) =>
+    withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.select({ secret: schema.userFactors.secret }).from(schema.userFactors)
+    )
+  const codesOf = (tenant: TestTenant) =>
+    withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.select({ codeHash: schema.backupCodes.codeHash }).from(schema.backupCodes)
+    )
+
+  /** A user with a factor and one backup code, in `tenant`. */
+  async function enrolled(tenant: TestTenant, label: string) {
+    const user = await insertUser(tenant, `${label}-${Bun.randomUUIDv7()}@mfa.test`)
+    const scope = { projectId: tenant.projectId, environmentId: tenant.environmentId }
+    await withTenant(testDb.db, tenant.environmentId, async (tx) => {
+      await tx
+        .insert(schema.userFactors)
+        .values({ ...scope, userId: user.id, type: 'totp', secret: `sealed-${label}` })
+      await tx
+        .insert(schema.backupCodes)
+        .values({ ...scope, userId: user.id, codeHash: `hash-${label}` })
+    })
+    return user
+  }
+
+  test('an environment sees only its own factors and backup codes, and nothing outside a scope', async () => {
+    await enrolled(a, 'seen-a')
+    await enrolled(b, 'seen-b')
+    expect((await factorsOf(a)).map((row) => row.secret)).toContain('sealed-seen-a')
+    expect((await factorsOf(a)).map((row) => row.secret)).not.toContain('sealed-seen-b')
+    expect((await codesOf(b)).map((row) => row.codeHash)).toContain('hash-seen-b')
+    expect((await codesOf(b)).map((row) => row.codeHash)).not.toContain('hash-seen-a')
+    expect(await testDb.db.select().from(schema.userFactors)).toEqual([])
+    expect(await testDb.db.select().from(schema.backupCodes)).toEqual([])
+  })
+
+  test('cannot write a factor or a backup code into another environment', async () => {
+    const theirs = await enrolled(b, 'write-b')
+    const foreign = { projectId: b.projectId, environmentId: b.environmentId, userId: theirs.id }
+    await expect(
+      withTenant(testDb.db, a.environmentId, (tx) =>
+        tx.insert(schema.backupCodes).values({ ...foreign, codeHash: 'hash-planted' })
+      )
+    ).rejects.toThrow()
+    // Nor for a user of another environment under this one's ids: the user is not there.
+    await expect(
+      withTenant(testDb.db, a.environmentId, (tx) =>
+        tx.insert(schema.userFactors).values({
+          projectId: a.projectId,
+          environmentId: a.environmentId,
+          userId: theirs.id,
+          type: 'totp',
+          secret: 'sealed-planted',
+        })
+      )
+    ).rejects.toThrow()
+    expect((await codesOf(b)).map((row) => row.codeHash)).not.toContain('hash-planted')
+  })
+
+  test('cannot read, change or delete another environment’s factors and backup codes', async () => {
+    const theirs = await enrolled(b, 'touch-b')
+    const touched = await withTenant(testDb.db, a.environmentId, async (tx) => ({
+      factors: await tx
+        .update(schema.userFactors)
+        .set({ confirmedAt: new Date(), lastUsedStep: 0 })
+        .where(eq(schema.userFactors.userId, theirs.id))
+        .returning(),
+      codes: await tx
+        .update(schema.backupCodes)
+        .set({ usedAt: new Date() })
+        .where(eq(schema.backupCodes.userId, theirs.id))
+        .returning(),
+      deletedFactors: await tx
+        .delete(schema.userFactors)
+        .where(eq(schema.userFactors.userId, theirs.id))
+        .returning(),
+      deletedCodes: await tx
+        .delete(schema.backupCodes)
+        .where(eq(schema.backupCodes.userId, theirs.id))
+        .returning(),
+    }))
+    expect(touched).toEqual({ factors: [], codes: [], deletedFactors: [], deletedCodes: [] })
+    const [factor] = await withTenant(testDb.db, b.environmentId, (tx) =>
+      tx.select().from(schema.userFactors).where(eq(schema.userFactors.userId, theirs.id))
+    )
+    expect(factor).toMatchObject({
+      confirmedAt: null,
+      lastUsedStep: null,
+      secret: 'sealed-touch-b',
+    })
+    const [code] = await withTenant(testDb.db, b.environmentId, (tx) =>
+      tx.select().from(schema.backupCodes).where(eq(schema.backupCodes.userId, theirs.id))
+    )
+    expect(code).toMatchObject({ usedAt: null })
+  })
+
+  test('the runtime role may delete its own environment’s factors and backup codes', async () => {
+    const mine = await enrolled(a, 'delete-a')
+    const deleted = await withTenant(testDb.db, a.environmentId, async (tx) => ({
+      codes: await tx
+        .delete(schema.backupCodes)
+        .where(eq(schema.backupCodes.userId, mine.id))
+        .returning({ codeHash: schema.backupCodes.codeHash }),
+      factors: await tx
+        .delete(schema.userFactors)
+        .where(eq(schema.userFactors.userId, mine.id))
+        .returning({ secret: schema.userFactors.secret }),
+    }))
+    expect(deleted).toEqual({
+      codes: [{ codeHash: 'hash-delete-a' }],
+      factors: [{ secret: 'sealed-delete-a' }],
+    })
+  })
+
+  test('a user has one factor of a type, and a code hash once', async () => {
+    const mine = await enrolled(a, 'unique-a')
+    const scope = { projectId: a.projectId, environmentId: a.environmentId, userId: mine.id }
+    await expect(
+      withTenant(testDb.db, a.environmentId, (tx) =>
+        tx.insert(schema.userFactors).values({ ...scope, type: 'totp', secret: 'sealed-second' })
+      )
+    ).rejects.toThrow()
+    await expect(
+      withTenant(testDb.db, a.environmentId, (tx) =>
+        tx.insert(schema.backupCodes).values({ ...scope, codeHash: 'hash-unique-a' })
+      )
+    ).rejects.toThrow()
+  })
+
+  test('deleting a user removes their factor and their backup codes', async () => {
+    const mine = await enrolled(a, 'cascade-a')
+    await withTenant(testDb.db, a.environmentId, (tx) =>
+      tx.delete(schema.users).where(eq(schema.users.id, mine.id))
+    )
+    expect((await factorsOf(a)).map((row) => row.secret)).not.toContain('sealed-cascade-a')
+    expect((await codesOf(a)).map((row) => row.codeHash)).not.toContain('hash-cascade-a')
+  })
+})

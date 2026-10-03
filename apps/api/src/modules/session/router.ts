@@ -8,6 +8,7 @@ import { originMayUseCookies } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
+import * as Mfa from '~/modules/mfa/service'
 import * as Sessions from '~/modules/session/service'
 import * as openapi from '~/openapi'
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './cookies'
@@ -17,7 +18,11 @@ import {
   SessionIdParamSchema,
   SessionListSchema,
   SessionTokensSchema,
+  StepUpRequestSchema,
 } from './schema'
+
+/** Step-ups per minute from one IP; the service also limits wrong proofs per user. */
+export const STEP_UP_RATE_LIMIT = 10
 
 const router = new Hono<AppEnv>()
 
@@ -232,6 +237,53 @@ router.delete(
       clearRefreshCookie(c, deps.config, tenant.environmentId)
     }
     return c.body(null, 204)
+  }
+)
+
+router.post(
+  '/sessions/step-up',
+  describeRoute({
+    operationId: 'stepUpSession',
+    tags: ['Sessions'],
+    summary: 'Prove it is still me',
+    description:
+      'Proves a factor again for the current session and returns a fresh access token whose ' +
+      '`auth_time` is now and whose `amr` includes the method. Sensitive routes that answer ' +
+      '`auth.step_up_required` accept that token for ten minutes. A user with two-step ' +
+      'verification must use `totp` or `backup_code` (their password alone answers ' +
+      '`auth.step_up_required`); a user without it uses `password`. A wrong password is ' +
+      '`auth.invalid_credentials`, a wrong code `mfa.invalid_code`; wrong proofs back off per ' +
+      'user. The refresh token is not rotated.',
+    security: openapi.security.session,
+    responses: {
+      413: openapi.responses[413],
+      200: { description: 'A fresh access token.', content: json(SessionTokensSchema) },
+      401: openapi.responses[401],
+      403: openapi.responses[403],
+      422: openapi.responses[422],
+      429: openapi.responses[429],
+      500: openapi.responses[500],
+      503: openapi.responses[503],
+    },
+  }),
+  rateLimit({ name: 'session_step_up', limit: STEP_UP_RATE_LIMIT, window: '1m', key: byIp }),
+  publishableKey(),
+  sessionAuth(),
+  validator('json', StepUpRequestSchema, validationHook),
+  async (c) => {
+    const { sub, sid } = c.get('session')
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      SessionTokensSchema.parse(
+        await Mfa.stepUp(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: sub, sessionId: sid },
+          c.req.valid('json'),
+          requestOrigin(c)
+        )
+      )
+    )
   }
 )
 

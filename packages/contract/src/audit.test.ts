@@ -59,4 +59,23 @@ describe('ActivityType', () => {
     }
     expect(ActivityTypeSchema.safeParse('user.exploded').success).toBe(false)
   })
+
+  test.each<[string]>([
+    ['user.mfa_enabled'],
+    ['user.mfa_disabled'],
+    ['user.backup_codes_regenerated'],
+    ['user.backup_code_used'],
+    ['session.stepped_up'],
+  ])('%s is a recorded activity', (type) => {
+    expect(ACTIVITY_TYPES).toContain(type as never)
+    expect(ActivityTypeSchema.parse(type)).toBe(type as never)
+    // And an entry of that type reads back through the audit log schema.
+    expect(AuditLogSchema.parse({ ...entry, action: type }).action).toBe(type)
+  })
+
+  test('nothing is recorded for a started enrolment or a wrong code: there is no such type', () => {
+    for (const type of ['user.mfa_started', 'user.mfa_failed', 'user.totp_used']) {
+      expect(ActivityTypeSchema.safeParse(type).success).toBe(false)
+    }
+  })
 })

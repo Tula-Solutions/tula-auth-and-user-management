@@ -1945,7 +1945,8 @@ describe('second factor', () => {
   beforeEach(() => {
     required = spyOn(Factors, 'requiredFor').mockResolvedValue(['totp', 'backup_code'])
     verifier = spyOn(Factors, 'verify').mockImplementation(
-      async (_deps, _tenant, _userId, proof) => proof.response === GOOD
+      async (_deps, _tenant, _userId, proof) =>
+        proof.response === GOOD ? { methods: ['otp'] } : null
     )
   })
   afterEach(() => {
@@ -2021,7 +2022,13 @@ describe('second factor', () => {
     })
     expect(done.client).toBe('ios')
     expect(done.tokens?.refreshToken).toMatch(/^tula_rt_/)
-    expect(verifier).toHaveBeenCalledWith(deps, tenant, userId, { method: 'totp', response: GOOD })
+    expect(verifier).toHaveBeenCalledWith(
+      deps,
+      tenant,
+      userId,
+      { method: 'totp', response: GOOD },
+      { type: 'user', id: userId, ipAddress: null, userAgent: 'TulaSDK/1 iOS' }
+    )
     expect((await liveSessions(userId)).map((session) => session.id)).toEqual([
       done.tokens?.sessionId as string,
     ])
@@ -2035,7 +2042,7 @@ describe('second factor', () => {
     const attempt = await startSignIn()
     await password(attempt)
     const err = await rejection(second(attempt, '000000'))
-    expect(err.toJSON()).toMatchObject({ status: 422, code: 'verification.invalid_code' })
+    expect(err.toJSON()).toMatchObject({ status: 422, code: 'mfa.invalid_code' })
     expect(await liveSessions(userId)).toEqual([])
     expect((await second(attempt)).attempt.step.status).toBe('complete')
   })
@@ -2046,7 +2053,7 @@ describe('second factor', () => {
     await password(first)
     // The free tries, and the one failure that starts the first wait.
     for (let i = 0; i <= CREDENTIAL_LOCKOUT.freeAttempts; i++) {
-      expect((await rejection(second(first, '000000'))).code).toBe('verification.invalid_code')
+      expect((await rejection(second(first, '000000'))).code).toBe('mfa.invalid_code')
     }
     // Locked: even the right code is refused, and the verifier is not consulted.
     verifier.mockClear()
@@ -2065,7 +2072,7 @@ describe('second factor', () => {
     // Cleared: the free tries are back.
     const fresh = await startSignIn()
     await password(fresh)
-    expect((await rejection(second(fresh, '000000'))).code).toBe('verification.invalid_code')
+    expect((await rejection(second(fresh, '000000'))).code).toBe('mfa.invalid_code')
     expect((await second(fresh)).attempt.step.status).toBe('complete')
   })
 
@@ -2154,7 +2161,7 @@ describe('second factor', () => {
     await password(banned)
     await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
     // The ban is told only to someone who proved the factor.
-    expect((await rejection(second(banned, '000000'))).code).toBe('verification.invalid_code')
+    expect((await rejection(second(banned, '000000'))).code).toBe('mfa.invalid_code')
     expect((await rejection(second(banned))).code).toBe('auth.user_banned')
     expect(await liveSessions(userId)).toEqual([])
 
@@ -2162,7 +2169,7 @@ describe('second factor', () => {
     const deleted = await startSignIn()
     await password(deleted)
     await deps.users.delete(tenant.environmentId, userId)
-    expect((await rejection(second(deleted))).code).toBe('verification.invalid_code')
+    expect((await rejection(second(deleted))).code).toBe('mfa.invalid_code')
   })
 
   test('an unverified user verifies the email first, then the second factor', async () => {
@@ -2258,7 +2265,7 @@ describe('second factor', () => {
       await reset(attempt, sentCode())
 
       expect((await rejection(second(attempt, '000000', { kind: 'password_reset' }))).code).toBe(
-        'verification.invalid_code'
+        'mfa.invalid_code'
       )
       expect(await Passwords.verify(await stored(), NEW_PASSWORD)).toBe(true)
       // A sign-in attempt's route cannot finish a reset attempt.

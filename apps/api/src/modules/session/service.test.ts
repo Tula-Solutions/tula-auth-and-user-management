@@ -11,6 +11,7 @@ import { MAX_USER_AGENT_LENGTH } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Sessions from '~/modules/session/service'
+import { authenticatedAt, mergeAuthMethods } from '~/ports/session-store'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const DAY = 86_400_000
@@ -88,6 +89,8 @@ describe('create', () => {
       iat,
       exp: iat + 60,
       v: 1,
+      auth_time: iat,
+      amr: [],
     })
     expect(tokens.accessTokenExpiresAt).toBe(new Date((iat + 60) * 1000).toISOString())
   })
@@ -761,5 +764,125 @@ describe('when the signing key cannot be loaded', () => {
     expect(rt(next)).not.toBe(rt(tokens))
     expect(deps.activityLog.ofType('session.reuse_detected')).toEqual([])
     expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
+  })
+})
+
+describe('what a session has proven (auth_time and amr)', () => {
+  const seconds = (date: Date) => Math.floor(date.getTime() / 1000)
+  const claimsOf = (tokens: SessionTokens) => verifyAccessToken(deps, tokens.accessToken, tenant)
+
+  test('a session records the methods it was created with, once each, and when', async () => {
+    const tokens = await create({ authMethods: ['pwd', 'otp', 'mfa', 'otp'] })
+    expect(await session(tokens.sessionId)).toMatchObject({
+      factorVerifiedAt: deps.clock.now(),
+      authMethods: ['pwd', 'otp', 'mfa'],
+    })
+    expect(await claimsOf(tokens)).toMatchObject({
+      auth_time: seconds(deps.clock.now()),
+      amr: ['pwd', 'otp', 'mfa'],
+    })
+  })
+
+  test('a session created without methods has proven none', async () => {
+    const tokens = await create()
+    expect((await session(tokens.sessionId))?.authMethods).toEqual([])
+    expect((await claimsOf(tokens)).amr).toEqual([])
+  })
+
+  test('a refresh, and a replay inside the grace window, repeat the session’s claims', async () => {
+    const tokens = await create({ authMethods: ['pwd'] })
+    const issued = seconds(deps.clock.now())
+    deps.clock.advance('2h')
+    const refreshed = await refresh(rt(tokens))
+    expect(await claimsOf(refreshed)).toMatchObject({ auth_time: issued, amr: ['pwd'] })
+    deps.clock.advance('5s')
+    const replayed = await refresh(rt(tokens))
+    expect(await claimsOf(replayed)).toMatchObject({ auth_time: issued, amr: ['pwd'] })
+  })
+
+  test('recordAuthentication moves auth_time, adds the methods and returns no refresh token', async () => {
+    const tokens = await create({ authMethods: ['pwd'] })
+    deps.clock.advance('20m')
+    const actor = { type: 'user', id: USER, ipAddress: '203.0.113.9', userAgent: 'app/1' } as const
+    const stepped = await Sessions.recordAuthentication(
+      deps,
+      tenant,
+      { userId: USER, sessionId: tokens.sessionId },
+      ['otp', 'mfa'],
+      actor
+    )
+    expect(Object.keys(stepped).sort()).toEqual([
+      'accessToken',
+      'accessTokenExpiresAt',
+      'sessionId',
+    ])
+    expect(await claimsOf(stepped as SessionTokens)).toMatchObject({
+      sid: tokens.sessionId,
+      auth_time: seconds(deps.clock.now()),
+      amr: ['pwd', 'otp', 'mfa'],
+    })
+    expect(deps.activityLog.ofType('session.stepped_up')).toEqual([
+      expect.objectContaining({
+        actor: { type: 'user', id: USER },
+        target: { type: 'session', id: tokens.sessionId },
+        ipAddress: '203.0.113.9',
+        userAgent: 'app/1',
+        data: { userId: USER, methods: ['otp', 'mfa'] },
+      }),
+    ])
+    // Not a rotation: the session's refresh token still works, and carries the new claims.
+    const refreshed = await refresh(rt(tokens))
+    expect((await claimsOf(refreshed)).amr).toEqual(['pwd', 'otp', 'mfa'])
+  })
+
+  test('recordAuthentication refuses a session that is not this user’s, not this environment’s, or has ended', async () => {
+    const mine = await create({ authMethods: ['pwd'] })
+    const theirs = await create({ userId: OTHER_USER, authMethods: ['pwd'] })
+    const ended = await create({ authMethods: ['pwd'] })
+    await Sessions.revoke(deps, tenant, {
+      userId: USER,
+      sessionId: ended.sessionId,
+      actor: TEST_ACTOR,
+    })
+    const record = (sessionId: string, scope: Tenant = tenant) =>
+      Sessions.recordAuthentication(deps, scope, { userId: USER, sessionId }, ['otp', 'mfa'], {
+        ...TEST_ACTOR,
+        type: 'user',
+        id: USER,
+      })
+    for (const refused of [
+      () => record(theirs.sessionId),
+      () => record(ended.sessionId),
+      () => record(mine.sessionId, otherTenant),
+      () => record('00000000-0000-7000-8000-00000000dead'),
+    ]) {
+      const err = await rejection(refused())
+      expect(err.toJSON()).toMatchObject({ status: 401, code: 'session.revoked' })
+    }
+    for (const untouched of [mine, theirs, ended]) {
+      expect((await session(untouched.sessionId))?.authMethods).toEqual(['pwd'])
+    }
+    expect(deps.activityLog.ofType('session.stepped_up')).toEqual([])
+  })
+
+  test('a session stored before proofs were recorded counts as authenticated when it was created', () => {
+    const createdAt = new Date('2026-01-01T00:00:00.000Z')
+    const stepUp = new Date('2026-01-02T00:00:00.000Z')
+    expect(authenticatedAt({ factorVerifiedAt: null, createdAt })).toEqual(createdAt)
+    expect(authenticatedAt({ factorVerifiedAt: stepUp, createdAt })).toEqual(stepUp)
+  })
+
+  test('methods merge without duplicates, the earlier ones first', () => {
+    expect(mergeAuthMethods([], [])).toEqual([])
+    expect(mergeAuthMethods(['pwd'], ['otp', 'mfa'])).toEqual(['pwd', 'otp', 'mfa'])
+    expect(mergeAuthMethods(['pwd', 'otp', 'mfa'], ['backup_code', 'mfa', 'pwd'])).toEqual([
+      'pwd',
+      'otp',
+      'mfa',
+      'backup_code',
+    ])
+    const current = ['pwd']
+    mergeAuthMethods(current, ['otp'])
+    expect(current).toEqual(['pwd'])
   })
 })

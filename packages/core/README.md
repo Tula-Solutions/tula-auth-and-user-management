@@ -109,7 +109,8 @@ const { status } = await tula.signIn.handleEmailLink()
 
 Every step status, so that a `switch` can be exhaustive: `needs_identifier`, `needs_password`,
 `needs_first_factor`, `needs_email_verification`, `needs_new_password`, `needs_second_factor`,
-`complete`. `needs_second_factor` has no action yet (it arrives with TOTP).
+`needs_factor_enrolment`, `complete`. The last two before `complete` are covered under
+[Two-step verification](#two-step-verification).
 
 When a step is `complete` the client is signed in: `tula.state.status === 'signed-in'`, and
 the flow object is spent (its secret is dropped; further actions are refused locally).
@@ -130,7 +131,7 @@ await tula.session.revokeOthers()                  // → how many ended
 await tula.user.get()                              // the signed-in user (also updates tula.state)
 await tula.user.changePassword({ currentPassword, newPassword })
 
-const config = await tula.config.get()             // app name, sign-in methods, password policy (cached)
+const config = await tula.config.get()             // app name, sign-in methods, password policy, mfa.policy (cached)
 ```
 
 Access tokens last about a minute. Call `getToken()` each time you need one rather than keeping
@@ -146,6 +147,87 @@ const stop = tula.onChange((state) => { … })      // also: the onSessionChange
 
 The state object keeps its identity until something changes, and a token refresh is not a
 change, so it can be used directly as an external-store snapshot.
+
+## Two-step verification
+
+An authenticator app (TOTP) plus ten backup codes. Whether an app offers it is the
+environment's `mfa.policy`: `(await tula.config.get()).mfa?.policy ?? 'off'` is `off` (hide
+it), `optional` or `required`.
+
+```ts
+// Turning it on, for the signed-in user
+const { totp, backupCodes } = await tula.mfa.get()   // { enabled, confirmedAt }, { remaining }
+const { secret, uri } = await tula.mfa.startTotp()   // show `uri` as a QR code, `secret` for typing
+const { codes } = await tula.mfa.confirmTotp({ code: '123456' })   // ten backup codes, once
+
+await tula.mfa.regenerateBackupCodes()               // → { codes }: the earlier ones stop working
+await tula.mfa.disableTotp()
+
+// Signing in (and resetting a password) with it on
+const flow = await tula.signIn.start({ identifier: email })
+await flow.submitPassword({ password })              // → { status: 'needs_second_factor', options: ['totp', 'backup_code'] }
+const { step } = await flow.submitSecondFactor({ method: 'totp', code: '123456' })
+// or a backup code, which is spent:
+const { step, backupCodesRemaining } = await flow.submitSecondFactor({ method: 'backup_code', code })
+
+// Where the environment requires it and the user has none, a flow stops to enrol
+if (flow.step.status === 'needs_factor_enrolment') {
+  const { secret, uri } = await flow.startTotpEnrolment()
+  const { step, backupCodes } = await flow.confirmTotpEnrolment({ code: '123456' })   // signed in
+}
+```
+
+- **The secret, its URI and the backup codes are handed to you once and kept nowhere in the
+  SDK**: not on the client or a flow object, not in `JSON.stringify` of either, not in storage,
+  not in an error. The server cannot show them again either. Put them on screen and let them go.
+- `submitSecondFactor` and `confirmTotpEnrolment` answer `{ step, … }` rather than the step
+  alone, because they carry something for the caller: `backupCodesRemaining` after a backup
+  code, `backupCodes` after an enrolment. If the device cannot store the session
+  (`storage.failed`), `confirmTotpEnrolment` still returns the codes, with the error as
+  `failure` instead of throwing it: the user is signed in for as long as the app runs.
+- `confirmTotp` ends the user's other sessions and refreshes this one, so that its next access
+  token says the second factor was proven. If that refresh cannot be made the codes are
+  returned all the same, and the next `getToken()` asks again.
+- A wrong code is `mfa.invalid_code`; repeated wrong codes are `rate_limited` with
+  `retryAfterMs`. An authenticator code is accepted once: after a wrong guess wait for the app
+  to show the next one. `mfa.enrolment_expired` means start again (a pending enrolment lasts
+  ten minutes). `mfa.not_available`: the policy is `off`. `mfa.required_by_policy`: it cannot
+  be turned off.
+- There is no emailed bypass. A user who lost both the authenticator and the backup codes is
+  reset by an administrator.
+
+## Step-up
+
+Sensitive calls need a recent proof of who the user is: `mfa.startTotp`, `mfa.disableTotp`,
+`mfa.regenerateBackupCodes`, and, for a user with two-step verification,
+`user.changePassword`. When the session's last proof is older than ten minutes (or did not
+include the second factor) they answer `auth.step_up_required`. The SDK never prompts and
+never retries by itself; your UI does:
+
+```ts
+import { isStepUpRequired, stepUpMethods } from '@tula/core'
+
+try {
+  await tula.mfa.regenerateBackupCodes()
+} catch (error) {
+  if (!isStepUpRequired(error)) throw error
+  const methods = stepUpMethods(error)       // ['totp', 'backup_code'], ['password'] or []
+  if (methods.length === 0) {
+    // Nothing to prove with (an account that signs in by email only): sign in again.
+  }
+  await tula.session.stepUp({ method: 'totp', code })        // or { method: 'backup_code', code }
+  // a user without two-step verification: { method: 'password', password }
+  await tula.mfa.regenerateBackupCodes()     // repeat the call
+}
+```
+
+`session.stepUp` gives the **same session** a new access token. The refresh token (or cookie)
+is untouched, `tula.state` does not change, and other tabs get the token too. A wrong password
+is `auth.invalid_credentials`, a wrong code `mfa.invalid_code`; a method the user may not use
+(a password, for a user with two-step verification) is `auth.step_up_required` again. If the
+session's token was replaced while the proof was on its way (a refresh, here or in another
+tab), the step-up's token is not installed over it; the client refreshes once more instead, so
+the token it ends with was issued after the proof.
 
 ## Password checklist
 
@@ -226,6 +308,8 @@ tula.setMessages(otherLocale)      // switch later
   session ends with the process. A React Native secure-store adapter comes in Phase 2.
 - An attempt's secret stays inside its flow object, in memory. It is not in `JSON.stringify(flow)`,
   not in logs and not in errors.
+- A TOTP secret, its `otpauth://` URI and backup codes pass through the SDK to the caller and
+  are kept nowhere: not in memory after the call returns, not in storage, not in an error.
 - **The one thing this SDK puts in `localStorage`** is the binding of an emailed sign-in link
   (`tula.link.<attempt id>`), because a new tab of the same browser has to read it. It is not a
   token and not the attempt's secret: alone it authorizes nothing, with the emailed token it

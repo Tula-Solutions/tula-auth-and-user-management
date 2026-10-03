@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { ERROR_CODES, ERROR_DEFINITIONS } from '@tula/contract'
-import { clientError, EN_MESSAGES, formatMessage, isTulaError, TulaError } from './errors'
+import {
+  clientError,
+  EN_MESSAGES,
+  formatMessage,
+  isStepUpRequired,
+  isTulaError,
+  stepUpMethods,
+  TulaError,
+} from './errors'
 
 describe('EN_MESSAGES', () => {
   test('has the contract’s message for every contract code, and one for each client code', () => {
@@ -190,5 +198,60 @@ describe('codes that name inherited object properties (review F3)', () => {
   test('a table entry that is not a string is skipped', () => {
     const messages = { 'password.common': 7 } as unknown as Record<string, string>
     expect(formatMessage('password.common', { messages })).toBe('This password is too common.')
+  })
+})
+
+describe('auth.step_up_required', () => {
+  const stepUp = (params?: Record<string, string | number | boolean>) =>
+    new TulaError({ code: 'auth.step_up_required', message: 'm', status: 403, params })
+
+  test('isStepUpRequired recognises the code and nothing else', () => {
+    expect(isStepUpRequired(stepUp({ methods: 'password' }))).toBe(true)
+    expect(
+      isStepUpRequired(new TulaError({ code: 'auth.forbidden', message: 'm', status: 403 }))
+    ).toBe(false)
+    expect(isStepUpRequired(new Error('auth.step_up_required'))).toBe(false)
+    expect(isStepUpRequired({ code: 'auth.step_up_required' })).toBe(false)
+    expect(isStepUpRequired(null)).toBe(false)
+  })
+
+  test.each([
+    ['password', ['password']],
+    ['totp,backup_code', ['totp', 'backup_code']],
+    ['backup_code,totp', ['backup_code', 'totp']],
+    // No method: the user has to sign in again.
+    ['', []],
+    // A method a newer server offers and this client does not know is left out.
+    ['totp,passkey', ['totp']],
+    ['constructor,__proto__', []],
+  ])('stepUpMethods reads params.methods %p as %p', (methods, expected) => {
+    expect<string[]>(stepUpMethods(stepUp({ methods }))).toEqual(expected)
+  })
+
+  test('stepUpMethods is empty without the param, for a param that is not a string, and for any other value', () => {
+    expect(stepUpMethods(stepUp())).toEqual([])
+    expect(stepUpMethods(stepUp({ methods: 3 }))).toEqual([])
+    expect(stepUpMethods(stepUp({ other: 'totp' }))).toEqual([])
+    expect(
+      stepUpMethods(
+        new TulaError({ code: 'auth.forbidden', message: 'm', params: { methods: 'totp' } })
+      )
+    ).toEqual([])
+    expect(stepUpMethods(new Error('x'))).toEqual([])
+    expect(stepUpMethods(undefined)).toEqual([])
+  })
+
+  test('the message is the contract’s', () => {
+    expect(EN_MESSAGES['auth.step_up_required']).toBe('Confirm it is you to continue.')
+    for (const code of [
+      'mfa.invalid_code',
+      'mfa.already_enabled',
+      'mfa.not_enabled',
+      'mfa.enrolment_expired',
+      'mfa.not_available',
+      'mfa.required_by_policy',
+    ] as const) {
+      expect(EN_MESSAGES[code]).toBe(ERROR_DEFINITIONS[code].message)
+    }
   })
 })

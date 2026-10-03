@@ -26,8 +26,11 @@ import {
   PasswordAttemptRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetStartRequestSchema,
+  SecondFactorRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
+  TotpConfirmRequestSchema,
+  TotpEnrolmentSchema,
   VerifyEmailRequestSchema,
 } from './schema'
 
@@ -553,6 +556,160 @@ for (const [kind, path, tag] of [
             id: c.req.valid('param').attemptId,
             secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
           },
+          await clientContext(c)
+        )
+      )
+  )
+}
+
+for (const [kind, path, tag] of [
+  ['sign_in', '/sign-ins', 'SignIn'],
+  ['password_reset', '/password-resets', 'PasswordReset'],
+] as const satisfies readonly (readonly [Exclude<FlowKind, 'sign_up'>, string, string])[]) {
+  router.post(
+    `${path}/:attemptId/second-factor`,
+    describeRoute({
+      operationId: `submit${tag}SecondFactor`,
+      tags: ['Flows'],
+      summary: 'Submit a second factor',
+      description:
+        'Proves one of the `options` of an attempt waiting on `needs_second_factor` and ' +
+        'completes it: `totp` with the 6-digit code an authenticator app shows now (the ' +
+        'current 30-second step or one either side; a code is accepted once), or ' +
+        '`backup_code` with an unused backup code (case, spaces and dashes are ignored; it is ' +
+        'spent, and `backupCodesRemaining` says how many are left). A wrong code is ' +
+        '`mfa.invalid_code`; wrong codes back off per user across both methods (429 with ' +
+        '`Retry-After`). No tokens are returned before this step succeeds.' +
+        BOUND +
+        DELIVERY,
+      security: openapi.security.client,
+      responses: {
+        413: openapi.responses[413],
+        200: attemptResponse('The completed attempt.'),
+        403: openapi.responses[403],
+        404: openapi.responses[404],
+        409: openapi.responses[409],
+        ...errors,
+      },
+    }),
+    limited(`${kind}_second_factor`),
+    publishableKey(),
+    validator('param', AttemptIdParamSchema, validationHook),
+    validator('header', AttemptHeaderSchema, validationHook),
+    validator('json', SecondFactorRequestSchema, validationHook),
+    async (c) => {
+      const { method, code } = c.req.valid('json')
+      return respond(
+        c,
+        await Flows.submitSecondFactor(
+          c.get('deps'),
+          c.get('tenant'),
+          kind,
+          {
+            id: c.req.valid('param').attemptId,
+            secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+          },
+          { method, response: code },
+          await clientContext(c)
+        )
+      )
+    }
+  )
+}
+
+for (const [kind, path, tag] of [
+  ['sign_up', '/sign-ups', 'SignUp'],
+  ['sign_in', '/sign-ins', 'SignIn'],
+  ['password_reset', '/password-resets', 'PasswordReset'],
+] as const satisfies readonly (readonly [FlowKind, string, string])[]) {
+  router.post(
+    `${path}/:attemptId/factor-enrolment/totp`,
+    describeRoute({
+      operationId: `start${tag}TotpEnrolment`,
+      tags: ['Flows'],
+      summary: 'Start enrolling an authenticator app inside an attempt',
+      description:
+        'For an attempt waiting on `needs_factor_enrolment` (the environment requires a second ' +
+        'factor and the user has none): creates a pending authenticator and returns its secret ' +
+        '**once**, as Base32 and as an `otpauth://` URI. Calling it again replaces the pending ' +
+        'secret.' +
+        BOUND,
+      security: openapi.security.client,
+      responses: {
+        200: {
+          description: 'The secret and its URI.',
+          content: { 'application/json': { schema: resolver(TotpEnrolmentSchema) } },
+        },
+        403: openapi.responses[403],
+        404: openapi.responses[404],
+        409: openapi.responses[409],
+        ...errors,
+      },
+    }),
+    limited(`${kind}_enrolment_start`, SIGN_UP_RATE_LIMIT),
+    publishableKey(),
+    validator('param', AttemptIdParamSchema, validationHook),
+    validator('header', AttemptHeaderSchema, validationHook),
+    async (c) => {
+      c.header('Cache-Control', 'no-store')
+      return c.json(
+        TotpEnrolmentSchema.parse(
+          await Flows.startFactorEnrolment(
+            c.get('deps'),
+            c.get('tenant'),
+            kind,
+            {
+              id: c.req.valid('param').attemptId,
+              secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+            },
+            await clientContext(c)
+          )
+        )
+      )
+    }
+  )
+
+  router.post(
+    `${path}/:attemptId/factor-enrolment/totp/confirm`,
+    describeRoute({
+      operationId: `confirm${tag}TotpEnrolment`,
+      tags: ['Flows'],
+      summary: 'Confirm the authenticator app and complete the attempt',
+      description:
+        'Confirms the pending authenticator with the 6-digit code it shows and completes the ' +
+        'attempt. The response carries the session and `backupCodes`: ten backup codes, ' +
+        '**once**. A wrong code is `mfa.invalid_code` and counts against the user’s ' +
+        'second-factor lockout; after ten minutes it is `mfa.enrolment_expired` (410).' +
+        BOUND +
+        DELIVERY,
+      security: openapi.security.client,
+      responses: {
+        413: openapi.responses[413],
+        200: attemptResponse('The completed attempt, with the backup codes.'),
+        403: openapi.responses[403],
+        404: openapi.responses[404],
+        409: openapi.responses[409],
+        410: openapi.responses[410],
+        ...errors,
+      },
+    }),
+    limited(`${kind}_enrolment_confirm`),
+    publishableKey(),
+    validator('param', AttemptIdParamSchema, validationHook),
+    validator('header', AttemptHeaderSchema, validationHook),
+    validator('json', TotpConfirmRequestSchema, validationHook),
+    async (c) =>
+      respond(
+        c,
+        await Flows.confirmFactorEnrolment(
+          c.get('deps'),
+          c.get('tenant'),
+          kind,
+          {
+            id: c.req.valid('param').attemptId,
+            secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+          },
+          c.req.valid('json').code,
           await clientContext(c)
         )
       )

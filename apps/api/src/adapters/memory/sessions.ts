@@ -1,9 +1,11 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { Activity } from '~/ports/activity-log'
 import {
+  type Authentication,
   beganBefore,
   endedBy,
   isActive,
+  mergeAuthMethods,
   type NewRefreshToken,
   type NewSession,
   type RefreshTokenRecord,
@@ -32,7 +34,13 @@ export class MemorySessionStore implements SessionStore {
 
   /** @inheritdoc */
   async create(session: NewSession, token: NewRefreshToken, activity?: Activity): Promise<void> {
-    this.#sessions.set(session.id, { ...session, revokedAt: null, revokeReason: null })
+    this.#sessions.set(session.id, {
+      ...session,
+      factorVerifiedAt: session.factorVerifiedAt ?? null,
+      authMethods: [...(session.authMethods ?? [])],
+      revokedAt: null,
+      revokeReason: null,
+    })
     this.#tokens.set(token.id, { ...token, replacedById: null, usedAt: null })
     this.#activityLog.record(activity ? [activity] : [])
   }
@@ -140,6 +148,23 @@ export class MemorySessionStore implements SessionStore {
     session.revokeReason = reason
     this.#activityLog.record(activity ? [activity] : [])
     return true
+  }
+
+  /** @inheritdoc */
+  async recordAuthentication(
+    environmentId: string,
+    id: string,
+    authentication: Authentication,
+    activity?: Activity
+  ): Promise<SessionRecord | null> {
+    const session = this.#session(environmentId, id)
+    if (!session || !isActive(session, authentication.at)) {
+      return null
+    }
+    session.factorVerifiedAt = authentication.at
+    session.authMethods = mergeAuthMethods(session.authMethods, authentication.methods)
+    this.#activityLog.record(activity ? [activity] : [])
+    return { ...session, authMethods: [...session.authMethods] }
   }
 
   /** @inheritdoc */

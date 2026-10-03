@@ -11,8 +11,11 @@ export {
   PasswordAttemptRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetStartRequestSchema,
+  SecondFactorRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
+  TotpConfirmRequestSchema,
+  TotpEnrolmentSchema,
   VerifyEmailRequestSchema,
 } from '@tula/contract'
 

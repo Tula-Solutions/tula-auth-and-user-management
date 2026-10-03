@@ -273,8 +273,8 @@ describe('new sign-in notice', () => {
     await Sessions.revokeAllForUser(deps, tenant, userId, 'revoked_by_admin', TEST_ACTOR)
     spies.push(
       spyOn(Factors, 'requiredFor').mockResolvedValue(['totp']),
-      spyOn(Factors, 'verify').mockImplementation(
-        async (_d, _t, _u, proof) => proof.response === 'good'
+      spyOn(Factors, 'verify').mockImplementation(async (_d, _t, _u, proof) =>
+        proof.response === 'good' ? { methods: ['otp'] } : null
       )
     )
     const ctx = from(FIREFOX_MAC)
@@ -635,6 +635,116 @@ describe('password notice', () => {
     )
     const recorded = JSON.stringify(deps.activityLog.entries)
     expect(recorded).not.toMatch(/notice|northline/i)
+  })
+})
+
+describe('two-step verification notice', () => {
+  const at = new Date('2026-10-03T14:05:59.000Z')
+  const user = { id: '00000000-0000-7000-8000-0000000000a1', email: EMAIL }
+  type Change = Parameters<typeof Notices.mfaChanged>[3]
+  const notify = (change: Change, to = user) => Notices.mfaChanged(deps, tenant, to, change)
+  const mfaMail = async () => {
+    await Notices.settled()
+    return deps.mailer.outbox.filter((message) => /two-step|backup code/i.test(message.subject))
+  }
+
+  test.each<[Change['change'], string]>([
+    ['enabled', 'Two-step verification was turned on for your Tula account'],
+    ['disabled', 'Two-step verification was turned off for your Tula account'],
+    ['admin_reset', 'Two-step verification was reset for your Tula account'],
+    ['backup_codes_regenerated', 'New backup codes were created for your Tula account'],
+    ['backup_code_used', 'A backup code was used to sign in to your Tula account'],
+  ])(
+    '`%s` is emailed to the account’s address, with the time and nothing sensitive',
+    async (change, subject) => {
+      notify({ change, at })
+      const [notice, ...more] = await sent(subject)
+      expect(more).toEqual([])
+      expect(notice?.to).toBe(EMAIL)
+      expect(notice?.text).toContain('When: 2026-10-03 14:05 UTC')
+      expect(notice?.text).not.toContain('Backup codes left')
+      expectNothingSensitive(notice as MailMessage)
+    }
+  )
+
+  test('a used backup code says how many are left, and only then', async () => {
+    notify({ change: 'backup_code_used', at, remaining: 4 })
+    const [notice] = await sent('A backup code was used to sign in to your Tula account')
+    expect(notice?.text).toContain('Backup codes left: 4')
+    expect(notice?.html).toContain('Backup codes left: 4')
+  })
+
+  test('returns before the email is sent, and never throws', async () => {
+    deps.mailer.failing = true
+    const read = logged('warn')
+    expect(notify({ change: 'enabled', at })).toBeUndefined()
+    expect(deps.mailer.outbox).toEqual([])
+    await Notices.settled()
+    expect(read()).toContain('security notice not sent')
+    expect(read()).toContain('mfa_changed')
+    expect(read().toLowerCase()).not.toContain('northline')
+  })
+
+  test('nothing is sent when the environment has the notice switched off; the others are their own', async () => {
+    const { userId } = await registered()
+    settings({ mfaChanged: false })
+    notify({ change: 'enabled', at })
+    notify({ change: 'admin_reset', at })
+    expect(await mfaMail()).toEqual([])
+    await Users.setPassword(deps, tenant, userId, NEW_PASSWORD, TEST_ACTOR)
+    expect(await sent(CHANGED_SUBJECT)).toHaveLength(1)
+
+    settings({ mfaChanged: true, passwordChanged: false, newSignIn: false })
+    notify({ change: 'disabled', at })
+    expect(await mfaMail()).toHaveLength(1)
+  })
+
+  test('at most three an hour per user, whatever changed, apart from the other notices’ allowance', async () => {
+    const { userId } = await registered()
+    const account = { id: userId, email: EMAIL }
+    for (const change of [
+      'enabled',
+      'backup_code_used',
+      'backup_codes_regenerated',
+      'disabled',
+      'admin_reset',
+    ] as const) {
+      notify({ change, at }, account)
+      await Notices.settled()
+    }
+    expect(await mfaMail()).toHaveLength(Notices.NOTICES_PER_HOUR)
+    // Another user has an allowance of their own, and so has another kind of notice.
+    notify({ change: 'enabled', at }, { id: 'someone-else', email: 'other@northline.app' })
+    expect(await mfaMail()).toHaveLength(Notices.NOTICES_PER_HOUR + 1)
+    await Users.setPassword(deps, tenant, userId, NEW_PASSWORD, TEST_ACTOR)
+    expect(await sent(CHANGED_SUBJECT)).toHaveLength(1)
+
+    deps.clock.advance(Notices.NOTICE_WINDOW_MS)
+    notify({ change: 'admin_reset', at }, account)
+    expect(await mfaMail()).toHaveLength(Notices.NOTICES_PER_HOUR + 2)
+  })
+
+  test('a limiter that cannot count means no notice', async () => {
+    build({ rateLimiter: brokenNoticeLimiter(deps.rateLimiter) as never })
+    const read = logged('warn')
+    notify({ change: 'enabled', at })
+    expect(await mfaMail()).toEqual([])
+    expect(read()).toContain('security notice not sent')
+  })
+
+  test('settings that cannot be read mean no notice', async () => {
+    spies.push(spyOn(deps.environmentSettings, 'get').mockRejectedValue(new Error('db down')))
+    const read = logged('warn')
+    notify({ change: 'enabled', at })
+    await Notices.settled()
+    expect(deps.mailer.outbox).toEqual([])
+    expect(read()).toContain('security notice not sent')
+  })
+
+  test('its allowance is keyed by kind, environment and user', () => {
+    expect(Notices.limitKey('mfa_changed', tenant, 'user-1')).toBe(
+      `notice_mfa_changed:${tenant.environmentId}:user-1`
+    )
   })
 })
 

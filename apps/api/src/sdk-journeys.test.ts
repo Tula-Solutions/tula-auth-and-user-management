@@ -6,13 +6,17 @@ import {
   createTulaClient,
   evaluatePassword,
   type FlowStep,
+  isStepUpRequired,
   isTulaError,
   memoryStorage,
+  stepUpMethods,
   type TokenStorage,
   type TulaClient,
   type TulaError,
 } from '@tula/core'
+import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
+import { base32Decode, totp } from '~/lib/totp'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 // The SDK, driven through its public API against the real server in process: memory adapters,
@@ -1266,6 +1270,453 @@ describe('SDK journeys: signing in by email', () => {
       const step = await flow.attemptFirstFactor({ strategy: 'email_code', code: s.code(email) })
       expect(step.status).toBe('complete')
       expect(next.tula.state.status).toBe('signed-in')
+    }
+  )
+})
+
+describe('SDK journeys: two-step verification and step-up', () => {
+  const BACKUP_CODE = /^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$/
+  /** One authenticator time step. A code is accepted once, so the next proof needs the next step. */
+  const STEP_MS = 30_000
+
+  /** The code an authenticator app holding `secret` shows at the server's time. */
+  const authenticator = (s: Server, secret: string) =>
+    totp(base32Decode(secret), s.deps.clock.now())
+
+  /** A 6-digit code the authenticator does not show now, nor one step either side. */
+  function wrongCode(s: Server, secret: string): string {
+    const now = s.deps.clock.now().getTime()
+    const valid = [-STEP_MS, 0, STEP_MS].map((offset) =>
+      totp(base32Decode(secret), new Date(now + offset))
+    )
+    return ['000000', '111111', '222222', '333333'].find((code) => !valid.includes(code)) ?? ''
+  }
+
+  /** What the access token the client would send says about how the user proved themselves. */
+  async function proofs(tula: TulaClient): Promise<string[]> {
+    const { amr } = decodeJwt((await tula.session.getToken()) ?? '')
+    return Array.isArray(amr) ? amr.map(String) : []
+  }
+
+  /**
+   * Sign up and turn two-step verification on through the SDK. The clock is left one step
+   * later: the code that confirmed the enrolment is spent.
+   */
+  async function enrolled(s: Server, kind: ClientKind = 'server') {
+    const user = await signUp(s, kind)
+    const { secret } = await user.tula.mfa.startTotp()
+    const { codes } = await user.tula.mfa.confirmTotp({ code: authenticator(s, secret) })
+    s.advance(STEP_MS)
+    return { ...user, secret, codes }
+  }
+
+  /** A sign-in with the password, on a new client, for a user who has a second factor. */
+  async function atSecondFactor(s: Server, email: string, password = PASSWORD) {
+    const context = await signIn(s, email, 'server', password)
+    expect(context.step).toEqual({
+      status: 'needs_second_factor',
+      options: ['totp', 'backup_code'],
+    })
+    // No tokens before the second factor: the client is not signed in.
+    expect(context.tula.state.status).toBe('loading')
+    return context
+  }
+
+  journey(
+    'two-step enrolment and sign-in',
+    'two-step verification: enrol an authenticator, then sign in with the password and its code',
+    async () => {
+      const s = await server()
+      const { tula, email } = await signUp(s)
+      expect(await tula.mfa.get()).toEqual({
+        totp: { enabled: false, confirmedAt: null },
+        backupCodes: { remaining: 0 },
+      })
+
+      const { secret, uri } = await tula.mfa.startTotp()
+      expect(secret).toMatch(/^[A-Z2-7]{32}$/)
+      expect(uri.startsWith('otpauth://totp/')).toBe(true)
+      expect(uri).toContain(`secret=${secret}`)
+      // Not confirmed: it counts for nothing.
+      expect((await tula.mfa.get()).totp.enabled).toBe(false)
+
+      expect(await caught(tula.mfa.confirmTotp({ code: wrongCode(s, secret) }))).toMatchObject({
+        code: 'mfa.invalid_code',
+        status: 422,
+      })
+      const before = refreshes(s).length
+      const { codes } = await tula.mfa.confirmTotp({ code: authenticator(s, secret) })
+      expect(codes).toHaveLength(10)
+      for (const code of codes) {
+        expect(code).toMatch(BACKUP_CODE)
+      }
+      // The SDK refreshed the session, so the token in hand says the factor was proven.
+      expect(refreshes(s)).toHaveLength(before + 1)
+      expect(await proofs(tula)).toContain('mfa')
+      expect(tula.state.status).toBe('signed-in')
+      expect(await tula.mfa.get()).toMatchObject({
+        totp: { enabled: true },
+        backupCodes: { remaining: 10 },
+      })
+      // Nothing the SDK holds shows the secret or a code.
+      const visible = JSON.stringify(tula) + JSON.stringify(tula.state)
+      for (const hidden of [secret, ...codes]) {
+        expect(visible).not.toContain(hidden)
+      }
+
+      s.advance(STEP_MS)
+      const second = await atSecondFactor(s, email)
+      const { step } = await second.flow.submitSecondFactor({
+        method: 'totp',
+        code: authenticator(s, secret),
+      })
+      expect(step.status).toBe('complete')
+      expect(second.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect(await proofs(second.tula)).toEqual(expect.arrayContaining(['pwd', 'otp', 'mfa']))
+      expect((await second.tula.mfa.get()).backupCodes.remaining).toBe(10)
+    }
+  )
+
+  journey(
+    'second factor lockout',
+    'second factor lockout: six wrong codes, then every try is rate_limited, for the user and not the attempt',
+    async () => {
+      const s = await server()
+      const { email, secret, codes } = await enrolled(s)
+      const first = await atSecondFactor(s, email)
+      const wrong = wrongCode(s, secret)
+      for (let guess = 0; guess < 6; guess += 1) {
+        expect(
+          await caught(first.flow.submitSecondFactor({ method: 'totp', code: wrong }))
+        ).toMatchObject({ code: 'mfa.invalid_code', status: 422 })
+      }
+      const locked = await caught(first.flow.submitSecondFactor({ method: 'totp', code: wrong }))
+      expect(locked).toMatchObject({ code: 'rate_limited', status: 429 })
+      expect(locked.retryAfterMs).toBeGreaterThan(0)
+      // One budget for both methods: a correct backup code is locked out too.
+      expect(
+        await caught(first.flow.submitSecondFactor({ method: 'backup_code', code: codes[0] ?? '' }))
+      ).toMatchObject({ code: 'rate_limited', status: 429 })
+      expect(first.flow.step.status).toBe('needs_second_factor')
+
+      // The password has a lockout of its own and is still accepted; the second factor is
+      // locked for the user, whatever the attempt.
+      const again = await atSecondFactor(s, email)
+      expect(
+        await caught(
+          again.flow.submitSecondFactor({ method: 'totp', code: authenticator(s, secret) })
+        )
+      ).toMatchObject({ code: 'rate_limited', status: 429 })
+      expect(again.tula.state.status).toBe('loading')
+      expect(first.tula.state.status).toBe('loading')
+    }
+  )
+
+  journey(
+    'authenticator code replay',
+    'an authenticator code is accepted once: not after it confirmed the enrolment, and not on a second sign-in',
+    async () => {
+      const s = await server()
+      const { tula, email } = await signUp(s)
+      const { secret } = await tula.mfa.startTotp()
+      const confirming = authenticator(s, secret)
+      await tula.mfa.confirmTotp({ code: confirming })
+
+      const first = await atSecondFactor(s, email)
+      expect(
+        await caught(first.flow.submitSecondFactor({ method: 'totp', code: confirming }))
+      ).toMatchObject({ code: 'mfa.invalid_code', status: 422 })
+      expect(first.tula.state.status).toBe('loading')
+
+      s.advance(STEP_MS)
+      const next = authenticator(s, secret)
+      expect(
+        (await first.flow.submitSecondFactor({ method: 'totp', code: next })).step.status
+      ).toBe('complete')
+      expect(first.tula.state.status).toBe('signed-in')
+
+      const second = await atSecondFactor(s, email)
+      expect(
+        await caught(second.flow.submitSecondFactor({ method: 'totp', code: next }))
+      ).toMatchObject({ code: 'mfa.invalid_code', status: 422 })
+      expect(second.tula.state.status).toBe('loading')
+    }
+  )
+
+  journey(
+    'backup codes',
+    'backup codes: each works once and says how many are left; a new set replaces the old one',
+    async () => {
+      const s = await server()
+      const { email, codes } = await enrolled(s)
+      const [one = '', two = '', three = ''] = codes
+      const unknown = codes.includes('zzzzz-zzzzz') ? 'yyyyy-yyyyy' : 'zzzzz-zzzzz'
+
+      const first = await atSecondFactor(s, email)
+      expect(
+        await caught(first.flow.submitSecondFactor({ method: 'backup_code', code: unknown }))
+      ).toMatchObject({ code: 'mfa.invalid_code', status: 422 })
+      // However it is typed: here with spaces around it.
+      expect(
+        await first.flow.submitSecondFactor({ method: 'backup_code', code: `  ${one}  ` })
+      ).toMatchObject({ step: { status: 'complete' }, backupCodesRemaining: 9 })
+      expect(first.tula.state.status).toBe('signed-in')
+      expect((await first.tula.mfa.get()).backupCodes.remaining).toBe(9)
+      expect(JSON.stringify(first.flow)).not.toContain(one)
+
+      const second = await atSecondFactor(s, email)
+      expect(
+        await caught(second.flow.submitSecondFactor({ method: 'backup_code', code: one }))
+      ).toMatchObject({ code: 'mfa.invalid_code' })
+      expect(
+        await second.flow.submitSecondFactor({ method: 'backup_code', code: two })
+      ).toMatchObject({ step: { status: 'complete' }, backupCodesRemaining: 8 })
+
+      // This session just proved the second factor: no step-up is asked for.
+      const { codes: fresh } = await second.tula.mfa.regenerateBackupCodes()
+      expect(fresh).toHaveLength(10)
+      expect(fresh.some((code) => codes.includes(code))).toBe(false)
+      expect((await second.tula.mfa.get()).backupCodes.remaining).toBe(10)
+
+      const third = await atSecondFactor(s, email)
+      expect(
+        await caught(third.flow.submitSecondFactor({ method: 'backup_code', code: three }))
+      ).toMatchObject({ code: 'mfa.invalid_code' })
+      expect(
+        await third.flow.submitSecondFactor({ method: 'backup_code', code: fresh[0] ?? '' })
+      ).toMatchObject({ step: { status: 'complete' }, backupCodesRemaining: 9 })
+    }
+  )
+
+  journey(
+    'password reset with a second factor',
+    'a password reset stops at the second factor: no session until the authenticator’s code',
+    async () => {
+      const s = await server()
+      const before = await enrolled(s)
+      const { email, secret } = before
+      // Past the one-email-a-minute limit for the address, which the sign-up used.
+      s.advance(61_000)
+      const { tula } = s.client('server')
+      const flow = await tula.resetPassword.start({ email })
+      expect(await flow.submit({ code: s.code(email), password: NEW_PASSWORD })).toEqual({
+        status: 'needs_second_factor',
+        options: ['totp', 'backup_code'],
+      })
+      expect(tula.state.status).toBe('loading')
+
+      expect(
+        await caught(flow.submitSecondFactor({ method: 'totp', code: wrongCode(s, secret) }))
+      ).toMatchObject({ code: 'mfa.invalid_code', status: 422 })
+      expect(flow.step.status).toBe('needs_second_factor')
+
+      const { step } = await flow.submitSecondFactor({
+        method: 'totp',
+        code: authenticator(s, secret),
+      })
+      expect(step.status).toBe('complete')
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+
+      // The session from before the reset has ended, and the factor outlives the reset.
+      expect(await before.tula.session.refresh()).toBeNull()
+      expect(before.tula.state).toEqual({ status: 'signed-out' })
+      s.advance(STEP_MS)
+      await atSecondFactor(s, email, NEW_PASSWORD)
+    }
+  )
+
+  journey(
+    'step-up',
+    'step-up: a sensitive call says what to prove; session.stepUp installs a fresh token for the same session, and the repeated call succeeds',
+    async () => {
+      const s = await server()
+      const { tula, states, cookies } = await signUp(s, 'web')
+      const sessionId = tula.state.status === 'signed-in' ? tula.state.sessionId : ''
+      const stepUps = () =>
+        s.exchanges.filter((exchange) => exchange.path === '/v1/client/sessions/step-up')
+
+      // Without a second factor the password steps up.
+      expect(
+        await caught(tula.session.stepUp({ method: 'password', password: 'wrong-password-1' }))
+      ).toMatchObject({ code: 'auth.invalid_credentials', status: 401 })
+      expect(tula.state.status).toBe('signed-in')
+      const cookie = JSON.stringify([...cookies])
+      const tokenBefore = await tula.session.getToken()
+      s.advance(1_000)
+      await tula.session.stepUp({ method: 'password', password: PASSWORD })
+      // A fresh access token for the same session; the refresh cookie was neither sent nor set.
+      expect(await tula.session.getToken()).not.toBe(tokenBefore)
+      expect(tula.state).toMatchObject({ status: 'signed-in', sessionId })
+      expect(await proofs(tula)).toContain('pwd')
+      expect(JSON.stringify([...cookies])).toBe(cookie)
+      expect(stepUps().at(-1)).toMatchObject({ status: 200, setCookie: null })
+      expect(stepUps().at(-1)?.responseBody).not.toContain('refreshToken')
+      expect(refreshes(s)).toHaveLength(0)
+      expect(states).toHaveLength(1)
+
+      // A method the user does not have is refused, naming the one to use.
+      const noFactor = await caught(tula.session.stepUp({ method: 'totp', code: '123456' }))
+      expect(isStepUpRequired(noFactor)).toBe(true)
+      expect(stepUpMethods(noFactor)).toEqual(['password'])
+
+      const { secret } = await tula.mfa.startTotp()
+      const { codes } = await tula.mfa.confirmTotp({ code: authenticator(s, secret) })
+      // Right after the enrolment the SDK's refreshed token carries the proof.
+      expect((await tula.mfa.get()).backupCodes.remaining).toBe(10)
+
+      // Eleven minutes on, the proof is too old for a sensitive action.
+      s.advance(11 * 60_000)
+      for (const sensitive of [
+        () => tula.mfa.regenerateBackupCodes(),
+        () => tula.mfa.disableTotp(),
+        () => tula.user.changePassword({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD }),
+      ]) {
+        const refused = await caught(sensitive())
+        expect(refused).toMatchObject({ code: 'auth.step_up_required', status: 403 })
+        expect(isStepUpRequired(refused)).toBe(true)
+        expect(stepUpMethods(refused)).toEqual(['totp', 'backup_code'])
+      }
+      // The SDK asked for nothing by itself.
+      const asked = stepUps().length
+
+      // The password alone no longer steps up.
+      const passwordOnly = await caught(
+        tula.session.stepUp({ method: 'password', password: PASSWORD })
+      )
+      expect(stepUpMethods(passwordOnly)).toEqual(['totp', 'backup_code'])
+      const unknown = codes.includes('zzzzz-zzzzz') ? 'yyyyy-yyyyy' : 'zzzzz-zzzzz'
+      expect(
+        await caught(tula.session.stepUp({ method: 'backup_code', code: unknown }))
+      ).toMatchObject({ code: 'mfa.invalid_code', status: 422 })
+      expect(stepUps()).toHaveLength(asked + 2)
+
+      const refreshed = refreshes(s).length
+      const jar = JSON.stringify([...cookies])
+      await tula.session.stepUp({ method: 'backup_code', code: codes[0] ?? '' })
+      expect(refreshes(s)).toHaveLength(refreshed)
+      expect(JSON.stringify([...cookies])).toBe(jar)
+      expect(await proofs(tula)).toEqual(expect.arrayContaining(['backup_code', 'mfa']))
+      expect(tula.state).toMatchObject({ status: 'signed-in', sessionId })
+
+      // The repeated action succeeds with the fresh token.
+      expect((await tula.mfa.regenerateBackupCodes()).codes).toHaveLength(10)
+      // And the proof survives a refresh: it belongs to the session, not to one token.
+      await tula.session.refresh()
+      expect(await proofs(tula)).toContain('mfa')
+      await tula.user.changePassword({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD })
+      expect(states).toHaveLength(1)
+    }
+  )
+
+  journey(
+    'admin second factor reset',
+    'an admin resets a user’s second factor: their sessions end at once, and the next sign-in needs the password alone',
+    async () => {
+      const s = await server()
+      const { tula, email, states } = await enrolled(s)
+      const userId = tula.state.status === 'signed-in' ? tula.state.user?.id : undefined
+      expect((await s.admin('DELETE', `/v1/admin/users/${userId}/factors`)).status).toBe(204)
+
+      // The access token is refused at once, and so is the refresh the SDK then tries.
+      expect((await caught(tula.mfa.get())).status).toBe(401)
+      expect(tula.state).toEqual({ status: 'signed-out' })
+      expect(states.at(-1)).toEqual({ status: 'signed-out' })
+      expect(states.filter((state) => state.status === 'signed-out')).toHaveLength(1)
+
+      const again = await signIn(s, email)
+      expect(again.step.status).toBe('complete')
+      expect(await again.tula.mfa.get()).toEqual({
+        totp: { enabled: false, confirmedAt: null },
+        backupCodes: { remaining: 0 },
+      })
+    }
+  )
+
+  journey(
+    'required second factor',
+    'policy required: sign-in and sign-up stop at needs_factor_enrolment and complete with backup codes; the factor cannot be turned off',
+    async () => {
+      const s = await server()
+      const existing = await signUp(s)
+      const { email } = existing
+      expect((await existing.tula.config.get()).mfa?.policy).toBe('optional')
+      const saved = await s.admin(
+        'PUT',
+        '/v1/admin/settings',
+        { mfa: { policy: 'required' } },
+        { 'if-match': '"0"' }
+      )
+      expect(saved.status).toBe(200)
+      expect((await existing.tula.config.get({ force: true })).mfa?.policy).toBe('required')
+
+      // A user without a factor gets no session until they have enrolled one.
+      const { tula, flow, step } = await signIn(s, email)
+      expect(step).toEqual({ status: 'needs_factor_enrolment', methods: ['totp'] })
+      expect(tula.state.status).toBe('loading')
+      const { secret, uri } = await flow.startTotpEnrolment()
+      expect(secret).toMatch(/^[A-Z2-7]{32}$/)
+      expect(uri.startsWith('otpauth://totp/')).toBe(true)
+      expect(flow.step.status).toBe('needs_factor_enrolment')
+      expect(await caught(flow.confirmTotpEnrolment({ code: wrongCode(s, secret) }))).toMatchObject(
+        { code: 'mfa.invalid_code', status: 422 }
+      )
+      expect(tula.state.status).toBe('loading')
+
+      const result = await flow.confirmTotpEnrolment({ code: authenticator(s, secret) })
+      expect(result.step.status).toBe('complete')
+      expect(result.failure).toBeUndefined()
+      expect(result.backupCodes).toHaveLength(10)
+      for (const code of result.backupCodes) {
+        expect(code).toMatch(BACKUP_CODE)
+      }
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect(await proofs(tula)).toContain('mfa')
+      const visible = JSON.stringify(flow) + JSON.stringify(tula) + JSON.stringify(tula.state)
+      for (const hidden of [secret, ...result.backupCodes]) {
+        expect(visible).not.toContain(hidden)
+      }
+
+      expect(await caught(tula.mfa.disableTotp())).toMatchObject({
+        code: 'mfa.required_by_policy',
+        status: 403,
+      })
+      expect(await tula.mfa.get()).toMatchObject({
+        totp: { enabled: true },
+        backupCodes: { remaining: 10 },
+      })
+
+      // A sign-up under the policy enrols before it gets a session.
+      const newcomer = s.client('server')
+      const newcomerEmail = freshEmail()
+      const signUpFlow = await newcomer.tula.signUp.start({
+        email: newcomerEmail,
+        password: PASSWORD,
+      })
+      expect(await signUpFlow.verifyEmail({ code: s.code(newcomerEmail) })).toEqual({
+        status: 'needs_factor_enrolment',
+        methods: ['totp'],
+      })
+      expect(newcomer.tula.state.status).toBe('loading')
+      const enrolment = await signUpFlow.startTotpEnrolment()
+      const joined = await signUpFlow.confirmTotpEnrolment({
+        code: authenticator(s, enrolment.secret),
+      })
+      expect(joined.step.status).toBe('complete')
+      expect(joined.backupCodes).toHaveLength(10)
+      expect(newcomer.tula.state).toMatchObject({
+        status: 'signed-in',
+        user: { email: newcomerEmail },
+      })
+
+      // The first user's next sign-in asks for the factor, not for an enrolment.
+      s.advance(STEP_MS)
+      const next = await atSecondFactor(s, email)
+      expect(
+        await next.flow.submitSecondFactor({
+          method: 'backup_code',
+          code: result.backupCodes[0] ?? '',
+        })
+      ).toMatchObject({ step: { status: 'complete' }, backupCodesRemaining: 9 })
     }
   )
 })

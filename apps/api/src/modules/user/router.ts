@@ -5,6 +5,7 @@ import { validationHook } from '~/handlers'
 import { adminActor, requestOrigin } from '~/lib/actor'
 import { publishableKey } from '~/middleware/publishable-key'
 import { adminRateLimit, byIp, rateLimit } from '~/middleware/rate-limit'
+import { requireRecentAuth } from '~/middleware/recent-auth'
 import { secretKey } from '~/middleware/secret-key'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as Users from '~/modules/user/service'
@@ -252,12 +253,15 @@ router.post(
       'Requires the current password. On success the user’s other sessions end and this ' +
       'device stays signed in. A wrong current password answers `auth.invalid_credentials`. ' +
       'An account that has no password answers `password.not_set` (409): a first password is ' +
-      'set through a password reset.',
+      'set through a password reset. A user with two-step verification must also have proven ' +
+      'their second factor in the last ten minutes: otherwise `auth.step_up_required` (403).',
     security: openapi.security.session,
     responses: {
       413: openapi.responses[413],
       204: { description: 'The password was changed.' },
       401: openapi.responses[401],
+      // `auth.step_up_required`: a user with a second factor has not proven it recently.
+      403: openapi.responses[403],
       // `password.not_set`: the account has no password to change.
       409: openapi.responses[409],
       422: openapi.responses[422],
@@ -274,6 +278,9 @@ router.post(
   }),
   publishableKey(),
   sessionAuth(),
+  // For a user with a second factor the current password is not enough: a stolen session plus a
+  // known password would otherwise replace the password. Everyone else is unaffected.
+  requireRecentAuth({ onlyWithSecondFactor: true }),
   validator('json', ChangePasswordRequestSchema, validationHook),
   async (c) => {
     const { sub, sid } = c.get('session')

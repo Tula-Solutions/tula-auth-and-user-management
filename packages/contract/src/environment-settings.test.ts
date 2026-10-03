@@ -8,6 +8,7 @@ import {
   MAX_ALLOWED_ORIGINS,
   MAX_ALLOWED_REDIRECT_URLS,
   MAX_APP_NAME_LENGTH,
+  MfaPolicySchema,
   MIN_PASSWORD_MIN_LENGTH,
   parseStoredEnvironmentSettings,
   RedirectUrlSchema,
@@ -40,7 +41,8 @@ describe('EnvironmentSettingsSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
-      notifications: { passwordChanged: true, newSignIn: true },
+      notifications: { passwordChanged: true, newSignIn: true, mfaChanged: true },
+      mfa: { policy: 'optional' },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -311,7 +313,8 @@ describe('EnvironmentSettingsInputSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
-      notifications: { passwordChanged: true, newSignIn: true },
+      notifications: { passwordChanged: true, newSignIn: true, mfaChanged: true },
+      mfa: { policy: 'optional' },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -439,5 +442,99 @@ describe('email sign-in methods and the sign-up password', () => {
       ClientConfigSchema.parse({ ...config, signUp: { password: 'optional' } }).signUp
     ).toEqual({ password: 'optional' })
     expect(SignUpPasswordModeSchema.options).toEqual(['required', 'optional'])
+  })
+})
+
+describe('two-step verification: the policy and its notice', () => {
+  const paths =
+    (schema: typeof EnvironmentSettingsSchema | typeof EnvironmentSettingsInputSchema) =>
+    (input: unknown) => {
+      const result = schema.safeParse(input)
+      return result.success ? [] : result.error.issues.map((issue) => issue.path.join('.'))
+    }
+
+  test('the policy is optional and its notice on until an environment says otherwise', () => {
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.mfa).toEqual({ policy: 'optional' })
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.notifications.mfaChanged).toBe(true)
+    expect(MfaPolicySchema.options).toEqual(['off', 'optional', 'required'])
+  })
+
+  test.each([EnvironmentSettingsSchema, EnvironmentSettingsInputSchema])(
+    'every policy is accepted, and the notice can be switched off (schema %#)',
+    (schema) => {
+      for (const policy of MfaPolicySchema.options) {
+        expect(schema.parse({ mfa: { policy } }).mfa).toEqual({ policy })
+      }
+      expect(schema.parse({ mfa: {} }).mfa).toEqual({ policy: 'optional' })
+      expect(schema.parse({ notifications: { mfaChanged: false } }).notifications).toEqual({
+        passwordChanged: true,
+        newSignIn: true,
+        mfaChanged: false,
+      })
+    }
+  )
+
+  test.each([EnvironmentSettingsSchema, EnvironmentSettingsInputSchema])(
+    'an unknown policy, an unknown key under `mfa` and a notice that is not a boolean are refused (schema %#)',
+    (schema) => {
+      expect(paths(schema)({ mfa: { policy: 'mandatory' } })).toEqual(['mfa.policy'])
+      expect(paths(schema)({ mfa: { policy: null } })).toEqual(['mfa.policy'])
+      expect(paths(schema)({ mfa: { policy: 'required', methods: ['sms'] } })).toEqual(['mfa'])
+      expect(paths(schema)({ mfa: { enforced: true } })).toEqual(['mfa'])
+      expect(paths(schema)({ mfa: 'required' })).toEqual(['mfa'])
+      expect(paths(schema)({ notifications: { mfaChanged: 'no' } })).toEqual([
+        'notifications.mfaChanged',
+      ])
+      expect(paths(schema)({ notifications: { mfa: false } })).toEqual(['notifications'])
+    }
+  )
+
+  test('a document stored before the policy existed reads as optional, with the notice on', () => {
+    const stored = {
+      version: 1,
+      app: { name: 'Acme', supportEmail: null },
+      notifications: { passwordChanged: false, newSignIn: true },
+    }
+    const { settings, dropped } = readStoredEnvironmentSettings(stored)
+    expect(dropped).toBe(0)
+    expect(settings.mfa).toEqual({ policy: 'optional' })
+    expect(settings.notifications).toEqual({
+      passwordChanged: false,
+      newSignIn: true,
+      mfaChanged: true,
+    })
+    expect(EnvironmentSettingsSchema.parse(settings)).toEqual(settings)
+  })
+
+  test('a stored document keeps its policy, and a key another version put under `mfa` is dropped', () => {
+    const settings = parseStoredEnvironmentSettings({
+      mfa: { policy: 'required', methods: ['sms'], gracePeriodDays: 7 },
+    })
+    expect(settings.mfa).toEqual({ policy: 'required' })
+    // What was read is a document the strict schema accepts.
+    expect(EnvironmentSettingsSchema.parse(settings)).toEqual(settings)
+  })
+
+  test('a stored policy this version does not know is still an error, not a silent default', () => {
+    expect(() => parseStoredEnvironmentSettings({ mfa: { policy: 'mandatory' } })).toThrow()
+  })
+
+  test('the client config carries the policy, and tolerates a server that sends none', () => {
+    const config = {
+      app: { name: 'Acme', supportEmail: null },
+      signIn: { methods: ['password'] },
+      password: PASSWORD_POLICY_PRESETS.recommended,
+    }
+    expect(ClientConfigSchema.parse(config).mfa).toBeUndefined()
+    for (const policy of MfaPolicySchema.options) {
+      expect(ClientConfigSchema.parse({ ...config, mfa: { policy } }).mfa).toEqual({ policy })
+    }
+    expect(ClientConfigSchema.safeParse({ ...config, mfa: { policy: 'mandatory' } }).success).toBe(
+      false
+    )
+    // The notice switches stay server-side.
+    expect(
+      ClientConfigSchema.parse({ ...config, notifications: { mfaChanged: false } })
+    ).not.toHaveProperty('notifications')
   })
 })

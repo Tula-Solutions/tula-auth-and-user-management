@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
 
 /** A tenant plus the rows the store's foreign keys need. */
@@ -12,6 +13,8 @@ export interface SessionSuiteTenant {
 /** What a store under test provides. */
 export interface SessionSuiteContext {
   store: SessionStore
+  /** The audit log the store records into. */
+  log: ActivityLog
   a: SessionSuiteTenant
   b: SessionSuiteTenant
 }
@@ -85,6 +88,8 @@ export function describeSessionStore(
       const { session: s, root } = await seed(ctx.a)
       expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toEqual({
         ...s,
+        factorVerifiedAt: null,
+        authMethods: [],
         revokedAt: null,
         revokeReason: null,
       })
@@ -96,6 +101,143 @@ export function describeSessionStore(
       )
       expect(await ctx.store.findToken(ctx.a.environmentId, 'missing')).toBeNull()
       expect(await ctx.store.findTokenById(ctx.a.environmentId, Bun.randomUUIDv7())).toBeNull()
+    })
+
+    function steppedUp(tenant: SessionSuiteTenant, sessionId: string): Activity {
+      return {
+        id: Bun.randomUUIDv7(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        type: 'session.stepped_up',
+        actor: { type: 'user', id: null },
+        target: { type: 'session', id: sessionId },
+        ipAddress: '203.0.113.7',
+        userAgent: 'suite/1.0',
+        data: { methods: ['otp', 'mfa'] },
+        occurredAt: now,
+      }
+    }
+
+    /** Types recorded about one session. */
+    async function recorded(tenant: SessionSuiteTenant, sessionId: string): Promise<string[]> {
+      const { entries } = await ctx.log.listAudit(tenant.environmentId, {
+        targetId: sessionId,
+        page: 1,
+        size: 100,
+      })
+      return entries.map((entry) => entry.type)
+    }
+
+    test('stores what a session proved at sign-in, and when', async () => {
+      const { session: s } = await seed(ctx.a, {
+        factorVerifiedAt: later(-5_000),
+        authMethods: ['pwd', 'otp', 'mfa'],
+      })
+      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toMatchObject({
+        factorVerifiedAt: later(-5_000),
+        authMethods: ['pwd', 'otp', 'mfa'],
+      })
+      // A session stored without them has proven nothing.
+      const { session: bare } = await seed(ctx.a)
+      expect(await ctx.store.findById(ctx.a.environmentId, bare.id)).toMatchObject({
+        factorVerifiedAt: null,
+        authMethods: [],
+      })
+    })
+
+    test('recording an authentication moves the time, merges the methods and records the activity', async () => {
+      const { session: s, root } = await seed(ctx.a, {
+        factorVerifiedAt: now,
+        authMethods: ['pwd'],
+      })
+      const updated = await ctx.store.recordAuthentication(
+        ctx.a.environmentId,
+        s.id,
+        { at: later(60_000), methods: ['otp', 'mfa'] },
+        steppedUp(ctx.a, s.id)
+      )
+      expect(updated).toEqual({
+        ...s,
+        factorVerifiedAt: later(60_000),
+        authMethods: ['pwd', 'otp', 'mfa'],
+        revokedAt: null,
+        revokeReason: null,
+      })
+      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toEqual(updated)
+      expect(await recorded(ctx.a, s.id)).toEqual(['session.stepped_up'])
+      // A step-up is not a rotation: the refresh token is untouched.
+      expect(await ctx.store.findTokenById(ctx.a.environmentId, root.id)).toMatchObject({
+        usedAt: null,
+        replacedById: null,
+      })
+    })
+
+    test('methods proven again are not listed twice, and the earlier order is kept', async () => {
+      const { session: s } = await seed(ctx.a, { authMethods: ['pwd', 'otp', 'mfa'] })
+      const first = await ctx.store.recordAuthentication(ctx.a.environmentId, s.id, {
+        at: later(1_000),
+        methods: ['otp', 'mfa'],
+      })
+      expect(first?.authMethods).toEqual(['pwd', 'otp', 'mfa'])
+      const second = await ctx.store.recordAuthentication(ctx.a.environmentId, s.id, {
+        at: later(2_000),
+        methods: ['backup_code', 'mfa', 'backup_code'],
+      })
+      expect(second).toMatchObject({
+        factorVerifiedAt: later(2_000),
+        authMethods: ['pwd', 'otp', 'mfa', 'backup_code'],
+      })
+      // Without an activity nothing is recorded.
+      expect(await recorded(ctx.a, s.id)).toEqual([])
+    })
+
+    test('concurrent authentications of one session merge: no method is lost', async () => {
+      const { session: s } = await seed(ctx.a, { authMethods: ['pwd'] })
+      await Promise.all(
+        [['otp'], ['mfa'], ['backup_code']].map((methods) =>
+          ctx.store.recordAuthentication(ctx.a.environmentId, s.id, { at: later(1_000), methods })
+        )
+      )
+      const stored = await ctx.store.findById(ctx.a.environmentId, s.id)
+      expect([...(stored?.authMethods ?? [])].sort()).toEqual(['backup_code', 'mfa', 'otp', 'pwd'])
+    })
+
+    test('an ended or foreign session records no authentication and no activity', async () => {
+      const revoked = await seed(ctx.a, { authMethods: ['pwd'] })
+      await ctx.store.revoke(ctx.a.environmentId, revoked.session.id, 'sign_out', later(1_000))
+      const idle = await seed(ctx.a, { authMethods: ['pwd'], idleExpiresAt: later(10_000) })
+      const absolute = await seed(ctx.a, { authMethods: ['pwd'], absoluteExpiresAt: later(10_000) })
+      const live = await seed(ctx.a, { authMethods: ['pwd'] })
+      const record = (tenant: SessionSuiteTenant, id: string, at: Date) =>
+        ctx.store.recordAuthentication(
+          tenant.environmentId,
+          id,
+          { at, methods: ['otp', 'mfa'] },
+          steppedUp(tenant, id)
+        )
+
+      expect(await record(ctx.a, revoked.session.id, later(2_000))).toBeNull()
+      // From the moment a session expires, by either limit.
+      expect(await record(ctx.a, idle.session.id, later(10_000))).toBeNull()
+      expect(await record(ctx.a, absolute.session.id, later(10_000))).toBeNull()
+      // Another environment cannot step up this one's session.
+      expect(await record(ctx.b, live.session.id, later(2_000))).toBeNull()
+      expect(await record(ctx.a, Bun.randomUUIDv7(), later(2_000))).toBeNull()
+
+      for (const untouched of [revoked, idle, absolute, live]) {
+        expect(await ctx.store.findById(ctx.a.environmentId, untouched.session.id)).toMatchObject({
+          factorVerifiedAt: null,
+          authMethods: ['pwd'],
+        })
+        expect(await recorded(ctx.a, untouched.session.id)).toEqual([])
+        expect(await recorded(ctx.b, untouched.session.id)).toEqual([])
+      }
+      // One millisecond before its expiry a session can still be stepped up.
+      expect(await record(ctx.a, idle.session.id, later(9_999))).toMatchObject({
+        factorVerifiedAt: later(9_999),
+        authMethods: ['pwd', 'otp', 'mfa'],
+      })
+      expect(await recorded(ctx.a, idle.session.id)).toEqual(['session.stepped_up'])
     })
 
     test('stores sessions with no absolute limit, user agent or IP', async () => {

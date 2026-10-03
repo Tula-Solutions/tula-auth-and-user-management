@@ -59,8 +59,25 @@ export interface NewSignInMessage {
   ipAddress: string | null
 }
 
+/**
+ * Tells an account's owner that its two-step verification changed (ADR 0025). Never carries a
+ * secret or a backup code.
+ */
+export interface MfaChangedMessage {
+  type: 'mfa_changed'
+  /**
+   * What happened: it was turned on, turned off by someone signed in, reset by an
+   * administrator, the backup codes were replaced, or a backup code was used to sign in.
+   */
+  change: 'enabled' | 'disabled' | 'admin_reset' | 'backup_codes_regenerated' | 'backup_code_used'
+  /** When it happened. */
+  at: Date
+  /** For `backup_code_used`: how many unused backup codes are left. */
+  remaining?: number
+}
+
 /** An email that tells an account's owner about a change to who can get in. */
-export type SecurityNoticeMessage = PasswordChangedMessage | NewSignInMessage
+export type SecurityNoticeMessage = PasswordChangedMessage | NewSignInMessage | MfaChangedMessage
 
 /** Every email Tula sends. Adding a message means adding its copy to this module, nowhere else. */
 export type EmailMessage = CodeMessage | NoticeMessage | SecurityNoticeMessage
@@ -172,8 +189,56 @@ function passwordChange({ by, added }: PasswordChangedMessage): string[] {
   ]
 }
 
+/** Subject and first paragraph of each two-step verification notice. */
+const MFA_COPY: Record<MfaChangedMessage['change'], [subject: string, lead: string]> = {
+  enabled: [
+    'Two-step verification was turned on for your {app} account',
+    'Two-step verification was turned on for your {app} account. Signing in now needs a code from your authenticator app as well. Every other device was signed out.',
+  ],
+  disabled: [
+    'Two-step verification was turned off for your {app} account',
+    'Two-step verification was turned off for your {app} account by someone signed in to it. Signing in no longer asks for a code from an authenticator app.',
+  ],
+  admin_reset: [
+    'Two-step verification was reset for your {app} account',
+    'An administrator of {app} reset two-step verification for your account. Your authenticator app and backup codes no longer work, and every device was signed out.',
+  ],
+  backup_codes_regenerated: [
+    'New backup codes were created for your {app} account',
+    'New backup codes were created for your {app} account by someone signed in to it. The earlier backup codes no longer work.',
+  ],
+  backup_code_used: [
+    'A backup code was used to sign in to your {app} account',
+    'A backup code was used instead of your authenticator app to sign in to your {app} account. That code cannot be used again.',
+  ],
+}
+
+/** The copy of a two-step verification notice. */
+function mfaCopy(message: MfaChangedMessage): Copy {
+  const [subject, lead] = MFA_COPY[message.change]
+  return {
+    subject,
+    lead: [lead],
+    details: [
+      ['When', utc(message.at)],
+      ...(message.remaining === undefined
+        ? []
+        : ([['Backup codes left', String(message.remaining)]] as [string, string][])),
+    ],
+    closing: [
+      message.change === 'admin_reset'
+        ? 'If you expected this, sign in and turn two-step verification on again.'
+        : 'If this was you, there is nothing more to do.',
+      `If it wasn't you, or you did not expect it, ${RESET_NOW}.`,
+    ],
+  }
+}
+
 /** The copy of a security notice. Built per message: what it says depends on what happened. */
 function securityCopy(message: SecurityNoticeMessage): Copy {
+  if (message.type === 'mfa_changed') {
+    return mfaCopy(message)
+  }
   if (message.type === 'new_sign_in') {
     return {
       subject: 'New sign-in to your {app} account',
@@ -207,7 +272,11 @@ function securityCopy(message: SecurityNoticeMessage): Copy {
 }
 
 function isSecurityNotice(message: EmailMessage): message is SecurityNoticeMessage {
-  return message.type === 'password_changed' || message.type === 'new_sign_in'
+  return (
+    message.type === 'password_changed' ||
+    message.type === 'new_sign_in' ||
+    message.type === 'mfa_changed'
+  )
 }
 
 // Control characters and line or paragraph separators: anything that could end a header line.

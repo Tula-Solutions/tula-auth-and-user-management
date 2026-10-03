@@ -1,6 +1,9 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { User, UserList } from '@tula/contract'
 import { createApp } from '~/index'
+import { base32Decode, totp } from '~/lib/totp'
+import * as Mfa from '~/modules/mfa/service'
+import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
@@ -239,5 +242,102 @@ describe('client: /v1/client/me', () => {
     expect(await code(await client('POST', '/me/password', undefined, body))).toBe(
       'auth.unauthenticated'
     )
+  })
+})
+
+describe('client: changing a password with two-step verification on', () => {
+  const scope = { ...tenant, apiKeyId: 'key_1' }
+  const body = { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }
+  afterEach(() => Notices.settled())
+
+  const session = (userId: string, authMethods: string[]) =>
+    Sessions.create(deps, tenant, { userId, client: 'ios', authMethods })
+  const stored = async (email: string) =>
+    (await deps.users.findByEmailWithPassword(tenant.environmentId, email))?.passwordHash ?? null
+
+  /** Turn two-step verification on for a user; returns the authenticator's secret. */
+  async function enrol(userId: string) {
+    const { secret } = await Mfa.startTotp(deps, scope, userId)
+    await Mfa.confirmTotp(deps, scope, { userId }, totp(base32Decode(secret), deps.clock.now()), {
+      type: 'user',
+      id: userId,
+      ipAddress: null,
+      userAgent: null,
+    })
+    deps.clock.advance('30s')
+    return secret
+  }
+
+  test('a session that did not prove the second factor is asked to step up: the password stays', async () => {
+    const user = await createUser()
+    await enrol(user.id)
+    const before = await stored(user.email)
+    const tokens = await session(user.id, ['pwd'])
+    const res = await client('POST', '/me/password', tokens.accessToken, body)
+    expect(res.status).toBe(403)
+    expect(await json<unknown>(res)).toEqual({
+      status: 403,
+      code: 'auth.step_up_required',
+      detail: 'Confirm it is you to continue.',
+      params: { methods: 'totp,backup_code' },
+    })
+    expect(await stored(user.email)).toBe(before)
+    // Even a wrong current password is not looked at before the step-up.
+    const wrong = await client('POST', '/me/password', tokens.accessToken, {
+      currentPassword: 'not my password',
+      newPassword: NEW_PASSWORD,
+    })
+    expect(await code(wrong)).toBe('auth.step_up_required')
+  })
+
+  test('a session that proved it in the last ten minutes changes the password', async () => {
+    const user = await createUser()
+    const secret = await enrol(user.id)
+    const tokens = await session(user.id, ['pwd'])
+    const stepped = await client('POST', '/sessions/step-up', tokens.accessToken, {
+      method: 'totp',
+      code: totp(base32Decode(secret), deps.clock.now()),
+    })
+    expect(stepped.status).toBe(200)
+    const { accessToken } = await json<{ accessToken: string }>(stepped)
+    const res = await client('POST', '/me/password', accessToken, body)
+    expect(res.status).toBe(204)
+    expect(await Passwords.verify(await stored(user.email), NEW_PASSWORD)).toBe(true)
+    // The second factor is still on: changing a password does not remove it.
+    expect(await Mfa.status(deps, scope, user.id)).toMatchObject({ totp: { enabled: true } })
+  })
+
+  test('a second factor proven more than ten minutes ago is not enough', async () => {
+    const user = await createUser()
+    await enrol(user.id)
+    const tokens = await session(user.id, ['pwd', 'otp', 'mfa'])
+    expect((await client('POST', '/me/password', tokens.accessToken, body)).status).toBe(204)
+
+    const again = await session(user.id, ['pwd', 'otp', 'mfa'])
+    deps.clock.advance('11m')
+    const refreshed = await Sessions.refresh(deps, tenant, again.refreshToken as string)
+    const res = await client('POST', '/me/password', refreshed.accessToken, {
+      currentPassword: NEW_PASSWORD,
+      newPassword: PASSWORD,
+    })
+    expect(await code(res)).toBe('auth.step_up_required')
+    expect(await Passwords.verify(await stored(user.email), NEW_PASSWORD)).toBe(true)
+  })
+
+  test('a user without a second factor is not asked to step up, however old the sign-in', async () => {
+    const user = await createUser()
+    const tokens = await session(user.id, ['pwd'])
+    deps.clock.advance('3h')
+    const refreshed = await Sessions.refresh(deps, tenant, tokens.refreshToken as string)
+    const res = await client('POST', '/me/password', refreshed.accessToken, body)
+    expect(res.status).toBe(204)
+    expect(await Passwords.verify(await stored(user.email), NEW_PASSWORD)).toBe(true)
+  })
+
+  test('a pending enrolment does not make the password change need a step-up', async () => {
+    const user = await createUser()
+    await Mfa.startTotp(deps, scope, user.id)
+    const tokens = await session(user.id, ['pwd'])
+    expect((await client('POST', '/me/password', tokens.accessToken, body)).status).toBe(204)
   })
 })

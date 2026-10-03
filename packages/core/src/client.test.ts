@@ -290,6 +290,320 @@ describe('messages', () => {
   })
 })
 
+describe('two-step verification (client.mfa)', () => {
+  const FACTORS = 'GET /v1/client/me/factors'
+  const TOTP = 'POST /v1/client/me/factors/totp'
+  const CONFIRM = 'POST /v1/client/me/factors/totp/confirm'
+  const DISABLE = 'DELETE /v1/client/me/factors/totp'
+  const BACKUP = 'POST /v1/client/me/factors/backup-codes'
+  const REFRESH = 'POST /v1/client/sessions/refresh'
+  const TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
+  const TOTP_URI = `otpauth://totp/Tula:maya%40northline.app?secret=${TOTP_SECRET}&issuer=Tula`
+  const CODES = ['2a3b4-c5d6e', '7f8g9-h2j3k', 'm4n5p-q6r7s']
+  const NEW_CODES = ['zzzz2-yyyy3', 'xxxx4-wwww5']
+  const bearer = (label: string) => `Bearer ${sessionTokens(label).accessToken}`
+
+  /** A signed-in client (token `a`) whose later refreshes answer `next_1`, `next_2`, … */
+  async function enrolling() {
+    const storage = memoryStorage()
+    await storage.set(`tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`, 'rt_0')
+    const context = setup({ storage })
+    await context.tula.load()
+    let count = 0
+    context.api.on(REFRESH, () => {
+      count += 1
+      return json(200, sessionTokens(`next_${count}`, { refreshToken: `rt_next_${count}` }))
+    })
+    return { ...context, storage }
+  }
+
+  test('get answers what is enrolled, with the access token', async () => {
+    const { api, tula } = await signedIn()
+    const factors = {
+      totp: { enabled: true, confirmedAt: '2030-01-01T00:00:00.000Z' },
+      backupCodes: { remaining: 8 },
+    }
+    api.on(FACTORS, () => json(200, factors))
+    expect(await tula.mfa.get()).toEqual(factors)
+    expect(api.calls(FACTORS)[0]?.headers.get('authorization')).toBe(bearer('a'))
+  })
+
+  test.each([
+    ['a page that is not the API', { html: '<html>' }],
+    ['no backup codes', { totp: { enabled: false, confirmedAt: null } }],
+    [
+      'a count that is not a number',
+      { totp: { enabled: false, confirmedAt: null }, backupCodes: { remaining: '8' } },
+    ],
+    [
+      'enabled that is not a boolean',
+      { totp: { enabled: 'yes', confirmedAt: null }, backupCodes: { remaining: 0 } },
+    ],
+    [
+      'a confirmedAt that is neither a date nor null',
+      { totp: { enabled: true, confirmedAt: 7 }, backupCodes: { remaining: 0 } },
+    ],
+    ['a list', []],
+  ])('get answered with %s is response.invalid', async (_name, body) => {
+    const { api, tula } = await signedIn()
+    api.on(FACTORS, () => json(200, body))
+    expect(await caught(tula.mfa.get())).toMatchObject({ code: 'response.invalid', status: 0 })
+  })
+
+  test('nobody signed in: every call fails locally with auth.unauthenticated', async () => {
+    const { api, tula } = setup()
+    api.on(REFRESH, () => failure(401, 'auth.unauthenticated'))
+    await tula.load()
+    const before = api.requests.length
+    for (const call of [
+      () => tula.mfa.get(),
+      () => tula.mfa.startTotp(),
+      () => tula.mfa.confirmTotp({ code: '123456' }),
+      () => tula.mfa.disableTotp(),
+      () => tula.mfa.regenerateBackupCodes(),
+      () => tula.session.stepUp({ method: 'password', password: 'pw' }),
+    ]) {
+      expect(await caught(call())).toMatchObject({ code: 'auth.unauthenticated' })
+    }
+    expect(api.requests).toHaveLength(before)
+  })
+
+  test('startTotp hands over the secret and its URI and nothing else', async () => {
+    const { api, tula } = await signedIn()
+    api.on(TOTP, () => json(200, { secret: TOTP_SECRET, uri: TOTP_URI, extra: 'ignored' }))
+    expect(await tula.mfa.startTotp()).toEqual({ secret: TOTP_SECRET, uri: TOTP_URI })
+    expect(api.calls(TOTP)[0]?.body).toBeUndefined()
+    expect(api.calls(TOTP)[0]?.headers.get('authorization')).toBe(bearer('a'))
+  })
+
+  test.each([
+    ['no URI', { secret: TOTP_SECRET }],
+    ['a URI that is not otpauth', { secret: TOTP_SECRET, uri: 'javascript:alert(1)' }],
+    ['a secret that is not a string', { secret: 7, uri: TOTP_URI }],
+  ])(
+    'startTotp answered with %s is response.invalid, and the error carries no secret',
+    async (_name, body) => {
+      const { api, tula } = await signedIn()
+      api.on(TOTP, () => json(200, body))
+      const error = await caught(tula.mfa.startTotp())
+      expect(error).toMatchObject({ code: 'response.invalid', status: 0 })
+      expect(JSON.stringify(error) + error.stack).not.toContain(TOTP_SECRET)
+    }
+  )
+
+  test.each([
+    ['mfa.not_available', 403],
+    ['mfa.already_enabled', 409],
+  ])('startTotp refused with %s is that error', async (code, status) => {
+    const { api, tula } = await signedIn()
+    api.on(TOTP, () => failure(status, code))
+    expect(await caught(tula.mfa.startTotp())).toMatchObject({ code, status })
+  })
+
+  test('confirmTotp returns the backup codes and refreshes the session once, so the next token carries the proof', async () => {
+    const { api, tula } = await enrolling()
+    const states: unknown[] = []
+    tula.onChange((state) => states.push(state))
+    api.on(CONFIRM, () => json(200, { codes: CODES, extra: 'ignored' }))
+    expect(await tula.mfa.confirmTotp({ code: '123456' })).toEqual({ codes: CODES })
+    expect(api.calls(CONFIRM)[0]?.body).toEqual({ code: '123456' })
+    expect(api.calls(CONFIRM)[0]?.headers.get('authorization')).toBe(bearer('a'))
+    // One refresh after the load's, made by the confirm itself.
+    expect(api.calls(REFRESH)).toHaveLength(2)
+    expect(await tula.session.getToken()).toBe(sessionTokens('next_1').accessToken)
+    expect(api.calls(REFRESH)).toHaveLength(2)
+    // A refresh is not a change of state.
+    expect(states).toEqual([])
+  })
+
+  test('if that refresh cannot be made the codes are returned all the same, and the next getToken() asks again', async () => {
+    const { api, tula } = await enrolling()
+    api.on(CONFIRM, () => json(200, { codes: CODES }))
+    api.on(REFRESH, () => failure(503, 'service.unavailable'))
+    expect(await tula.mfa.confirmTotp({ code: '123456' })).toEqual({ codes: CODES })
+    expect(api.calls(REFRESH)).toHaveLength(2)
+    expect(tula.state.status).toBe('signed-in')
+
+    // Still failing: the token in hand is valid and is used, but a refresh was asked for.
+    expect(await tula.session.getToken()).toBe(sessionTokens('a').accessToken)
+    expect(api.calls(REFRESH)).toHaveLength(3)
+    // Working again: the next call gets the token that carries the proof.
+    api.on(REFRESH, () => json(200, sessionTokens('proven', { refreshToken: 'rt_p' })))
+    expect(await tula.session.getToken()).toBe(sessionTokens('proven').accessToken)
+    expect(api.calls(REFRESH)).toHaveLength(4)
+    expect(await tula.session.getToken()).toBe(sessionTokens('proven').accessToken)
+    expect(api.calls(REFRESH)).toHaveLength(4)
+  })
+
+  test('if that refresh gets no answer, the codes are returned all the same', async () => {
+    const { api, tula } = await enrolling()
+    api.on(CONFIRM, () => json(200, { codes: CODES }))
+    api.on(REFRESH, () => {
+      throw new TypeError('offline')
+    })
+    expect(await tula.mfa.confirmTotp({ code: '123456' })).toEqual({ codes: CODES })
+    expect(tula.state.status).toBe('signed-in')
+  })
+
+  test('if that refresh says the session is over, the codes are still returned and the client is signed out', async () => {
+    const { api, tula } = await enrolling()
+    api.on(CONFIRM, () => json(200, { codes: CODES }))
+    api.on(REFRESH, () => failure(401, 'session.revoked'))
+    expect(await tula.mfa.confirmTotp({ code: '123456' })).toEqual({ codes: CODES })
+    expect(tula.state).toEqual({ status: 'signed-out' })
+  })
+
+  test('a sign-out while the confirm is in flight stays a sign-out: the codes are returned and no refresh is made', async () => {
+    const { api, tula } = await enrolling()
+    api.on('POST /v1/client/sessions/sign-out', () => new Response(null, { status: 204 }))
+    let release!: (response: Response) => void
+    api.on(
+      CONFIRM,
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        })
+    )
+    const confirming = tula.mfa.confirmTotp({ code: '123456' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tula.session.signOut()
+    release(json(200, { codes: CODES }))
+    expect(await confirming).toEqual({ codes: CODES })
+    expect(tula.state).toEqual({ status: 'signed-out' })
+    expect(api.calls(REFRESH)).toHaveLength(1)
+  })
+
+  test.each([
+    ['no codes', {}],
+    ['an empty list', { codes: [] }],
+    ['codes that are not strings', { codes: [1, 2] }],
+    ['a list', CODES],
+  ])(
+    'confirmTotp answered with %s is response.invalid, and no refresh is made',
+    async (_name, body) => {
+      const { api, tula } = await enrolling()
+      api.on(CONFIRM, () => json(200, body))
+      expect(await caught(tula.mfa.confirmTotp({ code: '123456' }))).toMatchObject({
+        code: 'response.invalid',
+        status: 0,
+      })
+      expect(api.calls(REFRESH)).toHaveLength(1)
+    }
+  )
+
+  test.each([
+    ['mfa.invalid_code', 422],
+    ['mfa.enrolment_expired', 410],
+    ['rate_limited', 429],
+  ])('confirmTotp refused with %s is that error, and no refresh is made', async (code, status) => {
+    const { api, tula } = await enrolling()
+    api.on(CONFIRM, () => failure(status, code))
+    expect(await caught(tula.mfa.confirmTotp({ code: '000000' }))).toMatchObject({ code, status })
+    expect(api.calls(REFRESH)).toHaveLength(1)
+  })
+
+  test('disableTotp sends a DELETE; a policy that requires it is the server’s error', async () => {
+    const { api, tula } = await signedIn()
+    api.on(DISABLE, () => new Response(null, { status: 204 }))
+    expect(await tula.mfa.disableTotp()).toBeUndefined()
+    expect(api.calls(DISABLE)[0]?.headers.get('authorization')).toBe(bearer('a'))
+    api.on(DISABLE, () => failure(403, 'mfa.required_by_policy'))
+    expect(await caught(tula.mfa.disableTotp())).toMatchObject({
+      code: 'mfa.required_by_policy',
+      status: 403,
+    })
+    api.on(DISABLE, () => failure(409, 'mfa.not_enabled'))
+    expect(await caught(tula.mfa.disableTotp())).toMatchObject({ code: 'mfa.not_enabled' })
+  })
+
+  test('regenerateBackupCodes returns the new codes; a malformed answer is response.invalid', async () => {
+    const { api, tula } = await signedIn()
+    api.on(BACKUP, () => json(200, { codes: NEW_CODES, extra: 'ignored' }))
+    expect(await tula.mfa.regenerateBackupCodes()).toEqual({ codes: NEW_CODES })
+    expect(api.calls(BACKUP)[0]?.body).toBeUndefined()
+    api.on(BACKUP, () => json(200, { codes: 'zzzz2-yyyy3' }))
+    expect(await caught(tula.mfa.regenerateBackupCodes())).toMatchObject({
+      code: 'response.invalid',
+    })
+  })
+
+  test('the secret, the URI and the backup codes are kept nowhere: not on the client, not in its state, not in storage', async () => {
+    const { api, tula, storage } = await enrolling()
+    const set = spyOn(storage, 'set')
+    api.on(TOTP, () => json(200, { secret: TOTP_SECRET, uri: TOTP_URI }))
+    api.on(CONFIRM, () => json(200, { codes: CODES }))
+    api.on(BACKUP, () => json(200, { codes: NEW_CODES }))
+    await tula.mfa.startTotp()
+    await tula.mfa.confirmTotp({ code: '123456' })
+    await tula.mfa.regenerateBackupCodes()
+
+    const visible =
+      JSON.stringify(tula) +
+      JSON.stringify(tula.state) +
+      Bun.inspect(tula, { depth: 10 }) +
+      JSON.stringify(set.mock.calls) +
+      JSON.stringify(await storage.get(`tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`))
+    for (const secret of [TOTP_SECRET, TOTP_URI, ...CODES, ...NEW_CODES, '123456']) {
+      expect(visible).not.toContain(secret)
+    }
+    // The one write is the refresh token of the refresh that follows the confirm.
+    expect(set.mock.calls.map((call) => call[1])).toEqual(['rt_next_1'])
+  })
+
+  test.each([
+    ['startTotp', TOTP, (tula: Core.TulaClient) => tula.mfa.startTotp()],
+    ['disableTotp', DISABLE, (tula: Core.TulaClient) => tula.mfa.disableTotp()],
+    ['regenerateBackupCodes', BACKUP, (tula: Core.TulaClient) => tula.mfa.regenerateBackupCodes()],
+    [
+      'user.changePassword',
+      'POST /v1/client/me/password',
+      (tula: Core.TulaClient) =>
+        tula.user.changePassword({ currentPassword: 'old', newPassword: 'new' }),
+    ],
+  ])(
+    '%s answered auth.step_up_required: the error says what to prove, and nothing is prompted, refreshed or retried',
+    async (_name, route, call) => {
+      const { api, tula } = await signedIn()
+      api.on(route, () =>
+        failure(403, 'auth.step_up_required', { params: { methods: 'totp,backup_code' } })
+      )
+      const error = await caught(call(tula))
+      expect(error).toMatchObject({ code: 'auth.step_up_required', status: 403 })
+      expect(Core.isStepUpRequired(error)).toBe(true)
+      expect(Core.stepUpMethods(error)).toEqual(['totp', 'backup_code'])
+      expect(api.calls(route)).toHaveLength(1)
+      expect(api.calls(REFRESH)).toHaveLength(1)
+      expect(api.calls('POST /v1/client/sessions/step-up')).toHaveLength(0)
+      expect(tula.state.status).toBe('signed-in')
+    }
+  )
+
+  test('step up, then repeat: the repeated call carries the token the step-up returned', async () => {
+    const { api, tula } = await signedIn()
+    api.on(BACKUP, (request) =>
+      request.headers.get('authorization') === bearer('proven')
+        ? json(200, { codes: NEW_CODES })
+        : failure(403, 'auth.step_up_required', { params: { methods: 'password' } })
+    )
+    api.on('POST /v1/client/sessions/step-up', () => json(200, sessionTokens('proven')))
+    const error = await caught(tula.mfa.regenerateBackupCodes())
+    expect(Core.stepUpMethods(error)).toEqual(['password'])
+    await tula.session.stepUp({ method: 'password', password: 'pw' })
+    expect(await tula.mfa.regenerateBackupCodes()).toEqual({ codes: NEW_CODES })
+    expect(api.calls(REFRESH)).toHaveLength(1)
+  })
+})
+
+describe('config.mfa', () => {
+  test('the policy is passed through; an API that does not say leaves it out', async () => {
+    const { api, tula } = setup()
+    api.on('GET /v1/client/config', () => json(200, { ...CONFIG, mfa: { policy: 'required' } }))
+    expect((await tula.config.get()).mfa?.policy).toBe('required')
+    api.on('GET /v1/client/config', () => json(200, CONFIG))
+    expect((await tula.config.get({ force: true })).mfa?.policy ?? 'off').toBe('off')
+  })
+})
+
 describe('the public surface', () => {
   test('exports exactly these values', () => {
     expect(Object.keys(Core).sort()).toEqual([
@@ -305,8 +619,10 @@ describe('the public surface', () => {
       'createTulaClient',
       'evaluatePassword',
       'formatMessage',
+      'isStepUpRequired',
       'isTulaError',
       'memoryStorage',
+      'stepUpMethods',
     ])
     expect(DEFAULT_TIMEOUT_MS).toBe(15_000)
     expect(Core.ACCESS_TOKEN_EXPIRY_SKEW_MS).toBe(10_000)

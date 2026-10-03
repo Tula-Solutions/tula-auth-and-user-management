@@ -2,11 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import {
   EmailLinkRequestSchema,
   EmailLinkResultSchema,
+  FactorEnrolmentMethodSchema,
   FirstFactorAttemptRequestSchema,
   FirstFactorPrepareRequestSchema,
   FirstFactorStrategySchema,
   FlowAttemptSchema,
   FlowStepSchema,
+  SecondFactorMethodSchema,
+  SecondFactorRequestSchema,
   SignUpRequestSchema,
   VerifyEmailRequestSchema,
 } from './flow'
@@ -30,6 +33,8 @@ describe('FlowStep', () => {
       strategies: ['email_code'],
     },
     { status: 'needs_second_factor', options: ['totp', 'passkey'] },
+    { status: 'needs_second_factor', options: ['totp', 'backup_code'] },
+    { status: 'needs_factor_enrolment', methods: ['totp'] },
     { status: 'complete', userId: 'u_1', sessionId: 's_1' },
   ])('accepts $status', (step) => {
     expect(FlowStepSchema.parse(step)).toEqual(step as never)
@@ -234,5 +239,91 @@ describe('refresh reuse grace window (F8)', () => {
       SessionProfileSchema.safeParse({ ...DEFAULT_WEB_SESSION_PROFILE, refresh: withoutGrace })
         .success
     ).toBe(false)
+  })
+})
+
+describe('second factors and enrolment inside an attempt', () => {
+  const attempt = { id: 'a_1', kind: 'sign_in', expiresAt: '2026-01-01T00:10:00.000Z' }
+
+  test('needs_factor_enrolment names at least one method, and only ones that can be enrolled', () => {
+    expect(FactorEnrolmentMethodSchema.options).toEqual(['totp'])
+    for (const step of [
+      { status: 'needs_factor_enrolment' },
+      { status: 'needs_factor_enrolment', methods: [] },
+      { status: 'needs_factor_enrolment', methods: ['backup_code'] },
+      { status: 'needs_factor_enrolment', methods: ['sms_code'] },
+      { status: 'needs_factor_enrolment', methods: ['totp', 'passkey'] },
+    ]) {
+      expect([step, FlowStepSchema.safeParse(step).success]).toEqual([step, false])
+    }
+  })
+
+  test('the step carries nothing but its methods: no secret, no options, no session', () => {
+    const parsed = FlowStepSchema.parse({
+      status: 'needs_factor_enrolment',
+      methods: ['totp'],
+      secret: 'GEZDGNBVGY3TQOJQ',
+      options: ['totp'],
+    })
+    expect(parsed).toEqual({ status: 'needs_factor_enrolment', methods: ['totp'] })
+  })
+
+  test('the second-factor methods a step can offer', () => {
+    expect(SecondFactorMethodSchema.options).toEqual(['totp', 'passkey', 'backup_code', 'sms_code'])
+  })
+
+  test.each<[string, unknown]>([
+    ['an authenticator code', { method: 'totp', code: '012345' }],
+    ['a backup code', { method: 'backup_code', code: 'abcde-fghjk' }],
+    ['a backup code typed loosely', { method: 'backup_code', code: ' ABCDE FGHJK ' }],
+    ['a backup code of 64 characters', { method: 'backup_code', code: 'a'.repeat(64) }],
+  ])('a second-factor request accepts %s', (_, body) => {
+    expect(SecondFactorRequestSchema.parse(body)).toEqual(body as never)
+  })
+
+  test.each<[string, unknown]>([
+    ['nothing', {}],
+    ['a code with no method', { code: '123456' }],
+    ['a method with no code', { method: 'totp' }],
+    ['a five-digit code', { method: 'totp', code: '12345' }],
+    ['a seven-digit code', { method: 'totp', code: '1234567' }],
+    ['a code with a letter', { method: 'totp', code: '12345a' }],
+    ['a code as a number', { method: 'totp', code: 123456 }],
+    ['an empty backup code', { method: 'backup_code', code: '' }],
+    ['a backup code of 65 characters', { method: 'backup_code', code: 'a'.repeat(65) }],
+    ['a passkey, which has no verifier yet', { method: 'passkey', code: '123456' }],
+    ['an SMS code', { method: 'sms_code', code: '123456' }],
+    ['a password', { method: 'password', password: 'x' }],
+  ])('a second-factor request refuses %s', (_, body) => {
+    expect(SecondFactorRequestSchema.safeParse(body).success).toBe(false)
+  })
+
+  test('a completed attempt may carry the backup codes, or how many are left', () => {
+    const step = { status: 'complete', userId: 'u_1', sessionId: 's_1' }
+    const codes = ['abcde-fghjk', 'mnpqr-stuvw']
+    expect(FlowAttemptSchema.parse({ ...attempt, step, backupCodes: codes }).backupCodes).toEqual(
+      codes
+    )
+    expect(
+      FlowAttemptSchema.parse({ ...attempt, step, backupCodesRemaining: 0 }).backupCodesRemaining
+    ).toBe(0)
+    const plain = FlowAttemptSchema.parse({ ...attempt, step })
+    expect(plain).not.toHaveProperty('backupCodes')
+    expect(plain).not.toHaveProperty('backupCodesRemaining')
+    for (const bad of [
+      { backupCodesRemaining: -1 },
+      { backupCodesRemaining: 1.5 },
+      { backupCodes: [1] },
+    ]) {
+      expect(FlowAttemptSchema.safeParse({ ...attempt, step, ...bad }).success).toBe(false)
+    }
+  })
+
+  test('an attempt waiting on an enrolment carries no session', () => {
+    const waiting = FlowAttemptSchema.parse({
+      ...attempt,
+      step: { status: 'needs_factor_enrolment', methods: ['totp'] },
+    })
+    expect(waiting).not.toHaveProperty('session')
   })
 })
