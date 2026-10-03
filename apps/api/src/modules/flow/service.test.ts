@@ -678,41 +678,6 @@ describe('resendVerification', () => {
   })
 })
 
-describe('purgeExpired', () => {
-  test('removes expired attempts in every environment, with their pending password hashes', async () => {
-    const abandoned = await signUp()
-    const other = (await Flows.signUp(deps, otherTenant, { email: EMAIL, password: PASSWORD }, web))
-      .attempt
-    deps.clock.advance('5m')
-    const live = await startSignIn()
-
-    expect(await Flows.purgeExpired(deps)).toBe(0)
-    deps.clock.advance('5m')
-    expect(await Flows.purgeExpired(deps)).toBe(2)
-    expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned.attempt.id)).toBeNull()
-    expect(await deps.flowAttempts.findById(otherTenant.environmentId, other.id)).toBeNull()
-    expect(await deps.flowAttempts.findById(tenant.environmentId, live.id)).not.toBeNull()
-  })
-
-  test('one failing environment does not stop the others from being purged', async () => {
-    await signUp()
-    const other = (await Flows.signUp(deps, otherTenant, { email: EMAIL, password: PASSWORD }, web))
-      .attempt
-    deps.clock.advance('10m')
-    const deleteExpired = deps.flowAttempts.deleteExpired.bind(deps.flowAttempts)
-    spy = spyOn(deps.flowAttempts, 'deleteExpired').mockImplementation(
-      async (environmentId, now) => {
-        if (environmentId === tenant.environmentId) {
-          throw new Error('database unavailable')
-        }
-        return deleteExpired(environmentId, now)
-      }
-    )
-    expect(await Flows.purgeExpired(deps)).toBe(1)
-    expect(await deps.flowAttempts.findById(otherTenant.environmentId, other.id)).toBeNull()
-  })
-})
-
 describe('per-environment ceilings', () => {
   test('sign-ups are capped per environment across all callers', async () => {
     // Hashing 600 passwords for real would take most of a minute.

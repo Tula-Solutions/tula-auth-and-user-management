@@ -3,7 +3,13 @@
 #   docker build -f apps/api/Dockerfile -t tula-api .
 # Bun runs the TypeScript sources directly, so there is no compile step: the image is the
 # production dependencies plus the sources of the API and the two packages it imports.
-FROM oven/bun:1.4.2-slim AS base
+#
+# The base image is pinned by digest (the multi-arch index, so amd64 and arm64 both resolve):
+# a tag can be moved to different contents, a digest cannot. Dependabot proposes the update
+# when a new digest or version is published (.github/dependabot.yml); keep the tag in step with
+# `packageManager` in the root package.json. To check or refresh it by hand:
+#   docker buildx imagetools inspect oven/bun:1.4.2-slim
+FROM oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS base
 WORKDIR /usr/src/app
 
 # Production dependencies only. Every workspace manifest is needed for the frozen lockfile to

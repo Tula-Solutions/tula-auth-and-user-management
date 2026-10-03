@@ -107,6 +107,30 @@ Redis adapter on a real server (`redis.integration.ts`, run by `bun run test:int
 in CI). The fake cannot run Lua; it restates each script in TypeScript, so the real-server run
 is what proves the scripts and what would catch the fake drifting from them.
 
+**The packaged stack runs two instances, and CI proves they share their state.** The Compose
+`app` profile starts `api` and `api-2`: the same image and the same settings (one YAML anchor),
+differing only in the host port (3003 and 3004). Each instance is published on its own port
+instead of both sitting behind a proxy, because the point of the example is to let a test, or
+a curious self-hoster, talk to each one separately; a real deployment puts a load balancer in
+front and publishes nothing else. They must share `PUBLIC_URL`: it is the issuer of every
+access token, so a token signed by one is only accepted by the other if they agree on it.
+
+The conformance format gained one optional field, `instance: "second"` on a request, and the
+runner an optional second base URL (`CONFORMANCE_SECOND_BASE_URL`). The `two instances`
+scenario signs up through the first instance, uses and then ends the session through the
+second, shows the first refusing the access token at once, and alternates six wrong passwords
+between the two before both refuse the seventh. With no second instance configured every step
+goes to the one server and the scenario still passes, so the scenario files stay valid for any
+server and any SDK; in process the second instance is a second `createApp` over the same
+stores. The `self-host` CI job runs the whole suite against both containers and fails unless
+that scenario passed against two distinct URLs. This was chosen over a separate script because
+it was a small additive change, and it puts the cross-instance behaviour in the same files
+every SDK will run.
+
+**Background jobs take a lock in Postgres, not Redis.** Two instances also means two copies of
+every timer. The retention job runs on one instance at a time through a Postgres advisory lock
+([ADR 0017](0017-retention.md)).
+
 ## Consequences
 
 - **Redis is on the critical path in production.** An outage stops sign-in and every

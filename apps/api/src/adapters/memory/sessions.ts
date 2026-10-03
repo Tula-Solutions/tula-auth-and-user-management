@@ -1,6 +1,7 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { Activity } from '~/ports/activity-log'
 import {
+  endedBy,
   isActive,
   type NewRefreshToken,
   type NewSession,
@@ -138,6 +139,23 @@ export class MemorySessionStore implements SessionStore {
     }
     this.#activityLog.record(activity ? revoked.map(activity) : [])
     return revoked
+  }
+
+  /** @inheritdoc */
+  async deleteEnded(environmentId: string, before: Date, limit: number): Promise<number> {
+    const ended = [...this.#sessions.values()]
+      .filter((session) => session.environmentId === environmentId && endedBy(session, before))
+      .slice(0, limit)
+    for (const session of ended) {
+      this.#sessions.delete(session.id)
+      // As the database cascade does: the whole chain goes with its session.
+      for (const [id, token] of this.#tokens) {
+        if (token.sessionId === session.id) {
+          this.#tokens.delete(id)
+        }
+      }
+    }
+    return ended.length
   }
 
   #session(environmentId: string, id: string): SessionRecord | undefined {

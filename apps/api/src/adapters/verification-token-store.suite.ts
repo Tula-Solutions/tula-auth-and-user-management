@@ -188,6 +188,50 @@ export function describeVerificationTokenStore(
       expect(await ctx.store.consume(ctx.a.environmentId, input.id, later(1))).toBe(true)
     })
 
+    test('purges tokens past their expiry, consumed or not, in batches, and nothing else', async () => {
+      // Times earlier than any other test's, because a shared database keeps their rows.
+      const past = -30 * 86_400_000
+      const flowAttemptId = await ctx.a.flowAttempt()
+      const userId = await ctx.a.user()
+      const foreignUser = await ctx.b.user()
+      // `replaced` is consumed by `expired`, which is never used: both are past their expiry.
+      const replaced = token(ctx.a, { flowAttemptId, expiresAt: later(past) })
+      const expired = token(ctx.a, { flowAttemptId, expiresAt: later(past) })
+      // Consumed, but its lifetime is not over at the purge time: it stays.
+      const consumed = token(ctx.a, {
+        userId,
+        purpose: 'password_reset',
+        expiresAt: later(past + 5_000),
+      })
+      const foreign = token(ctx.b, {
+        userId: foreignUser,
+        purpose: 'password_reset',
+        expiresAt: later(past),
+      })
+      for (const input of [replaced, expired, consumed, foreign]) {
+        await ctx.store.replace(input, later(past - 60_000))
+      }
+      expect(await ctx.store.consume(ctx.a.environmentId, consumed.id, later(past))).toBe(true)
+
+      const latest = () =>
+        ctx.store.findLatest(ctx.a.environmentId, 'email_verification', { flowAttemptId })
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past - 1), 100)).toBe(0)
+      expect((await latest())?.id).toBe(expired.id)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past), 1)).toBe(1)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past), 1)).toBe(1)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past), 1)).toBe(0)
+      expect(await latest()).toBeNull()
+      expect(
+        (await ctx.store.findLatest(ctx.a.environmentId, 'password_reset', { userId }))?.id
+      ).toBe(consumed.id)
+      // Environment A's purge never touched environment B's expired token.
+      expect(
+        (await ctx.store.findLatest(ctx.b.environmentId, 'password_reset', { userId: foreignUser }))
+          ?.id
+      ).toBe(foreign.id)
+      expect(await ctx.store.deleteExpired(ctx.b.environmentId, later(past), 100)).toBe(1)
+    })
+
     test('an unknown link hash finds nothing', async () => {
       expect(await ctx.store.findByLinkHash(ctx.a.environmentId, 'nope')).toBeNull()
     })

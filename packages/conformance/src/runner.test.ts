@@ -138,6 +138,44 @@ describe('runScenario', () => {
     expect(requests[1]?.headers[PUBLISHABLE_KEY_HEADER]).toBeUndefined()
   })
 
+  test('a step marked for the second instance goes there; the rest go to the first', async () => {
+    const hosts: string[] = []
+    const { target, requests } = fakeTarget(() => ({ status: 204 }))
+    const steps = scenario([
+      { name: 'first by default', request: get('/a'), expect: { status: 204 } },
+      { name: 'second', request: get('/b', { instance: 'second' }), expect: { status: 204 } },
+      { name: 'first', request: get('/c', { instance: 'first' }), expect: { status: 204 } },
+    ])
+    const result = await runScenario(steps, {
+      ...target,
+      second: {
+        baseUrl: 'http://second.test',
+        fetch: async (request) => {
+          hosts.push(request.url)
+          // The same credentials and client address reach whichever instance is asked.
+          expect(request.headers.get(PUBLISHABLE_KEY_HEADER)).toBe('tula_pk_test')
+          expect(request.headers.get('x-forwarded-for')).toMatch(/^198\.18\./)
+          return new Response(null, { status: 204 })
+        },
+      },
+    })
+    expect(result.status).toBe('passed')
+    expect(hosts).toEqual(['http://second.test/b'])
+    expect(requests.map((seen) => seen.path)).toEqual(['/a', '/c'])
+  })
+
+  test('with only one instance, a step for the second goes to the first', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 204 }))
+    const result = await runScenario(
+      scenario([
+        { name: 'second', request: get('/b', { instance: 'second' }), expect: { status: 204 } },
+      ]),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(requests.map((seen) => seen.path)).toEqual(['/b'])
+  })
+
   test('every request of a scenario comes from one address, and each run from another', async () => {
     const { target, requests } = fakeTarget(() => ({ status: 200 }))
     const two = scenario([

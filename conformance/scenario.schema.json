@@ -78,7 +78,11 @@
                     "type": "string",
                     "enum": ["web", "ios", "android", "server"]
                   },
-                  "body": {}
+                  "body": {},
+                  "instance": {
+                    "type": "string",
+                    "enum": ["first", "second"]
+                  }
                 },
                 "required": ["method", "path"],
                 "ref": "ConformanceRequest"

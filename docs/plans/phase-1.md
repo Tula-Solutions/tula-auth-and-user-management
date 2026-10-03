@@ -81,12 +81,21 @@ second factor; 1.9 and 1.10 are independent of each other. D and E can overlap w
   than 30 days with their refresh tokens, and delivered outbox events older than 30 days. Audit
   entries are kept (their retention becomes a per-environment setting in 1.2, default: keep).
   Runs on one instance at a time (Postgres advisory lock).
+  *As built ([ADR 0017](../adr/0017-retention.md)):* outbox events are **not** deleted yet.
+  Nothing marks an event delivered until the webhook worker (Phase 2), so there is no
+  delivered event to delete; the purge, and the `DELETE` grant it needs, move to that step.
+  Verification tokens are deleted one hour after they expire, which covers consumed ones.
 - **Carry-overs:** composite tenant foreign key on `api_keys` (new migration); API image pinned
   by digest with an update rule; find or fence the harness-test stall (a per-test timeout so a
   hang fails in seconds and names the test).
 - **Done when:** two API containers behind one Compose service pass the conformance suite,
   including a step that signs out on one and is refused on the other; the `self-host` CI job
   runs that.
+  *As built:* two Compose services (`api`, `api-2`) on their own host ports rather than one
+  scaled service, so that the suite can address each instance; the `two instances` scenario
+  uses a new optional `instance` field ([ADR 0016](../adr/0016-redis-and-multiple-instances.md)).
+  The harness stall was not reproduced (60 consecutive runs); it is fenced with a timeout on
+  every spawned process, the only kind that can interrupt `Bun.spawnSync`.
 
 ### 1.2 Per-environment settings
 

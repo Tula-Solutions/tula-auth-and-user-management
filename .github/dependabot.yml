@@ -1,0 +1,32 @@
+# Keeps what is pinned by digest or by major version moving: a pin without updates only freezes
+# today's vulnerabilities in place. npm dependencies are not here on purpose: `bun.lock` is
+# managed by `bun add` with a three-day release-age buffer (bunfig.toml).
+version: 2
+updates:
+  # The API image's base (`FROM oven/bun:<version>-slim@sha256:…`). A version bump must match
+  # `packageManager` in the root package.json; a digest-only update can be merged as is.
+  - package-ecosystem: docker
+    directory: /apps/api
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+
+  # The service images in docker-compose.yml (Postgres, Redis, Mailpit), also pinned by digest.
+  - package-ecosystem: docker-compose
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+
+  # Actions used by .github/workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

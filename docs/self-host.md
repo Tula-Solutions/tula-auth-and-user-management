@@ -1,7 +1,8 @@
 # Self-hosting Tula Auth
 
-Tula's API is one container and one PostgreSQL database. This guide covers trying it locally
-with Docker Compose, and what to change for a real deployment.
+Tula's API is one container image, a PostgreSQL database and, for more than one instance, a
+Redis. This guide covers trying it locally with Docker Compose, and what to change for a real
+deployment.
 
 Phase 0 status: email and password sign-up and sign-in, sessions, user administration and the
 audit log. No dashboard yet; administration is through the HTTP API (`/v1/docs` lists it).
@@ -18,8 +19,13 @@ export TULA_MASTER_KEY=$(openssl rand -hex 32)
 docker compose --profile app up -d --build
 ```
 
-This starts PostgreSQL, Mailpit (a local inbox at http://localhost:8025), applies the database
-migrations, and starts the API on http://localhost:3003. The API waits for the migrations to
+This starts PostgreSQL, Redis and Mailpit (a local inbox at http://localhost:8025), applies the
+database migrations, and starts **two instances** of the API: http://localhost:3003 and
+http://localhost:3004. They are the same image with the same settings, sharing the database and
+Redis, so you can see for yourself that they behave as one server: sign in through one and the
+other accepts the token; sign out through one and the other refuses it. Use either; a real
+deployment puts a load balancer in front of them (see
+[Redis and more than one instance](#running-it-for-real)). The APIs wait for the migrations to
 finish. Keep the same `TULA_MASTER_KEY` for every later start: put it in a `.env` file next to
 `docker-compose.yml` (`TULA_MASTER_KEY=…`) rather than exporting it each time.
 
@@ -52,7 +58,7 @@ curl http://localhost:3003/v1/ready
 The API reference is at http://localhost:3003/v1/docs. Verification emails land in Mailpit.
 
 To stop it: `docker compose --profile app down`. Adding `-v` also deletes the database. Always
-pass `--profile app`: a plain `docker compose down` leaves the API container running.
+pass `--profile app`: a plain `docker compose down` leaves the API containers running.
 
 Compose also reads a `.env` file next to `docker-compose.yml`. These variables change the
 packaged stack:
@@ -60,8 +66,9 @@ packaged stack:
 | Variable | Default | |
 | --- | --- | --- |
 | `TULA_MASTER_KEY` | none | Required. |
-| `API_PORT` | `3003` | Host port of the API. |
-| `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The API's `PUBLIC_URL`. A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
+| `API_PORT` | `3003` | Host port of the first API instance. |
+| `API_2_PORT` | `3004` | Host port of the second API instance. |
+| `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The `PUBLIC_URL` of **both** instances: it is the issuer of every access token, so they must agree on it. A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
 | `API_REDIS_URL` | `redis://redis:6379` | The API's `REDIS_URL`: the stack's own Redis unless you point it elsewhere. A separate name for the same reason. |
 | `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. Required in `staging` and `prod`, where the bundled Mailpit is refused. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
 | `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. |
@@ -76,8 +83,13 @@ The server has to be started with `TRUST_PROXY=true` for this (see
 [`conformance/README.md`](../conformance/README.md)):
 
 ```bash
-CONFORMANCE_PUBLISHABLE_KEY=tula_pk_dev_… CONFORMANCE_SECRET_KEY=tula_sk_dev_… bun run conformance
+CONFORMANCE_PUBLISHABLE_KEY=tula_pk_dev_… CONFORMANCE_SECRET_KEY=tula_sk_dev_… CONFORMANCE_SECOND_BASE_URL=http://localhost:3004 bun run conformance
 ```
+
+`CONFORMANCE_SECOND_BASE_URL` names the second instance. With it, the `two instances` scenario
+signs in through one instance and out through the other, and spreads wrong passwords over both
+to show one shared lockout; the summary line then ends `against http://localhost:3003 and
+http://localhost:3004`. Without it every step goes to the first instance.
 
 ## Settings
 
@@ -169,15 +181,34 @@ themselves survive: refreshing a token needs only the database and keeps working
 no backup. If it loses its data, counters and lockouts start again and nothing else is lost.
 See [ADR 0016](adr/0016-redis-and-multiple-instances.md).
 
+Every instance needs the same `PUBLIC_URL`, `TULA_MASTER_KEY`, `DATABASE_URL` and `REDIS_URL`.
+The Compose file shows the arrangement with two instances (`api` and `api-2`) built from one
+set of settings; it publishes each on its own port only so that they can be compared. Publish
+your load balancer instead, and keep the instances' clocks in sync (NTP).
+
 Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
 separately, and a restart forgets all three.
+
+**Retention.** The API cleans up after itself; there is nothing to schedule. On start-up and
+every ten minutes one instance (whichever takes a PostgreSQL advisory lock first; the others
+skip that round) deletes:
+
+- sign-in and sign-up attempts that have expired;
+- emailed codes and links one hour after they expire;
+- sessions, with their refresh tokens, 30 days after they were revoked or expired.
+
+It never deletes audit entries or outbox events. Each run logs one line, `retention run
+finished`, with counts only (at `debug` level when there was nothing to delete). The periods
+are fixed for now. See [ADR 0017](adr/0017-retention.md).
 
 **Health.** `GET /v1/status` answers while the process is up; `GET /v1/ready` also checks the
 database, and Redis when it is configured, and is what the image's health check and a load
 balancer should use.
 
 **The image.** It runs as the unprivileged `bun` user, listens on 3003, and contains only the
-API's sources and production dependencies. Build it from the repository root:
+API's sources and production dependencies. Its base image is pinned by digest, as are the
+PostgreSQL, Redis and Mailpit images in the Compose file, so a rebuild next month starts from
+the same bytes as today's; Dependabot proposes the updates. Build it from the repository root:
 
 ```bash
 docker build -f apps/api/Dockerfile -t tula-api .
@@ -196,8 +227,9 @@ DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_
 ## Not there yet
 
 - No published image; build it from source.
-- No retention job: audit entries, outbox events, and expired or revoked sessions accumulate.
-- Nothing delivers the event outbox (webhooks arrive in Phase 2).
+- Audit entries and outbox events are kept for ever: audit retention becomes a setting in a
+  later step, and nothing delivers the event outbox yet (webhooks arrive in Phase 2), so no
+  event is deleted until something has delivered it.
 - A `TULA_MASTER_KEY` that does not match the stored signing keys does not stop the server. It
   logs `signing keys are unusable in some environments` at start-up, and sign-in fails in those
   environments until the right key is restored.

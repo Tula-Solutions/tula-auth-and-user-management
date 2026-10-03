@@ -1,4 +1,4 @@
-import { index, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { foreignKey, index, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { environments } from './environments'
 import { tula } from './pg-schema'
@@ -12,6 +12,10 @@ export const API_KEY_KINDS = ['publishable', 'secret'] as const
  *
  * Deliberately **not** under row-level security: the key lookup is what *determines* the tenant,
  * so it has to run before any environment is known. Only key resolution and the admin key routes touch it.
+ *
+ * It still carries the composite `(environment_id, project_id)` foreign key every tenant table
+ * has: without row-level security that key is the only thing stopping a row from naming one
+ * project and another project's environment, and key resolution trusts both columns.
  */
 export const apiKeys = tula.table(
   'api_keys',
@@ -35,6 +39,11 @@ export const apiKeys = tula.table(
   },
   (t) => [
     unique('api_keys_key_hash_key').on(t.keyHash),
+    foreignKey({
+      name: 'api_keys_environment_project_fk',
+      columns: [t.environmentId, t.projectId],
+      foreignColumns: [environments.id, environments.projectId],
+    }).onDelete('cascade'),
     index('api_keys_environment_id_idx').on(t.environmentId),
   ]
 )

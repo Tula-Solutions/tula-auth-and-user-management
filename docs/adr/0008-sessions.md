@@ -63,5 +63,6 @@ access tokens are still unexpired.
   trade-off: beyond the window a retry is indistinguishable from theft.
 - Reuse is logged (`refresh token reuse detected`) and recorded as a `session.reuse_detected`
   event and audit entry, in the same transaction as the revocation (ADR 0012).
-- Expired and revoked sessions are not pruned yet; a cleanup job deletes them by session, and
-  the cascade removes their token chains.
+- Expired and revoked sessions are deleted 30 days after they ended, by session, and the
+  cascade removes their token chains ([ADR 0017](0017-retention.md)). A refresh token of a
+  purged session is answered like any unknown token.

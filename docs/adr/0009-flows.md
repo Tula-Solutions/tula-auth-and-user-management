@@ -24,7 +24,8 @@ claim an address they don't control, and must be safe when requests race.
 - **Sign-up creates the account only after the email is verified.** Until then the names and
   the argon2id hash of the password live in the attempt's state. They are dropped from it on
   completion; an attempt whose email could not be sent is deleted at once; and the server
-  deletes every expired attempt on boot and every ten minutes. Nobody can squat on an address
+  deletes every expired attempt on boot and every ten minutes (since
+  [ADR 0017](0017-retention.md), as part of the retention job). Nobody can squat on an address
   they don't control.
 - **Sign-up does not enumerate accounts.** If the address already has an account the response
   is identical. The owner is emailed a notice instead of a code, and the attempt is a *decoy*:

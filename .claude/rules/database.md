@@ -12,14 +12,17 @@ paths:
   that adds the composite `(environment_id, project_id)` FK, the index and the RLS policy.
 - **New tenant table → add `ALTER TABLE tula.<table> FORCE ROW LEVEL SECURITY;` in a custom
   migration** (`bunx drizzle-kit generate --custom --name <name>`). `src/rls.test.ts` fails for
-  any table with `environment_id` that isn't enabled + forced (except the documented `api_keys`).
+  any table with `environment_id` that isn't enabled + forced (except the documented `api_keys`,
+  which has no RLS but does declare the composite FK itself).
 - Tenant data is only read/written inside `withTenant(db, environmentId, fn)`. Outside it,
   policies match nothing — a missing `withTenant` shows up as "no rows", not a leak.
 - Runtime connects as `tula_api` (in role `tula_app`); migrations run as the owner. Migration
   history lives in `drizzle.__drizzle_migrations`, unreachable by the runtime role.
 - The runtime grant matrix (migration 0003) is least-privilege: control plane has no DELETE,
-  `audit_logs` is append-only, `events` has no DELETE. Retention purges and admin deletes run
-  under the owner (`DATABASE_MIGRATION_URL`), never the request path. New tables get **no**
+  `audit_logs` is append-only, `events` has no DELETE. Admin deletes run under the owner
+  (`DATABASE_MIGRATION_URL`), never the request path. The retention job (ADR 0017) deletes
+  expired tenant rows as the runtime role, per environment inside `withTenant`, through batched
+  store methods; it never touches `audit_logs` or `events`. New tables get **no**
   default grants: add them to the matrix in the same migration (a test fails otherwise). Run all
   migrations as the same owner role (default privileges are per-owner).
 - Refresh tokens are pruned by deleting sessions (cascade), never token-by-token.

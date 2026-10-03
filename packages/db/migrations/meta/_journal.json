@@ -43,6 +43,13 @@
       "when": 1791038471614,
       "tag": "0005_audit_log_filter_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791045243336,
+      "tag": "0006_api_keys_tenant_foreign_key",
+      "breakpoints": true
     }
   ]
 }

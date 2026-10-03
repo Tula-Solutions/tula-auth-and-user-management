@@ -1,5 +1,5 @@
 import { type Database, refreshTokens, sessions, withTenant } from '@tula/db'
-import { and, desc, eq, gt, isNull, ne, or } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lte, ne, or } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
 import type { Activity } from '~/ports/activity-log'
@@ -247,5 +247,41 @@ export class PostgresSessionStore implements SessionStore {
       await recordActivity(tx, activity ? ids.map(activity) : [])
       return ids
     })
+  }
+
+  /** @inheritdoc */
+  async deleteEnded(environmentId: string, before: Date, limit: number): Promise<number> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(sessions)
+        .where(
+          and(
+            eq(sessions.environmentId, environmentId),
+            // DELETE has no LIMIT in Postgres: pick the batch in a subquery. The refresh tokens
+            // go by the foreign-key cascade, the only way a chain can be removed (its links
+            // reference each other).
+            inArray(
+              sessions.id,
+              tx
+                .select({ id: sessions.id })
+                .from(sessions)
+                .where(
+                  and(
+                    eq(sessions.environmentId, environmentId),
+                    // The same three conditions as `endedBy` in the port.
+                    or(
+                      lte(sessions.revokedAt, before),
+                      lte(sessions.idleExpiresAt, before),
+                      lte(sessions.absoluteExpiresAt, before)
+                    )
+                  )
+                )
+                .limit(limit)
+            )
+          )
+        )
+        .returning({ id: sessions.id })
+    )
+    return rows.length
   }
 }

@@ -12,6 +12,7 @@ import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
 import { databaseProbe } from '~/adapters/postgres/health'
+import { PostgresJobLock } from '~/adapters/postgres/job-lock'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
@@ -94,6 +95,8 @@ export function createContainer(env: Env): Container {
     mailer,
     secretBox: createSecretBox(env.TULA_MASTER_KEY),
     keyedHash,
+    // On Postgres even when Redis is configured: the jobs it guards are database work.
+    jobLock: new PostgresJobLock(database.withAdvisoryLock),
     probes: redis ? [databaseProbe(database.db), redisProbe(redis)] : [databaseProbe(database.db)],
   }
   return {

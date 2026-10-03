@@ -1,0 +1,11 @@
+-- api_keys gets the composite key every tenant table already has (Phase 0 review finding C5).
+--
+-- Why: api_keys has no row-level security (resolving a key is what determines the tenant), so
+-- nothing else stops a row from naming one project and another project's environment. Key
+-- resolution trusts both columns.
+--
+-- If this fails on an existing database, a key row already disagrees with its environment:
+--   SELECT k.id FROM tula.api_keys k JOIN tula.environments e ON e.id = k.environment_id
+--   WHERE e.project_id <> k.project_id;
+-- Delete those rows as the owner (they could never have been created through the API), then rerun.
+ALTER TABLE "tula"."api_keys" ADD CONSTRAINT "api_keys_environment_project_fk" FOREIGN KEY ("environment_id","project_id") REFERENCES "tula"."environments"("id","project_id") ON DELETE cascade ON UPDATE no action;

@@ -698,31 +698,3 @@ export async function resendCode(
   })
   return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
 }
-
-/**
- * Delete every expired attempt in every environment.
- *
- * Abandoned sign-ups hold the hash of a password that was never used; nothing else removes
- * them. Run on boot and on a timer by `server.ts`. A failure in one environment is logged and
- * skipped, so it cannot keep the environments after it from being purged.
- *
- * @param deps - Environments, flow attempt store and clock.
- * @returns How many attempts were removed.
- */
-export async function purgeExpired(
-  deps: Pick<Deps, 'environments' | 'flowAttempts' | 'clock'>
-): Promise<number> {
-  const now = deps.clock.now()
-  let removed = 0
-  for (const environment of await deps.environments.listAll()) {
-    try {
-      removed += await deps.flowAttempts.deleteExpired(environment.id, now)
-    } catch (error) {
-      logger.warn('could not purge expired flow attempts', {
-        environmentId: environment.id,
-        err: error instanceof Error ? error.name : 'unknown',
-      })
-    }
-  }
-  return removed
-}

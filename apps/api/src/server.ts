@@ -3,8 +3,8 @@ import { loadEnv } from '~/env'
 import { createApp, MAX_BODY_BYTES } from '~/index'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
-import * as Flows from '~/modules/flow/service'
 import * as Jwks from '~/modules/jwks/service'
+import * as Retention from '~/modules/retention/service'
 
 const env = loadEnv()
 const container = createContainer(env)
@@ -31,31 +31,24 @@ const server = Bun.serve({
 
 logger.info('tula api listening', { url: server.url.href, environment: env.ENVIRONMENT })
 
-/** How often expired sign-in and sign-up attempts are deleted. */
-const PURGE_INTERVAL_MS = 10 * 60_000
-
-// Abandoned sign-ups hold the hash of a password that was never used; remove them once expired.
-async function purgeFlowAttempts() {
+// Every instance starts this timer; the job lock inside `Retention.run` lets one of them through
+// each round, and the others skip it.
+async function runRetention() {
   try {
-    const removed = await Flows.purgeExpired(container.deps)
-    if (removed > 0) {
-      logger.info('purged expired flow attempts', { removed })
-    }
+    await Retention.run(container.deps)
   } catch (error) {
-    logger.warn('could not purge expired flow attempts', {
-      err: errorReason(error),
-    })
+    logger.warn('could not run the retention job', { err: errorReason(error) })
   }
 }
-void purgeFlowAttempts()
-const purgeTimer = setInterval(() => void purgeFlowAttempts(), PURGE_INTERVAL_MS)
+void runRetention()
+const retentionTimer = setInterval(() => void runRetention(), Retention.RETENTION_INTERVAL_MS)
 
 /** How long in-flight requests get to finish before the process exits anyway. */
 const SHUTDOWN_TIMEOUT_MS = 10_000
 
 async function shutdown(signal: string) {
   logger.info('shutting down', { signal })
-  clearInterval(purgeTimer)
+  clearInterval(retentionTimer)
   // A hung request must not hold the process until the orchestrator kills it uncleanly.
   setTimeout(() => {
     logger.error('shutdown timed out; exiting', { timeoutMs: SHUTDOWN_TIMEOUT_MS })

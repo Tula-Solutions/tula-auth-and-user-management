@@ -10,6 +10,8 @@ import { exitCode, formatResult, runScenario, type Target } from './runner'
  * - `CONFORMANCE_PUBLISHABLE_KEY` (required)
  * - `CONFORMANCE_SECRET_KEY` (optional; admin scenarios are skipped without it)
  * - `CONFORMANCE_MAILPIT_URL` (default `http://localhost:8025`)
+ * - `CONFORMANCE_SECOND_BASE_URL` (optional): a second instance of the same deployment. Steps
+ *   marked `instance: "second"` go there; without it they go to the first.
  *
  * The server must run with `TRUST_PROXY=true` and deliver mail to that Mailpit.
  */
@@ -19,8 +21,13 @@ if (!publishableKey) {
   process.exit(2)
 }
 
+const secondBaseUrl = process.env.CONFORMANCE_SECOND_BASE_URL?.replace(/\/+$/, '')
+
 const target: Target = {
   baseUrl: (process.env.CONFORMANCE_BASE_URL ?? 'http://localhost:3003').replace(/\/+$/, ''),
+  second: secondBaseUrl
+    ? { baseUrl: secondBaseUrl, fetch: (request) => fetch(request) }
+    : undefined,
   publishableKey,
   secretKey: process.env.CONFORMANCE_SECRET_KEY || undefined,
   fetch: (request) => fetch(request),
@@ -35,6 +42,9 @@ for (const { scenario } of await loadScenarios()) {
   process.stdout.write(`${formatResult(result)}\n`)
 }
 process.stdout.write(
-  `\n${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped against ${target.baseUrl}\n`
+  `\n${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped against ${target.baseUrl}${
+    // Said explicitly, so a run that was meant to cover two instances can be checked for it.
+    target.second ? ` and ${target.second.baseUrl}` : ' (one instance)'
+  }\n`
 )
 process.exit(exitCode(counts))

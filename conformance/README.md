@@ -4,7 +4,8 @@ Language-neutral descriptions of what a Tula server must do, as sequences of HTT
 The same files are run:
 
 - **in process**, by the API's own tests (`apps/api/src/conformance.test.ts`, part of
-  `bun run verify`), against memory adapters and a controllable clock;
+  `bun run verify`), against memory adapters and a controllable clock (the second instance is a
+  second app over the same stores);
 - **against a live server**, with `bun run conformance`;
 - later, by each SDK's test suite (TypeScript, Swift, Kotlin), so every client is checked
   against the same behaviour.
@@ -28,6 +29,7 @@ bun run conformance
 | `CONFORMANCE_SECRET_KEY` | none | A secret key of the same environment. Without it, scenarios marked `needsSecretKey` are skipped. |
 | `CONFORMANCE_BASE_URL` | `http://localhost:3003` | Origin of the API. |
 | `CONFORMANCE_MAILPIT_URL` | `http://localhost:8025` | Mailpit's web address. |
+| `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
 audit entries, and leaves them there. A full run takes about two and a half minutes, most of it
@@ -76,6 +78,9 @@ shape only. The loader also enforces two rules it cannot express: a scenario wit
   every built-in policy), or a value an earlier step captured.
 - **Request steps.** `auth` is `publishable` (the default), `secret` or `none`; `accessToken`
   adds `Authorization: Bearer …`; `client` sets `x-tula-client`. `times` repeats the request.
+  `instance` is `first` (the default) or `second`: which API instance of the deployment gets
+  the request. A runner with only one instance sends both to it, so a scenario that uses
+  `second` must also be true of a single server.
 - **Expectations.** `status` must match exactly. `body` is matched as a subset: keys you leave
   out are not checked. Values compare literally, except `"$any"` (present and not null),
   `"$absent"` (missing or null), `{ "$not": value }` and `{ "$matches": "regex" }` (both need
@@ -101,6 +106,8 @@ Steps run in order and a scenario stops at its first failing step.
 | `07-admin-ban-and-audit` | Ban (a banned user with the right password is told so), unban, and an audit log without email addresses (needs a secret key). |
 | `08-sign-up-existing-address` | Signing up with a taken address looks the same and changes nothing about the account. (That no usable code is sent for it is covered by the API's own tests; the runner cannot assert an email's absence.) |
 | `09-verification-attempts` | A code dies after five wrong guesses. |
+| `10-password-reset` | A forgotten password is replaced with an emailed code, and the old sessions end. |
+| `11-two-instances` | Two instances behave as one server: a token from one is accepted by the other, a sign-out on one is refused by the other at once, and wrong passwords sent to either share one lockout. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). Browser cookie delivery is not covered yet; scenarios use a native client

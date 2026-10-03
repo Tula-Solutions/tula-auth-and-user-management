@@ -24,6 +24,13 @@ export const RequestSchema = z
     client: z.enum(['web', 'ios', 'android', 'server']).optional(),
     /** JSON body. */
     body: z.unknown().optional(),
+    /**
+     * Which API instance receives the request, for behaviour that must hold across instances of
+     * one deployment (a session ended on one is refused by the other). `second` goes to the
+     * target's second instance; a target with only one sends it to that one, so the scenario
+     * still runs, and passes, against a single server. Defaults to `first`.
+     */
+    instance: z.enum(['first', 'second']).optional(),
   })
   .refine((request) => !(request.auth === 'secret' && request.accessToken !== undefined), {
     message: 'a request carries the secret key or an access token, not both',

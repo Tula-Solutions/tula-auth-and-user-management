@@ -1,16 +1,58 @@
 # Local V1 stack (business plan §5.8).
 #   Development:  `docker compose up -d` then `bun run dev` (Postgres, Redis and Mailpit only).
-#   Packaged API: `docker compose --profile app up -d --build` also runs the migrations and the
-#                 API image. See docs/self-host.md.
-# Host ports can be moved with POSTGRES_PORT, REDIS_PORT, MAILPIT_SMTP_PORT, MAILPIT_UI_PORT and
-# API_PORT, e.g. to run a second stack next to this one.
+#   Packaged API: `docker compose --profile app up -d --build` also runs the migrations and two
+#                 instances of the API image. See docs/self-host.md.
+# Host ports can be moved with POSTGRES_PORT, REDIS_PORT, MAILPIT_SMTP_PORT, MAILPIT_UI_PORT,
+# API_PORT and API_2_PORT, e.g. to run a second stack next to this one.
 # After using the profile, stop with it too: `docker compose --profile app down`. A plain
-# `docker compose down` leaves the API container running and holding the network.
+# `docker compose down` leaves the API containers running and holding the network.
 # Ports bind to 127.0.0.1 only: Docker bypasses host firewalls, and these services use dev
 # credentials (Redis and Mailpit have none), so they must not be reachable from the LAN.
+# Images are pinned by digest (the multi-arch index): a tag can be moved, a digest cannot.
+# Dependabot proposes updates (.github/dependabot.yml).
+
+# The packaged API. Connects as the non-owner `tula_api` role, so row-level security applies.
+# Shared by both instances below: they must differ in nothing but the host port.
+x-api: &api
+  profiles: ['app']
+  image: tula-api:local
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+  environment:
+    ENVIRONMENT: ${ENVIRONMENT:-local}
+    DATABASE_URL: postgres://tula_api:tula_api@postgres:5432/tula
+    # Required: 32 bytes as hex (`openssl rand -hex 32`). The API refuses to start without it.
+    TULA_MASTER_KEY: ${TULA_MASTER_KEY:-}
+    # Not `PUBLIC_URL` / `SMTP_URL`: Compose also reads the repository's `.env`, where a
+    # developer's values describe `bun run dev` on the host (port 3003, mail at 127.0.0.1, which
+    # inside this container is the container itself).
+    # Both instances share one PUBLIC_URL: it is the issuer of every access token, so a token
+    # signed by one instance is only accepted by the other if they agree on it.
+    PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
+    SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
+    # Not `REDIS_URL`, for the same reason: in a developer's `.env` it points at 127.0.0.1.
+    REDIS_URL: ${API_REDIS_URL:-redis://redis:6379}
+    MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
+    BREACH_CHECK: ${BREACH_CHECK:-offline}
+    PASSWORD_POLICY: ${PASSWORD_POLICY:-recommended}
+    CORS_ORIGINS: ${CORS_ORIGINS:-}
+    TRUST_PROXY: ${TRUST_PROXY:-false}
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+    mailpit:
+      condition: service_started
+  restart: unless-stopped
+
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
     environment:
       POSTGRES_USER: tula
       POSTGRES_PASSWORD: tula
@@ -26,7 +68,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     ports: ['127.0.0.1:${REDIS_PORT:-6379}:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
@@ -36,7 +78,7 @@ services:
 
   # Local inbox for verification emails: SMTP on 1025, web UI on http://localhost:8025
   mailpit:
-    image: axllent/mailpit:v1.31.3
+    image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
     ports: ['127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025', '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025']
 
   # Applies pending migrations as the schema owner, then exits. The API waits for it.
@@ -54,42 +96,16 @@ services:
         condition: service_healthy
     restart: 'no'
 
-  # The packaged API. Connects as the non-owner `tula_api` role, so row-level security applies.
+  # Two instances of the API over one Postgres and one Redis (ADR 0016). In a real deployment
+  # a load balancer sits in front of them and nothing else is published; here each gets its own
+  # host port, so the two can be compared directly (the `two instances` conformance scenario).
   api:
-    profiles: ['app']
-    image: tula-api:local
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    environment:
-      ENVIRONMENT: ${ENVIRONMENT:-local}
-      DATABASE_URL: postgres://tula_api:tula_api@postgres:5432/tula
-      # Required: 32 bytes as hex (`openssl rand -hex 32`). The API refuses to start without it.
-      TULA_MASTER_KEY: ${TULA_MASTER_KEY:-}
-      # Not `PUBLIC_URL` / `SMTP_URL`: Compose also reads the repository's `.env`, where a
-      # developer's values describe `bun run dev` on the host (port 3003, mail at 127.0.0.1, which
-      # inside this container is the container itself).
-      PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
-      SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
-      # Not `REDIS_URL`, for the same reason: in a developer's `.env` it points at 127.0.0.1.
-      REDIS_URL: ${API_REDIS_URL:-redis://redis:6379}
-      MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
-      BREACH_CHECK: ${BREACH_CHECK:-offline}
-      PASSWORD_POLICY: ${PASSWORD_POLICY:-recommended}
-      CORS_ORIGINS: ${CORS_ORIGINS:-}
-      TRUST_PROXY: ${TRUST_PROXY:-false}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
+    <<: *api
     ports: ['127.0.0.1:${API_PORT:-3003}:3003']
-    depends_on:
-      postgres:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-      mailpit:
-        condition: service_started
-    restart: unless-stopped
+
+  api-2:
+    <<: *api
+    ports: ['127.0.0.1:${API_2_PORT:-3004}:3003']
 
 volumes:
   postgres-data:

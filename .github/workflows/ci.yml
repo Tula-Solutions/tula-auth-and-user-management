@@ -52,8 +52,10 @@ jobs:
       - run: bun run db:migrate
       - run: bun run test:integration
 
-  # The packaged server, as a self-hoster runs it: build the image, start it with Compose, and
-  # run the conformance scenarios against it over HTTP.
+  # The packaged server, as a self-hoster runs it: build the image, start two instances of it
+  # with Compose, and run the conformance scenarios against them over HTTP. The `two instances`
+  # scenario signs in through one and out through the other, and spreads wrong passwords over
+  # both, so this job is what proves the instances share their state (ADR 0016).
   self-host:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -68,13 +70,16 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Build and start the stack
         run: docker compose --profile app up -d --build
-      - name: Wait until the API is ready
+      - name: Wait until both API instances are ready
         run: |
           for attempt in $(seq 1 60); do
-            if curl -fsS http://localhost:3003/v1/ready > /dev/null; then exit 0; fi
+            if curl -fsS http://localhost:3003/v1/ready > /dev/null &&
+              curl -fsS http://localhost:3004/v1/ready > /dev/null; then
+              exit 0
+            fi
             sleep 2
           done
-          echo "the API did not become ready" >&2
+          echo "the API instances did not both become ready" >&2
           exit 1
       - name: Create an environment and its keys
         run: |
@@ -99,15 +104,24 @@ jobs:
             name=$(echo "$kind" | tr '[:lower:]' '[:upper:]')
             echo "CONFORMANCE_${name}_KEY=$key" >> "$GITHUB_ENV"
           done
-      - name: Run the conformance scenarios
+      - name: Run the conformance scenarios against both instances
+        env:
+          CONFORMANCE_BASE_URL: http://localhost:3003
+          CONFORMANCE_SECOND_BASE_URL: http://localhost:3004
         run: |
           # Every scenario must run: a missing secret key would skip the admin ones.
           test -n "$CONFORMANCE_PUBLISHABLE_KEY" && test -n "$CONFORMANCE_SECRET_KEY"
           bun run conformance | tee conformance.log
-          if grep -q '^SKIPPED' conformance.log; then
+          # `bun run --filter` prefixes every line with the package name, so none of these
+          # patterns may be anchored to the start of a line.
+          if grep -Eq '(^|: )SKIPPED ' conformance.log; then
             echo "scenarios were skipped" >&2
             exit 1
           fi
+          # The cross-instance scenario must have run, and against two instances: without the
+          # second URL its steps would all go to one server and prove nothing about sharing.
+          grep -Eq '(^|: )PASSED two instances$' conformance.log
+          grep -Eq ' 0 failed, 0 skipped against http://localhost:3003 and http://localhost:3004$' conformance.log
         shell: bash -euo pipefail {0}
       - name: Stack logs
         if: failure()

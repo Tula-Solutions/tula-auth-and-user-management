@@ -253,6 +253,66 @@ export function describeSessionStore(
       })
     })
 
+    test('purges sessions that had ended by a moment, with their token chains, in batches', async () => {
+      // Times earlier than any other test's, because a shared database keeps their rows.
+      const ended = later(-50 * DAY)
+      const cutoff = later(-40 * DAY)
+      const idle = await seed(ctx.a, { idleExpiresAt: ended, absoluteExpiresAt: null })
+      const absolute = await seed(ctx.a, { absoluteExpiresAt: ended })
+      const revokedLongAgo = await seed(ctx.a)
+      const revokedSince = await seed(ctx.a)
+      const live = await seed(ctx.a)
+      const foreign = await seed(ctx.b, { idleExpiresAt: ended })
+      // A chain of two tokens, so the purge has to remove links that reference each other.
+      const child = token(idle.session.id, { parentId: idle.root.id })
+      expect(
+        await ctx.store.rotate(ctx.a.environmentId, {
+          parentId: idle.root.id,
+          child,
+          at: later(-51 * DAY),
+          idleExpiresAt: ended,
+        })
+      ).toBe(true)
+      await ctx.store.revoke(ctx.a.environmentId, revokedLongAgo.session.id, 'sign_out', ended)
+      await ctx.store.revoke(
+        ctx.a.environmentId,
+        revokedSince.session.id,
+        'sign_out',
+        later(-39 * DAY)
+      )
+
+      const found = (tenant: SessionSuiteTenant, id: string) =>
+        ctx.store.findById(tenant.environmentId, id)
+      expect(await ctx.store.deleteEnded(ctx.a.environmentId, later(-50 * DAY - 1), 100)).toBe(0)
+      expect(await ctx.store.deleteEnded(ctx.a.environmentId, cutoff, 2)).toBe(2)
+      expect(await ctx.store.deleteEnded(ctx.a.environmentId, cutoff, 2)).toBe(1)
+      expect(await ctx.store.deleteEnded(ctx.a.environmentId, cutoff, 2)).toBe(0)
+
+      for (const gone of [idle, absolute, revokedLongAgo]) {
+        expect(await found(ctx.a, gone.session.id)).toBeNull()
+        expect(await ctx.store.findTokenById(ctx.a.environmentId, gone.root.id)).toBeNull()
+        expect(await ctx.store.findToken(ctx.a.environmentId, gone.root.tokenHash)).toBeNull()
+      }
+      expect(await ctx.store.findTokenById(ctx.a.environmentId, child.id)).toBeNull()
+      // Revoked after the cutoff, or still usable: kept, tokens and all.
+      for (const kept of [revokedSince, live]) {
+        expect(await found(ctx.a, kept.session.id)).not.toBeNull()
+        expect(await ctx.store.findTokenById(ctx.a.environmentId, kept.root.id)).not.toBeNull()
+      }
+      // Environment A's purge never touched environment B's ended session.
+      expect(await found(ctx.b, foreign.session.id)).not.toBeNull()
+      expect(await ctx.store.deleteEnded(ctx.b.environmentId, cutoff, 100)).toBe(1)
+    })
+
+    test('a session that can still be refreshed is never purged', async () => {
+      const { session: s, root } = await seed(ctx.a)
+      // One millisecond before its idle expiry it is still usable, so it stays.
+      const justBefore = new Date(s.idleExpiresAt.getTime() - 1)
+      await ctx.store.deleteEnded(ctx.a.environmentId, justBefore, 100)
+      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).not.toBeNull()
+      expect(await ctx.store.findToken(ctx.a.environmentId, root.tokenHash)).not.toBeNull()
+    })
+
     test('one environment cannot read, rotate, list or revoke another’s sessions', async () => {
       const { session: s, root, userId } = await seed(ctx.a)
       const foreign = ctx.b.environmentId

@@ -1,3 +1,4 @@
+export * from './advisory-lock'
 export * from './client'
 export * from './migrate'
 export * from './mixins'

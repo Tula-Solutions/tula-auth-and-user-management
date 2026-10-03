@@ -453,6 +453,7 @@ describe('verifyLink', () => {
         findByLinkHash: store.findByLinkHash.bind(store),
         recordAttempt: store.recordAttempt.bind(store),
         consume: store.consume.bind(store),
+        deleteExpired: store.deleteExpired.bind(store),
         findLatest: async () => ({ ...stale, id: '00000000-0000-7000-8000-0000000000ff' }),
       },
     }

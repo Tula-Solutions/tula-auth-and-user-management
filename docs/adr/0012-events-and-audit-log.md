@@ -67,14 +67,17 @@ of.
   for the ban and one for ending their sessions; a crash between them leaves the ban recorded
   and the sessions still open, which the ban check on refresh then closes (and records).
 - Nothing reads the outbox yet. Events accumulate undelivered until the webhook worker (Phase 2)
-  ships; there is no retention job for either table. Both need one before a busy production
-  deployment.
+  ships. The retention job ([ADR 0017](0017-retention.md)) deletes neither table's rows: no
+  event is safe to drop before something has delivered it, so the outbox purge lands with that
+  worker, and audit retention becomes a per-environment setting (default: keep). Both tables
+  therefore still grow without bound.
 - Not recorded: token refreshes (about one a minute per session), failed sign-ins, lockouts and
   rate-limit refusals. They have no write to share a transaction with, and they are
   attacker-driven, so recording them needs its own volume limits first.
 - Event payloads (`{ actor, target, data }`) are not yet a typed contract per event type. They
   will be fixed when webhooks ship; until then treat `data` as informative.
-- Audit entries keep IP addresses after a user is deleted. A retention policy has to cover that.
+- Audit entries keep IP addresses after a user is deleted, and outlive the sessions they name
+  (which are deleted 30 days after they end). The audit retention setting has to cover that.
 - Every write that records activity costs two more inserts in its transaction.
 - The list uses offset paging, like the user list: entries written while a client pages shift
   later pages by that many rows, and deep pages are slow. Filtering by `action` alone scans the
