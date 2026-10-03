@@ -211,12 +211,25 @@ export function describeFlowAttemptStore(
         later(past - 500)
       )
 
-      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past - 1))).toBe(0)
-      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past))).toBe(2)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past - 1), 100)).toBe(0)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past), 100)).toBe(2)
       expect(await ctx.store.findById(ctx.a.environmentId, expired.id)).toBeNull()
       expect(await ctx.store.findById(ctx.a.environmentId, completed.id)).toBeNull()
       expect(await ctx.store.findById(ctx.a.environmentId, live.id)).not.toBeNull()
       expect(await ctx.store.findById(ctx.b.environmentId, foreign.id)).not.toBeNull()
+    })
+
+    test('a purge removes at most its limit per call, and another environment’s purge removes none', async () => {
+      const past = -7_200_000
+      const expired = [1, 2, 3].map(() => attempt(ctx.a, { expiresAt: later(past) }))
+      for (const input of expired) {
+        await ctx.store.create(input)
+      }
+      // Environment B's purge, at a time when all of A's have expired, touches none of them.
+      expect(await ctx.store.deleteExpired(ctx.b.environmentId, later(past), 100)).toBe(0)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past), 2)).toBe(2)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past), 2)).toBe(1)
+      expect(await ctx.store.deleteExpired(ctx.a.environmentId, later(past), 2)).toBe(0)
     })
 
     test('one environment cannot read or move another’s attempts', async () => {

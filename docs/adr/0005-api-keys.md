@@ -17,7 +17,9 @@ lookup has to run before any environment is known.
   The full key is returned once, with `Cache-Control: no-store`.
 - **`api_keys` has no row-level security,** because the lookup precedes the tenant. Every other
   query on the table filters by `environment_id` explicitly, and tests prove a key from one
-  environment cannot list or revoke another's.
+  environment cannot list or revoke another's. The table does carry the composite
+  `(environment_id, project_id)` foreign key every tenant table has (migration 0006), so a key
+  row cannot name one project and another project's environment.
 - **One generic error.** Missing, malformed, unknown, wrong-kind and revoked keys all return
   `auth.invalid_key`, so responses reveal nothing about which keys exist.
 - **Guard rails:** a key cannot revoke itself (rotate by creating a new key first), at most 100

@@ -55,7 +55,9 @@ export function lockoutDelayMs(policy: LockoutPolicy, failures: number): number 
  * Exponential backoff for attempts at guessing a secret (a password), keyed by what is being
  * attacked (an identifier or a user), not by who is asking.
  *
- * Memory now; Redis in Phase 1 for multi-instance deployments.
+ * In process memory for one instance, in Redis when several share the count (ADR 0016). An
+ * adapter whose storage is unreachable throws `service.unavailable`: an attempt is never
+ * allowed uncounted.
  */
 export interface Lockout {
   /**
@@ -81,8 +83,8 @@ export interface Lockout {
 /**
  * The lockout key for password sign-in of one identifier in one environment.
  *
- * The identifier is hashed so that lockout storage (process memory now, Redis later) holds no
- * email address.
+ * The identifier is hashed so that lockout storage (process memory or Redis) holds no email
+ * address.
  *
  * @param environmentId - The environment.
  * @param identifier - The normalized identifier (email) being signed in to.

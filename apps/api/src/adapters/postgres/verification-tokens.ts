@@ -1,5 +1,5 @@
 import { type Database, verificationTokens, withTenant } from '@tula/db'
-import { and, desc, eq, gt, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
 import {
   type NewVerificationToken,
   subjectOf,
@@ -146,5 +146,34 @@ export class PostgresVerificationTokenStore implements VerificationTokenStore {
         .returning({ id: verificationTokens.id })
     )
     return rows.length === 1
+  }
+
+  /** @inheritdoc */
+  async deleteExpired(environmentId: string, before: Date, limit: number): Promise<number> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(verificationTokens)
+        .where(
+          and(
+            eq(verificationTokens.environmentId, environmentId),
+            // DELETE has no LIMIT in Postgres: pick the batch in a subquery.
+            inArray(
+              verificationTokens.id,
+              tx
+                .select({ id: verificationTokens.id })
+                .from(verificationTokens)
+                .where(
+                  and(
+                    eq(verificationTokens.environmentId, environmentId),
+                    lte(verificationTokens.expiresAt, before)
+                  )
+                )
+                .limit(limit)
+            )
+          )
+        )
+        .returning({ id: verificationTokens.id })
+    )
+    return rows.length
   }
 }

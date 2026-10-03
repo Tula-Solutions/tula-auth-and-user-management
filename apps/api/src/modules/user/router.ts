@@ -33,6 +33,7 @@ const adminErrors = {
   401: openapi.responses[401],
   429: openapi.responses[429],
   500: openapi.responses[500],
+  503: openapi.responses[503],
 } as const
 
 router.get(
@@ -225,6 +226,7 @@ router.get(
       404: openapi.responses[404],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   publishableKey(),
@@ -254,6 +256,7 @@ router.post(
       422: openapi.responses[422],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   rateLimit({

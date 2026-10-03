@@ -108,4 +108,16 @@ export interface VerificationTokenStore {
    * @returns `false` when it was already consumed or has expired.
    */
   consume(environmentId: string, id: string, now: Date): Promise<boolean>
+
+  /**
+   * Remove tokens in an environment that expired at or before `before`, consumed or not. Every
+   * token expires, so this is also what removes consumed ones. At most `limit` go per call, so
+   * no call holds locks for long; the caller repeats while a full batch comes back.
+   *
+   * @param environmentId - The environment to purge.
+   * @param before - Tokens with `expiresAt <= before` go.
+   * @param limit - The most tokens to remove in this call.
+   * @returns How many tokens were removed.
+   */
+  deleteExpired(environmentId: string, before: Date, limit: number): Promise<number>
 }

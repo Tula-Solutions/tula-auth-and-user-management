@@ -4,6 +4,10 @@
  * Access tokens are verified without a database hit, so a revoked session's token would stay
  * valid until it expires (about a minute). `sessionAuth` checks this list to close that gap.
  * Entries only need to live as long as the longest access token.
+ *
+ * In process memory for one instance, in Redis when several must agree (ADR 0016). An adapter
+ * whose storage is unreachable throws `service.unavailable` from `has`: a token is not accepted
+ * while nobody can say whether its session was revoked.
  */
 export interface RevokedSessions {
   /**

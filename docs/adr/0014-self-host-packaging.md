@@ -39,8 +39,13 @@ that, and a check that the packaged server behaves like the one the tests exerci
 
 - The image carries TypeScript sources and Bun's transpile cost at start-up (well under a
   second). A bundled build can replace it later without changing how it is run.
-- A deployment is a single API instance until rate limits, lockout and the session denylist
-  move to Redis (Phase 1); `docs/self-host.md` says so.
+- When this was written a deployment was a single API instance. Rate limits, lockout and the
+  session denylist have since moved to Redis
+  ([ADR 0016](0016-redis-and-multiple-instances.md)), and the Compose profile now starts two
+  instances (`api` and `api-2`) that share them.
+- The base image and the Compose service images are pinned by digest (the multi-arch index),
+  with Dependabot proposing updates (`.github/dependabot.yml`). The tag is kept next to the
+  digest for readers; the digest is what is pulled.
 - Without the master key the Compose `api` service restarts in a loop with a clear error in its
   log, rather than failing `docker compose up` itself: a required-variable check in the Compose
   file would also break the development stack, which does not need the key.

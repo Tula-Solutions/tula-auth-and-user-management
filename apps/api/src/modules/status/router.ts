@@ -28,7 +28,8 @@ router.get(
 )
 
 /**
- * Readiness checks per minute from one IP. Each one queries the database, and the route is
+ * Readiness checks per minute from one IP. Each one queries the database (and Redis, when
+ * configured), and the route is
  * public, so it is limited like the other unauthenticated database-backed route (JWKS). Two a
  * second is far above any health checker's cadence. `/v1/status` touches nothing and has no limit.
  */
@@ -55,7 +56,14 @@ router.get(
       429: openapi.responses[429],
     },
   }),
-  rateLimit({ name: 'ready', limit: READY_RATE_LIMIT, window: '1m', key: byIp }),
+  rateLimit({
+    name: 'ready',
+    limit: READY_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+    // When the limiter's store is down this route must still run, to report it as failing.
+    whenUnavailable: 'allow',
+  }),
   async (c) => {
     const result = ReadinessResponseSchema.parse(await Status.ready(c.get('deps')))
     return c.json(result, result.status === 'ready' ? 200 : 503)

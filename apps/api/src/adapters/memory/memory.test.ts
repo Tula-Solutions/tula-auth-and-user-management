@@ -6,6 +6,7 @@ import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
+import { describeRateLimiter } from '~/adapters/rate-limiter.suite'
 import { systemClock } from '~/adapters/system/clock'
 import { uuidV7Ids } from '~/adapters/system/ids'
 import { RETIRED_KEY_RETENTION_MS } from '~/ports/signing-key-store'
@@ -143,34 +144,13 @@ describe('MemorySigningKeyStore', () => {
   })
 })
 
+describeRateLimiter('memory', async () => {
+  const clock = new FixedClock()
+  const limiter = new MemoryRateLimiter(clock)
+  return { limiter, peer: limiter, clock }
+})
+
 describe('MemoryRateLimiter', () => {
-  test('allows up to the limit per window, then reports time to reset', async () => {
-    const clock = new FixedClock()
-    const limiter = new MemoryRateLimiter(clock)
-    expect(await limiter.hit('k', 2, 60_000)).toEqual({
-      allowed: true,
-      remaining: 1,
-      retryAfterMs: 60_000,
-    })
-    await limiter.hit('k', 2, 60_000)
-    clock.advance('15s')
-    expect(await limiter.hit('k', 2, 60_000)).toEqual({
-      allowed: false,
-      remaining: 0,
-      retryAfterMs: 45_000,
-    })
-    expect((await limiter.hit('other', 2, 60_000)).allowed).toBe(true)
-  })
-
-  test('starts a new window once the old one ends', async () => {
-    const clock = new FixedClock()
-    const limiter = new MemoryRateLimiter(clock)
-    await limiter.hit('k', 1, 1_000)
-    expect((await limiter.hit('k', 1, 1_000)).allowed).toBe(false)
-    clock.advance(1_000)
-    expect((await limiter.hit('k', 1, 1_000)).allowed).toBe(true)
-  })
-
   test('sweeps expired buckets so key churn cannot grow memory forever', async () => {
     const clock = new FixedClock()
     const limiter = new MemoryRateLimiter(clock)

@@ -12,10 +12,16 @@ import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
 import { databaseProbe } from '~/adapters/postgres/health'
+import { PostgresJobLock } from '~/adapters/postgres/job-lock'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
+import { connectRedis, redisProbe } from '~/adapters/redis/connection'
+import { RedisLockout } from '~/adapters/redis/lockout'
+import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
+import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
+import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
 import { systemClock } from '~/adapters/system/clock'
 import { uuidV7Ids } from '~/adapters/system/ids'
 import type { Deps } from '~/dependencies'
@@ -25,6 +31,12 @@ import { createSecretBox } from '~/lib/secret-box'
 
 /** How long verification keys are cached per instance. See the rotation invariant. */
 export const SIGNING_KEY_CACHE_TTL_MS = 60_000
+
+/**
+ * With Redis, how often an instance checks whether another one changed an environment's signing
+ * keys: the longest it keeps serving keys that predate a rotation (see `cacheSigningKeys`).
+ */
+export const SIGNING_KEY_VERSION_CHECK_MS = 5_000
 
 /** Production dependencies plus the function that releases their resources. */
 export interface Container {
@@ -44,6 +56,11 @@ export function createContainer(env: Env): Container {
   const database = createDatabase(env.DATABASE_URL)
   const clock = systemClock
   const mailer = new SmtpMailer({ url: env.SMTP_URL, from: env.MAIL_FROM })
+  const keyedHash = createKeyedHash(env.TULA_MASTER_KEY)
+  // State that API instances must agree on lives in Redis when it is configured. Without it
+  // (allowed in `local` and `dev` only, see `env.ts`) it is held in this process's memory.
+  const redis = env.REDIS_URL ? connectRedis(env.REDIS_URL, clock) : null
+  const signingKeys = new PostgresSigningKeyStore(database.db)
   const deps: Deps = {
     config: {
       tier: env.ENVIRONMENT,
@@ -56,29 +73,37 @@ export function createContainer(env: Env): Container {
     ids: uuidV7Ids,
     apiKeys: new PostgresApiKeyRepository(database.db),
     environments: new PostgresEnvironmentRepository(database.db),
-    signingKeys: cacheSigningKeys(
-      new PostgresSigningKeyStore(database.db),
-      clock,
-      SIGNING_KEY_CACHE_TTL_MS
-    ),
-    rateLimiter: new MemoryRateLimiter(clock),
-    lockout: new MemoryLockout(clock),
+    signingKeys: redis
+      ? cacheSigningKeys(signingKeys, clock, SIGNING_KEY_CACHE_TTL_MS, {
+          versions: new RedisSigningKeyVersions(redis),
+          checkEveryMs: SIGNING_KEY_VERSION_CHECK_MS,
+        })
+      : cacheSigningKeys(signingKeys, clock, SIGNING_KEY_CACHE_TTL_MS),
+    rateLimiter: redis
+      ? new RedisRateLimiter(redis, clock, keyedHash)
+      : new MemoryRateLimiter(clock),
+    lockout: redis ? new RedisLockout(redis) : new MemoryLockout(clock),
     breachChecker: env.BREACH_CHECK === 'hibp' ? new HibpBreachChecker() : offlineBreachChecker,
     verificationTokens: new PostgresVerificationTokenStore(database.db),
     sessions: new PostgresSessionStore(database.db),
     users: new PostgresUserRepository(database.db),
     flowAttempts: new PostgresFlowAttemptStore(database.db),
     activityLog: new PostgresActivityLog(database.db),
-    revokedSessions: new MemoryRevokedSessions(clock),
+    revokedSessions: redis
+      ? new RedisRevokedSessions(redis, clock)
+      : new MemoryRevokedSessions(clock),
     mailer,
     secretBox: createSecretBox(env.TULA_MASTER_KEY),
-    keyedHash: createKeyedHash(env.TULA_MASTER_KEY),
-    probes: [databaseProbe(database.db)],
+    keyedHash,
+    // On Postgres even when Redis is configured: the jobs it guards are database work.
+    jobLock: new PostgresJobLock(database.withAdvisoryLock),
+    probes: redis ? [databaseProbe(database.db), redisProbe(redis)] : [databaseProbe(database.db)],
   }
   return {
     deps,
     close: async () => {
       mailer.close()
+      redis?.close()
       await database.close()
     },
   }

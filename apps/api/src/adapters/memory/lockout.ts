@@ -20,7 +20,8 @@ const SWEEP_EVERY = 1_000
  * Lockout state held in process memory.
  *
  * Correct for a single instance only: behind a load balancer each instance counts separately,
- * which multiplies the guesses an attacker gets. Phase 1 adds a Redis adapter for that.
+ * which multiplies the guesses an attacker gets. `RedisLockout` is the adapter for that; this
+ * one is used when `REDIS_URL` is unset (`local` and `dev` only) and by unit tests.
  */
 export class MemoryLockout implements Lockout {
   readonly #entries: Map<string, Entry>

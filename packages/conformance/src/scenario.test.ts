@@ -26,6 +26,7 @@ test.each([
   ['a relative path', { method: 'GET', path: 'v1/status' }],
   ['an unknown method', { method: 'TRACE', path: '/v1/status' }],
   ['an unknown client', { method: 'GET', path: '/v1/status', client: 'fridge' }],
+  ['an unknown instance', { method: 'GET', path: '/v1/status', instance: 'third' }],
 ])('rejects a request with %s', (_name, request) => {
   expect(
     ScenarioSchema.safeParse({

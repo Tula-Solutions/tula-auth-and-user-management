@@ -96,6 +96,19 @@ export class MemoryVerificationTokenStore implements VerificationTokenStore {
     return true
   }
 
+  /** @inheritdoc */
+  async deleteExpired(environmentId: string, before: Date, limit: number): Promise<number> {
+    let removed = 0
+    for (let index = this.#tokens.length - 1; index >= 0 && removed < limit; index--) {
+      const token = this.#tokens[index]
+      if (token?.environmentId === environmentId && token.expiresAt.getTime() <= before.getTime()) {
+        this.#tokens.splice(index, 1)
+        removed += 1
+      }
+    }
+    return removed
+  }
+
   #usable(environmentId: string, id: string, now: Date): VerificationTokenRecord | undefined {
     return this.#tokens.find(
       (token) =>

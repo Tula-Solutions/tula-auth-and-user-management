@@ -6,6 +6,7 @@ import { FixedClock } from '~/adapters/memory/clock'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
 import { SequentialIds } from '~/adapters/memory/ids'
+import { MemoryJobLock } from '~/adapters/memory/job-lock'
 import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryMailer } from '~/adapters/memory/mailer'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
@@ -38,6 +39,7 @@ export interface TestDeps extends Deps {
   rateLimiter: MemoryRateLimiter
   lockout: MemoryLockout
   breachChecker: MemoryBreachChecker
+  jobLock: MemoryJobLock
 }
 
 /** Master key for test secret boxes. Never use outside tests. */
@@ -85,6 +87,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     breachChecker: new MemoryBreachChecker(),
     secretBox: createSecretBox(TEST_MASTER_KEY),
     keyedHash: createKeyedHash(TEST_MASTER_KEY),
+    jobLock: new MemoryJobLock(),
     probes: [],
     ...overrides,
     clock,

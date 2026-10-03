@@ -49,6 +49,7 @@ const errors = {
   422: openapi.responses[422],
   429: openapi.responses[429],
   500: openapi.responses[500],
+  503: openapi.responses[503],
 } as const
 
 const DELIVERY =

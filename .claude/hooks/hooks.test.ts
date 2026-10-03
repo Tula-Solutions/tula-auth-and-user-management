@@ -5,10 +5,27 @@ import { join } from 'node:path'
 
 const root = join(import.meta.dir, '..', '..')
 
+/**
+ * How long a spawned script may run. `Bun.spawnSync` blocks the thread the test runner's own
+ * timeout runs on, so a child that never exits would hang `bun run verify` for ever instead of
+ * failing one test; only a timeout on the spawn itself can stop it. These scripts take
+ * milliseconds.
+ */
+const SPAWN_TIMEOUT_MS = 10_000
+
+/** Run a command to completion, or fail the test naming it if it had to be killed. */
+function spawn(command: string[], options: { stdin?: Buffer; env?: Record<string, string> } = {}) {
+  const proc = Bun.spawnSync(command, { ...options, timeout: SPAWN_TIMEOUT_MS })
+  if (proc.exitedDueToTimeout) {
+    throw new Error(`timed out after ${SPAWN_TIMEOUT_MS} ms: ${command.join(' ')}`)
+  }
+  return proc
+}
+
 function run(script: string, stdin: string, args: string[] = []) {
-  const proc = Bun.spawnSync(['bash', join(root, script), ...args], {
+  const proc = spawn(['bash', join(root, script), ...args], {
     stdin: Buffer.from(stdin),
-    env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+    env: { ...(process.env as Record<string, string>), CLAUDE_PROJECT_DIR: root },
   })
   return { code: proc.exitCode, stderr: proc.stderr.toString() }
 }
@@ -17,6 +34,15 @@ function protect(path: string) {
   return run('.claude/hooks/protect-files.sh', JSON.stringify({ tool_input: { file_path: path } }))
     .code
 }
+
+describe('spawned scripts', () => {
+  test('a script that never exits fails its test by name instead of hanging the run', () => {
+    const started = Date.now()
+    const hang = () => Bun.spawnSync(['bash', '-c', 'sleep 30'], { timeout: 200 })
+    expect(hang().exitedDueToTimeout).toBe(true)
+    expect(Date.now() - started).toBeLessThan(5_000)
+  })
+})
 
 describe('protect-files.sh', () => {
   test.each([
@@ -51,7 +77,7 @@ describe('protect-files.sh', () => {
 describe('.husky/commit-msg', () => {
   function commitMsg(subject: string) {
     const file = join(tmpdir(), `commit-msg-${crypto.randomUUID()}`)
-    Bun.spawnSync(['bash', '-c', 'printf "%s\\n" "$1" > "$2"', '_', subject, file])
+    spawn(['bash', '-c', 'printf "%s\\n" "$1" > "$2"', '_', subject, file])
     return run('.husky/commit-msg', '', [file]).code
   }
 

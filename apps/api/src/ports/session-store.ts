@@ -80,6 +80,29 @@ export function isActive(
   )
 }
 
+/**
+ * Whether a session had already ended at `at`: revoked by then, or past its idle or absolute
+ * expiry. The opposite of {@link isActive} for an unrevoked session; for a revoked one it asks
+ * when the revocation happened, which `isActive` does not.
+ *
+ * Shared by every adapter so they agree on which sessions retention may delete.
+ *
+ * @param session - Revocation and expiry fields.
+ * @param at - The moment to judge by.
+ * @returns `true` when the session could not be used at `at` or any time after.
+ */
+export function endedBy(
+  session: Pick<SessionRecord, 'revokedAt' | 'idleExpiresAt' | 'absoluteExpiresAt'>,
+  at: Date
+): boolean {
+  const time = at.getTime()
+  return (
+    (session.revokedAt !== null && session.revokedAt.getTime() <= time) ||
+    session.idleExpiresAt.getTime() <= time ||
+    (session.absoluteExpiresAt !== null && session.absoluteExpiresAt.getTime() <= time)
+  )
+}
+
 /** Options of {@link SessionStore.revokeByUser}. */
 export interface RevokeByUserOptions {
   /** A session to leave signed in. */
@@ -177,4 +200,18 @@ export interface SessionStore {
     at: Date,
     options?: RevokeByUserOptions
   ): Promise<string[]>
+
+  /**
+   * Remove sessions in an environment that had ended by `before` (see {@link endedBy}), each
+   * with its whole refresh-token chain. A session that can still be refreshed is never touched.
+   * Nothing is recorded: the session's end is already in the audit log, and the audit entries
+   * stay. At most `limit` sessions go per call, so no call holds locks for long; the caller
+   * repeats while a full batch comes back.
+   *
+   * @param environmentId - The environment to purge.
+   * @param before - Sessions revoked or expired at or before this moment go.
+   * @param limit - The most sessions to remove in this call.
+   * @returns How many sessions were removed.
+   */
+  deleteEnded(environmentId: string, before: Date, limit: number): Promise<number>
 }

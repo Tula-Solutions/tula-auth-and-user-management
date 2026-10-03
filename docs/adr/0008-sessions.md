@@ -50,9 +50,12 @@ access tokens are still unexpired.
 
 ## Consequences
 
-- The denylist is in process memory in Phase 0: with several API instances, a revoked session's
-  access token can still be accepted by another instance for up to 60 seconds. The Redis adapter
-  (Phase 1) closes this.
+- The denylist is shared through Redis when `REDIS_URL` is set, which `staging` and `prod`
+  require ([ADR 0016](0016-redis-and-multiple-instances.md)): a session revoked on one instance
+  is refused by all of them at once. If Redis cannot be reached, requests carrying an access
+  token and revocations are refused with `service.unavailable` (503); refresh keeps working.
+  Without `REDIS_URL` (`local` and `dev` only) the denylist is in process memory, and another
+  instance would accept a revoked session's access token for up to 60 seconds.
 - Rotating `TULA_MASTER_KEY` changes the derivation key. Stored hashes still match tokens already
   issued, but the grace-period replay re-derives the child with the new key and would return a
   token that does not match its stored hash; affected clients sign in again.
@@ -60,5 +63,6 @@ access tokens are still unexpired.
   trade-off: beyond the window a retry is indistinguishable from theft.
 - Reuse is logged (`refresh token reuse detected`) and recorded as a `session.reuse_detected`
   event and audit entry, in the same transaction as the revocation (ADR 0012).
-- Expired and revoked sessions are not pruned yet; a cleanup job deletes them by session, and
-  the cascade removes their token chains.
+- Expired and revoked sessions are deleted 30 days after they ended, by session, and the
+  cascade removes their token chains ([ADR 0017](0017-retention.md)). A refresh token of a
+  purged session is answered like any unknown token.

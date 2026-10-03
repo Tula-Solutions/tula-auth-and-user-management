@@ -6,6 +6,14 @@ import { fill } from './template'
 /** Header carrying the publishable key. */
 export const PUBLISHABLE_KEY_HEADER = 'x-tula-publishable-key'
 
+/** One API instance of the deployment under test. */
+export interface Instance {
+  /** Origin of the instance, e.g. `http://localhost:3004`. No trailing slash. */
+  baseUrl: string
+  /** Sends a request to it. */
+  fetch: (request: Request) => Promise<Response>
+}
+
 /** The server under test and the test doubles around it. */
 export interface Target {
   /** Origin of the API, e.g. `http://localhost:3003`. No trailing slash. */
@@ -15,6 +23,11 @@ export interface Target {
   secretKey?: string
   /** Sends a request: `fetch` for a live server, `app.request` for an in-process one. */
   fetch: (request: Request) => Promise<Response>
+  /**
+   * A second instance of the same deployment (same database, same keys), reached separately.
+   * Requests marked `instance: "second"` go here; without it they go to the first.
+   */
+  second?: Instance
   /**
    * The 6-digit code in the newest email to an address.
    *
@@ -97,6 +110,11 @@ function initialVariables(scenario: Scenario, origin: string): Record<string, st
   return variables
 }
 
+/** The instance a request is for: the second only when it is asked for and there is one. */
+function instanceFor(target: Target, request: ScenarioRequest): Instance {
+  return request.instance === 'second' && target.second ? target.second : target
+}
+
 function buildRequest(target: Target, request: ScenarioRequest, origin: string): Request {
   const headers = new Headers({
     // Scenarios each come from their own address, so per-IP limits don't couple them. Only a
@@ -119,7 +137,7 @@ function buildRequest(target: Target, request: ScenarioRequest, origin: string):
   if (request.body !== undefined) {
     headers.set('content-type', 'application/json')
   }
-  return new Request(`${target.baseUrl}${request.path}`, {
+  return new Request(`${instanceFor(target, request).baseUrl}${request.path}`, {
     method: request.method,
     headers,
     body: request.body === undefined ? undefined : JSON.stringify(request.body),
@@ -157,7 +175,9 @@ async function runStep(
   const request = fill(step.request, variables)
   const expected = fill(step.expect, variables)
   for (let attempt = 1; attempt <= (step.times ?? 1); attempt++) {
-    const response = await target.fetch(buildRequest(target, request, variables.origin ?? ''))
+    const response = await instanceFor(target, request).fetch(
+      buildRequest(target, request, variables.origin ?? '')
+    )
     const text = await response.text()
     const body = parseBody(text)
     const problems = match(expected.body, expected.body === undefined ? undefined : body).map(

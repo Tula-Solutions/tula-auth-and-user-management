@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core'
 import { Pool } from 'pg'
+import { type AdvisoryLockKey, type AdvisoryLockResult, withAdvisoryLock } from './advisory-lock'
 import * as schema from './schema'
 
 /** The Drizzle schema object (all Tula tables). */
@@ -18,6 +19,18 @@ export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
 /** A database plus the function that releases its connections. */
 export interface DatabaseHandle {
   db: Database
+  /**
+   * Run `fn` while holding a session-level advisory lock, or not at all if another session
+   * (another API instance) holds it. See {@link withAdvisoryLock}.
+   *
+   * @param key - The lock to take.
+   * @param fn - Work to do while holding it.
+   * @returns `fn`'s result, or `{ acquired: false }`.
+   */
+  withAdvisoryLock: <T>(
+    key: AdvisoryLockKey,
+    fn: () => Promise<T>
+  ) => Promise<AdvisoryLockResult<T>>
   close: () => Promise<void>
 }
 
@@ -29,7 +42,8 @@ export interface DatabaseHandle {
  *
  * @param url - Postgres connection string.
  * @param options - Pool size (default 10).
- * @returns The database and a `close` function for graceful shutdown.
+ * @returns The database, an advisory-lock helper on the same pool, and a `close` function for
+ *   graceful shutdown.
  *
  * @example
  * ```ts
@@ -38,5 +52,9 @@ export interface DatabaseHandle {
  */
 export function createDatabase(url: string, options: { max?: number } = {}): DatabaseHandle {
   const pool = new Pool({ connectionString: url, max: options.max ?? 10 })
-  return { db: drizzle(pool, { schema }), close: () => pool.end() }
+  return {
+    db: drizzle(pool, { schema }),
+    withAdvisoryLock: (key, fn) => withAdvisoryLock(pool, key, fn),
+    close: () => pool.end(),
+  }
 }

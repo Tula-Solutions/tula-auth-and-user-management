@@ -1,0 +1,305 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "two instances",
+  "description": "Two API instances of one deployment behave as one server: a token issued by one is accepted by the other, a session signed out on one is refused by the other at once, and wrong passwords sent to either count towards one shared lockout. Against a single server every step goes to it, and the scenario still passes.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"]
+          },
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "signUpId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "the right code completes the sign-up and returns tokens in the body for a native client",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "sessionId": "step.sessionId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "the second instance accepts an access token the first one issued",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}",
+        "instance": "second"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}"
+        }
+      }
+    },
+    {
+      "name": "sign out through the second instance",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/sign-out",
+        "instance": "second",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "the first instance refuses the access token at once, before it expires",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "the first instance refuses the refresh token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "start a sign-in on the first instance",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_password"
+          }
+        }
+      },
+      "capture": {
+        "signInId": "id"
+      }
+    },
+    {
+      "name": "wrong password 1 of 6, on the first instance, is auth.invalid_credentials",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}-wrong"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "wrong password 2 of 6, on the second instance, is auth.invalid_credentials",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}-wrong"
+        },
+        "instance": "second"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "wrong password 3 of 6, on the first instance, is auth.invalid_credentials",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}-wrong"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "wrong password 4 of 6, on the second instance, is auth.invalid_credentials",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}-wrong"
+        },
+        "instance": "second"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "wrong password 5 of 6, on the first instance, is auth.invalid_credentials",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}-wrong"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "wrong password 6 of 6, on the second instance, is auth.invalid_credentials",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}-wrong"
+        },
+        "instance": "second"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "the seventh try is locked out on the first instance, even with the right password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "status": 429,
+          "code": "rate_limited",
+          "params": {
+            "retryAfter": "$any"
+          }
+        }
+      }
+    },
+    {
+      "name": "and on the second instance",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "instance": "second",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "status": 429,
+          "code": "rate_limited",
+          "params": {
+            "retryAfter": "$any"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -172,6 +172,19 @@ export class InternalError extends ServiceException {
   }
 }
 
+/**
+ * 503: a dependency the request cannot be decided without is unreachable (the shared store
+ * behind rate limits, lockout and the revoked-session list). Thrown instead of letting the
+ * request through: see ADR 0016.
+ */
+export class ServiceUnavailableError extends ServiceException {
+  /** @param options - Log-only details. Never a connection string. */
+  constructor(options: Omit<ServiceExceptionOptions, 'message' | 'params' | 'errors'> = {}) {
+    super('service.unavailable', options)
+    this.name = 'ServiceUnavailableError'
+  }
+}
+
 /** 501: the capability is on the roadmap but not built (e.g. a non-hybrid session type). */
 export class NotImplementedError extends ServiceException {
   /** @param options - Message and log-only details. */

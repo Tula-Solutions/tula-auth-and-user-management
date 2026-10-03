@@ -8,7 +8,9 @@ const SWEEP_EVERY = 500
  * Revoked-session denylist held in process memory.
  *
  * Correct for a single instance only: another instance keeps honouring a revoked session's
- * access token until it expires (at most the access-token TTL). Phase 1 adds a Redis adapter.
+ * access token until it expires (at most the access-token TTL). `RedisRevokedSessions` is the
+ * adapter for that; this one is used when `REDIS_URL` is unset (`local` and `dev` only) and by
+ * unit tests.
  */
 export class MemoryRevokedSessions implements RevokedSessions {
   readonly #until: Map<string, number>

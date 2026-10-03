@@ -10,6 +10,7 @@ import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { FlowAttemptStore } from '~/ports/flow-attempt-store'
 import type { HealthProbe } from '~/ports/health-probe'
 import type { IdGenerator } from '~/ports/id-generator'
+import type { JobLock } from '~/ports/job-lock'
 import type { Lockout } from '~/ports/lockout'
 import type { Mailer } from '~/ports/mailer'
 import type { RateLimiter } from '~/ports/rate-limiter'
@@ -61,6 +62,8 @@ export interface Deps {
   secretBox: SecretBox
   /** HMACs for low-entropy secrets (codes), with keys derived from `TULA_MASTER_KEY`. */
   keyedHash: KeyedHash
+  /** Lets one API instance at a time run a background job (retention). */
+  jobLock: JobLock
   /** Dependencies checked by `/v1/ready`. */
   probes: readonly HealthProbe[]
 }

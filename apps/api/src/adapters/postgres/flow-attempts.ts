@@ -1,6 +1,6 @@
 import type { FlowKind, FlowStatus } from '@tula/contract'
 import { type Database, flowAttempts, withTenant } from '@tula/db'
-import { and, eq, gt, isNull, lte } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, lte } from 'drizzle-orm'
 import type {
   FlowAttemptChange,
   FlowAttemptRecord,
@@ -95,11 +95,29 @@ export class PostgresFlowAttemptStore implements FlowAttemptStore {
   }
 
   /** @inheritdoc */
-  async deleteExpired(environmentId: string, now: Date): Promise<number> {
+  async deleteExpired(environmentId: string, now: Date, limit: number): Promise<number> {
     const rows = await withTenant(this.db, environmentId, (tx) =>
       tx
         .delete(flowAttempts)
-        .where(and(eq(flowAttempts.environmentId, environmentId), lte(flowAttempts.expiresAt, now)))
+        .where(
+          and(
+            eq(flowAttempts.environmentId, environmentId),
+            // DELETE has no LIMIT in Postgres: pick the batch in a subquery.
+            inArray(
+              flowAttempts.id,
+              tx
+                .select({ id: flowAttempts.id })
+                .from(flowAttempts)
+                .where(
+                  and(
+                    eq(flowAttempts.environmentId, environmentId),
+                    lte(flowAttempts.expiresAt, now)
+                  )
+                )
+                .limit(limit)
+            )
+          )
+        )
         .returning({ id: flowAttempts.id })
     )
     return rows.length

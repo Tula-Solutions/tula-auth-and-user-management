@@ -72,12 +72,15 @@ export interface FlowAttemptStore {
   delete(environmentId: string, id: string): Promise<void>
 
   /**
-   * Remove every attempt in an environment whose lifetime is over, completed or not. Abandoned
-   * sign-ups hold a pending password hash, so they must not be kept.
+   * Remove attempts in an environment whose lifetime is over, completed or not (and, by
+   * cascade, their verification tokens). Abandoned sign-ups hold a pending password hash, so
+   * they must not be kept. At most `limit` go per call, so no call holds locks for long; the
+   * caller repeats while a full batch comes back.
    *
    * @param environmentId - The environment to purge.
    * @param now - Current time; attempts with `expiresAt <= now` go.
+   * @param limit - The most attempts to remove in this call.
    * @returns How many attempts were removed.
    */
-  deleteExpired(environmentId: string, now: Date): Promise<number>
+  deleteExpired(environmentId: string, now: Date, limit: number): Promise<number>
 }

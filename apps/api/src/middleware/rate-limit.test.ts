@@ -1,5 +1,8 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
+import type { Deps } from '~/dependencies'
+import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
+import * as logger from '~/lib/logger'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'
 import { byEnvironment, byIp, rateLimit } from '~/middleware/rate-limit'
 import { createTestDeps, seedApiKey, TEST_CONFIG } from '~/testing'
@@ -70,5 +73,77 @@ describe('rateLimit', () => {
     expect((await keyed()).status).toBe(429)
     expect((await app.request('/test/open')).status).toBe(200)
     expect((await app.request('/test/open')).status).toBe(200)
+  })
+})
+
+describe('rateLimit when the limiter is unavailable', () => {
+  const down = new ServiceUnavailableError({ internalMessage: 'redis EVAL failed: RedisError' })
+
+  function appWith(failure: Error) {
+    const deps: Deps = {
+      ...createTestDeps(),
+      rateLimiter: { hit: () => Promise.reject(failure) },
+    }
+    const app = createApp(deps)
+    app.get('/test/strict', rateLimit({ name: 'strict', limit: 1, window: '1m', key: byIp }), (c) =>
+      c.text('ok')
+    )
+    app.get(
+      '/test/lenient',
+      rateLimit({ name: 'lenient', limit: 1, window: '1m', key: byIp, whenUnavailable: 'allow' }),
+      (c) => c.text('ok')
+    )
+    return app
+  }
+
+  test('refuses by default with the 503 envelope', async () => {
+    const error = spyOn(logger, 'error').mockImplementation(() => {})
+    const res = await appWith(down).request('/test/strict')
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({
+      status: 503,
+      code: 'service.unavailable',
+      detail: 'The service is temporarily unavailable. Try again shortly.',
+    })
+    expect(res.headers.get('retry-after')).toBeNull()
+    error.mockRestore()
+  })
+
+  test('a rule marked `allow` lets the request through uncounted and says so in the log', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    const app = appWith(down)
+    expect((await app.request('/test/lenient')).status).toBe(200)
+    expect((await app.request('/test/lenient')).status).toBe(200)
+    expect(warn).toHaveBeenCalledTimes(2)
+    expect(warn.mock.calls[0]).toEqual([
+      'rate limiter unavailable; request allowed uncounted',
+      { requestId: expect.any(String), rule: 'lenient' },
+    ])
+    warn.mockRestore()
+  })
+
+  test('`allow` covers an unavailable limiter only, not a limiter that is broken', async () => {
+    const error = spyOn(logger, 'error').mockImplementation(() => {})
+    const res = await appWith(new Error('bug')).request('/test/lenient')
+    expect(res.status).toBe(500)
+    expect(((await res.json()) as { code: string }).code).toBe('internal')
+    error.mockRestore()
+  })
+
+  test('only the ceilings that guard nothing guessable are marked `allow`', async () => {
+    // The whole-group client ceiling lets a request through; a credential step's own limit,
+    // counted next, refuses it.
+    const error = spyOn(logger, 'error').mockImplementation(() => {})
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    const app = appWith(down)
+    const res = await app.request('/v1/client/sign-ins', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ identifier: 'maya@northline.app' }),
+    })
+    expect(res.status).toBe(503)
+    expect(warn.mock.calls.map(([, context]) => context?.rule)).toEqual(['client'])
+    error.mockRestore()
+    warn.mockRestore()
   })
 })

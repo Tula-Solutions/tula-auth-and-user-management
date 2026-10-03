@@ -143,6 +143,8 @@ describe('createDatabase', () => {
   test('builds a pooled client lazily and closes cleanly', async () => {
     const handle = createDatabase('postgres://nobody@127.0.0.1:1/none', { max: 1 })
     expect(typeof handle.db.select).toBe('function')
+    // The advisory lock takes its own connection from the same pool: nothing listens here.
+    await expect(handle.withAdvisoryLock([1, 1], async () => 'unreachable')).rejects.toThrow()
     await handle.close()
   })
 })

@@ -113,7 +113,16 @@ export async function revoke(deps: Pick<Deps, 'sessions' | 'clock'>, sessionId: 
 `apps/api/src/adapters/<tech>/`. `apps/api/src/container.ts` is the only place that picks adapters.
 Add a port **only when there are two or more real implementations** on the roadmap (session store,
 mailer, breach checker, key store, rate limiter, clock, id generator, repositories). Every port has
-a memory adapter used by unit tests via `createTestDeps()`.
+a memory adapter used by unit tests via `createTestDeps()`. The rate limiter, lockout and
+revoked-session list also have Redis adapters (`adapters/redis/`), chosen when `REDIS_URL` is
+set so that several API instances share them; they are unit-tested on `FakeRedis` and proved
+against a real server by `redis.integration.ts` ([ADR 0016](docs/adr/0016-redis-and-multiple-instances.md)).
+
+**Background jobs** are service functions `server.ts` runs on boot and on a timer, on every
+instance; `deps.jobLock.runExclusive(job, fn)` lets one instance through and the others skip
+the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). The only one so
+far is `modules/retention`, which has no router. Its deletes go through store methods that take
+an environment, a cutoff and a batch limit, never through a query of its own.
 
 Register routers in `apps/api/src/index.ts` with lazy imports:
 `app.route('/v1/client/sessions', (await import('~/modules/session/router')).default)`.
@@ -170,7 +179,14 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   superusers bypass RLS. Migrations run as the owner via `DATABASE_MIGRATION_URL`.
 - `api_keys` is the one table with tenant columns but no RLS: resolving a key is what determines
   the tenant. Only key resolution and the admin key routes (`modules/project`) touch it, and
-  every query except the lookup by hash filters by environment.
+  every query except the lookup by hash filters by environment. It still has the composite
+  `(environment_id, project_id)` foreign key, declared in its own schema file.
+- **Rows that expire are deleted by the retention job** (`modules/retention`,
+  [ADR 0017](docs/adr/0017-retention.md)): expired flow attempts, verification tokens an hour
+  past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
+  cascade). A new table of short-lived rows gets a batched purge method on its store, in both
+  adapters and the shared suite, and a line in that job. Audit entries and outbox events are
+  never deleted by it.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 
@@ -197,12 +213,20 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   flows: [ADR 0009](docs/adr/0009-flows.md); users: [ADR 0010](docs/adr/0010-user-management.md);
   rate limits and lockout: [ADR 0011](docs/adr/0011-rate-limits-and-lockout.md); events and the
   audit log: [ADR 0012](docs/adr/0012-events-and-audit-log.md); password reset:
-  [ADR 0015](docs/adr/0015-password-reset.md).
+  [ADR 0015](docs/adr/0015-password-reset.md); Redis and several instances:
+  [ADR 0016](docs/adr/0016-redis-and-multiple-instances.md); retention:
+  [ADR 0017](docs/adr/0017-retention.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
   that checks a guessable secret (a password) also goes through `deps.lockout` with
   `CREDENTIAL_LOCKOUT`: count the attempt first, clear it on success.
+- **Shared state fails closed.** When the store behind the rate limiter, the lockout or the
+  revoked-session list cannot answer, the adapter throws `ServiceUnavailableError`
+  (`service.unavailable`, 503); it never reports "allowed" or "not revoked", and nothing falls
+  back to process memory. A rate-limit rule may opt out with `whenUnavailable: 'allow'` only
+  when nothing guessable or costly sits behind it (ADR 0016). Keys written to Redis hold ids
+  and keyed hashes, never an email or IP address.
 - Cookies: `HttpOnly`, `Secure`, `SameSite=Lax` (or stricter), scoped path. Use the helpers in
   `~/modules/session/cookies`; never set the refresh cookie by hand.
 - Revoking a session must go through `~/modules/session/service` so its id is denylisted:
@@ -222,8 +246,13 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 
 - `bun test` (`import { describe, test, expect, spyOn } from 'bun:test'`), colocated `*.test.ts`.
 - Unit tests use `createTestDeps()` (memory adapters, fixed clock) — no network, no Docker.
-- Tests that need Postgres are named `*.integration.ts` and run with the docker-compose
-  database (`bun run test:integration`).
+- Tests that need Postgres or Redis are named `*.integration.ts` and run with the docker-compose
+  services (`bun run test:integration`; Redis at `REDIS_TEST_URL`, default `redis://127.0.0.1:6379`).
+  A port with more than one adapter has a behaviour suite (`adapters/<port>.suite.ts`) that
+  every adapter runs.
+- **A test that spawns a process gives the spawn a `timeout`.** `Bun.spawnSync` blocks the
+  thread the test runner's own timeout runs on, so a child that never exits hangs the whole run
+  instead of failing one test (`.claude/hooks/*.test.ts` show the pattern).
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
 - Route tests call `createApp(createTestDeps()).request(...)`.
@@ -277,9 +306,10 @@ apps/api/src/
 ├── testing.ts        # createTestDeps(): memory adapters + FixedClock
 ├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor
 ├── ports/            # interfaces the domain depends on
-├── adapters/         # memory/, postgres/, system/, cache/, breach/, mail/
+├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/
 ├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, request-log
-└── modules/          # flow, password, session, jwks, verification, user, audit, project, status
+└── modules/          # flow, password, session, jwks, verification, user, audit, project, status,
+                      # retention (a background job: service only, no router)
 ```
 
 ## Common commands
@@ -288,7 +318,8 @@ apps/api/src/
 bun install
 docker compose up -d        # postgres, redis, mailpit (http://localhost:8025)
 docker compose --profile app up -d --build
-                            # also migrations + the packaged API image (docs/self-host.md)
+                            # also migrations + two instances of the packaged API image, on
+                            # ports 3003 and 3004 (docs/self-host.md)
                             # roles come from docker/postgres/init.sql on a FRESH volume only;
                             # after changing it: docker compose --profile app down -v
                             # (wipes local data; the profile also stops the packaged API)
@@ -309,6 +340,7 @@ bun run db:migrate          # apply migrations as the schema owner (DATABASE_MIG
 bun run seed                # local workspace, default project, dev + prod environments
 bun run api-key:create --environment <id> [--kind secret|publishable]
                             # mint a key (printed once); bootstraps the first secret key
-bun run test:integration    # Postgres tests against docker compose (needs .env)
+bun run test:integration    # Postgres and Redis tests against docker compose (needs .env)
 bun run conformance         # run conformance/ scenarios against a live server (see conformance/README.md)
+                            # CONFORMANCE_SECOND_BASE_URL=http://localhost:3004 also checks a second instance
 ```
