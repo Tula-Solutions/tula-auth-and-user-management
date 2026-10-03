@@ -10,6 +10,7 @@ export const RESERVED_HEADERS: ReadonlySet<string> = new Set([
   'content-type',
   'user-agent',
   'x-forwarded-for',
+  'x-tula-attempt',
   'x-tula-client',
   'x-tula-publishable-key',
 ])
@@ -36,6 +37,12 @@ export const RequestSchema = z
     /** Value of `x-tula-client`. Scenarios use a native kind so tokens arrive in the body. */
     client: z.enum(['web', 'ios', 'android', 'server']).optional(),
     /**
+     * The secret of the attempt the request continues, sent as `x-tula-attempt`: the
+     * `attemptSecret` a start step captured, e.g. `{{signInSecret}}`. Every call on an attempt
+     * after its start needs it; leave it out (or send a wrong one) to show the refusal.
+     */
+    attempt: z.string().optional(),
+    /**
      * JSON body. An object of the form `{ "$json": "{{name}}" }`, anywhere in it, is replaced
      * by the JSON value a `captureJson` stored in that variable, so a document read in one step
      * can be sent back whole in a later one.
@@ -43,8 +50,8 @@ export const RequestSchema = z
     body: z.unknown().optional(),
     /**
      * Extra request headers, e.g. `{ "If-Match": "{{etag}}" }` or `{ "Origin": "…" }`. The
-     * headers the runner sets itself (keys, client kind, content type, forwarded address) cannot
-     * be set here.
+     * headers the runner sets itself (keys, client kind, attempt secret, content type, forwarded
+     * address) cannot be set here.
      */
     headers: z.record(z.string().regex(HEADER_NAME), z.string()).optional(),
     /**

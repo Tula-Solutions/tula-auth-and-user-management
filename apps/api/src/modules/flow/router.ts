@@ -5,15 +5,18 @@ import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv, TenantVariables } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { clientIp } from '~/lib/client-ip'
+import { originMayUseCookies } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import * as Flows from '~/modules/flow/service'
 import { setRefreshCookie } from '~/modules/session/cookies'
 import * as openapi from '~/openapi'
 import {
+  AttemptHeaderSchema,
   AttemptIdParamSchema,
   CLIENT_HEADER,
   ClientHeaderSchema,
+  FLOW_ATTEMPT_HEADER,
   FlowAttemptSchema,
   PasswordAttemptRequestSchema,
   PasswordResetRequestSchema,
@@ -56,12 +59,29 @@ const DELIVERY =
   ' When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, ' +
   'the default) receive the refresh token as an httpOnly cookie, other clients in the body.'
 
-function clientContext(c: FlowContext, client: Flows.ClientContext['client'] | undefined) {
+const START =
+  ' The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on ' +
+  'every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused ' +
+  'with `request.origin_not_allowed` from an origin the environment does not allow.'
+
+const BOUND =
+  ' Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers ' +
+  '`flow.not_found`.'
+
+/**
+ * The requesting device, and whether its origin may set this environment's cookies. The one
+ * place a flow route's context is built, so every route applies the same origin rule.
+ */
+async function clientContext(
+  c: FlowContext,
+  client?: Flows.ClientContext['client']
+): Promise<Flows.ClientContext> {
   return {
     client: client ?? 'web',
     userAgent: c.req.header('user-agent') ?? null,
     ipAddress: clientIp(c, c.get('deps').config.trustProxy),
-  } satisfies Flows.ClientContext
+    originAllowed: await originMayUseCookies(c),
+  }
 }
 
 /**
@@ -91,12 +111,14 @@ router.post(
       'Checks the email and password and emails a 6-digit code. The account is created when ' +
       'the code is verified. The response is the same whether or not the address already has ' +
       'an account. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how ' +
-      'tokens are delivered when the flow completes.',
+      'tokens are delivered when the flow completes.' +
+      START,
     security: openapi.security.client,
     responses: {
       413: openapi.responses[413],
       200: attemptResponse('The attempt, waiting on email verification.'),
       // `auth.method_disabled`: the environment has switched password sign-in off.
+      // `request.origin_not_allowed`: a browser attempt from an origin that is not allowed.
       403: openapi.responses[403],
       ...errors,
     },
@@ -106,7 +128,7 @@ router.post(
   validator('header', ClientHeaderSchema, validationHook),
   validator('json', SignUpRequestSchema, validationHook),
   async (c) => {
-    const context = clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
     return respond(
       c,
       await Flows.signUp(c.get('deps'), c.get('tenant'), c.req.valid('json'), context)
@@ -121,13 +143,18 @@ router.post(
     tags: ['Flows'],
     summary: 'Start a sign-in',
     description:
-      'Always answers `needs_password`, whether or not the identifier belongs to an account. ' +
-      'Send `x-tula-client` to choose how tokens are delivered when the flow completes.',
+      'Answers with the first factors the environment offers: `needs_password` when the ' +
+      'password is its only sign-in method, `needs_first_factor` with the enabled strategies ' +
+      'otherwise. The answer depends only on the environment’s settings, never on the ' +
+      'identifier: it is the same whether or not the address has an account. ' +
+      'Send `x-tula-client` to choose how tokens are delivered when the flow completes.' +
+      START,
     security: openapi.security.client,
     responses: {
       413: openapi.responses[413],
-      200: attemptResponse('The attempt, waiting on a password.'),
+      200: attemptResponse('The attempt, waiting on a first factor.'),
       // `auth.method_disabled`: the environment has switched password sign-in off.
+      // `request.origin_not_allowed`: a browser attempt from an origin that is not allowed.
       403: openapi.responses[403],
       ...errors,
     },
@@ -137,7 +164,7 @@ router.post(
   validator('header', ClientHeaderSchema, validationHook),
   validator('json', SignInStartRequestSchema, validationHook),
   async (c) => {
-    const context = clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
     return respond(
       c,
       await Flows.signIn(c.get('deps'), c.get('tenant'), c.req.valid('json'), context)
@@ -152,8 +179,11 @@ router.post(
     tags: ['Flows'],
     summary: 'Submit the password',
     description:
-      'Completes the sign-in, or moves it to `needs_email_verification` when the user’s email ' +
-      'is not verified yet. Every failure is the same `auth.invalid_credentials`.' +
+      'For an attempt on `needs_password`, or on `needs_first_factor` with `password` among ' +
+      'its strategies. Completes the sign-in, or moves it to `needs_email_verification` when ' +
+      'the user’s email is not verified yet, or to `needs_second_factor` (no tokens) when the ' +
+      'user has a second factor. Every failure is the same `auth.invalid_credentials`.' +
+      BOUND +
       DELIVERY,
     security: openapi.security.client,
     responses: {
@@ -168,6 +198,7 @@ router.post(
   limited('sign_in_password'),
   publishableKey(),
   validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
   validator('json', PasswordAttemptRequestSchema, validationHook),
   async (c) =>
     respond(
@@ -175,9 +206,9 @@ router.post(
       await Flows.submitPassword(
         c.get('deps'),
         c.get('tenant'),
-        c.req.valid('param').attemptId,
+        { id: c.req.valid('param').attemptId, secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER] },
         c.req.valid('json').password,
-        clientContext(c, undefined)
+        await clientContext(c)
       )
     )
 )
@@ -194,7 +225,9 @@ for (const [kind, path, tag] of [
       summary: 'Submit the emailed code',
       description:
         'Verifies the 6-digit code for an attempt waiting on `needs_email_verification` and ' +
-        'completes it. A code allows five guesses and lasts ten minutes.' +
+        'completes it (a sign-in of a user with a second factor moves to ' +
+        '`needs_second_factor` instead). A code allows five guesses and lasts ten minutes.' +
+        BOUND +
         DELIVERY,
       security: openapi.security.client,
       responses: {
@@ -210,6 +243,7 @@ for (const [kind, path, tag] of [
     limited(`${kind}_verify`),
     publishableKey(),
     validator('param', AttemptIdParamSchema, validationHook),
+    validator('header', AttemptHeaderSchema, validationHook),
     validator('json', VerifyEmailRequestSchema, validationHook),
     async (c) =>
       respond(
@@ -218,9 +252,12 @@ for (const [kind, path, tag] of [
           c.get('deps'),
           c.get('tenant'),
           kind,
-          c.req.valid('param').attemptId,
+          {
+            id: c.req.valid('param').attemptId,
+            secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+          },
           c.req.valid('json').code,
-          clientContext(c, undefined)
+          await clientContext(c)
         )
       )
   )
@@ -235,12 +272,14 @@ router.post(
     description:
       'Emails a 6-digit code to the address. The response is the same whether or not the ' +
       'address has an account. Send `x-tula-client` to choose how tokens are delivered when ' +
-      'the reset completes.',
+      'the reset completes.' +
+      START,
     security: openapi.security.client,
     responses: {
       413: openapi.responses[413],
       200: attemptResponse('The attempt, waiting on the code and a new password.'),
       // `auth.method_disabled`: the environment has switched password sign-in off.
+      // `request.origin_not_allowed`: a browser attempt from an origin that is not allowed.
       403: openapi.responses[403],
       ...errors,
     },
@@ -250,7 +289,7 @@ router.post(
   validator('header', ClientHeaderSchema, validationHook),
   validator('json', PasswordResetStartRequestSchema, validationHook),
   async (c) => {
-    const context = clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
     return respond(
       c,
       await Flows.startPasswordReset(c.get('deps'), c.get('tenant'), c.req.valid('json'), context)
@@ -266,8 +305,11 @@ router.post(
     summary: 'Submit the emailed code and a new password',
     description:
       'Checks the 6-digit code, stores the new password, ends every existing session of the ' +
-      'user and signs them in. A code allows five guesses and lasts ten minutes; a new ' +
+      'user and signs them in. A user with a second factor is not signed in: the attempt ' +
+      'moves to `needs_second_factor` with the new password already stored. A user who had no ' +
+      'password gets their first one. A code allows five guesses and lasts ten minutes; a new ' +
       'password the policy rejects uses one guess but not the code.' +
+      BOUND +
       DELIVERY,
     security: openapi.security.client,
     responses: {
@@ -283,6 +325,7 @@ router.post(
   limited('password_reset_submit'),
   publishableKey(),
   validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
   validator('json', PasswordResetRequestSchema, validationHook),
   async (c) =>
     respond(
@@ -290,9 +333,9 @@ router.post(
       await Flows.resetPassword(
         c.get('deps'),
         c.get('tenant'),
-        c.req.valid('param').attemptId,
+        { id: c.req.valid('param').attemptId, secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER] },
         c.req.valid('json'),
-        clientContext(c, undefined)
+        await clientContext(c)
       )
     )
 )
@@ -310,13 +353,15 @@ for (const [kind, path, tag] of [
       summary: 'Resend the email code',
       description:
         'Emails a fresh code and retires the previous one. Limited to one email a minute and ' +
-        'five an hour per address.',
+        'five an hour per address.' +
+        BOUND,
       security: openapi.security.client,
       responses: {
         200: attemptResponse('The attempt, still waiting on the emailed code.'),
         404: openapi.responses[404],
         409: openapi.responses[409],
         // `auth.method_disabled`: the environment has switched password sign-in off.
+        // `request.origin_not_allowed`: a browser attempt from an origin that is not allowed.
         403: openapi.responses[403],
         ...errors,
       },
@@ -324,10 +369,20 @@ for (const [kind, path, tag] of [
     limited(`${kind}_resend`, SIGN_UP_RATE_LIMIT),
     publishableKey(),
     validator('param', AttemptIdParamSchema, validationHook),
+    validator('header', AttemptHeaderSchema, validationHook),
     async (c) =>
       respond(
         c,
-        await Flows.resendCode(c.get('deps'), c.get('tenant'), kind, c.req.valid('param').attemptId)
+        await Flows.resendCode(
+          c.get('deps'),
+          c.get('tenant'),
+          kind,
+          {
+            id: c.req.valid('param').attemptId,
+            secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+          },
+          await clientContext(c)
+        )
       )
   )
 }

@@ -68,8 +68,10 @@ router.post(
     tags: ['Users'],
     summary: 'Create a user',
     description:
-      'Creates a user with a password that must meet the environment’s policy. The email is ' +
-      'unverified unless `emailVerified` is true. A taken email answers 409.',
+      'Creates a user. A `password`, when given, must meet the environment’s policy; without ' +
+      'one the user has no password and gets one through a password reset or the admin ' +
+      '"set password". The email is unverified unless `emailVerified` is true. A taken email ' +
+      'answers 409.',
     security: openapi.security.admin,
     responses: {
       413: openapi.responses[413],
@@ -186,7 +188,8 @@ router.put(
     tags: ['Users'],
     summary: 'Set a user’s password',
     description:
-      'Replaces the password (it must meet the policy) and ends every session of the user.',
+      'Replaces the password (it must meet the policy), or creates it for a user who has ' +
+      'none, and ends every session of the user.',
     security: openapi.security.admin,
     responses: {
       413: openapi.responses[413],
@@ -247,12 +250,16 @@ router.post(
     summary: 'Change my password',
     description:
       'Requires the current password. On success the user’s other sessions end and this ' +
-      'device stays signed in. A wrong current password answers `auth.invalid_credentials`.',
+      'device stays signed in. A wrong current password answers `auth.invalid_credentials`. ' +
+      'An account that has no password answers `password.not_set` (409): a first password is ' +
+      'set through a password reset.',
     security: openapi.security.session,
     responses: {
       413: openapi.responses[413],
       204: { description: 'The password was changed.' },
       401: openapi.responses[401],
+      // `password.not_set`: the account has no password to change.
+      409: openapi.responses[409],
       422: openapi.responses[422],
       429: openapi.responses[429],
       500: openapi.responses[500],

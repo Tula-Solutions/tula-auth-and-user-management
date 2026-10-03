@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
 import * as Passwords from '~/modules/password/service'
@@ -282,13 +282,41 @@ describe('setPassword (admin)', () => {
     expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
   })
 
-  test('does not report success, or end sessions, when no password was stored', async () => {
+  test('does not report success, or end sessions, when the user vanished before the password was stored', async () => {
     const user = await create()
     const tokens = await signIn(user.id)
-    deps.users.setPasswordHash = async () => false
+    deps.users.setPasswordHash = async () => null
     const err = await rejection(Users.setPassword(deps, tenant, user.id, NEW_PASSWORD, TEST_ACTOR))
-    expect(err.status).toBe(409)
+    expect(err.status).toBe(404)
     expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
+  })
+
+  test('gives a user who has no password their first one, recorded as created', async () => {
+    const user = await create({ password: undefined })
+    expect(await storedPassword()).toBeNull()
+    const tokens = await signIn(user.id)
+    await Users.setPassword(deps, tenant, user.id, NEW_PASSWORD, TEST_ACTOR)
+
+    expect(await Passwords.verify(await storedPassword(), NEW_PASSWORD)).toBe(true)
+    expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
+    expect(deps.activityLog.ofType('user.password_changed').map((entry) => entry.data)).toEqual([
+      { method: 'admin_reset', created: true },
+    ])
+    // The next one is an ordinary replacement.
+    await Users.setPassword(deps, tenant, user.id, PASSWORD, TEST_ACTOR)
+    expect(deps.activityLog.ofType('user.password_changed').map((entry) => entry.data)).toEqual([
+      { method: 'admin_reset', created: true },
+      { method: 'admin_reset' },
+    ])
+  })
+
+  test('the policy applies to a first password too, and a rejected one creates nothing', async () => {
+    const user = await create({ password: undefined, firstName: 'Maya', lastName: 'Okafor' })
+    const err = await rejection(
+      Users.setPassword(deps, tenant, user.id, 'okafor-okafor-okafor', TEST_ACTOR)
+    )
+    expect(err.code).toBe('password.contains_user_info')
+    expect(await storedPassword()).toBeNull()
   })
 
   test('answers 404 for unknown users and other environments', async () => {
@@ -300,6 +328,96 @@ describe('setPassword (admin)', () => {
       (await rejection(Users.setPassword(deps, otherTenant, user.id, NEW_PASSWORD, TEST_ACTOR)))
         .status
     ).toBe(404)
+  })
+})
+
+describe('create without a password', () => {
+  test('creates a user with no password credential, and says so in the audit entry', async () => {
+    const user = await create({ password: undefined, emailVerified: true })
+    expect(user).toMatchObject({ email: 'Maya@Northline.app', emailVerifiedAt: expect.any(String) })
+    expect(
+      await deps.users.findByEmailWithPassword(tenant.environmentId, 'maya@northline.app')
+    ).toMatchObject({ user: { id: user.id }, passwordHash: null })
+    expect(deps.activityLog.ofType('user.created').map((entry) => entry.data)).toEqual([
+      { method: 'admin', emailVerified: true, passwordless: true },
+    ])
+  })
+
+  test('a user created with a password is not marked passwordless', async () => {
+    await create()
+    expect(deps.activityLog.ofType('user.created').map((entry) => entry.data)).toEqual([
+      { method: 'admin', emailVerified: false },
+    ])
+  })
+
+  test('still refuses a malformed or taken email', async () => {
+    expect((await rejection(create({ password: undefined, email: 'nope' }))).code).toBe(
+      'email.invalid'
+    )
+    await create({ password: undefined })
+    expect((await rejection(create({ password: undefined }))).status).toBe(409)
+  })
+})
+
+describe('changePassword on an account with no password', () => {
+  async function setup() {
+    const user = await create({ password: undefined })
+    const current = await signIn(user.id)
+    const change = (currentPassword: string) =>
+      Users.changePassword(
+        deps,
+        tenant,
+        { userId: user.id, sessionId: current.sessionId },
+        { currentPassword, newPassword: NEW_PASSWORD }
+      )
+    return { user, current, change }
+  }
+
+  test('answers password.not_set and sets nothing, whatever is sent as the current password', async () => {
+    const { current, change } = await setup()
+    for (const guess of ['', 'anything', NEW_PASSWORD]) {
+      const err = await rejection(change(guess))
+      expect(err.toJSON()).toMatchObject({ status: 409, code: 'password.not_set' })
+    }
+    expect(await storedPassword()).toBeNull()
+    expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+    expect((await session(current.sessionId))?.revokedAt).toBeNull()
+  })
+
+  test('is not counted as a wrong guess, and checks no password', async () => {
+    const { change } = await setup()
+    const lockout = spyOn(deps.lockout, 'attempt')
+    const verify = spyOn(Bun.password, 'verify')
+    try {
+      for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts + 3; i++) {
+        expect((await rejection(change('x'))).code).toBe('password.not_set')
+      }
+      expect(lockout).not.toHaveBeenCalled()
+      expect(verify).not.toHaveBeenCalled()
+    } finally {
+      lockout.mockRestore()
+      verify.mockRestore()
+    }
+  })
+
+  test('says nothing about anyone else: an account that no longer exists is a generic failure', async () => {
+    const { user, change } = await setup()
+    await deps.users.delete(tenant.environmentId, user.id)
+    expect((await rejection(change('x'))).code).toBe('auth.invalid_credentials')
+  })
+
+  test('once a password exists, changing it works as usual', async () => {
+    const { user, change } = await setup()
+    await Users.setPassword(deps, tenant, user.id, PASSWORD, TEST_ACTOR)
+    const current = await signIn(user.id)
+    await Users.changePassword(
+      deps,
+      tenant,
+      { userId: user.id, sessionId: current.sessionId },
+      { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }
+    )
+    expect(await Passwords.verify(await storedPassword(), NEW_PASSWORD)).toBe(true)
+    expect((await rejection(change('x'))).code).toBe('auth.invalid_credentials')
   })
 })
 

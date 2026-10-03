@@ -108,7 +108,20 @@ describe('admin: /v1/admin/users', () => {
     const weak = await admin('POST', '', { email: 'new@northline.app', password: 'short' })
     expect(weak.status).toBe(422)
     expect(await code(weak)).toBe('password.too_short')
-    expect((await admin('POST', '', { email: 'new@northline.app' })).status).toBe(422)
+    expect((await admin('POST', '', { password: PASSWORD })).status).toBe(422)
+  })
+
+  test('creates a user without a password, who then gets one from the admin', async () => {
+    const created = await admin('POST', '', { email: 'social@northline.app', emailVerified: true })
+    expect(created.status).toBe(201)
+    const user = await json<User>(created)
+    expect(JSON.stringify(user)).not.toContain('password')
+    const lookup = () => deps.users.findByEmailWithPassword(tenant.environmentId, user.email)
+    expect((await lookup())?.passwordHash).toBeNull()
+
+    const set = await admin('PUT', `/${user.id}/password`, { password: NEW_PASSWORD })
+    expect(set.status).toBe(204)
+    expect(await Passwords.verify((await lookup())?.passwordHash ?? null, NEW_PASSWORD)).toBe(true)
   })
 
   test('bans and unbans a user, ending their sessions', async () => {
@@ -209,5 +222,22 @@ describe('client: /v1/client/me', () => {
         })
       )
     ).toBe('auth.unauthenticated')
+  })
+
+  test('an account with no password answers 409 password.not_set, only to its own signed-in user', async () => {
+    const created = await admin('POST', '', { email: 'social@northline.app', emailVerified: true })
+    const user = await json<User>(created)
+    const tokens = await signIn(user.id)
+    const body = { currentPassword: 'anything', newPassword: NEW_PASSWORD }
+    const res = await client('POST', '/me/password', tokens.accessToken, body)
+    expect(res.status).toBe(409)
+    expect(await json(res)).toMatchObject({ status: 409, code: 'password.not_set' })
+    expect(
+      (await deps.users.findByEmailWithPassword(tenant.environmentId, user.email))?.passwordHash
+    ).toBeNull()
+    // Without that user's access token the route says nothing about the account.
+    expect(await code(await client('POST', '/me/password', undefined, body))).toBe(
+      'auth.unauthenticated'
+    )
   })
 })

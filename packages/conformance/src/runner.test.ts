@@ -126,6 +126,83 @@ describe('runScenario', () => {
     expect(second?.headers['content-type']).toBeUndefined()
   })
 
+  test('attempt sends the captured secret as x-tula-attempt, and nothing when it is left out', async () => {
+    const { target, requests } = fakeTarget((_seen, index) =>
+      index === 0
+        ? { status: 200, body: { id: 'a1', attemptSecret: 'tula_at_s3cret' } }
+        : { status: 404 }
+    )
+    const result = await runScenario(
+      scenario([
+        {
+          name: 'start',
+          request: { method: 'POST', path: '/v1/client/sign-ins', body: {} },
+          expect: { status: 200 },
+          capture: { id: 'id', secret: 'attemptSecret' },
+        },
+        {
+          name: 'with the secret',
+          request: {
+            method: 'POST',
+            path: '/v1/client/sign-ins/{{id}}/password',
+            attempt: '{{secret}}',
+            body: {},
+          },
+          expect: { status: 404 },
+        },
+        {
+          name: 'with a wrong one',
+          request: {
+            method: 'POST',
+            path: '/v1/client/sign-ins/{{id}}/password',
+            attempt: '{{secret}}x',
+            body: {},
+          },
+          expect: { status: 404 },
+        },
+        {
+          name: 'without',
+          request: { method: 'POST', path: '/v1/client/sign-ins/{{id}}/password', body: {} },
+          expect: { status: 404 },
+        },
+      ]),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(requests.map((request) => request.headers['x-tula-attempt'])).toEqual([
+      undefined,
+      'tula_at_s3cret',
+      'tula_at_s3cretx',
+      undefined,
+    ])
+  })
+
+  test('a captured attempt secret is never printed in a failure', async () => {
+    const { target } = fakeTarget((_seen, index) =>
+      index === 0
+        ? { status: 200, body: { id: 'a1', attemptSecret: 'tula_at_s3cret-value' } }
+        : { status: 200, body: { echoed: 'tula_at_s3cret-value' } }
+    )
+    const result = await runScenario(
+      scenario([
+        {
+          name: 'start',
+          request: { method: 'POST', path: '/v1/client/sign-ins', body: {} },
+          expect: { status: 200 },
+          capture: { secret: 'attemptSecret' },
+        },
+        {
+          name: 'echo',
+          request: get('/v1/x'),
+          expect: { status: 200, body: { echoed: 'something else' } },
+        },
+      ]),
+      target
+    )
+    expect(result.status).toBe('failed')
+    expect(JSON.stringify(result)).not.toContain('tula_at_s3cret-value')
+  })
+
   test('auth decides which key is sent', async () => {
     const { target, requests } = fakeTarget(() => ({ status: 200 }))
     await runScenario(

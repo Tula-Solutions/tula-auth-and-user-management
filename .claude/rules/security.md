@@ -36,3 +36,17 @@ Before finishing any change here, confirm each item holds and has a test:
 11. **Signing keys:** a key is published as `next` for at least `NEXT_KEY_MIN_AGE_MS` before it signs;
     private keys only ever leave the database sealed (`~/lib/secret-box`) and live in memory as
     non-extractable `CryptoKey`s.
+12. **Attempt binding:** every flow step loads its attempt through the flow service's `load`, which
+    requires the attempt's secret (`x-tula-attempt`). Missing, wrong, another attempt's, or an
+    attempt with no stored hash: the same `flow.not_found` as an unknown attempt, with nothing
+    counted, spent or sent. The secret is returned only by the start, stored only as SHA-256 and
+    never logged or audited. Test every new step with each of those.
+13. **Origin of a browser flow:** an attempt started as `web` is refused
+    (`request.origin_not_allowed`) at its start and at every step from an origin the environment
+    does not allow, before any state changes (no guess counted, no code consumed, no session, no
+    `Set-Cookie`). Test it at the router for every route that can complete a flow.
+14. **First factors:** what a sign-in start offers comes from the environment's settings only
+    (`Factors.firstFactors`), never from the identifier or the account.
+15. **Second factor:** nothing reaches `complete` past a required second factor. A step that
+    accepts a first factor (or a reset) asks `Factors.requiredFor` and returns no tokens on
+    `needs_second_factor`. Test that no session exists until the factor is proven.

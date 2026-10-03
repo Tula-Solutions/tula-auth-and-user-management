@@ -4,7 +4,8 @@ import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
 import type { Activity } from '~/ports/activity-log'
 import type {
-  NewUserWithPassword,
+  NewUser,
+  PasswordOutcome,
   UserListCriteria,
   UserRecord,
   UserRepository,
@@ -105,7 +106,7 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async createWithPassword(user: NewUserWithPassword, activity?: Activity): Promise<boolean> {
+  async create(user: NewUser, activity?: Activity): Promise<boolean> {
     const { identityId, credentialId, passwordHash, ...record } = user
     const scope = { projectId: user.projectId, environmentId: user.environmentId }
     const stamps = { createdAt: user.createdAt, updatedAt: user.createdAt }
@@ -120,14 +121,16 @@ export class PostgresUserRepository implements UserRepository {
           providerSubject: user.emailNormalized,
           ...stamps,
         })
-        await tx.insert(credentials).values({
-          id: credentialId,
-          ...scope,
-          userId: user.id,
-          type: 'password',
-          secret: passwordHash,
-          ...stamps,
-        })
+        if (passwordHash !== null) {
+          await tx.insert(credentials).values({
+            id: credentialId,
+            ...scope,
+            userId: user.id,
+            type: 'password',
+            secret: passwordHash,
+            ...stamps,
+          })
+        }
         await recordActivity(tx, activity ? [activity] : [])
       })
       return true
@@ -147,22 +150,51 @@ export class PostgresUserRepository implements UserRepository {
     passwordHash: string,
     at: Date,
     activity?: Activity
-  ): Promise<boolean> {
+  ): Promise<PasswordOutcome | null> {
     return withTenant(this.db, environmentId, async (tx) => {
-      const rows = await tx
-        .update(credentials)
-        .set({ secret: passwordHash, updatedAt: at })
-        .where(
-          and(
-            eq(credentials.userId, userId),
-            eq(credentials.environmentId, environmentId),
-            eq(credentials.type, 'password')
-          )
-        )
-        .returning({ id: credentials.id })
-      const replaced = rows.length === 1
-      await recordActivity(tx, replaced && activity ? [activity] : [])
-      return replaced
+      // The row lock keeps the user from being deleted between this read and the write below,
+      // which needs their project for a new credential row.
+      const [owner] = await tx
+        .select({ projectId: users.projectId })
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .limit(1)
+        .for('share')
+      if (!owner) {
+        return null
+      }
+      // One statement creates or replaces, so two concurrent first passwords cannot both
+      // insert: the second lands on the unique (user, type) key and updates instead.
+      const [row] = await tx
+        .insert(credentials)
+        .values({
+          projectId: owner.projectId,
+          environmentId,
+          userId,
+          type: 'password',
+          secret: passwordHash,
+          createdAt: at,
+          updatedAt: at,
+        })
+        .onConflictDoUpdate({
+          target: [credentials.userId, credentials.type],
+          set: { secret: passwordHash, updatedAt: at },
+        })
+        // `xmax` is 0 on a row this statement inserted and the updating transaction's id on
+        // one it updated: the standard way to tell the two apart in an upsert.
+        .returning({ created: sql<boolean>`(xmax = 0)` })
+      const outcome: PasswordOutcome = row?.created ? 'created' : 'replaced'
+      await recordActivity(
+        tx,
+        activity
+          ? [
+              outcome === 'created'
+                ? { ...activity, data: { ...activity.data, created: true } }
+                : activity,
+            ]
+          : []
+      )
+      return outcome
     })
   }
 

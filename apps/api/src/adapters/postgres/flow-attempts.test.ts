@@ -56,6 +56,7 @@ test('a NUL character in a stored value is reported as SQLSTATE 22021, which the
     environmentId: a.environmentId,
     kind: 'sign_in',
     status: 'needs_password',
+    secretHash: 'a'.repeat(64),
     identifier: 'a\u0000b',
     userId: null,
     state: { client: 'web' },

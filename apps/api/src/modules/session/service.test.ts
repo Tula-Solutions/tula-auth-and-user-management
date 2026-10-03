@@ -275,7 +275,7 @@ describe('refresh', () => {
   })
 
   test('a banned user cannot refresh, and the attempt ends their session', async () => {
-    await deps.users.createWithPassword({
+    await deps.users.create({
       id: USER,
       projectId: tenant.projectId,
       environmentId: tenant.environmentId,
@@ -620,7 +620,7 @@ describe('activity', () => {
   })
 
   test('a banned user’s refresh records the revocation as the system’s', async () => {
-    await deps.users.createWithPassword({
+    await deps.users.create({
       id: USER,
       projectId: tenant.projectId,
       environmentId: tenant.environmentId,

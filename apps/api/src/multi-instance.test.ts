@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import type { FlowAttempt, SessionTokens } from '@tula/contract'
+import { FLOW_ATTEMPT_HEADER, type FlowAttempt, type SessionTokens } from '@tula/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { redisProbe } from '~/adapters/redis/connection'
@@ -95,7 +95,14 @@ interface Options {
   secret?: boolean
 }
 
-function call(app: App, method: string, path: string, options: Options = {}) {
+/**
+ * The secret of every attempt started through {@link call}, by attempt id. One map for both
+ * instances: an attempt started on one is continued on the other with the same secret.
+ */
+const attemptSecrets = new Map<string, string>()
+const ATTEMPT_PATH = /^\/client\/(?:sign-ups|sign-ins|password-resets)\/([^/]+)\//
+
+async function call(app: App, method: string, path: string, options: Options = {}) {
   const headers: Record<string, string> = options.secret
     ? { authorization: `Bearer ${SK}` }
     : { 'x-tula-publishable-key': PK, 'x-tula-client': 'ios' }
@@ -105,11 +112,23 @@ function call(app: App, method: string, path: string, options: Options = {}) {
   if (options.accessToken) {
     headers.authorization = `Bearer ${options.accessToken}`
   }
-  return app.request(`/v1${path}`, {
+  const attemptSecret = attemptSecrets.get(ATTEMPT_PATH.exec(path)?.[1] ?? '')
+  if (attemptSecret) {
+    headers[FLOW_ATTEMPT_HEADER] = attemptSecret
+  }
+  const res = await app.request(`/v1${path}`, {
     method,
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   })
+  const started = (await res
+    .clone()
+    .json()
+    .catch(() => null)) as Partial<FlowAttempt> | null
+  if (started?.id && started.attemptSecret) {
+    attemptSecrets.set(started.id, started.attemptSecret)
+  }
+  return res
 }
 
 const post = (app: App, path: string, body: unknown = {}) =>
@@ -405,5 +424,25 @@ describe('environment settings across instances', () => {
     expect(await appName(b)).toBe('Tula')
     shared.clock.advance(1)
     expect(await appName(b)).toBe('Northline')
+  })
+})
+
+describe('an attempt started on one instance', () => {
+  test('is continued on the other with its secret, and refused there without it', async () => {
+    await register()
+    const attempt = await json<FlowAttempt>(await post(a, '/sign-ins', { identifier: EMAIL }))
+    const secret = attemptSecrets.get(attempt.id) as string
+    expect(secret).toMatch(/^tula_at_/)
+
+    attemptSecrets.delete(attempt.id)
+    const path = `/sign-ins/${attempt.id}/password`
+    expect(await code(await post(b, path, { password: PASSWORD }))).toBe('flow.not_found')
+
+    attemptSecrets.set(attempt.id, secret)
+    const done = await post(b, path, { password: PASSWORD })
+    expect(done.status).toBe(200)
+    expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
+    // The secret never reaches the shared Redis.
+    expect(redis.keys().join('\n')).not.toContain('tula_at_')
   })
 })

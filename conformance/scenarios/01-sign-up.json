@@ -34,7 +34,8 @@
         }
       },
       "capture": {
-        "signUpId": "id"
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
       }
     },
     {
@@ -64,7 +65,8 @@
         }
       },
       "capture": {
-        "earlySignInId": "id"
+        "earlySignInId": "id",
+        "earlySignInSecret": "attemptSecret"
       }
     },
     {
@@ -72,6 +74,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ins/{{earlySignInId}}/password",
+        "attempt": "{{earlySignInSecret}}",
         "body": {
           "password": "{{password}}"
         }
@@ -88,6 +91,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
         "body": {
           "code": "{{wrongCode}}"
         }
@@ -108,6 +112,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
         "body": {
           "code": "12345"
         }
@@ -124,6 +129,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
         "body": {
           "code": "{{code}}"
         }
@@ -178,6 +184,7 @@
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
         "body": {
           "code": "{{code}}"
         }

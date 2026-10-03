@@ -145,6 +145,20 @@ The changes every new method needs, made once.
   test enumerates every combination, allowed or refused.
 - **ADR** superseding parts of 0009. **Conformance:** existing scenarios unchanged; a new one
   for a bound attempt refused without its secret.
+  *As built ([ADR 0019](../adr/0019-flow-engine-v2.md)):* attempt binding is **required from
+  this step**, not introduced additively: no client has been released, so there was nobody to
+  break, and an optional secret protects nothing. Consequently every existing scenario changed
+  (each captures `attemptSecret` and sends it through a new `attempt` request field), and
+  `13-attempt-binding` is the new one. Beyond the plan: a browser attempt is refused from an
+  origin the environment does not allow, at its start and at every step
+  (`request.origin_not_allowed`), which closes login CSRF on cookie setting; `POST
+  /v1/admin/users` accepts a user without a password. The transition context is
+  `{ strategies, emailVerified, secondFactors }` rather than the settings document: the
+  settings are reduced to strategies in one registry (`modules/factor/service.ts`) so the
+  transition function stays free of settings. The second-factor entry point
+  (`Flows.submitSecondFactor`, with a verifier registry) exists and is tested with a fake
+  factor, but has **no HTTP route** until 1.8 adds the first real factor. `needs_first_factor`
+  is likewise reachable only in tests until 1.7 adds a second method.
 
 ---
 

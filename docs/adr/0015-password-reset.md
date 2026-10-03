@@ -71,3 +71,5 @@ access the old password gave.
   notifications.
 - Users without a password credential cannot reset one into existence: `setPasswordHash`
   replaces, it does not create. Phase 1's passwordless users need that decided.
+  *Decided in [ADR 0019](0019-flow-engine-v2.md):* a reset now creates the first password, and
+  a reset by a user with a second factor leads to `needs_second_factor` instead of a session.

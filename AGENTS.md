@@ -134,6 +134,9 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 
 - `/v1/client/*` — called from browsers and apps with a **publishable key**
   (`tula_pk_<env>_…`, header `x-tula-publishable-key`). Resolves project + environment.
+  Flow routes also read `x-tula-client` (how tokens are delivered; fixed when the attempt
+  starts) and, on every call after the start, `x-tula-attempt` (the attempt's secret;
+  `FLOW_ATTEMPT_HEADER` in `@tula/contract`).
 - `/v1/admin/*` — server-to-server and the dashboard with a **secret key**
   (`Authorization: Bearer tula_sk_<env>_…`).
 - `/v1/environments/:id/.well-known/jwks.json` (the token `iss` + `/.well-known/jwks.json`; see
@@ -174,10 +177,21 @@ redirect URLs, audit retention. **Read it through `~/modules/settings/service`**
 ### Server-driven flows
 
 The API never tells a client which screen to draw; it returns the next **flow step** from
-`@tula/contract` (`needs_password`, `needs_email_verification`, `needs_new_password`,
-`needs_second_factor`, `complete`).
-Flow transitions are pure functions so they can be table-tested. Adding a sign-in method means
-adding a step on the server, not logic in each SDK.
+`@tula/contract` (`needs_password`, `needs_first_factor`, `needs_email_verification`,
+`needs_new_password`, `needs_second_factor`, `complete`). See
+[ADR 0019](docs/adr/0019-flow-engine-v2.md).
+
+- **Transitions are one pure function**, `nextStatus(kind, status, event, context)` in
+  `modules/flow/transitions.ts`. Its table test enumerates every kind × step × event; a new
+  step or event must be classified there.
+- **A sign-in method is registered in one place**: `FIRST_FACTORS` in
+  `modules/factor/service.ts` maps the environment's settings to the strategies a sign-in
+  offers; a second factor registers a verifier in `SECOND_FACTOR_VERIFIERS` and is submitted
+  through `Flows.submitSecondFactor`. Adding a method means adding an entry and the route that
+  proves it, not editing the transition function or any SDK.
+- **Every flow step starts with the service's `load`**, which checks the attempt's secret and,
+  for a browser attempt, the request's origin. Never read an attempt from the store directly
+  in a step.
 
 ### Errors
 
@@ -249,7 +263,21 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0015](docs/adr/0015-password-reset.md); Redis and several instances:
   [ADR 0016](docs/adr/0016-redis-and-multiple-instances.md); retention:
   [ADR 0017](docs/adr/0017-retention.md); per-environment settings and CORS:
-  [ADR 0018](docs/adr/0018-environment-settings.md).
+  [ADR 0018](docs/adr/0018-environment-settings.md); attempt binding, first-factor choice and
+  second factors: [ADR 0019](docs/adr/0019-flow-engine-v2.md).
+- **Every flow call after the start presents the attempt's secret** (`x-tula-attempt`). The
+  secret is 256 bits, returned once by the start, stored only as SHA-256 and never logged or
+  audited. Missing, wrong or another attempt's: the same `flow.not_found` as an unknown attempt,
+  before anything is counted, spent or sent. An attempt with no stored hash matches no secret.
+- **A browser flow is bound to an allowed origin.** An attempt started as a `web` client is
+  refused (`request.origin_not_allowed`) at its start and at every step unless the request has
+  no `Origin` or one the environment allows, before any state changes. This is what stops a
+  foreign page from having a session cookie set (login CSRF).
+- **The first factors a sign-in offers depend only on the environment's settings**, never on
+  the identifier: the start does not look the identifier up.
+- **No session before the second factor.** After a first factor, and after a password reset,
+  the engine asks `Factors.requiredFor`; a non-empty answer means `needs_second_factor` and no
+  tokens. Never call `Sessions.create` for a sign-in outside the flow service's `finish`.
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
@@ -350,7 +378,8 @@ apps/api/src/
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/
 ├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, cors, request-log
 └── modules/          # flow, password, session, jwks, verification, user, audit, project, status,
-                      # settings, email (layout + copy: service only, no router),
+                      # settings, factor (first-factor registry and second-factor hooks:
+                      # service only), email (layout + copy: service only, no router),
                       # retention (a background job: service only, no router)
 ```
 

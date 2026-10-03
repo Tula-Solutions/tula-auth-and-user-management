@@ -5,6 +5,42 @@ export const SecondFactorMethodSchema = z
   .enum(['totp', 'passkey', 'backup_code', 'sms_code'])
   .meta({ ref: 'SecondFactorMethod' })
 
+/**
+ * Request header carrying an attempt's secret.
+ *
+ * Starting a sign-up, sign-in or password reset returns `attemptSecret` once; every later call
+ * on that attempt sends it in this header. Without it (or with another attempt's) the attempt
+ * answers `flow.not_found`, so an attempt id seen in a URL, a log or an email is useless alone.
+ *
+ * @example
+ * ```ts
+ * await fetch(`${api}/v1/client/sign-ins/${attempt.id}/password`, {
+ *   method: 'POST',
+ *   headers: { [FLOW_ATTEMPT_HEADER]: attempt.attemptSecret, ...others },
+ *   body: JSON.stringify({ password }),
+ * })
+ * ```
+ */
+export const FLOW_ATTEMPT_HEADER = 'x-tula-attempt'
+
+/**
+ * Ways to prove who you are as the first step of a sign-in.
+ *
+ * Which ones a sign-in offers depends only on the environment's settings, never on the
+ * identifier, so the list says nothing about any account.
+ */
+export const FirstFactorStrategySchema = z
+  .enum([
+    'password',
+    'email_code',
+    'email_link',
+    'passkey',
+    'oauth_google',
+    'oauth_github',
+    'oauth_apple',
+  ])
+  .meta({ ref: 'FirstFactorStrategy' })
+
 /** How an email address can be verified. */
 export const EmailVerificationStrategySchema = z
   .enum(['email_code', 'email_link'])
@@ -20,6 +56,15 @@ export const FlowStepSchema = z
   .discriminatedUnion('status', [
     z.object({ status: z.literal('needs_identifier') }),
     z.object({ status: z.literal('needs_password') }),
+    z.object({
+      /**
+       * A sign-in in an environment that offers more than one first factor: prove one of
+       * `strategies`. An environment whose only method is the password answers `needs_password`
+       * instead.
+       */
+      status: z.literal('needs_first_factor'),
+      strategies: z.array(FirstFactorStrategySchema).min(1),
+    }),
     z.object({
       status: z.literal('needs_email_verification'),
       /** Masked destination, e.g. `m***@northline.app`. */
@@ -37,6 +82,10 @@ export const FlowStepSchema = z
       strategies: z.array(EmailVerificationStrategySchema).min(1),
     }),
     z.object({
+      /**
+       * The first factor was accepted and the user has a second one: prove one of `options`. No
+       * session exists and no tokens are returned until then.
+       */
       status: z.literal('needs_second_factor'),
       options: z.array(SecondFactorMethodSchema).min(1),
     }),
@@ -78,6 +127,11 @@ export const FlowAttemptSchema = z
     kind: FlowKindSchema,
     expiresAt: z.iso.datetime(),
     step: FlowStepSchema,
+    /**
+     * The attempt's secret. Present **only** in the response that starts the attempt, never
+     * again: keep it in memory and send it as {@link FLOW_ATTEMPT_HEADER} on every later call.
+     */
+    attemptSecret: z.string().optional(),
     /** Present only when `step.status === 'complete'`. */
     session: SessionTokensSchema.optional(),
   })
@@ -98,7 +152,10 @@ export const SignInStartRequestSchema = z
   .object({ identifier: z.string().max(320) })
   .meta({ ref: 'SignInStartRequest' })
 
-/** Submit a password for a sign-in attempt waiting on `needs_password`. */
+/**
+ * Submit a password for a sign-in attempt waiting on `needs_password`, or on
+ * `needs_first_factor` with `password` among its strategies.
+ */
 export const PasswordAttemptRequestSchema = z
   .object({ password: z.string().max(1024) })
   .meta({ ref: 'PasswordAttemptRequest' })
@@ -118,6 +175,8 @@ export const PasswordResetRequestSchema = z
   .object({ code: z.string().regex(/^\d{6}$/), password: z.string().max(1024) })
   .meta({ ref: 'PasswordResetRequest' })
 
+/** First-factor strategy. */
+export type FirstFactorStrategy = z.infer<typeof FirstFactorStrategySchema>
 /** Second-factor method. */
 export type SecondFactorMethod = z.infer<typeof SecondFactorMethodSchema>
 /** Email verification strategy. */

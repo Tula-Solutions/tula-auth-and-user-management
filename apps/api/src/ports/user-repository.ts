@@ -18,15 +18,21 @@ export interface UserRecord {
   createdAt: Date
 }
 
-/** A user to create together with their email identity and password credential. */
-export interface NewUserWithPassword extends Omit<UserRecord, 'bannedAt' | 'lastSignInAt'> {
+/** A user to create together with their email identity and, if they have one, their password. */
+export interface NewUser extends Omit<UserRecord, 'bannedAt' | 'lastSignInAt'> {
   /** Id for the `email` identity row. */
   identityId: string
-  /** Id for the `password` credential row. */
+  /** Id for the `password` credential row. Unused when there is no password. */
   credentialId: string
-  /** argon2id hash of the password. */
-  passwordHash: string
+  /** argon2id hash of the password, or `null` for a user who has none (no credential row). */
+  passwordHash: string | null
 }
+
+/**
+ * What storing a password did: `created` when the user had none before (their first password),
+ * `replaced` otherwise.
+ */
+export type PasswordOutcome = 'created' | 'replaced'
 
 /** Which users to list. */
 export interface UserListCriteria {
@@ -69,24 +75,29 @@ export interface UserRepository {
   ): Promise<{ user: UserRecord; passwordHash: string | null } | null>
 
   /**
-   * Create a user, their email identity and their password credential atomically.
+   * Create a user and their email identity atomically, with a password credential when
+   * `passwordHash` is given.
    *
-   * @param user - The user and credential.
+   * @param user - The user and, optionally, their password.
    * @param activity - Recorded in the same transaction, only if the user was created.
    * @returns `false` when the email is already taken in that environment (nothing is written).
    */
-  createWithPassword(user: NewUserWithPassword, activity?: Activity): Promise<boolean>
+  create(user: NewUser, activity?: Activity): Promise<boolean>
 
   /**
-   * Replace a user's password hash (password change, or a rehash with stronger parameters).
+   * Store a user's password hash: replace the one they have, or create the credential when
+   * they have none (a user who signed up another way setting their first password). One atomic
+   * write either way; of two concurrent first passwords exactly one is `created`.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param passwordHash - The new argon2id hash.
    * @param at - Update time.
-   * @param activity - Recorded in the same transaction, only if the hash was replaced. Leave it
-   *   out for a rehash, which is not a password change.
-   * @returns `false` when the user has no password credential to replace (nothing is written).
+   * @param activity - Recorded in the same transaction as the write. When the password is the
+   *   user's first, the recorded entry's `data` gains `created: true`: only the store knows
+   *   which happened at the moment it happens.
+   * @returns What happened, or `null` when the user does not exist in that environment (nothing
+   *   is written or recorded).
    */
   setPasswordHash(
     environmentId: string,
@@ -94,7 +105,7 @@ export interface UserRepository {
     passwordHash: string,
     at: Date,
     activity?: Activity
-  ): Promise<boolean>
+  ): Promise<PasswordOutcome | null>
 
   /**
    * Replace a password hash with a stronger hash **of the same password**, only if the stored

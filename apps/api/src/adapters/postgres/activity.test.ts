@@ -85,7 +85,7 @@ describe('the event outbox', () => {
   test('every activity is also an undelivered event with the same id, without the origin', async () => {
     const user = newUser(a)
     const entry = activity(a, { target: { type: 'user', id: user.id } })
-    await new PostgresUserRepository(testDb.db).createWithPassword(user, entry)
+    await new PostgresUserRepository(testDb.db).create(user, entry)
     const [event] = await withTenant(testDb.db, a.environmentId, (tx) =>
       tx.select().from(events).where(eq(events.id, entry.id))
     )
@@ -134,16 +134,16 @@ describe('atomicity', () => {
   test('a user is not created when its record cannot be written', async () => {
     const users = new PostgresUserRepository(testDb.db)
     const user = newUser(a)
-    await expect(users.createWithPassword(user, broken(a, user.id))).rejects.toThrow()
+    await expect(users.create(user, broken(a, user.id))).rejects.toThrow()
     expect(await users.findById(a.environmentId, user.id)).toBeNull()
     // And the email is still free: the identity and credential rolled back too.
-    expect(await users.createWithPassword(user)).toBe(true)
+    expect(await users.create(user)).toBe(true)
   })
 
   test('a user is not deleted, banned or re-passworded when the record cannot be written', async () => {
     const users = new PostgresUserRepository(testDb.db)
     const user = newUser(a)
-    await users.createWithPassword(user)
+    await users.create(user)
     const env = a.environmentId
     await expect(users.delete(env, user.id, broken(a, user.id))).rejects.toThrow()
     await expect(users.setBanned(env, user.id, now, now, broken(a, user.id))).rejects.toThrow()
@@ -160,7 +160,7 @@ describe('atomicity', () => {
     const users = new PostgresUserRepository(testDb.db)
     const sessions = new PostgresSessionStore(testDb.db)
     const user = newUser(a)
-    await users.createWithPassword(user)
+    await users.create(user)
     const session = (id: string) => ({
       id,
       ...scope(a),
@@ -225,7 +225,7 @@ describe('the audit log is append-only and tenant-scoped', () => {
   test('the runtime role can neither change nor delete an entry', async () => {
     const user = newUser(a)
     const entry = activity(a, { target: { type: 'user', id: user.id } })
-    await new PostgresUserRepository(testDb.db).createWithPassword(user, entry)
+    await new PostgresUserRepository(testDb.db).create(user, entry)
     await expect(
       withTenant(testDb.db, a.environmentId, (tx) =>
         tx.update(auditLogs).set({ action: 'forged' }).where(eq(auditLogs.id, entry.id))

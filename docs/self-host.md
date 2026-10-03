@@ -172,8 +172,16 @@ it and within 5 seconds on the others (30 if Redis is unreachable). Apps read th
 (app name, sign-in methods, password policy) from `GET /v1/client/config`.
 
 **Browsers.** An origin has to be in the environment's `urls.allowedOrigins` to read the
-client API's responses and to use the refresh cookie. `/v1/admin/*` only ever allows the
-origins in `CORS_ORIGINS`. See [ADR 0018](adr/0018-environment-settings.md).
+client API's responses, to use the refresh cookie, and to sign anyone in: a sign-up, sign-in or
+password reset started as a browser client is refused with `request.origin_not_allowed` (403)
+from any other origin, so that a foreign page cannot have a session cookie set. If your app
+gets that error, add its origin (scheme, host and port, exactly as the browser sends it).
+`/v1/admin/*` only ever allows the origins in `CORS_ORIGINS`. See
+[ADR 0018](adr/0018-environment-settings.md) and [ADR 0019](adr/0019-flow-engine-v2.md).
+
+**Upgrading.** Migration `0008` adds the attempt secret. Sign-ups, sign-ins and resets that are
+in flight while you upgrade (they live ten minutes) cannot be continued afterwards; the user
+starts again.
 
 ## Running it for real
 

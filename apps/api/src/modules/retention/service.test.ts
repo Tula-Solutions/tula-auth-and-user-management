@@ -54,6 +54,7 @@ async function flowAttempt(scope: Tenant, expiresAt: Date): Promise<string> {
     status: 'needs_email_verification',
     userId: null,
     identifier: 'maya@northline.app',
+    secretHash: 'a'.repeat(64),
     state: { client: 'web', passwordHash: '$argon2id$never-used' },
     expiresAt,
     createdAt: deps.clock.now(),

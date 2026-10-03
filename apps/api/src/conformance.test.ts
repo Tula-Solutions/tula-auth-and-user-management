@@ -67,6 +67,7 @@ describe('conformance scenarios, in process', () => {
       'password reset',
       'two instances',
       'environment settings',
+      'attempt binding',
     ])
   })
 

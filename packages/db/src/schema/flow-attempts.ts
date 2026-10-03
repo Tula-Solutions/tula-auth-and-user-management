@@ -22,6 +22,11 @@ export const flowAttempts = tula.table(
     userId: uuid('user_id'),
     /** Normalized identifier the attempt started with. */
     identifier: text('identifier').notNull(),
+    /**
+     * SHA-256 of the attempt's secret, which every call after the start must present. `NULL` only
+     * on rows written before the column existed; such an attempt can never be continued.
+     */
+    secretHash: text('secret_hash'),
     /** Step-specific server state (never sent to clients). */
     state: jsonb('state').$type<Record<string, unknown>>().notNull().default({}),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
