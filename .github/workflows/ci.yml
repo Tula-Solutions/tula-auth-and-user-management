@@ -27,9 +27,18 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U tula -d tula"
           --health-interval 5s --health-timeout 3s --health-retries 10
+      # The Redis adapters' Lua scripts are only proved against a real server
+      # (apps/api/src/adapters/redis/redis.integration.ts, part of `test:integration`).
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       DATABASE_URL: postgres://tula_api:tula_api@localhost:5432/tula
       DATABASE_MIGRATION_URL: postgres://tula:tula@localhost:5432/tula
+      REDIS_TEST_URL: redis://localhost:6379
       TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || 'HEAD~1' }}
     steps:
       - uses: actions/checkout@v4

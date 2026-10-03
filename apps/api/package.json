@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
+    "test:integration": "bun test --timeout 30000 ./src/adapters/redis/redis.integration.ts",
     "contract:generate": "bun run src/scripts/generate-openapi.ts",
     "contract:check": "bun run src/scripts/generate-openapi.ts --check"
   },

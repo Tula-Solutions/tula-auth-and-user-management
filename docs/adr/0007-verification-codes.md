@@ -43,6 +43,6 @@ no routes of its own.
 ## Consequences
 
 - Rotating `TULA_MASTER_KEY` invalidates outstanding codes (they expire in 10 minutes anyway).
-- Rate-limit counters are in process memory in Phase 0, so limits are per instance until the
-  Redis adapter lands (Phase 1).
+- Send limits are counted through the rate limiter, which is shared between instances when
+  Redis is configured ([ADR 0016](0016-redis-and-multiple-instances.md)).
 - Emails are plain and unbranded for now; per-project templates arrive with the dashboard.

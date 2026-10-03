@@ -22,7 +22,7 @@
     "test:integration": {
       "cache": false,
       "outputs": [],
-      "env": ["DATABASE_URL", "DATABASE_MIGRATION_URL"]
+      "env": ["DATABASE_URL", "DATABASE_MIGRATION_URL", "REDIS_TEST_URL", "CI"]
     }
   }
 }

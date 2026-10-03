@@ -71,6 +71,8 @@ services:
       # inside this container is the container itself).
       PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
       SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
+      # Not `REDIS_URL`, for the same reason: in a developer's `.env` it points at 127.0.0.1.
+      REDIS_URL: ${API_REDIS_URL:-redis://redis:6379}
       MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
       BREACH_CHECK: ${BREACH_CHECK:-offline}
       PASSWORD_POLICY: ${PASSWORD_POLICY:-recommended}
@@ -83,6 +85,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
       mailpit:
         condition: service_started
     restart: unless-stopped

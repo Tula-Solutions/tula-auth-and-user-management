@@ -81,7 +81,10 @@ the address at all.
   still counts as a lockout failure (the lockout is checked first), so retrying during an
   attack adds to that identifier's backoff. That is the intended trade: one tenant's attack
   must not take the server down for every tenant.
-- **All of it is in process memory in Phase 0.** With several API instances each counts
-  separately, which multiplies every limit by the instance count, and a restart forgets
-  lockouts. The Redis adapters (Phase 1) fix both; the ports are already in place.
+- **Counters and lockouts are shared through Redis** when `REDIS_URL` is set, which `staging`
+  and `prod` require ([ADR 0016](0016-redis-and-multiple-instances.md)): several API instances
+  count as one, and a restart forgets nothing. If Redis cannot be reached the limits and the
+  lockout fail closed, answering `service.unavailable` (503) instead of letting a request
+  through uncounted. Without `REDIS_URL` (`local` and `dev` only) they are in process memory:
+  each instance counts separately and a restart forgets lockouts.
 - Limits are constants in code for now; per-project configuration arrives with the dashboard.

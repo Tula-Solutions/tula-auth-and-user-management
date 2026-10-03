@@ -60,6 +60,7 @@ const DEVELOPER_ENV = {
   PUBLIC_URL: 'http://localhost:3003',
   TULA_MASTER_KEY: 'ab'.repeat(32),
   SMTP_URL: 'smtp://127.0.0.1:1025',
+  REDIS_URL: 'redis://127.0.0.1:6379',
 }
 
 describe.skipIf(!hasCompose)('docker-compose.yml', () => {
@@ -67,6 +68,7 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
     const { api, migrate } = resolved(DEVELOPER_ENV)
     // Inside the container 127.0.0.1 is the container itself: mail and the database would fail.
     expect(api?.environment?.SMTP_URL).toBe('smtp://mailpit:1025')
+    expect(api?.environment?.REDIS_URL).toBe('redis://redis:6379')
     expect(api?.environment?.DATABASE_URL).toBe('postgres://tula_api:tula_api@postgres:5432/tula')
     expect(migrate?.environment?.DATABASE_MIGRATION_URL).toBe(
       'postgres://tula:tula@postgres:5432/tula'
@@ -77,6 +79,13 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
   test('the mail relay can still be chosen on purpose', () => {
     const { api } = resolved({ API_SMTP_URL: 'smtps://relay.example.com:465' })
     expect(api?.environment?.SMTP_URL).toBe('smtps://relay.example.com:465')
+  })
+
+  test('the packaged API shares its state through the stack’s Redis unless told otherwise', () => {
+    expect(resolved({}).api?.environment?.REDIS_URL).toBe('redis://redis:6379')
+    expect(
+      resolved({ API_REDIS_URL: 'rediss://cache.example.com:6380' }).api?.environment?.REDIS_URL
+    ).toBe('rediss://cache.example.com:6380')
   })
 
   test('moving the API port moves its public URL with it', () => {

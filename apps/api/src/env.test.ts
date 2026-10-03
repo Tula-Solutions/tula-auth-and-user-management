@@ -14,6 +14,7 @@ const live = {
   MAIL_FROM: 'Example <no-reply@example.com>',
   BREACH_CHECK: 'hibp',
   PUBLIC_URL: 'https://auth.example.com',
+  REDIS_URL: 'rediss://cache.example.com:6380',
 }
 
 function issues(source: Record<string, string | undefined>): string[] {
@@ -93,8 +94,41 @@ describe('parseEnv', () => {
       'SMTP_URL',
       'MAIL_FROM',
       'BREACH_CHECK',
+      'REDIS_URL',
       'PUBLIC_URL',
     ])
+  })
+
+  test.each(['staging', 'prod'])('%s refuses to start without Redis', (tier) => {
+    const { REDIS_URL: _unset, ...withoutRedis } = live
+    expect(issues({ ...withoutRedis, ENVIRONMENT: tier })).toEqual([
+      `REDIS_URL: is required in ${tier}: rate limits, lockout and revoked sessions must be shared between instances`,
+    ])
+    expect(invalidVars({ ...live, ENVIRONMENT: tier, REDIS_URL: '  ' })).toEqual(['REDIS_URL'])
+  })
+
+  test.each(['local', 'dev'])('%s runs without Redis, and with it when set', (tier) => {
+    expect(parseEnv({ ...base, ENVIRONMENT: tier }).REDIS_URL).toBeUndefined()
+    // A blank value, as in a copied `.env.example`, means unset.
+    expect(parseEnv({ ...base, ENVIRONMENT: tier, REDIS_URL: '' }).REDIS_URL).toBeUndefined()
+    expect(
+      parseEnv({ ...base, ENVIRONMENT: tier, REDIS_URL: 'redis://127.0.0.1:6379' }).REDIS_URL
+    ).toBe('redis://127.0.0.1:6379')
+  })
+
+  test.each(['redis://h:6379', 'rediss://h:6380/2', 'valkey://h', 'valkeys://u:p@h:1'])(
+    'accepts the Redis URL %p',
+    (url) => {
+      expect(parseEnv({ ...base, REDIS_URL: url }).REDIS_URL).toBe(url)
+    }
+  )
+
+  test.each(['http://h:6379', 'h:6379', 'not a url'])('rejects the Redis URL %p', (url) => {
+    expect(invalidVars({ ...base, REDIS_URL: url })).toEqual(['REDIS_URL'])
+  })
+
+  test('an invalid Redis URL is reported without echoing it', () => {
+    expect(issues({ ...base, REDIS_URL: 'http://:hunter2@h' }).join(' ')).not.toContain('hunter2')
   })
 
   test('the live-tier SMTP check also catches localhost', () => {

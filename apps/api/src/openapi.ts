@@ -30,6 +30,9 @@ export const responses = {
   429: errorResponse('Rate limited; retry after `params.retryAfter` seconds.'),
   500: errorResponse('Unexpected server error.'),
   501: errorResponse('Capability not implemented yet.'),
+  503: errorResponse(
+    'A dependency is unreachable and the request was refused (`service.unavailable`); retry.'
+  ),
 } as const
 
 /**

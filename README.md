@@ -6,8 +6,8 @@ and prebuilt UI, first-class native mobile, and data you own.
 > **Status: Phase 0 is feature-complete.** Email and password sign-up, sign-in and password
 > reset, sessions,
 > user administration, the audit log and self-hosting work end to end and are covered by the
-> conformance suite. Nothing is released yet, there is no dashboard or SDK, and a deployment is
-> a single instance: not ready for production.
+> conformance suite. With Redis the API can run as several instances. Nothing is released yet
+> and there is no dashboard or SDK: not ready for production.
 
 ## What's here
 

@@ -113,7 +113,10 @@ export async function revoke(deps: Pick<Deps, 'sessions' | 'clock'>, sessionId: 
 `apps/api/src/adapters/<tech>/`. `apps/api/src/container.ts` is the only place that picks adapters.
 Add a port **only when there are two or more real implementations** on the roadmap (session store,
 mailer, breach checker, key store, rate limiter, clock, id generator, repositories). Every port has
-a memory adapter used by unit tests via `createTestDeps()`.
+a memory adapter used by unit tests via `createTestDeps()`. The rate limiter, lockout and
+revoked-session list also have Redis adapters (`adapters/redis/`), chosen when `REDIS_URL` is
+set so that several API instances share them; they are unit-tested on `FakeRedis` and proved
+against a real server by `redis.integration.ts` ([ADR 0016](docs/adr/0016-redis-and-multiple-instances.md)).
 
 Register routers in `apps/api/src/index.ts` with lazy imports:
 `app.route('/v1/client/sessions', (await import('~/modules/session/router')).default)`.
@@ -197,12 +200,19 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   flows: [ADR 0009](docs/adr/0009-flows.md); users: [ADR 0010](docs/adr/0010-user-management.md);
   rate limits and lockout: [ADR 0011](docs/adr/0011-rate-limits-and-lockout.md); events and the
   audit log: [ADR 0012](docs/adr/0012-events-and-audit-log.md); password reset:
-  [ADR 0015](docs/adr/0015-password-reset.md).
+  [ADR 0015](docs/adr/0015-password-reset.md); Redis and several instances:
+  [ADR 0016](docs/adr/0016-redis-and-multiple-instances.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
   that checks a guessable secret (a password) also goes through `deps.lockout` with
   `CREDENTIAL_LOCKOUT`: count the attempt first, clear it on success.
+- **Shared state fails closed.** When the store behind the rate limiter, the lockout or the
+  revoked-session list cannot answer, the adapter throws `ServiceUnavailableError`
+  (`service.unavailable`, 503); it never reports "allowed" or "not revoked", and nothing falls
+  back to process memory. A rate-limit rule may opt out with `whenUnavailable: 'allow'` only
+  when nothing guessable or costly sits behind it (ADR 0016). Keys written to Redis hold ids
+  and keyed hashes, never an email or IP address.
 - Cookies: `HttpOnly`, `Secure`, `SameSite=Lax` (or stricter), scoped path. Use the helpers in
   `~/modules/session/cookies`; never set the refresh cookie by hand.
 - Revoking a session must go through `~/modules/session/service` so its id is denylisted:
@@ -222,8 +232,10 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 
 - `bun test` (`import { describe, test, expect, spyOn } from 'bun:test'`), colocated `*.test.ts`.
 - Unit tests use `createTestDeps()` (memory adapters, fixed clock) — no network, no Docker.
-- Tests that need Postgres are named `*.integration.ts` and run with the docker-compose
-  database (`bun run test:integration`).
+- Tests that need Postgres or Redis are named `*.integration.ts` and run with the docker-compose
+  services (`bun run test:integration`; Redis at `REDIS_TEST_URL`, default `redis://127.0.0.1:6379`).
+  A port with more than one adapter has a behaviour suite (`adapters/<port>.suite.ts`) that
+  every adapter runs.
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
 - Route tests call `createApp(createTestDeps()).request(...)`.
@@ -277,7 +289,7 @@ apps/api/src/
 ├── testing.ts        # createTestDeps(): memory adapters + FixedClock
 ├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor
 ├── ports/            # interfaces the domain depends on
-├── adapters/         # memory/, postgres/, system/, cache/, breach/, mail/
+├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/
 ├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, request-log
 └── modules/          # flow, password, session, jwks, verification, user, audit, project, status
 ```
@@ -309,6 +321,6 @@ bun run db:migrate          # apply migrations as the schema owner (DATABASE_MIG
 bun run seed                # local workspace, default project, dev + prod environments
 bun run api-key:create --environment <id> [--kind secret|publishable]
                             # mint a key (printed once); bootstraps the first secret key
-bun run test:integration    # Postgres tests against docker compose (needs .env)
+bun run test:integration    # Postgres and Redis tests against docker compose (needs .env)
 bun run conformance         # run conformance/ scenarios against a live server (see conformance/README.md)
 ```

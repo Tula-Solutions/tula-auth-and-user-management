@@ -62,6 +62,7 @@ packaged stack:
 | `TULA_MASTER_KEY` | none | Required. |
 | `API_PORT` | `3003` | Host port of the API. |
 | `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The API's `PUBLIC_URL`. A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
+| `API_REDIS_URL` | `redis://redis:6379` | The API's `REDIS_URL`: the stack's own Redis unless you point it elsewhere. A separate name for the same reason. |
 | `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. Required in `staging` and `prod`, where the bundled Mailpit is refused. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
 | `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. |
 | `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `5432`, `6379`, `1025`, `8025` | Host ports of the other services. |
@@ -84,7 +85,7 @@ The API reads its settings from the environment and refuses to start if one is i
 
 | Variable | Required | Default | |
 | --- | --- | --- | --- |
-| `ENVIRONMENT` | yes | | `local`, `dev`, `staging` or `prod`. `staging` and `prod` require https, a real mail relay and sender (not Mailpit) and breach checks. |
+| `ENVIRONMENT` | yes | | `local`, `dev`, `staging` or `prod`. `staging` and `prod` require https, a real mail relay and sender (not Mailpit), breach checks and Redis. |
 | `DATABASE_URL` | yes | | PostgreSQL connection as the **non-owner** runtime role (see below). |
 | `TULA_MASTER_KEY` | yes | | 64 hex characters (`openssl rand -hex 32`). Encrypts signing keys and keys the hashes of emailed codes. |
 | `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API. It is part of every access token's issuer. |
@@ -95,6 +96,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. |
 | `CORS_ORIGINS` | | none | Comma-separated browser origins allowed to call the API with credentials. |
 | `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. |
+| `REDIS_URL` | in `staging` and `prod` | none | Redis (or Valkey) shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
 
 ## Running it for real
@@ -136,7 +138,7 @@ docker run --rm -e DATABASE_URL=postgres://tula_api:…@db:5432/tula tula-api bu
 ```
 
 ```bash
-docker run --rm -e ENVIRONMENT=prod -e DATABASE_URL=postgres://tula_api:…@db:5432/tula -e TULA_MASTER_KEY=… -e PUBLIC_URL=https://auth.example.com -e SMTP_URL=smtps://… -e MAIL_FROM='Example <no-reply@example.com>' -e BREACH_CHECK=hibp tula-api bun run src/scripts/create-api-key.ts --environment <environment id> --kind secret
+docker run --rm -e ENVIRONMENT=prod -e DATABASE_URL=postgres://tula_api:…@db:5432/tula -e TULA_MASTER_KEY=… -e PUBLIC_URL=https://auth.example.com -e SMTP_URL=smtps://… -e MAIL_FROM='Example <no-reply@example.com>' -e BREACH_CHECK=hibp -e REDIS_URL=rediss://… tula-api bun run src/scripts/create-api-key.ts --environment <environment id> --kind secret
 ```
 
 The key script validates the same settings as the server, so give it the ones your deployment
@@ -153,14 +155,26 @@ https. Set `TRUST_PROXY=true` so rate limits and the audit log see the client's 
 make sure the proxy **overwrites** `X-Forwarded-For`; if the API is also reachable without the
 proxy, clients can forge their address.
 
-**One instance.** Run a single API instance for now. Rate limits, the password lockout and the
-list of revoked sessions are held in the process's memory. With several instances each counts
-separately, and a session revoked on one instance keeps working on the others until its access
-token expires (up to 60 seconds). A restart forgets all three. Shared storage (Redis) for them
-is planned for Phase 1.
+**Redis and more than one instance.** Set `REDIS_URL` and you can run as many API instances
+as you like behind a load balancer: rate limits, the password lockout and the list of revoked
+sessions are kept in Redis, so every instance counts the same attempts and a session revoked on
+one is refused by all. `staging` and `prod` refuse to start without it. Use `rediss://` when
+Redis is not on a private network. Nothing personal is stored there: keys are ids and keyed
+hashes, never an email or IP address.
+
+Treat Redis as part of the service. If the API cannot reach it, sign-in, sign-up and every
+request that carries an access token are answered with 503 (`service.unavailable`) until it is
+back; the API will not guess whether a limit was reached or a session revoked. Sessions
+themselves survive: refreshing a token needs only the database and keeps working. Redis needs
+no backup. If it loses its data, counters and lockouts start again and nothing else is lost.
+See [ADR 0016](adr/0016-redis-and-multiple-instances.md).
+
+Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
+separately, and a restart forgets all three.
 
 **Health.** `GET /v1/status` answers while the process is up; `GET /v1/ready` also checks the
-database and is what the image's health check and a load balancer should use.
+database, and Redis when it is configured, and is what the image's health check and a load
+balancer should use.
 
 **The image.** It runs as the unprivileged `bun` user, listens on 3003, and contains only the
 API's sources and production dependencies. Build it from the repository root:

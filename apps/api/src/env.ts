@@ -6,7 +6,10 @@ export const TIERS = ['local', 'dev', 'staging', 'prod'] as const
 /** A deployment tier. */
 export type Tier = (typeof TIERS)[number]
 
-/** Tiers that face real users: they must send real email and check real breach data. */
+/**
+ * Tiers that face real users: they must send real email, check real breach data and share
+ * rate-limit, lockout and revoked-session state through Redis.
+ */
 const LIVE_TIERS: ReadonlySet<Tier> = new Set(['staging', 'prod'])
 
 /** Parse a comma-separated list, dropping blanks. Unset or blank yields `[]`. */
@@ -75,6 +78,16 @@ const fields = z.object({
    * header: otherwise any client can pick its own rate-limit bucket.
    */
   TRUST_PROXY: flag,
+  /**
+   * Redis (or Valkey) for the state API instances must share: rate limits, the password lockout
+   * and the list of revoked sessions. `rediss://` for TLS. Unset (or blank) in `local` and `dev`
+   * keeps that state in process memory, which is correct for one instance only; live tiers must
+   * set it (ADR 0016).
+   */
+  REDIS_URL: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.url({ protocol: /^(rediss?|valkeys?)$/ }).optional()
+  ),
 })
 
 const schema = fields.superRefine((env, ctx) => {
@@ -102,6 +115,16 @@ const schema = fields.superRefine((env, ctx) => {
       code: 'custom',
       path: ['BREACH_CHECK'],
       message: `must be \`hibp\` in ${env.ENVIRONMENT}`,
+    })
+  }
+  if (!env.REDIS_URL) {
+    // Memory adapters count per process: a second instance would double every limit and keep
+    // honouring sessions the first one revoked. A live deployment must not depend on never
+    // being scaled, so the shared store is required rather than assumed.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['REDIS_URL'],
+      message: `is required in ${env.ENVIRONMENT}: rate limits, lockout and revoked sessions must be shared between instances`,
     })
   }
   if (new URL(env.PUBLIC_URL).protocol !== 'https:') {

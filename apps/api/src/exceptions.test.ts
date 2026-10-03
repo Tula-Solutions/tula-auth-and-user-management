@@ -10,6 +10,7 @@ import {
   NotImplementedError,
   RateLimitError,
   ServiceException,
+  ServiceUnavailableError,
   UnauthorizedError,
   ValidationError,
 } from '~/exceptions'
@@ -25,6 +26,7 @@ describe('ServiceException subclasses', () => {
     [new RateLimitError(1), 'rate_limited', 429],
     [new InternalError(), 'internal', 500],
     [new NotImplementedError(), 'not_implemented', 501],
+    [new ServiceUnavailableError(), 'service.unavailable', 503],
   ] as const)('%p maps to %s / %i', (error, code, status) => {
     expect(error).toBeInstanceOf(ServiceException)
     expect(error.code).toBe(code)

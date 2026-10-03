@@ -2,8 +2,10 @@ import { durationToMs } from '@tula/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, TenantVariables } from '~/dependencies'
-import { RateLimitError } from '~/exceptions'
+import { RateLimitError, ServiceUnavailableError } from '~/exceptions'
 import { clientIp, ipBucket } from '~/lib/client-ip'
+import * as logger from '~/lib/logger'
+import type { RateLimitDecision } from '~/ports/rate-limiter'
 
 /** One rate-limit bucket family. */
 export interface RateLimitRule {
@@ -17,6 +19,17 @@ export interface RateLimitRule {
    * The bucket key for this request, e.g. the client IP. Return `null` to skip the rule.
    */
   key: (c: Context<AppEnv>) => string | null
+  /**
+   * What to do when the limiter itself cannot answer (its shared store is unreachable).
+   *
+   * - `'refuse'` (the default): the request fails with `service.unavailable`. Required for
+   *   anything that accepts a guessable secret or does costly work, where an uncounted request
+   *   is exactly what an attacker wants.
+   * - `'allow'`: the request goes on uncounted. Only for routes whose own protection does not
+   *   depend on the count (unguessable tokens, public data, the readiness check) and which
+   *   should keep working through an outage of the store. See ADR 0016.
+   */
+  whenUnavailable?: 'refuse' | 'allow'
 }
 
 /**
@@ -40,6 +53,27 @@ export function byEnvironment(c: Context<AppEnv>): string | null {
   return tenant ? `env:${tenant.environmentId}` : null
 }
 
+/** Count the request; `null` when the limiter is unavailable and the rule lets requests through. */
+async function count(
+  c: Context<AppEnv>,
+  rule: RateLimitRule,
+  bucket: string,
+  windowMs: number
+): Promise<RateLimitDecision | null> {
+  try {
+    return await c.get('deps').rateLimiter.hit(bucket, rule.limit, windowMs)
+  } catch (error) {
+    if (rule.whenUnavailable === 'allow' && error instanceof ServiceUnavailableError) {
+      logger.warn('rate limiter unavailable; request allowed uncounted', {
+        requestId: c.get('requestId'),
+        rule: rule.name,
+      })
+      return null
+    }
+    throw error
+  }
+}
+
 /**
  * Enforce a fixed-window rate limit. Stack one per dimension (IP, environment, …); per-identifier
  * limits need the parsed body and are applied in services through `deps.rateLimiter`.
@@ -47,16 +81,16 @@ export function byEnvironment(c: Context<AppEnv>): string | null {
  * @param rule - Name, limit, window and key function.
  * @returns The middleware.
  * @throws RateLimitError (429 with `Retry-After`) once the limit is exceeded.
+ * @throws ServiceUnavailableError (503) when the limiter cannot answer, unless the rule's
+ *   `whenUnavailable` is `'allow'`.
  */
 export function rateLimit(rule: RateLimitRule) {
   const windowMs = durationToMs(rule.window)
   return createMiddleware<AppEnv>(async (c, next) => {
     const key = rule.key(c)
     if (key !== null) {
-      const decision = await c
-        .get('deps')
-        .rateLimiter.hit(`${rule.name}:${key}`, rule.limit, windowMs)
-      if (!decision.allowed) {
+      const decision = await count(c, rule, `${rule.name}:${key}`, windowMs)
+      if (decision && !decision.allowed) {
         throw new RateLimitError(decision.retryAfterMs)
       }
     }
@@ -88,5 +122,14 @@ export const CLIENT_RATE_LIMIT = 600
  * @returns The middleware (one shared `client` bucket per IP across all client routes).
  */
 export function clientRateLimit() {
-  return rateLimit({ name: 'client', limit: CLIENT_RATE_LIMIT, window: '1m', key: byIp })
+  return rateLimit({
+    name: 'client',
+    limit: CLIENT_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+    // This ceiling sits in front of every client route, refresh included. Refusing here would
+    // turn an outage of the limiter's store into an outage of all of them; the routes that
+    // take a guessable secret have their own limits, which do refuse.
+    whenUnavailable: 'allow',
+  })
 }

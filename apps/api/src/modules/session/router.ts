@@ -46,6 +46,7 @@ router.post(
       422: openapi.responses[422],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   // Each call is a database lookup by an unauthenticated caller.
@@ -54,6 +55,10 @@ router.post(
     limit: Sessions.REFRESH_RATE_LIMIT,
     window: '1m',
     key: byIp,
+    // Refresh needs only Postgres, and a refresh token is 256 bits: nothing here can be
+    // guessed. If the limiter's store is down, signed-in users must still be able to refresh
+    // rather than all be signed out when their access tokens expire (ADR 0016).
+    whenUnavailable: 'allow',
   }),
   publishableKey(),
   validator('json', RefreshTokenRequestSchema, validationHook),
@@ -110,6 +115,7 @@ router.post(
       422: openapi.responses[422],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   publishableKey(),
@@ -138,6 +144,7 @@ router.get(
       401: openapi.responses[401],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   publishableKey(),
@@ -165,6 +172,7 @@ router.post(
       401: openapi.responses[401],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   publishableKey(),
@@ -197,6 +205,7 @@ router.delete(
       422: openapi.responses[422],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   publishableKey(),

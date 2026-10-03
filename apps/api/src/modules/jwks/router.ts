@@ -35,7 +35,15 @@ router.get(
     },
   }),
   // Public and uncredentialed, and each call checks the environment in the database.
-  rateLimit({ name: 'jwks', limit: 600, window: '1m', key: byIp }),
+  rateLimit({
+    name: 'jwks',
+    limit: 600,
+    window: '1m',
+    key: byIp,
+    // Public keys are not a secret, and services verifying tokens fetch them from here: an
+    // outage of the limiter's store must not stop them (ADR 0016).
+    whenUnavailable: 'allow',
+  }),
   validator('param', EnvironmentIdParamSchema, validationHook),
   async (c) => {
     const set = await Jwks.publicKeySet(c.get('deps'), c.req.valid('param').environmentId)
@@ -61,6 +69,7 @@ router.get(
       401: openapi.responses[401],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   adminRateLimit(),
@@ -88,6 +97,7 @@ router.post(
       409: openapi.responses[409],
       429: openapi.responses[429],
       500: openapi.responses[500],
+      503: openapi.responses[503],
     },
   }),
   adminRateLimit(),

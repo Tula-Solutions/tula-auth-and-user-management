@@ -79,6 +79,12 @@ export const ERROR_DEFINITIONS = {
   'resource.not_found': { status: 404, message: 'The requested resource does not exist.' },
   'resource.conflict': { status: 409, message: 'The resource conflicts with existing data.' },
   not_implemented: { status: 501, message: 'This capability is not available yet.' },
+  // A dependency the request needs to be decided safely (the shared rate-limit, lockout and
+  // revoked-session store) cannot be reached. Nothing was changed; the same request can be retried.
+  'service.unavailable': {
+    status: 503,
+    message: 'The service is temporarily unavailable. Try again shortly.',
+  },
   internal: { status: 500, message: 'Something went wrong on our side.' },
 } as const satisfies Record<string, ErrorDefinition>
 

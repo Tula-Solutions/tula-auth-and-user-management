@@ -13,7 +13,8 @@ const SWEEP_EVERY = 1_000
  * Fixed-window counter held in process memory.
  *
  * Correct for a single instance only: behind a load balancer each instance counts separately,
- * which multiplies the effective limit. Phase 1 adds a Redis adapter for that.
+ * which multiplies the effective limit. `RedisRateLimiter` is the adapter for that; this one is
+ * used when `REDIS_URL` is unset (`local` and `dev` only) and by unit tests.
  */
 export class MemoryRateLimiter implements RateLimiter {
   readonly #windows = new Map<string, Window & { windowMs: number }>()
