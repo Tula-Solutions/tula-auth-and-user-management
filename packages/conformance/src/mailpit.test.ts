@@ -54,4 +54,24 @@ describe('mailpitCodes', () => {
     await expect(emailCode('maya@example.com')).rejects.toThrow('Mailpit answered 503')
     expect(urls).toHaveLength(1)
   })
+
+  test('refuses an address that would break out of the search query', async () => {
+    const { emailCode, urls } = fakeMailpit([{ messages: [{ Subject: '111111 code' }] }])
+    await expect(emailCode('a" OR to:"victim@example.com')).rejects.toThrow(
+      'not an address the runner can search for'
+    )
+    expect(urls).toEqual([])
+  })
+
+  test('every request has a deadline, so a stalled Mailpit cannot hang the run', async () => {
+    const signals: (AbortSignal | undefined)[] = []
+    const emailCode = mailpitCodes('http://mailpit.test', {
+      fetch: (async (_url: string, init?: RequestInit) => {
+        signals.push(init?.signal ?? undefined)
+        return new Response(JSON.stringify({ messages: [{ Subject: '222222 code' }] }))
+      }) as unknown as typeof fetch,
+    })
+    expect(await emailCode('maya@example.com')).toBe('222222')
+    expect(signals[0]).toBeInstanceOf(AbortSignal)
+  })
 })

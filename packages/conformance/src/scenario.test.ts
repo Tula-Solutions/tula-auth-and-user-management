@@ -35,3 +35,27 @@ test.each([
     }).success
   ).toBe(false)
 })
+
+const secretStep = (request: object = {}) => ({
+  name: 'admin',
+  request: { method: 'GET', path: '/v1/admin/users', auth: 'secret', ...request },
+  expect: { status: 200 },
+})
+
+test('a scenario that uses the secret key must say so, so it is skipped rather than sent without one', () => {
+  const base = { name: 'x', description: 'y', steps: [secretStep()] }
+  expect(ScenarioSchema.safeParse(base).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base, needsSecretKey: false }).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base, needsSecretKey: true }).success).toBe(true)
+})
+
+test('a request cannot carry both the secret key and an access token', () => {
+  expect(
+    ScenarioSchema.safeParse({
+      name: 'x',
+      description: 'y',
+      needsSecretKey: true,
+      steps: [secretStep({ accessToken: '{{token}}' })],
+    }).success
+  ).toBe(false)
+})

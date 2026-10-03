@@ -26,10 +26,14 @@ language-neutral suite every server and SDK must pass.
   `bun test` in milliseconds. Against a live server they are real `fetch`, Mailpit and a real
   sleep.
 - **Scenarios are independent.** Each run generates its own email address and password and
-  presents its own client address, so neither per-address nor per-IP limits couple one
-  scenario to another, and a live run can be repeated at once.
-- **Failures never print response bodies.** A failing step reports the status, the error code
-  and the fields that differed. Bodies hold tokens, and CI logs are widely readable.
+  presents its own client address (from a range of 62,500, starting at a random point in each
+  process), so neither per-address nor per-IP limits couple one scenario to another, and a live
+  run can normally be repeated at once.
+- **A run that checks nothing fails.** The CLI exits non-zero when a scenario fails or when
+  none passed.
+- **Failures never quote secrets.** A failing step reports the status, the error code and the
+  fields that differed. Short plain values are quoted; long or token-shaped strings, objects and
+  arrays are only described. Bodies hold tokens, and CI logs are widely readable.
 - **The in-process run is part of the quality gate.** It is an ordinary test file in
   `apps/api`, so `bun run verify` and CI run every scenario on every change.
 

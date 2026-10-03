@@ -46,6 +46,44 @@
       }
     },
     {
+      "name": "before the code is verified there is no account: start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_password"
+          }
+        }
+      },
+      "capture": {
+        "earlySignInId": "id"
+      }
+    },
+    {
+      "name": "the chosen password does not sign in yet",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{earlySignInId}}/password",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
       "name": "a wrong code is refused and says how many tries remain",
       "request": {
         "method": "POST",
@@ -107,7 +145,8 @@
               "$matches": "^tula_rt_"
             }
           }
-        }
+        },
+        "bodyExcludes": ["{{password}}"]
       },
       "capture": {
         "userId": "step.userId",
@@ -130,7 +169,8 @@
           "email": "{{email}}",
           "emailVerifiedAt": "$any",
           "bannedAt": null
-        }
+        },
+        "bodyExcludes": ["{{password}}"]
       }
     },
     {

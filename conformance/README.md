@@ -33,14 +33,17 @@ Use a development environment: every run creates users (with `@example.com` addr
 audit entries, and leaves them there. A full run takes about 15 seconds, most of it the wait
 for the refresh grace period to pass.
 
-The exit code is 0 when nothing failed. A failing step prints what differed, never the response
-body, because bodies contain tokens.
+The exit code is 0 when at least one scenario passed and none failed. A failing step prints the
+status, the error code and short plain values that differed. Tokens, long strings, objects and
+arrays are described (`a string of 52 characters`), never quoted, because the output ends up in
+CI logs.
 
 ## Scenario format
 
 A scenario is one JSON file in `scenarios/`, validated against
 [`scenario.schema.json`](scenario.schema.json) (generated from
-`packages/conformance/src/scenario.ts`).
+`packages/conformance/src/scenario.ts`; do not edit it by hand). A scenario with an
+`auth: "secret"` step must set `needsSecretKey: true`.
 
 ```json
 {
@@ -72,10 +75,12 @@ A scenario is one JSON file in `scenarios/`, validated against
   adds `Authorization: Bearer …`; `client` sets `x-tula-client`. `times` repeats the request.
 - **Expectations.** `status` must match exactly. `body` is matched as a subset: keys you leave
   out are not checked. Values compare literally, except `"$any"` (present and not null),
-  `"$absent"` (missing or null), `{ "$not": value }` and `{ "$matches": "regex" }`.
+  `"$absent"` (missing or null), `{ "$not": value }` and `{ "$matches": "regex" }` (both need
+  the value to be present). `bodyExcludes` lists strings the raw response must not contain.
 - **Capture.** `{ "variable": "dot.path" }` stores a string from the response body.
 - **Email steps** read the 6-digit code from the newest email to an address. `captureWrong`
-  also stores a code that is guaranteed not to be the right one.
+  also stores a code that is guaranteed not to be the right one. Right after a resend the
+  newest email can still be the previous one; no scenario resends yet.
 - **Wait steps** let time pass: a real sleep against a live server, a clock advance in process.
 
 Steps run in order and a scenario stops at its first failing step.
@@ -85,12 +90,12 @@ Steps run in order and a scenario stops at its first failing step.
 | File | Shows |
 | --- | --- |
 | `01-sign-up` | The account is created only when the emailed code is verified. |
-| `02-sign-in` | Known and unknown addresses are indistinguishable; one generic error. |
+| `02-sign-in` | A wrong password and an unknown address get the same status, code and message. Timing is not compared. |
 | `03-refresh-rotation-and-reuse` | Single-use refresh tokens, the grace period, reuse revoking the session. |
 | `04-sign-out` | Sign-out ends the refresh token and the unexpired access token. |
 | `05-password-policy` | The published policy and stable `password.*` errors. |
 | `06-lockout` | Backoff after repeated wrong passwords. |
-| `07-admin-ban-and-audit` | Ban, unban and the audit log (needs a secret key). |
+| `07-admin-ban-and-audit` | Ban (a banned user with the right password is told so), unban, and an audit log without email addresses (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). Browser cookie delivery is not covered yet; scenarios use a native client

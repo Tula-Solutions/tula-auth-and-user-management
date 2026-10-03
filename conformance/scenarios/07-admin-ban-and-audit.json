@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "admin ban and audit log",
-  "description": "Banning a user ends their sessions at once and keeps them out; lifting the ban lets them sign in again. Each admin action is in the audit log, without the user's email.",
+  "description": "Banning a user ends their sessions at once and keeps them out; lifting the ban lets them sign in again. Each admin action is in the audit log, which names the user by id and never by email.",
   "needsSecretKey": true,
   "variables": {
     "email": {
@@ -185,7 +185,8 @@
               }
             }
           ]
-        }
+        },
+        "bodyExcludes": ["{{email}}", "@example.com"]
       }
     },
     {
@@ -209,7 +210,8 @@
               }
             }
           ]
-        }
+        },
+        "bodyExcludes": ["{{email}}", "@example.com"]
       }
     },
     {
@@ -223,6 +225,34 @@
         "body": {
           "code": "auth.invalid_key"
         }
+      }
+    },
+    {
+      "name": "everything recorded about the user is free of their email address",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?actorId={{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "actor": {
+                "type": "user",
+                "id": "{{userId}}"
+              }
+            },
+            {
+              "actor": {
+                "type": "user",
+                "id": "{{userId}}"
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{email}}", "@example.com"]
       }
     },
     {

@@ -21,6 +21,7 @@ function protect(path: string) {
 describe('protect-files.sh', () => {
   test.each([
     'packages/contract/openapi.json',
+    'conformance/scenario.schema.json',
     'apps/api/src/routeTree.gen.ts',
     'apps/dashboard/src/components/ui/button.tsx',
     'bun.lock',

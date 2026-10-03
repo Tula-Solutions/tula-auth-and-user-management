@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "sign-in",
-  "description": "Sign-in never reveals whether an address has an account: starting one always asks for a password, and every failure is the same error.",
+  "description": "Sign-in never reveals whether an address has an account: starting one asks for a password either way, and a wrong password and an unknown address get the same status, code and message.",
   "variables": {
     "email": {
       "generate": "email"
@@ -98,7 +98,10 @@
         "body": {
           "kind": "sign_in",
           "step": {
-            "status": "needs_password"
+            "status": "needs_password",
+            "destination": "$absent",
+            "strategies": "$absent",
+            "userId": "$absent"
           },
           "session": "$absent"
         }
@@ -122,7 +125,10 @@
         "body": {
           "kind": "sign_in",
           "step": {
-            "status": "needs_password"
+            "status": "needs_password",
+            "destination": "$absent",
+            "strategies": "$absent",
+            "userId": "$absent"
           },
           "session": "$absent"
         }
@@ -144,12 +150,18 @@
         "status": 401,
         "body": {
           "status": 401,
-          "code": "auth.invalid_credentials"
+          "code": "auth.invalid_credentials",
+          "detail": "$any",
+          "params": "$absent",
+          "errors": "$absent"
         }
+      },
+      "capture": {
+        "failureDetail": "detail"
       }
     },
     {
-      "name": "so is any password for an unknown address",
+      "name": "any password for an unknown address gets the same status, code and message",
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ins/{{strangerSignInId}}/password",
@@ -161,7 +173,10 @@
         "status": 401,
         "body": {
           "status": 401,
-          "code": "auth.invalid_credentials"
+          "code": "auth.invalid_credentials",
+          "detail": "{{failureDetail}}",
+          "params": "$absent",
+          "errors": "$absent"
         }
       }
     },
@@ -198,7 +213,7 @@
       }
     },
     {
-      "name": "both devices are listed, and the one asking is marked current",
+      "name": "both devices are listed, newest first, and only the one asking is marked current",
       "request": {
         "method": "GET",
         "path": "/v1/client/sessions",
@@ -209,10 +224,12 @@
         "body": {
           "data": [
             {
-              "current": "$any"
+              "id": "{{secondSessionId}}",
+              "current": true
             },
             {
-              "current": "$any"
+              "id": "{{sessionId}}",
+              "current": false
             }
           ]
         }

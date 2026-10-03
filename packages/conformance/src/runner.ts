@@ -111,8 +111,7 @@ function buildRequest(target: Target, request: ScenarioRequest, origin: string):
   })
 }
 
-async function readBody(response: Response): Promise<unknown> {
-  const text = await response.text()
+function parseBody(text: string): unknown {
   if (text === '') {
     return undefined
   }
@@ -144,10 +143,17 @@ async function runStep(
   const expected = fill(step.expect, variables)
   for (let attempt = 1; attempt <= (step.times ?? 1); attempt++) {
     const response = await target.fetch(buildRequest(target, request, variables.origin ?? ''))
-    const body = await readBody(response)
+    const text = await response.text()
+    const body = parseBody(text)
     const problems = match(expected.body, expected.body === undefined ? undefined : body).map(
       (mismatch) => mismatch.message
     )
+    for (const [index, excluded] of (expected.bodyExcludes ?? []).entries()) {
+      if (text.includes(excluded)) {
+        // Named by position: the value is what must not be printed.
+        problems.push(`the response contains a value it must not (bodyExcludes[${index}])`)
+      }
+    }
     if (response.status !== expected.status) {
       // The error code says far more than the status alone; never print the whole body, which
       // can hold tokens.
@@ -173,19 +179,41 @@ async function runStep(
   }
 }
 
-let counter = 0
+/** How many distinct addresses {@link nextOrigin} cycles through. */
+const ORIGINS = 250 * 250
 
-/** A documentation-range IPv4 address (198.18.0.0/15) that is different for every scenario run. */
-function nextOrigin(): string {
-  counter = (counter + 1) % 65_000
+// Starts somewhere different in every process, so two CLI runs in a row don't present the same
+// addresses and inherit each other's per-IP counters. Not a secret; any spread will do.
+let counter = (crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) % ORIGINS
+
+/**
+ * The client address a scenario run presents in `X-Forwarded-For`.
+ *
+ * @returns An IPv4 address in 198.18.0.0/16 (reserved for benchmarking, never routed), different
+ *   from the previous 62,499.
+ */
+export function nextOrigin(): string {
+  counter = (counter + 1) % ORIGINS
   return `198.18.${Math.floor(counter / 250)}.${(counter % 250) + 1}`
+}
+
+/**
+ * The exit code of a run.
+ *
+ * @param counts - How many scenarios passed, failed and were skipped.
+ * @returns 1 when a scenario failed or none passed (a run that checked nothing must not look
+ *   green), otherwise 0.
+ */
+export function exitCode(counts: { passed: number; failed: number; skipped: number }): 0 | 1 {
+  return counts.failed > 0 || counts.passed === 0 ? 1 : 0
 }
 
 /**
  * Run one scenario against a server.
  *
- * Steps run in order and stop at the first failure. A failing step reports what differed, never
- * the response body, because bodies contain tokens.
+ * Steps run in order and stop at the first failure. A failing step reports what differed: the
+ * status, the error code and short plain values. Tokens, long strings, objects and arrays are
+ * described, never quoted, because the report is read in CI logs.
  *
  * @param scenario - A parsed scenario.
  * @param target - The server and its test doubles.

@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test'
-import { formatResult, PUBLISHABLE_KEY_HEADER, runScenario, type Target } from './runner'
+import {
+  exitCode,
+  formatResult,
+  nextOrigin,
+  PUBLISHABLE_KEY_HEADER,
+  runScenario,
+  type Target,
+} from './runner'
 import { type Scenario, ScenarioSchema } from './scenario'
 
 interface Seen {
@@ -116,10 +123,13 @@ describe('runScenario', () => {
   test('auth decides which key is sent', async () => {
     const { target, requests } = fakeTarget(() => ({ status: 200 }))
     await runScenario(
-      scenario([
-        { name: 'admin', request: get('/a', { auth: 'secret' }), expect: { status: 200 } },
-        { name: 'anonymous', request: get('/b', { auth: 'none' }), expect: { status: 200 } },
-      ]),
+      scenario(
+        [
+          { name: 'admin', request: get('/a', { auth: 'secret' }), expect: { status: 200 } },
+          { name: 'anonymous', request: get('/b', { auth: 'none' }), expect: { status: 200 } },
+        ],
+        { needsSecretKey: true }
+      ),
       target
     )
     expect(requests[0]?.headers.authorization).toBe('Bearer tula_sk_test')
@@ -296,5 +306,107 @@ describe('runScenario', () => {
     })
     expect(formatResult(result)).toBe('SKIPPED test\n  (needs a secret key)')
     expect(requests).toEqual([])
+  })
+})
+
+describe('what a failure may print', () => {
+  const REFRESH = 'tula_rt_Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6'
+  const NEXT = 'tula_rt_YmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9v'
+  const JWT = 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ1c2VyXzEifQ.c2lnbmF0dXJl'
+
+  test('a server that returns tokens where none are expected does not get them printed', async () => {
+    const { target } = fakeTarget((_seen, index) => ({
+      status: 200,
+      body:
+        index === 0
+          ? { refreshToken: REFRESH }
+          : { session: { refreshToken: NEXT, accessToken: JWT }, refreshToken: NEXT },
+    }))
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'sign in',
+            request: get('/a'),
+            expect: { status: 200 },
+            capture: { token: 'refreshToken' },
+          },
+          {
+            name: 'retry',
+            request: { method: 'POST', path: '/b', body: { password: '{{password}}' } },
+            expect: {
+              status: 200,
+              body: { session: '$absent', refreshToken: '{{token}}' },
+            },
+          },
+        ],
+        { variables: { password: { generate: 'password' } } }
+      ),
+      target
+    )
+    expect(result.status).toBe('failed')
+    const printed = formatResult(result)
+    for (const secret of [REFRESH, NEXT, JWT, 'Zm9v', 'YmF6', 'eyJ', 'Tu-']) {
+      expect(printed).not.toContain(secret)
+    }
+    expect(result.steps.at(-1)?.problems).toEqual([
+      'expected session to be absent, got an object',
+      'expected refreshToken to be a string of 52 characters, got a different string of 52 characters',
+    ])
+  })
+
+  test('bodyExcludes fails a response that contains a value, without printing the value', async () => {
+    const { target } = fakeTarget(() => ({
+      status: 200,
+      body: { data: [{ metadata: { note: 'for maya@example.com' } }] },
+    }))
+    const steps = (excludes: string[]) => [
+      {
+        name: 'audit',
+        request: get('/audit'),
+        expect: { status: 200, bodyExcludes: excludes },
+      },
+    ]
+    const variables = { email: 'maya@example.com' }
+    const leaked = await runScenario(
+      scenario(steps(['absent', '{{email}}']), { variables }),
+      target
+    )
+    expect(leaked.steps[0]?.problems).toEqual([
+      'the response contains a value it must not (bodyExcludes[1])',
+    ])
+    expect(formatResult(leaked)).not.toContain('maya@')
+    const clean = await runScenario(scenario(steps(['someone-else@example.com'])), target)
+    expect(clean.status).toBe('passed')
+  })
+})
+
+describe('nextOrigin', () => {
+  test('every address is a valid IPv4 in the benchmarking range, with no repeats in a long run', () => {
+    const seen = new Set<string>()
+    for (let index = 0; index < 62_500; index++) {
+      const origin = nextOrigin()
+      const octets = origin.split('.').map(Number)
+      expect(octets).toHaveLength(4)
+      expect(octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)).toBe(
+        true
+      )
+      expect(origin.startsWith('198.18.')).toBe(true)
+      seen.add(origin)
+    }
+    expect(seen.size).toBe(62_500)
+  })
+})
+
+describe('exitCode', () => {
+  test.each([
+    [{ passed: 7, failed: 0, skipped: 0 }, 0],
+    [{ passed: 6, failed: 0, skipped: 1 }, 0],
+    [{ passed: 6, failed: 1, skipped: 0 }, 1],
+    // Nothing ran: a run that checked nothing must not look green.
+    [{ passed: 0, failed: 0, skipped: 7 }, 1],
+    [{ passed: 0, failed: 0, skipped: 0 }, 1],
+  ] as [Parameters<typeof exitCode>[0], 0 | 1][])('%j exits %i', (counts, expected) => {
+    expect(exitCode(counts)).toBe(expected)
   })
 })

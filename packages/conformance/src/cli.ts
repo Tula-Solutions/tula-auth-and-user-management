@@ -1,6 +1,6 @@
 import { loadScenarios } from './load'
 import { mailpitCodes } from './mailpit'
-import { formatResult, runScenario, type Target } from './runner'
+import { exitCode, formatResult, runScenario, type Target } from './runner'
 
 /**
  * Run every scenario against a live server: `bun run conformance`.
@@ -37,4 +37,4 @@ for (const { scenario } of await loadScenarios()) {
 process.stdout.write(
   `\n${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped against ${target.baseUrl}\n`
 )
-process.exit(counts.failed > 0 ? 1 : 0)
+process.exit(exitCode(counts))

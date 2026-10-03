@@ -25,6 +25,9 @@ export const RequestSchema = z
     /** JSON body. */
     body: z.unknown().optional(),
   })
+  .refine((request) => !(request.auth === 'secret' && request.accessToken !== undefined), {
+    message: 'a request carries the secret key or an access token, not both',
+  })
   .meta({ ref: 'ConformanceRequest' })
 
 /**
@@ -36,11 +39,15 @@ export const RequestSchema = z
  * - `"$absent"`: missing or null
  * - `{ "$not": value }`: anything but `value`
  * - `{ "$matches": "regex" }`: a string matching the pattern
+ *
+ * `$not` and `$matches` need the value to be present.
  */
 export const ExpectSchema = z
   .object({
     status: z.number().int().min(100).max(599),
     body: z.unknown().optional(),
+    /** Strings the raw response must not contain anywhere, e.g. `{{email}}` in an audit entry. */
+    bodyExcludes: z.array(z.string().min(1)).optional(),
   })
   .meta({ ref: 'ConformanceExpect' })
 
@@ -111,6 +118,14 @@ export const ScenarioSchema = z
     steps: z.array(StepSchema).min(1),
   })
   .strict()
+  // Without the flag the runner cannot know to skip the scenario when no secret key is given,
+  // and would send the request without one.
+  .refine(
+    (scenario) =>
+      scenario.needsSecretKey === true ||
+      scenario.steps.every((step) => !('request' in step) || step.request.auth !== 'secret'),
+    { message: 'a scenario with an `auth: "secret"` step must set `needsSecretKey: true`' }
+  )
   .meta({ ref: 'ConformanceScenario' })
 
 /** A request to send. */

@@ -50,7 +50,7 @@ describe('match', () => {
     [
       'an array of another length',
       { data: [{ id: 'x' }] },
-      'expected data to be [{"id":"x"}], got [{"id":"x"},{"id":"y"}]',
+      'expected data to be an array of 1, got an array of 2',
     ],
     [
       'an array item',
@@ -61,7 +61,7 @@ describe('match', () => {
     [
       'an array where an object is',
       { step: [1] },
-      'expected step to be [1], got {"status":"complete","userId":"u1"}',
+      'expected step to be an array of 1, got an object',
     ],
   ])('reports %s', (_name, expected, message) => {
     expect(match(expected, body).map((mismatch) => mismatch.message)).toEqual([message])
@@ -90,4 +90,68 @@ describe('pick', () => {
   ])('%s', (path, expected) => {
     expect(pick(body, path)).toBe(expected as never)
   })
+})
+
+describe('secrets never reach a message', () => {
+  const REFRESH = 'tula_rt_Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6'
+  const OTHER = 'tula_rt_YmF6cXV4Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4Zm9v'
+  const JWT = 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ1c2VyXzEifQ.c2lnbmF0dXJl'
+  const SECRET_KEY = 'tula_sk_dev_short'
+  const leaky = {
+    session: { refreshToken: REFRESH, accessToken: JWT },
+    refreshToken: REFRESH,
+    key: SECRET_KEY,
+    list: [REFRESH, JWT],
+  }
+
+  test.each([
+    ['$absent on a session', { session: '$absent' }],
+    ['$absent on a token', { refreshToken: '$absent' }],
+    ['a literal captured token that differs', { refreshToken: OTHER }],
+    ['$not on the same token', { refreshToken: { $not: REFRESH } }],
+    ['$matches that fails', { refreshToken: { $matches: '^nope' } }],
+    ['an object expected where a token is', { refreshToken: { a: 1 } }],
+    ['an array of another length', { list: [REFRESH] }],
+    ['an array expected where an object is', { session: [1] }],
+    ['a short key with a secret prefix', { key: 'something else' }],
+    ['a number expected where a token is', { refreshToken: 5 }],
+  ])('%s', (_name, expected) => {
+    const messages = match(expected, leaky).map((mismatch) => mismatch.message)
+    expect(messages.length).toBeGreaterThan(0)
+    const text = messages.join('\n')
+    for (const secret of [REFRESH, OTHER, JWT, SECRET_KEY, 'Zm9v', 'eyJ']) {
+      expect(text).not.toContain(secret)
+    }
+  })
+
+  test('short, plain values are still shown, because they are what explains a failure', () => {
+    expect(match({ code: 'ok', count: 2 }, { code: 'session.revoked', count: 3 })).toEqual([
+      { path: 'code', message: 'expected code to be "ok", got "session.revoked"' },
+      { path: 'count', message: 'expected count to be 2, got 3' },
+    ])
+  })
+
+  test('two long values that differ are said to differ, without either', () => {
+    expect(match({ refreshToken: OTHER }, leaky)[0]?.message).toBe(
+      'expected refreshToken to be a string of 52 characters, got a different string of 52 characters'
+    )
+  })
+})
+
+describe('$not and matcher objects', () => {
+  test('$not needs a value to compare: a missing field does not pass', () => {
+    expect(match({ refreshToken: { $not: 'old' } }, {}).map((m) => m.message)).toEqual([
+      'expected refreshToken to be present',
+    ])
+    expect(match({ refreshToken: { $not: 'old' } }, { refreshToken: null })).toHaveLength(1)
+  })
+
+  test.each([[{ id: { $not: 'a2', extra: 1 } }], [{ id: { $matches: '^a', $not: 'b' } }]])(
+    'a matcher object with other keys is an authoring error: %j',
+    (expected) => {
+      expect(match(expected, body).map((m) => m.message)).toEqual([
+        'id: a matcher object takes exactly one key',
+      ])
+    }
+  )
 })

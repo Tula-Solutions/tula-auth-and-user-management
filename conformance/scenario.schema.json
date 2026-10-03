@@ -91,7 +91,14 @@
                     "minimum": 100,
                     "maximum": 599
                   },
-                  "body": {}
+                  "body": {},
+                  "bodyExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
                 },
                 "required": ["status"],
                 "ref": "ConformanceExpect"

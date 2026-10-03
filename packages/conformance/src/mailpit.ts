@@ -1,3 +1,6 @@
+/** How long one request to Mailpit may take. */
+export const MAILPIT_REQUEST_TIMEOUT_MS = 3_000
+
 /** How long to wait for an email to reach Mailpit before giving up. */
 export const MAILPIT_TIMEOUT_MS = 5_000
 
@@ -11,7 +14,8 @@ interface MailpitSearch {
  * @param baseUrl - Mailpit's web address, e.g. `http://localhost:8025`.
  * @param options - Injectable `fetch` and `sleep`, for tests.
  * @returns A function that returns the code in the newest email to an address. Tula puts the
- *   code first in the subject, so only the message list is read, never a message body.
+ *   code first in the subject, so only the message list is read, never a message body. It reads
+ *   whatever is newest when asked: right after a resend that can still be the previous code.
  *
  * @example
  * ```ts
@@ -26,10 +30,16 @@ export function mailpitCodes(
   const send = options.fetch ?? fetch
   const sleep = options.sleep ?? Bun.sleep
   return async (to) => {
+    // The address goes inside a quoted search term; a quote or space would change the query.
+    if (/["\\\s]/.test(to)) {
+      throw new Error('not an address the runner can search for')
+    }
     const url = `${baseUrl}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}&limit=1`
     // Delivery is asynchronous: the API answers before Mailpit has indexed the message.
     for (let waited = 0; waited <= MAILPIT_TIMEOUT_MS; waited += 100) {
-      const response = await send(url)
+      const response = await send(url, {
+        signal: AbortSignal.timeout(MAILPIT_REQUEST_TIMEOUT_MS),
+      })
       if (!response.ok) {
         throw new Error(`Mailpit answered ${response.status}`)
       }
