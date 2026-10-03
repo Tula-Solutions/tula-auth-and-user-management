@@ -1,10 +1,13 @@
-import { PUBLISHABLE_KEY_PREFIX } from '@tula/contract'
+import { PUBLISHABLE_KEY_HEADER, PUBLISHABLE_KEY_PREFIX } from '@tula/contract'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, TenantVariables } from '~/dependencies'
 import { resolveApiKey } from '~/middleware/api-key'
 
-/** Header that carries the publishable key on `/v1/client/*` requests. */
-export const PUBLISHABLE_KEY_HEADER = 'x-tula-publishable-key'
+/**
+ * Header that carries the publishable key on `/v1/client/*` requests. Defined by the contract so
+ * every SDK sends the same one.
+ */
+export { PUBLISHABLE_KEY_HEADER }
 
 /**
  * Require a valid publishable key and set `c.var.tenant`.

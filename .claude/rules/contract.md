@@ -13,5 +13,8 @@ paths:
 - Every exported schema has `.meta({ ref: 'Name' })` and a JSDoc block; public helpers include
   `@example`.
 - Keep this package free of Node/Bun-only APIs. It must run in browsers and React Native.
+- `error-codes.ts`, `headers.ts` and `password-rules.ts` must not import Zod (types only from
+  schema modules): they are the entry points SDKs load at run time. A new subpath goes in both
+  `exports` and `publishConfig.exports`, and in `bunup.config.ts`.
 - After changes: `bun run contract:generate` (writes `openapi.json`) and run the contract tests.
   Use `/contract-change`.

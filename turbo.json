@@ -9,6 +9,9 @@
     "typecheck": {
       "outputs": []
     },
+    "generate:check": {
+      "outputs": []
+    },
     "test": {
       "outputs": []
     },

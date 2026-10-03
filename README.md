@@ -7,7 +7,8 @@ and prebuilt UI, first-class native mobile, and data you own.
 > reset, sessions,
 > user administration, the audit log and self-hosting work end to end and are covered by the
 > conformance suite. With Redis the API can run as several instances. Nothing is released yet
-> and there is no dashboard or SDK: not ready for production.
+> and there is no dashboard yet; the first SDK (`@tula/core`) is in the repository but
+> unpublished: not ready for production.
 
 ## What's here
 
@@ -19,10 +20,12 @@ as the public contract that every SDK, the dashboard, the CLI and the MCP server
 | --- | --- |
 | [`apps/api`](apps/api) | `@tula/api`, the auth server |
 | [`packages/contract`](packages/contract) | `@tula/contract`: schemas, flow protocol, error codes, token claims, password policy, [`openapi.json`](packages/contract/openapi.json) |
+| [`packages/core`](packages/core) | `@tula/core`: the [headless TypeScript client](packages/core/README.md) (flows, session, token refresh) |
 | [`packages/db`](packages/db) | `@tula/db`: Drizzle schema, migrations, row-level security, tenant helpers |
 | [`packages/conformance`](packages/conformance) | `@tula/conformance`: runs the conformance scenarios, in process or against a live server |
 | [`conformance/`](conformance) | Language-neutral [scenarios](conformance/README.md) every server and SDK must pass |
-| [`docs/`](docs) | [Self-hosting](docs/self-host.md), [business plan](docs/business-plan.md), [architecture decisions](docs/adr), [designs](docs/design/Design.pdf) |
+| [`examples/core-playground`](examples/core-playground) | A browser test bench for `@tula/core` |
+| [`docs/`](docs) | [Self-hosting](docs/self-host.md), [releasing](docs/releasing.md), [business plan](docs/business-plan.md), [architecture decisions](docs/adr), [designs](docs/design/Design.pdf) |
 
 ## Quickstart (local)
 
