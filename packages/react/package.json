@@ -1,0 +1,55 @@
+{
+  "name": "@tula/react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's React SDK: a provider, hooks and prebuilt, themeable, accessible components for sign-up, sign-in, password reset and account management.",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./styles.css": "./dist/styles.css",
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "generate": "bun run scripts/generate-tokens.ts",
+    "generate:check": "bun run scripts/generate-tokens.ts --check"
+  },
+  "dependencies": {
+    "@tula/contract": "workspace:*",
+    "@tula/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0 || ^19.0.0",
+    "react-dom": "^18.2.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@tula/tsconfig": "workspace:*",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^20.14.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  }
+}

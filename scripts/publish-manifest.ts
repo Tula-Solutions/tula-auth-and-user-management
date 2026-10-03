@@ -1,5 +1,9 @@
 /** Publishable packages, dependencies first. Everything else in the workspace stays private. */
-export const PUBLISHABLE_PACKAGES = ['packages/contract', 'packages/core'] as const
+export const PUBLISHABLE_PACKAGES = [
+  'packages/contract',
+  'packages/core',
+  'packages/react',
+] as const
 
 /** The fields of a package.json this tooling reads. */
 export type Manifest = Record<string, unknown> & {

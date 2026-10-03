@@ -146,8 +146,11 @@ memory; silently continuing would turn into an unexplained sign-out at the next 
 - **Fallbacks.** Without Web Locks, tabs may refresh at the same moment; the server's reuse
   grace period ([ADR 0008](0008-sessions.md)) answers both with the same next token. Without a
   channel, each tab refreshes for itself, one after the other. A tab that cannot get the lock
-  within one request timeout plus two seconds goes on without it, so a stalled tab cannot
-  block the rest.
+  within the longest the holder can need plus two seconds goes on without it, so a stalled
+  tab cannot block the rest. "The longest the holder can need" is a request's timeout or the
+  refresh budget (`refreshBudgetMs`: a refresh may be tried twice), whichever is longer; with
+  only the request timeout, an app that set `timeoutMs: 5000` had a waiter give up at 7
+  seconds while the holder's retry ran until 10, and both refreshed at once.
 - **A refused refresh ends the session once.** `session.*`, `auth.unauthenticated` and
   `auth.user_banned` set the state to `signed-out`, clear storage, notify listeners once and
   resolve every waiter with `null`. Nothing is retried. This covers reuse detection outside the
@@ -181,6 +184,13 @@ memory; silently continuing would turn into an unexplained sign-out at the next 
 - **`Retry-After` is capped at five minutes** (`MAX_REFRESH_BACKOFF_MS`) for the fail-fast
   window, and an explicit `session.refresh()` ignores the window and asks: a proxy answering
   `Retry-After: 86400` must not lock a session for a day.
+- **A 204's empty body is read to its end.** Chromium records a `fetch` whose body nobody
+  consumed as `net::ERR_ABORTED` when the response is collected, with or without an
+  `AbortSignal` (a plain `fetch` of a 204 shows the same), so every successful sign-out and
+  password change looked like a failed request in the network panel. The client never aborts a
+  request that got its answer; the only abort is the timeout.
+- **`user.get()` belongs to the session that asked.** The user is installed into the state
+  only if the session that was current when the request started still is.
 - **A 200 is checked before it is installed.** Refresh answers and a completed flow's `session`
   must have a string `accessToken`, a string `sessionId` and a readable expiry; a flow answer
   must have an `id` and a `step.status`. Otherwise `response.invalid`, with nothing installed,

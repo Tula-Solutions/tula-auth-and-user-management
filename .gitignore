@@ -7,6 +7,10 @@ out/
 coverage/
 *.tsbuildinfo
 
+# Playwright (bun run e2e)
+e2e/test-results/
+e2e/playwright-report/
+
 # env — only the example is committed
 .env
 .env.*

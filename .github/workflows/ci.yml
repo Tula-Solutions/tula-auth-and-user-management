@@ -52,6 +52,31 @@ jobs:
       - run: bun run db:migrate
       - run: bun run test:integration
 
+  # Browser behaviour is tested in a browser (Phase 1 plan, rule 3): the example app, built only
+  # from @tula/react components, against the real API served in process with memory adapters
+  # (e2e/server.ts), driven by Playwright, with axe on every screen in light and dark. Its own
+  # job, not part of `bun run verify`: it needs a browser download.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: Install Chromium and its system libraries
+        run: bunx playwright install --with-deps chromium
+      - run: bun run e2e
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
   # The packaged server, as a self-hoster runs it: build the image, start two instances of it
   # with Compose, and run the conformance scenarios against them over HTTP. The `two instances`
   # scenario signs in through one and out through the other, and spreads wrong passwords over

@@ -1,6 +1,6 @@
 # Changesets
 
-Every change to a publishable package (`@tula/contract`, `@tula/core`) comes with a changeset:
+Every change to a publishable package (`@tula/contract`, `@tula/core`, `@tula/react`) comes with a changeset:
 a small Markdown file in this folder that names the packages, the kind of bump and the
 changelog line.
 

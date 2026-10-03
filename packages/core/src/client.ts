@@ -8,7 +8,12 @@ import {
   signInFlow,
   signUpFlow,
 } from './flows'
-import { createSessionManager, LOCK_WAIT_MARGIN_MS, REFRESH_TIMEOUT_MS } from './session'
+import {
+  createSessionManager,
+  LOCK_WAIT_MARGIN_MS,
+  REFRESH_TIMEOUT_MS,
+  refreshBudgetMs,
+} from './session'
 import { memoryStorage, type TokenStorage } from './storage'
 import { createTransport } from './transport'
 import type { AuthState, ClientConfig, ClientKind, FetchLike, Session, User } from './types'
@@ -265,6 +270,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError('createTulaClient: `timeoutMs` must be a positive number')
   }
+  const refreshTimeoutMs = Math.min(timeoutMs, REFRESH_TIMEOUT_MS)
   const send = options.fetch ?? ((request: Request) => globalThis.fetch(request))
 
   let messages: Messages = options.messages ?? {}
@@ -283,8 +289,10 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     transport,
     storage: options.storage ?? memoryStorage(),
     environment,
-    lockWaitMs: timeoutMs + LOCK_WAIT_MARGIN_MS,
-    refreshTimeoutMs: Math.min(timeoutMs, REFRESH_TIMEOUT_MS),
+    // The lock is held for a refresh (which may be tried twice) or for one sign-out request.
+    // A waiter that gave up sooner than the holder can take would refresh alongside it.
+    lockWaitMs: Math.max(timeoutMs, refreshBudgetMs(refreshTimeoutMs)) + LOCK_WAIT_MARGIN_MS,
+    refreshTimeoutMs,
     // One lock, channel and storage entry per API and environment, so two apps (or two
     // environments) on one origin do not share a session.
     scope: `${baseUrl}|${publishableKey}`,
@@ -330,8 +338,21 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     },
     user: {
       async get() {
+        // Settle who is signed in first (a client that has not loaded yet restores its
+        // session here), so that the answer can be tied to that session.
+        await session.getToken()
+        const asked = session.state()
         const user = await session.authorized('getMe', {})
-        session.setUser(user)
+        const now = session.state()
+        // The user belongs to the session that asked. If that session ended, or someone else
+        // signed in, while the request was in flight, it must not become the new state's user.
+        if (
+          asked.status === 'signed-in' &&
+          now.status === 'signed-in' &&
+          now.sessionId === asked.sessionId
+        ) {
+          session.setUser(user)
+        }
         return user
       },
       async changePassword(input) {

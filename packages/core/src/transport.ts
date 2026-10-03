@@ -201,16 +201,27 @@ export function createTransport(options: TransportOptions): Transport {
         })
       )
       // Read inside the timeout: a stalled body is the same failure as a stalled request.
-      payload =
-        response.status === 204
-          ? undefined
-          : await response.json().catch((cause: unknown) => {
-              // Cut off by the timeout: that is a timeout, not an unreadable answer.
-              if (controller.signal.aborted) {
-                throw cause
-              }
-              return null
-            })
+      if (response.status === 204) {
+        // Nothing to parse, but the (empty) body is still read to its end. A browser records a
+        // fetch whose body nobody consumed as cancelled (`net::ERR_ABORTED` in the network
+        // panel) when the response is collected, which made every successful sign-out and
+        // password change look like a failed request. This client never aborts a request
+        // that got its answer; the only abort is the timeout above.
+        await response.text().catch((cause: unknown) => {
+          if (controller.signal.aborted) {
+            throw cause
+          }
+        })
+        payload = undefined
+      } else {
+        payload = await response.json().catch((cause: unknown) => {
+          // Cut off by the timeout: that is a timeout, not an unreadable answer.
+          if (controller.signal.aborted) {
+            throw cause
+          }
+          return null
+        })
+      }
     } catch (cause) {
       throw clientError(
         controller.signal.aborted ? 'network.timeout' : 'network.failed',

@@ -10,6 +10,7 @@
     "./error-codes": "./src/error-codes.ts",
     "./headers": "./src/headers.ts",
     "./password-rules": "./src/password-rules.ts",
+    "./theme": "./src/theme.ts",
     "./openapi.json": "./openapi.json"
   },
   "publishConfig": {
@@ -29,6 +30,10 @@
       "./password-rules": {
         "types": "./dist/password-rules.d.ts",
         "default": "./dist/password-rules.js"
+      },
+      "./theme": {
+        "types": "./dist/theme.d.ts",
+        "default": "./dist/theme.js"
       },
       "./openapi.json": "./openapi.json",
       "./package.json": "./package.json"

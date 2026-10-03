@@ -1,6 +1,9 @@
 ---
 paths:
   - "packages/core/**"
+  - "packages/react/**"
+  - "examples/react-vite/**"
+  - "e2e/**"
   - "packages/nextjs/**"
   - "packages/expo/**"
 ---
@@ -41,3 +44,41 @@ paths:
   listed there as server-only with a reason (the guard test enforces it). The JSON scenarios
   themselves are HTTP-level and are run by servers and native SDKs.
 - Check browser behaviour in a browser: `bun run playground`.
+
+## React SDK (`packages/react`, ADR 0022)
+
+- Runtime dependencies: `@tula/core` and the contract's Zod-free entry points. No CSS
+  framework, icon library, CSS-in-JS runtime or router. React is a peer (18.2+ and 19).
+- Components draw `step.status` and contain no flow logic. The default branch of a step
+  `switch` is `UnsupportedScreen`. A new method is a screen plus an entry in
+  `FIRST_FACTOR_FORMS`.
+- One stylesheet, `src/styles.css`: every selector inside `:where()`, classes prefixed
+  `tula-`, colours only through the private `--_tula-*` properties. Its token block is
+  generated (`bun run --filter @tula/react generate`) from `@tula/contract/theme`; change
+  tokens there. `package.test.tsx` enforces all of it.
+- Every stylable part goes through `el('<name>')` with a name from `ELEMENT_NAMES` (class
+  `tula-<kebab>` and `data-tula-element`). Adding a name is additive; removing or renaming one
+  is breaking.
+- Every user-visible string is in `src/localization.ts`. Server error messages come from
+  `@tula/core` by code; never copy one into the table.
+- Nothing during render touches `window`, `document`, `Date.now()` or storage (`ssr-render.tsx`
+  proves it in a process without a DOM). No `dangerouslySetInnerHTML`. No `console`.
+- Destinations are developer-supplied props only, passed through `go()` / `safeUrl()`.
+- Theme values reach the page only through `themeToCssVariables`, which validates them
+  (`isValidThemeValue`). They are untrusted: never interpolate one into CSS or a style
+  attribute yourself.
+- After an `await` on the API, check the session is still the one the call started under
+  before setting state; never share an in-flight request across sessions. Do not drop a flow
+  object in an effect cleanup (`<Activity>` re-runs effects with state kept).
+- Passwords and codes: component state only while the form is on screen; cleared on submit of
+  a sign-in password and on completion.
+- Accessibility: a real `<form>` and `<label>` per field (`TextField`), errors through
+  `errors` (sets `aria-invalid`, `aria-describedby`, `role="alert"`), `Button` for anything
+  that can be pending (`aria-disabled`, never `disabled`), focus on the title when a screen
+  changes (`Card focusTitle`). Tab order follows the document: put a secondary action after
+  the field it belongs to.
+- Tests: `bun test` in happy-dom (preload `src/testing/setup.ts`), Testing Library queries by
+  role and label, the world from `src/testing/harness.tsx`. Coverage is per file (90%).
+- Browser tests live in `e2e/tests`. A new screen or state gets a scenario and an
+  `expectAccessible` call in both colour schemes; no axe rule is disabled without a comment
+  saying why. `e2e/server.ts` must keep refusing to start without `E2E=1`.

@@ -77,9 +77,27 @@ const MIN_REFRESH_RETRY_TIMEOUT_MS = 1_000
 export const MAX_REFRESH_BACKOFF_MS = 5 * 60_000
 
 /**
- * How much longer than one request's timeout a tab waits for the cross-tab lock before it goes
- * on without it. The tab holding the lock makes one request, so it frees the lock within the
- * timeout unless it has stalled; waiting for ever would let one stuck tab block the rest.
+ * The longest a refresh can run: its first try, plus the one retry a try with no answer gets.
+ *
+ * The retry is given what is left of {@link REFRESH_RETRY_WINDOW_MS} (at least
+ * `MIN_REFRESH_RETRY_TIMEOUT_MS`, at most the refresh timeout), so the two tries together end
+ * within the window when the timeout is long, and within twice the timeout when it is short.
+ *
+ * @param refreshTimeoutMs - The refresh request's own timeout.
+ * @returns The budget in milliseconds.
+ */
+export function refreshBudgetMs(refreshTimeoutMs: number): number {
+  return Math.min(
+    2 * refreshTimeoutMs,
+    Math.max(REFRESH_RETRY_WINDOW_MS, refreshTimeoutMs + MIN_REFRESH_RETRY_TIMEOUT_MS)
+  )
+}
+
+/**
+ * How much longer than the lock holder can need a tab waits for the cross-tab lock before it
+ * goes on without it. The holder makes a refresh (up to {@link refreshBudgetMs}, since a
+ * refresh may be tried twice) or one sign-out request, so it frees the lock within that time
+ * unless it has stalled; waiting for ever would let one stuck tab block the rest.
  */
 export const LOCK_WAIT_MARGIN_MS = 2_000
 
@@ -122,8 +140,9 @@ export interface SessionOptions {
   /** Clock, locks and channel. */
   environment: Environment
   /**
-   * How long a tab waits for the cross-tab lock before going on without it: one request's
-   * timeout plus {@link LOCK_WAIT_MARGIN_MS}.
+   * How long a tab waits for the cross-tab lock before going on without it: the longest the
+   * holder can need (a request's timeout, or {@link refreshBudgetMs} if that is longer) plus
+   * {@link LOCK_WAIT_MARGIN_MS}.
    */
   lockWaitMs: number
   /** The refresh request's own timeout: {@link REFRESH_TIMEOUT_MS}, or the client's if smaller. */

@@ -42,6 +42,16 @@ interface Packed {
   private: boolean
   tarball: string
   files: number
+  /** Entry points that are not modules (a stylesheet): they have no types to check. */
+  assets: string[]
+}
+
+/** The `exports` subpaths of a published manifest that point at a stylesheet. */
+function assetEntryPoints(manifest: Manifest): string[] {
+  const published = (manifest.publishConfig?.exports ?? {}) as Record<string, unknown>
+  return Object.entries(published)
+    .filter(([, target]) => typeof target === 'string' && target.endsWith('.css'))
+    .map(([subpath]) => subpath.replace(/^\.\//, ''))
 }
 
 async function stageAndPack(dir: string, versions: ReadonlyMap<string, string>): Promise<Packed> {
@@ -77,6 +87,7 @@ async function stageAndPack(dir: string, versions: ReadonlyMap<string, string>):
     private: manifest.private === true,
     tarball,
     files: listing.trim().split('\n').length,
+    assets: assetEntryPoints(manifest),
   }
 }
 
@@ -92,7 +103,13 @@ async function check(packed: Packed): Promise<void> {
   await run(['bunx', 'publint', 'run', packed.tarball, '--strict'], root)
   // Are the types wrong: every entry point resolves to types under each module resolution
   // mode. The packages are ESM-only on purpose, so CommonJS `require` is out of scope.
-  await run(['bunx', 'attw', packed.tarball, '--profile', 'esm-only', '--no-emoji'], root)
+  // A stylesheet entry point resolves to no types by nature; publint above has already checked
+  // that its file exists in the tarball.
+  const skipped = packed.assets.length > 0 ? ['--exclude-entrypoints', ...packed.assets] : []
+  await run(
+    ['bunx', 'attw', packed.tarball, '--profile', 'esm-only', '--no-emoji', ...skipped],
+    root
+  )
 }
 
 const mode = process.argv[2]
