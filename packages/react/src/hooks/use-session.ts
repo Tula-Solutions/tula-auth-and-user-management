@@ -97,6 +97,10 @@ export function useSession(): UseSessionResult {
       return Promise.resolve()
     }
     if (inFlight.current?.sessionId === startedFor) {
+      // The request being joined is still running, so this session's list is loading, whatever
+      // the flag was reset to since it started: under StrictMode the effect below runs twice,
+      // and its second run clears the flag before joining the first run's request.
+      setLoading(true)
       return inFlight.current.done
     }
     /** Still mounted, and still the session this request was made for. */

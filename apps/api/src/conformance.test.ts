@@ -5,6 +5,8 @@ import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '~/testing'
 
 const PUBLISHABLE_KEY = 'tula_pk_dev_conformance00000000000000000000'
 const SECRET_KEY = 'tula_sk_dev_conformance00000000000000000000'
+/** A subject that leads with a 6-digit code, as every code email's does. */
+const CODE_SUBJECT = /^(\d{6})\b/
 
 /**
  * A fresh in-process server per scenario: memory adapters, a clock that `wait` steps advance,
@@ -37,8 +39,11 @@ async function inProcessTarget(): Promise<Target> {
       fetch: async (request) => second.request(request),
     },
     emailCode: async (to) => {
-      const message = deps.mailer.outbox.findLast((sent) => sent.to === to)
-      const code = /^(\d{6})\b/.exec(message?.subject ?? '')?.[1]
+      // The newest email that carries a code: a security notice (ADR 0023) can follow it.
+      const message = deps.mailer.outbox.findLast(
+        (sent) => sent.to === to && CODE_SUBJECT.test(sent.subject)
+      )
+      const code = CODE_SUBJECT.exec(message?.subject ?? '')?.[1]
       if (!code) {
         throw new Error(`no email with a code was sent to ${to}`)
       }

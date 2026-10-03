@@ -31,6 +31,10 @@ document with a format `version` (1) and five sections:
 | `urls` | `allowedOrigins` (at most 50) and `allowedRedirectUrls` (at most 100). |
 | `audit` | `retentionDays`: 1–3650, or `null` to keep entries for ever (the default). |
 
+A sixth section, `notifications` (which security notices are emailed), was added later by
+[ADR 0023](0023-security-notices.md), the additive way described here; switching one off also
+sets the `weakened` flag below.
+
 Every field has a default, so `{}` is a valid document. Because of that, **an unknown key is
 refused**, not ignored: a misspelt `pasword` section would otherwise save successfully and
 silently reset the policy to its default. Documents read back from storage are parsed

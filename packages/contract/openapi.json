@@ -1552,6 +1552,21 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "notifications": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "passwordChanged": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "newSignIn": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [
@@ -1674,6 +1689,21 @@
                     "type": "null"
                   }
                 ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "notifications": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "passwordChanged": {
+                "default": true,
+                "type": "boolean"
+              },
+              "newSignIn": {
+                "default": true,
+                "type": "boolean"
               }
             },
             "additionalProperties": false

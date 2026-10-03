@@ -136,11 +136,19 @@ const BREACH_CHECK_STRENGTH: Record<PasswordPolicy['breachCheck'], number> = {
   block: 2,
 }
 
+/** The security notices an environment can switch off. Switching one off is a weakening. */
+const NOTICES = [
+  'passwordChanged',
+  'newSignIn',
+] as const satisfies readonly (keyof EnvironmentSettings['notifications'])[]
+
 /**
- * Whether replacing `before` with `after` makes passwords easier to guess: the definition
- * behind the audit entry's `weakened` flag.
+ * Whether replacing `before` with `after` makes an account easier to take over, or a takeover
+ * harder to notice: the definition behind the audit entry's `weakened` flag.
  *
- * True when the new password policy, compared with the old one:
+ * True when a security notice that was on is switched off (`notifications.passwordChanged`,
+ * `notifications.newSignIn`: the owner would no longer be told), or when the new password
+ * policy, compared with the old one:
  * - allows a shorter password (`minLength` is lower);
  * - checks breached passwords less strictly (`block` → `warn` → `off`);
  * - turns off a rule that was on (a required character kind, `disallowUserInfo`,
@@ -150,12 +158,13 @@ const BREACH_CHECK_STRENGTH: Record<PasswordPolicy['breachCheck'], number> = {
  *
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
- * measure), and anything outside the password policy. Disabling a sign-in method removes a way
- * in; it is not a weakening.
+ * measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
+ * weakening.
  *
  * @param before - The settings being replaced.
  * @param after - The new settings.
- * @returns `true` when the password policy got weaker in at least one respect.
+ * @returns `true` when the password policy got weaker in at least one respect, or a security
+ *   notice was switched off.
  */
 export function weakened(before: EnvironmentSettings, after: EnvironmentSettings): boolean {
   const [was, is] = [before.password, after.password]
@@ -166,7 +175,8 @@ export function weakened(before: EnvironmentSettings, after: EnvironmentSettings
     SWITCHED_RULES.some((rule) => was[rule] && !is[rule]) ||
     is.minCharacterClasses < was.minCharacterClasses ||
     repeats(is) > repeats(was) ||
-    is.history < was.history
+    is.history < was.history ||
+    NOTICES.some((notice) => before.notifications[notice] && !after.notifications[notice])
   )
 }
 
@@ -250,7 +260,7 @@ export interface ReplaceInput {
  *
  * The change is recorded as `environment.settings_updated` in the same transaction, with the
  * keys that changed and never their values, and `weakened: true` when it made the password
- * policy weaker (see {@link weakened}). A document identical to the current one changes
+ * policy weaker or switched a security notice off (see {@link weakened}). A document identical to the current one changes
  * nothing: no new revision and no audit entry.
  *
  * @param deps - Settings store, config, ids and clock.

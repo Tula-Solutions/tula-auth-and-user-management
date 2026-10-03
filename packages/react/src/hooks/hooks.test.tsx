@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, jest, mock, test } from 'bun:test'
 import { act, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { renderToString } from 'react-dom/server'
 import { SignedIn, SignedOut, TulaLoading } from '../components/control'
 import { SignUp } from '../components/sign-up'
@@ -290,6 +291,38 @@ describe('a result that arrives for a session that is no longer the current one 
     })
     expect(seen.at(-1)).toEqual(['session_2'])
     expect(seen.flat()).not.toContain('first_users_phone')
+  })
+
+  test('under StrictMode the device list is loading for the whole first fetch', async () => {
+    const w = world({ signedIn: true })
+    let release: (response: Response) => void = () => undefined
+    w.api.on(ROUTE.sessions, () => new Promise<Response>((resolve) => (release = resolve)))
+    const seen: { isLoading: boolean; sessions: string[] | null }[] = []
+    function Probe() {
+      const { isLoading, sessions } = useSession()
+      seen.push({ isLoading, sessions: sessions ? sessions.map((entry) => entry.id) : null })
+      return null
+    }
+    // Mounted once the session is restored, as a device list is: the hook then starts signed
+    // in, and StrictMode runs its effect twice. The second run joins the first request.
+    w.mount(
+      <StrictMode>
+        <SignedIn>
+          <Probe />
+        </SignedIn>
+      </StrictMode>
+    )
+    await waitFor(() => expect(w.api.calls(ROUTE.sessions)).toHaveLength(1))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    expect(w.api.calls(ROUTE.sessions)).toHaveLength(1)
+    expect(seen.at(-1)).toEqual({ isLoading: true, sessions: null })
+    await act(async () => {
+      release(json(200, { data: [device('session_1')] }))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    expect(seen.at(-1)).toEqual({ isLoading: false, sessions: ['session_1'] })
   })
 
   test('a user fetched for one session is not installed into the next', async () => {

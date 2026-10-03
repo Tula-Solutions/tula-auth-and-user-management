@@ -32,6 +32,7 @@ describe('EnvironmentSettingsSchema', () => {
       signIn: { methods: { password: { enabled: true } } },
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
+      notifications: { passwordChanged: true, newSignIn: true },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -56,6 +57,12 @@ describe('EnvironmentSettingsSchema', () => {
     ['an unknown sign-in method', { signIn: { methods: { carrierPigeon: {} } } }, 'signIn.methods'],
     ['an unknown url list', { urls: { origins: [] } }, 'urls'],
     ['an unknown audit field', { audit: { days: 1 } }, 'audit'],
+    ['an unknown notice', { notifications: { newSingIn: false } }, 'notifications'],
+    [
+      'a notice switch that is not a boolean',
+      { notifications: { newSignIn: 'no' } },
+      'notifications.newSignIn',
+    ],
     ['another document version', { version: 2 }, 'version'],
   ])('%s is refused, not ignored', (_, input, path) => {
     expect(issuePaths(input)).toContain(path)
@@ -289,6 +296,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       signIn: { methods: { password: { enabled: true } } },
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
+      notifications: { passwordChanged: true, newSignIn: true },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,

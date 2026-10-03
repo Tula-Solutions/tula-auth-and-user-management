@@ -103,6 +103,28 @@ export function endedBy(
   )
 }
 
+/** What a session was created from: the client kind and the user agent it sent. */
+export type SessionDevice = Pick<SessionRecord, 'client' | 'userAgent'>
+
+/**
+ * Whether session `x` began before session `y`: by creation time, then by id, so that of two
+ * sessions created in the same instant exactly one is the earlier.
+ *
+ * Shared by every adapter so they agree on which sessions {@link SessionStore.listDevicesBefore}
+ * looks at.
+ *
+ * @param x - A session.
+ * @param y - Another session.
+ * @returns `true` when `x` comes first.
+ */
+export function beganBefore(
+  x: Pick<SessionRecord, 'id' | 'createdAt'>,
+  y: Pick<SessionRecord, 'id' | 'createdAt'>
+): boolean {
+  const [xAt, yAt] = [x.createdAt.getTime(), y.createdAt.getTime()]
+  return xAt < yAt || (xAt === yAt && x.id < y.id)
+}
+
 /** Options of {@link SessionStore.revokeByUser}. */
 export interface RevokeByUserOptions {
   /** A session to leave signed in. */
@@ -164,6 +186,28 @@ export interface SessionStore {
    * @returns The user's active sessions, most recently active first.
    */
   listActiveByUser(environmentId: string, userId: string, now: Date): Promise<SessionRecord[]>
+
+  /**
+   * The devices a user's earlier sessions were created from: every session of the user still in
+   * the table, **active or ended**, that began before `session` (see {@link beganBefore}).
+   * Used to tell whether a sign-in comes from a device the account has been seen on (ADR 0023).
+   *
+   * Each distinct pair of client kind and user agent is returned once. When there are more than
+   * `limit`, the ones used by the most recent sessions are kept.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param session - The session to look back from; it is never part of the result.
+   * @param limit - The most devices to return.
+   * @returns The devices, the most recently used first. Empty when the user has no earlier
+   *   session.
+   */
+  listDevicesBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    limit: number
+  ): Promise<SessionDevice[]>
 
   /**
    * Revoke one session. Revoking the session invalidates its whole refresh-token chain.

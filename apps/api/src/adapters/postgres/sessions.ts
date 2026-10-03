@@ -1,5 +1,5 @@
 import { type Database, refreshTokens, sessions, withTenant } from '@tula/db'
-import { and, desc, eq, gt, inArray, isNull, lte, ne, or } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
 import type { Activity } from '~/ports/activity-log'
@@ -9,6 +9,7 @@ import type {
   RefreshTokenRecord,
   RevokeByUserOptions,
   Rotation,
+  SessionDevice,
   SessionRecord,
   SessionRevokeReason,
   SessionStore,
@@ -192,6 +193,35 @@ export class PostgresSessionStore implements SessionStore {
           )
         )
         .orderBy(desc(sessions.lastActiveAt), desc(sessions.id))
+    )
+  }
+
+  /** @inheritdoc */
+  async listDevicesBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    limit: number
+  ): Promise<SessionDevice[]> {
+    return withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({ client: sessions.client, userAgent: sessions.userAgent })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.environmentId, environmentId),
+            eq(sessions.userId, userId),
+            // The same order as `beganBefore` in the port: creation time, then id.
+            or(
+              lt(sessions.createdAt, session.createdAt),
+              and(eq(sessions.createdAt, session.createdAt), lt(sessions.id, session.id))
+            )
+          )
+        )
+        .groupBy(sessions.client, sessions.userAgent)
+        // Postgres before 18 has no max(uuid); as text a uuid sorts the same way.
+        .orderBy(desc(max(sessions.createdAt)), desc(sql`max(${sessions.id}::text)`))
+        .limit(limit)
     )
   }
 

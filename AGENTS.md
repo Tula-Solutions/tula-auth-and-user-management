@@ -205,7 +205,7 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 Anything about how sign-in behaves that differs between tenants lives in the environment's
 settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/adr/0018-environment-settings.md)):
 app name and support address, password policy, enabled sign-in methods, allowed origins and
-redirect URLs, audit retention. **Read it through `~/modules/settings/service`**
+redirect URLs, audit retention, and which security notices are emailed (`notifications`). **Read it through `~/modules/settings/service`**
 (`Settings.current(deps, tenant)`), never from `deps.config`: `PASSWORD_POLICY` and
 `CORS_ORIGINS` are only the defaults of an environment that has saved nothing.
 
@@ -324,7 +324,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   second factors: [ADR 0019](docs/adr/0019-flow-engine-v2.md); packaging and releases:
   [ADR 0020](docs/adr/0020-packaging-and-release.md); the client SDK and where it keeps tokens:
   [ADR 0021](docs/adr/0021-core-sdk.md); the React components, theming and browser tests:
-  [ADR 0022](docs/adr/0022-react-sdk.md).
+  [ADR 0022](docs/adr/0022-react-sdk.md); security notice emails and what "a new device" means:
+  [ADR 0023](docs/adr/0023-security-notices.md).
 - **Every flow call after the start presents the attempt's secret** (`x-tula-attempt`). The
   secret is 256 bits, returned once by the start, stored only as SHA-256 and never logged or
   audited. Missing, wrong or another attempt's: the same `flow.not_found` as an unknown attempt,
@@ -367,7 +368,17 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   (ADR 0012).
 - Operator-supplied text that reaches an email (the app name) is untrusted input: it goes
   through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
-  subject or HTML.
+  subject or HTML. A user agent never reaches an email at all: only the family
+  `deviceFamily` (`~/lib/device`) derives from it, which is built from fixed names.
+- **A change to a password, and a sign-in from a new device, are announced to the account's
+  owner** through `~/modules/notice/service` (ADR 0023). A new code path that stores a password
+  goes through `Users.replacePassword`, and one that creates a session for a sign-in goes
+  through the flow engine's `finish`, so it is announced too. Notices are started after the
+  change is committed and are never awaited: they must not fail or delay what they describe.
+  They have their own per-user limit (`NOTICES_PER_HOUR`), and a limiter that cannot count
+  means no notice, never a refused sign-in. A notice carries no code, token or link, and its
+  subject never starts with digits. Tests wait for them with `Notices.settled()` and read a
+  code from the newest email whose subject leads with one, not from the newest email.
 - Treat every change under `modules/{flow,session,password,jwks,verification}`, `middleware/cors.ts`
   or `lib/crypto.ts` as security-sensitive: it needs tests for the failure paths, not just the happy path.
 
@@ -450,14 +461,16 @@ apps/api/src/
 ├── handlers.ts       # onError + validation hook → contract error envelope
 ├── openapi.ts        # shared OpenAPI responses, security requirements, document info
 ├── testing.ts        # createTestDeps(): memory adapters + FixedClock
-├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor
+├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor,
+│                     # device (the family a user agent belongs to), safe-error
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/
 ├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, cors, request-log
 └── modules/          # flow, password, session, jwks, verification, user, audit, project, status,
                       # settings, factor (first-factor registry and second-factor hooks:
                       # service only), email (layout + copy: service only, no router),
-                      # retention (a background job: service only, no router)
+                      # retention (a background job: service only, no router),
+                      # notice (security notice emails: service only, no router)
 ```
 
 ## Common commands

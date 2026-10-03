@@ -106,3 +106,31 @@ export function errorReason(error: unknown): string {
   }
   return message ?? name
 }
+
+/**
+ * Summarize a failed email send for a log line without its message, which routinely quotes the
+ * recipient (`550 <user@example.com>: rejected`). The error's name, its Node or nodemailer code
+ * and the SMTP status are enough to diagnose and contain no personal data.
+ *
+ * Safe for whatever went wrong on the way to a send, not only the relay: nothing but those three
+ * fields is ever read.
+ *
+ * @param error - Whatever was thrown.
+ * @returns The parts that are present, space-separated, e.g. `Error EENVELOPE 550`; an empty
+ *   string for a value that carries none.
+ *
+ * @example
+ * ```ts
+ * logger.warn('security notice not sent', { reason: describeMailFailure(error) })
+ * ```
+ */
+export function describeMailFailure(error: unknown): string {
+  const { name, code, responseCode } = (error ?? {}) as {
+    name?: unknown
+    code?: unknown
+    responseCode?: unknown
+  }
+  return [name, code, responseCode]
+    .filter((part) => typeof part === 'string' || typeof part === 'number')
+    .join(' ')
+}

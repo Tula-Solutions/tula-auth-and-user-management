@@ -24,8 +24,46 @@ export interface NoticeMessage {
   type: 'account_exists' | 'no_account'
 }
 
+/**
+ * A security notice: the account's password was changed, or a first one was added.
+ *
+ * It carries no code and no link: nothing in it acts on the account (ADR 0023).
+ */
+export interface PasswordChangedMessage {
+  type: 'password_changed'
+  /**
+   * How it was changed: by the signed-in user (`self`), by a completed password reset (`reset`)
+   * or by an administrator (`admin`).
+   */
+  by: 'self' | 'reset' | 'admin'
+  /** `true` when the account had no password before, so one was added rather than replaced. */
+  added: boolean
+  /** When the password was stored. */
+  at: Date
+}
+
+/**
+ * A security notice: the account was signed in to from a device family none of its earlier
+ * sessions has. No code and no link.
+ */
+export interface NewSignInMessage {
+  type: 'new_sign_in'
+  /**
+   * The device family, from `deviceFamily` in `~/lib/device`: one of its fixed names, never the
+   * user agent itself, which is text the client chose.
+   */
+  device: string
+  /** When the session began. */
+  at: Date
+  /** The address the sign-in came from, as stored with the session, or `null` to leave it out. */
+  ipAddress: string | null
+}
+
+/** An email that tells an account's owner about a change to who can get in. */
+export type SecurityNoticeMessage = PasswordChangedMessage | NewSignInMessage
+
 /** Every email Tula sends. Adding a message means adding its copy to this module, nowhere else. */
-export type EmailMessage = CodeMessage | NoticeMessage
+export type EmailMessage = CodeMessage | NoticeMessage | SecurityNoticeMessage
 
 /** What a message says, before the layout is applied. `{app}` is replaced by the app's name. */
 interface Copy {
@@ -35,13 +73,15 @@ interface Copy {
   lead: string[]
   /** Label of the link button of a code message. */
   action?: string
+  /** Facts shown between the lead and the closing, one `label: value` per line. */
+  details?: [label: string, value: string][]
   /** Paragraphs after the code. */
   closing: string[]
 }
 
 const IGNORE = "If you didn't request this, you can safely ignore this email."
 
-const COPY: Record<EmailMessage['type'], Copy> = {
+const COPY: Record<(CodeMessage | NoticeMessage)['type'], Copy> = {
   email_verification: {
     subject: 'is your {app} verification code',
     lead: ['Enter this code to verify your email address for {app}:'],
@@ -70,6 +110,82 @@ const COPY: Record<EmailMessage['type'], Copy> = {
     ],
     closing: ["If it wasn't you, you can safely ignore this email."],
   },
+}
+
+const SIGNED_OUT = 'Every device that was signed in has been signed out.'
+const RESET_NOW = 'open {app} and reset your password from the sign-in screen right away'
+
+/**
+ * A moment as text nobody can misread: `2026-10-03 14:05 UTC`. Always UTC, since the server
+ * does not know where the reader is.
+ */
+function utc(at: Date): string {
+  const iso = at.toISOString()
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`
+}
+
+/** What a password notice says happened, by who did it and whether a password existed before. */
+function passwordChange({ by, added }: PasswordChangedMessage): string[] {
+  if (by === 'admin') {
+    return [
+      added
+        ? 'An administrator of {app} added a password to your account.'
+        : 'An administrator of {app} set a new password for your account.',
+      SIGNED_OUT,
+    ]
+  }
+  if (by === 'reset') {
+    return [
+      added
+        ? 'A password was added to your {app} account, using a code sent to this email address.'
+        : 'The password for your {app} account was reset, using a code sent to this email address.',
+      SIGNED_OUT,
+    ]
+  }
+  return [
+    added
+      ? 'A password was added to your {app} account by someone signed in to it.'
+      : 'The password for your {app} account was changed by someone signed in to it.',
+    'Every other device was signed out.',
+  ]
+}
+
+/** The copy of a security notice. Built per message: what it says depends on what happened. */
+function securityCopy(message: SecurityNoticeMessage): Copy {
+  if (message.type === 'new_sign_in') {
+    return {
+      subject: 'New sign-in to your {app} account',
+      lead: [
+        'Your {app} account was just signed in to from a device we have not seen it used on before.',
+      ],
+      details: [
+        ['Device', message.device],
+        ['When', utc(message.at)],
+        ...(message.ipAddress ? ([['IP address', message.ipAddress]] as [string, string][]) : []),
+      ],
+      closing: [
+        'If this was you, you can ignore this email.',
+        `If it wasn't you, ${RESET_NOW}. Resetting the password signs every device out.`,
+      ],
+    }
+  }
+  return {
+    subject: message.added
+      ? 'A password was added to your {app} account'
+      : 'Your {app} password was changed',
+    lead: [passwordChange(message).join(' ')],
+    details: [['When', utc(message.at)]],
+    closing: [
+      message.by === 'admin'
+        ? 'If you expected this, there is nothing more to do.'
+        : 'If this was you, there is nothing more to do.',
+      `If it wasn't you, or you did not expect it, ${RESET_NOW}.`,
+    ],
+  }
+}
+
+function isSecurityNotice(message: EmailMessage): message is SecurityNoticeMessage {
+  return message.type === 'password_changed' || message.type === 'new_sign_in'
 }
 
 // Control characters and line or paragraph separators: anything that could end a header line.
@@ -115,6 +231,10 @@ function paragraph(text: string): string {
   return `<p>${escapeHtml(text)}</p>`
 }
 
+function detailLine([label, value]: [string, string]): string {
+  return `${label}: ${value}`
+}
+
 /**
  * Render an email: the one layout every message shares, as plain text and as HTML.
  *
@@ -122,6 +242,9 @@ function paragraph(text: string): string {
  * - A code leads the subject, so it can be read from a notification without opening the email
  *   (and so the conformance runner can find it).
  * - Every interpolated value is HTML-escaped in the HTML part, the app name included.
+ * - A security notice (password changed, new sign-in) never leads its subject with digits and
+ *   carries no code and no link; when a support address is set it says to write there if the
+ *   reader cannot get back in.
  *
  * @param brand - The environment's app name and support address.
  * @param message - What to say.
@@ -129,15 +252,21 @@ function paragraph(text: string): string {
  */
 export function render(brand: EmailBrand, message: EmailMessage): Omit<MailMessage, 'to'> {
   const app = displayName(brand.name)
-  const copy = COPY[message.type]
+  const notice = isSecurityNotice(message)
+  const copy = notice ? securityCopy(message) : COPY[message.type]
   // A function, not a string: `$&` and friends in a replacement string are patterns, and the
   // name is operator input.
   const named = (text: string) => text.replaceAll('{app}', () => app)
   const code = 'code' in message ? message : null
   const lead = copy.lead.map(named)
+  const details = (copy.details ?? []).map(detailLine)
   const closing = [
     ...(code ? [`This code expires in ${code.ttlMinutes} minutes.`] : []),
     ...copy.closing.map(named),
+    // Appended after the name is filled in: an address may itself contain `{app}`.
+    ...(notice && brand.supportEmail
+      ? [`If you cannot get back in to your account, contact ${brand.supportEmail}.`]
+      : []),
   ]
   const support = brand.supportEmail ? `Need help? Contact ${brand.supportEmail}` : null
 
@@ -145,6 +274,7 @@ export function render(brand: EmailBrand, message: EmailMessage): Omit<MailMessa
     subject: code ? `${code.code} ${named(copy.subject)}` : named(copy.subject),
     text: [
       ...lead,
+      ...(details.length > 0 ? [details.join('\n')] : []),
       ...(code ? [code.code] : []),
       ...(code?.linkUrl ? [`Or open this link: ${code.linkUrl}`] : []),
       ...closing,
@@ -154,6 +284,7 @@ export function render(brand: EmailBrand, message: EmailMessage): Omit<MailMessa
       '<!doctype html>',
       `<html><body style="${BODY_STYLE}">`,
       ...lead.map(paragraph),
+      ...(details.length > 0 ? [`<p>${details.map(escapeHtml).join('<br>')}</p>`] : []),
       ...(code ? [`<p style="${CODE_STYLE}">${escapeHtml(code.code)}</p>`] : []),
       ...(code?.linkUrl
         ? [`<p><a href="${escapeHtml(code.linkUrl)}">${escapeHtml(copy.action ?? 'Open')}</a></p>`]

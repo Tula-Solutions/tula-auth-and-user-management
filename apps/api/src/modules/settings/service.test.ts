@@ -376,6 +376,36 @@ describe('weakened', () => {
     expect(Settings.weakened(strict, policy({ minLength: 30, requireNumber: false }))).toBe(true)
   })
 
+  test.each<[string, boolean, boolean, boolean, boolean]>([
+    ['the password notice switched off', true, false, true, true],
+    ['the new sign-in notice switched off', true, true, true, false],
+    ['a notice switched on', false, true, true, true],
+    ['a notice that stays off', false, false, true, true],
+  ])('%s', (_, passwordWas, passwordIs, signInWas, signInIs) => {
+    const before = document({
+      notifications: { passwordChanged: passwordWas, newSignIn: signInWas },
+    })
+    const after = document({ notifications: { passwordChanged: passwordIs, newSignIn: signInIs } })
+    expect(Settings.weakened(before, after)).toBe(
+      (passwordWas && !passwordIs) || (signInWas && !signInIs)
+    )
+  })
+
+  test('switching a security notice off is flagged in the audit entry, switching it on is not', async () => {
+    const off = document({ notifications: { passwordChanged: true, newSignIn: false } })
+    await replace(0, off)
+    expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
+      revision: 1,
+      changed: expect.arrayContaining(['notifications.newSignIn']),
+      weakened: true,
+    })
+    await replace(1, { ...off, notifications: { passwordChanged: true, newSignIn: true } })
+    expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
+      revision: 2,
+      changed: ['notifications.newSignIn'],
+    })
+  })
+
   test('changes outside the password policy are not a weakening', () => {
     const after = document({
       password: strict.password,
