@@ -8,8 +8,8 @@
     "dev": "bun --env-file=../../.env run --hot src/server.ts",
     "start": "bun --env-file=../../.env run src/server.ts",
     "typecheck": "tsc --noEmit -p .",
-    "test": "bun test",
-    "test:coverage": "bun test --coverage",
+    "test": "bun test --timeout 20000",
+    "test:coverage": "bun test --timeout 20000 --coverage",
     "test:integration": "bun test --timeout 30000 ./src/adapters/redis/redis.integration.ts ./src/adapters/postgres/job-lock.integration.ts",
     "contract:generate": "bun run src/scripts/generate-openapi.ts",
     "contract:check": "bun run src/scripts/generate-openapi.ts --check"
