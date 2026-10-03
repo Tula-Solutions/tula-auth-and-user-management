@@ -150,7 +150,7 @@
               "minLength": 14
             },
             "urls": {
-              "allowedOrigins": [],
+              "allowedOrigins": "$any",
               "allowedRedirectUrls": []
             },
             "audit": {

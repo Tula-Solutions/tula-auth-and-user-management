@@ -2,6 +2,7 @@ import {
   type ClientConfig,
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
+  type PasswordPolicy,
   type SignInMethod,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
@@ -116,19 +117,118 @@ export function changedKeys(before: EnvironmentSettings, after: EnvironmentSetti
     .sort()
 }
 
+/** Password rules that are either on or off. Turning one off weakens the policy. */
+const SWITCHED_RULES = [
+  'requireLowercase',
+  'requireUppercase',
+  'requireNumber',
+  'requireSpecial',
+  'disallowUserInfo',
+  'disallowCommon',
+  'blockSequences',
+] as const satisfies readonly (keyof PasswordPolicy)[]
+
+const BREACH_CHECK_STRENGTH: Record<PasswordPolicy['breachCheck'], number> = {
+  off: 0,
+  warn: 1,
+  block: 2,
+}
+
+/**
+ * Whether replacing `before` with `after` makes passwords easier to guess: the definition
+ * behind the audit entry's `weakened` flag.
+ *
+ * True when the new password policy, compared with the old one:
+ * - allows a shorter password (`minLength` is lower);
+ * - checks breached passwords less strictly (`block` → `warn` → `off`);
+ * - turns off a rule that was on (a required character kind, `disallowUserInfo`,
+ *   `disallowCommon`, `blockSequences`);
+ * - asks for fewer character classes, allows longer runs of one character (a higher
+ *   `maxRepeatedChars`, or none), or remembers fewer previous passwords (`history`).
+ *
+ * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
+ * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
+ * measure), and anything outside the password policy. Disabling a sign-in method removes a way
+ * in; it is not a weakening.
+ *
+ * @param before - The settings being replaced.
+ * @param after - The new settings.
+ * @returns `true` when the password policy got weaker in at least one respect.
+ */
+export function weakened(before: EnvironmentSettings, after: EnvironmentSettings): boolean {
+  const [was, is] = [before.password, after.password]
+  const repeats = (policy: PasswordPolicy) => policy.maxRepeatedChars ?? Number.POSITIVE_INFINITY
+  return (
+    is.minLength < was.minLength ||
+    BREACH_CHECK_STRENGTH[is.breachCheck] < BREACH_CHECK_STRENGTH[was.breachCheck] ||
+    SWITCHED_RULES.some((rule) => was[rule] && !is[rule]) ||
+    is.minCharacterClasses < was.minCharacterClasses ||
+    repeats(is) > repeats(was) ||
+    is.history < was.history
+  )
+}
+
+function isSent(sent: unknown, section: string, field?: string): boolean {
+  const value = isRecord(sent) ? sent[section] : undefined
+  if (field === undefined) {
+    return value !== undefined
+  }
+  return isRecord(value) && value[field] !== undefined
+}
+
+/**
+ * Give the sections a request left out the deployment's defaults instead of the schema's.
+ *
+ * The one place this rule lives. Validation fills an omitted `password` with the `recommended`
+ * preset and an omitted `urls.allowedOrigins` with an empty list; taken literally, `PUT {}`
+ * would then weaken a deployment that runs `PASSWORD_POLICY=strict` and lock every browser app
+ * of a deployment that lists its origins in `CORS_ORIGINS` out, cookie refresh included. So
+ * those two take what {@link defaults} gives, on every replace, whatever was saved before.
+ * Anything the request did send, an empty list included, is left as sent.
+ *
+ * @param config - The deployment's configuration.
+ * @param sent - The request body as received, before validation filled anything in.
+ * @param settings - The validated document.
+ * @returns The document to store. `settings` itself is not changed.
+ */
+export function withDeploymentDefaults(
+  config: Pick<AppConfig, 'passwordPolicy' | 'corsOrigins'>,
+  sent: unknown,
+  settings: EnvironmentSettings
+): EnvironmentSettings {
+  const fallback = defaults(config)
+  return {
+    ...settings,
+    password: isSent(sent, 'password') ? settings.password : fallback.password,
+    urls: {
+      ...settings.urls,
+      allowedOrigins: isSent(sent, 'urls', 'allowedOrigins')
+        ? settings.urls.allowedOrigins
+        : fallback.urls.allowedOrigins,
+    },
+  }
+}
+
 /** A replace of an environment's settings. */
 export interface ReplaceInput {
   /** The revision the caller read, from `If-Match`. */
   expectedRevision: number
-  /** The whole new document, already validated. */
+  /** The new document, already validated. */
   settings: EnvironmentSettings
+  /**
+   * The request body as received. The sections it leaves out take the deployment's defaults
+   * (see {@link withDeploymentDefaults}). Leave it out when `settings` is a whole document
+   * that is to be stored exactly as given.
+   */
+  sent?: unknown
 }
 
 /**
  * Replace an environment's settings, if they are still at the revision the caller read.
  *
  * The change is recorded as `environment.settings_updated` in the same transaction, with the
- * keys that changed and never their values. A document identical to the current one changes
+ * keys that changed and never their values, and `weakened: true` when it made the password
+ * policy weaker (see {@link weakened}). A document identical to the current one changes
  * nothing: no new revision and no audit entry.
  *
  * @param deps - Settings store, config, ids and clock.
@@ -151,20 +251,29 @@ export async function replace(
   if (before.revision !== input.expectedRevision) {
     throw new ServiceException('precondition.failed', { params: { revision: before.revision } })
   }
-  const changed = changedKeys(before.settings, input.settings)
+  const settings =
+    input.sent === undefined
+      ? input.settings
+      : withDeploymentDefaults(deps.config, input.sent, input.settings)
+  const changed = changedKeys(before.settings, settings)
   if (changed.length === 0) {
     return before
   }
   const replaced = await deps.environmentSettings.replace(
     tenant.environmentId,
     input.expectedRevision,
-    input.settings,
+    settings,
     deps.clock.now(),
     Audit.entry(deps, tenant, {
       type: 'environment.settings_updated',
       actor,
       target: { type: 'environment', id: tenant.environmentId },
-      data: { revision: input.expectedRevision + 1, changed },
+      data: {
+        revision: input.expectedRevision + 1,
+        changed,
+        // A flag, never the values: enough to find the change that loosened the policy.
+        ...(weakened(before.settings, settings) && { weakened: true }),
+      },
     })
   )
   if (!replaced) {

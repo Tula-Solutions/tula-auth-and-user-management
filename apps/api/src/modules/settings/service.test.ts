@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
+  EnvironmentSettingsSchema,
   PASSWORD_POLICY_PRESETS,
 } from '@tula/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
@@ -326,5 +327,153 @@ describe('requireMethod', () => {
       params: { method: 'password' },
     })
     await Settings.requireMethod(deps, other, 'password')
+  })
+})
+
+describe('weakened', () => {
+  const base = PASSWORD_POLICY_PRESETS.strict
+  const policy = (overrides: Partial<typeof base>) =>
+    document({ password: { ...base, preset: 'custom', ...overrides } })
+  const strict = document({ password: { ...base, preset: 'custom' } })
+
+  test.each<[string, Partial<typeof base>, boolean]>([
+    ['nothing changed', {}, false],
+    ['a shorter minimum length', { minLength: base.minLength - 1 }, true],
+    ['a longer minimum length', { minLength: base.minLength + 1 }, false],
+    ['the breach check from block to warn', { breachCheck: 'warn' }, true],
+    ['the breach check from block to off', { breachCheck: 'off' }, true],
+    ['lowercase no longer required', { requireLowercase: false }, true],
+    ['uppercase no longer required', { requireUppercase: false }, true],
+    ['a number no longer required', { requireNumber: false }, true],
+    ['a special character no longer required', { requireSpecial: false }, true],
+    ['user info allowed', { disallowUserInfo: false }, true],
+    ['common passwords allowed', { disallowCommon: false }, true],
+    ['sequences allowed', { blockSequences: false }, true],
+    ['the repeat limit removed', { maxRepeatedChars: null }, true],
+    ['a looser repeat limit', { maxRepeatedChars: 5 }, true],
+    ['a tighter repeat limit', { maxRepeatedChars: 2 }, false],
+    ['a shorter history', { history: 2 }, true],
+    ['a longer history', { history: 10 }, false],
+    ['a longer maximum length', { maxLength: 256 }, false],
+    ['a different set of special characters', { specialChars: '!?' }, false],
+    ['forced rotation removed', { expiryDays: null }, false],
+  ])('%s → %p', (_, overrides, expected) => {
+    expect(Settings.weakened(strict, policy(overrides))).toBe(expected)
+  })
+
+  test.each<[string, Partial<typeof base>, Partial<typeof base>, boolean]>([
+    ['the breach check from warn to off', { breachCheck: 'warn' }, { breachCheck: 'off' }, true],
+    ['the breach check from off to block', { breachCheck: 'off' }, { breachCheck: 'block' }, false],
+    ['fewer character classes', { minCharacterClasses: 3 }, { minCharacterClasses: 2 }, true],
+    ['more character classes', { minCharacterClasses: 2 }, { minCharacterClasses: 3 }, false],
+    ['a repeat limit added', { maxRepeatedChars: null }, { maxRepeatedChars: 3 }, false],
+    ['a rule turned on', { requireNumber: false }, { requireNumber: true }, false],
+  ])('%s', (_, before, after, expected) => {
+    expect(Settings.weakened(policy(before), policy(after))).toBe(expected)
+  })
+
+  test('one loosened rule is enough, whatever else got stricter', () => {
+    expect(Settings.weakened(strict, policy({ minLength: 30, requireNumber: false }))).toBe(true)
+  })
+
+  test('changes outside the password policy are not a weakening', () => {
+    const after = document({
+      password: strict.password,
+      app: { name: 'Acme', supportEmail: null },
+      urls: { allowedOrigins: ['https://a.test'], allowedRedirectUrls: [] },
+    })
+    expect(Settings.weakened(strict, after)).toBe(false)
+  })
+})
+
+describe('the audit entry says when a change weakened the password policy', () => {
+  const recorded = () => deps.activityLog.ofType('environment.settings_updated').at(-1)?.data
+
+  test('lowering the minimum length is flagged, without the lengths', async () => {
+    await replace(0, document({ password: { ...PASSWORD_POLICY_PRESETS.strict } }))
+    expect(recorded()).toEqual({
+      revision: 1,
+      changed: expect.arrayContaining(['password.minLength']),
+    })
+    await replace(
+      1,
+      document({ password: { ...PASSWORD_POLICY_PRESETS.strict, preset: 'custom', minLength: 9 } })
+    )
+    expect(recorded()).toEqual({
+      revision: 2,
+      changed: ['password.minLength', 'password.preset'],
+      weakened: true,
+    })
+    expect(JSON.stringify(recorded())).not.toMatch(/\b(9|12)\b/)
+  })
+
+  test('a change that weakens nothing carries no flag', async () => {
+    await replace(0, document({ app: { name: 'Acme', supportEmail: null } }))
+    expect(recorded()).toEqual({ revision: 1, changed: ['app.name'] })
+  })
+})
+
+describe('sections a replace leaves out take the deployment’s defaults', () => {
+  const config = {
+    ...TEST_CONFIG,
+    passwordPolicy: PASSWORD_POLICY_PRESETS.strict,
+    corsOrigins: ['https://app.test'],
+  }
+  const send = (expectedRevision: number, sent: Record<string, unknown>) =>
+    Settings.replace(
+      deps,
+      tenant,
+      { expectedRevision, sent, settings: EnvironmentSettingsSchema.parse(sent) },
+      TEST_ACTOR
+    )
+
+  beforeEach(() => {
+    deps = createTestDeps({ config })
+  })
+
+  test.each<[string, Record<string, unknown>]>([
+    ['an empty document', {}],
+    [
+      'a document with other sections only',
+      { app: { name: 'Acme' }, audit: { retentionDays: 30 } },
+    ],
+    [
+      'a urls section without allowedOrigins',
+      { urls: { allowedRedirectUrls: ['https://app.test/cb'] } },
+    ],
+  ])('%s keeps PASSWORD_POLICY and CORS_ORIGINS', async (_, sent) => {
+    const { settings } = await send(0, sent)
+    expect(settings.password).toEqual(PASSWORD_POLICY_PRESETS.strict)
+    expect(settings.urls.allowedOrigins).toEqual(['https://app.test'])
+  })
+
+  test('an empty document at revision 0 changes nothing at all', async () => {
+    expect((await send(0, {})).revision).toBe(0)
+    expect(deps.activityLog.entries).toEqual([])
+  })
+
+  test('what is sent explicitly is honoured as sent, an empty list included', async () => {
+    const { settings } = await send(0, {
+      password: PASSWORD_POLICY_PRESETS.recommended,
+      urls: { allowedOrigins: [] },
+    })
+    expect(settings.password).toEqual(PASSWORD_POLICY_PRESETS.recommended)
+    expect(settings.urls.allowedOrigins).toEqual([])
+  })
+
+  test('on a later replace an omitted section goes to the deployment default, not to its last value', async () => {
+    await send(0, {
+      password: { ...PASSWORD_POLICY_PRESETS.recommended, preset: 'custom', minLength: 16 },
+      urls: { allowedOrigins: ['https://other.test'] },
+    })
+    const { settings, revision } = await send(1, { app: { name: 'Acme' } })
+    expect(revision).toBe(2)
+    expect(settings.password).toEqual(PASSWORD_POLICY_PRESETS.strict)
+    expect(settings.urls.allowedOrigins).toEqual(['https://app.test'])
+  })
+
+  test('the stored list is a copy of the deployment list', async () => {
+    const { settings } = await send(0, { app: { name: 'Acme' } })
+    expect(settings.urls.allowedOrigins).not.toBe(config.corsOrigins)
   })
 })

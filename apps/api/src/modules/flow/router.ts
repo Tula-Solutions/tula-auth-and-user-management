@@ -316,6 +316,8 @@ for (const [kind, path, tag] of [
         200: attemptResponse('The attempt, still waiting on the emailed code.'),
         404: openapi.responses[404],
         409: openapi.responses[409],
+        // `auth.method_disabled`: the environment has switched password sign-in off.
+        403: openapi.responses[403],
         ...errors,
       },
     }),

@@ -3,10 +3,13 @@ import {
   ClientConfigSchema,
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
+  MIN_PASSWORD_MIN_LENGTH,
   PASSWORD_POLICY_PRESETS,
 } from '@tula/contract'
 import { createApp } from '~/index'
 import { ADMIN_RATE_LIMIT, CLIENT_RATE_LIMIT } from '~/middleware/rate-limit'
+import { refreshCookieName } from '~/modules/session/cookies'
+import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const SK = 'tula_sk_dev_admin000000000000000000000000000000'
@@ -403,5 +406,87 @@ describe('two environments in one deployment', () => {
     // Each origin is refused by the other environment.
     expect(await allowOrigin(PK, 'https://app.acme.test')).toBeNull()
     expect(await allowOrigin(PROD_PK, 'https://dev.acme.test')).toBeNull()
+  })
+})
+
+describe('a replace that leaves sections out', () => {
+  const ORIGIN = 'https://app.northline.app'
+
+  test('with CORS_ORIGINS set, PUT {} keeps the origin working, cookie refresh included', async () => {
+    await build({
+      ...TEST_CONFIG,
+      tier: 'prod',
+      publicUrl: 'https://auth.northline.app',
+      corsOrigins: [ORIGIN],
+    })
+    expect((await put({}, '"0"')).status).toBe(200)
+    expect((await put({ app: { name: 'Northline' } }, '"0"')).status).toBe(200)
+    const { settings } = (await (await read()).json()) as State
+    expect(settings.urls.allowedOrigins).toEqual([ORIGIN])
+
+    const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+    const tokens = await Sessions.create(deps, tenant, {
+      userId: '00000000-0000-7000-8000-0000000000a1',
+      client: 'web',
+      userAgent: null,
+      ipAddress: null,
+    })
+    const refresh = await app.request('/v1/client/sessions/refresh', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-tula-publishable-key': PK,
+        origin: ORIGIN,
+        cookie: `${refreshCookieName(deps.config, tenant.environmentId)}=${tokens.refreshToken}`,
+      },
+      body: '{}',
+    })
+    expect(refresh.status).toBe(200)
+    expect(refresh.headers.get('access-control-allow-origin')).toBe(ORIGIN)
+  })
+
+  test('with a strict deployment policy, PUT { app } keeps strict', async () => {
+    await build({ ...TEST_CONFIG, passwordPolicy: PASSWORD_POLICY_PRESETS.strict })
+    const res = await put({ app: { name: 'Acme' } }, '"0"')
+    expect(((await res.json()) as State).settings.password).toEqual(PASSWORD_POLICY_PRESETS.strict)
+    const policy = await app.request('/v1/client/password-policy', {
+      headers: { 'x-tula-publishable-key': PK },
+    })
+    expect(await policy.json()).toEqual(PASSWORD_POLICY_PRESETS.strict)
+  })
+
+  test('an explicitly empty origin list is honoured', async () => {
+    await build({ ...TEST_CONFIG, corsOrigins: [ORIGIN] })
+    const res = await put({ urls: { allowedOrigins: [] } }, '"0"')
+    expect(((await res.json()) as State).settings.urls.allowedOrigins).toEqual([])
+  })
+})
+
+describe('the password policy has a floor', () => {
+  const withMin = (minLength: number) => ({
+    password: { ...PASSWORD_POLICY_PRESETS.recommended, preset: 'custom', minLength },
+  })
+
+  test('a minimum length under 8 is refused, naming the field', async () => {
+    const res = await put(withMin(7), '"0"')
+    expect(res.status).toBe(422)
+    const failure = (await res.json()) as Failure
+    expect(failure.errors?.map((error) => error.field)).toEqual(['password.minLength'])
+    expect(((await (await read()).json()) as State).revision).toBe(0)
+  })
+
+  test('8 is accepted, and the change is flagged as a weakening in the audit log', async () => {
+    expect((await put(withMin(8), '"0"')).status).toBe(200)
+    expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
+      revision: 1,
+      changed: ['password.minLength', 'password.preset'],
+      weakened: true,
+    })
+  })
+
+  test('every shipped preset is at or above the floor', () => {
+    for (const preset of Object.values(PASSWORD_POLICY_PRESETS)) {
+      expect(preset.minLength).toBeGreaterThanOrEqual(MIN_PASSWORD_MIN_LENGTH)
+    }
   })
 })

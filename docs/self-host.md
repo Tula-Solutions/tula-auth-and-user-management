@@ -134,7 +134,10 @@ curl -si http://localhost:3003/v1/admin/settings -H "Authorization: Bearer $TULA
 ```
 
 Replace it, naming the revision you read in `If-Match`. The body is the **whole** document:
-anything you leave out goes back to its default, and an unknown key is refused.
+anything you leave out goes back to its default, and an unknown key is refused. Two defaults
+are your deployment's own: leave `password` out and it is `PASSWORD_POLICY`; leave
+`urls.allowedOrigins` out and it is `CORS_ORIGINS`. Send `"allowedOrigins": []` to allow no
+origin at all. `password.minLength` cannot be set below 8.
 
 ```bash
 curl -s -X PUT http://localhost:3003/v1/admin/settings \
@@ -148,7 +151,8 @@ curl -s -X PUT http://localhost:3003/v1/admin/settings \
 
 Without `If-Match` the answer is 428 (`precondition.required`); with a revision that is no
 longer current, 412 (`precondition.failed`): read again and retry. Each change is in the audit
-log as `environment.settings_updated`, listing the keys that changed and never their values.
+log as `environment.settings_updated`, listing the keys that changed and never their values,
+with `"weakened": true` when the change made the password policy weaker.
 
 An environment that has never saved settings is at revision 0 and uses the defaults, including
 `PASSWORD_POLICY` and `CORS_ORIGINS` from the table above. Once it saves a document, those two

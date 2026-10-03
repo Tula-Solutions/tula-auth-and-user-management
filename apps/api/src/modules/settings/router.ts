@@ -75,11 +75,17 @@ router.put(
     summary: 'Replace the environment’s settings',
     description:
       'Replaces the whole document: a section or field left out takes its default, and an ' +
-      'unknown key is refused. `If-Match` must carry the revision that was read (the `ETag` ' +
+      'unknown key is refused. Two defaults are the deployment’s rather than the schema’s: ' +
+      'a `password` section that is left out takes the deployment’s `PASSWORD_POLICY`, and a ' +
+      '`urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` ' +
+      'returns at revision 0), so a partial document never loosens the policy or locks ' +
+      'browser apps out by accident; a value that is sent, an empty list included, is taken ' +
+      'as sent. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` ' +
       'of the last response), so two writers cannot silently overwrite each other: a missing ' +
       'header is `precondition.required`, a revision that is no longer current is ' +
       '`precondition.failed`. The change is recorded in the audit log as ' +
-      '`environment.settings_updated` with the keys that changed, never their values. ' +
+      '`environment.settings_updated` with the keys that changed, never their values, and ' +
+      '`weakened: true` when it made the password policy weaker. ' +
       'Other API instances apply it within a few seconds.',
     security: openapi.security.admin,
     parameters: [
@@ -118,6 +124,8 @@ router.put(
       {
         expectedRevision: Settings.expectedRevision(c.req.header('if-match')),
         settings: c.req.valid('json'),
+        // As received: the service needs to know which sections were left out.
+        sent: await c.req.json(),
       },
       adminActor(c)
     )

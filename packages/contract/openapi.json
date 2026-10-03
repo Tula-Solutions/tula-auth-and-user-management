@@ -4064,6 +4064,16 @@
               }
             }
           },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "404": {
             "description": "The resource does not exist in this environment.",
             "content": {
@@ -4201,6 +4211,16 @@
               }
             }
           },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "404": {
             "description": "The resource does not exist in this environment.",
             "content": {
@@ -4330,6 +4350,16 @@
           },
           "401": {
             "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5765,7 +5795,7 @@
           "Settings"
         ],
         "summary": "Replace the environment’s settings",
-        "description": "Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values. Other API instances apply it within a few seconds.",
+        "description": "Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. Two defaults are the deployment’s rather than the schema’s: a `password` section that is left out takes the deployment’s `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` returns at revision 0), so a partial document never loosens the policy or locks browser apps out by accident; a value that is sent, an empty list included, is taken as sent. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values, and `weakened: true` when it made the password policy weaker. Other API instances apply it within a few seconds.",
         "security": [
           {
             "secretKey": []

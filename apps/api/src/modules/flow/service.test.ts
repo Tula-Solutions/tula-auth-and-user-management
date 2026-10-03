@@ -1333,3 +1333,88 @@ describe('a sign-in method the environment has switched off', () => {
     expect(started.attempt.step.status).toBe('needs_password')
   })
 })
+
+describe('an attempt started before password sign-in was switched off', () => {
+  function switchOff() {
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        signIn: { methods: { password: { enabled: false } } },
+      },
+    })
+  }
+  const disabled = { status: 403, code: 'auth.method_disabled', params: { method: 'password' } }
+
+  test('a started sign-in cannot submit its password, and the try counts against nobody', async () => {
+    await seedUser()
+    const attempt = await startSignIn()
+    switchOff()
+    const err = await rejection(password(attempt.id))
+    expect(err.toJSON()).toMatchObject(disabled)
+    expect(deps.activityLog.ofType('session.created')).toEqual([])
+    // Neither the lockout nor the environment's ceiling was charged for the refused try.
+    const ceiling = Flows.environmentKey('password', tenant)
+    expect((await deps.rateLimiter.hit(ceiling, 10, 60_000)).remaining).toBe(9)
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 2,
+      settings: DEFAULT_ENVIRONMENT_SETTINGS,
+    })
+    expect((await password(attempt.id)).attempt.step.status).toBe('complete')
+  })
+
+  test('a started sign-up cannot be completed: no password account is created', async () => {
+    const { attempt } = await signUp()
+    const code = sentCode()
+    switchOff()
+    const err = await rejection(Flows.verifyEmail(deps, tenant, 'sign_up', attempt.id, code, web))
+    expect(err.toJSON()).toMatchObject(disabled)
+    expect(await deps.users.findByEmail(tenant.environmentId, NORMALIZED)).toBeNull()
+  })
+
+  test('a sign-in waiting on email verification cannot be completed either', async () => {
+    await seedUser({ verified: false })
+    const attempt = await startSignIn()
+    await password(attempt.id)
+    const code = sentCode()
+    switchOff()
+    const err = await rejection(Flows.verifyEmail(deps, tenant, 'sign_in', attempt.id, code, web))
+    expect(err.toJSON()).toMatchObject(disabled)
+    expect(deps.activityLog.ofType('session.created')).toEqual([])
+  })
+
+  test('a started password reset cannot set a password, and its code is not spent', async () => {
+    await seedUser()
+    const { attempt } = await Flows.startPasswordReset(deps, tenant, { email: EMAIL }, web)
+    const code = sentCode()
+    switchOff()
+    const reset = () =>
+      Flows.resetPassword(
+        deps,
+        tenant,
+        attempt.id,
+        { code, password: 'a brand new passphrase 42' },
+        web
+      )
+    expect((await rejection(reset())).toJSON()).toMatchObject(disabled)
+    expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+    const found = await deps.users.findByEmailWithPassword(tenant.environmentId, NORMALIZED)
+    expect(await Passwords.verify(found?.passwordHash ?? null, PASSWORD)).toBe(true)
+    // Switched back on, the same code still works: the refused call did not use a guess.
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 2,
+      settings: DEFAULT_ENVIRONMENT_SETTINGS,
+    })
+    expect((await reset()).attempt.step.status).toBe('complete')
+  })
+
+  test('no further code is emailed for an attempt that can no longer finish', async () => {
+    const { attempt } = await signUp()
+    deps.clock.advance('2m')
+    switchOff()
+    const sent = deps.mailer.outbox.length
+    const err = await rejection(Flows.resendCode(deps, tenant, 'sign_up', attempt.id))
+    expect(err.toJSON()).toMatchObject(disabled)
+    expect(deps.mailer.outbox).toHaveLength(sent)
+  })
+})

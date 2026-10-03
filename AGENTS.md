@@ -157,7 +157,13 @@ redirect URLs, audit retention. **Read it through `~/modules/settings/service`**
 - Reads are cached per instance (`cacheEnvironmentSettings`): the writer sees its write at
   once, other instances within 5 seconds with Redis and 30 without. Do not add a setting whose
   safety depends on taking effect everywhere immediately.
-- A flow that starts with a sign-in method calls `Settings.requireMethod` first.
+- A flow that uses a sign-in method calls `Settings.requireMethod` on **every** step, after
+  the attempt is loaded and before anything is counted, spent or sent: an attempt started
+  before a method was switched off must not finish with it.
+- A `PUT` that leaves out `password` or `urls.allowedOrigins` stores the deployment's
+  `PASSWORD_POLICY` / `CORS_ORIGINS` for them (`Settings.withDeploymentDefaults`), not the
+  schema defaults. `password.minLength` has a floor of 8 on input, and the audit entry carries
+  `weakened: true` when `Settings.weakened` says the password policy got weaker.
 - CORS is decided per request in `~/middleware/cors`: a preflight passes when any environment
   allows the origin, the response is readable only when the key's environment does.
 

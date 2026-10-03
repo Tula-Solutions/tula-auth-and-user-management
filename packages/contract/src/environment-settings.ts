@@ -13,6 +13,12 @@ export const MAX_ALLOWED_ORIGINS = 50
 /** Most redirect URLs one environment may allow. */
 export const MAX_ALLOWED_REDIRECT_URLS = 100
 
+/**
+ * Shortest `password.minLength` the settings API accepts (NIST SP 800-63B's minimum for a
+ * user-chosen password). Every built-in preset is at or above it.
+ */
+export const MIN_PASSWORD_MIN_LENGTH = 8
+
 /** Longest audit retention that can be set, in days (ten years). */
 export const MAX_AUDIT_RETENTION_DAYS = 3650
 
@@ -151,9 +157,17 @@ const version = z.literal(1).default(1)
  * that an unknown key is refused rather than ignored: a misspelt `pasword` section would
  * otherwise silently reset the password policy to its default.
  *
+ * The defaults written here are the schema's own. Through `PUT /v1/admin/settings` two of them
+ * are replaced by the deployment's: a `password` section that is left out takes the
+ * deployment's `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its
+ * `CORS_ORIGINS` (what `GET` returns at revision 0), so saving a partial document never
+ * loosens the policy or locks browser apps out by accident. A value that is sent, an empty
+ * list included, is taken as sent.
+ *
  * - `version`: the format of this document, `1`.
  * - `app`: the product's name and support address.
- * - `password`: the password policy (see `PasswordPolicy`).
+ * - `password`: the password policy (see `PasswordPolicy`). `minLength` cannot be set below
+ *   {@link MIN_PASSWORD_MIN_LENGTH}.
  * - `signIn.methods`: which first factors are offered. `password` is the only one today; at
  *   least one must stay enabled.
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
@@ -174,6 +188,12 @@ export const EnvironmentSettingsSchema = z
       .prefault({}),
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
+  })
+  // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
+  // with documents stored before the floor existed.
+  .refine((settings) => settings.password.minLength >= MIN_PASSWORD_MIN_LENGTH, {
+    message: `must be at least ${MIN_PASSWORD_MIN_LENGTH}`,
+    path: ['password', 'minLength'],
   })
   .meta({ ref: 'EnvironmentSettings' })
 

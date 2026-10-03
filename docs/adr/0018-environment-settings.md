@@ -60,6 +60,18 @@ document, that document is the whole truth for it and the variables no longer ap
 defaults, never overrides, so an operator cannot be surprised by a variable silently winning
 over what the API returns.
 
+**The same two defaults apply to what a `PUT` leaves out.** Every field has a schema default,
+and taken literally that would make a partial document dangerous: `PUT {}` at revision 0 would
+replace `CORS_ORIGINS` with an empty list (every browser app, and its cookie refresh, stops
+working) and `PASSWORD_POLICY=strict` with `recommended`. So on every `PUT`, at any revision, a
+`password` section that is left out takes the deployment's `PASSWORD_POLICY` and a
+`urls.allowedOrigins` that is left out takes its `CORS_ORIGINS`: the values a revision-0 `GET`
+returns, not the previous document's and not the schema's. What is sent is honoured as sent,
+an explicitly empty origin list included. The rule lives in one function,
+`Settings.withDeploymentDefaults`, applied after validation to the body as received; the
+deployment's values are therefore stored as they are, exactly as a revision-0 `GET` shows
+them. Every other omitted field takes its schema default.
+
 `CORS_ORIGINS` is not re-validated at boot (that would stop existing deployments from
 starting), so a default list can contain an entry the settings API refuses, such as a plain
 `http` origin on a LAN. It keeps working as a default and has to be corrected when the
@@ -86,6 +98,16 @@ Every change is recorded as `environment.settings_updated`, in the same transact
 new `revision` and `changed`: the dotted keys that differ (`password.minLength`,
 `urls.allowedOrigins`), lists compared whole. **Never the values**: an origin list or a support
 address has no business in an audit log or in a webhook payload.
+
+**A floor, and a flag for weakening.** A secret key can change the password policy, so two
+things limit and expose a weakening. `password.minLength` cannot be set below 8 through the
+API (`MIN_PASSWORD_MIN_LENGTH`, NIST SP 800-63B's minimum; all three presets are at or above
+it). The floor is on the settings document, not on `PasswordPolicy`, so a document stored
+earlier still reads. And the audit entry carries `weakened: true` (a boolean, never a value)
+when the change made the password policy weaker: a lower `minLength`, a looser `breachCheck`,
+a rule turned off, fewer required character classes, a looser repeat limit or a shorter
+history. `Settings.weakened` is that definition, as one pure function. Disabling a sign-in
+method is not a weakening.
 
 Three error codes are new: `precondition.required` (428), `precondition.failed` (412) and
 `auth.method_disabled` (403).
@@ -160,7 +182,17 @@ tenancy rule for the sake of a cached read).
 
 `Settings.requireMethod(deps, tenant, method)` is the one place a method's switch is checked.
 Starting a sign-up, a sign-in or a password reset calls it first, before the identifier is
-looked at, and answers `auth.method_disabled` (403) when password sign-in is off. Since
+looked at, and answers `auth.method_disabled` (403) when password sign-in is off.
+
+The switch is checked on **every later step too**: submitting the password, verifying the
+email, resetting the password and resending a code. An attempt lives for ten minutes, and one
+started before the switch-off must not finish with a password after it. That includes
+verifying the email of a sign-up (it would create an account with the password whose hash the
+attempt holds) and of a sign-in (its password was accepted before the switch-off, and
+completing it would start a password-authenticated session). The check comes after the attempt
+is found and before anything is counted, spent or sent, so a refused step uses no lockout
+try, no code guess and no rate limit, and the attempt continues if the method is switched
+back on within its lifetime. Since
 `password` is the only method and one must stay enabled, the API cannot produce that state
 yet; the check is there so that steps 1.7–1.10 add a method by adding a switch.
 
@@ -188,6 +220,14 @@ value. There is no template editor; that is Phase 2.
   that lands on another instance in that window. A removed origin can additionally keep
   passing preflights for the 10 minutes a browser caches one, but its real requests are
   refused per environment as soon as the instance has the new document.
+- **A preflight tells anyone whether an origin is allowed by some environment** of the
+  deployment (not which one): it is answered from the union, and it needs no key. Accepted:
+  the origins of a product's web apps are not secrets, and the alternative is a preflight
+  that is always permissive.
+- **The refresh cookie is still *set* whatever the origin** when a web flow completes; only
+  its *use* is gated by origin. Browsers refuse a `SameSite=Lax` cookie set by a cross-site
+  response, but a page on another origin of the same site could complete a flow and plant a
+  session cookie (login CSRF). Step 1.3 revisits this together with attempt binding.
 - The union of allowed origins costs two statements per environment each time it is rebuilt
   (at most once per 30 seconds per instance, and after a change). That is fine for the tens or
   hundreds of environments a self-hosted deployment has; a deployment with many thousands

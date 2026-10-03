@@ -7,6 +7,7 @@ import {
   MAX_ALLOWED_ORIGINS,
   MAX_ALLOWED_REDIRECT_URLS,
   MAX_APP_NAME_LENGTH,
+  MIN_PASSWORD_MIN_LENGTH,
   parseStoredEnvironmentSettings,
   RedirectUrlSchema,
   WebOriginSchema,
@@ -212,5 +213,21 @@ describe('ClientConfigSchema', () => {
     expect(
       ClientConfigSchema.parse({ ...config, urls: { allowedOrigins: ['https://a.test'] } })
     ).toEqual(config)
+  })
+})
+
+describe('the minimum password length has a floor', () => {
+  const withMin = (minLength: number) => ({
+    password: { ...PASSWORD_POLICY_PRESETS.recommended, minLength },
+  })
+
+  test('a document sent to the API cannot set it under the floor', () => {
+    expect(issuePaths(withMin(MIN_PASSWORD_MIN_LENGTH - 1))).toEqual(['password.minLength'])
+    expect(accepts(withMin(MIN_PASSWORD_MIN_LENGTH))).toBe(true)
+    expect(MIN_PASSWORD_MIN_LENGTH).toBe(8)
+  })
+
+  test('a document already stored below the floor still reads', () => {
+    expect(parseStoredEnvironmentSettings(withMin(6)).password.minLength).toBe(6)
   })
 })
