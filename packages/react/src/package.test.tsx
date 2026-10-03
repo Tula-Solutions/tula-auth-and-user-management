@@ -98,14 +98,20 @@ describe('server rendering', () => {
     expect(has('<p>in</p>')).toBe(false)
     expect(has('<p>out</p>')).toBe(false)
     expect(has('Create your account')).toBe(true)
+    // The page an emailed link leads to renders its waiting state: nothing read the address.
+    expect(has('Signing you in…')).toBe(true)
     expect(has('href="/sign-up"')).toBe(true)
     expect(has('--tula-color-primary:#0f766e')).toBe(true)
   })
 })
 
 describe('what @tula/react costs a browser bundle', () => {
-  /** Minified and gzipped, with `@tula/core` and its part of the contract, without React. */
-  const GZIP_BUDGET_BYTES = 26_000
+  /**
+   * Minified and gzipped, with `@tula/core` and its part of the contract, without React. About
+   * 26.4 kB today; the emailed code and link (their screens, the landing-page component and
+   * the client's part) took it past the 26 kB it was first budgeted at.
+   */
+  const GZIP_BUDGET_BYTES = 30_000
 
   test('the components stay within their size budget and bring no schema library', async () => {
     const built = await Bun.build({

@@ -1,5 +1,12 @@
 import {
   durationToMs,
+  EMAIL_LINK_ATTEMPT_PARAM,
+  EMAIL_LINK_TOKEN_PARAM,
+  type EmailLinkRequest,
+  type EmailLinkResult,
+  EmailVerificationStrategySchema,
+  type FirstFactorAttemptRequest,
+  type FirstFactorPrepareRequest,
   FirstFactorStrategySchema,
   type FlowAttempt,
   type FlowKind,
@@ -15,7 +22,7 @@ import {
 } from '@tula/contract'
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, InvalidEmailError, RateLimitError } from '~/exceptions'
+import { AuthError, InvalidEmailError, RateLimitError, ValidationError } from '~/exceptions'
 import { cleanOrigin } from '~/lib/actor'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
@@ -30,13 +37,19 @@ import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import { sendAccountExistsNotice, sendNoAccountNotice } from './mailer'
+import type { UserRecord } from '~/ports/user-repository'
+import { sendAccountExistsNotice, sendNoAccountNotice, sendNoAccountSignInNotice } from './mailer'
 import { assertAccepts, nextStatus } from './transitions'
 
 /** How long a sign-in or sign-up attempt can be continued. */
 export const ATTEMPT_TTL = '10m'
 /** Prefix of an attempt secret, so one is recognisable in a leak scan (like `tula_rt_`). */
 export const ATTEMPT_SECRET_PREFIX = 'tula_at_'
+/**
+ * Prefix of a link binding: the value that ties an emailed sign-in link to the browser that
+ * asked for it. Recognisable, and unmistakably not a token: on its own it authorizes nothing.
+ */
+export const LINK_BINDING_PREFIX = 'tula_lb_'
 // Stands in for the stored hash of an attempt that does not exist or has none. Not hex, so no
 // SHA-256 digest can ever equal it.
 const NO_SECRET_HASH = 'x'.repeat(64)
@@ -49,6 +62,7 @@ const NO_SECRET_HASH = 'x'.repeat(64)
 export const ENVIRONMENT_RATE_LIMITS = {
   signUp: 600,
   passwordReset: 600,
+  emailSignIn: 600,
   password: 3_000,
   verify: 3_000,
 } as const
@@ -97,14 +111,39 @@ async function chargeEnvironment(
  * that means signing in with one, setting one, or creating an account that has one (a sign-up
  * holds the hash of its password until the email is verified). Each step calls this after the
  * attempt is found and before anything is counted, spent or sent, so a refused step uses up
- * no guess, no code and no rate limit. Every flow today is a password flow; a flow for another
- * method checks its own switch.
+ * no guess, no code and no rate limit. The email first factors check their own switches
+ * (`Factors.EMAIL_FACTOR_METHODS`), and a sign-up made without a password checks the email
+ * code's ({@link requireSignUpMethod}).
  */
 function requirePasswordMethod(
   deps: Pick<Deps, 'environmentSettings' | 'config'>,
   tenant: Pick<Tenant, 'environmentId'>
 ): Promise<void> {
   return Settings.requireMethod(deps, tenant, 'password')
+}
+
+/**
+ * Refuse a step of a sign-up the environment no longer allows: passwords switched off for a
+ * sign-up that chose one; for one that did not, the email code switched off (its account could
+ * only ever get in by email) **or the sign-up mode back at `required`**. An operator who
+ * requires a password again must not get a passwordless account from an attempt that was
+ * already under way. Checked on every step, before anything is counted, spent or sent, and the
+ * same for a decoy.
+ *
+ * @throws AuthError `auth.method_disabled`.
+ */
+async function requireSignUpMethod(
+  deps: Pick<Deps, 'environmentSettings' | 'config'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  state: Pick<State, 'passwordless'>
+): Promise<void> {
+  if (!state.passwordless) {
+    return Settings.requireMethod(deps, tenant, 'password')
+  }
+  if ((await Settings.current(deps, tenant)).signUp.password !== 'optional') {
+    throw new AuthError('auth.method_disabled')
+  }
+  return Settings.requireMethod(deps, tenant, 'emailCode')
 }
 
 /** The device a flow request comes from. */
@@ -163,6 +202,20 @@ const StateSchema = z.object({
   strategies: z.array(FirstFactorStrategySchema).optional(),
   /** The second factors the user may choose from, while the attempt waits on one. */
   secondFactors: z.array(SecondFactorMethodSchema).optional(),
+  /** A sign-up made without a password (`signUp.password: 'optional'`). */
+  passwordless: z.boolean().optional(),
+  /** The email first factor a sign-in last asked an email for. */
+  prepared: EmailVerificationStrategySchema.optional(),
+  /**
+   * SHA-256 of the binding returned to the browser that asked for an emailed link. The link is
+   * honoured only together with that binding.
+   */
+  linkBindingHash: z.string().optional(),
+  /**
+   * The emailed link was opened in the browser that asked for it: the first factor is proven,
+   * and the client holding the attempt's secret may complete the sign-in.
+   */
+  linkVerified: z.boolean().optional(),
 })
 type State = z.infer<typeof StateSchema>
 
@@ -185,7 +238,14 @@ function stepFor(
     }
   }
   if (attempt.status === 'needs_first_factor') {
-    return { status: 'needs_first_factor', strategies: state.strategies ?? [] }
+    return {
+      status: 'needs_first_factor',
+      strategies: state.strategies ?? [],
+      // The identifier as it was typed at the start, masked: it says nothing about an account.
+      ...(state.prepared && {
+        prepared: { strategy: state.prepared, destination: maskEmail(attempt.identifier) },
+      }),
+    }
   }
   if (attempt.status === 'needs_second_factor') {
     return { status: 'needs_second_factor', options: state.secondFactors ?? [] }
@@ -198,14 +258,21 @@ function stepFor(
 /**
  * @param secret - Given only for the response that starts the attempt: the one time the client
  *   is told its secret.
+ * @param linkBinding - Given only for the response to asking for an emailed link.
  */
-function toAttempt(attempt: FlowAttemptRecord, step: FlowStep, secret?: string): FlowAttempt {
+function toAttempt(
+  attempt: FlowAttemptRecord,
+  step: FlowStep,
+  secret?: string,
+  linkBinding?: string
+): FlowAttempt {
   return {
     id: attempt.id,
     kind: attempt.kind,
     expiresAt: attempt.expiresAt.toISOString(),
     step,
     ...(secret !== undefined && { attemptSecret: secret }),
+    ...(linkBinding !== undefined && { linkBinding }),
   }
 }
 
@@ -401,13 +468,20 @@ async function awaitSecondFactor(
  * attempt gets a decoy code nobody knows, so later guesses behave identically and can never
  * complete it. The password is hashed in both cases so the two take the same time.
  *
+ * **Without a password** (only where the environment says `signUp.password: 'optional'`) the
+ * account is created with no password credential: it signs in with an emailed code or link,
+ * and gets a first password through the reset flow. Nothing is hashed for either kind of
+ * address, so the two still take the same time.
+ *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
- * @param input - Email, password and optional names.
+ * @param input - Email, optional password and optional names.
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_email_verification`.
  * @throws InvalidEmailError, or a `password.*` ServiceException with per-field `errors`.
- * @throws AuthError `auth.method_disabled` when the environment has switched passwords off, or
+ * @throws ValidationError on `password` when it is left out where the environment requires one.
+ * @throws AuthError `auth.method_disabled` when the environment has switched off the method the
+ *   sign-up relies on (passwords, or the email code for a sign-up without one), or
  *   `request.origin_not_allowed` for a browser attempt from an origin the environment does not
  *   allow.
  * @throws RateLimitError when the address was emailed too recently or too often.
@@ -424,21 +498,31 @@ export async function signUp(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
-  await requirePasswordMethod(deps, tenant)
+  const passwordless = input.password === undefined
+  if (passwordless && (await Settings.current(deps, tenant)).signUp.password !== 'optional') {
+    throw new ValidationError({
+      errors: [{ field: 'password', code: 'validation.failed', message: 'Enter a password.' }],
+    })
+  }
+  await requireSignUpMethod(deps, tenant, { passwordless })
   await chargeEnvironment(deps, tenant, 'signUp')
   const firstName = input.firstName?.trim() || null
   const lastName = input.lastName?.trim() || null
-  await Passwords.assess(deps, tenant, input.password, {
-    email,
-    firstName: firstName ?? undefined,
-    lastName: lastName ?? undefined,
-  })
-  const passwordHash = await Passwords.hash(input.password)
+  let passwordHash: string | undefined
+  if (input.password !== undefined) {
+    await Passwords.assess(deps, tenant, input.password, {
+      email,
+      firstName: firstName ?? undefined,
+      lastName: lastName ?? undefined,
+    })
+    passwordHash = await Passwords.hash(input.password)
+  }
 
   const decoy = (await deps.users.findByEmail(tenant.environmentId, identifier)) !== null
+  const base = { client: context.client, email, ...(passwordless && { passwordless }) }
   const state: State = decoy
-    ? { client: context.client, email, decoy: true }
-    : { client: context.client, email, firstName, lastName, passwordHash }
+    ? { ...base, decoy: true }
+    : { ...base, firstName, lastName, ...(passwordHash !== undefined && { passwordHash }) }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'sign_up',
     status: 'needs_email_verification',
@@ -630,6 +714,344 @@ export async function submitPassword(
 }
 
 /**
+ * Finish a sign-in whose email first factor (a code, or a link opened in the asking browser)
+ * has just been proven for `user`.
+ *
+ * The email proves the inbox, so the address counts as verified (and is marked so, with its
+ * audit entry) and the attempt never detours through `needs_email_verification`. A ban is
+ * revealed only here, after the factor. A user with a second factor gets `needs_second_factor`
+ * and no tokens.
+ *
+ * @param spend - Uses the proof up. Called after the second factors are read and before
+ *   anything is changed, so a failure to read them leaves the proof usable, and of two racing
+ *   requests holding the same proof only one gets past it.
+ */
+async function completeEmailFactor(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  user: UserRecord,
+  strategy: 'email_code' | 'email_link',
+  context: ClientContext,
+  spend: () => Promise<void>
+): Promise<FlowResult> {
+  if (user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  const secondFactors = await Factors.requiredFor(deps, tenant, user.id)
+  const next = nextStatus(
+    attempt.kind,
+    attempt.status,
+    { type: 'first_factor_verified', strategy },
+    { strategies: state.strategies ?? [], emailVerified: true, secondFactors }
+  )
+  await spend()
+  if (user.emailVerifiedAt === null) {
+    try {
+      await deps.users.markEmailVerified(
+        tenant.environmentId,
+        user.id,
+        deps.clock.now(),
+        Audit.entry(deps, tenant, {
+          type: 'user.email_verified',
+          actor: { type: 'user', id: user.id, ...cleanOrigin(context) },
+          target: { type: 'user', id: user.id },
+        })
+      )
+    } catch (error) {
+      // The proof is spent, so failing here would strand the user. A later password sign-in
+      // asks them to verify the address instead.
+      logger.warn('could not mark the email verified after an email sign-in', {
+        environmentId: tenant.environmentId,
+        err: error instanceof Error ? error.name : 'unknown',
+      })
+    }
+  }
+  // What the email flow kept on the attempt has done its job and is not carried further.
+  const {
+    prepared: _prepared,
+    linkBindingHash: _linkBindingHash,
+    linkVerified: _linkVerified,
+    ...rest
+  } = state
+  return next === 'complete'
+    ? finish(deps, tenant, attempt, rest, user.id, context)
+    : awaitSecondFactor(deps, tenant, attempt, rest, user.id, secondFactors)
+}
+
+/**
+ * Email the code (and, for `email_link`, the link) that proves a sign-in's email first factor.
+ *
+ * **The answer is the same for every address.** An address with no account is sent a notice
+ * instead (no code, no link), its attempt holds a decoy code nobody knows, and the per-address
+ * send limits, the environment's ceiling, the response and the cost of one email are identical.
+ * A banned user is sent a code like anyone else and learns of the ban only after proving the
+ * inbox. Calling it again sends a fresh email and retires the previous code and link.
+ *
+ * **`email_link`** (ADR 0024). `redirectUrl` must be, exactly, one of the environment's
+ * `urls.allowedRedirectUrls`. The email's link is that URL with the link token and the attempt
+ * id in the **fragment**, which a browser never sends to a server. The response carries a
+ * `linkBinding`, once: 256 random bits whose SHA-256 is kept on the attempt. The link is
+ * honoured only together with it ({@link verifyEmailLink}), so a link opened in any browser but
+ * the one that asked proves nothing. The binding is not a credential: without the emailed
+ * token it does nothing, and the session still goes only to the holder of the attempt's secret.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The sign-in attempt and its secret.
+ * @param input - The strategy, and the redirect URL for a link.
+ * @param context - The requesting device.
+ * @returns The attempt, still on `needs_first_factor`, now with `prepared`; and `linkBinding`
+ *   for `email_link`.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` (not on
+ *   `needs_first_factor`, or a strategy it was not offered), `auth.method_disabled` or
+ *   `request.redirect_not_allowed`.
+ * @throws InvalidEmailError when the attempt's identifier is not an email address.
+ * @throws RateLimitError when the address was emailed too recently or too often.
+ */
+export async function prepareFirstFactor(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  input: FirstFactorPrepareRequest,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  const { strategy } = input
+  assertAccepts(
+    attempt.kind,
+    attempt.status,
+    { type: 'first_factor_verified', strategy },
+    state.strategies ?? []
+  )
+  await Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[strategy])
+  const redirectUrl =
+    strategy === 'email_link'
+      ? await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl)
+      : undefined
+  const parsed = parseEmail(attempt.identifier)
+  if (!parsed) {
+    throw new InvalidEmailError()
+  }
+
+  const user = await deps.users.findByEmail(tenant.environmentId, attempt.identifier)
+  // Made for every address, so the response has the same shape whether or not it has an account.
+  const linkBinding =
+    redirectUrl === undefined ? undefined : `${LINK_BINDING_PREFIX}${randomToken()}`
+  await Verification.issue(deps, tenant, {
+    purpose: 'sign_in',
+    destination: parsed.email,
+    flowAttemptId: attempt.id,
+    userId: user?.id,
+    onAllowed: () => chargeEnvironment(deps, tenant, 'emailSignIn'),
+    ...(user
+      ? redirectUrl !== undefined && {
+          // In the fragment, never the query: a fragment is not sent to the app's server, to a
+          // proxy or in `Referer`.
+          linkUrl: (token: string) =>
+            `${redirectUrl}#${EMAIL_LINK_TOKEN_PARAM}=${encodeURIComponent(token)}` +
+            `&${EMAIL_LINK_ATTEMPT_PARAM}=${attempt.id}`,
+        }
+      : { deliver: ({ to }) => sendNoAccountSignInNotice(deps, tenant, to) }),
+  })
+
+  const { linkBindingHash: _old, linkVerified: _proven, ...kept } = state
+  const pending: State = {
+    ...kept,
+    prepared: strategy,
+    ...(linkBinding !== undefined && { linkBindingHash: sha256Hex(linkBinding) }),
+  }
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: attempt.status, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return {
+    attempt: toAttempt(attempt, stepFor(attempt, pending), undefined, linkBinding),
+    client: state.client,
+  }
+}
+
+/**
+ * Prove a sign-in's email first factor.
+ *
+ * **`email_code`**: checks the emailed code. A wrong one is `verification.invalid_code`; the
+ * code allows five guesses, and every try also counts against the per-identifier lockout
+ * (`CREDENTIAL_LOCKOUT`, under the same key as password sign-in, so guessing codes and guessing
+ * passwords share one budget). A code issued for another purpose (verifying an address,
+ * resetting a password) is never accepted here. The right code of a decoy attempt, for an
+ * address with no account, answers like a wrong one.
+ *
+ * **`email_link`**: asks whether the emailed link has been opened in the browser that asked for
+ * it ({@link verifyEmailLink}). Until then it answers the unchanged step: nothing is counted as
+ * a guess and nothing is charged, so the waiting client can simply ask again, and the answer is
+ * the same for an address with no account, whose link never arrives.
+ *
+ * Either way the session goes to the caller, who holds the attempt's secret. Of two requests
+ * that arrive together once the link was accepted (two tabs, a retry), exactly one creates the
+ * session; the other answers `flow.invalid_step`, and any later one `flow.not_found`.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The sign-in attempt and its secret.
+ * @param input - The strategy, and the code for `email_code`.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens; `needs_second_factor`, without tokens, for a user who has a
+ *   second factor; or, for a link not opened yet, the attempt still on `needs_first_factor`.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step`,
+ *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`.
+ * @throws RateLimitError while the identifier is locked out after repeated failures.
+ */
+export async function attemptFirstFactor(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  input: FirstFactorAttemptRequest,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  assertAccepts(
+    attempt.kind,
+    attempt.status,
+    { type: 'first_factor_verified', strategy: input.strategy },
+    state.strategies ?? []
+  )
+  await Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[input.strategy])
+
+  if (input.strategy === 'email_link') {
+    if (!state.linkVerified || !attempt.userId) {
+      return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
+    }
+    await chargeEnvironment(deps, tenant, 'verify')
+    const user = await deps.users.findById(tenant.environmentId, attempt.userId)
+    if (!user || user.emailNormalized !== attempt.identifier) {
+      // The account was deleted or moved to another address since the link was opened.
+      throw new AuthError('flow.invalid_step')
+    }
+    // The link's token was spent when it was opened; the attempt's own compare-and-set (in
+    // `finish`) is what lets only one request complete.
+    return completeEmailFactor(deps, tenant, attempt, state, user, 'email_link', context, () =>
+      Promise.resolve()
+    )
+  }
+
+  // Counted as a failure up front and cleared on success, exactly as a password is.
+  const lockKey = signInLockKey(tenant.environmentId, attempt.identifier)
+  const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
+  if (!lock.allowed) {
+    throw new RateLimitError(lock.retryAfterMs)
+  }
+  await chargeEnvironment(deps, tenant, 'verify')
+  const token = await Verification.verifyCode(deps, tenant, {
+    purpose: 'sign_in',
+    subject: { flowAttemptId: attempt.id },
+    code: input.code,
+    consume: false,
+  })
+  const user = token.userId ? await deps.users.findById(tenant.environmentId, token.userId) : null
+  if (!user || user.emailNormalized !== attempt.identifier) {
+    // Someone guessed the decoy code of a sign-in for an address with no account, or the
+    // account was deleted or moved to another address meanwhile. Answer as if the guess was
+    // wrong: a code proves control of the address it was sent to, not of an account.
+    throw new AuthError('verification.invalid_code', { attemptsRemaining: 0 })
+  }
+  await deps.lockout.clear(lockKey)
+  return completeEmailFactor(deps, tenant, attempt, state, user, 'email_code', context, () =>
+    Verification.consume(deps, tenant, token.id)
+  )
+}
+
+/**
+ * Accept an emailed sign-in link, opened in the browser that asked for it.
+ *
+ * This is the one flow step that is **not** authorized by the attempt's secret: the page a link
+ * leads to is a fresh page and does not have it. It is authorized instead by the link's token
+ * (256 bits, single use, ten minutes, newest only, purpose `sign_in`, issued for exactly this
+ * attempt) **together with** the binding the asking browser was given.
+ *
+ * The threat this answers: an attacker starts a sign-in for a victim's address, and the victim,
+ * receiving a genuine email, clicks the link. If that click completed the attacker's waiting
+ * attempt, the attacker would be signed in as the victim. The victim's browser never received
+ * the attacker's binding, so here the click proves nothing:
+ *
+ * - No link, an unknown, used, replaced or expired one, one for another attempt or purpose, or
+ *   an attempt that is gone: `verification.expired`, exactly like any dead link.
+ * - A good link without the matching binding (another browser or device, or someone else's
+ *   attempt): `verification.different_browser`, and **nothing is used up**. The link still
+ *   works in the browser that asked, and so does the code in the same email.
+ * - A good link with its binding: the token is spent (which also ends the code) and the attempt
+ *   is marked as proven. **No session is created and no tokens are returned**: the client that
+ *   holds the attempt's secret completes the sign-in with {@link attemptFirstFactor}.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param input - The link's token and attempt id, and this browser's binding (if it has one).
+ * @param context - The requesting device.
+ * @returns `verified`.
+ * @throws AuthError `verification.expired`, `verification.different_browser`,
+ *   `request.origin_not_allowed` or `auth.method_disabled`.
+ */
+export async function verifyEmailLink(
+  deps: Deps,
+  tenant: Tenant,
+  input: EmailLinkRequest,
+  context: Pick<ClientContext, 'originAllowed'>
+): Promise<EmailLinkResult> {
+  const attempt = await deps.flowAttempts.findById(tenant.environmentId, input.attemptId)
+  const parsed = attempt ? StateSchema.safeParse(attempt.state) : null
+  const state = parsed?.success ? parsed.data : null
+  // Compared in constant time, and compared even when there is nothing to compare with.
+  const bound = timingSafeEqual(
+    sha256Hex(input.binding ?? ''),
+    state?.linkBindingHash ?? NO_SECRET_HASH
+  )
+  const token = await Verification.verifyLink(deps, tenant, {
+    purpose: 'sign_in',
+    linkToken: input.token,
+    consume: false,
+  })
+  if (
+    !attempt ||
+    !state ||
+    attempt.kind !== 'sign_in' ||
+    attempt.status !== 'needs_first_factor' ||
+    attempt.completedAt !== null ||
+    attempt.expiresAt.getTime() <= deps.clock.now().getTime() ||
+    token.flowAttemptId !== attempt.id ||
+    token.userId === null ||
+    !state.strategies?.includes('email_link')
+  ) {
+    throw new AuthError('verification.expired')
+  }
+  if (!bound || input.binding === undefined || state.linkBindingHash === undefined) {
+    throw new AuthError('verification.different_browser')
+  }
+  requireAllowedOrigin(state.client, context)
+  await Settings.requireMethod(deps, tenant, 'emailLink')
+  await chargeEnvironment(deps, tenant, 'verify')
+  // Single use: of two tabs opening the same link, only the first gets past this.
+  await Verification.consume(deps, tenant, token.id)
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: attempt.status, userId: token.userId, state: { ...state, linkVerified: true } },
+    deps.clock.now()
+  )
+  if (!moved) {
+    // The attempt completed or expired between the read and the write.
+    throw new AuthError('verification.expired')
+  }
+  return { status: 'verified' }
+}
+
+/**
  * Submit the emailed code for an attempt waiting on `needs_email_verification`.
  *
  * For a sign-up this creates the account (now that the address is proven) and signs the user
@@ -658,7 +1080,9 @@ export async function verifyEmail(
   const event = { type: 'email_verified' } as const
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
   assertAccepts(attempt.kind, attempt.status, event)
-  await requirePasswordMethod(deps, tenant)
+  // A sign-in reaches this step only after a password (an email factor verifies the address
+  // itself), so its switch is the password's.
+  await requireSignUpMethod(deps, tenant, attempt.kind === 'sign_up' ? state : {})
   await chargeEnvironment(deps, tenant, 'verify')
 
   await Verification.verifyCode(deps, tenant, {
@@ -699,7 +1123,7 @@ export async function verifyEmail(
       : awaitSecondFactor(deps, tenant, attempt, state, user.id, secondFactors)
   }
 
-  if (state.decoy || !state.passwordHash) {
+  if (state.decoy || (!state.passwordHash && !state.passwordless)) {
     // Someone guessed the decoy code of a sign-up for an address that already has an account.
     // Answer as if the guess was wrong: the attempt can never create or enter an account.
     throw new AuthError('verification.invalid_code', { attemptsRemaining: 0 })
@@ -718,14 +1142,18 @@ export async function verifyEmail(
       createdAt: now,
       identityId: deps.ids.next(),
       credentialId: deps.ids.next(),
-      passwordHash: state.passwordHash,
+      passwordHash: state.passwordHash ?? null,
     },
     Audit.entry(deps, tenant, {
       type: 'user.created',
       // They created the account themselves, so the new user is the actor.
       actor: { type: 'user', id: userId, ...context },
       target: { type: 'user', id: userId },
-      data: { method: 'sign_up', emailVerified: true },
+      data: {
+        method: 'sign_up',
+        emailVerified: true,
+        ...(!state.passwordHash && { passwordless: true }),
+      },
     })
   )
   if (!created) {
@@ -985,7 +1413,7 @@ export async function resendCode(
   if (attempt.status !== waitsOn) {
     throw new AuthError('flow.invalid_step')
   }
-  await requirePasswordMethod(deps, tenant)
+  await requireSignUpMethod(deps, tenant, kind === 'sign_up' ? state : {})
   await issueCode(deps, tenant, attempt, state, {
     userId: attempt.userId ?? undefined,
     charge: true,

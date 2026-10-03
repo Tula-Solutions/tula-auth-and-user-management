@@ -79,6 +79,14 @@ export const ERROR_DEFINITIONS = {
     message: 'Too many incorrect codes. Request a new one.',
   },
 
+  // An emailed sign-in link opened in a browser other than the one that asked for it. Nothing
+  // was used up: the link still works where it was requested, and so does the code beside it.
+  'verification.different_browser': {
+    status: 409,
+    message:
+      'Open this link in the browser where you started signing in, or enter the code from the email there.',
+  },
+
   'session.invalid_token': { status: 401, message: 'Your session is invalid. Sign in again.' },
   'session.expired': { status: 401, message: 'Your session has expired. Sign in again.' },
   'session.revoked': { status: 401, message: 'Your session was signed out. Sign in again.' },
@@ -96,6 +104,12 @@ export const ERROR_DEFINITIONS = {
   'request.origin_not_allowed': {
     status: 403,
     message: 'This origin is not allowed to sign in to this app.',
+  },
+  // An emailed sign-in link was asked for with a `redirectUrl` that is not, exactly, one of the
+  // environment's `urls.allowedRedirectUrls`. Says nothing about any account.
+  'request.redirect_not_allowed': {
+    status: 400,
+    message: 'This redirect URL is not allowed for this app.',
   },
   'validation.failed': { status: 422, message: 'Some fields are invalid.' },
   'resource.not_found': { status: 404, message: 'The requested resource does not exist.' },

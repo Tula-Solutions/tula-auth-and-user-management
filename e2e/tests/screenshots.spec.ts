@@ -1,6 +1,16 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { latestCode, PASSWORD, resetLimits, signUp, uniqueEmail } from './support'
+import {
+  EMAIL_METHODS,
+  latestCode,
+  latestLink,
+  PASSWORD,
+  resetLimits,
+  signOut,
+  signUp,
+  uniqueEmail,
+  useSettings,
+} from './support'
 
 // Regenerates the screenshots the READMEs show (examples/react-vite/docs). Not part of the
 // suite: it only runs when asked for.
@@ -21,6 +31,10 @@ async function shot(page: Page, name: string): Promise<void> {
 
 test.beforeEach(async ({ request }) => {
   await resetLimits(request)
+})
+
+test.afterEach(async ({ request }) => {
+  await useSettings(request)
 })
 
 test('sign-up with the checklist, the emailed code, and the profile', async ({ page, request }) => {
@@ -79,4 +93,81 @@ test('sign-in, light and dark, and sign-up on a phone', async ({ page, request, 
   await expect(mobile.getByText('Met: 10 or more characters')).toBeAttached()
   await shot(mobile, 'mobile-sign-up')
   await phone.close()
+})
+
+test('email sign-in: the choice, the emailed code, waiting for a link, and the link page', async ({
+  page,
+  request,
+  browser,
+}) => {
+  const email = 'maya@northline.app'
+  await signUp(page, request, { email, firstName: 'Maya' })
+  await signOut(page)
+  await resetLimits(request)
+  await useSettings(request, EMAIL_METHODS)
+
+  await page.setViewportSize(DESKTOP)
+  await page.getByLabel('Email address').fill(email)
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await expect(page.getByRole('list', { name: 'Other ways to sign in' })).toBeVisible()
+  await shot(page, 'sign-in-methods')
+
+  await page.getByRole('button', { name: 'Email me a code' }).click()
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible()
+  await page.getByLabel('Verification code').fill('482')
+  await shot(page, 'email-code')
+
+  await resetLimits(request)
+  await page.getByRole('button', { name: 'Email me a link' }).click()
+  await expect(page.getByText('Waiting for you to open the link…')).toBeVisible()
+  await page.getByRole('heading', { name: 'Check your email' }).focus()
+  // This card is taller than the others: the link's status, then the code as the way in from
+  // another device.
+  await page.setViewportSize({ width: 1000, height: 820 })
+  await shot(page, 'email-link-waiting')
+
+  // The link, opened in a browser that did not ask for it.
+  const link = await latestLink(request, email)
+  const other = await browser.newContext({ viewport: DESKTOP })
+  const stranger = await other.newPage()
+  await stranger.goto(link)
+  await expect(
+    stranger.getByRole('heading', { name: 'Open this link where you started' })
+  ).toBeVisible()
+  await shot(stranger, 'email-link-other-browser')
+  await other.close()
+
+  const phone = await browser.newContext({
+    viewport: PHONE,
+    deviceScaleFactor: 2,
+    colorScheme: 'dark',
+  })
+  const mobile = await phone.newPage()
+  await mobile.goto('/sign-in')
+  await mobile.getByLabel('Email address').fill(email)
+  await mobile.getByRole('button', { name: 'Continue' }).click()
+  await resetLimits(request)
+  await mobile.getByRole('button', { name: 'Email me a link' }).click()
+  await expect(mobile.getByText('Waiting for you to open the link…')).toBeVisible()
+  await shot(mobile, 'mobile-email-link-dark')
+  await phone.close()
+})
+
+test('sign-up where the password is optional', async ({ page, request }) => {
+  await useSettings(request, {
+    signIn: {
+      methods: {
+        password: { enabled: true },
+        emailCode: { enabled: true },
+        emailLink: { enabled: false },
+      },
+    },
+    signUp: { password: 'optional' },
+  })
+  await page.setViewportSize(DESKTOP)
+  await page.goto('/sign-up')
+  await expect(page.getByLabel('Password (optional)')).toBeVisible()
+  await page.getByLabel('First name').fill('Ines')
+  await page.getByLabel('Email address').fill('ines@northline.app')
+  await shot(page, 'sign-up-optional-password')
 })

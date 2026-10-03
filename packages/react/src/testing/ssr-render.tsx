@@ -1,5 +1,6 @@
 import { renderToString } from 'react-dom/server'
 import {
+  EmailLinkCallback,
   SignedIn,
   SignedOut,
   SignIn,
@@ -33,7 +34,8 @@ const html = renderToString(
     <SignedOut>
       <p>out</p>
     </SignedOut>
-    <SignIn signUpUrl='/sign-up' afterSignInUrl='/app' />
+    <SignIn signUpUrl='/sign-up' afterSignInUrl='/app' emailLinkUrl='/auth/link' />
+    <EmailLinkCallback />
     <SignUp />
     <UserButton />
     <UserProfile />

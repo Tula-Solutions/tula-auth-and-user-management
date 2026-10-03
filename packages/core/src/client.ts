@@ -1,3 +1,4 @@
+import { createLinkStore, type EmailLinkOutcome, handleEmailLink } from './email-link'
 import { type Environment, runtimeEnvironment } from './environment'
 import type { Messages } from './errors'
 import {
@@ -112,11 +113,15 @@ export interface TulaClient {
    * @param messages - Messages by error code; codes left out stay English.
    */
   setMessages(messages: Messages): void
-  /** Sign-up with email and password. */
+  /** Sign-up with email and, unless the environment makes it optional, a password. */
   readonly signUp: {
     /**
      * Start a sign-up: checks the email and password and emails a 6-digit code. The answer is
      * the same whether or not the address already has an account.
+     *
+     * `password` may be left out only where the environment's configuration says
+     * `signUp.password: 'optional'` (see `config.get()`): the account then has no password and
+     * signs in with an emailed code or link.
      *
      * @param input - The new account's email, password and optional name.
      * @returns The flow, waiting on `needs_email_verification`.
@@ -125,7 +130,7 @@ export interface TulaClient {
      */
     start(input: {
       email: string
-      password: string
+      password?: string
       firstName?: string
       lastName?: string
     }): Promise<SignUpFlow>
@@ -140,6 +145,31 @@ export interface TulaClient {
      * @returns The flow.
      */
     start(input: { identifier: string }): Promise<SignInFlow>
+    /**
+     * Whether an emailed sign-in link can be used in this browser: it needs storage shared by
+     * the browser's tabs (`localStorage`). Where it cannot, offer the emailed code only.
+     *
+     * @returns `false` outside a browser, and where storage is missing or refuses writes.
+     */
+    canUseEmailLink(): boolean
+    /**
+     * Handle the emailed sign-in link in the page's address, if there is one. Call it once on
+     * the page your links lead to (the `redirectUrl` given to `prepareFirstFactor`).
+     *
+     * The link's token is read from the URL fragment and removed from the address bar before
+     * anything is sent. Opening a link never signs this tab in by itself: the tab that started
+     * the sign-in finishes it, and this tab then shares its session. A link opened in another
+     * browser or on another device is refused without being used up.
+     *
+     * Calls made while one is in flight share its result, so calling it from an effect that
+     * runs twice is safe.
+     *
+     * @param options - `waitMs`: how long to wait for the session after the link was accepted
+     *   (default `EMAIL_LINK_SESSION_WAIT_MS`).
+     * @returns What became of the link; `{ status: 'none' }` when the address carries none.
+     * @throws TulaError when the API could not be reached or refused for another reason.
+     */
+    handleEmailLink(options?: { waitMs?: number }): Promise<EmailLinkOutcome>
   }
   /** Forgotten password. */
   readonly resetPassword: {
@@ -276,6 +306,9 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   let messages: Messages = options.messages ?? {}
   const currentMessages = () => messages
 
+  // One lock, channel and storage entry per API and environment, so two apps (or two
+  // environments) on one origin do not share a session.
+  const scope = `${baseUrl}|${publishableKey}`
   const transport = createTransport({
     baseUrl,
     publishableKey,
@@ -293,16 +326,16 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     // A waiter that gave up sooner than the holder can take would refresh alongside it.
     lockWaitMs: Math.max(timeoutMs, refreshBudgetMs(refreshTimeoutMs)) + LOCK_WAIT_MARGIN_MS,
     refreshTimeoutMs,
-    // One lock, channel and storage entry per API and environment, so two apps (or two
-    // environments) on one origin do not share a session.
-    scope: `${baseUrl}|${publishableKey}`,
+    scope,
     messages: currentMessages,
   })
   if (options.onSessionChange) {
     session.subscribe(options.onSessionChange)
   }
-  const flows = { transport, session, messages: currentMessages }
+  const links = createLinkStore(environment, scope)
+  const flows = { transport, session, messages: currentMessages, environment, links, scope }
   let config: Promise<ClientConfig> | null = null
+  let handlingLink: Promise<EmailLinkOutcome> | null = null
 
   return {
     get state() {
@@ -320,6 +353,21 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     signIn: {
       start: async (input) =>
         signInFlow(flows, await transport.call('startSignIn', { body: input })),
+      canUseEmailLink: () => links.available(),
+      handleEmailLink(options) {
+        if (!handlingLink) {
+          const pending = handleEmailLink(
+            { transport, session, environment, links, scope },
+            options
+          ).finally(() => {
+            if (handlingLink === pending) {
+              handlingLink = null
+            }
+          })
+          handlingLink = pending
+        }
+        return handlingLink
+      },
     },
     resetPassword: {
       start: async (input) =>

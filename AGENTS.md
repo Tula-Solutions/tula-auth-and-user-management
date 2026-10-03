@@ -141,7 +141,13 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - **A destination is only ever a prop** (`afterSignInUrl`, …), checked to be relative or
   `http(s)`. Nothing reads a URL from the address bar or the server.
 - **Nothing touches `window` or `document` during render**, and no token, code, password or
-  attempt secret goes into storage, a URL, a DOM attribute or a log line.
+  attempt secret goes into storage, a URL, a DOM attribute or a log line. The one thing in web
+  storage is `@tula/core`'s emailed-link binding (`tula.link.<attempt id>` in `localStorage`):
+  it is not a token and authorizes nothing by itself; the components never touch it.
+- **An effect that waits is restartable.** A wait started from an effect (`waitForEmailLink`)
+  gets its own `AbortSignal` and is aborted in the cleanup; StrictMode, Fast Refresh and
+  `<Activity>` clean up and set up again in one tick, and the second wait must not die with
+  the first one's signal.
 - **Accessibility is part of done**: labelled fields, errors associated and announced, focus
   moved on a step change and on failure, state as text and not only colour, keyboard operation
   of everything. axe runs on every screen in the browser tests with no rule disabled.
@@ -204,8 +210,10 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 
 Anything about how sign-in behaves that differs between tenants lives in the environment's
 settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/adr/0018-environment-settings.md)):
-app name and support address, password policy, enabled sign-in methods, allowed origins and
-redirect URLs, audit retention, and which security notices are emailed (`notifications`). **Read it through `~/modules/settings/service`**
+app name and support address, password policy, enabled sign-in methods (`password`,
+`emailCode`, `emailLink`), whether a sign-up needs a password (`signUp.password`), allowed
+origins and redirect URLs, audit retention, and which security notices are emailed
+(`notifications`). **Read it through `~/modules/settings/service`**
 (`Settings.current(deps, tenant)`), never from `deps.config`: `PASSWORD_POLICY` and
 `CORS_ORIGINS` are only the defaults of an environment that has saved nothing.
 
@@ -243,12 +251,19 @@ The API never tells a client which screen to draw; it returns the next **flow st
   step or event must be classified there.
 - **A sign-in method is registered in one place**: `FIRST_FACTORS` in
   `modules/factor/service.ts` maps the environment's settings to the strategies a sign-in
-  offers; a second factor registers a verifier in `SECOND_FACTOR_VERIFIERS` and is submitted
+  offers (`password`, `email_code`, `email_link`); a second factor registers a verifier in `SECOND_FACTOR_VERIFIERS` and is submitted
   through `Flows.submitSecondFactor`. Adding a method means adding an entry and the route that
   proves it, not editing the transition function or any SDK.
 - **Every flow step starts with the service's `load`**, which checks the attempt's secret and,
   for a browser attempt, the request's origin. Never read an attempt from the store directly
-  in a step.
+  in a step. The one exception is `Flows.verifyEmailLink` (`POST /v1/client/sign-ins/link`):
+  the page an emailed link leads to has no attempt secret, so that step is authorized by the
+  link's token together with the browser's link binding, creates no session and returns no
+  tokens ([ADR 0024](docs/adr/0024-email-sign-in.md)).
+- **An email is asked for, never sent by a start.** `first-factor/prepare` emails the code (and
+  link) of an email first factor and `first-factor/attempt` proves it; the waiting step is
+  `needs_first_factor` with `prepared`. A sign-up without a password (`signUp.password:
+  'optional'`) creates the account with no credential.
 
 ### Errors
 
@@ -325,7 +340,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0020](docs/adr/0020-packaging-and-release.md); the client SDK and where it keeps tokens:
   [ADR 0021](docs/adr/0021-core-sdk.md); the React components, theming and browser tests:
   [ADR 0022](docs/adr/0022-react-sdk.md); security notice emails and what "a new device" means:
-  [ADR 0023](docs/adr/0023-security-notices.md).
+  [ADR 0023](docs/adr/0023-security-notices.md); signing in by email (codes, same-browser
+  links, passwordless sign-up): [ADR 0024](docs/adr/0024-email-sign-in.md).
 - **Every flow call after the start presents the attempt's secret** (`x-tula-attempt`). The
   secret is 256 bits, returned once by the start, stored only as SHA-256 and never logged or
   audited. Missing, wrong or another attempt's: the same `flow.not_found` as an unknown attempt,
@@ -336,6 +352,22 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   foreign page from having a session cookie set (login CSRF).
 - **The first factors a sign-in offers depend only on the environment's settings**, never on
   the identifier: the start does not look the identifier up.
+- **Asking for a sign-in email answers the same for every address.** An address with no account
+  is sent a notice with no code and no link, its attempt holds a decoy, and the response, the
+  send limits and the cost are the same. An emailed code counts against the same per-identifier
+  lockout as the password, and a token issued for one purpose (`email_verification`,
+  `password_reset`, `sign_in`) is never honoured for another.
+- **An emailed link is honoured only in the browser that asked for it.** The link's token is
+  accepted only together with the `linkBinding` returned once to the asking client (stored as
+  SHA-256 on the attempt, compared in constant time). Without it the answer is
+  `verification.different_browser` and nothing is spent: a victim clicking a link an attacker
+  asked for proves nothing. Accepting a link never creates a session; only the holder of the
+  attempt's secret completes. The token travels in the URL **fragment**, never a query, and in
+  a JSON body to the API. Never weaken either rule to make links work across devices: the code
+  in the same email is the cross-device path.
+- **A redirect URL is matched exactly** against `urls.allowedRedirectUrls`
+  (`Settings.requireRedirectUrl`): no prefix, pattern or same-host rule. Loopback `http` URLs
+  are allowed in the `local` tier only.
 - **No session before the second factor.** After a first factor, and after a password reset,
   the engine asks `Factors.requiredFor`; a non-empty answer means `needs_second_factor` and no
   tokens. Never call `Sessions.create` for a sign-in outside the flow service's `finish`.
@@ -400,6 +432,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   bunfig from the test cwd, and Turborepo runs tests per package). Aim for 95% on
   security-sensitive modules. `bun run test:harness` enforces that every package with a
   `test:coverage` script has a threshold.
+- **A scenario that changes the environment's settings restores them in `cleanup` steps**, which
+  run whether or not its steps passed (scenarios 14 to 16 show the pattern).
 - **Every conformance scenario has an SDK decision.** `apps/api/src/sdk-journeys.test.ts` drives
   `@tula/core` against the API in process; its guard fails unless each scenario is covered by a
   `journey('<scenario name>', …)` there or listed in `SERVER_ONLY` with the reason. When you add

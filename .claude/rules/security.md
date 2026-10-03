@@ -50,3 +50,20 @@ Before finishing any change here, confirm each item holds and has a test:
 15. **Second factor:** nothing reaches `complete` past a required second factor. A step that
     accepts a first factor (or a reset) asks `Factors.requiredFor` and returns no tokens on
     `needs_second_factor`. Test that no session exists until the factor is proven.
+16. **Email first factors:** asking for a code or link (`first-factor/prepare`) answers, costs
+    and is limited the same for an address with and without an account (a notice with no code
+    and no link, a decoy token). A code counts against the identifier's lockout, shared with
+    the password. A token of one purpose (`email_verification`, `password_reset`, `sign_in`) is
+    refused for every other. Test known and unknown addresses side by side. A sign-up without
+    a password re-checks on every step that `signUp.password` is still `optional`. Code
+    attempts and link polls are limited per IP in separate buckets.
+17. **Link binding:** an emailed link is accepted only with the `linkBinding` the asking client
+    was given (SHA-256 on the attempt, constant-time compare). Missing, wrong or another
+    attempt's binding: `verification.different_browser`, with the token **not** consumed and no
+    session. A dead, replayed or foreign token: `verification.expired`. Accepting a link
+    returns no tokens; only the holder of the attempt's secret completes. Test the attacker's
+    case: their attempt must never complete because someone else opened the link.
+18. **Redirect allow-list:** a redirect URL must equal an entry of `urls.allowedRedirectUrls`
+    exactly (`Settings.requireRedirectUrl`); loopback `http` only in the `local` tier. Test a
+    longer path, an added query or fragment, another case, a look-alike host and credentials in
+    front of an allowed host. A link's token goes in the URL fragment, never the query.

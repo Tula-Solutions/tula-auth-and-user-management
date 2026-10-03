@@ -476,7 +476,9 @@ describe('password sign-in switched off for the environment', () => {
       revision: 1,
       settings: {
         ...DEFAULT_ENVIRONMENT_SETTINGS,
-        signIn: { methods: { password: { enabled: false } } },
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, password: { enabled: false } },
+        },
       },
     })
     const res = await post(path, body)

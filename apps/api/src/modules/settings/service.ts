@@ -352,7 +352,8 @@ export function etag(revision: number): string {
  * What a client may know about an environment: enough to draw a sign-in screen.
  *
  * @param settings - The environment's settings.
- * @returns App name and support address, enabled sign-in methods and the password policy.
+ * @returns App name and support address, enabled sign-in methods, whether a sign-up needs a
+ *   password, and the password policy.
  */
 export function clientConfig(settings: EnvironmentSettings): ClientConfig {
   return {
@@ -362,6 +363,7 @@ export function clientConfig(settings: EnvironmentSettings): ClientConfig {
         .filter(([, method]) => method.enabled)
         .map(([name]) => name),
     },
+    signUp: { password: settings.signUp.password },
     password: settings.password,
   }
 }
@@ -386,4 +388,55 @@ export async function requireMethod(
   if (!signIn.methods[method].enabled) {
     throw new AuthError('auth.method_disabled', { method })
   }
+}
+
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/** Whether `url` is a plain `http://` URL on this machine: no credentials and no fragment. */
+function isLoopbackUrl(url: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  return (
+    parsed.protocol === 'http:' &&
+    LOOPBACK_HOSTS.has(parsed.hostname) &&
+    parsed.username === '' &&
+    parsed.password === '' &&
+    !url.includes('#')
+  )
+}
+
+/**
+ * Refuse a URL a flow is asked to send the user to unless the environment allows it.
+ *
+ * The match is **exact**: the URL must be, character for character, an entry of
+ * `urls.allowedRedirectUrls`. No prefix, pattern or "same host" rule, because each of those has
+ * turned an allow-list into an open redirect somewhere. In the `local` tier any `http://` URL on
+ * a loopback host is allowed as well, mirroring the CORS rule, so local development needs no
+ * setup. It depends only on the environment, never on an account.
+ *
+ * @param deps - Settings store and config.
+ * @param tenant - The environment.
+ * @param url - The URL the request asked for, if any.
+ * @returns The URL, now known to be allowed.
+ * @throws AuthError `request.redirect_not_allowed` (400) when it is missing or not allowed.
+ */
+export async function requireRedirectUrl(
+  deps: ReadDeps,
+  tenant: Pick<Tenant, 'environmentId'>,
+  url: string | undefined
+): Promise<string> {
+  if (url !== undefined) {
+    const { urls } = await current(deps, tenant)
+    if (
+      urls.allowedRedirectUrls.includes(url) ||
+      (deps.config.tier === 'local' && isLoopbackUrl(url))
+    ) {
+      return url
+    }
+  }
+  throw new AuthError('request.redirect_not_allowed')
 }

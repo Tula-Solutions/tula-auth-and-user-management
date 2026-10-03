@@ -1,5 +1,12 @@
 import type { FirstFactorStrategy, FlowStep } from '@tula/core'
-import { type ComponentType, type MouseEvent, type ReactNode, useState } from 'react'
+import {
+  type ComponentType,
+  type MouseEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'
 import { useClientConfig, usePasswordChecklist } from '../hooks/use-password-checklist'
@@ -11,6 +18,7 @@ import {
   CODE_LENGTH,
   CodeField,
   type FlowResult,
+  IdentityRow,
   ResendButton,
   SignedInNotice,
   UnsupportedScreen,
@@ -18,7 +26,7 @@ import {
   useRetryAfter,
   VerificationScreen,
 } from './flow-screens'
-import { fieldResolver, formatDuration, placeErrors } from './form-errors'
+import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
 import {
   Button,
   Card,
@@ -50,6 +58,12 @@ export interface SignInProps {
   afterSignInUrl?: string
   /** Called once signed in, instead of navigating to `afterSignInUrl`. */
   onComplete?: (result: FlowResult) => void
+  /**
+   * The page emailed sign-in links lead to: the one that renders `<EmailLinkCallback>`. It
+   * must be one of the environment's allowed redirect URLs, exactly. Overrides the provider's
+   * `emailLinkUrl`; without either, "Email me a link" is not offered.
+   */
+  emailLinkUrl?: string
   /** Puts an address in the email field to start with. */
   initialEmail?: string
   /** Theme tokens, colour scheme and class names for this component. */
@@ -103,6 +117,9 @@ export function SwitchLink(props: {
   )
 }
 
+/** The `needs_first_factor` step. */
+type FirstFactorStep = Extract<FlowStep, { status: 'needs_first_factor' }>
+
 /** What a first-factor form gets. */
 interface FirstFactorProps {
   email: string
@@ -110,20 +127,40 @@ interface FirstFactorProps {
   focusTitle: boolean
   onForgotPassword(): void
   onChangeEmail(): void
+  /** What the server last emailed for this attempt, when it has. */
+  prepared?: FirstFactorStep['prepared']
+  /** Ask the server for the email of an email strategy (again, for a fresh one). */
+  sendEmail?(strategy: 'email_code' | 'email_link'): Promise<FlowStep | null>
+  /** The other ways to sign in the attempt offers, drawn under the form. */
+  alternatives?: ReactNode
 }
 
 /**
  * The first factors this version can draw, by strategy. A later step adds a method by adding
- * its form here (magic link, email code, passkeys, OAuth); a strategy with no entry is skipped.
+ * its form here (passkeys, OAuth); a strategy with no entry is skipped.
  */
 const FIRST_FACTOR_FORMS: Partial<Record<FirstFactorStrategy, ComponentType<FirstFactorProps>>> = {
   password: PasswordScreen,
+  email_code: EmailCodeScreen,
+  email_link: EmailLinkScreen,
 }
 
-function supportedStrategies(strategies: readonly string[]): FirstFactorStrategy[] {
-  return strategies.filter((strategy): strategy is FirstFactorStrategy =>
-    Object.hasOwn(FIRST_FACTOR_FORMS, strategy)
+function supportedStrategies(
+  strategies: readonly string[],
+  canUseLink: boolean
+): FirstFactorStrategy[] {
+  return strategies.filter(
+    (strategy): strategy is FirstFactorStrategy =>
+      Object.hasOwn(FIRST_FACTOR_FORMS, strategy) && (strategy !== 'email_link' || canUseLink)
   )
+}
+
+/**
+ * The absolute URL an emailed link should lead to, from the developer's prop. Only ever called
+ * from an event handler, never during render.
+ */
+function resolveLinkUrl(url: string | undefined): string | null {
+  return typeof window === 'undefined' ? null : safeUrl(url, window.location.href)
 }
 
 function IdentifierScreen(props: {
@@ -186,7 +223,7 @@ function IdentifierScreen(props: {
 }
 
 function PasswordScreen(props: FirstFactorProps) {
-  const { el, t } = useUi()
+  const { t } = useUi()
   const { signIn, email } = props
   const [password, setPassword] = useState('')
   const [missing, setMissing] = useState<{ message: string } | null>(null)
@@ -206,12 +243,7 @@ function PasswordScreen(props: FirstFactorProps) {
   }
   return (
     <Card title={t.signIn.passwordTitle} focusTitle={props.focusTitle}>
-      <p {...el('identity')}>
-        <span>{email}</span>
-        <Button kind='link' onClick={props.onChangeEmail}>
-          {t.signIn.changeEmail}
-        </Button>
-      </p>
+      <IdentityRow email={email} onChange={props.onChangeEmail} />
       <Form
         onSubmit={submit}
         failure={missing ?? signIn.error}
@@ -256,22 +288,278 @@ function PasswordScreen(props: FirstFactorProps) {
           {t.signIn.submit}
         </Button>
       </Form>
+      {props.alternatives}
     </Card>
   )
 }
 
+/**
+ * The emailed first factors: a code, or a link (whose email carries the code as well).
+ *
+ * Before the server has emailed anything it offers to; afterwards it takes the code, and for a
+ * link also waits for the link to be opened in this browser. The waiting is the flow's (the
+ * hook's `waitForEmailLink`): this screen starts it when it appears and stops it when it goes.
+ */
+function EmailFactorScreen(props: FirstFactorProps & { strategy: 'email_code' | 'email_link' }) {
+  const { el, t } = useUi()
+  const { signIn, strategy, prepared } = props
+  const [code, setCode] = useState('')
+  const [incomplete, setIncomplete] = useState<{ message: string } | null>(null)
+  const [resent, setResent] = useState(false)
+  const [action, setAction] = useState<'submit' | 'send' | null>(null)
+  // When the address screen asked for the email itself and was told to wait, this screen
+  // appears with that refusal: it is about sending.
+  const limits = useRetryAfter<'submit' | 'send'>(signIn.error, 'send')
+  const placed = placeErrors(signIn.error, fieldResolver(['code']))
+  const hint = attemptsLeft(signIn.error, t)
+  const codeErrors = incomplete
+    ? [incomplete.message]
+    : (placed.fields.code ?? []).map((message) => (hint ? `${message} ${hint}` : message))
+  const submitWait = limits.secondsLeft('submit')
+  const sendWait = limits.secondsLeft('send')
+  const viaLink = strategy === 'email_link'
+  // The email for a link carries the code too, so a link's email serves the code screen.
+  const sent = prepared !== undefined && (viaLink ? prepared.strategy === 'email_link' : true)
+  const waiting = viaLink && sent
+
+  // The latest `waitForEmailLink`, read by the effect below without making it re-run: its
+  // identity changes with every render of the parent.
+  const wait = useRef(signIn.waitForEmailLink)
+  wait.current = signIn.waitForEmailLink
+  useEffect(() => {
+    if (!waiting) {
+      return
+    }
+    const leaving = new AbortController()
+    void wait.current({ signal: leaving.signal })
+    return () => leaving.abort()
+  }, [waiting])
+
+  const send = async (again: boolean) => {
+    setIncomplete(null)
+    setResent(false)
+    limits.mark('send')
+    setAction('send')
+    const next = (await props.sendEmail?.(strategy)) ?? null
+    setResent(again && next !== null)
+  }
+  const submit = async () => {
+    setResent(false)
+    if (code.length !== CODE_LENGTH) {
+      setIncomplete({ message: t.verification.codeIncomplete })
+      return
+    }
+    setIncomplete(null)
+    limits.mark('submit')
+    setAction('submit')
+    const next = await signIn.attemptFirstFactor({ strategy: 'email_code', code })
+    if (next === null) {
+      // A wrong code is retyped from scratch.
+      setCode('')
+    }
+  }
+  const retry = (seconds: number) =>
+    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
+
+  if (!sent) {
+    return (
+      <Card
+        key='ask'
+        title={viaLink ? t.signIn.emailLink : t.signIn.emailCode}
+        subtitle={viaLink ? t.signIn.emailLinkPrompt : t.signIn.emailCodePrompt}
+        focusTitle={props.focusTitle}
+      >
+        <IdentityRow email={props.email} onChange={props.onChangeEmail} />
+        <Form
+          onSubmit={() => void send(false)}
+          failure={signIn.error}
+          blocked={signIn.isPending || sendWait > 0}
+        >
+          <FormError message={placed.form} detail={retry(sendWait)} />
+          <Button type='submit' pending={signIn.isPending} disabled={sendWait > 0}>
+            {viaLink ? t.signIn.emailLink : t.signIn.emailCode}
+          </Button>
+        </Form>
+        {props.alternatives}
+      </Card>
+    )
+  }
+
+  return (
+    // A different card from the one that asked: its title takes focus, so the change from
+    // "about to send" to "sent" is announced.
+    <Card
+      key='sent'
+      title={t.signIn.emailTitle}
+      subtitle={formatText(viaLink ? t.signIn.emailLinkSubtitle : t.signIn.emailCodeSubtitle, {
+        destination: prepared.destination,
+      })}
+      focusTitle={props.focusTitle}
+    >
+      <IdentityRow email={props.email} onChange={props.onChangeEmail} />
+      {waiting ? (
+        <>
+          {/* Not a live region: it is there when the screen appears and never changes. */}
+          <p {...el('waiting')}>
+            <span {...el('spinner')} aria-hidden='true' />
+            <span>{t.signIn.emailLinkWaiting}</span>
+          </p>
+          <p className='tula-text'>{t.signIn.emailLinkCodeHint}</p>
+        </>
+      ) : null}
+      <Form
+        onSubmit={submit}
+        failure={incomplete ?? signIn.error}
+        blocked={signIn.isPending || submitWait > 0}
+      >
+        <FormError message={placed.form} detail={retry(Math.max(submitWait, sendWait))} />
+        <CodeField
+          value={code}
+          onValue={(value) => {
+            setCode(value)
+            setIncomplete(null)
+          }}
+          errors={codeErrors}
+        />
+        <Button
+          type='submit'
+          pending={signIn.isPending && action === 'submit'}
+          disabled={signIn.isPending || submitWait > 0}
+        >
+          {t.signIn.emailCodeSubmit}
+        </Button>
+        <div className='tula-actions'>
+          <ResendButton
+            secondsLeft={sendWait}
+            pending={signIn.isPending && action === 'send'}
+            onResend={() => void send(true)}
+            label={t.signIn.emailResend}
+            waitingLabel={t.signIn.emailResendIn}
+          />
+        </div>
+        <Status message={resent ? t.signIn.emailResent : null} />
+      </Form>
+      {props.alternatives}
+    </Card>
+  )
+}
+
+function EmailCodeScreen(props: FirstFactorProps) {
+  return <EmailFactorScreen {...props} strategy='email_code' />
+}
+
+function EmailLinkScreen(props: FirstFactorProps) {
+  return <EmailFactorScreen {...props} strategy='email_link' />
+}
+
+/** The label of the button that switches to a strategy. */
+function strategyLabel(
+  strategy: FirstFactorStrategy,
+  t: ReturnType<typeof useUi>['t']
+): string | null {
+  switch (strategy) {
+    case 'password':
+      return t.signIn.usePassword
+    case 'email_code':
+      return t.signIn.emailCode
+    case 'email_link':
+      return t.signIn.emailLink
+    default:
+      return null
+  }
+}
+
 /** `needs_first_factor`: one form per strategy the server offered that this version knows. */
 function FirstFactorScreen(
-  props: FirstFactorProps & { strategies: readonly string[]; onRestart(): void }
+  props: Omit<FirstFactorProps, 'prepared' | 'alternatives' | 'sendEmail'> & {
+    step: FirstFactorStep
+    /** The page an emailed link leads to, as the developer gave it. */
+    emailLinkUrl?: string
+    onRestart(): void
+  }
 ) {
-  const { strategies, onRestart, ...form } = props
-  const known = supportedStrategies(strategies)
-  const [first] = known
-  const Screen = first ? FIRST_FACTOR_FORMS[first] : undefined
-  if (!Screen) {
+  const { el, t } = useUi()
+  const { step, onRestart, emailLinkUrl: _emailLinkUrl, ...form } = props
+  const { signIn } = props
+  const { prepared } = step
+  // Whether a link could be honoured here is a fact about the browser (storage) and about the
+  // developer's prop, read after mount: nothing during render touches storage.
+  const [storageUsable, setStorageUsable] = useState(false)
+  const canUse = useRef(signIn.canUseEmailLink)
+  canUse.current = signIn.canUseEmailLink
+  useEffect(() => {
+    setStorageUsable(canUse.current())
+  }, [])
+  const linkConfigured = safeUrl(props.emailLinkUrl, 'http://localhost') !== null
+  const known = supportedStrategies(step.strategies, storageUsable && linkConfigured)
+  // What the user picked on this screen; until then, what the server last emailed for, or the
+  // first strategy on offer.
+  const [chosen, setChosen] = useState<FirstFactorStrategy | null>(null)
+  /** The email method whose email is being asked for from the list of other ways. */
+  const [sending, setSending] = useState<FirstFactorStrategy | null>(null)
+  const emailed = prepared && known.includes(prepared.strategy) ? prepared.strategy : undefined
+  const active = chosen && known.includes(chosen) ? chosen : (emailed ?? known[0])
+  const Screen = active ? FIRST_FACTOR_FORMS[active] : undefined
+  if (!Screen || !active) {
     return <UnsupportedScreen focusTitle={props.focusTitle} onRestart={onRestart} />
   }
-  return <Screen {...form} />
+
+  const others = known.filter(
+    (strategy) =>
+      strategy !== active &&
+      // The email a link came in carries the code, and that screen takes it.
+      !(strategy === 'email_code' && active === 'email_link' && prepared?.strategy === 'email_link')
+  )
+  const sendEmail = (strategy: 'email_code' | 'email_link') => {
+    const redirectUrl = strategy === 'email_link' ? resolveLinkUrl(props.emailLinkUrl) : null
+    return signIn.prepareFirstFactor(
+      strategy === 'email_link' && redirectUrl !== null
+        ? { strategy, redirectUrl }
+        : { strategy: 'email_code' }
+    )
+  }
+  const choose = async (strategy: FirstFactorStrategy) => {
+    signIn.clearError()
+    // Choosing an email method is asking for the email: one click, not two. An email that is
+    // already there is not sent again (a link's email carries the code as well). If the email
+    // cannot be sent (too soon after the last one), the method's screen says so and offers to.
+    const needsEmail =
+      strategy === 'email_link'
+        ? prepared?.strategy !== 'email_link'
+        : strategy === 'email_code' && prepared === undefined
+    if (needsEmail && (strategy === 'email_code' || strategy === 'email_link')) {
+      setSending(strategy)
+      await sendEmail(strategy)
+      setSending(null)
+    }
+    setChosen(strategy)
+  }
+  const alternatives =
+    others.length > 0 ? (
+      <ul {...el('alternatives')} aria-label={t.signIn.otherMethods}>
+        {others.map((strategy) => (
+          <li key={strategy}>
+            <Button
+              kind='link'
+              pending={sending === strategy}
+              disabled={signIn.isPending}
+              onClick={() => void choose(strategy)}
+            >
+              {strategyLabel(strategy, t)}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    ) : null
+  return (
+    <Screen
+      key={active}
+      {...form}
+      prepared={prepared}
+      sendEmail={sendEmail}
+      alternatives={alternatives}
+    />
+  )
 }
 
 function ResetStartScreen(props: {
@@ -465,12 +753,28 @@ function SignInScreens(props: SignInProps) {
     onComplete: props.onComplete,
     url: props.afterSignInUrl ?? navigation.afterSignInUrl,
   })
+  const emailLinkUrl = props.emailLinkUrl ?? navigation.emailLinkUrl
   // Every action that can complete the flow reports its result to `finish`.
   const signIn: UseSignInResult = {
     ...signInFlow,
-    start: (input) => signInFlow.start(input).then(finish),
+    async start(input) {
+      const next = await signInFlow.start(input)
+      // Where an emailed code is the only way in there is nothing to choose: ask for it, so
+      // the user goes from their address straight to the code.
+      const only =
+        next?.status === 'needs_first_factor' && next.strategies.length === 1
+          ? next.strategies[0]
+          : undefined
+      return finish(
+        only === 'email_code'
+          ? ((await signInFlow.prepareFirstFactor({ strategy: 'email_code' })) ?? next)
+          : next
+      )
+    },
     submitPassword: (input) => signInFlow.submitPassword(input).then(finish),
     verifyEmail: (input) => signInFlow.verifyEmail(input).then(finish),
+    attemptFirstFactor: (input) => signInFlow.attemptFirstFactor(input).then(finish),
+    waitForEmailLink: (options) => signInFlow.waitForEmailLink(options).then(finish),
   }
   const reset: UseResetPasswordResult = {
     ...resetFlow,
@@ -525,7 +829,14 @@ function SignInScreens(props: SignInProps) {
     }
   }
 
-  const factor = { email, signIn, focusTitle, onForgotPassword: toReset, onChangeEmail: toSignIn }
+  const factor = {
+    email,
+    signIn,
+    focusTitle,
+    onForgotPassword: toReset,
+    onChangeEmail: toSignIn,
+    emailLinkUrl,
+  }
   switch (step?.status) {
     case undefined:
     case 'needs_identifier':
@@ -549,14 +860,7 @@ function SignInScreens(props: SignInProps) {
     case 'needs_password':
       return <PasswordScreen key={screen} {...factor} />
     case 'needs_first_factor':
-      return (
-        <FirstFactorScreen
-          key={screen}
-          {...factor}
-          strategies={step.strategies}
-          onRestart={toSignIn}
-        />
-      )
+      return <FirstFactorScreen key={screen} {...factor} step={step} onRestart={toSignIn} />
     case 'needs_email_verification':
       return (
         <VerificationScreen
@@ -577,7 +881,11 @@ function SignInScreens(props: SignInProps) {
 
 /**
  * A complete sign-in: email, then whatever the server asks for next (a password, an emailed
- * code), with "Forgot password?" leading into the reset flow in the same card.
+ * code or link, with a way to switch between the ones the environment offers), and "Forgot
+ * password?" leading into the reset flow in the same card.
+ *
+ * To offer "Email me a link", give `emailLinkUrl` (here or on the provider): the page of your
+ * app that renders `<EmailLinkCallback>`, listed in the environment's allowed redirect URLs.
  *
  * The component holds no flow logic: each screen is the server's current step. A step this
  * version does not know (a method added to the server later) shows a clear "not supported"

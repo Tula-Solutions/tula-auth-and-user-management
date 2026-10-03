@@ -15,8 +15,11 @@ export const MAILPIT_SEARCH_LIMIT = 10
 const CODE_SUBJECT = /^(\d{6})\b/
 
 interface MailpitSearch {
-  messages?: { Subject?: string }[]
+  messages?: { ID?: string; Subject?: string }[]
 }
+
+/** A sign-in link as Tula emails it: a URL whose fragment carries the link token. */
+const LINK = /https?:\/\/[^\s"<>]+#[^\s"<>]*tula_link=[^\s"<>]+/
 
 /**
  * Read verification codes from a Mailpit inbox (the local SMTP catcher in docker-compose).
@@ -65,5 +68,57 @@ export function mailpitCodes(
       await sleep(100)
     }
     throw new Error(`no email with a code arrived for ${to}`)
+  }
+}
+
+/**
+ * Read sign-in links from a Mailpit inbox.
+ *
+ * @param baseUrl - Mailpit's web address, e.g. `http://localhost:8025`.
+ * @param options - Injectable `fetch` and `sleep`, for tests.
+ * @returns A function that returns the link in the newest email to an address whose subject
+ *   leads with a code (the email a link travels in). Unlike a code, a link is only in the
+ *   message's text, so that one message is fetched.
+ *
+ * @example
+ * ```ts
+ * const emailLink = mailpitLinks('http://localhost:8025')
+ * const url = await emailLink('maya@example.com') // https://app.example.com/link#tula_link=…
+ * ```
+ */
+export function mailpitLinks(
+  baseUrl: string,
+  options: { fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}
+): (to: string) => Promise<string> {
+  const send = options.fetch ?? fetch
+  const sleep = options.sleep ?? Bun.sleep
+  const read = async (url: string): Promise<unknown> => {
+    const response = await send(url, { signal: AbortSignal.timeout(MAILPIT_REQUEST_TIMEOUT_MS) })
+    if (!response.ok) {
+      throw new Error(`Mailpit answered ${response.status}`)
+    }
+    return response.json()
+  }
+  return async (to) => {
+    if (/["\\\s]/.test(to)) {
+      throw new Error('not an address the runner can search for')
+    }
+    const search = `${baseUrl}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}&limit=${MAILPIT_SEARCH_LIMIT}`
+    for (let waited = 0; waited <= MAILPIT_TIMEOUT_MS; waited += 100) {
+      const { messages } = (await read(search)) as MailpitSearch
+      const id = (messages ?? []).find((message) => CODE_SUBJECT.test(message.Subject ?? ''))?.ID
+      if (id) {
+        const message = (await read(`${baseUrl}/api/v1/message/${encodeURIComponent(id)}`)) as {
+          Text?: string
+        }
+        const link = LINK.exec(message.Text ?? '')?.[0]
+        if (!link) {
+          throw new Error(`the newest code email for ${to} holds no link`)
+        }
+        return link
+      }
+      await sleep(100)
+    }
+    throw new Error(`no email with a link arrived for ${to}`)
   }
 }

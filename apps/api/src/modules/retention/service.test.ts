@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import { durationToMs } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, durationToMs } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'
+import * as Flows from '~/modules/flow/service'
 import * as Retention from '~/modules/retention/service'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
@@ -165,6 +166,55 @@ describe('purge', () => {
     expect(await hasToken(tenant, used)).toBe(false)
     expect(await hasToken(tenant, unused)).toBe(false)
     expect(await hasToken(otherTenant, later)).toBe(true)
+  })
+
+  test('an abandoned email sign-in leaves nothing behind: its attempt, binding hash and sign-in token all go', async () => {
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        signIn: {
+          methods: {
+            password: { enabled: true },
+            emailCode: { enabled: true },
+            emailLink: { enabled: true },
+          },
+        },
+      },
+    })
+    const context = {
+      client: 'web',
+      userAgent: null,
+      ipAddress: null,
+      originAllowed: true,
+    } as const
+    const scope = tenant
+    const started = await Flows.signIn(deps, scope, { identifier: 'maya@northline.app' }, context)
+    const prepared = await Flows.prepareFirstFactor(
+      deps,
+      scope,
+      { id: started.attempt.id, secret: started.attempt.attemptSecret },
+      { strategy: 'email_link', redirectUrl: 'http://localhost:5174/auth/link' },
+      context
+    )
+    const stored = await deps.flowAttempts.findById(tenant.environmentId, started.attempt.id)
+    expect(stored?.state.linkBindingHash).toBeString()
+    expect(prepared.attempt.linkBinding).toBeString()
+    const subject = { flowAttemptId: started.attempt.id }
+    expect(
+      await deps.verificationTokens.findLatest(tenant.environmentId, 'sign_in', subject)
+    ).not.toBeNull()
+
+    // The attempt and its token expire together, ten minutes on; the attempt goes at once (and
+    // in Postgres takes its tokens with it, by cascade), a token on its own an hour later.
+    deps.clock.advance('10m')
+    expect((await Retention.purge(deps)).flowAttempts).toBe(1)
+    expect(await deps.flowAttempts.findById(tenant.environmentId, started.attempt.id)).toBeNull()
+    deps.clock.advance(HOUR)
+    await Retention.purge(deps)
+    expect(
+      await deps.verificationTokens.findLatest(tenant.environmentId, 'sign_in', subject)
+    ).toBeNull()
   })
 
   test('removes sessions thirty days after they expire, with their refresh tokens', async () => {

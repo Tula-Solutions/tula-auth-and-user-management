@@ -7,6 +7,8 @@ const PUBLISHABLE_KEY = 'tula_pk_dev_conformance00000000000000000000'
 const SECRET_KEY = 'tula_sk_dev_conformance00000000000000000000'
 /** A subject that leads with a 6-digit code, as every code email's does. */
 const CODE_SUBJECT = /^(\d{6})\b/
+/** A sign-in link as it appears in an email's text: a URL with the link token in its fragment. */
+const EMAIL_LINK = /https?:\/\/\S+#\S*tula_link=\S+/
 
 /**
  * A fresh in-process server per scenario: memory adapters, a clock that `wait` steps advance,
@@ -49,6 +51,17 @@ async function inProcessTarget(): Promise<Target> {
       }
       return code
     },
+    emailLink: async (to) => {
+      // The link travels in the email that carries the code.
+      const message = deps.mailer.outbox.findLast(
+        (sent) => sent.to === to && CODE_SUBJECT.test(sent.subject)
+      )
+      const link = EMAIL_LINK.exec(message?.text ?? '')?.[0]
+      if (!link) {
+        throw new Error(`no email with a link was sent to ${to}`)
+      }
+      return link
+    },
     wait: async (ms) => {
       deps.clock.advance(ms)
     },
@@ -73,6 +86,9 @@ describe('conformance scenarios, in process', () => {
       'two instances',
       'environment settings',
       'attempt binding',
+      'email code sign-in',
+      'email link sign-in',
+      'passwordless sign-up',
     ])
   })
 
@@ -82,9 +98,10 @@ describe('conformance scenarios, in process', () => {
       const result = await runScenario(scenario, await inProcessTarget())
       // On failure the message shows each step and what differed.
       expect(formatResult(result)).toBe(
-        [`PASSED ${scenario.name}`, ...scenario.steps.map((step) => `  ok   ${step.name}`)].join(
-          '\n'
-        )
+        [
+          `PASSED ${scenario.name}`,
+          ...[...scenario.steps, ...(scenario.cleanup ?? [])].map((step) => `  ok   ${step.name}`),
+        ].join('\n')
       )
     }
   )

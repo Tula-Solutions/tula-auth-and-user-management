@@ -28,6 +28,7 @@ const STATUSES: readonly FlowStatus[] = FlowStepSchema.options.map(
 const EVENTS = {
   password: { type: 'first_factor_verified', strategy: 'password' },
   email_code: { type: 'first_factor_verified', strategy: 'email_code' },
+  email_link: { type: 'first_factor_verified', strategy: 'email_link' },
   email_verified: { type: 'email_verified' },
   password_reset: { type: 'password_reset' },
   second_factor: { type: 'second_factor_verified' },
@@ -35,7 +36,7 @@ const EVENTS = {
 type EventName = keyof typeof EVENTS
 
 const SAMPLED: Record<FlowEventType, readonly EventName[]> = {
-  first_factor_verified: ['password', 'email_code'],
+  first_factor_verified: ['password', 'email_code', 'email_link'],
   email_verified: ['email_verified'],
   password_reset: ['password_reset'],
   second_factor_verified: ['second_factor'],
@@ -47,6 +48,8 @@ const OFFERS = {
   P: ['password'],
   PE: ['password', 'email_code'],
   E: ['email_code'],
+  PEL: ['password', 'email_code', 'email_link'],
+  EL: ['email_code', 'email_link'],
 } as const satisfies Record<string, readonly FirstFactorStrategy[]>
 type OfferName = keyof typeof OFFERS
 
@@ -77,23 +80,43 @@ const ALLOWED: readonly [FlowKind, FlowStatus, EventName, OfferName[], UserName[
   ['sign_in', 'needs_password', 'password', ANY_OFFER, ['U0', 'U2'], 'needs_email_verification'],
 
   // Sign-in with a choice accepts exactly the strategies the attempt was offered.
-  ['sign_in', 'needs_first_factor', 'password', ['P', 'PE'], ['V0'], 'complete'],
-  ['sign_in', 'needs_first_factor', 'password', ['P', 'PE'], ['V2'], 'needs_second_factor'],
+  ['sign_in', 'needs_first_factor', 'password', ['P', 'PE', 'PEL'], ['V0'], 'complete'],
+  ['sign_in', 'needs_first_factor', 'password', ['P', 'PE', 'PEL'], ['V2'], 'needs_second_factor'],
   [
     'sign_in',
     'needs_first_factor',
     'password',
-    ['P', 'PE'],
+    ['P', 'PE', 'PEL'],
     ['U0', 'U2'],
     'needs_email_verification',
   ],
-  ['sign_in', 'needs_first_factor', 'email_code', ['PE', 'E'], ['V0'], 'complete'],
-  ['sign_in', 'needs_first_factor', 'email_code', ['PE', 'E'], ['V2'], 'needs_second_factor'],
+  ['sign_in', 'needs_first_factor', 'email_code', ['PE', 'E', 'PEL', 'EL'], ['V0'], 'complete'],
   [
     'sign_in',
     'needs_first_factor',
     'email_code',
-    ['PE', 'E'],
+    ['PE', 'E', 'PEL', 'EL'],
+    ['V2'],
+    'needs_second_factor',
+  ],
+  // The function is asked with `emailVerified: true` after an email factor (the email is the
+  // proof), so the engine never takes these two rows; the table still has to classify them.
+  [
+    'sign_in',
+    'needs_first_factor',
+    'email_code',
+    ['PE', 'E', 'PEL', 'EL'],
+    ['U0', 'U2'],
+    'needs_email_verification',
+  ],
+  // An emailed link is a first factor like the code, where the attempt was offered it.
+  ['sign_in', 'needs_first_factor', 'email_link', ['PEL', 'EL'], ['V0'], 'complete'],
+  ['sign_in', 'needs_first_factor', 'email_link', ['PEL', 'EL'], ['V2'], 'needs_second_factor'],
+  [
+    'sign_in',
+    'needs_first_factor',
+    'email_link',
+    ['PEL', 'EL'],
     ['U0', 'U2'],
     'needs_email_verification',
   ],
@@ -176,7 +199,7 @@ describe('nextStatus', () => {
       'needs_second_factor',
       'complete',
     ])
-    expect(combinations).toHaveLength(KINDS.length * STATUSES.length * 5)
+    expect(combinations).toHaveLength(KINDS.length * STATUSES.length * 6)
   })
 
   // One test per kind × step × event; each asserts every offer and every kind of user.

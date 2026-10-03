@@ -81,7 +81,9 @@ ignored.
 
 ### `<SignIn>`
 
-Email first, then whatever the server asks for: a password, an emailed code. "Forgot
+Email first, then whatever the server asks for: a password, an emailed code or link. Where the
+environment offers more than one way in, the first is drawn as a form and the others as "other
+ways to sign in"; choosing "Email me a code" or "Email me a link" sends the email. "Forgot
 password?" runs the reset in the same card (email → code and new password together → signed
 in).
 
@@ -89,12 +91,35 @@ in).
 | --- | --- |
 | `signUpUrl`, `onSwitchToSignUp` | Shows "New here? Create an account" as a link, or calls you instead. |
 | `afterSignInUrl`, `onComplete` | Go there once signed in, or get `{ userId, sessionId }` instead. |
+| `emailLinkUrl` | The page emailed sign-in links lead to (it renders `<EmailLinkCallback>`). Without it (here or on the provider) "Email me a link" is not offered. It must be one of the environment's allowed redirect URLs, exactly, **and on the same origin as the page showing `<SignIn>`** (the link is tied to the browser through that origin's storage; another origin is refused with `link.cross_origin` before any email is sent). A relative value is resolved against the page. |
 | `initialEmail` | Prefills the email field. |
 | `appearance`, `headingLevel` | See below. `headingLevel` (1–3, default 1) is the card title's level. |
 
+### `<EmailLinkCallback>`
+
+The page an emailed sign-in link leads to. It takes the link's token out of the address bar,
+checks it, and says one of: you are signed in (and goes to `afterSignInUrl`); continue in the
+tab where you started; **open this link where you started** (it was opened in a browser that
+did not ask for it: nothing is used up, and the code from the same email works there); the
+link has expired; or there is no link here.
+
+```tsx
+// At the URL you pass as emailLinkUrl, e.g. /auth/link
+<EmailLinkCallback signInUrl='/sign-in' afterSignInUrl='/app' />
+```
+
+Props: `signInUrl`, `afterSignInUrl`, `onComplete`, `appearance`, `headingLevel`. For your own
+page, `useEmailLinkCallback()` returns `{ status, error }` with the same outcomes
+(`loading`, `signed_in`, `verified`, `different_browser`, `expired`, `none`, `error`).
+
+A link works only in the browser that asked for it, by design: someone who types another
+person's address must not be signed in because that person clicked the genuine email.
+
 ### `<SignUp>`
 
-Email and password with the **live password checklist**, then the emailed code.
+Email and password with the **live password checklist**, then the emailed code. Where the
+environment makes the password optional (`signUp.password: 'optional'`), the field is labelled
+"Password (optional)" and may be left empty: the account then signs in with an emailed code.
 
 | Prop | |
 | --- | --- |
@@ -269,7 +294,17 @@ await signIn.start({ identifier })
 await signIn.submitPassword({ password })           // resolves with the next step, or null (see error)
 await signIn.verifyEmail({ code })
 await signIn.resendCode()
-signIn.reset()
+await signIn.prepareFirstFactor({ strategy: 'email_code' })   // or { strategy: 'email_link', redirectUrl }
+await signIn.attemptFirstFactor({ strategy: 'email_code', code })
+signIn.canUseEmailLink()                            // false where the browser refuses storage
+useEffect(() => {                                   // while the "open the link" screen is shown
+  const leaving = new AbortController()
+  void signIn.waitForEmailLink({ signal: leaving.signal })
+  return () => leaving.abort()
+}, [])
+signIn.reset()                                      // also stops waiting and forgets the link's binding
+
+const { status, error } = useEmailLinkCallback()    // on the page a link leads to
 ```
 
 Flow actions never reject: they resolve with the next step, or `null` with the reason in
@@ -314,7 +349,11 @@ Server-side session checks (`auth()`, middleware) come with `@tula/nextjs`.
 ## Security notes
 
 - Tokens: see `@tula/core`. This package adds no storage of its own: nothing is written to
-  `localStorage`, `sessionStorage`, a cookie, a URL or a DOM attribute.
+  `localStorage`, `sessionStorage`, a cookie, a URL or a DOM attribute. (`@tula/core` keeps one
+  thing in `localStorage` while a sign-in waits for an emailed link: the link's binding, which
+  is not a token. See its security notes.)
+- An emailed link signs nobody in when it is opened in a browser that did not ask for it, and
+  its token is removed from the address bar before anything is sent.
 - Passwords and codes live in component state only while their form is on screen and are
   cleared when it is submitted or goes away. Nothing is logged.
 - Nothing from the server is rendered as HTML (no `dangerouslySetInnerHTML`); a session's user

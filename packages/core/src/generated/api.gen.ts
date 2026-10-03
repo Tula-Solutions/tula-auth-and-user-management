@@ -15,10 +15,21 @@ export interface Schemas {
     signIn: {
       methods: string[]
     }
+    signUp?: {
+      password: Schemas['SignUpPasswordMode']
+    }
     password: Schemas['PasswordPolicy']
   }
+  EmailLinkRequest: {
+    token: string
+    attemptId: string
+    binding?: string
+  }
+  EmailLinkResult: {
+    status: 'verified'
+  }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -35,6 +46,16 @@ export interface Schemas {
     message: string
     params?: Schemas['ErrorParams']
   }
+  FirstFactorAttemptRequest: {
+    strategy: 'email_code'
+    code: string
+  } | {
+    strategy: 'email_link'
+  }
+  FirstFactorPrepareRequest: {
+    strategy: Schemas['EmailVerificationStrategy']
+    redirectUrl?: string
+  }
   FirstFactorStrategy: 'password' | 'email_code' | 'email_link' | 'passkey' | 'oauth_google' | 'oauth_github' | 'oauth_apple'
   FlowAttempt: {
     id: string
@@ -42,6 +63,7 @@ export interface Schemas {
     expiresAt: string
     step: Schemas['FlowStep']
     attemptSecret?: string
+    linkBinding?: string
     session?: Schemas['SessionTokens']
   }
   FlowKind: 'sign_in' | 'sign_up' | 'password_reset'
@@ -52,6 +74,10 @@ export interface Schemas {
   } | {
     status: 'needs_first_factor'
     strategies: Schemas['FirstFactorStrategy'][]
+    prepared?: {
+      strategy: Schemas['EmailVerificationStrategy']
+      destination: string
+    }
   } | {
     status: 'needs_email_verification'
     destination: string
@@ -126,9 +152,10 @@ export interface Schemas {
   SignInStartRequest: {
     identifier: string
   }
+  SignUpPasswordMode: 'required' | 'optional'
   SignUpRequest: {
     email: string
-    password: string
+    password?: string
     firstName?: string
     lastName?: string
   }
@@ -149,6 +176,8 @@ export interface Schemas {
 
 /** Path parameters, JSON body and success response of every client operation. */
 export interface Operations {
+  /** Prove an email first factor (`POST /v1/client/sign-ins/{attemptId}/first-factor/attempt`). */
+  attemptSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorAttemptRequest']; response: Schemas['FlowAttempt'] }
   /** Change my password (`POST /v1/client/me/password`). */
   changeMyPassword: { params: Record<string, never>; body: Schemas['ChangePasswordRequest']; response: undefined }
   /** Client configuration (`GET /v1/client/config`). */
@@ -159,6 +188,8 @@ export interface Operations {
   getPasswordPolicy: { params: Record<string, never>; body: undefined; response: Schemas['PasswordPolicy'] }
   /** List my sessions (`GET /v1/client/sessions`). */
   listSessions: { params: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
+  /** Email a sign-in code or link (`POST /v1/client/sign-ins/{attemptId}/first-factor/prepare`). */
+  prepareSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
   /** Refresh a session (`POST /v1/client/sessions/refresh`). */
   refreshSession: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: Schemas['SessionTokens'] }
   /** Resend the email code (`POST /v1/client/password-resets/{attemptId}/resend-code`). */
@@ -185,6 +216,8 @@ export interface Operations {
   submitSignInPassword: { params: { attemptId: string }; body: Schemas['PasswordAttemptRequest']; response: Schemas['FlowAttempt'] }
   /** Submit the emailed code (`POST /v1/client/sign-ins/{attemptId}/verify-email`). */
   verifySignInEmail: { params: { attemptId: string }; body: Schemas['VerifyEmailRequest']; response: Schemas['FlowAttempt'] }
+  /** Accept an emailed sign-in link (`POST /v1/client/sign-ins/link`). */
+  verifySignInLink: { params: Record<string, never>; body: Schemas['EmailLinkRequest']; response: Schemas['EmailLinkResult'] }
   /** Submit the emailed code (`POST /v1/client/sign-ups/{attemptId}/verify-email`). */
   verifySignUpEmail: { params: { attemptId: string }; body: Schemas['VerifyEmailRequest']; response: Schemas['FlowAttempt'] }
 }
@@ -201,11 +234,13 @@ export interface OperationRoute {
 
 /** Method, path and authentication of every client operation, by operation id. */
 export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } = {
+  attemptSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/attempt', session: false },
   changeMyPassword: { method: 'POST', path: '/v1/client/me/password', session: true },
   getClientConfig: { method: 'GET', path: '/v1/client/config', session: false },
   getMe: { method: 'GET', path: '/v1/client/me', session: true },
   getPasswordPolicy: { method: 'GET', path: '/v1/client/password-policy', session: false },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
+  prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
   resendPasswordResetCode: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/resend-code', session: false },
   resendSignInCode: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/resend-code', session: false },
@@ -219,5 +254,6 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },
   submitSignInPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/password', session: false },
   verifySignInEmail: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/verify-email', session: false },
+  verifySignInLink: { method: 'POST', path: '/v1/client/sign-ins/link', session: false },
   verifySignUpEmail: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/verify-email', session: false },
 }

@@ -111,6 +111,9 @@ const App = z.object({
 })
 
 const PasswordMethod = z.object({ enabled: z.boolean().default(true) })
+// Methods added after the password are off until an environment switches them on, so a
+// document saved before they existed keeps behaving as it did.
+const OptionalMethod = z.object({ enabled: z.boolean().default(false) })
 
 const atLeastOneMethod = {
   message: 'at least one sign-in method must stay enabled',
@@ -118,6 +121,50 @@ const atLeastOneMethod = {
 
 function anyEnabled(methods: Record<string, { enabled: boolean }>): boolean {
   return Object.values(methods).some((method) => method.enabled)
+}
+
+// An emailed link works only in the browser that asked for it, and the email always carries a
+// code as the way in from any other device: a link without the code would strand those users.
+const linkNeedsCode = {
+  message: 'emailLink needs emailCode to be enabled as well',
+  path: ['emailLink', 'enabled'],
+}
+
+function linkHasCode(methods: {
+  emailCode: { enabled: boolean }
+  emailLink: { enabled: boolean }
+}): boolean {
+  return !methods.emailLink.enabled || methods.emailCode.enabled
+}
+
+/** Whether a sign-up must choose a password. */
+export const SignUpPasswordModeSchema = z
+  .enum(['required', 'optional'])
+  .meta({ ref: 'SignUpPasswordMode' })
+
+/** Whether a sign-up must choose a password. */
+export type SignUpPasswordMode = z.infer<typeof SignUpPasswordModeSchema>
+
+const SignUp = z.object({
+  /**
+   * `required` (the default): a sign-up chooses a password. `optional`: a sign-up may leave it
+   * out; the account then has no password and signs in with an emailed code or link, so
+   * `signIn.methods.emailCode` must be enabled.
+   */
+  password: SignUpPasswordModeSchema.default('required'),
+})
+
+// An account created without a password can only get in by email.
+const passwordlessNeedsCode = {
+  message: 'an optional sign-up password needs signIn.methods.emailCode to be enabled',
+  path: ['signUp', 'password'],
+}
+
+function passwordlessHasCode(settings: {
+  signUp: { password: SignUpPasswordMode }
+  signIn: { methods: { emailCode: { enabled: boolean } } }
+}): boolean {
+  return settings.signUp.password === 'required' || settings.signIn.methods.emailCode.enabled
 }
 
 const AllowedOrigins = z
@@ -129,8 +176,8 @@ const Urls = z.object({
   /** Browser origins that may call the client API and read its responses (CORS). */
   allowedOrigins: AllowedOrigins.default([]),
   /**
-   * URLs a flow may redirect to. Validated and stored only: nothing redirects yet (magic links
-   * and OAuth callbacks, Phase 1.7 and 1.9, are the first to read it).
+   * URLs a flow may send the user to. An emailed sign-in link leads only to a URL listed here,
+   * matched exactly: no prefix, no wildcard. (OAuth callbacks, Phase 1.9, read it too.)
    */
   allowedRedirectUrls: z
     .array(RedirectUrlSchema)
@@ -166,8 +213,13 @@ const version = z.literal(1).default(1)
 const SignIn = z
   .strictObject({
     methods: z
-      .strictObject({ password: PasswordMethod.strict().prefault({}) })
+      .strictObject({
+        password: PasswordMethod.strict().prefault({}),
+        emailCode: OptionalMethod.strict().prefault({}),
+        emailLink: OptionalMethod.strict().prefault({}),
+      })
       .refine(anyEnabled, atLeastOneMethod)
+      .refine(linkHasCode, linkNeedsCode)
       .prefault({}),
   })
   .prefault({})
@@ -190,8 +242,11 @@ const minLengthFloor = {
  * - `app`: the product's name and support address.
  * - `password`: the password policy (see `PasswordPolicy`). `minLength` cannot be set below
  *   {@link MIN_PASSWORD_MIN_LENGTH}.
- * - `signIn.methods`: which first factors are offered. `password` is the only one today; at
- *   least one must stay enabled.
+ * - `signIn.methods`: which first factors are offered: `password` (on by default), `emailCode`
+ *   (a 6-digit code by email) and `emailLink` (a link in that email, which needs `emailCode`
+ *   too). At least one must stay enabled.
+ * - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
+ *   may leave it out (`optional`, which needs `emailCode`).
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
  * - `audit.retentionDays`: how long audit entries are kept.
  * - `notifications`: which security notices are emailed to an account's owner
@@ -203,6 +258,7 @@ export const EnvironmentSettingsSchema = z
     app: App.strict().prefault({}),
     password,
     signIn: SignIn,
+    signUp: SignUp.strict().prefault({}),
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
@@ -210,6 +266,7 @@ export const EnvironmentSettingsSchema = z
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
   .refine((settings) => settings.password.minLength >= MIN_PASSWORD_MIN_LENGTH, minLengthFloor)
+  .refine(passwordlessHasCode, passwordlessNeedsCode)
   .meta({ ref: 'EnvironmentSettings' })
 
 /** An environment's settings. */
@@ -237,6 +294,7 @@ export const EnvironmentSettingsInputSchema = z
     app: App.strict().prefault({}),
     password: PasswordPolicySchema.optional(),
     signIn: SignIn,
+    signUp: SignUp.strict().prefault({}),
     urls: z
       .strictObject({
         /** Leave out to take the deployment's `CORS_ORIGINS`; send `[]` to allow no origin. */
@@ -252,6 +310,7 @@ export const EnvironmentSettingsInputSchema = z
       settings.password === undefined || settings.password.minLength >= MIN_PASSWORD_MIN_LENGTH,
     minLengthFloor
   )
+  .refine(passwordlessHasCode, passwordlessNeedsCode)
   .meta({ ref: 'EnvironmentSettingsInput' })
 
 /** A settings document as sent to `PUT /v1/admin/settings`. */
@@ -269,11 +328,16 @@ const Stored = z.object({
   signIn: z
     .object({
       methods: z
-        .object({ password: PasswordMethod.prefault({}) })
+        .object({
+          password: PasswordMethod.prefault({}),
+          emailCode: OptionalMethod.prefault({}),
+          emailLink: OptionalMethod.prefault({}),
+        })
         .refine(anyEnabled, atLeastOneMethod)
         .prefault({}),
     })
     .prefault({}),
+  signUp: SignUp.prefault({}),
   urls: Urls.prefault({}),
   audit: Audit.prefault({}),
   notifications: Notifications.prefault({}),
@@ -385,9 +449,11 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
  *
  * - `app.supportEmail` is included because a sign-in screen links to it ("Need help?") and every
  *   email already shows it. It is `null` when none is set.
- * - `signIn.methods` lists the enabled methods by name. It is an array of plain strings, not an
- *   enum, so a client built against this version keeps working when a server offers a method it
- *   does not know; it should ignore those.
+ * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`). It
+ *   is an array of plain strings, not an enum, so a client built against this version keeps
+ *   working when a server offers a method it does not know; it should ignore those.
+ * - `signUp.password` says whether the sign-up form must ask for a password. Optional in the
+ *   schema, so a client reading an older server's answer treats a missing one as `required`.
  * - The allow-lists (`urls`), the audit settings and the notice switches (`notifications`) are
  *   deliberately absent.
  */
@@ -395,6 +461,7 @@ export const ClientConfigSchema = z
   .object({
     app: z.object({ name: z.string(), supportEmail: z.string().nullable() }),
     signIn: z.object({ methods: z.array(z.string()) }),
+    signUp: z.object({ password: SignUpPasswordModeSchema }).optional(),
     password: PasswordPolicySchema,
   })
   .meta({ ref: 'ClientConfig' })

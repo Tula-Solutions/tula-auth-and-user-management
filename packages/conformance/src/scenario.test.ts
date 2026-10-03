@@ -50,6 +50,49 @@ test('a scenario that uses the secret key must say so, so it is skipped rather t
   expect(ScenarioSchema.safeParse({ ...base, needsSecretKey: true }).success).toBe(true)
 })
 
+test('a secret-key step in the cleanup needs the flag as well', () => {
+  const step = { name: 's', request: { method: 'GET', path: '/x' }, expect: { status: 200 } }
+  const cleanup = [
+    { name: 'c', request: { method: 'GET', path: '/y', auth: 'secret' }, expect: { status: 200 } },
+  ]
+  const base = { name: 'n', description: 'd', steps: [step], cleanup }
+  expect(ScenarioSchema.safeParse(base).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base, needsSecretKey: true }).success).toBe(true)
+  // A cleanup, when given, has at least one step.
+  expect(ScenarioSchema.safeParse({ ...base, needsSecretKey: true, cleanup: [] }).success).toBe(
+    false
+  )
+})
+
+test('an email-link step names the address and where the token goes, and nothing unknown', () => {
+  const scenario = (emailLink: object) => ({
+    name: 'n',
+    description: 'd',
+    steps: [{ name: 'read', emailLink }],
+  })
+  expect(
+    ScenarioSchema.safeParse(scenario({ to: '{{email}}', captureToken: 'token' })).success
+  ).toBe(true)
+  expect(
+    ScenarioSchema.safeParse(
+      scenario({
+        to: '{{email}}',
+        captureToken: 'token',
+        captureAttempt: 'attempt',
+        url: '{{redirect}}',
+      })
+    ).success
+  ).toBe(true)
+  expect(ScenarioSchema.safeParse(scenario({ to: '{{email}}' })).success).toBe(false)
+  expect(
+    ScenarioSchema.safeParse({
+      name: 'n',
+      description: 'd',
+      steps: [{ name: 'read', emailLink: { to: 'a', captureToken: 't' }, wait: '1s' }],
+    }).success
+  ).toBe(false)
+})
+
 test('a request cannot carry both the secret key and an access token', () => {
   expect(
     ScenarioSchema.safeParse({

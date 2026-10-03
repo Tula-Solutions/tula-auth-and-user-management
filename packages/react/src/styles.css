@@ -387,6 +387,31 @@
   justify-content: flex-end;
 }
 
+/* The other ways to sign in, under a first-factor form. */
+:where(.tula-alternatives) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25rem 1.25rem;
+  margin: 0;
+  padding: 0.75rem 0 0;
+  border-top: 1px solid var(--_tula-color-border);
+  list-style: none;
+}
+
+/* "Waiting for you to open the link…", with its spinner. */
+:where(.tula-waiting) {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--_tula-color-border);
+  border-radius: var(--_tula-radius-small);
+  color: var(--_tula-color-text);
+  font-size: var(--_tula-font-size-small);
+}
+
 :where(.tula-identity) {
   display: flex;
   align-items: center;

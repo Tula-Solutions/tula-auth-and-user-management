@@ -108,6 +108,7 @@
           "verification.invalid_code",
           "verification.expired",
           "verification.too_many_attempts",
+          "verification.different_browser",
           "session.invalid_token",
           "session.expired",
           "session.revoked",
@@ -116,6 +117,7 @@
           "request.malformed",
           "request.too_large",
           "request.origin_not_allowed",
+          "request.redirect_not_allowed",
           "validation.failed",
           "resource.not_found",
           "resource.conflict",
@@ -856,6 +858,21 @@
                 "items": {
                   "$ref": "#/components/schemas/FirstFactorStrategy"
                 }
+              },
+              "prepared": {
+                "type": "object",
+                "properties": {
+                  "strategy": {
+                    "$ref": "#/components/schemas/EmailVerificationStrategy"
+                  },
+                  "destination": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "strategy",
+                  "destination"
+                ]
               }
             },
             "required": [
@@ -973,6 +990,9 @@
           "attemptSecret": {
             "type": "string"
           },
+          "linkBinding": {
+            "type": "string"
+          },
           "session": {
             "$ref": "#/components/schemas/SessionTokens"
           }
@@ -1005,8 +1025,7 @@
           }
         },
         "required": [
-          "email",
-          "password"
+          "email"
         ]
       },
       "SignInStartRequest": {
@@ -1031,6 +1050,89 @@
         },
         "required": [
           "password"
+        ]
+      },
+      "FirstFactorPrepareRequest": {
+        "type": "object",
+        "properties": {
+          "strategy": {
+            "$ref": "#/components/schemas/EmailVerificationStrategy"
+          },
+          "redirectUrl": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "strategy"
+        ]
+      },
+      "FirstFactorAttemptRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "const": "email_code"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              }
+            },
+            "required": [
+              "strategy",
+              "code"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "const": "email_link"
+              }
+            },
+            "required": [
+              "strategy"
+            ]
+          }
+        ]
+      },
+      "EmailLinkResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "verified"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "EmailLinkRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "binding": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "token",
+          "attemptId"
         ]
       },
       "VerifyEmailRequest": {
@@ -1440,6 +1542,13 @@
           }
         }
       },
+      "SignUpPasswordMode": {
+        "type": "string",
+        "enum": [
+          "required",
+          "optional"
+        ]
+      },
       "EnvironmentSettingsState": {
         "type": "object",
         "properties": {
@@ -1504,9 +1613,41 @@
                           }
                         },
                         "additionalProperties": false
+                      },
+                      "emailCode": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "default": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "emailLink": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "default": false,
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "signUp": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "$ref": "#/components/schemas/SignUpPasswordMode"
                   }
                 },
                 "additionalProperties": false
@@ -1644,9 +1785,41 @@
                       }
                     },
                     "additionalProperties": false
+                  },
+                  "emailCode": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "emailLink": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "default": false,
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "signUp": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "password": {
+                "$ref": "#/components/schemas/SignUpPasswordMode"
               }
             },
             "additionalProperties": false
@@ -1744,6 +1917,17 @@
             },
             "required": [
               "methods"
+            ]
+          },
+          "signUp": {
+            "type": "object",
+            "properties": {
+              "password": {
+                "$ref": "#/components/schemas/SignUpPasswordMode"
+              }
+            },
+            "required": [
+              "password"
             ]
           },
           "password": {
@@ -3052,7 +3236,7 @@
           "Flows"
         ],
         "summary": "Start a sign-up",
-        "description": "Checks the email and password and emails a 6-digit code. The account is created when the code is verified. The response is the same whether or not the address already has an account. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
+        "description": "Checks the email and password and emails a 6-digit code. The account is created when the code is verified. The response is the same whether or not the address already has an account. `password` may be left out only where the environment says `signUp.password: optional`; the account then has no password and signs in by email. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how tokens are delivered when the flow completes. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
         "security": [
           {
             "publishableKey": []
@@ -3503,6 +3687,505 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PasswordAttemptRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/{attemptId}/first-factor/prepare": {
+      "post": {
+        "operationId": "prepareSignInFirstFactor",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Email a sign-in code or link",
+        "description": "For an attempt on `needs_first_factor` offering `email_code` or `email_link`. Emails a 6-digit code and, for `email_link`, a link to `redirectUrl`, which must be exactly one of the environment’s `urls.allowedRedirectUrls` (`request.redirect_not_allowed` otherwise). The answer is the same whether or not the address has an account. The link carries its token in the URL fragment and works only in the browser that asked: the response carries `linkBinding`, once, which that browser sends back with the link’s token to `sign-ins/link`. Calling it again sends a fresh email and retires the previous one. Limited to one email a minute and five an hour per address. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attempt, on `needs_first_factor` with `prepared`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The redirect URL is not, exactly, one of the environment’s allowed redirect URLs (`request.redirect_not_allowed`), or the request could not be read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attemptId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FirstFactorPrepareRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/{attemptId}/first-factor/attempt": {
+      "post": {
+        "operationId": "attemptSignInFirstFactor",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Prove an email first factor",
+        "description": "`email_code`: submits the emailed code (five guesses, ten minutes; every try also counts against the identifier’s lockout, shared with password sign-in). `email_link`: asks whether the emailed link has been opened in the browser that asked for it; until then the answer is the unchanged step, and asking costs no guess (such requests have their own per-IP limit, apart from code attempts). On success the sign-in completes, or moves to `needs_second_factor` (no tokens) for a user who has a second factor. The email counts as verified. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The next step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attemptId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "header",
+            "name": "x-tula-attempt",
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "description": "The `attemptSecret` returned when the attempt was started. Without it, or with any other value, the attempt answers `flow.not_found`."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FirstFactorAttemptRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/link": {
+      "post": {
+        "operationId": "verifySignInLink",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Accept an emailed sign-in link",
+        "description": "Called by the page an emailed link leads to, with the token and attempt id from the link’s fragment and the `linkBinding` this browser was given when it asked for the link. A link opened in any other browser has no binding: it answers `verification.different_browser` and uses nothing up. A dead link answers `verification.expired`. On success the answer is `verified` and **carries no tokens**: the client that started the sign-in completes it with `first-factor/attempt`.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The link was accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailLinkResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailLinkRequest"
               }
             }
           }

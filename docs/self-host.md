@@ -120,9 +120,10 @@ API key belongs to) has a settings document, read and replaced with its secret k
 | --- | --- |
 | `app.name`, `app.supportEmail` | The product's name and help address. Every email names the app; the default name is `Tula`. |
 | `password` | The password policy. |
-| `signIn.methods` | Which sign-in methods are offered (`password` today). |
+| `signIn.methods` | Which sign-in methods are offered: `password` (on by default), `emailCode` (a 6-digit code by email) and `emailLink` (a link in that email; needs `emailCode`). At least one must stay on. |
+| `signUp.password` | `required` (default), or `optional`: a sign-up may then leave the password out and the account signs in by email (needs `emailCode`). |
 | `urls.allowedOrigins` | Browser origins that may call the client API: exact origins such as `https://app.example.com`, no paths or wildcards, `http` only for localhost. |
-| `urls.allowedRedirectUrls` | URLs a flow may send users back to. Stored for the sign-in methods that redirect; nothing uses it yet. |
+| `urls.allowedRedirectUrls` | URLs a flow may send users to, matched **exactly**. An emailed sign-in link leads only to a URL listed here. |
 | `audit.retentionDays` | How long audit entries are kept (`null`: for ever). Stored; nothing is deleted yet. |
 | `notifications.passwordChanged` | Email a user when their password is changed, reset, set by an administrator or added. On by default. |
 | `notifications.newSignIn` | Email a user when their account is signed in to from a browser and operating system (or a native app) none of their other sessions has. On by default. |
@@ -192,7 +193,45 @@ gets that error, add its origin (scheme, host and port, exactly as the browser s
 `/v1/admin/*` only ever allows the origins in `CORS_ORIGINS`. See
 [ADR 0018](adr/0018-environment-settings.md) and [ADR 0019](adr/0019-flow-engine-v2.md).
 
-**Upgrading.** Migration `0008` adds the attempt secret. Sign-ups, sign-ins and resets that are
+**Signing in by email.** To let users sign in with an emailed code, and optionally a link
+([ADR 0024](adr/0024-email-sign-in.md)), send the methods in the settings document (with the
+rest of it: a `PUT` replaces the whole document):
+
+```json
+{
+  "signIn": {
+    "methods": {
+      "password": { "enabled": true },
+      "emailCode": { "enabled": true },
+      "emailLink": { "enabled": true }
+    }
+  },
+  "urls": { "allowedRedirectUrls": ["https://app.example.com/auth/link"] }
+}
+```
+
+- `emailCode` alone needs nothing else. With it on, `password` may be switched off.
+- `emailLink` also needs the page your links lead to in `urls.allowedRedirectUrls`: the whole
+  URL, exactly as your app sends it. There is no prefix or wildcard matching, and a URL with a
+  query or a trailing slash is a different URL. A request for a link to any other URL is
+  refused with `request.redirect_not_allowed` (400). With `ENVIRONMENT=local`, `http://` URLs
+  on `localhost`, `127.0.0.1` and `[::1]` are allowed without being listed.
+- The link's page has to be on the same origin (scheme, host, port) as the page people sign in
+  on: the browser ties the link to itself through that origin's storage.
+- That page renders `<EmailLinkCallback>` from `@tula/react` (or calls
+  `tula.signIn.handleEmailLink()`), and `<SignIn>` is told where it is with `emailLinkUrl`.
+- **A link works only in the browser that asked for it.** Opened on another device it signs
+  nobody in and tells the user to enter the code from the same email where they started. This
+  is what stops a stranger who types your user's address from being signed in when the user
+  clicks the genuine email. The link's token travels in the URL fragment, which browsers never
+  send to a server.
+- `"signUp": { "password": "optional" }` lets people sign up with only an email address. Such
+  an account has no password: it signs in by email, and gets a password through "forgot
+  password" if it wants one.
+- An address with no account that asks to sign in by email is sent a short notice instead of a
+  code, so the screens look the same for every address.
+
+**Upgrading.** Signing in by email needs no migration. Migration `0008` adds the attempt secret. Sign-ups, sign-ins and resets that are
 in flight while you upgrade (they live ten minutes) cannot be continued afterwards; the user
 starts again.
 

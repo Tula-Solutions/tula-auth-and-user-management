@@ -130,6 +130,30 @@ export const EmailCodeStepSchema = z
   .strict()
   .meta({ ref: 'ConformanceEmailCodeStep' })
 
+/**
+ * Read the sign-in link from the newest email to an address that carries a code, and take it
+ * apart the way the page it leads to does: the link token and the attempt id are in the URL's
+ * fragment (`#tula_link=…&tula_attempt=…`), never in its query.
+ */
+export const EmailLinkStepSchema = z
+  .object({
+    name: z.string().min(1),
+    emailLink: z.object({
+      to: z.string(),
+      /** Variable to store the link token in. */
+      captureToken: z.string(),
+      /** Variable to store the attempt id the link names in. */
+      captureAttempt: z.string().optional(),
+      /**
+       * What the link must be once its fragment is removed: exactly this URL. Shows that the
+       * link leads to the redirect URL that was asked for and carries nothing in its query.
+       */
+      url: z.string().optional(),
+    }),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceEmailLinkStep' })
+
 /** Let time pass, e.g. past the refresh reuse grace period. */
 export const WaitStepSchema = z
   .object({ name: z.string().min(1), wait: DurationSchema })
@@ -138,7 +162,7 @@ export const WaitStepSchema = z
 
 /** One step of a scenario. */
 export const StepSchema = z
-  .union([RequestStepSchema, EmailCodeStepSchema, WaitStepSchema])
+  .union([RequestStepSchema, EmailCodeStepSchema, EmailLinkStepSchema, WaitStepSchema])
   .meta({ ref: 'ConformanceStep' })
 
 /**
@@ -165,6 +189,13 @@ export const ScenarioSchema = z
     needsSecretKey: z.boolean().optional(),
     variables: z.record(z.string(), VariableSchema).optional(),
     steps: z.array(StepSchema).min(1),
+    /**
+     * Steps that run after `steps`, **whether or not they passed**: how a scenario that changes
+     * the environment's settings puts them back even when it fails half-way, so that it cannot
+     * break the scenarios after it. They stop at their own first failure, which fails the
+     * scenario.
+     */
+    cleanup: z.array(StepSchema).min(1).optional(),
   })
   .strict()
   // Without the flag the runner cannot know to skip the scenario when no secret key is given,
@@ -172,7 +203,9 @@ export const ScenarioSchema = z
   .refine(
     (scenario) =>
       scenario.needsSecretKey === true ||
-      scenario.steps.every((step) => !('request' in step) || step.request.auth !== 'secret'),
+      [...scenario.steps, ...(scenario.cleanup ?? [])].every(
+        (step) => !('request' in step) || step.request.auth !== 'secret'
+      ),
     { message: 'a scenario with an `auth: "secret"` step must set `needsSecretKey: true`' }
   )
   .meta({ ref: 'ConformanceScenario' })

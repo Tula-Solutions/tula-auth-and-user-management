@@ -9,9 +9,15 @@ import type { ReactElement } from 'react'
 import { createClient } from '../../../core/src/client'
 import {
   type FakeApi,
+  type FakeLinkStorage,
+  type FakePage,
+  type FakeTimers,
   failure,
   fakeApi,
   fakeEnvironment,
+  fakeLinkStorage,
+  fakePage,
+  fakeTimers,
   json,
   manualClock,
   sessionTokens,
@@ -21,7 +27,19 @@ import {
 } from '../../../core/src/testing/fakes'
 import { TulaProvider, type TulaProviderProps } from '../context'
 
-export { failure, json, sessionTokens, TEST_BASE_URL, TEST_KEY, TEST_USER }
+export {
+  type FakeLinkStorage,
+  type FakeTimers,
+  failure,
+  fakeLinkStorage,
+  fakePage,
+  fakeTimers,
+  json,
+  sessionTokens,
+  TEST_BASE_URL,
+  TEST_KEY,
+  TEST_USER,
+}
 
 /** The routes the components call, as the fake API names them. */
 export const ROUTE = {
@@ -36,6 +54,9 @@ export const ROUTE = {
   signInPassword: 'POST /v1/client/sign-ins/attempt_1/password',
   signInVerify: 'POST /v1/client/sign-ins/attempt_1/verify-email',
   signInResend: 'POST /v1/client/sign-ins/attempt_1/resend-code',
+  signInPrepare: 'POST /v1/client/sign-ins/attempt_1/first-factor/prepare',
+  signInAttempt: 'POST /v1/client/sign-ins/attempt_1/first-factor/attempt',
+  signInLink: 'POST /v1/client/sign-ins/link',
   signUp: 'POST /v1/client/sign-ups',
   signUpVerify: 'POST /v1/client/sign-ups/attempt_1/verify-email',
   signUpResend: 'POST /v1/client/sign-ups/attempt_1/resend-code',
@@ -89,12 +110,27 @@ export interface World {
   mount(ui: ReactElement, provider?: Partial<TulaProviderProps>): RenderResult
 }
 
+/** What a test can decide about the world's "browser". */
+export interface WorldOptions {
+  /** Whether the browser has a session to restore. */
+  signedIn?: boolean
+  /** The environment's password policy. */
+  policy?: PasswordPolicy
+  /** Whether a sign-up may leave the password out. */
+  signUpPassword?: 'required' | 'optional'
+  /** Storage shared by the browser's tabs; without it an emailed link cannot be used. */
+  linkStorage?: FakeLinkStorage
+  /** The address the page was opened at, for the page an emailed link leads to. */
+  page?: FakePage
+  /** Timers the test fires by hand; real ones otherwise. */
+  timers?: FakeTimers
+}
+
 /**
- * @param options - `signedIn`: whether the browser has a session to restore. `policy`: the
- *   environment's password policy.
+ * @param options - What the browser and the environment are like.
  * @returns The world.
  */
-export function world(options: { signedIn?: boolean; policy?: PasswordPolicy } = {}): World {
+export function world(options: WorldOptions = {}): World {
   const api = fakeApi()
   api.on(ROUTE.refresh, () =>
     options.signedIn ? json(200, sessionTokens('access_1')) : failure(401, 'auth.unauthenticated')
@@ -104,13 +140,18 @@ export function world(options: { signedIn?: boolean; policy?: PasswordPolicy } =
     json(200, {
       app: { name: 'Northline', supportEmail: null },
       signIn: { methods: ['password'] },
+      signUp: { password: options.signUpPassword ?? 'required' },
       password: options.policy ?? PASSWORD_POLICY_PRESETS.recommended,
     })
   )
   api.on(ROUTE.signOut, () => new Response(null, { status: 204 }))
   const client = createClient(
     { publishableKey: TEST_KEY, baseUrl: TEST_BASE_URL, client: 'web', fetch: api.fetch },
-    fakeEnvironment(manualClock())
+    fakeEnvironment(manualClock(), {
+      linkStorage: options.linkStorage,
+      page: options.page,
+      timers: options.timers,
+    })
   )
   return {
     api,

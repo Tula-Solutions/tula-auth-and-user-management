@@ -335,14 +335,18 @@ describe('the attempt secret stays inside the flow', () => {
     })
     expect(Object.keys(flow).sort()).toEqual(
       [
+        'attemptFirstFactor',
+        'discard',
         'expiresAt',
         'id',
         'kind',
+        'prepareFirstFactor',
         'resendCode',
         'step',
         'submitPassword',
         'toJSON',
         'verifyEmail',
+        'waitForEmailLink',
       ].sort()
     )
     const renderings = [

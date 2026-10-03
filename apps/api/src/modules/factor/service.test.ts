@@ -14,7 +14,12 @@ const USER = '00000000-0000-7000-8000-0000000000a1'
 function settings(passwordEnabled: boolean): EnvironmentSettings {
   return {
     ...DEFAULT_ENVIRONMENT_SETTINGS,
-    signIn: { methods: { password: { enabled: passwordEnabled } } },
+    signIn: {
+      methods: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods,
+        password: { enabled: passwordEnabled },
+      },
+    },
   }
 }
 
@@ -22,6 +27,33 @@ describe('firstFactors', () => {
   test('lists the password when the environment has it switched on', () => {
     expect(Factors.firstFactors(DEFAULT_ENVIRONMENT_SETTINGS)).toEqual(['password'])
     expect(Factors.firstFactors(settings(true))).toEqual(['password'])
+  })
+
+  test('lists the email strategies an environment has switched on, after the password', () => {
+    const withEmail = (emailCode: boolean, emailLink: boolean, password = true) => ({
+      ...DEFAULT_ENVIRONMENT_SETTINGS,
+      signIn: {
+        methods: {
+          password: { enabled: password },
+          emailCode: { enabled: emailCode },
+          emailLink: { enabled: emailLink },
+        },
+      },
+    })
+    expect(Factors.firstFactors(withEmail(true, false))).toEqual(['password', 'email_code'])
+    expect(Factors.firstFactors(withEmail(true, true))).toEqual([
+      'password',
+      'email_code',
+      'email_link',
+    ])
+    expect(Factors.firstFactors(withEmail(true, true, false))).toEqual(['email_code', 'email_link'])
+  })
+
+  test('each email strategy names the setting that switches it on', () => {
+    expect(Factors.EMAIL_FACTOR_METHODS).toEqual({
+      email_code: 'emailCode',
+      email_link: 'emailLink',
+    })
   })
 
   test('lists nothing when every method is switched off', () => {

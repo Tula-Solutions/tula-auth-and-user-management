@@ -1,4 +1,5 @@
 import {
+  EmailLinkCallback,
   SignedIn,
   SignedOut,
   SignIn,
@@ -12,7 +13,13 @@ import {
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 
 // Everything about authentication on this page is a `@tula/react` component or hook. The app
-// itself only adds a header, three routes and a theme switch.
+// itself only adds a header, its routes and a theme switch.
+
+/**
+ * The page emailed sign-in links lead to. In a deployed app this exact URL is listed in the
+ * environment's `urls.allowedRedirectUrls`; a local API allows any loopback URL.
+ */
+const EMAIL_LINK_PATH = '/auth/link'
 
 const API_URL: string = import.meta.env.VITE_TULA_API_URL ?? 'http://localhost:3003'
 const PUBLISHABLE_KEY: string = import.meta.env.VITE_TULA_PUBLISHABLE_KEY ?? ''
@@ -141,7 +148,7 @@ export function App() {
     return <Setup />
   }
 
-  const auth = path === '/sign-in' || path === '/sign-up'
+  const auth = path === '/sign-in' || path === '/sign-up' || path === EMAIL_LINK_PATH
   return (
     <TulaProvider
       publishableKey={PUBLISHABLE_KEY}
@@ -150,6 +157,7 @@ export function App() {
       signInUrl='/sign-in'
       signUpUrl='/sign-up'
       afterSignInUrl='/'
+      emailLinkUrl={EMAIL_LINK_PATH}
       afterSignUpUrl='/'
       afterSignOutUrl='/sign-in'
     >
@@ -198,6 +206,10 @@ export function App() {
               <Redirect to='/' navigate={navigate} />
             </SignedIn>
           </>
+        ) : path === EMAIL_LINK_PATH ? (
+          // Whoever opens an emailed link lands here, signed in or not: the component says
+          // what became of the link and sends a signed-in visitor on.
+          <EmailLinkCallback />
         ) : path === '/account' ? (
           <>
             <SignedIn>

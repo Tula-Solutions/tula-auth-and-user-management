@@ -1,4 +1,11 @@
-import { clientError, formatMessage, type Messages, TulaError } from './errors'
+import {
+  EMAIL_LINK_POLL_INTERVAL_MS,
+  isLinkAccepted,
+  type LinkStore,
+  openLinkChannel,
+} from './email-link'
+import type { Environment } from './environment'
+import { clientError, formatMessage, isTulaError, type Messages, TulaError } from './errors'
 import type { Schemas } from './generated/api.gen'
 import { isSessionTokens, type SessionManager } from './session'
 import type { Transport } from './transport'
@@ -87,6 +94,16 @@ export interface SignUpFlow extends Flow<'sign_up'> {
  *   }
  * }
  * ```
+ *
+ * @example
+ * ```ts
+ * // An environment that offers an emailed code:
+ * const flow = await tula.signIn.start({ identifier: email })
+ * if (flow.step.status === 'needs_first_factor' && flow.step.strategies.includes('email_code')) {
+ *   await flow.prepareFirstFactor({ strategy: 'email_code' })
+ *   await flow.attemptFirstFactor({ strategy: 'email_code', code: '123456' })
+ * }
+ * ```
  */
 export interface SignInFlow extends Flow<'sign_in'> {
   /**
@@ -108,6 +125,61 @@ export interface SignInFlow extends Flow<'sign_in'> {
    *   `verification.too_many_attempts`.
    */
   verifyEmail(input: { code: string }): Promise<FlowStep>
+  /**
+   * Ask for the email that proves an email first factor (step `needs_first_factor` offering
+   * `email_code` or `email_link`). The answer is the same whether or not the address has an
+   * account. Calling it again sends a fresh email, at most one a minute.
+   *
+   * With `email_link` the email also carries a link to `redirectUrl`, which must be one of the
+   * environment's allowed redirect URLs, exactly, **and on the same origin as the page that
+   * asks** (scheme, host and port): what ties the link to this browser is kept in this origin's
+   * storage, and a page on another origin could not read it. The link works only in this browser: the
+   * flow keeps what ties the two together (in `localStorage`; it is not a token and authorizes
+   * nothing by itself). Follow it with {@link SignInFlow.waitForEmailLink}.
+   *
+   * @param input - The strategy, and for a link the page it leads to.
+   * @returns The step, still `needs_first_factor`, now with `prepared`.
+   * @throws TulaError `request.redirect_not_allowed` for a URL that is not allowed,
+   *   `rate_limited` (with `retryAfterMs`) when asked too soon, and two raised by the client
+   *   itself, with `status: 0` and no request sent: `link.cross_origin` for a `redirectUrl` on
+   *   another origin than the page (checked only where there is a page), and `storage.failed`
+   *   for `email_link` in a browser without usable storage.
+   */
+  prepareFirstFactor(
+    input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
+  ): Promise<FlowStep>
+  /**
+   * Prove an email first factor: submit the emailed code, or (`email_link`) ask once whether
+   * the emailed link has been opened in this browser.
+   *
+   * @param input - The strategy, and the code for `email_code`.
+   * @returns The next step. For a link not opened yet: the unchanged `needs_first_factor`.
+   * @throws TulaError `verification.invalid_code`, `verification.expired`,
+   *   `verification.too_many_attempts`, or `rate_limited` while the address is locked.
+   */
+  attemptFirstFactor(
+    input: { strategy: 'email_code'; code: string } | { strategy: 'email_link' }
+  ): Promise<FlowStep>
+  /**
+   * Wait for the emailed link to be opened in this browser, then finish the sign-in here.
+   *
+   * Asks the server every few seconds (sooner when the tab that opened the link says so), until
+   * the step moves on, the attempt expires, `signal` aborts, the client signs out or
+   * {@link SignInFlow.discard} is called. Nothing keeps running after it settles. While it
+   * waits the other actions still work (the code from the same email, a password).
+   *
+   * @param options - `signal`: stop waiting.
+   * @returns The next step: `complete`, or `needs_second_factor`. When the wait was stopped:
+   *   the step as it stands.
+   * @throws TulaError `flow.not_found` once the attempt has expired, or whatever else the
+   *   server refuses with.
+   */
+  waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep>
+  /**
+   * Leave this sign-in: stop waiting for a link and forget what the flow kept for it in the
+   * browser. Call it when the user goes back or the screen is closed.
+   */
+  discard(): void
 }
 
 /**
@@ -142,6 +214,12 @@ export interface FlowContext {
   session: SessionManager
   /** The current locale table. */
   messages: () => Messages
+  /** The runtime: timers and the channel to other tabs. */
+  environment: Environment
+  /** Where an emailed link's binding is kept until the link is opened. */
+  links: LinkStore
+  /** Names the API and environment (the link channel's name). */
+  scope: string
 }
 
 /** What identifies an attempt to the API: its id in the path, its secret in a header. */
@@ -203,9 +281,15 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
       throw clientError('response.invalid', context.messages())
     }
     current = { id: next.id, kind: next.kind, step: next.step, expiresAt: next.expiresAt }
+    if (next.linkBinding) {
+      // Kept for the tab the emailed link will open in. Not the secret: see `LinkStore`.
+      context.links.save(next.id, next.linkBinding)
+    }
     if (next.step.status === 'complete') {
-      // A completed attempt accepts nothing more, so its secret has no further use.
+      // A completed attempt accepts nothing more, so its secret has no further use, and
+      // neither has a link's binding.
       secret = null
+      context.links.remove(next.id)
     }
     if (next.session) {
       await context.session.adopt(next.session)
@@ -221,6 +305,11 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
   return {
     snapshot: <Kind extends FlowKind>(): FlowSnapshot<Kind> => current as FlowSnapshot<Kind>,
     accept,
+    refused,
+    /** Whether an action is being sent right now. */
+    busy: () => busy,
+    /** Whether the flow has completed. */
+    finished: () => secret === null,
     /**
      * Send one call on this attempt and take the server's answer as the new step.
      *
@@ -302,6 +391,7 @@ export async function signInFlow(context: FlowContext, started: FlowAttempt): Pr
   const { transport } = context
   const attempt = createAttempt(context, started)
   await attempt.accept(started)
+  const waiting = emailLinkWait(context, attempt)
   return flowObject<'sign_in', Omit<SignInFlow, keyof FlowSnapshot | 'toJSON'>>(attempt, {
     submitPassword: ({ password }) =>
       attempt.step((bound) =>
@@ -310,7 +400,205 @@ export async function signInFlow(context: FlowContext, started: FlowAttempt): Pr
     verifyEmail: ({ code }) =>
       attempt.step((bound) => transport.call('verifySignInEmail', { ...bound, body: { code } })),
     resendCode: () => attempt.step((bound) => transport.call('resendSignInCode', bound)),
+    async prepareFirstFactor(input) {
+      if (input.strategy === 'email_link' && !context.links.available()) {
+        // Without somewhere to keep the binding the link could never be honoured: say so
+        // before an email is sent that would only disappoint.
+        throw clientError('storage.failed', context.messages())
+      }
+      if (input.strategy === 'email_link' && leavesOrigin(context, input.redirectUrl)) {
+        // Storage belongs to an origin: a page elsewhere could not read the binding, and the
+        // link would answer "different browser" in the very browser that asked.
+        throw clientError('link.cross_origin', context.messages())
+      }
+      return attempt.step((bound) =>
+        transport.call('prepareSignInFirstFactor', { ...bound, body: input })
+      )
+    },
+    attemptFirstFactor: (input) =>
+      attempt.step((bound) =>
+        transport.call('attemptSignInFirstFactor', { ...bound, body: input })
+      ),
+    waitForEmailLink: (options) => waiting.wait(options?.signal),
+    discard() {
+      waiting.stop()
+      context.links.remove(attempt.snapshot().id)
+    },
   })
+}
+
+/**
+ * Whether `redirectUrl` is on another origin than the page the client runs in. `false` when
+ * there is no page (not a browser) or either URL cannot be read: the server then decides.
+ */
+function leavesOrigin(context: FlowContext, redirectUrl: string): boolean {
+  const page = context.environment.page
+  if (!page) {
+    return false
+  }
+  try {
+    return new URL(redirectUrl).origin !== new URL(page.url()).origin
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The waiting side of an emailed link: the tab that started the sign-in asks the server
+ * whether the link has been opened, and completes the sign-in when it has.
+ *
+ * One loop per flow, shared by every caller; each caller leaves with its own signal, and the
+ * loop goes on while anyone is left. That matters because a UI stops and restarts its wait in
+ * one tick (an effect cleaned up and set up again): the restart must not end with the signal
+ * of the wait it replaces. Each round is one timer; the timer is cancelled, the channel closed
+ * and the listeners removed before the loop ends, so nothing is left running. A `rate_limited`
+ * answer is obeyed (the next round waits `retryAfterMs`), a round with no answer at all is
+ * simply tried again, and anything else ends the wait, for every caller, with that error.
+ */
+function emailLinkWait(context: FlowContext, attempt: Attempt) {
+  const { environment, transport, session } = context
+  let loop: Promise<FlowStep> | null = null
+  /** Lets each caller that is still waiting go, with the step as it stands. */
+  const callers = new Set<() => void>()
+  /** Nobody is waiting any more: the loop ends at its next turn. */
+  let stopping = false
+  /** A caller arrived while the loop was about to stop: it sleeps again instead of asking. */
+  let resumed = false
+  let wake: (() => void) | null = null
+
+  function stop(): void {
+    for (const release of [...callers]) {
+      release()
+    }
+    if (loop) {
+      stopping = true
+      wake?.()
+    }
+  }
+
+  async function run(): Promise<FlowStep> {
+    const channel = openLinkChannel(environment, context.scope)
+    if (channel) {
+      channel.onmessage = (event) => {
+        if (isLinkAccepted(event.data, attempt.snapshot().id)) {
+          wake?.()
+        }
+      }
+    }
+    const stopListening = session.subscribe((state) => {
+      if (state.status === 'signed-out') {
+        stop()
+      }
+    })
+    let delay = EMAIL_LINK_POLL_INTERVAL_MS
+    try {
+      for (;;) {
+        if (!stopping) {
+          let cancel: () => void = () => undefined
+          await new Promise<void>((resolve) => {
+            wake = resolve
+            cancel = environment.setTimer(resolve, delay)
+          })
+          wake = null
+          cancel()
+        }
+        if (resumed) {
+          resumed = false
+          continue
+        }
+        delay = EMAIL_LINK_POLL_INTERVAL_MS
+        const { step } = attempt.snapshot()
+        if (stopping || attempt.finished() || step.status !== 'needs_first_factor') {
+          return step
+        }
+        if (attempt.busy()) {
+          // The user is submitting something else (the code, a password). Try the next round.
+          continue
+        }
+        try {
+          const next = await attempt.step((bound) =>
+            transport.call('attemptSignInFirstFactor', {
+              ...bound,
+              body: { strategy: 'email_link' },
+            })
+          )
+          if (next.status !== 'needs_first_factor') {
+            return next
+          }
+        } catch (error) {
+          if (!isTulaError(error)) {
+            throw error
+          }
+          if (error.code === 'rate_limited') {
+            delay = Math.max(delay, error.retryAfterMs ?? 0)
+          } else if (
+            error.code !== 'network.failed' &&
+            error.code !== 'network.timeout' &&
+            error.code !== 'flow.busy'
+          ) {
+            throw error
+          }
+        }
+      }
+    } finally {
+      // Cleared here, in the loop's last synchronous step, so that a caller arriving right
+      // after starts a new loop instead of joining one that has ended.
+      loop = null
+      stopping = false
+      resumed = false
+      wake = null
+      stopListening()
+      if (channel) {
+        channel.onmessage = null
+        channel.close?.()
+      }
+    }
+  }
+
+  return {
+    wait(signal: AbortSignal | undefined): Promise<FlowStep> {
+      if (attempt.finished()) {
+        return Promise.reject(attempt.refused('flow.invalid_step'))
+      }
+      if (signal?.aborted) {
+        return Promise.resolve(attempt.snapshot().step)
+      }
+      if (stopping) {
+        // The loop was about to end for want of callers. Here is one.
+        stopping = false
+        resumed = true
+      }
+      loop ??= run()
+      const running = loop
+      return new Promise<FlowStep>((resolve, reject) => {
+        const leave = () => {
+          callers.delete(release)
+          signal?.removeEventListener('abort', release)
+        }
+        const release = () => {
+          leave()
+          resolve(attempt.snapshot().step)
+          if (callers.size === 0) {
+            stopping = true
+            wake?.()
+          }
+        }
+        callers.add(release)
+        signal?.addEventListener('abort', release)
+        running.then(
+          (step) => {
+            leave()
+            resolve(step)
+          },
+          (error) => {
+            leave()
+            reject(error)
+          }
+        )
+      })
+    },
+    stop,
+  }
 }
 
 /**

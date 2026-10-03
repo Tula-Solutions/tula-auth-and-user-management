@@ -16,12 +16,17 @@ const CLIENT_MESSAGES = {
   'storage.failed': 'Your session could not be saved on this device.',
   // A flow object refuses a second action while one is being sent (see `flows.ts`).
   'flow.busy': 'Another step of this flow is still being sent. Wait for it to finish.',
+  // An emailed sign-in link was asked for with a `redirectUrl` on another origin than the page.
+  // The link's binding is kept in this origin's storage, so such a link could never be honoured.
+  'link.cross_origin':
+    'A sign-in link has to lead to a page on the site where the sign-in was started.',
 } as const
 
 /**
  * A code the client itself raises: the request never got an answer, the answer could not be
- * read (or was not what the API sends), the storage adapter failed, or a flow object was asked
- * for a second action while one was still being sent (`flow.busy`).
+ * read (or was not what the API sends), the storage adapter failed, a flow object was asked
+ * for a second action while one was still being sent (`flow.busy`), or an emailed sign-in link
+ * was asked for with a page on another origin (`link.cross_origin`).
  *
  * @example
  * ```ts

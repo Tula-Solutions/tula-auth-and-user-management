@@ -5,6 +5,10 @@ import { createApp, MAX_BODY_BYTES } from '../apps/api/src/index'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '../apps/api/src/testing'
+import {
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  EnvironmentSettingsSchema,
+} from '../packages/contract/src/index'
 import { testRouteRefusal } from './guard'
 
 // The server the browser tests run against: the REAL API (`createApp`, every route and
@@ -83,8 +87,32 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
+/** Every settings change the tests make gets the next revision, as a real replace would. */
+let settingsRevision = 0
+
+/**
+ * Replace the environment's settings with the defaults plus what a test asks for (which
+ * sign-in methods are on, whether a sign-up needs a password). `{}` puts the defaults back.
+ * The document is validated exactly as `PUT /v1/admin/settings` validates one.
+ */
+async function replaceSettings(request: Request): Promise<Response> {
+  const parsed = EnvironmentSettingsSchema.safeParse({
+    ...DEFAULT_ENVIRONMENT_SETTINGS,
+    ...((await request.json()) as object),
+  })
+  if (!parsed.success) {
+    return json({ error: 'not a settings document' }, 422)
+  }
+  settingsRevision += 1
+  deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+    revision: settingsRevision,
+    settings: parsed.data,
+  })
+  return json({ ok: true })
+}
+
 /** Test-only routes, next to the API's own. Reached by the test runner, never by the page. */
-function testRoute(request: Request): Response | null {
+function testRoute(request: Request): Response | Promise<Response> | null {
   const url = new URL(request.url)
   if (!url.pathname.startsWith('/__test/')) {
     return null
@@ -104,6 +132,9 @@ function testRoute(request: Request): Response | null {
   if (request.method === 'POST' && url.pathname === '/__test/reset-limits') {
     rateLimiter.reset()
     return json({ ok: true })
+  }
+  if (request.method === 'POST' && url.pathname === '/__test/settings') {
+    return replaceSettings(request)
   }
   return json({ error: 'unknown test route' }, 404)
 }

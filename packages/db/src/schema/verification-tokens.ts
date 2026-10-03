@@ -5,8 +5,11 @@ import { flowAttempts } from './flow-attempts'
 import { tula } from './pg-schema'
 import { users } from './users'
 
-/** What a verification token proves. */
-export const VERIFICATION_PURPOSES = ['email_verification', 'password_reset'] as const
+/**
+ * What a verification token proves. The column is plain `text`, so a new purpose needs no
+ * migration; `sign_in` is the emailed code or link that is a sign-in's first factor.
+ */
+export const VERIFICATION_PURPOSES = ['email_verification', 'password_reset', 'sign_in'] as const
 
 /**
  * Emailed codes and magic links, with an attempt counter so codes can't be brute-forced online.

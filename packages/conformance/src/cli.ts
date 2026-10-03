@@ -1,5 +1,5 @@
 import { loadScenarios } from './load'
-import { mailpitCodes } from './mailpit'
+import { mailpitCodes, mailpitLinks } from './mailpit'
 import { exitCode, formatResult, runScenario, type Target } from './runner'
 
 /**
@@ -23,6 +23,8 @@ if (!publishableKey) {
 
 const secondBaseUrl = process.env.CONFORMANCE_SECOND_BASE_URL?.replace(/\/+$/, '')
 
+const mailpit = process.env.CONFORMANCE_MAILPIT_URL ?? 'http://localhost:8025'
+
 const target: Target = {
   baseUrl: (process.env.CONFORMANCE_BASE_URL ?? 'http://localhost:3003').replace(/\/+$/, ''),
   second: secondBaseUrl
@@ -31,7 +33,8 @@ const target: Target = {
   publishableKey,
   secretKey: process.env.CONFORMANCE_SECRET_KEY || undefined,
   fetch: (request) => fetch(request),
-  emailCode: mailpitCodes(process.env.CONFORMANCE_MAILPIT_URL ?? 'http://localhost:8025'),
+  emailCode: mailpitCodes(mailpit),
+  emailLink: mailpitLinks(mailpit),
   wait: (ms) => Bun.sleep(ms),
 }
 

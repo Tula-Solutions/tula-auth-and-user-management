@@ -37,6 +37,38 @@ export interface UseSignInResult extends FlowState {
   verifyEmail(input: { code: string }): Promise<FlowStep | null>
   /** Email a fresh code. The server allows one a minute (`rate_limited` with `retryAfterMs`). */
   resendCode(): Promise<FlowStep | null>
+  /**
+   * Ask for the email that proves an email first factor (step `needs_first_factor` offering
+   * `email_code` or `email_link`): a 6-digit code, and for `email_link` also a link to
+   * `redirectUrl` that works only in this browser. `redirectUrl` must be one of the
+   * environment's allowed redirect URLs, exactly. Call it again for a fresh email (one a
+   * minute).
+   *
+   * @param input - The strategy, and for a link the page it leads to.
+   */
+  prepareFirstFactor(
+    input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
+  ): Promise<FlowStep | null>
+  /**
+   * Submit the emailed sign-in code.
+   *
+   * @param input - The strategy and the code.
+   */
+  attemptFirstFactor(input: { strategy: 'email_code'; code: string }): Promise<FlowStep | null>
+  /**
+   * Wait for the emailed link to be opened in this browser, and finish the sign-in here when
+   * it is. It does not set `isPending`, and the other actions keep working while it waits.
+   * Abort the signal when the screen goes away.
+   *
+   * @param options - `signal`: stop waiting.
+   */
+  waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep | null>
+  /**
+   * Whether an emailed link can be used in this browser: it needs storage the browser's tabs
+   * share, which some privacy modes and sandboxed frames refuse. Offer only the code where it
+   * cannot.
+   */
+  canUseEmailLink(): boolean
 }
 
 /**
@@ -69,7 +101,7 @@ export interface UseSignInResult extends FlowState {
  */
 export function useSignIn(): UseSignInResult {
   const { client } = useTulaContext()
-  const { start: begin, act, ...state } = useFlowController<SignInFlow>()
+  const { start: begin, act, watch, ...state } = useFlowController<SignInFlow>()
   const start = useCallback(
     (input: { identifier: string }) => begin(() => client.signIn.start(input)),
     [begin, client]
@@ -83,5 +115,30 @@ export function useSignIn(): UseSignInResult {
     [act]
   )
   const resendCode = useCallback(() => act((flow) => flow.resendCode()), [act])
-  return { ...state, start, submitPassword, verifyEmail, resendCode }
+  const prepareFirstFactor = useCallback(
+    (input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }) =>
+      act((flow) => flow.prepareFirstFactor(input)),
+    [act]
+  )
+  const attemptFirstFactor = useCallback(
+    (input: { strategy: 'email_code'; code: string }) =>
+      act((flow) => flow.attemptFirstFactor(input)),
+    [act]
+  )
+  const waitForEmailLink = useCallback(
+    (options?: { signal?: AbortSignal }) => watch((flow) => flow.waitForEmailLink(options)),
+    [watch]
+  )
+  const canUseEmailLink = useCallback(() => client.signIn.canUseEmailLink(), [client])
+  return {
+    ...state,
+    start,
+    submitPassword,
+    verifyEmail,
+    resendCode,
+    prepareFirstFactor,
+    attemptFirstFactor,
+    waitForEmailLink,
+    canUseEmailLink,
+  }
 }

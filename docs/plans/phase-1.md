@@ -47,7 +47,7 @@ Three rules are new:
    `apps/api/src/sdk-journeys.test.ts` drives the SDK's public API against the real API in
    process, and a guard test requires every scenario name to be covered by a named journey or
    listed as server-only with a reason. A new scenario cannot be added without deciding its
-   SDK coverage. Twelve of the thirteen are covered; `two instances` is server-only.
+   SDK coverage. Fifteen of the sixteen are covered; `two instances` is server-only.
 3. **Browser behaviour is tested in a browser.** Components and the dashboard get Playwright
    tests against the in-process API; they run in CI as their own job, not inside `verify`.
 
@@ -272,6 +272,25 @@ The changes every new method needs, made once.
   device completes the original tab and shows "you can close this page" there.
 - Passwordless sign-up (email only) when the environment enables it.
 - Enumeration: starting an email sign-in for an unknown address behaves like the sign-up decoy.
+  *As built ([ADR 0024](../adr/0024-email-sign-in.md)):* **a link works only in the browser
+  that asked for it**, a deliberate change from the sketch above. Completing the original tab
+  from a click on another device would have let anyone who starts a sign-in for a victim's
+  address be signed in when the victim clicks the genuine email: attempt binding decides who
+  *receives* the session, not whether the click came from the person who asked. So asking for a
+  link returns a `linkBinding` the browser keeps (`localStorage`; it is not a token), the link
+  is accepted only together with it, a link opened anywhere else answers
+  `verification.different_browser` without being used up, and the email always carries the
+  6-digit code as the cross-device path (`emailLink` therefore needs `emailCode`). The token
+  travels in the URL fragment. Accepting a link returns no tokens: the starting tab asks
+  (polling every 3 s, nudged at once over a `BroadcastChannel`) and completes. Routes:
+  `sign-ins/:id/first-factor/prepare`, `…/first-factor/attempt`, `sign-ins/link`; the waiting
+  step is `needs_first_factor` with an added `prepared`. Codes count against the same lockout
+  as passwords. `signUp.password: 'optional'` gives passwordless sign-up. No migration was
+  needed (a new token purpose in a `text` column; the binding hash in the attempt's JSON
+  state). `urls.allowedRedirectUrls` is now enforced, by exact match. The conformance format
+  gained `emailLink` and `cleanup` steps; three scenarios and their SDK journeys were added.
+  `@tula/react` has `<EmailLinkCallback>` and `useEmailLinkCallback()`. A user who closes the
+  starting tab before opening the link has to start again.
 
 ### 1.8 MFA: TOTP and backup codes
 

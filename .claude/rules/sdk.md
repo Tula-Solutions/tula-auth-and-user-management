@@ -28,6 +28,24 @@ paths:
   native, memory otherwise. Never `localStorage` or `sessionStorage` for any token or for an
   attempt's secret, and never a token, secret or password in an error, a log line or a
   `toJSON`.
+- **The one permitted use of `localStorage`** is the emailed-link binding
+  (`packages/core/src/email-link.ts`, key `tula.link.<attempt id>`): a new tab of the same
+  browser has to read it, and it is not a token and not the attempt's secret (alone it
+  authorizes nothing; with the emailed token it only marks an attempt proven, and the session
+  still goes to the tab holding the secret). Every access is guarded: without storage the link
+  is unavailable and the code path remains. It is removed when the link is used, the sign-in
+  completes or the flow is discarded, and expires on the device's own clock. Nothing else may
+  be added to it.
+- An emailed link leads to a page on the **same origin** as the page that asked (the binding is
+  in that origin's storage); `prepareFirstFactor` refuses another origin with
+  `link.cross_origin` where a page origin is known. `verification.expired` never removes a
+  binding: an old or forged link must not undo the current one.
+- An emailed link's token is read from the URL **fragment** and removed from the address
+  (`history.replaceState`) before any request; it is sent only in a JSON body.
+- A wait (`waitForEmailLink`) leaves nothing running: one timer per round, cancelled before the
+  wait settles; it ends on completion, abort, `discard()`, sign-out or an error, and obeys
+  `Retry-After`. Each caller leaves with its own signal; a wait restarted in the same tick as
+  its predecessor was aborted must keep going.
 - A signed-out client stays signed out: no late 401, in-flight refresh or other tab's message
   about an ended session may sign it back in. A 200 is validated (hand-written guards) before
   tokens or a flow are built from it. Look server-supplied keys up with `ownString` /
@@ -36,7 +54,7 @@ paths:
   `refresh.reuseGracePeriod` in `packages/contract/src/session-profile.ts`; a test holds it.
 - One error class: every failed call throws `TulaError` with a contract code or one of the
   client's own (`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`,
-  `flow.busy`), all `status: 0`.
+  `flow.busy`, `link.cross_origin`), all `status: 0`.
 - Types come from `src/generated/api.gen.ts` (run `bun run core:generate` after
   `contract:generate`); run-time imports from the contract use its Zod-free entry points only.
   No `Buffer`, `process` or `node:` import: `typecheck:portable` must pass.
@@ -51,7 +69,9 @@ paths:
   framework, icon library, CSS-in-JS runtime or router. React is a peer (18.2+ and 19).
 - Components draw `step.status` and contain no flow logic. The default branch of a step
   `switch` is `UnsupportedScreen`. A new method is a screen plus an entry in
-  `FIRST_FACTOR_FORMS`.
+  `FIRST_FACTOR_FORMS`. An effect that starts a wait aborts it in its cleanup and must survive
+  being run twice (StrictMode); a hook that reads the page's address does so through
+  `@tula/core`, never `location` itself.
 - One stylesheet, `src/styles.css`: every selector inside `:where()`, classes prefixed
   `tula-`, colours only through the private `--_tula-*` properties. Its token block is
   generated (`bun run --filter @tula/react generate`) from `@tula/contract/theme`; change
