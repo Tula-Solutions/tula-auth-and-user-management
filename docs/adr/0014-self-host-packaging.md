@@ -23,7 +23,8 @@ that, and a check that the packaged server behaves like the one the tests exerci
   configurable so a second stack can run beside the first.
 - **Container-internal addresses are not taken from `.env`.** Compose reads the repository's
   `.env`, which for a developer holds host addresses (`127.0.0.1`). The database URLs are fixed
-  in the Compose file and the mail relay is read from `API_SMTP_URL`, not `SMTP_URL`. A
+  in the Compose file, and the mail relay and public URL are read from `API_SMTP_URL` and
+  `API_PUBLIC_URL`, not `SMTP_URL` and `PUBLIC_URL`. A
   guardrail test resolves the Compose file with a developer's `.env` and checks this.
 - **No default master key.** Compose passes `TULA_MASTER_KEY` through and the API refuses to
   start without a valid one. A built-in default would be a shared secret in every careless

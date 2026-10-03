@@ -95,7 +95,10 @@ jobs:
           # Every scenario must run: a missing secret key would skip the admin ones.
           test -n "$CONFORMANCE_PUBLISHABLE_KEY" && test -n "$CONFORMANCE_SECRET_KEY"
           bun run conformance | tee conformance.log
-          ! grep -q '^SKIPPED' conformance.log
+          if grep -q '^SKIPPED' conformance.log; then
+            echo "scenarios were skipped" >&2
+            exit 1
+          fi
         shell: bash -euo pipefail {0}
       - name: Stack logs
         if: failure()

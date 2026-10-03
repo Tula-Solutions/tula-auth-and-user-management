@@ -66,9 +66,10 @@ services:
       DATABASE_URL: postgres://tula_api:tula_api@postgres:5432/tula
       # Required: 32 bytes as hex (`openssl rand -hex 32`). The API refuses to start without it.
       TULA_MASTER_KEY: ${TULA_MASTER_KEY:-}
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
-      # Not `SMTP_URL`: Compose also reads the repository's `.env`, where a developer's SMTP_URL
-      # points at 127.0.0.1, which inside this container is the container itself.
+      # Not `PUBLIC_URL` / `SMTP_URL`: Compose also reads the repository's `.env`, where a
+      # developer's values describe `bun run dev` on the host (port 3003, mail at 127.0.0.1, which
+      # inside this container is the container itself).
+      PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
       SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
       MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
       BREACH_CHECK: ${BREACH_CHECK:-offline}

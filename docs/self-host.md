@@ -60,8 +60,8 @@ packaged stack:
 | Variable | Default | |
 | --- | --- | --- |
 | `TULA_MASTER_KEY` | none | Required. |
-| `API_PORT` | `3003` | Host port of the API. `PUBLIC_URL` follows it unless set. |
-| `PUBLIC_URL` | `http://localhost:<API_PORT>` | |
+| `API_PORT` | `3003` | Host port of the API. |
+| `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The API's `PUBLIC_URL`. A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
 | `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
 | `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. |
 | `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `5432`, `6379`, `1025`, `8025` | Host ports of the other services. |
@@ -141,6 +141,11 @@ docker run --rm -e ENVIRONMENT=prod -e DATABASE_URL=postgres://tula_api:…@db:5
 
 The key script validates the same settings as the server, so give it the ones your deployment
 uses. Create the roles first, then run the migrations, then these.
+
+The commands above spell the settings out for clarity. In practice keep them out of your shell
+history and the process list: put them in a file only you can read and pass
+`--env-file tula.env` instead of `-e NAME=value`. Add `--network <name>` when the database is
+only reachable on a Docker network.
 
 **HTTPS and the proxy.** Put the API behind a TLS-terminating reverse proxy and set
 `PUBLIC_URL` to the public https address. Refresh cookies are `Secure` when `PUBLIC_URL` is

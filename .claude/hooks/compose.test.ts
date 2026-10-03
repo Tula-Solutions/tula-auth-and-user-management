@@ -4,7 +4,16 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dir, '../..')
-const hasCompose = Bun.spawnSync(['docker', 'compose', 'version']).exitCode === 0
+// `spawnSync` throws when the binary is missing; without Docker these tests are skipped, since
+// unit tests must run on a machine that has none.
+function composeAvailable(): boolean {
+  try {
+    return Bun.spawnSync(['docker', 'compose', 'version']).exitCode === 0
+  } catch {
+    return false
+  }
+}
+const hasCompose = composeAvailable()
 
 interface Service {
   environment?: Record<string, string>
@@ -75,9 +84,15 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
     expect(api?.ports?.[0]).toMatchObject({ published: '3010', target: 3003 })
     expect(api?.environment?.PUBLIC_URL).toBe('http://localhost:3010')
     expect(resolved({}).api?.environment?.PUBLIC_URL).toBe('http://localhost:3003')
-    expect(resolved({ PUBLIC_URL: 'https://auth.example.com' }).api?.environment?.PUBLIC_URL).toBe(
-      'https://auth.example.com'
-    )
+    expect(
+      resolved({ API_PUBLIC_URL: 'https://auth.example.com' }).api?.environment?.PUBLIC_URL
+    ).toBe('https://auth.example.com')
+    // A developer's `.env` carries PUBLIC_URL for `bun run dev`; it must not pin the packaged
+    // API to the old port.
+    expect(
+      resolved({ PUBLIC_URL: 'http://localhost:3003', API_PORT: '3010' }).api?.environment
+        ?.PUBLIC_URL
+    ).toBe('http://localhost:3010')
   })
 
   test('nothing listens beyond this machine, and the API runs as the non-owner role', () => {
