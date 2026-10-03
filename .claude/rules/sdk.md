@@ -36,6 +36,10 @@ paths:
   is unavailable and the code path remains. It is removed when the link is used, the sign-in
   completes or the flow is discarded, and expires on the device's own clock. Nothing else may
   be added to it.
+- An emailed link leads to a page on the **same origin** as the page that asked (the binding is
+  in that origin's storage); `prepareFirstFactor` refuses another origin with
+  `link.cross_origin` where a page origin is known. `verification.expired` never removes a
+  binding: an old or forged link must not undo the current one.
 - An emailed link's token is read from the URL **fragment** and removed from the address
   (`history.replaceState`) before any request; it is sent only in a JSON body.
 - A wait (`waitForEmailLink`) leaves nothing running: one timer per round, cancelled before the
@@ -50,7 +54,7 @@ paths:
   `refresh.reuseGracePeriod` in `packages/contract/src/session-profile.ts`; a test holds it.
 - One error class: every failed call throws `TulaError` with a contract code or one of the
   client's own (`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`,
-  `flow.busy`), all `status: 0`.
+  `flow.busy`, `link.cross_origin`), all `status: 0`.
 - Types come from `src/generated/api.gen.ts` (run `bun run core:generate` after
   `contract:generate`); run-time imports from the contract use its Zod-free entry points only.
   No `Buffer`, `process` or `node:` import: `typecheck:portable` must pass.

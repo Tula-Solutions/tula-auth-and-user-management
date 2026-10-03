@@ -357,7 +357,10 @@ export async function handleEmailLink(
       return { status: 'different_browser' }
     }
     if (isTulaError(error) && error.code === 'verification.expired') {
-      links.remove(link.attemptId)
+      // The binding stays. "Expired" is also the answer for the link of an email that a newer
+      // one replaced, and for a made-up token: removing the binding here would let an old or
+      // forged link undo the current email's. It goes when its own link is accepted, when the
+      // sign-in completes, on `discard()`, or with age.
       return { status: 'expired' }
     }
     throw error

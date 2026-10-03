@@ -1052,6 +1052,33 @@ describe('opening an emailed link', () => {
     expect(await sessionsOf(userId)).toHaveLength(1)
   })
 
+  test('two polls at once after the link was accepted: one session, and the other is told the step has gone', async () => {
+    const userId = await seedUser()
+    const { attempt, binding } = await askForLink()
+    await open({ ...sentLink(), binding })
+    const outcome = (call: Promise<Flows.FlowResult>) =>
+      call.then(
+        (result) => ({ step: result.attempt.step, tokens: result.tokens, refused: null }),
+        (error: unknown) => ({
+          step: null,
+          tokens: undefined,
+          refused: error instanceof ServiceException ? error.toJSON() : String(error),
+        })
+      )
+    const results = await Promise.all([outcome(poll(attempt)), outcome(poll(attempt))])
+    const won = results.filter((result) => result.step !== null)
+    const lost = results.filter((result) => result.step === null)
+    expect(won).toHaveLength(1)
+    expect(won[0]?.step).toMatchObject({ status: 'complete', userId })
+    expect(won[0]?.tokens?.accessToken).toBeString()
+    expect(lost).toHaveLength(1)
+    expect(lost[0]?.refused).toMatchObject({ status: 409, code: 'flow.invalid_step' })
+    expect(await sessionsOf(userId)).toHaveLength(1)
+    expect(deps.activityLog.ofType('session.created')).toHaveLength(1)
+    // A third poll, later, finds no open attempt at all.
+    expect((await rejection(poll(attempt))).code).toBe('flow.not_found')
+  })
+
   test('opening the link ends the code that came with it', async () => {
     await seedUser()
     const { attempt, binding } = await askForLink()
@@ -1355,6 +1382,56 @@ describe('sign-up without a password', () => {
         ).toJSON()
       ).toMatchObject(disabled)
       expect(await deps.users.findByEmail(tenant.environmentId, NORMALIZED)).toBeNull()
+    })
+
+    test('once the operator requires a password again, a passwordless sign-up in flight creates nothing', async () => {
+      const started = await signUp()
+      const code = sentCode()
+      const emails = deps.mailer.outbox.length
+      // The email code stays on: only the sign-up mode goes back to `required`.
+      configure({ signUpPassword: 'required' })
+      const refused = { status: 403, code: 'auth.method_disabled' }
+
+      expect((await rejection(verify(started.attempt, code))).toJSON()).toMatchObject(refused)
+      expect(await deps.users.findByEmail(tenant.environmentId, NORMALIZED)).toBeNull()
+      expect(deps.activityLog.ofType('user.created')).toHaveLength(0)
+      expect(deps.activityLog.ofType('session.created')).toHaveLength(0)
+      // Refused before anything was counted or spent: the code has all its guesses and is unused.
+      const token = await deps.verificationTokens.findLatest(
+        tenant.environmentId,
+        'email_verification',
+        { flowAttemptId: started.attempt.id }
+      )
+      expect(token).toMatchObject({ attempts: 0, consumedAt: null })
+
+      deps.clock.advance(Verification.RESEND_COOLDOWN)
+      expect(
+        (
+          await rejection(Flows.resendCode(deps, tenant, 'sign_up', ref(started.attempt), web))
+        ).toJSON()
+      ).toMatchObject(refused)
+      expect(deps.mailer.outbox).toHaveLength(emails)
+
+      // Made optional again, the same attempt and the same code complete.
+      configure({ signUpPassword: 'optional' })
+      expect((await verify(started.attempt, code)).attempt.step.status).toBe('complete')
+    })
+
+    test('the same switch refuses a decoy sign-up identically', async () => {
+      await seedUser()
+      const taken = await signUp()
+      configure({ signUpPassword: 'required' })
+      expect((await rejection(verify(taken.attempt, '123456'))).toJSON()).toMatchObject({
+        status: 403,
+        code: 'auth.method_disabled',
+      })
+    })
+
+    test('a sign-up that chose a password is not affected by the sign-up mode', async () => {
+      const started = await signUp({ password: PASSWORD })
+      const code = sentCode()
+      configure({ signUpPassword: 'required' })
+      expect((await verify(started.attempt, code)).attempt.step.status).toBe('complete')
     })
 
     test('a browser sign-up from an origin that is not allowed is refused', async () => {

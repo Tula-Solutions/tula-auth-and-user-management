@@ -159,7 +159,10 @@ The existing-address decoy is unchanged, and nothing is hashed for either kind o
 the two still cost the same. Such an account signs in by email, "change my password" answers
 `password.not_set`, and a first password is set through the reset flow (ADR 0019). A sign-up
 that does send a password behaves as before. Each later step checks the switch of the method
-the sign-up relies on: the password's, or the email code's for a sign-up without one.
+the sign-up relies on: the password's, or, for a sign-up without one, the email code's **and
+that `signUp.password` is still `optional`**. An attempt started before an operator went back
+to `required` is refused (`auth.method_disabled`) before its code is counted or spent, so it
+creates no account.
 
 ### `@tula/core`
 
@@ -181,11 +184,25 @@ the sign-up relies on: the password's, or the email code's for a sign-up without
   caller; each caller leaves with its own `AbortSignal` and the loop ends with the last one, on
   `discard()`, on sign-out, when the step moves on, or on an error (an expired attempt answers
   `flow.not_found`, so a wait never outlives its attempt). `Retry-After` is obeyed. Nothing is
-  left running. The route's per-IP limit is 60 a minute, twice the usual, to leave room for it.
+  left running. Polls have **their own per-IP bucket** (300 a minute: fifteen waiting tabs
+  behind one address), chosen by the validated `strategy` after the body is parsed, so people
+  waiting for links never use up the allowance of people typing codes, which stays at the
+  credential limit of 30.
 - `handleEmailLink()` returns `none`, `signed_in`, `verified`, `different_browser` or `expired`.
   After `verified` it waits up to four seconds for the session the starting tab's completion
   shares (the existing session channel, or the cookie), so the landing tab normally ends up
   signed in as well.
+
+- **The link's page is on the origin that asked.** Storage belongs to an origin, so a
+  `redirectUrl` elsewhere (another host, scheme or port, even one on the allow-list) could
+  never present the binding and would always answer `different_browser`. In a browser
+  `prepareFirstFactor` refuses it before any request with a client-raised `link.cross_origin`
+  (`status: 0`); where there is no page (a server, a native shell) nothing is checked. An app
+  whose sign-in and link pages are on different origins uses the code.
+- **A dead link leaves the binding alone.** `verification.expired` is also what the link of a
+  replaced email, or a forged token for a known attempt id, answers; removing the binding on
+  it would let either undo the current email's link. The binding goes when its own link is
+  accepted, on completion, on `discard()` and with age.
 
 ### `@tula/react`
 

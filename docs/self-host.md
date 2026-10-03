@@ -216,6 +216,8 @@ rest of it: a `PUT` replaces the whole document):
   query or a trailing slash is a different URL. A request for a link to any other URL is
   refused with `request.redirect_not_allowed` (400). With `ENVIRONMENT=local`, `http://` URLs
   on `localhost`, `127.0.0.1` and `[::1]` are allowed without being listed.
+- The link's page has to be on the same origin (scheme, host, port) as the page people sign in
+  on: the browser ties the link to itself through that origin's storage.
 - That page renders `<EmailLinkCallback>` from `@tula/react` (or calls
   `tula.signIn.handleEmailLink()`), and `<SignIn>` is told where it is with `emailLinkUrl`.
 - **A link works only in the browser that asked for it.** Opened on another device it signs

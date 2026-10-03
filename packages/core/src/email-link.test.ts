@@ -332,6 +332,60 @@ describe('asking for an email', () => {
     }
   })
 
+  test('a link to another origin is refused before anything is sent: the binding could never be read there', async () => {
+    const shared = browser()
+    const { flow } = await started(shared, { url: 'https://app.test/sign-in' })
+    for (const redirectUrl of [
+      'https://other.test/auth/link',
+      'http://app.test/auth/link',
+      'https://app.test:8443/auth/link',
+      'https://app.test.evil.test/auth/link',
+    ]) {
+      const error = await caught(flow.prepareFirstFactor({ strategy: 'email_link', redirectUrl }))
+      expect(error).toMatchObject({ code: 'link.cross_origin', status: 0 })
+      expect(error.message).toBe(
+        'A sign-in link has to lead to a page on the site where the sign-in was started.'
+      )
+    }
+    expect(
+      shared.api.calls(`POST /v1/client/sign-ins/${ATTEMPT}/first-factor/prepare`)
+    ).toHaveLength(0)
+    expect(shared.storage.entries.size).toBe(0)
+    // The same origin, any path or query, goes through; so does the code.
+    expect(
+      await flow.prepareFirstFactor({
+        strategy: 'email_link',
+        redirectUrl: 'https://app.test/auth/link?from=sign-in',
+      })
+    ).toEqual(prepared('email_link'))
+    expect(await flow.prepareFirstFactor({ strategy: 'email_code' })).toEqual(
+      prepared('email_code')
+    )
+  })
+
+  test('where no page address is known (not a browser), the origin is not checked', async () => {
+    const shared = browser()
+    const { flow } = await started(shared)
+    expect(
+      await flow.prepareFirstFactor({
+        strategy: 'email_link',
+        redirectUrl: 'https://anywhere.test/auth/link',
+      })
+    ).toEqual(prepared('email_link'))
+  })
+
+  test('a redirect URL that is not a URL is left for the server to refuse', async () => {
+    const shared = browser()
+    const { flow } = await started(shared, { url: 'https://app.test/sign-in' })
+    shared.api.on(`POST /v1/client/sign-ins/${ATTEMPT}/first-factor/prepare`, () =>
+      failure(400, 'request.redirect_not_allowed')
+    )
+    const error = await caught(
+      flow.prepareFirstFactor({ strategy: 'email_link', redirectUrl: 'auth/link' })
+    )
+    expect(error.code).toBe('request.redirect_not_allowed')
+  })
+
   test('a refused redirect URL surfaces the contract error', async () => {
     const shared = browser()
     const { flow } = await started(shared)
@@ -848,16 +902,57 @@ describe('the page an emailed link leads to', () => {
     expect(shared.api.calls(LINK_ROUTE)[0]?.body).toEqual({ token: TOKEN, attemptId: ATTEMPT })
   })
 
-  test('a dead link: expired, and the binding that went with it is dropped', async () => {
+  test('a dead link is expired, and leaves this browser’s binding alone', async () => {
     const shared = browser()
-    shared.storage.setItem(
-      KEY,
-      JSON.stringify({ b: BINDING, e: shared.clock.now() + 60_000, s: SCOPE })
-    )
+    const entry = JSON.stringify({ b: BINDING, e: shared.clock.now() + 60_000, s: SCOPE })
+    shared.storage.setItem(KEY, entry)
     shared.api.on(LINK_ROUTE, () => failure(410, 'verification.expired'))
     const landing = tab(shared, { url: LINK_URL })
     expect(await landing.tula.signIn.handleEmailLink()).toEqual({ status: 'expired' })
-    expect(shared.storage.entries.size).toBe(0)
+    // An expired answer says nothing about the binding: it may belong to a newer email.
+    expect(shared.storage.entries.get(KEY)).toBe(entry)
+  })
+
+  test('the link of an email that was replaced does not undo the newer one', async () => {
+    const shared = browser()
+    shared.api.on('POST /v1/client/sessions/refresh', () => failure(401, 'session.invalid_token'))
+    const original = await started(shared)
+    // Asked twice (a resend): the binding in storage is the second email's.
+    let sent = 0
+    shared.api.on(`POST /v1/client/sign-ins/${ATTEMPT}/first-factor/prepare`, () => {
+      sent += 1
+      return json(
+        200,
+        attempt(shared, prepared('email_link'), { linkBinding: `${BINDING}-${sent}` })
+      )
+    })
+    await original.flow.prepareFirstFactor({ strategy: 'email_link', redirectUrl: REDIRECT })
+    await original.flow.prepareFirstFactor({ strategy: 'email_link', redirectUrl: REDIRECT })
+    // The server knows only the newest token.
+    shared.api.on(LINK_ROUTE, (request) => {
+      const body = request.body as { token: string; binding?: string }
+      return body.token === 'new-token' && body.binding === `${BINDING}-2`
+        ? json(200, { status: 'verified' })
+        : failure(410, 'verification.expired')
+    })
+
+    // The user opens the first email's link by mistake…
+    const stale = tab(shared, { url: `${REDIRECT}#tula_link=old-token&tula_attempt=${ATTEMPT}` })
+    expect(await stale.tula.signIn.handleEmailLink()).toEqual({ status: 'expired' })
+    expect(JSON.parse(shared.storage.entries.get(KEY) ?? '{}').b).toBe(`${BINDING}-2`)
+
+    // …and the second email's link still works.
+    const landing = tab(shared, { url: `${REDIRECT}#tula_link=new-token&tula_attempt=${ATTEMPT}` })
+    const handling = landing.tula.signIn.handleEmailLink()
+    await settle()
+    expect(shared.api.calls(LINK_ROUTE).at(-1)?.body).toEqual({
+      token: 'new-token',
+      attemptId: ATTEMPT,
+      binding: `${BINDING}-2`,
+    })
+    landing.timers.fire()
+    expect(await handling).toEqual({ status: 'verified' })
+    original.flow.discard()
   })
 
   test('any other failure is thrown, with the token already out of the address', async () => {

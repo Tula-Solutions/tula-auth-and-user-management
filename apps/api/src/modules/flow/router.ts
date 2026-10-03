@@ -1,6 +1,7 @@
-import type { FlowKind } from '@tula/contract'
-import type { Context } from 'hono'
+import type { FirstFactorAttemptRequest, FlowKind } from '@tula/contract'
+import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
+import { createMiddleware } from 'hono/factory'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv, TenantVariables } from '~/dependencies'
 import { validationHook } from '~/handlers'
@@ -39,12 +40,14 @@ export const SIGN_UP_RATE_LIMIT = 10
  */
 export const CREDENTIAL_RATE_LIMIT = 30
 /**
- * Requests per minute from one IP to `first-factor/attempt`. Higher than
- * {@link CREDENTIAL_RATE_LIMIT} because a client waiting for an emailed link to be opened asks
- * every few seconds; what it guards is still bounded elsewhere (a code allows five guesses, an
- * identifier locks out, an unopened link's answer costs one read).
+ * Requests per minute from one IP asking whether an emailed link has been opened
+ * (`first-factor/attempt` with `email_link`). A waiting tab asks every three seconds, twenty
+ * times a minute, and many people share one address behind a NAT: this leaves room for fifteen
+ * of them. An unopened link's answer is one read and nothing guessable sits behind it, so the
+ * limit only bounds load. It is a bucket of its own, so that people waiting for links never
+ * use up the allowance of people typing codes ({@link CREDENTIAL_RATE_LIMIT}).
  */
-export const FIRST_FACTOR_ATTEMPT_RATE_LIMIT = 60
+export const EMAIL_LINK_POLL_RATE_LIMIT = 300
 
 const router = new Hono<AppEnv>()
 
@@ -52,6 +55,19 @@ type FlowContext = Context<AppEnv & { Variables: TenantVariables }>
 
 const limited = (name: string, limit = CREDENTIAL_RATE_LIMIT) =>
   rateLimit({ name, limit, window: '1m', key: byIp })
+
+const codeAttemptLimit = limited('sign_in_first_factor_code')
+const linkPollLimit = limited('sign_in_link_poll', EMAIL_LINK_POLL_RATE_LIMIT)
+
+/** Apply `limit` to requests whose validated body names `strategy`, and to no others. */
+function firstFactorLimit(
+  strategy: FirstFactorAttemptRequest['strategy'],
+  limit: MiddlewareHandler<AppEnv>
+) {
+  return createMiddleware<AppEnv, string, { out: { json: FirstFactorAttemptRequest } }>(
+    (c, next) => (c.req.valid('json').strategy === strategy ? limit(c, next) : next())
+  )
+}
 
 const attemptResponse = (description: string) => ({
   description,
@@ -285,7 +301,8 @@ router.post(
       '`email_code`: submits the emailed code (five guesses, ten minutes; every try also ' +
       'counts against the identifier’s lockout, shared with password sign-in). `email_link`: ' +
       'asks whether the emailed link has been opened in the browser that asked for it; until ' +
-      'then the answer is the unchanged step, and asking costs no guess. On success the ' +
+      'then the answer is the unchanged step, and asking costs no guess (such requests have ' +
+      'their own per-IP limit, apart from code attempts). On success the ' +
       'sign-in completes, or moves to `needs_second_factor` (no tokens) for a user who has a ' +
       'second factor. The email counts as verified.' +
       BOUND +
@@ -301,11 +318,16 @@ router.post(
       ...errors,
     },
   }),
-  limited('sign_in_first_factor', FIRST_FACTOR_ATTEMPT_RATE_LIMIT),
   publishableKey(),
   validator('param', AttemptIdParamSchema, validationHook),
   validator('header', AttemptHeaderSchema, validationHook),
   validator('json', FirstFactorAttemptRequestSchema, validationHook),
+  // After the body is validated, because which limit applies depends on its `strategy`, and
+  // only a validated one can be trusted to choose. (Requests that fail validation, or carry no
+  // valid key, are bounded by the per-IP limit on every client route.) A code is a guess at a
+  // secret and keeps the credential limit; a poll for a link has its own, larger bucket.
+  firstFactorLimit('email_code', codeAttemptLimit),
+  firstFactorLimit('email_link', linkPollLimit),
   async (c) =>
     respond(
       c,

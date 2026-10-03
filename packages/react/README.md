@@ -91,7 +91,7 @@ in).
 | --- | --- |
 | `signUpUrl`, `onSwitchToSignUp` | Shows "New here? Create an account" as a link, or calls you instead. |
 | `afterSignInUrl`, `onComplete` | Go there once signed in, or get `{ userId, sessionId }` instead. |
-| `emailLinkUrl` | The page emailed sign-in links lead to (it renders `<EmailLinkCallback>`). Without it (here or on the provider) "Email me a link" is not offered. It must be one of the environment's allowed redirect URLs, exactly; a relative value is resolved against the page. |
+| `emailLinkUrl` | The page emailed sign-in links lead to (it renders `<EmailLinkCallback>`). Without it (here or on the provider) "Email me a link" is not offered. It must be one of the environment's allowed redirect URLs, exactly, **and on the same origin as the page showing `<SignIn>`** (the link is tied to the browser through that origin's storage; another origin is refused with `link.cross_origin` before any email is sent). A relative value is resolved against the page. |
 | `initialEmail` | Prefills the email field. |
 | `appearance`, `headingLevel` | See below. `headingLevel` (1–3, default 1) is the card title's level. |
 

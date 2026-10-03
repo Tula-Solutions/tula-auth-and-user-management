@@ -3858,7 +3858,7 @@
           "Flows"
         ],
         "summary": "Prove an email first factor",
-        "description": "`email_code`: submits the emailed code (five guesses, ten minutes; every try also counts against the identifier’s lockout, shared with password sign-in). `email_link`: asks whether the emailed link has been opened in the browser that asked for it; until then the answer is the unchanged step, and asking costs no guess. On success the sign-in completes, or moves to `needs_second_factor` (no tokens) for a user who has a second factor. The email counts as verified. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "description": "`email_code`: submits the emailed code (five guesses, ten minutes; every try also counts against the identifier’s lockout, shared with password sign-in). `email_link`: asks whether the emailed link has been opened in the browser that asked for it; until then the answer is the unchanged step, and asking costs no guess (such requests have their own per-IP limit, apart from code attempts). On success the sign-in completes, or moves to `needs_second_factor` (no tokens) for a user who has a second factor. The email counts as verified. Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers `flow.not_found`. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
         "security": [
           {
             "publishableKey": []

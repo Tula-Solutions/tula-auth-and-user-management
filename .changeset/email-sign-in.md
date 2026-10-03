@@ -22,7 +22,9 @@ and sign-up without a password.
   `discard`; `signIn.canUseEmailLink()` and `signIn.handleEmailLink()` for the page a link
   leads to; `signUp.start` takes an optional password. An emailed link's binding is kept in
   `localStorage` (it is not a token; see the README's security notes), and the link's token is
-  read from the URL fragment and removed from the address before anything is sent.
+  read from the URL fragment and removed from the address before anything is sent. A link's
+  page must be on the origin that asks: another origin is refused locally with the new client
+  code `link.cross_origin`.
 - `@tula/react`: `<SignIn>` draws the emailed code and link and lets the user switch between
   the methods on offer (new prop `emailLinkUrl`, also on the provider); `<SignUp>` marks the
   password optional where the environment says so; new `<EmailLinkCallback>` and

@@ -1159,11 +1159,17 @@ describe('SDK journeys: signing in by email', () => {
       const original = s.client('web')
       expect(original.tula.signIn.canUseEmailLink()).toBe(true)
       const flow = await original.tula.signIn.start({ identifier: email })
+      // A page on another origin could never read this browser's binding: the SDK says so
+      // itself, and nothing is sent. (The server's own refusal of a URL that is not on the
+      // allow-list is in the scenario and the API's tests.)
       expect(
         await caught(
           flow.prepareFirstFactor({ strategy: 'email_link', redirectUrl: 'https://evil.test/' })
         )
-      ).toMatchObject({ code: 'request.redirect_not_allowed', status: 400 })
+      ).toMatchObject({ code: 'link.cross_origin', status: 0 })
+      expect(s.exchanges.some((exchange) => exchange.path.endsWith('/first-factor/prepare'))).toBe(
+        false
+      )
       const prepared = await flow.prepareFirstFactor({
         strategy: 'email_link',
         redirectUrl: REDIRECT,

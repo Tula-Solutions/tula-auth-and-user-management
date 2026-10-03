@@ -73,7 +73,7 @@ await flow.attemptFirstFactor({ strategy: 'email_code', code })  // → 'complet
 if (tula.signIn.canUseEmailLink()) {
   await flow.prepareFirstFactor({
     strategy: 'email_link',
-    redirectUrl: 'https://app.example.com/auth/link',   // one of the environment's allowed redirect URLs, exactly
+    redirectUrl: 'https://app.example.com/auth/link',   // an allowed redirect URL, exactly, on this page's origin
   })
   const step = await flow.waitForEmailLink({ signal })  // resolves when the link was opened in this browser
 }
@@ -96,6 +96,13 @@ const { status } = await tula.signIn.handleEmailLink()
   link was accepted, and obeys `Retry-After`. It ends when the step moves on, on `signal`,
   `discard()`, sign-out or an error (an expired attempt is `flow.not_found`); nothing keeps
   running afterwards. The other actions keep working while it waits.
+- **The link's page must be on the same origin as the page that asks** (scheme, host and
+  port). The binding is kept in that origin's storage; a page elsewhere could not read it, and
+  the link would answer `different_browser` in the very browser that asked. In a browser,
+  `prepareFirstFactor` refuses such a `redirectUrl` itself with `link.cross_origin` (`status:
+  0`, nothing sent); outside a browser there is no page origin and nothing is checked.
+- A dead link (`expired`) leaves this browser's binding alone: the link of an older email, or
+  a forged one, cannot undo the email that is current.
 - The answer to `prepareFirstFactor` is the same whether or not the address has an account.
 - `signUp.start({ email })` without a password is accepted where the environment's config says
   `signUp.password === 'optional'`.
@@ -168,7 +175,8 @@ error.retryAfterMs   // on a 429 or 503 that says when to try again
 
 Client-side codes (all `status: 0`): `network.failed`, `network.timeout`, `response.invalid`
 (the answer could not be read, or a 200 was not what the API sends: check `baseUrl`),
-`storage.failed`, and `flow.busy` (a second action on a flow while one is still being sent).
+`storage.failed`, `flow.busy` (a second action on a flow while one is still being sent), and
+`link.cross_origin` (an emailed sign-in link was asked for with a page on another origin).
 One contract code is also raised locally: `flow.invalid_step` with `status: 0` for an action on
 a flow that has already completed. The client never retries on its own, with one exception: a refresh that got no answer is sent
 once more (see the security notes). After a 429 or 503

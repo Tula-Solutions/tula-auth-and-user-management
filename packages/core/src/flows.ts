@@ -131,15 +131,19 @@ export interface SignInFlow extends Flow<'sign_in'> {
    * account. Calling it again sends a fresh email, at most one a minute.
    *
    * With `email_link` the email also carries a link to `redirectUrl`, which must be one of the
-   * environment's allowed redirect URLs, exactly. The link works only in this browser: the
+   * environment's allowed redirect URLs, exactly, **and on the same origin as the page that
+   * asks** (scheme, host and port): what ties the link to this browser is kept in this origin's
+   * storage, and a page on another origin could not read it. The link works only in this browser: the
    * flow keeps what ties the two together (in `localStorage`; it is not a token and authorizes
    * nothing by itself). Follow it with {@link SignInFlow.waitForEmailLink}.
    *
    * @param input - The strategy, and for a link the page it leads to.
    * @returns The step, still `needs_first_factor`, now with `prepared`.
    * @throws TulaError `request.redirect_not_allowed` for a URL that is not allowed,
-   *   `rate_limited` (with `retryAfterMs`) when asked too soon, or `storage.failed` (no
-   *   request is sent) for `email_link` in a browser without usable storage.
+   *   `rate_limited` (with `retryAfterMs`) when asked too soon, and two raised by the client
+   *   itself, with `status: 0` and no request sent: `link.cross_origin` for a `redirectUrl` on
+   *   another origin than the page (checked only where there is a page), and `storage.failed`
+   *   for `email_link` in a browser without usable storage.
    */
   prepareFirstFactor(
     input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
@@ -402,6 +406,11 @@ export async function signInFlow(context: FlowContext, started: FlowAttempt): Pr
         // before an email is sent that would only disappoint.
         throw clientError('storage.failed', context.messages())
       }
+      if (input.strategy === 'email_link' && leavesOrigin(context, input.redirectUrl)) {
+        // Storage belongs to an origin: a page elsewhere could not read the binding, and the
+        // link would answer "different browser" in the very browser that asked.
+        throw clientError('link.cross_origin', context.messages())
+      }
       return attempt.step((bound) =>
         transport.call('prepareSignInFirstFactor', { ...bound, body: input })
       )
@@ -416,6 +425,22 @@ export async function signInFlow(context: FlowContext, started: FlowAttempt): Pr
       context.links.remove(attempt.snapshot().id)
     },
   })
+}
+
+/**
+ * Whether `redirectUrl` is on another origin than the page the client runs in. `false` when
+ * there is no page (not a browser) or either URL cannot be read: the server then decides.
+ */
+function leavesOrigin(context: FlowContext, redirectUrl: string): boolean {
+  const page = context.environment.page
+  if (!page) {
+    return false
+  }
+  try {
+    return new URL(redirectUrl).origin !== new URL(page.url()).origin
+  } catch {
+    return false
+  }
 }
 
 /**

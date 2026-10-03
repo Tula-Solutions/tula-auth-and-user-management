@@ -12,10 +12,12 @@ describe('EN_MESSAGES', () => {
       'network.timeout',
       'response.invalid',
       'storage.failed',
+      'flow.busy',
+      'link.cross_origin',
     ] as const) {
       expect(EN_MESSAGES[code].length).toBeGreaterThan(10)
     }
-    expect(Object.keys(EN_MESSAGES)).toHaveLength(ERROR_CODES.length + 5)
+    expect(Object.keys(EN_MESSAGES)).toHaveLength(ERROR_CODES.length + 6)
   })
 })
 

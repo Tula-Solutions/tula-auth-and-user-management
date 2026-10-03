@@ -123,16 +123,27 @@ function requirePasswordMethod(
 }
 
 /**
- * Refuse a step of a sign-up whose method the environment has switched off: passwords for a
- * sign-up that chose one, the email code for one that did not (its account could only ever get
- * in by email).
+ * Refuse a step of a sign-up the environment no longer allows: passwords switched off for a
+ * sign-up that chose one; for one that did not, the email code switched off (its account could
+ * only ever get in by email) **or the sign-up mode back at `required`**. An operator who
+ * requires a password again must not get a passwordless account from an attempt that was
+ * already under way. Checked on every step, before anything is counted, spent or sent, and the
+ * same for a decoy.
+ *
+ * @throws AuthError `auth.method_disabled`.
  */
-function requireSignUpMethod(
+async function requireSignUpMethod(
   deps: Pick<Deps, 'environmentSettings' | 'config'>,
   tenant: Pick<Tenant, 'environmentId'>,
   state: Pick<State, 'passwordless'>
 ): Promise<void> {
-  return Settings.requireMethod(deps, tenant, state.passwordless ? 'emailCode' : 'password')
+  if (!state.passwordless) {
+    return Settings.requireMethod(deps, tenant, 'password')
+  }
+  if ((await Settings.current(deps, tenant)).signUp.password !== 'optional') {
+    throw new AuthError('auth.method_disabled')
+  }
+  return Settings.requireMethod(deps, tenant, 'emailCode')
 }
 
 /** The device a flow request comes from. */
@@ -882,7 +893,9 @@ export async function prepareFirstFactor(
  * a guess and nothing is charged, so the waiting client can simply ask again, and the answer is
  * the same for an address with no account, whose link never arrives.
  *
- * Either way the session goes to the caller, who holds the attempt's secret.
+ * Either way the session goes to the caller, who holds the attempt's secret. Of two requests
+ * that arrive together once the link was accepted (two tabs, a retry), exactly one creates the
+ * session; the other answers `flow.invalid_step`, and any later one `flow.not_found`.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.

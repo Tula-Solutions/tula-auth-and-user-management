@@ -453,14 +453,51 @@ describe('rate limits per IP', () => {
     expect(res.headers.get('retry-after')).toBeString()
   })
 
-  test('waiting for a link may ask every few seconds, and no more than that', async () => {
+  test('people waiting for links do not lock the same IP out of entering codes', async () => {
+    const waiting = await askForLink()
+    const poll = `/sign-ins/${waiting.attempt.id}/first-factor/attempt`
+    // More polls than a code step allows in a minute, as a few waiting tabs behind one NAT make.
+    for (let asked = 0; asked < Flows.CREDENTIAL_RATE_LIMIT * 3; asked++) {
+      expect((await post(poll, { strategy: 'email_link' })).status).toBe(200)
+    }
+    // Someone else at that address can still submit a code.
+    const other = await startSignIn({}, 'ines@northline.app')
+    const res = await post(`/sign-ins/${other.id}/first-factor/attempt`, {
+      strategy: 'email_code',
+      code: '123456',
+    })
+    expect(res.status).toBe(410)
+    expect((await json<{ code: string }>(res)).code).toBe('verification.expired')
+  })
+
+  test('code attempts keep the tight credential limit, whatever the polls did', async () => {
+    const attempt = await startSignIn()
+    const path = `/sign-ins/${attempt.id}/first-factor/attempt`
+    await post(path, { strategy: 'email_link' })
+    const body = { strategy: 'email_code', code: '123456' }
+    // Without the attempt's secret each one answers 404 before the identifier's lockout is
+    // touched, so what refuses the last one can only be the per-IP limit.
+    for (let guess = 0; guess < Flows.CREDENTIAL_RATE_LIMIT; guess++) {
+      expect((await post(path, body, { attempt: null })).status).toBe(404)
+    }
+    const res = await post(path, body, { attempt: null })
+    expect(res.status).toBe(429)
+    expect((await json<{ code: string }>(res)).code).toBe('rate_limited')
+    // Polls have their own bucket and still get through.
+    expect((await post(path, { strategy: 'email_link' })).status).not.toBe(429)
+  })
+
+  test('polls have a limit of their own, sized for a shared address', async () => {
     const { attempt } = await askForLink()
     const path = `/sign-ins/${attempt.id}/first-factor/attempt`
-    for (let asked = 0; asked < Flows.FIRST_FACTOR_ATTEMPT_RATE_LIMIT; asked++) {
+    for (let asked = 0; asked < Flows.EMAIL_LINK_POLL_RATE_LIMIT; asked++) {
       expect((await post(path, { strategy: 'email_link' })).status).toBe(200)
     }
-    expect((await post(path, { strategy: 'email_link' })).status).toBe(429)
-    expect(Flows.FIRST_FACTOR_ATTEMPT_RATE_LIMIT).toBeGreaterThan(Flows.CREDENTIAL_RATE_LIMIT)
+    const res = await post(path, { strategy: 'email_link' })
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).toBeString()
+    // Room for at least ten tabs asking every three seconds.
+    expect(Flows.EMAIL_LINK_POLL_RATE_LIMIT).toBeGreaterThanOrEqual(200)
   })
 
   test('opening links is limited like any credential step', async () => {

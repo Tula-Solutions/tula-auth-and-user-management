@@ -54,7 +54,9 @@ Before finishing any change here, confirm each item holds and has a test:
     and is limited the same for an address with and without an account (a notice with no code
     and no link, a decoy token). A code counts against the identifier's lockout, shared with
     the password. A token of one purpose (`email_verification`, `password_reset`, `sign_in`) is
-    refused for every other. Test known and unknown addresses side by side.
+    refused for every other. Test known and unknown addresses side by side. A sign-up without
+    a password re-checks on every step that `signUp.password` is still `optional`. Code
+    attempts and link polls are limited per IP in separate buckets.
 17. **Link binding:** an emailed link is accepted only with the `linkBinding` the asking client
     was given (SHA-256 on the attempt, constant-time compare). Missing, wrong or another
     attempt's binding: `verification.different_browser`, with the token **not** consumed and no
