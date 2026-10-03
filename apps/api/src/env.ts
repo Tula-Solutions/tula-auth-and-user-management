@@ -67,11 +67,15 @@ const fields = z.object({
   /** `hibp` queries Have I Been Pwned (k-anonymity); `offline` uses the bundled common list. */
   BREACH_CHECK: z.enum(['hibp', 'offline']).default('offline'),
   /**
-   * Password rules preset for every environment. Phase 0 has one policy per deployment;
-   * per-environment policies arrive with the dashboard (Phase 1).
+   * The password policy of an environment that has saved no settings of its own. A default, not
+   * an override: once an environment saves settings (`PUT /v1/admin/settings`), its own
+   * `password` section applies (ADR 0018).
    */
   PASSWORD_POLICY: z.enum(['recommended', 'strict', 'legacy']).default('recommended'),
-  /** Browser origins allowed to call the API with credentials, comma-separated. */
+  /**
+   * Browser origins, comma-separated. They are allowed for `/v1/admin/*`, and are the default
+   * `urls.allowedOrigins` of an environment that has saved no settings of its own (ADR 0018).
+   */
   CORS_ORIGINS: list,
   /**
    * Trust `X-Forwarded-For` for the client IP. Enable only behind a proxy that overwrites the

@@ -32,9 +32,12 @@ password, and sign-in that doesn't reveal which accounts exist.
   dev use the bundled common-password list with no network. The lookup runs only after the local
   rules pass, times out after 2 s, and **fails open**: an HIBP outage must not block every
   sign-up. The policy's `breachCheck` chooses `off`, `warn` (returned as a warning) or `block`.
-- **Phase 0 has one policy per deployment** (`PASSWORD_POLICY` preset, default `recommended`).
-  `Passwords.policy` already takes the tenant, so per-environment policies (dashboard, Phase 1)
-  won't change callers.
+- **Each environment has its own policy** (since Phase 1.2, [ADR 0018](0018-environment-settings.md)):
+  the `password` section of its settings, changed with `PUT /v1/admin/settings`.
+  `Passwords.policy(deps, tenant)` reads it, so sign-up, reset, change and the admin routes all
+  enforce the environment's own rules, and two environments of one deployment can differ. The
+  `PASSWORD_POLICY` preset (default `recommended`) is now only the default of an environment
+  that has saved no settings. Phase 0 had that one policy for the whole deployment.
 
 ## Consequences
 

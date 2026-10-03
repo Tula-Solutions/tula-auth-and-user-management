@@ -99,7 +99,9 @@ Every feature lives in `apps/api/src/modules/<kebab-name>/` with the payhub shap
   `deps: Deps` (or a `Pick<Deps, ...>` of the ports it needs), never a database handle.
 - **`schema.ts`** — Zod request/response schemas with `.meta({ ref: 'Name' })`. Shared shapes
   come from `@tula/contract`; don't redeclare them.
-- Optional: `mailer.ts` (`sendX(deps, params)`), `helpers.ts`, `constants.ts`, `types.ts`.
+- Optional: `mailer.ts` (`sendX(deps, tenant, params)`; it calls `Email.send` from
+  `~/modules/email`, which owns the one layout and the copy of every message, so no module
+  builds a subject or a body itself), `helpers.ts`, `constants.ts`, `types.ts`.
 - Tests are colocated: `service.test.ts`, `router.test.ts`.
 
 ```ts
@@ -137,6 +139,37 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 - `/v1/environments/:id/.well-known/jwks.json` (the token `iss` + `/.well-known/jwks.json`; see
   `environmentIssuer` in `@tula/contract`), `/v1/status`, `/v1/ready`, `/v1/openapi.json`,
   `/v1/docs` — public.
+
+### Per-environment settings
+
+Anything about how sign-in behaves that differs between tenants lives in the environment's
+settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/adr/0018-environment-settings.md)):
+app name and support address, password policy, enabled sign-in methods, allowed origins and
+redirect URLs, audit retention. **Read it through `~/modules/settings/service`**
+(`Settings.current(deps, tenant)`), never from `deps.config`: `PASSWORD_POLICY` and
+`CORS_ORIGINS` are only the defaults of an environment that has saved nothing.
+
+- `GET` / `PUT /v1/admin/settings` reads and replaces the whole document. The `PUT` needs
+  `If-Match: "<revision>"` (428 `precondition.required` without it, 412 `precondition.failed`
+  when stale). `GET /v1/client/config` is the public view a sign-in screen is drawn from.
+- A new setting is a new field **with a default** in the contract schema (additive), in both
+  the strict input schema and the lenient stored one. Unknown keys are refused on input.
+- Reads are cached per instance (`cacheEnvironmentSettings`): the writer sees its write at
+  once, other instances within 5 seconds with Redis and 30 without. Do not add a setting whose
+  safety depends on taking effect everywhere immediately.
+- A flow that uses a sign-in method calls `Settings.requireMethod` on **every** step, after
+  the attempt is loaded and before anything is counted, spent or sent: an attempt started
+  before a method was switched off must not finish with it.
+- A `PUT` that leaves out `password` or `urls.allowedOrigins` stores the deployment's
+  `PASSWORD_POLICY` / `CORS_ORIGINS` for them, not the schema defaults. The body is validated
+  as `EnvironmentSettingsInput` (those two stay absent when left out) and only
+  `Settings.withDeploymentDefaults` turns it into a storable document, validating the result
+  strictly again: nothing reaches the store that `EnvironmentSettingsSchema` refuses. Reading
+  is defensive too (`readStoredEnvironmentSettings` drops list entries it would not accept),
+  because settings are read on the request path. `password.minLength` has a floor of 8 on input, and the audit entry carries
+  `weakened: true` when `Settings.weakened` says the password policy got weaker.
+- CORS is decided per request in `~/middleware/cors`: a preflight passes when any environment
+  allows the origin, the response is readable only when the key's environment does.
 
 ### Server-driven flows
 
@@ -215,7 +248,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   audit log: [ADR 0012](docs/adr/0012-events-and-audit-log.md); password reset:
   [ADR 0015](docs/adr/0015-password-reset.md); Redis and several instances:
   [ADR 0016](docs/adr/0016-redis-and-multiple-instances.md); retention:
-  [ADR 0017](docs/adr/0017-retention.md).
+  [ADR 0017](docs/adr/0017-retention.md); per-environment settings and CORS:
+  [ADR 0018](docs/adr/0018-environment-settings.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
@@ -228,19 +262,26 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   when nothing guessable or costly sits behind it (ADR 0016). Keys written to Redis hold ids
   and keyed hashes, never an email or IP address.
 - Cookies: `HttpOnly`, `Secure`, `SameSite=Lax` (or stricter), scoped path. Use the helpers in
-  `~/modules/session/cookies`; never set the refresh cookie by hand.
+  `~/modules/session/cookies`; never set the refresh cookie by hand. A route that accepts the
+  cookie honours it only when `originMayUseCookies(c)` (`~/middleware/cors`) says the request's
+  origin is one the environment allows: withholding CORS headers stops a page reading a
+  response, not the request from running.
 - Revoking a session must go through `~/modules/session/service` so its id is denylisted:
   `sessionAuth` verifies access tokens without a database hit, and only the denylist stops a
   revoked session's token before it expires.
 - **Every change to who can do what is recorded, in the same transaction.** A store method that changes a
-  user, session, API key or signing key takes an `Activity` (built with `Audit.entry` from
+  user, session, API key, signing key or an environment's settings takes an `Activity` (built with `Audit.entry` from
   `~/modules/audit/service`) and writes it with the change; services pass the `Actor` their
   router built with `adminActor(c)` / `userActor(c)` (`~/lib/actor`). Never write an audit entry
-  as a separate step, and never put a secret or an email address in one. The only unrecorded
+  as a separate step, and never put a secret or an email address in one. A settings change
+  records the **keys** that changed (`data.changed`), never their values. The only unrecorded
   writes are a password-hash upgrade after sign-in and an environment's first signing keys
   (ADR 0012).
-- Treat every change under `modules/{flow,session,password,jwks,verification}` or `lib/crypto.ts`
-  as security-sensitive: it needs tests for the failure paths, not just the happy path.
+- Operator-supplied text that reaches an email (the app name) is untrusted input: it goes
+  through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
+  subject or HTML.
+- Treat every change under `modules/{flow,session,password,jwks,verification}`, `middleware/cors.ts`
+  or `lib/crypto.ts` as security-sensitive: it needs tests for the failure paths, not just the happy path.
 
 ## Testing
 
@@ -307,8 +348,9 @@ apps/api/src/
 ├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/
-├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, request-log
+├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, cors, request-log
 └── modules/          # flow, password, session, jwks, verification, user, audit, project, status,
+                      # settings, email (layout + copy: service only, no router),
                       # retention (a background job: service only, no router)
 ```
 

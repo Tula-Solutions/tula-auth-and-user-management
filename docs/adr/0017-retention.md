@@ -37,8 +37,9 @@ presenting a purged token is answered like any unknown token. Refresh tokens are
 one by one: their rows reference each other, so a chain only goes with its session, by the
 foreign-key cascade.
 
-**Audit entries are never deleted by this job.** Their retention becomes a per-environment
-setting in step 1.2 (default: keep).
+**Audit entries are never deleted by this job.** Their retention is a per-environment setting
+since step 1.2 (`audit.retentionDays`, default: keep; [ADR 0018](0018-environment-settings.md)),
+which is stored and validated but not acted on yet: this job still deletes no audit entry.
 
 **Outbox events are not deleted yet.** The plan was to delete *delivered* events older than 30
 days. The `events` table has a `delivered_at` column, but nothing sets it: delivery is the

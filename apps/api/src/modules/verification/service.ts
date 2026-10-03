@@ -116,7 +116,7 @@ function describeMailFailure(error: unknown): string {
  * still counts against those limits (the relay needs the breathing room) but leaves the
  * previous code valid.
  *
- * @param deps - Clock, ids, keyed hash, token store, mailer and rate limiter.
+ * @param deps - Clock, ids, keyed hash, token store, mailer, rate limiter and settings.
  * @param scope - The project and environment.
  * @param input - Purpose, destination, subject and optional link builder.
  * @returns The token id, masked destination and expiry.
@@ -124,7 +124,17 @@ function describeMailFailure(error: unknown): string {
  * @throws InternalError when the email could not be sent, or no subject was given.
  */
 export async function issue(
-  deps: Pick<Deps, 'clock' | 'ids' | 'keyedHash' | 'verificationTokens' | 'mailer' | 'rateLimiter'>,
+  deps: Pick<
+    Deps,
+    | 'clock'
+    | 'ids'
+    | 'keyedHash'
+    | 'verificationTokens'
+    | 'mailer'
+    | 'rateLimiter'
+    | 'environmentSettings'
+    | 'config'
+  >,
   scope: Scope,
   input: IssueInput
 ): Promise<IssuedVerification> {
@@ -148,7 +158,7 @@ export async function issue(
   try {
     await (input.deliver
       ? input.deliver(delivery)
-      : sendCode(deps, { purpose: input.purpose, ...delivery }))
+      : sendCode(deps, scope, { purpose: input.purpose, ...delivery }))
   } catch (error) {
     throw new InternalError({
       internalMessage: `verification email could not be sent (${describeMailFailure(error)})`,

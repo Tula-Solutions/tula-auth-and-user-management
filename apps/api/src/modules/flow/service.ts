@@ -20,6 +20,7 @@ import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
+import * as Settings from '~/modules/settings/service'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
@@ -76,6 +77,24 @@ async function chargeEnvironment(
   if (!decision.allowed) {
     throw new RateLimitError(decision.retryAfterMs)
   }
+}
+
+/**
+ * Refuse a step of a password flow in an environment that has switched passwords off.
+ *
+ * Checked on **every** step, not only when an attempt starts: an attempt lives for ten minutes,
+ * and one started before the switch-off must not finish with a password afterwards, whether
+ * that means signing in with one, setting one, or creating an account that has one (a sign-up
+ * holds the hash of its password until the email is verified). Each step calls this after the
+ * attempt is found and before anything is counted, spent or sent, so a refused step uses up
+ * no guess, no code and no rate limit. Every flow today is a password flow; a flow for another
+ * method checks its own switch.
+ */
+function requirePasswordMethod(
+  deps: Pick<Deps, 'environmentSettings' | 'config'>,
+  tenant: Pick<Tenant, 'environmentId'>
+): Promise<void> {
+  return Settings.requireMethod(deps, tenant, 'password')
 }
 
 /** The device a flow request comes from. Captured when the attempt starts. */
@@ -253,6 +272,7 @@ async function finish(
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_email_verification`.
  * @throws InvalidEmailError, or a `password.*` ServiceException with per-field `errors`.
+ * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function signUp(
@@ -266,6 +286,7 @@ export async function signUp(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'signUp')
   const firstName = input.firstName?.trim() || null
   const lastName = input.lastName?.trim() || null
@@ -319,7 +340,7 @@ async function issueCode(
     destination: state.email ?? attempt.identifier,
     flowAttemptId: attempt.id,
     userId: options.userId,
-    ...(state.decoy && { deliver: ({ to }) => notice(deps, to) }),
+    ...(state.decoy && { deliver: ({ to }) => notice(deps, tenant, to) }),
     ...(options.charge && {
       onAllowed: () => chargeEnvironment(deps, tenant, reset ? 'passwordReset' : 'signUp'),
     }),
@@ -330,18 +351,23 @@ async function issueCode(
  * Start a sign-in. Always answers `needs_password`, whoever the identifier belongs to and
  * whether or not it exists: the identifier is not looked up until a password is submitted.
  *
- * @param deps - Flow attempt store, clock and ids.
+ * Password is the only first factor today, so an environment that has switched it off refuses
+ * the start. Step 1.3 turns this into the choice of first factor (`needs_first_factor`).
+ *
+ * @param deps - Flow attempt store, clock, ids and settings.
  * @param tenant - The environment the publishable key resolved to.
  * @param input - The identifier (email).
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_password`.
+ * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
  */
 export async function signIn(
-  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'ids'>,
+  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config'>,
   tenant: Tenant,
   input: SignInStartRequest,
   context: ClientContext
 ): Promise<FlowResult> {
+  await requirePasswordMethod(deps, tenant)
   const state: State = { client: context.client }
   const attempt = await start(deps, tenant, {
     kind: 'sign_in',
@@ -367,8 +393,8 @@ export async function signIn(
  * @param password - The submitted password.
  * @param context - The requesting device.
  * @returns `complete` with tokens, or `needs_email_verification` for an unverified email.
- * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.invalid_credentials` or
- *   `auth.user_banned`.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`,
+ *   `auth.invalid_credentials` or `auth.user_banned`.
  * @throws RateLimitError while the identifier is locked out after repeated failures.
  */
 export async function submitPassword(
@@ -382,6 +408,7 @@ export async function submitPassword(
   if (attempt.status !== 'needs_password') {
     throw new AuthError('flow.invalid_step')
   }
+  await requirePasswordMethod(deps, tenant)
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
   // through; it happens before the lookup, so unknown identifiers lock out exactly the same.
@@ -456,8 +483,8 @@ export async function submitPassword(
  * @param code - The 6-digit code.
  * @param context - The requesting device.
  * @returns `complete` with tokens.
- * @throws AuthError `flow.not_found`, `flow.invalid_step`, a `verification.*` code or
- *   `auth.user_banned`.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`, a
+ *   `verification.*` code or `auth.user_banned`.
  */
 export async function verifyEmail(
   deps: Deps,
@@ -470,6 +497,7 @@ export async function verifyEmail(
   const { attempt, state } = await load(deps, tenant, kind, attemptId)
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
   nextStatus(attempt.kind, attempt.status, { type: 'email_verified' })
+  await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'verify')
 
   await Verification.verifyCode(deps, tenant, {
@@ -553,6 +581,7 @@ export async function verifyEmail(
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_new_password`.
  * @throws InvalidEmailError when the address is malformed.
+ * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function startPasswordReset(
@@ -566,6 +595,7 @@ export async function startPasswordReset(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'passwordReset')
   const user = await deps.users.findByEmail(tenant.environmentId, identifier)
   const state: State = { client: context.client, email, ...(!user && { decoy: true }) }
@@ -603,8 +633,8 @@ export async function startPasswordReset(
  * @param input - The emailed code and the new password.
  * @param context - The requesting device.
  * @returns `complete` with tokens.
- * @throws AuthError `flow.not_found`, `flow.invalid_step`, a `verification.*` code or
- *   `auth.user_banned`.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`, a
+ *   `verification.*` code or `auth.user_banned`.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
  */
 export async function resetPassword(
@@ -617,6 +647,7 @@ export async function resetPassword(
   const { attempt, state } = await load(deps, tenant, 'password_reset', attemptId)
   // Throws `flow.invalid_step` unless the attempt is waiting on the new password.
   nextStatus(attempt.kind, attempt.status, { type: 'password_reset' })
+  await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'verify')
 
   const token = await Verification.verifyCode(deps, tenant, {
@@ -678,7 +709,7 @@ export async function resetPassword(
  * @param kind - Which flow the route belongs to.
  * @param attemptId - The attempt.
  * @returns The attempt, still waiting on the same step.
- * @throws AuthError `flow.not_found` or `flow.invalid_step`.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step` or `auth.method_disabled`.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function resendCode(
@@ -692,6 +723,7 @@ export async function resendCode(
   if (attempt.status !== waitsOn) {
     throw new AuthError('flow.invalid_step')
   }
+  await requirePasswordMethod(deps, tenant)
   await issueCode(deps, tenant, attempt, state, {
     userId: attempt.userId ?? undefined,
     charge: true,

@@ -1,7 +1,7 @@
 import { durationToMs } from '@tula/contract'
 import { match, pick } from './match'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
-import { fill } from './template'
+import { expandJson, fill } from './template'
 
 /** Header carrying the publishable key. */
 export const PUBLISHABLE_KEY_HEADER = 'x-tula-publishable-key'
@@ -77,14 +77,23 @@ const ERROR_CODE = /^[a-z_]{1,40}(\.[a-z_]{1,40})?$/
 
 /**
  * Replace every value the scenario knows (generated passwords, emailed codes, captured tokens
- * and ids) with its placeholder, so a server that echoes one back cannot get it printed.
+ * and ids) with its placeholder, so a server that echoes one back cannot get it printed, whether
+ * it appears as written or JSON-escaped.
  * Longest first, so a value containing another is replaced whole.
  */
 function redact(message: string, variables: Readonly<Record<string, string>>): string {
   return Object.entries(variables)
     .filter(([name, value]) => name !== 'origin' && value.length >= 4)
     .sort(([, a], [, b]) => b.length - a.length)
-    .reduce((text, [name, value]) => text.replaceAll(value, `{{${name}}}`), message)
+    .reduce(
+      (text, [name, value]) =>
+        text
+          .replaceAll(value, `{{${name}}}`)
+          // Messages quote strings as JSON, so a value holding quotes (captured JSON) shows up
+          // escaped.
+          .replaceAll(JSON.stringify(value).slice(1, -1), `{{${name}}}`),
+      message
+    )
 }
 
 /** A code of the same length that cannot be the right one: its last digit is shifted by one. */
@@ -137,10 +146,14 @@ function buildRequest(target: Target, request: ScenarioRequest, origin: string):
   if (request.body !== undefined) {
     headers.set('content-type', 'application/json')
   }
+  // The schema refuses the names set above, so these only ever add.
+  for (const [name, value] of Object.entries(request.headers ?? {})) {
+    headers.set(name, value)
+  }
   return new Request(`${instanceFor(target, request).baseUrl}${request.path}`, {
     method: request.method,
     headers,
-    body: request.body === undefined ? undefined : JSON.stringify(request.body),
+    body: request.body === undefined ? undefined : JSON.stringify(expandJson(request.body)),
   })
 }
 
@@ -210,6 +223,20 @@ async function runStep(
         throw new StepFailure([`cannot capture ${name}: no string at ${path}`])
       }
       variables[name] = value
+    }
+    for (const [name, header] of Object.entries(step.captureHeaders ?? {})) {
+      const value = response.headers.get(header)
+      if (value === null) {
+        throw new StepFailure([`cannot capture ${name}: no ${header} header`])
+      }
+      variables[name] = value
+    }
+    for (const [name, path] of Object.entries(step.captureJson ?? {})) {
+      const value = pick(body, path)
+      if (value === undefined) {
+        throw new StepFailure([`cannot capture ${name}: nothing at ${path}`])
+      }
+      variables[name] = JSON.stringify(value)
     }
   }
 }

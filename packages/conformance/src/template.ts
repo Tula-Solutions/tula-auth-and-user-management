@@ -29,3 +29,41 @@ export function fill<T>(value: T, variables: Readonly<Record<string, string>>): 
   }
   return value
 }
+
+/**
+ * Replace every `{ "$json": "<JSON text>" }` in a value by the value that text encodes.
+ *
+ * Variables are strings, so a step that captured an object (`captureJson`) holds its JSON text;
+ * this is how a later request body gets the object back. Call it after {@link fill}.
+ *
+ * @param value - A request body, placeholders already filled in.
+ * @returns A copy with each `$json` object replaced.
+ * @throws Error when a `$json` value is not a string of valid JSON.
+ *
+ * @example
+ * ```ts
+ * expandJson({ settings: { $json: '{"a":1}' } }) // { settings: { a: 1 } }
+ * ```
+ */
+export function expandJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(expandJson)
+  }
+  if (typeof value !== 'object' || value === null) {
+    return value
+  }
+  const entries = Object.entries(value)
+  const [only] = entries
+  if (entries.length === 1 && only && only[0] === '$json') {
+    if (typeof only[1] !== 'string') {
+      throw new Error('$json takes a string holding JSON')
+    }
+    try {
+      return JSON.parse(only[1])
+    } catch {
+      // The text is a captured response value: never quote it.
+      throw new Error('$json does not hold valid JSON')
+    }
+  }
+  return Object.fromEntries(entries.map(([key, item]) => [key, expandJson(item)]))
+}

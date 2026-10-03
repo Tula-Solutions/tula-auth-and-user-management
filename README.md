@@ -64,6 +64,9 @@ makes them unreadable.
 | `GET, POST /v1/admin/api-keys`, `DELETE /v1/admin/api-keys/:id` | secret key | Manage API keys |
 | `GET /v1/admin/signing-keys`, `POST /v1/admin/signing-keys/rotate` | secret key | Signing-key lifecycle |
 | `GET, POST /v1/admin/users`, `GET, DELETE /v1/admin/users/:id`, `POST …/ban`, `POST …/unban`, `PUT …/password` | secret key | Manage users |
+| `GET, PUT /v1/admin/settings` | secret key | The environment's settings: app name, password policy, sign-in methods, allowed origins (`If-Match` on the revision) |
+| `GET /v1/admin/audit-logs` | secret key | The record of auth events and admin actions |
+| `GET /v1/client/config` | publishable key | What a sign-in screen needs: app name, sign-in methods, password policy |
 | `GET /v1/client/password-policy` | publishable key | Password rules for the live checklist |
 | `POST /v1/client/sign-ups`, `…/sign-ups/:id/verify-email`, `…/sign-ups/:id/resend-code` | publishable key | Sign up with email and password, verified by an emailed code |
 | `POST /v1/client/sign-ins`, `…/sign-ins/:id/password`, `…/sign-ins/:id/verify-email`, `…/sign-ins/:id/resend-code` | publishable key | Sign in; each call returns the next step |

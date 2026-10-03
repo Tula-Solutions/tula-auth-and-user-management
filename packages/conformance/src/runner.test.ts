@@ -18,7 +18,10 @@ interface Seen {
 
 /** A target whose server is a function, recording every request it receives. */
 function fakeTarget(
-  respond: (seen: Seen, index: number) => { status: number; body?: unknown; text?: string },
+  respond: (
+    seen: Seen,
+    index: number
+  ) => { status: number; body?: unknown; text?: string; headers?: Record<string, string> },
   overrides: Partial<Target> = {}
 ) {
   const requests: Seen[] = []
@@ -36,8 +39,11 @@ function fakeTarget(
         body: text ? JSON.parse(text) : undefined,
       }
       requests.push(seen)
-      const { status, body, text: raw } = respond(seen, requests.length - 1)
-      return new Response(raw ?? (body === undefined ? null : JSON.stringify(body)), { status })
+      const { status, body, text: raw, headers } = respond(seen, requests.length - 1)
+      return new Response(raw ?? (body === undefined ? null : JSON.stringify(body)), {
+        status,
+        headers,
+      })
     },
     emailCode: async () => '123459',
     wait: async (ms) => {
@@ -501,5 +507,126 @@ describe('exitCode', () => {
     [{ passed: 0, failed: 0, skipped: 0 }, 1],
   ] as [Parameters<typeof exitCode>[0], 0 | 1][])('%j exits %i', (counts, expected) => {
     expect(exitCode(counts)).toBe(expected)
+  })
+})
+
+describe('headers and whole values', () => {
+  const read = {
+    name: 'read',
+    request: get('/v1/admin/settings', { auth: 'secret' }),
+    expect: { status: 200 },
+    captureHeaders: { etag: 'ETag' },
+    captureJson: { original: 'settings', revision: 'revision' },
+  }
+
+  test('a response header and a whole JSON value can be captured and sent back', async () => {
+    const settings = { app: { name: 'Acme "Inc"' }, urls: { allowedOrigins: ['https://a.test'] } }
+    const { target, requests } = fakeTarget((_seen, index) =>
+      index === 0
+        ? { status: 200, body: { revision: 3, settings }, headers: { etag: '"3"' } }
+        : { status: 200 }
+    )
+    const result = await runScenario(
+      scenario(
+        [
+          read,
+          {
+            name: 'write it back',
+            request: {
+              method: 'PUT',
+              path: '/v1/admin/settings?was={{revision}}',
+              auth: 'secret',
+              headers: { 'If-Match': '{{etag}}', Origin: 'https://app.test' },
+              body: { $json: '{{original}}' },
+            },
+            expect: { status: 200 },
+          },
+          {
+            name: 'nested',
+            request: {
+              method: 'POST',
+              path: '/x',
+              body: { wrapped: [{ $json: '{{original}}' }], plain: { $json: 'x', other: 1 } },
+            },
+            expect: { status: 200 },
+          },
+        ],
+        { needsSecretKey: true }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(requests[1]).toMatchObject({
+      path: '/v1/admin/settings?was=3',
+      headers: {
+        'if-match': '"3"',
+        origin: 'https://app.test',
+        authorization: 'Bearer tula_sk_test',
+        'content-type': 'application/json',
+      },
+    })
+    expect(requests[1]?.body).toEqual(settings)
+    // Only an object that is exactly `{ $json }` is replaced.
+    expect(requests[2]?.body).toEqual({ wrapped: [settings], plain: { $json: 'x', other: 1 } })
+  })
+
+  test('a missing header or value fails the step, naming what was missing', async () => {
+    const { target } = fakeTarget(() => ({ status: 200, body: { revision: 1 } }))
+    const noHeader = await runScenario(
+      scenario([{ ...read, captureJson: undefined }], { needsSecretKey: true }),
+      target
+    )
+    expect(noHeader.steps.at(-1)?.problems).toEqual(['cannot capture etag: no ETag header'])
+    const noValue = await runScenario(
+      scenario([{ ...read, captureHeaders: undefined }], { needsSecretKey: true }),
+      target
+    )
+    expect(noValue.steps.at(-1)?.problems).toEqual(['cannot capture original: nothing at settings'])
+  })
+
+  test('a captured value is never printed in a failure', async () => {
+    const { target } = fakeTarget((_seen, index) =>
+      index === 0
+        ? {
+            status: 200,
+            body: { settings: { secretish: 'value-one-two' } },
+            headers: { etag: '"1"' },
+          }
+        : { status: 409, body: { echoed: '{"secretish":"value-one-two"}' } }
+    )
+    const result = await runScenario(
+      scenario(
+        [
+          { ...read, captureJson: { original: 'settings' } },
+          {
+            name: 'echo',
+            request: get('/x'),
+            expect: { status: 200, body: { echoed: 'something else' } },
+          },
+        ],
+        { needsSecretKey: true }
+      ),
+      target
+    )
+    expect(formatResult(result)).not.toContain('value-one-two')
+  })
+
+  test('text that is not JSON cannot be sent as $json', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'bad',
+            request: { method: 'POST', path: '/x', body: { $json: '{{broken}}' } },
+            expect: { status: 200 },
+          },
+        ],
+        { variables: { broken: '{not json' } }
+      ),
+      target
+    )
+    expect(result.steps.at(-1)?.problems).toEqual(['$json does not hold valid JSON'])
+    expect(requests).toEqual([])
   })
 })

@@ -23,6 +23,9 @@ export const ERROR_DEFINITIONS = {
   'auth.invalid_key': { status: 401, message: 'The API key is missing, invalid or revoked.' },
   'auth.forbidden': { status: 403, message: 'You do not have permission to do that.' },
   'auth.user_banned': { status: 403, message: 'This account has been disabled.' },
+  // The environment's settings switch this sign-in method off (`signIn.methods`). It says
+  // nothing about any account, so it is safe to report before an identifier is looked up.
+  'auth.method_disabled': { status: 403, message: 'This sign-in method is not available.' },
 
   'flow.not_found': { status: 404, message: 'This attempt does not exist or has expired.' },
   'flow.invalid_step': {
@@ -78,6 +81,16 @@ export const ERROR_DEFINITIONS = {
   'validation.failed': { status: 422, message: 'Some fields are invalid.' },
   'resource.not_found': { status: 404, message: 'The requested resource does not exist.' },
   'resource.conflict': { status: 409, message: 'The resource conflicts with existing data.' },
+  // Conditional writes (`PUT /v1/admin/settings`): the request must say which revision it
+  // changes (`If-Match`), and is refused when that revision is no longer the current one.
+  'precondition.required': {
+    status: 428,
+    message: 'Send the revision you are changing in an If-Match header.',
+  },
+  'precondition.failed': {
+    status: 412,
+    message: 'The resource changed since you read it. Read it again and retry.',
+  },
   not_implemented: { status: 501, message: 'This capability is not available yet.' },
   // A dependency the request needs to be decided safely (the shared rate-limit, lockout and
   // revoked-session store) cannot be reached. Nothing was changed; the same request can be retried.

@@ -7,6 +7,7 @@ import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { BreachChecker } from '~/ports/breach-checker'
 import type { Clock } from '~/ports/clock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
+import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 import type { FlowAttemptStore } from '~/ports/flow-attempt-store'
 import type { HealthProbe } from '~/ports/health-probe'
 import type { IdGenerator } from '~/ports/id-generator'
@@ -25,11 +26,17 @@ export interface AppConfig {
   tier: Tier
   /** Public base URL; each environment's token issuer lives under it (`environmentIssuer`). */
   publicUrl: string
-  /** Exact browser origins allowed to make credentialed requests. */
+  /**
+   * `CORS_ORIGINS`: the browser origins allowed for admin routes, and the default
+   * `urls.allowedOrigins` of an environment that has saved no settings (ADR 0018).
+   */
   corsOrigins: readonly string[]
   /** Whether to take the client IP from `X-Forwarded-For`. */
   trustProxy: boolean
-  /** Password rules applied to every environment (read through `Passwords.policy`). */
+  /**
+   * `PASSWORD_POLICY`: the default password policy of an environment that has saved no
+   * settings. Read the policy that applies through `Passwords.policy`, never from here.
+   */
   passwordPolicy: PasswordPolicy
 }
 
@@ -43,6 +50,8 @@ export interface Deps {
   ids: IdGenerator
   apiKeys: ApiKeyRepository
   environments: EnvironmentRepository
+  /** Per-environment settings documents. Read them through `~/modules/settings/service`. */
+  environmentSettings: EnvironmentSettingsStore
   signingKeys: SigningKeyStore
   verificationTokens: VerificationTokenStore
   sessions: SessionStore
