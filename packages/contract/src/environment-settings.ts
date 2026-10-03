@@ -147,6 +147,19 @@ const Audit = z.object({
   retentionDays: z.number().int().min(1).max(MAX_AUDIT_RETENTION_DAYS).nullable().default(null),
 })
 
+const Notifications = z.object({
+  /**
+   * Email the account's address when its password is changed, reset, set by an administrator or
+   * added. On by default; turning it off is recorded as a weakening.
+   */
+  passwordChanged: z.boolean().default(true),
+  /**
+   * Email the account's address when it is signed in to from a device family none of its other
+   * sessions has (ADR 0023). On by default; turning it off is recorded as a weakening.
+   */
+  newSignIn: z.boolean().default(true),
+})
+
 const password = PasswordPolicySchema.default(PASSWORD_POLICY_PRESETS.recommended)
 const version = z.literal(1).default(1)
 
@@ -181,6 +194,8 @@ const minLengthFloor = {
  *   least one must stay enabled.
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
  * - `audit.retentionDays`: how long audit entries are kept.
+ * - `notifications`: which security notices are emailed to an account's owner
+ *   (`passwordChanged`, `newSignIn`). Both are on unless switched off.
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({
@@ -190,6 +205,7 @@ export const EnvironmentSettingsSchema = z
     signIn: SignIn,
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
+    notifications: Notifications.strict().prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
@@ -229,6 +245,7 @@ export const EnvironmentSettingsInputSchema = z
       })
       .prefault({}),
     audit: Audit.strict().prefault({}),
+    notifications: Notifications.strict().prefault({}),
   })
   .refine(
     (settings) =>
@@ -259,6 +276,7 @@ const Stored = z.object({
     .prefault({}),
   urls: Urls.prefault({}),
   audit: Audit.prefault({}),
+  notifications: Notifications.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */
@@ -370,7 +388,8 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
  * - `signIn.methods` lists the enabled methods by name. It is an array of plain strings, not an
  *   enum, so a client built against this version keeps working when a server offers a method it
  *   does not know; it should ignore those.
- * - The allow-lists (`urls`) and the audit settings are deliberately absent.
+ * - The allow-lists (`urls`), the audit settings and the notice switches (`notifications`) are
+ *   deliberately absent.
  */
 export const ClientConfigSchema = z
   .object({

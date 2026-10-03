@@ -35,7 +35,12 @@ export async function latestCode(
           `${API_URL}/__test/outbox?to=${encodeURIComponent(email)}`
         )
         const { data } = (await response.json()) as { data: { subject: string }[] }
-        code = data.length > after ? /^(\d{6})\b/.exec(data.at(-1)?.subject ?? '')?.[1] : undefined
+        // The newest email with a code: a security notice ("your password was changed") can
+        // arrive after it, and has none.
+        code = data
+          .slice(after)
+          .map(({ subject }) => /^(\d{6})\b/.exec(subject)?.[1])
+          .findLast((found) => found !== undefined)
         return code
       },
       { message: `an email with a code for ${email}` }

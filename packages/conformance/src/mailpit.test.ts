@@ -26,8 +26,22 @@ describe('mailpitCodes', () => {
     ])
     expect(await emailCode('maya+test@example.com')).toBe('482913')
     expect(urls).toEqual([
-      'http://mailpit.test/api/v1/search?query=to%3A%22maya%2Btest%40example.com%22&limit=1',
+      'http://mailpit.test/api/v1/search?query=to%3A%22maya%2Btest%40example.com%22&limit=10',
     ])
+  })
+
+  test('a notice that arrived after the code does not hide it', async () => {
+    const { emailCode } = fakeMailpit([
+      {
+        messages: [
+          { Subject: 'New sign-in to your Acme account' },
+          { Subject: 'Your Acme password was changed' },
+          { Subject: '482913 is your Acme password reset code' },
+          { Subject: '111111 is your Acme verification code' },
+        ],
+      },
+    ])
+    expect(await emailCode('maya@example.com')).toBe('482913')
   })
 
   test('waits for a message that has not arrived yet', async () => {

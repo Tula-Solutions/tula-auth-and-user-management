@@ -21,6 +21,8 @@ import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } f
 
 const PUBLISHABLE_KEY = 'tula_pk_dev_sdkjourneys000000000000000000000'
 const SECRET_KEY = 'tula_sk_dev_sdkjourneys000000000000000000000'
+/** A subject that leads with a 6-digit code, as every code email's does. */
+const CODE_SUBJECT = /^(\d{6})\b/
 const PASSWORD = 'sturdy-Otter-plays-42-chess'
 const NEW_PASSWORD = 'quiet-Heron-wades-17-rivers'
 /** An origin the `local` tier allows (any loopback origin). */
@@ -172,8 +174,11 @@ async function server(): Promise<Server> {
       return { tula, states, cookies }
     },
     code(email) {
-      const message = deps.mailer.outbox.findLast((sent) => sent.to === email)
-      const code = /^(\d{6})\b/.exec(message?.subject ?? '')?.[1]
+      // The newest email that carries a code: a security notice (ADR 0023) can follow it.
+      const message = deps.mailer.outbox.findLast(
+        (sent) => sent.to === email && CODE_SUBJECT.test(sent.subject)
+      )
+      const code = CODE_SUBJECT.exec(message?.subject ?? '')?.[1]
       if (!code) {
         throw new Error(`no email with a code was sent to ${email}`)
       }

@@ -18,6 +18,7 @@ import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
+import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
@@ -296,7 +297,11 @@ export async function remove(
   }
 }
 
-type PasswordDeps = RevocationDeps & Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker'>
+type PasswordDeps = RevocationDeps &
+  Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter'>
+
+/** How a password notice names each way a password is stored. */
+const CHANGED_BY = { admin_reset: 'admin', self: 'self', reset: 'reset' } as const
 
 /**
  * Check, hash and store a user's password: a replacement, or their first one.
@@ -304,6 +309,12 @@ type PasswordDeps = RevocationDeps & Pick<Deps, 'config' | 'environmentSettings'
  * A user with no password credential gets one created (the store reports which happened and
  * marks the audit entry `created: true`), so an admin "set password" and a password reset both
  * work for someone who signed up another way.
+ *
+ * Once the password is stored the account's owner is told by email (`Notices.passwordChanged`,
+ * ADR 0023). That happens here, straight after the store and before anything else the caller
+ * still does, so no path stores a password without it and a later failure (ending the other
+ * sessions, clearing the lockout) cannot leave a changed password unannounced. The notice is
+ * sent in the background and cannot fail or delay the change.
  */
 async function replacePassword(
   deps: PasswordDeps,
@@ -322,11 +333,12 @@ async function replacePassword(
   // Hash first: a failure here must leave whatever `beforeStore` spends untouched.
   const passwordHash = await Passwords.hash(password)
   await beforeStore?.()
+  const now = deps.clock.now()
   const outcome = await deps.users.setPasswordHash(
     scope.environmentId,
     user.id,
     passwordHash,
-    deps.clock.now(),
+    now,
     Audit.entry(deps, scope, {
       type: 'user.password_changed',
       actor,
@@ -339,6 +351,11 @@ async function replacePassword(
     // that was not stored.
     throw new NotFoundError()
   }
+  Notices.passwordChanged(deps, scope, user, {
+    by: CHANGED_BY[method],
+    added: outcome === 'created',
+    at: now,
+  })
 }
 
 /**
@@ -347,8 +364,10 @@ async function replacePassword(
  *
  * Every session of the user ends: whoever knew the old password is signed out everywhere. The
  * sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
+ * The user is emailed that an administrator set their password (ADR 0023).
  *
- * @param deps - Users, password policy, sessions, denylist, lockout, ids and clock.
+ * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
+ *   clock.
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param password - The new password; must meet the policy.
@@ -383,9 +402,10 @@ export async function setPassword(
  * first sweep or the store fails, the account is never left with a new password and the old
  * sessions still alive, which is the one state a reset exists to prevent; the second sweep
  * catches a sign-in with the old password that landed in between. Clearing the lockout
- * afterwards is best-effort.
+ * afterwards is best-effort. The user is emailed that their password was reset (ADR 0023).
  *
- * @param deps - Users, password policy, sessions, denylist, lockout, ids and clock.
+ * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
+ *   clock.
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param password - The new password; must meet the policy.
@@ -427,7 +447,8 @@ export async function resetPassword(
  * The current password must be given, so a stolen access token alone cannot take the account
  * over; wrong guesses back off exponentially per user (`CREDENTIAL_LOCKOUT`), and a correct one
  * clears them. On success every *other* session ends and the
- * device making the change stays signed in.
+ * device making the change stays signed in. The user is emailed that their password was changed
+ * (ADR 0023).
  *
  * An account with no password (it signs in another way) answers `password.not_set`: there is no
  * current password to prove, and a first password is **not** set through this route, because an
@@ -437,7 +458,8 @@ export async function resetPassword(
  * nobody anything about anyone else; it is given before the lockout is counted, since nothing
  * was guessed.
  *
- * @param deps - Users, password policy, sessions, denylist, lockout, ids and clock.
+ * @param deps - Users, password policy, sessions, denylist, lockout, mailer, limiter, ids and
+ *   clock.
  * @param scope - The project and environment.
  * @param self - The signed-in user and their current session.
  * @param input - Current and new password.

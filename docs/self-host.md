@@ -124,6 +124,8 @@ API key belongs to) has a settings document, read and replaced with its secret k
 | `urls.allowedOrigins` | Browser origins that may call the client API: exact origins such as `https://app.example.com`, no paths or wildcards, `http` only for localhost. |
 | `urls.allowedRedirectUrls` | URLs a flow may send users back to. Stored for the sign-in methods that redirect; nothing uses it yet. |
 | `audit.retentionDays` | How long audit entries are kept (`null`: for ever). Stored; nothing is deleted yet. |
+| `notifications.passwordChanged` | Email a user when their password is changed, reset, set by an administrator or added. On by default. |
+| `notifications.newSignIn` | Email a user when their account is signed in to from a browser and operating system (or a native app) none of their other sessions has. On by default. |
 
 Read the document; the `ETag` is its revision:
 
@@ -163,7 +165,18 @@ curl -s -X PUT http://localhost:3003/v1/admin/settings \
 Without `If-Match` the answer is 428 (`precondition.required`); with a revision that is no
 longer current, 412 (`precondition.failed`): read again and retry. Each change is in the audit
 log as `environment.settings_updated`, listing the keys that changed and never their values,
-with `"weakened": true` when the change made the password policy weaker.
+with `"weakened": true` when the change made the password policy weaker or switched a security
+notice off.
+
+**Security notices.** The two `notifications` switches control the emails that let a user
+notice a takeover ([ADR 0023](adr/0023-security-notices.md)). They are sent after the change,
+in the background: a mail relay that is slow or down never fails or delays a sign-in or a
+password change, it only costs the notice, and the API logs `security notice not sent` with the
+error's name and SMTP status (never the address). A user is sent at most three of each kind an
+hour. The notices contain no link and no code. "A new device" is judged from the browser and
+operating system in the `User-Agent` header, so it is a hint to the user, not a guarantee: it
+does not replace the audit log. To turn one off, send it in the settings document:
+`"notifications": { "newSignIn": false }` (the other keeps its default).
 
 An environment that has never saved settings is at revision 0 and uses the defaults, including
 `PASSWORD_POLICY` and `CORS_ORIGINS` from the table above. Once it saves a document, those two

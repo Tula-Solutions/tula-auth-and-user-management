@@ -10,11 +10,21 @@ import {
 const acme: EmailBrand = { name: 'Acme', supportEmail: 'help@acme.test' }
 const code: EmailMessage = { type: 'email_verification', code: '482913', ttlMinutes: 10 }
 
+const at = new Date('2026-10-03T14:05:59.000Z')
+const signIn: EmailMessage = {
+  type: 'new_sign_in',
+  device: 'Chrome on Windows',
+  at,
+  ipAddress: '203.0.113.7',
+}
+
 const MESSAGES: EmailMessage[] = [
   code,
   { type: 'password_reset', code: '482913', ttlMinutes: 10 },
   { type: 'account_exists' },
   { type: 'no_account' },
+  signIn,
+  { type: 'password_changed', by: 'self', added: false, at },
 ]
 
 describe('render', () => {
@@ -52,6 +62,113 @@ describe('render', () => {
     expect(`${email.subject} ${email.text} ${email.html}`).not.toMatch(/\d{6}/)
     expect(email.html).not.toContain('<a ')
     expect(email.text).not.toContain('http')
+  })
+
+  test.each<['self' | 'reset' | 'admin', boolean, string, string]>([
+    [
+      'self',
+      false,
+      'Your Acme password was changed',
+      'was changed by someone signed in to it. Every other device was signed out.',
+    ],
+    [
+      'reset',
+      false,
+      'Your Acme password was changed',
+      'was reset, using a code sent to this email address. Every device that was signed in has been signed out.',
+    ],
+    [
+      'admin',
+      false,
+      'Your Acme password was changed',
+      'An administrator of Acme set a new password for your account.',
+    ],
+    [
+      'reset',
+      true,
+      'A password was added to your Acme account',
+      'A password was added to your Acme account, using a code sent to this email address.',
+    ],
+    [
+      'admin',
+      true,
+      'A password was added to your Acme account',
+      'An administrator of Acme added a password to your account.',
+    ],
+    [
+      'self',
+      true,
+      'A password was added to your Acme account',
+      'A password was added to your Acme account by someone signed in to it.',
+    ],
+  ])(
+    'a password notice (%s, added: %p) says who did it and what to do',
+    (by, added, subject, says) => {
+      const email = render(acme, { type: 'password_changed', by, added, at })
+      expect(email.subject).toBe(subject)
+      for (const part of [email.text, email.html]) {
+        expect(part).toContain(says)
+        expect(part).toContain('When: 2026-10-03 14:05 UTC')
+        expect(part).toContain(
+          'open Acme and reset your password from the sign-in screen right away'
+        )
+        expect(part).toContain('If you cannot get back in to your account, contact help@acme.test.')
+      }
+    }
+  )
+
+  test('a new sign-in notice gives the device, the time in UTC and the address', () => {
+    const email = render(acme, signIn)
+    expect(email.subject).toBe('New sign-in to your Acme account')
+    expect(email.text).toContain(
+      '\n\nDevice: Chrome on Windows\nWhen: 2026-10-03 14:05 UTC\nIP address: 203.0.113.7\n\n'
+    )
+    expect(email.html).toContain(
+      '<p>Device: Chrome on Windows<br>When: 2026-10-03 14:05 UTC<br>IP address: 203.0.113.7</p>'
+    )
+    expect(email.text).toContain("If it wasn't you, open Acme and reset your password")
+  })
+
+  test('a new sign-in notice leaves the address out when there is none', () => {
+    const email = render(acme, { ...signIn, ipAddress: null })
+    expect(email.text).toContain('Device: Chrome on Windows\nWhen: 2026-10-03 14:05 UTC\n\n')
+    expect(`${email.text}${email.html}`).not.toContain('IP address')
+  })
+
+  test.each<[string, EmailMessage]>([
+    ['new_sign_in', signIn],
+    ['password_changed', { type: 'password_changed', by: 'reset', added: false, at }],
+  ])(
+    '%s carries no code, no link and no token, and its subject does not lead with digits',
+    (_, message) => {
+      for (const brand of [acme, { name: '482913', supportEmail: null }]) {
+        const email = render(brand, message)
+        expect(email.subject).not.toMatch(/^\d/)
+        expect(email.html).not.toContain('<a ')
+        expect(`${email.text}${email.html}`).not.toMatch(/https?:|tula_/)
+      }
+      const email = render(acme, message)
+      expect(`${email.subject} ${email.text}`).not.toMatch(/\b\d{6}\b/)
+      // Without a support address nothing says to write to one.
+      expect(render({ name: 'Acme', supportEmail: null }, message).text).not.toContain('contact')
+    }
+  )
+
+  test('what a notice shows is escaped in the HTML, whatever it is', () => {
+    const hostile = '<img src=x onerror=alert(1)>'
+    const { html, text } = render({ name: hostile, supportEmail: null }, {
+      ...signIn,
+      device: hostile,
+      ipAddress: hostile,
+    } as EmailMessage)
+    expect(html).not.toContain('<img')
+    expect(html).toContain('Device: &lt;img src=x onerror=alert(1)&gt;<br>')
+    expect(text).toContain(`Device: ${hostile}`)
+  })
+
+  test('a support address that contains {app} is shown as written', () => {
+    const email = render({ name: 'Acme', supportEmail: '{app}@acme.test' }, signIn)
+    expect(email.text).toContain('contact {app}@acme.test.')
   })
 
   test('without a support address the footer is just the app name', () => {

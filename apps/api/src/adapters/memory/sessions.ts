@@ -1,6 +1,7 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { Activity } from '~/ports/activity-log'
 import {
+  beganBefore,
   endedBy,
   isActive,
   type NewRefreshToken,
@@ -8,6 +9,7 @@ import {
   type RefreshTokenRecord,
   type RevokeByUserOptions,
   type Rotation,
+  type SessionDevice,
   type SessionRecord,
   type SessionRevokeReason,
   type SessionStore,
@@ -95,6 +97,31 @@ export class MemorySessionStore implements SessionStore {
           (y.id > x.id ? 1 : y.id < x.id ? -1 : 0)
       )
       .map((session) => ({ ...session }))
+  }
+
+  /** @inheritdoc */
+  async listDevicesBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    limit: number
+  ): Promise<SessionDevice[]> {
+    const devices = new Map<string, SessionDevice>()
+    const earlier = [...this.#sessions.values()]
+      .filter(
+        (candidate) =>
+          candidate.environmentId === environmentId &&
+          candidate.userId === userId &&
+          beganBefore(candidate, session)
+      )
+      .sort((x, y) => (beganBefore(x, y) ? 1 : -1))
+    for (const { client, userAgent } of earlier) {
+      const key = JSON.stringify([client, userAgent])
+      if (!devices.has(key)) {
+        devices.set(key, { client, userAgent })
+      }
+    }
+    return [...devices.values()].slice(0, limit)
   }
 
   /** @inheritdoc */

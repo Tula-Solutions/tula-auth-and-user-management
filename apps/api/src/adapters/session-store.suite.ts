@@ -225,6 +225,52 @@ export function describeSessionStore(
       ).toHaveLength(4)
     })
 
+    test('lists the devices of a user’s earlier sessions, ended ones included, each once', async () => {
+      const userId = await ctx.a.user()
+      const first = await seed(ctx.a, { userId, userAgent: 'first', createdAt: later(1_000) })
+      await ctx.store.revoke(ctx.a.environmentId, first.session.id, 'sign_out', later(1_500))
+      await seed(ctx.a, { userId, userAgent: 'second', createdAt: later(2_000), client: 'ios' })
+      await seed(ctx.a, { userId, userAgent: 'first', createdAt: later(3_000) })
+      await seed(ctx.a, { userId, userAgent: null, createdAt: later(4_000), idleExpiresAt: now })
+      const newest = await seed(ctx.a, { userId, userAgent: 'newest', createdAt: later(5_000) })
+      await seed(ctx.a, { userId, userAgent: 'later', createdAt: later(6_000) })
+      await seed(ctx.a, { userAgent: 'someone else', createdAt: later(1_000) })
+
+      const devices = await ctx.store.listDevicesBefore(
+        ctx.a.environmentId,
+        userId,
+        newest.session,
+        10
+      )
+      expect(devices).toEqual([
+        { client: 'web', userAgent: null },
+        { client: 'web', userAgent: 'first' },
+        { client: 'ios', userAgent: 'second' },
+      ])
+      expect(
+        await ctx.store.listDevicesBefore(ctx.a.environmentId, userId, newest.session, 2)
+      ).toEqual(devices.slice(0, 2))
+      expect(
+        await ctx.store.listDevicesBefore(ctx.a.environmentId, userId, first.session, 10)
+      ).toEqual([])
+    })
+
+    test('of two sessions created in the same instant, only the later one sees the other', async () => {
+      const userId = await ctx.a.user()
+      const [low, high] = [
+        '00000000-0000-7000-8000-000000000001',
+        '00000000-0000-7000-8000-000000000002',
+      ]
+      const x = await seed(ctx.a, { userId, id: low, userAgent: 'x' })
+      const y = await seed(ctx.a, { userId, id: high, userAgent: 'y' })
+      expect(await ctx.store.listDevicesBefore(ctx.a.environmentId, userId, x.session, 10)).toEqual(
+        []
+      )
+      expect(await ctx.store.listDevicesBefore(ctx.a.environmentId, userId, y.session, 10)).toEqual(
+        [{ client: 'web', userAgent: 'x' }]
+      )
+    })
+
     test('revokes all of a user’s sessions except one', async () => {
       const userId = await ctx.a.user()
       const keep = await seed(ctx.a, { userId })
@@ -320,6 +366,14 @@ export function describeSessionStore(
       expect(await ctx.store.findToken(foreign, root.tokenHash)).toBeNull()
       expect(await ctx.store.findTokenById(foreign, root.id)).toBeNull()
       expect(await ctx.store.listActiveByUser(foreign, userId, later(1))).toEqual([])
+      expect(
+        await ctx.store.listDevicesBefore(
+          foreign,
+          userId,
+          { id: 'ffffffff-ffff-7fff-8fff-ffffffffffff', createdAt: later(DAY) },
+          10
+        )
+      ).toEqual([])
       expect(await ctx.store.revoke(foreign, s.id, 'sign_out', later(1))).toBe(false)
       expect(await ctx.store.revokeByUser(foreign, userId, 'sign_out', later(1))).toEqual([])
       expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.revokedAt).toBeNull()

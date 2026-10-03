@@ -4,6 +4,7 @@ import { createApp, MAX_BODY_BYTES } from '~/index'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import * as Jwks from '~/modules/jwks/service'
+import * as Notices from '~/modules/notice/service'
 import * as Retention from '~/modules/retention/service'
 
 const env = loadEnv()
@@ -57,6 +58,8 @@ async function shutdown(signal: string) {
   try {
     // Stop accepting connections and let in-flight requests finish before closing the pool.
     await server.stop()
+    // Security notices are sent after the response; let the ones under way reach the relay.
+    await Notices.settled()
     await container.close()
     process.exit(0)
   } catch (error) {

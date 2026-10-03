@@ -247,8 +247,16 @@ The changes every new method needs, made once.
   app against the real API in process on memory adapters (`e2e/server.ts`), including axe on
   every screen in light and dark; the components were also walked through by hand against the
   packaged Compose stack. `@tula/core`'s cross-tab lock wait now covers a refresh that is
-  tried twice (review finding F7). **Not in this step:** the security notice emails
-  (password changed, reset completed, new device), which follow as their own change.
+  tried twice (review finding F7). The security notice emails followed as their own change
+  ([ADR 0023](../adr/0023-security-notices.md)): "your password was changed" (by the user, by
+  a completed reset or by an administrator; "a password was added" for a first one) and "new
+  sign-in" for a device family (browser and operating system, or native platform) none of the
+  user's earlier sessions has. They are sent in the background after the change, at most three
+  of each kind per user per hour, never failing or delaying the action, with no link or code in
+  them, and each has a per-environment switch (`notifications`, on by default; switching one
+  off is audited as a weakening). "A reset was requested" got no new email: the code email is
+  it. `useSession` now reports `isLoading` correctly under React's StrictMode (review finding
+  F6).
 
 ---
 

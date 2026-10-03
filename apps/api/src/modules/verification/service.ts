@@ -3,6 +3,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InternalError, RateLimitError } from '~/exceptions'
 import { randomDigits, randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail } from '~/lib/email'
+import { describeMailFailure } from '~/lib/safe-error'
 import {
   subjectOf,
   type VerificationPurpose,
@@ -89,22 +90,6 @@ async function enforceSendLimits(
       throw new RateLimitError(decision.retryAfterMs)
     }
   }
-}
-
-/**
- * Summarize a relay failure for logs without its message, which routinely quotes the recipient
- * (`550 <user@example.com>: rejected`). Error name, Node/nodemailer code and SMTP status are
- * enough to diagnose and contain no personal data.
- */
-function describeMailFailure(error: unknown): string {
-  const { name, code, responseCode } = (error ?? {}) as {
-    name?: unknown
-    code?: unknown
-    responseCode?: unknown
-  }
-  return [name, code, responseCode]
-    .filter((part) => typeof part === 'string' || typeof part === 'number')
-    .join(' ')
 }
 
 /**

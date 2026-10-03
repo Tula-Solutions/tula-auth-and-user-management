@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { DrizzleQueryError } from 'drizzle-orm/errors'
-import { describeError, errorReason } from '~/lib/safe-error'
+import { describeError, describeMailFailure, errorReason } from '~/lib/safe-error'
 
 const EMAIL = 'maya@northline.app'
 const HASH = '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA'
@@ -102,5 +102,26 @@ describe('errorReason', () => {
     expect(errorReason(new DrizzleQueryError('select $1', [EMAIL]))).toBe('database error')
     expect(errorReason(new Error('socket hang up'))).toBe('socket hang up')
     expect(errorReason('offline')).toBe('offline')
+  })
+})
+
+describe('describeMailFailure', () => {
+  test('keeps the name, the code and the SMTP status, never the message', () => {
+    const rejected = Object.assign(new Error(`550 <${EMAIL}>: recipient rejected`), {
+      code: 'EENVELOPE',
+      responseCode: 550,
+      response: `550 <${EMAIL}>`,
+    })
+    expect(describeMailFailure(rejected)).toBe('Error EENVELOPE 550')
+    expect(describeMailFailure(new TypeError(EMAIL))).toBe('TypeError')
+  })
+
+  test.each<[string, unknown]>([
+    ['nothing', undefined],
+    ['null', null],
+    ['a string', EMAIL],
+    ['an object with other fields', { message: EMAIL, name: { nested: EMAIL } }],
+  ])('%s yields no text at all', (_, thrown) => {
+    expect(describeMailFailure(thrown)).toBe('')
   })
 })

@@ -22,6 +22,7 @@ import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
+import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
@@ -309,6 +310,12 @@ async function load(
  *
  * The attempt is moved to `complete` first, as a compare-and-set, so of two racing requests
  * only one creates a session. Pending sign-up data (the password hash) is dropped from it.
+ *
+ * The only place a flow creates a session, and so the only place the "new sign-in" notice is
+ * started (ADR 0023): after `Sessions.create` has returned, so a request that lost the race,
+ * stopped at a second factor or failed before this point created no session and sends nothing.
+ * Only a sign-in is announced. A sign-up's session belongs to someone who has just verified the
+ * address, and a password reset is announced by the password notice.
  */
 async function finish(
   deps: Deps,
@@ -335,6 +342,10 @@ async function finish(
     userAgent: context.userAgent,
     ipAddress: context.ipAddress,
   })
+  if (attempt.kind === 'sign_in') {
+    // Not awaited and cannot throw: the notice must neither delay nor fail the sign-in.
+    Notices.newSignIn(deps, tenant, { userId, sessionId: tokens.sessionId })
+  }
   try {
     await deps.users.recordSignIn(tenant.environmentId, userId, now)
   } catch (error) {
