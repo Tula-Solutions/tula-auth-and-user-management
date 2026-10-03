@@ -2,7 +2,22 @@ import { EnvironmentSettingsSchema } from '@tula/contract'
 import { z } from 'zod'
 
 /** The document and the client view are owned by the contract, so SDKs and the CLI share them. */
-export { ClientConfigSchema, EnvironmentSettingsSchema } from '@tula/contract'
+export {
+  ClientConfigSchema,
+  EnvironmentSettingsInputSchema,
+  EnvironmentSettingsSchema,
+} from '@tula/contract'
+
+// The document as it is in effect. The two lists are plain strings here: at revision 0
+// `urls.allowedOrigins` is the deployment's `CORS_ORIGINS` as written, which is not validated
+// at boot and can hold an entry a `PUT` would refuse. Showing it is the point (it is what the
+// environment allows), so answering must not depend on it being storable.
+const ReturnedSettings = EnvironmentSettingsSchema.safeExtend({
+  urls: z.strictObject({
+    allowedOrigins: z.array(z.string()),
+    allowedRedirectUrls: z.array(z.string()),
+  }),
+})
 
 /**
  * An environment's settings as the admin API returns them.
@@ -14,7 +29,7 @@ export { ClientConfigSchema, EnvironmentSettingsSchema } from '@tula/contract'
 export const EnvironmentSettingsStateSchema = z
   .object({
     revision: z.number().int().min(0),
-    settings: EnvironmentSettingsSchema,
+    settings: ReturnedSettings,
   })
   .meta({ ref: 'EnvironmentSettingsState' })
 

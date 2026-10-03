@@ -161,8 +161,12 @@ redirect URLs, audit retention. **Read it through `~/modules/settings/service`**
   the attempt is loaded and before anything is counted, spent or sent: an attempt started
   before a method was switched off must not finish with it.
 - A `PUT` that leaves out `password` or `urls.allowedOrigins` stores the deployment's
-  `PASSWORD_POLICY` / `CORS_ORIGINS` for them (`Settings.withDeploymentDefaults`), not the
-  schema defaults. `password.minLength` has a floor of 8 on input, and the audit entry carries
+  `PASSWORD_POLICY` / `CORS_ORIGINS` for them, not the schema defaults. The body is validated
+  as `EnvironmentSettingsInput` (those two stay absent when left out) and only
+  `Settings.withDeploymentDefaults` turns it into a storable document, validating the result
+  strictly again: nothing reaches the store that `EnvironmentSettingsSchema` refuses. Reading
+  is defensive too (`readStoredEnvironmentSettings` drops list entries it would not accept),
+  because settings are read on the request path. `password.minLength` has a floor of 8 on input, and the audit entry carries
   `weakened: true` when `Settings.weakened` says the password policy got weaker.
 - CORS is decided per request in `~/middleware/cors`: a preflight passes when any environment
   allows the origin, the response is readable only when the key's environment does.

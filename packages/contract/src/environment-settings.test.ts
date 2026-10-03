@@ -3,6 +3,7 @@ import {
   ClientConfigSchema,
   DEFAULT_APP_NAME,
   DEFAULT_ENVIRONMENT_SETTINGS,
+  EnvironmentSettingsInputSchema,
   EnvironmentSettingsSchema,
   MAX_ALLOWED_ORIGINS,
   MAX_ALLOWED_REDIRECT_URLS,
@@ -10,6 +11,7 @@ import {
   MIN_PASSWORD_MIN_LENGTH,
   parseStoredEnvironmentSettings,
   RedirectUrlSchema,
+  readStoredEnvironmentSettings,
   WebOriginSchema,
 } from './environment-settings'
 import { PASSWORD_POLICY_PRESETS } from './password-policy'
@@ -229,5 +231,94 @@ describe('the minimum password length has a floor', () => {
 
   test('a document already stored below the floor still reads', () => {
     expect(parseStoredEnvironmentSettings(withMin(6)).password.minLength).toBe(6)
+  })
+})
+
+describe('reading a stored document never fails over a list entry', () => {
+  test('an invalid origin or redirect URL is dropped, and counted', () => {
+    const read = readStoredEnvironmentSettings({
+      app: { name: 'Acme' },
+      urls: {
+        allowedOrigins: ['https://app.acme.test', 'http://app.lan', 7, 'https://app.acme.test'],
+        allowedRedirectUrls: ['https://app.acme.test/cb', 'javascript:alert(1)', null],
+      },
+    })
+    expect(read.settings.urls).toEqual({
+      allowedOrigins: ['https://app.acme.test'],
+      allowedRedirectUrls: ['https://app.acme.test/cb'],
+    })
+    expect(read.settings.app.name).toBe('Acme')
+    // Two bad origins, one duplicate, two bad URLs.
+    expect(read.dropped).toBe(5)
+    expect(
+      parseStoredEnvironmentSettings({ urls: { allowedOrigins: ['http://app.lan'] } }).urls
+        .allowedOrigins
+    ).toEqual([])
+  })
+
+  test('something that is not a document at all is still an error', () => {
+    expect(() => readStoredEnvironmentSettings(null)).toThrow()
+    expect(() => readStoredEnvironmentSettings('settings')).toThrow()
+  })
+
+  test('a list longer than the limit is cut to it', () => {
+    const origins = Array.from({ length: MAX_ALLOWED_ORIGINS + 3 }, (_, i) => `https://a${i}.test`)
+    const read = readStoredEnvironmentSettings({ urls: { allowedOrigins: origins } })
+    expect(read.settings.urls.allowedOrigins).toEqual(origins.slice(0, MAX_ALLOWED_ORIGINS))
+    expect(read.dropped).toBe(3)
+  })
+
+  test('a list that is not a list reads as empty; a clean document drops nothing', () => {
+    expect(readStoredEnvironmentSettings({ urls: { allowedOrigins: 'https://a.test' } })).toEqual({
+      settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      dropped: 1,
+    })
+    expect(readStoredEnvironmentSettings({ urls: null }).dropped).toBe(0)
+    expect(readStoredEnvironmentSettings(DEFAULT_ENVIRONMENT_SETTINGS)).toEqual({
+      settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      dropped: 0,
+    })
+  })
+})
+
+describe('EnvironmentSettingsInputSchema', () => {
+  test('keeps apart what was left out and what was sent', () => {
+    expect(EnvironmentSettingsInputSchema.parse({})).toEqual({
+      version: 1,
+      app: { name: DEFAULT_APP_NAME, supportEmail: null },
+      signIn: { methods: { password: { enabled: true } } },
+      urls: { allowedRedirectUrls: [] },
+      audit: { retentionDays: null },
+    })
+    const sent = EnvironmentSettingsInputSchema.parse({
+      password: PASSWORD_POLICY_PRESETS.strict,
+      urls: { allowedOrigins: [] },
+    })
+    expect(sent.password).toEqual(PASSWORD_POLICY_PRESETS.strict)
+    expect(sent.urls.allowedOrigins).toEqual([])
+  })
+
+  test('refuses what the document refuses', () => {
+    const paths = (input: unknown) => {
+      const result = EnvironmentSettingsInputSchema.safeParse(input)
+      return result.success ? [] : result.error.issues.map((issue) => issue.path.join('.'))
+    }
+    expect(paths({ pasword: {} })).toEqual([''])
+    expect(paths({ urls: { origins: [] } })).toEqual(['urls'])
+    expect(paths({ urls: { allowedOrigins: ['http://app.lan'] } })).toEqual([
+      'urls.allowedOrigins.0',
+    ])
+    expect(paths({ password: { ...PASSWORD_POLICY_PRESETS.recommended, minLength: 7 } })).toEqual([
+      'password.minLength',
+    ])
+    expect(paths({ signIn: { methods: { password: { enabled: false } } } })).toEqual([
+      'signIn.methods',
+    ])
+  })
+
+  test('every whole document is a valid input', () => {
+    expect(EnvironmentSettingsInputSchema.parse(DEFAULT_ENVIRONMENT_SETTINGS)).toEqual(
+      DEFAULT_ENVIRONMENT_SETTINGS
+    )
   })
 })

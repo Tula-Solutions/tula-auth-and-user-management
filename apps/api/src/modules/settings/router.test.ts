@@ -490,3 +490,72 @@ describe('the password policy has a floor', () => {
     }
   })
 })
+
+describe('deployment defaults the settings cannot store', () => {
+  const LAN = 'http://app.lan'
+
+  beforeEach(() => build({ ...TEST_CONFIG, tier: 'prod', corsOrigins: [LAN] }))
+
+  test.each<[string, unknown]>([
+    ['an empty document', {}],
+    ['a document that leaves the origins out', { app: { name: 'Acme' } }],
+  ])(
+    '%s is refused with a field error on urls.allowedOrigins, and nothing is written',
+    async (_, body) => {
+      const res = await put(body, '"0"')
+      expect(res.status).toBe(422)
+      const text = await res.text()
+      const failure = JSON.parse(text) as Failure & { errors: { field: string; message: string }[] }
+      expect(failure.code).toBe('validation.failed')
+      expect(failure.errors).toEqual([
+        {
+          field: 'urls.allowedOrigins',
+          code: 'validation.failed',
+          message:
+            'The deployment’s default origins (CORS_ORIGINS) include an entry settings cannot store. Send urls.allowedOrigins explicitly.',
+        },
+      ])
+      // The offending value is the operator's own configuration, but an error never echoes input.
+      expect(text).not.toContain('app.lan')
+      expect(await deps.environmentSettings.get(TEST_TENANT.environmentId)).toBeNull()
+      expect(deps.activityLog.entries).toEqual([])
+
+      // The environment still reads, at the same revision, with its defaults.
+      const after = await read()
+      expect(after.status).toBe(200)
+      expect(after.headers.get('etag')).toBe('"0"')
+      expect(((await after.json()) as State).settings.urls.allowedOrigins).toEqual([LAN])
+      expect((await config()).status).toBe(200)
+      // And the default origin keeps working for browsers.
+      expect((await config(PK, { origin: LAN })).headers.get('access-control-allow-origin')).toBe(
+        LAN
+      )
+    }
+  )
+
+  test('sending the list explicitly is the way out', async () => {
+    const res = await put({ urls: { allowedOrigins: ['https://app.acme.test'] } }, '"0"')
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as State).settings.urls.allowedOrigins).toEqual([
+      'https://app.acme.test',
+    ])
+  })
+
+  test('a deployment default policy the settings cannot store is refused the same way', async () => {
+    await build({
+      ...TEST_CONFIG,
+      passwordPolicy: { ...PASSWORD_POLICY_PRESETS.recommended, preset: 'custom', minLength: 6 },
+    })
+    const res = await put({ app: { name: 'Acme' } }, '"0"')
+    expect(res.status).toBe(422)
+    expect(((await res.json()) as { errors: unknown }).errors).toEqual([
+      {
+        field: 'password',
+        code: 'validation.failed',
+        message:
+          'The deployment’s default password policy cannot be stored in settings. Send password explicitly.',
+      },
+    ])
+    expect(await deps.environmentSettings.get(TEST_TENANT.environmentId)).toBeNull()
+  })
+})

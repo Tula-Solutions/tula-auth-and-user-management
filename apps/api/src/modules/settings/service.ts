@@ -2,11 +2,13 @@ import {
   type ClientConfig,
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
+  type EnvironmentSettingsInput,
+  EnvironmentSettingsSchema,
   type PasswordPolicy,
   type SignInMethod,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
-import { AuthError, ServiceException } from '~/exceptions'
+import { AuthError, ServiceException, ValidationError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Audit from '~/modules/audit/service'
 import type { EnvironmentSettingsState } from '~/modules/settings/schema'
@@ -168,59 +170,79 @@ export function weakened(before: EnvironmentSettings, after: EnvironmentSettings
   )
 }
 
-function isSent(sent: unknown, section: string, field?: string): boolean {
-  const value = isRecord(sent) ? sent[section] : undefined
-  if (field === undefined) {
-    return value !== undefined
-  }
-  return isRecord(value) && value[field] !== undefined
-}
+/** What to tell an operator whose deployment default cannot be stored, by the field left out. */
+const UNSTORABLE_DEFAULTS = [
+  {
+    field: 'password',
+    message:
+      'The deployment’s default password policy cannot be stored in settings. Send password explicitly.',
+  },
+  {
+    field: 'urls.allowedOrigins',
+    message:
+      'The deployment’s default origins (CORS_ORIGINS) include an entry settings cannot store. Send urls.allowedOrigins explicitly.',
+  },
+] as const
 
 /**
- * Give the sections a request left out the deployment's defaults instead of the schema's.
+ * Turn the body of a replace into the whole document to store: the sections it left out take
+ * the deployment's defaults instead of the schema's, and the result is validated again.
  *
- * The one place this rule lives. Validation fills an omitted `password` with the `recommended`
- * preset and an omitted `urls.allowedOrigins` with an empty list; taken literally, `PUT {}`
- * would then weaken a deployment that runs `PASSWORD_POLICY=strict` and lock every browser app
- * of a deployment that lists its origins in `CORS_ORIGINS` out, cookie refresh included. So
- * those two take what {@link defaults} gives, on every replace, whatever was saved before.
- * Anything the request did send, an empty list included, is left as sent.
+ * The one place this rule lives. Left to the schema, an omitted `password` would be the
+ * `recommended` preset and an omitted `urls.allowedOrigins` an empty list: `PUT {}` would then
+ * weaken a deployment that runs `PASSWORD_POLICY=strict` and lock every browser app of a
+ * deployment that lists its origins in `CORS_ORIGINS` out, cookie refresh included. So those
+ * two take what {@link defaults} gives, on every replace, whatever was saved before. Anything
+ * the request did send, an empty list included, is left as sent.
+ *
+ * The deployment's values are not validated at boot, so `CORS_ORIGINS` can hold an entry a
+ * settings document must not (plain `http` for a non-local host). **Nothing reaches the store
+ * that the document's own schema refuses**: the completed document is validated strictly, and
+ * when a deployment default is what fails, the request is refused with a field error telling
+ * the operator to send that field explicitly. The error names the field and never the entry.
  *
  * @param config - The deployment's configuration.
- * @param sent - The request body as received, before validation filled anything in.
- * @param settings - The validated document.
- * @returns The document to store. `settings` itself is not changed.
+ * @param input - The validated request body.
+ * @returns The whole, valid document to store.
+ * @throws ValidationError (422) with an error on `password` or `urls.allowedOrigins` when the
+ *   deployment's default for a field that was left out cannot be stored.
  */
 export function withDeploymentDefaults(
   config: Pick<AppConfig, 'passwordPolicy' | 'corsOrigins'>,
-  sent: unknown,
-  settings: EnvironmentSettings
+  input: EnvironmentSettingsInput
 ): EnvironmentSettings {
   const fallback = defaults(config)
-  return {
-    ...settings,
-    password: isSent(sent, 'password') ? settings.password : fallback.password,
+  const completed = EnvironmentSettingsSchema.safeParse({
+    ...input,
+    password: input.password ?? fallback.password,
     urls: {
-      ...settings.urls,
-      allowedOrigins: isSent(sent, 'urls', 'allowedOrigins')
-        ? settings.urls.allowedOrigins
-        : fallback.urls.allowedOrigins,
+      ...input.urls,
+      allowedOrigins: input.urls.allowedOrigins ?? fallback.urls.allowedOrigins,
     },
+  })
+  if (completed.success) {
+    return completed.data
   }
+  // `input` was already valid, so what fails now is something this function filled in.
+  const failed = completed.error.issues.map((issue) => issue.path.join('.'))
+  throw new ValidationError({
+    errors: UNSTORABLE_DEFAULTS.filter(({ field }) =>
+      failed.some((path) => path === field || path.startsWith(`${field}.`))
+    ).map(({ field, message }) => ({ field, code: 'validation.failed', message })),
+    internalMessage: 'a deployment default (PASSWORD_POLICY or CORS_ORIGINS) is not storable',
+  })
 }
 
 /** A replace of an environment's settings. */
 export interface ReplaceInput {
   /** The revision the caller read, from `If-Match`. */
   expectedRevision: number
-  /** The new document, already validated. */
-  settings: EnvironmentSettings
   /**
-   * The request body as received. The sections it leaves out take the deployment's defaults
-   * (see {@link withDeploymentDefaults}). Leave it out when `settings` is a whole document
-   * that is to be stored exactly as given.
+   * The request body, validated. Its type keeps `password` and `urls.allowedOrigins` absent
+   * when they were left out, so they cannot be stored without {@link withDeploymentDefaults}
+   * deciding what they are.
    */
-  sent?: unknown
+  settings: EnvironmentSettingsInput
 }
 
 /**
@@ -236,6 +258,8 @@ export interface ReplaceInput {
  * @param input - The revision being replaced and the new document.
  * @param actor - Who is changing the settings, for the audit log.
  * @returns The settings now in force and their revision.
+ * @throws ValidationError (422) when a deployment default the request relied on cannot be
+ *   stored (see {@link withDeploymentDefaults}).
  * @throws ServiceException `precondition.failed` (412) when the settings are no longer at
  *   `expectedRevision`; `params.revision` is the current one.
  */
@@ -245,16 +269,15 @@ export async function replace(
   input: ReplaceInput,
   actor: Actor
 ): Promise<EnvironmentSettingsState> {
+  // Before anything else, so a document that cannot be stored is refused whatever the revision
+  // and even when it would change nothing.
+  const settings = withDeploymentDefaults(deps.config, input.settings)
   // Read past the cache: both the revision check and the list of changed keys must be made
   // against what is really stored, not against what this instance last saw.
   const before = await read(deps, tenant, true)
   if (before.revision !== input.expectedRevision) {
     throw new ServiceException('precondition.failed', { params: { revision: before.revision } })
   }
-  const settings =
-    input.sent === undefined
-      ? input.settings
-      : withDeploymentDefaults(deps.config, input.sent, input.settings)
   const changed = changedKeys(before.settings, settings)
   if (changed.length === 0) {
     return before

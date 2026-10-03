@@ -139,6 +139,17 @@ are your deployment's own: leave `password` out and it is `PASSWORD_POLICY`; lea
 `urls.allowedOrigins` out and it is `CORS_ORIGINS`. Send `"allowedOrigins": []` to allow no
 origin at all. `password.minLength` cannot be set below 8.
 
+If the answer is 422 with an error on `urls.allowedOrigins` saying the deployment's default
+origins include an entry settings cannot store, your `CORS_ORIGINS` holds something a settings
+document does not accept (usually a plain `http://` origin that is not localhost). Nothing was
+saved. Send the list yourself in the same request, `"urls": { "allowedOrigins": ["https://…"] }`,
+or correct `CORS_ORIGINS` and restart. Until an environment saves settings, `CORS_ORIGINS`
+keeps applying to it exactly as written.
+
+If the API logs `stored environment settings held list entries that are not valid; they were
+ignored`, a stored origin or redirect URL is one this version does not accept. The environment
+keeps working without those entries; read the settings and `PUT` them back to clean the row.
+
 ```bash
 curl -s -X PUT http://localhost:3003/v1/admin/settings \
   -H "Authorization: Bearer $TULA_SECRET_KEY" \

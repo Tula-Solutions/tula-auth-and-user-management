@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import { environmentSettings, withTenant } from '@tula/db'
 import {
@@ -11,6 +11,7 @@ import { sql } from 'drizzle-orm'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresEnvironmentSettingsStore } from '~/adapters/postgres/environment-settings'
+import * as logger from '~/lib/logger'
 import type { Activity } from '~/ports/activity-log'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
@@ -81,6 +82,34 @@ describe('PostgresEnvironmentSettingsStore', () => {
     expect(origins).toContain('https://odd-shape.test')
     expect(origins).not.toContain('https://not-a-list.test')
     expect(origins.every((origin) => typeof origin === 'string')).toBe(true)
+  })
+
+  test('a stored row holding an origin settings would refuse still reads, minus that entry', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    const tenant = await storeRaw({
+      app: { name: 'Acme' },
+      urls: { allowedOrigins: ['http://app.lan', 'https://app.acme.test'] },
+    })
+    const store = new PostgresEnvironmentSettingsStore(testDb.db)
+    expect(await store.get(tenant.environmentId)).toEqual({
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        app: { name: 'Acme', supportEmail: null },
+        urls: { allowedOrigins: ['https://app.acme.test'], allowedRedirectUrls: [] },
+      },
+    })
+    // Said once per read, with the environment and a count, never the entry itself.
+    expect(warn.mock.calls).toEqual([
+      [
+        'stored environment settings held list entries that are not valid; they were ignored',
+        { environmentId: tenant.environmentId, dropped: 1 },
+      ],
+    ])
+    // The union for preflights leaves the entry out as well.
+    expect(await store.allowedOrigins()).not.toContain('http://app.lan')
+    expect(await store.allowedOrigins()).toContain('https://app.acme.test')
+    warn.mockRestore()
   })
 
   test('reading the origins of every environment leaves no tenant scope behind', async () => {

@@ -1404,6 +1404,131 @@
           }
         }
       },
+      "EnvironmentSettingsState": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "settings": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "default": 1,
+                "type": "number",
+                "const": 1
+              },
+              "app": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "default": "Tula",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "supportEmail": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 254,
+                        "format": "email",
+                        "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "password": {
+                "$ref": "#/components/schemas/PasswordPolicy"
+              },
+              "signIn": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "methods": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "password": {
+                        "default": {},
+                        "type": "object",
+                        "properties": {
+                          "enabled": {
+                            "default": true,
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              "urls": {
+                "type": "object",
+                "properties": {
+                  "allowedOrigins": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "allowedRedirectUrls": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "allowedOrigins",
+                  "allowedRedirectUrls"
+                ],
+                "additionalProperties": false
+              },
+              "audit": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "retentionDays": {
+                    "default": null,
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3650
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "urls"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "revision",
+          "settings"
+        ]
+      },
       "WebOrigin": {
         "type": "string",
         "maxLength": 255
@@ -1412,7 +1537,7 @@
         "type": "string",
         "maxLength": 2048
       },
-      "EnvironmentSettings": {
+      "EnvironmentSettingsInput": {
         "type": "object",
         "properties": {
           "version": {
@@ -1480,7 +1605,6 @@
             "type": "object",
             "properties": {
               "allowedOrigins": {
-                "default": [],
                 "maxItems": 50,
                 "type": "array",
                 "items": {
@@ -1520,23 +1644,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "EnvironmentSettingsState": {
-        "type": "object",
-        "properties": {
-          "revision": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "settings": {
-            "$ref": "#/components/schemas/EnvironmentSettings"
-          }
-        },
-        "required": [
-          "revision",
-          "settings"
-        ]
       },
       "ClientConfig": {
         "type": "object",
@@ -5795,7 +5902,7 @@
           "Settings"
         ],
         "summary": "Replace the environment’s settings",
-        "description": "Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. Two defaults are the deployment’s rather than the schema’s: a `password` section that is left out takes the deployment’s `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` returns at revision 0), so a partial document never loosens the policy or locks browser apps out by accident; a value that is sent, an empty list included, is taken as sent. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values, and `weakened: true` when it made the password policy weaker. Other API instances apply it within a few seconds.",
+        "description": "Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. Two defaults are the deployment’s rather than the schema’s: a `password` section that is left out takes the deployment’s `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` returns at revision 0), so a partial document never loosens the policy or locks browser apps out by accident; a value that is sent, an empty list included, is taken as sent. If the deployment’s default for a field that was left out is one settings cannot store (a plain-http origin in `CORS_ORIGINS`), the request is refused with a field error and that field has to be sent explicitly. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values, and `weakened: true` when it made the password policy weaker. Other API instances apply it within a few seconds.",
         "security": [
           {
             "secretKey": []
@@ -5928,7 +6035,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EnvironmentSettings"
+                "$ref": "#/components/schemas/EnvironmentSettingsInput"
               }
             }
           }

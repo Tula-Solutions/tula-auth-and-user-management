@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
-  EnvironmentSettingsSchema,
+  EnvironmentSettingsInputSchema,
   PASSWORD_POLICY_PRESETS,
 } from '@tula/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
@@ -423,7 +423,7 @@ describe('sections a replace leaves out take the deployment’s defaults', () =>
     Settings.replace(
       deps,
       tenant,
-      { expectedRevision, sent, settings: EnvironmentSettingsSchema.parse(sent) },
+      { expectedRevision, settings: EnvironmentSettingsInputSchema.parse(sent) },
       TEST_ACTOR
     )
 

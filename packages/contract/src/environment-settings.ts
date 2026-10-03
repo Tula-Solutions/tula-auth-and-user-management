@@ -120,13 +120,14 @@ function anyEnabled(methods: Record<string, { enabled: boolean }>): boolean {
   return Object.values(methods).some((method) => method.enabled)
 }
 
+const AllowedOrigins = z
+  .array(WebOriginSchema)
+  .max(MAX_ALLOWED_ORIGINS)
+  .refine(distinct, { message: 'must not list an origin twice' })
+
 const Urls = z.object({
   /** Browser origins that may call the client API and read its responses (CORS). */
-  allowedOrigins: z
-    .array(WebOriginSchema)
-    .max(MAX_ALLOWED_ORIGINS)
-    .refine(distinct, { message: 'must not list an origin twice' })
-    .default([]),
+  allowedOrigins: AllowedOrigins.default([]),
   /**
    * URLs a flow may redirect to. Validated and stored only: nothing redirects yet (magic links
    * and OAuth callbacks, Phase 1.7 and 1.9, are the first to read it).
@@ -149,20 +150,28 @@ const Audit = z.object({
 const password = PasswordPolicySchema.default(PASSWORD_POLICY_PRESETS.recommended)
 const version = z.literal(1).default(1)
 
+const SignIn = z
+  .strictObject({
+    methods: z
+      .strictObject({ password: PasswordMethod.strict().prefault({}) })
+      .refine(anyEnabled, atLeastOneMethod)
+      .prefault({}),
+  })
+  .prefault({})
+
+const minLengthFloor = {
+  message: `must be at least ${MIN_PASSWORD_MIN_LENGTH}`,
+  path: ['password', 'minLength'],
+}
+
 /**
  * An environment's settings: everything about how one tenant's sign-in behaves that is not a
- * secret. `PUT /v1/admin/settings` replaces the whole document.
+ * secret. This is the whole document, as it is stored and as `GET /v1/admin/settings` returns
+ * it. What `PUT /v1/admin/settings` accepts is {@link EnvironmentSettingsInputSchema}.
  *
  * Every field has a default, so `{}` is a valid document and means "the defaults". Because of
  * that an unknown key is refused rather than ignored: a misspelt `pasword` section would
  * otherwise silently reset the password policy to its default.
- *
- * The defaults written here are the schema's own. Through `PUT /v1/admin/settings` two of them
- * are replaced by the deployment's: a `password` section that is left out takes the
- * deployment's `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its
- * `CORS_ORIGINS` (what `GET` returns at revision 0), so saving a partial document never
- * loosens the policy or locks browser apps out by accident. A value that is sent, an empty
- * list included, is taken as sent.
  *
  * - `version`: the format of this document, `1`.
  * - `app`: the product's name and support address.
@@ -178,27 +187,58 @@ export const EnvironmentSettingsSchema = z
     version,
     app: App.strict().prefault({}),
     password,
-    signIn: z
-      .strictObject({
-        methods: z
-          .strictObject({ password: PasswordMethod.strict().prefault({}) })
-          .refine(anyEnabled, atLeastOneMethod)
-          .prefault({}),
-      })
-      .prefault({}),
+    signIn: SignIn,
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
-  .refine((settings) => settings.password.minLength >= MIN_PASSWORD_MIN_LENGTH, {
-    message: `must be at least ${MIN_PASSWORD_MIN_LENGTH}`,
-    path: ['password', 'minLength'],
-  })
+  .refine((settings) => settings.password.minLength >= MIN_PASSWORD_MIN_LENGTH, minLengthFloor)
   .meta({ ref: 'EnvironmentSettings' })
 
 /** An environment's settings. */
 export type EnvironmentSettings = z.infer<typeof EnvironmentSettingsSchema>
+
+/**
+ * The body of `PUT /v1/admin/settings`: the settings document, except that two fields have **no
+ * default of their own** and so stay absent when they are left out.
+ *
+ * - `password` left out takes the deployment's `PASSWORD_POLICY`.
+ * - `urls.allowedOrigins` left out takes the deployment's `CORS_ORIGINS`.
+ *
+ * Those are the values `GET` returns at revision 0. The server fills them in, on every replace
+ * and whatever was saved before, so saving a partial document never loosens the password policy
+ * or locks browser apps out by accident. A value that is sent, an empty list included, is taken
+ * as sent. Everything else is as in {@link EnvironmentSettingsSchema}: other fields left out
+ * take their defaults, and unknown keys are refused.
+ *
+ * The shape says which of the two were sent, so a server cannot store the document without
+ * first deciding what the missing ones are.
+ */
+export const EnvironmentSettingsInputSchema = z
+  .strictObject({
+    version,
+    app: App.strict().prefault({}),
+    password: PasswordPolicySchema.optional(),
+    signIn: SignIn,
+    urls: z
+      .strictObject({
+        /** Leave out to take the deployment's `CORS_ORIGINS`; send `[]` to allow no origin. */
+        allowedOrigins: AllowedOrigins.optional(),
+        allowedRedirectUrls: Urls.shape.allowedRedirectUrls,
+      })
+      .prefault({}),
+    audit: Audit.strict().prefault({}),
+  })
+  .refine(
+    (settings) =>
+      settings.password === undefined || settings.password.minLength >= MIN_PASSWORD_MIN_LENGTH,
+    minLengthFloor
+  )
+  .meta({ ref: 'EnvironmentSettingsInput' })
+
+/** A settings document as sent to `PUT /v1/admin/settings`. */
+export type EnvironmentSettingsInput = z.infer<typeof EnvironmentSettingsInputSchema>
 
 /** A sign-in method that can be switched on or off in {@link EnvironmentSettingsSchema}. */
 export type SignInMethod = keyof EnvironmentSettings['signIn']['methods']
@@ -224,15 +264,93 @@ const Stored = z.object({
 /** The settings of an environment that has never saved any. */
 export const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings = EnvironmentSettingsSchema.parse({})
 
+/** A stored settings document as read back. */
+export interface StoredEnvironmentSettingsRead {
+  settings: EnvironmentSettings
+  /** How many list entries were left out because this version would not accept them. */
+  dropped: number
+}
+
+interface ListRule {
+  entry: z.ZodType<string>
+  max: number
+}
+
+const LIST_RULES: Record<keyof EnvironmentSettings['urls'], ListRule> = {
+  allowedOrigins: { entry: WebOriginSchema, max: MAX_ALLOWED_ORIGINS },
+  allowedRedirectUrls: { entry: RedirectUrlSchema, max: MAX_ALLOWED_REDIRECT_URLS },
+}
+
+/** The entries of a stored list this version accepts, and how many it does not. */
+function usable(list: unknown, rule: ListRule): { kept: string[]; dropped: number } {
+  if (!Array.isArray(list)) {
+    // Something that is not a list at all counts as one unusable entry.
+    return { kept: [], dropped: 1 }
+  }
+  const kept = new Set<string>()
+  for (const entry of list) {
+    if (kept.size < rule.max && rule.entry.safeParse(entry).success) {
+      kept.add(entry)
+    }
+  }
+  return { kept: [...kept], dropped: list.length - kept.size }
+}
+
 /**
- * Read a settings document that was stored earlier, possibly by another version of the server.
+ * Read a settings document that was stored earlier, possibly by another version of the server,
+ * and say what had to be left out.
  *
- * Fields added since it was written take their defaults, and keys this version does not know are
- * dropped rather than refused, so a rollback never leaves an environment unreadable.
+ * Settings are read on the request path, so a stored document must not be able to take an
+ * environment down:
+ * - fields added since it was written take their defaults;
+ * - keys this version does not know are dropped rather than refused (a rollback);
+ * - an entry of `urls.allowedOrigins` or `urls.allowedRedirectUrls` that this version would not
+ *   accept (not a valid origin or URL, a duplicate, or beyond the list's limit) is left out
+ *   rather than failing the read. Leaving an entry out of an allow-list only ever allows less.
+ *
+ * @param stored - The stored document.
+ * @returns The settings, and how many list entries were left out.
+ * @throws ZodError when another known field holds a value that is not valid. Nothing the API
+ *   stores can do that: every document is validated in full before it is written.
+ *
+ * @example
+ * ```ts
+ * readStoredEnvironmentSettings({ urls: { allowedOrigins: ['http://app.lan'] } })
+ * // { settings: { …, urls: { allowedOrigins: [], … } }, dropped: 1 }
+ * ```
+ */
+export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmentSettingsRead {
+  if (typeof stored !== 'object' || stored === null) {
+    return { settings: Stored.parse(stored), dropped: 0 }
+  }
+  const { urls } = stored as { urls?: unknown }
+  if (typeof urls !== 'object' || urls === null) {
+    // A `urls` that is not a section at all is read as a missing one.
+    return { settings: Stored.parse({ ...stored, urls: undefined }), dropped: 0 }
+  }
+  const lists: Record<string, string[]> = {}
+  let dropped = 0
+  for (const [name, rule] of Object.entries(LIST_RULES)) {
+    const list = (urls as Record<string, unknown>)[name]
+    if (list !== undefined) {
+      const result = usable(list, rule)
+      lists[name] = result.kept
+      dropped += result.dropped
+    }
+  }
+  return {
+    settings: Stored.parse({ ...stored, urls: { ...urls, ...lists } }),
+    dropped,
+  }
+}
+
+/**
+ * Read a settings document that was stored earlier: {@link readStoredEnvironmentSettings}
+ * without the count.
  *
  * @param stored - The stored document.
  * @returns The settings.
- * @throws ZodError when a known field holds a value that is not valid.
+ * @throws ZodError when a known field other than a list entry holds a value that is not valid.
  *
  * @example
  * ```ts
@@ -240,7 +358,7 @@ export const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings = EnvironmentSett
  * ```
  */
 export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSettings {
-  return Stored.parse(stored)
+  return readStoredEnvironmentSettings(stored).settings
 }
 
 /**

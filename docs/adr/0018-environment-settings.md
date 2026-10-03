@@ -67,15 +67,34 @@ working) and `PASSWORD_POLICY=strict` with `recommended`. So on every `PUT`, at 
 `password` section that is left out takes the deployment's `PASSWORD_POLICY` and a
 `urls.allowedOrigins` that is left out takes its `CORS_ORIGINS`: the values a revision-0 `GET`
 returns, not the previous document's and not the schema's. What is sent is honoured as sent,
-an explicitly empty origin list included. The rule lives in one function,
-`Settings.withDeploymentDefaults`, applied after validation to the body as received; the
-deployment's values are therefore stored as they are, exactly as a revision-0 `GET` shows
-them. Every other omitted field takes its schema default.
+an explicitly empty origin list included. Every other omitted field takes its schema default.
+
+The request body has its own schema for this, `EnvironmentSettingsInput`: the document, except
+that `password` and `urls.allowedOrigins` have no default and stay absent when left out. The
+validated body therefore still says which of the two were sent, and its type cannot be handed
+to the store: it has to go through `Settings.withDeploymentDefaults`, the one function that
+fills them in and then **validates the completed document strictly again**. Nothing reaches
+the store that the document's own schema refuses.
 
 `CORS_ORIGINS` is not re-validated at boot (that would stop existing deployments from
-starting), so a default list can contain an entry the settings API refuses, such as a plain
-`http` origin on a LAN. It keeps working as a default and has to be corrected when the
-environment first saves its settings.
+starting), so a default list can contain an entry a settings document must not, such as a
+plain `http` origin on a LAN. It keeps working as a default: an environment that has saved
+nothing allows it, and `GET /v1/admin/settings` shows it. But it is never copied into a stored
+document. A `PUT` that leaves `urls.allowedOrigins` out on such a deployment is refused with
+422 and a field error on `urls.allowedOrigins` saying that the deployment's default origins
+include an entry settings cannot store; nothing is written and the revision does not move.
+**What the operator does:** send `urls.allowedOrigins` explicitly in that `PUT`, with the
+origins the environment should allow (https, or loopback http), or fix `CORS_ORIGINS` and
+restart. The error names the field and not the entry.
+
+**A stored document can never make an environment unreadable over a list entry.** Settings
+are read on the request path (every password check, every browser request), so the read is
+defensive as well: an entry of `urls.allowedOrigins` or `urls.allowedRedirectUrls` that this
+version would not accept (invalid, duplicate, or beyond the limit) is left out of what is
+read, and the Postgres adapter logs a warning with the environment id and the number of
+entries dropped, never the entries. Leaving an entry out of an allow-list only ever allows
+less. To repair such a row, save the settings again with `PUT`: the stored list is replaced
+by a valid one.
 
 ### Admin API: whole-document replace, guarded by the revision
 

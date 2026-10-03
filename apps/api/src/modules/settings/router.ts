@@ -10,7 +10,7 @@ import * as Settings from '~/modules/settings/service'
 import * as openapi from '~/openapi'
 import {
   ClientConfigSchema,
-  EnvironmentSettingsSchema,
+  EnvironmentSettingsInputSchema,
   EnvironmentSettingsStateSchema,
 } from './schema'
 
@@ -80,7 +80,10 @@ router.put(
       '`urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` ' +
       'returns at revision 0), so a partial document never loosens the policy or locks ' +
       'browser apps out by accident; a value that is sent, an empty list included, is taken ' +
-      'as sent. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` ' +
+      'as sent. If the deployment’s default for a field that was left out is one settings ' +
+      'cannot store (a plain-http origin in `CORS_ORIGINS`), the request is refused with a ' +
+      'field error and that field has to be sent explicitly. `password.minLength` cannot be ' +
+      'set below 8. `If-Match` must carry the revision that was read (the `ETag` ' +
       'of the last response), so two writers cannot silently overwrite each other: a missing ' +
       'header is `precondition.required`, a revision that is no longer current is ' +
       '`precondition.failed`. The change is recorded in the audit log as ' +
@@ -116,7 +119,7 @@ router.put(
   }),
   adminRateLimit(),
   secretKey(),
-  validator('json', EnvironmentSettingsSchema, validationHook),
+  validator('json', EnvironmentSettingsInputSchema, validationHook),
   async (c) => {
     const state = await Settings.replace(
       c.get('deps'),
@@ -124,8 +127,6 @@ router.put(
       {
         expectedRevision: Settings.expectedRevision(c.req.header('if-match')),
         settings: c.req.valid('json'),
-        // As received: the service needs to know which sections were left out.
-        sent: await c.req.json(),
       },
       adminActor(c)
     )
