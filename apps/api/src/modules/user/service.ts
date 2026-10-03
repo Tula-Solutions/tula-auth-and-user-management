@@ -19,7 +19,7 @@ import { parseEmail } from '~/lib/email'
 import * as Audit from '~/modules/audit/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
-import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
+import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import type { UserRecord } from '~/ports/user-repository'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
@@ -327,9 +327,10 @@ async function replacePassword(
 /**
  * Set a user's password from a server or the dashboard (an admin reset).
  *
- * Every session of the user ends: whoever knew the old password is signed out everywhere.
+ * Every session of the user ends: whoever knew the old password is signed out everywhere. The
+ * sign-in lockout for their address is cleared, so earlier wrong guesses don't keep them out.
  *
- * @param deps - Users, password policy, sessions, denylist, ids and clock.
+ * @param deps - Users, password policy, sessions, denylist, lockout, ids and clock.
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param password - The new password; must meet the policy.
@@ -338,7 +339,7 @@ async function replacePassword(
  *   ConflictError when the user has no password credential.
  */
 export async function setPassword(
-  deps: PasswordDeps,
+  deps: PasswordDeps & Pick<Deps, 'lockout'>,
   scope: Scope,
   userId: string,
   password: string,
@@ -347,6 +348,8 @@ export async function setPassword(
   const user = await requireUser(deps, scope, userId)
   await replacePassword(deps, scope, user, password, actor, 'admin_reset')
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
+  // Guesses at the old password must not keep the user out of the new one they were just given.
+  await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
 }
 
 /**

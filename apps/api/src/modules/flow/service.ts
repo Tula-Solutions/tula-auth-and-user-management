@@ -12,7 +12,6 @@ import {
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InvalidEmailError, RateLimitError } from '~/exceptions'
-import { sha256Hex } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
@@ -20,7 +19,7 @@ import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
-import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
+import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import { sendAccountExistsNotice } from './mailer'
 import { nextStatus } from './transitions'
 
@@ -359,7 +358,7 @@ export async function submitPassword(
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
   // through; it happens before the lookup, so unknown identifiers lock out exactly the same.
-  const lockKey = `sign_in:${tenant.environmentId}:${sha256Hex(attempt.identifier)}`
+  const lockKey = signInLockKey(tenant.environmentId, attempt.identifier)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
@@ -380,9 +379,12 @@ export async function submitPassword(
     throw new AuthError('auth.user_banned')
   }
   if (found.passwordHash && Passwords.needsRehash(found.passwordHash)) {
-    await deps.users.setPasswordHash(
+    // Only if the stored hash is still the one just verified: a password changed in the
+    // meantime must not be overwritten with the old one. Losing that race is fine.
+    await deps.users.upgradePasswordHash(
       tenant.environmentId,
       user.id,
+      found.passwordHash,
       await Passwords.hash(password),
       deps.clock.now()
     )

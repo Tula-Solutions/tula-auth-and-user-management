@@ -1,5 +1,6 @@
 import type { Deps } from '~/dependencies'
 import * as logger from '~/lib/logger'
+import { errorReason } from '~/lib/safe-error'
 import type { ReadinessResponse, StatusResponse } from '~/modules/status/schema'
 import { version } from '../../../package.json'
 
@@ -45,7 +46,7 @@ export async function ready(
       } catch (error) {
         logger.warn('readiness probe failed', {
           probe: probe.name,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: errorReason(error),
         })
         return [probe.name, 'fail'] as const
       }

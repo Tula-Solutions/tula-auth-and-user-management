@@ -81,8 +81,9 @@ const schema = fields.superRefine((env, ctx) => {
   if (!LIVE_TIERS.has(env.ENVIRONMENT)) {
     return
   }
-  const smtpHost = new URL(env.SMTP_URL).hostname
-  if (smtpHost === '127.0.0.1' || smtpHost === 'localhost') {
+  const smtpHost = new URL(env.SMTP_URL).hostname.toLowerCase()
+  // `mailpit` is the catch-all inbox of the Compose stack: mail sent there reaches nobody.
+  if (smtpHost === '127.0.0.1' || smtpHost === 'localhost' || smtpHost === 'mailpit') {
     ctx.addIssue({
       code: 'custom',
       path: ['SMTP_URL'],

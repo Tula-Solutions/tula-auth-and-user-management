@@ -902,3 +902,36 @@ describe('activity', () => {
     }
   })
 })
+
+describe('hash upgrade after sign-in', () => {
+  test('does not bring back a password that was changed while the sign-in was in progress', async () => {
+    const weak = await Bun.password.hash(PASSWORD, {
+      algorithm: 'argon2id',
+      memoryCost: 8,
+      timeCost: 1,
+    })
+    const userId = await seedUser({ passwordHash: weak })
+    const attempt = await startSignIn()
+    // An admin resets the password after this sign-in read the old hash and before it upgrades it.
+    const changed = await Passwords.hash('a different password entirely')
+    const find = deps.users.findByEmailWithPassword.bind(deps.users)
+    deps.users.findByEmailWithPassword = async (environmentId, email) => {
+      const found = await find(environmentId, email)
+      await deps.users.setPasswordHash(environmentId, userId, changed, deps.clock.now())
+      return found
+    }
+    await password(attempt.id)
+    deps.users.findByEmailWithPassword = find
+    expect((await find(tenant.environmentId, NORMALIZED))?.passwordHash).toBe(changed)
+  })
+})
+
+describe('the account-exists notice', () => {
+  test('does not point people at a password reset that does not exist yet', async () => {
+    await registered()
+    await signUp()
+    const notice = deps.mailer.last()
+    expect(notice.subject).toBe('You already have an account')
+    expect(`${notice.text} ${notice.html}`.toLowerCase()).not.toContain('reset')
+  })
+})

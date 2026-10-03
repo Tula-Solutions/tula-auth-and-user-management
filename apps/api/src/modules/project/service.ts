@@ -26,6 +26,13 @@ export const KEY_ENVIRONMENT_SEGMENT: Readonly<Record<EnvironmentKind, string>> 
 export const MAX_ACTIVE_KEYS = 100
 
 /**
+ * Most keys one environment may ever hold, revoked ones included. Revoked keys are kept (the API
+ * cannot delete them), so without this a leaked secret key could create and revoke in a loop
+ * and grow the table, and the key list, without limit.
+ */
+export const MAX_KEYS = 1_000
+
+/**
  * Mint a new raw API key: prefix, environment segment, then 256 random bits.
  *
  * @param kind - Publishable or secret.
@@ -76,7 +83,8 @@ export function listApiKeys(
  * @param actor - Who is creating the key, for the audit log.
  * @returns The stored key plus the full key value.
  * @throws NotFoundError if the environment does not exist in the tenant's project.
- * @throws ConflictError when the environment already has {@link MAX_ACTIVE_KEYS} active keys.
+ * @throws ConflictError when the environment already has {@link MAX_ACTIVE_KEYS} active keys, or
+ *   {@link MAX_KEYS} keys in total.
  */
 export async function createApiKey(
   deps: Pick<Deps, 'apiKeys' | 'environments' | 'ids' | 'clock'>,
@@ -88,12 +96,19 @@ export async function createApiKey(
   if (!environment || environment.projectId !== tenant.projectId) {
     throw new NotFoundError({ internalMessage: 'environment missing or in another project' })
   }
-  // A soft cap: two concurrent creates at the limit can both pass, which is acceptable here.
-  const existing = await deps.apiKeys.listByEnvironment(environment.id)
-  if (existing.filter((key) => key.revokedAt === null).length >= MAX_ACTIVE_KEYS) {
+  // Soft caps: two concurrent creates at a limit can both pass, which is acceptable here.
+  // Counted in the database, so the check costs the same however many keys were ever made.
+  const { active, total } = await deps.apiKeys.countByEnvironment(environment.id)
+  if (active >= MAX_ACTIVE_KEYS) {
     throw new ConflictError({
       message: `This environment already has ${MAX_ACTIVE_KEYS} active keys. Revoke one first.`,
       params: { max: MAX_ACTIVE_KEYS },
+    })
+  }
+  if (total >= MAX_KEYS) {
+    throw new ConflictError({
+      message: `This environment has had ${MAX_KEYS} keys, the most it can hold. Remove old revoked keys from the database to create more.`,
+      params: { max: MAX_KEYS },
     })
   }
   const key = generateKey(input.kind, environment.kind)

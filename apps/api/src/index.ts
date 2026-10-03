@@ -61,7 +61,7 @@ export function createApp(deps: Deps): Hono<AppEnv> {
     cors({
       origin: (origin) => allowedOrigin(origin, deps.config),
       credentials: true,
-      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization', PUBLISHABLE_KEY_HEADER, CLIENT_HEADER],
       exposeHeaders: ['Retry-After', 'X-Request-Id'],
       maxAge: 600,

@@ -1,3 +1,5 @@
+import { sha256Hex } from '~/lib/crypto'
+
 /** How failed attempts turn into waiting time. */
 export interface LockoutPolicy {
   /** Failures allowed before any waiting is imposed. */
@@ -74,4 +76,18 @@ export interface Lockout {
    * @param key - The key passed to {@link Lockout.attempt}.
    */
   clear(key: string): Promise<void>
+}
+
+/**
+ * The lockout key for password sign-in of one identifier in one environment.
+ *
+ * The identifier is hashed so that lockout storage (process memory now, Redis later) holds no
+ * email address.
+ *
+ * @param environmentId - The environment.
+ * @param identifier - The normalized identifier (email) being signed in to.
+ * @returns The key to pass to {@link Lockout.attempt} and {@link Lockout.clear}.
+ */
+export function signInLockKey(environmentId: string, identifier: string): string {
+  return `sign_in:${environmentId}:${sha256Hex(identifier)}`
 }

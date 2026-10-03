@@ -97,6 +97,26 @@ export interface UserRepository {
   ): Promise<boolean>
 
   /**
+   * Replace a password hash with a stronger hash **of the same password**, only if the stored
+   * hash is still the one that was verified. A plain write here could overwrite a password that
+   * was changed between the verify and the upgrade, bringing the old password back.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param currentHash - The hash the password was just verified against.
+   * @param passwordHash - The new argon2id hash of that same password.
+   * @param at - Update time.
+   * @returns `false` when the stored hash is no longer `currentHash` (nothing is written).
+   */
+  upgradePasswordHash(
+    environmentId: string,
+    userId: string,
+    currentHash: string,
+    passwordHash: string,
+    at: Date
+  ): Promise<boolean>
+
+  /**
    * Record that the user proved control of their email. Keeps the first verification time.
    *
    * @param environmentId - The user's environment.

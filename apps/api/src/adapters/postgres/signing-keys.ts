@@ -106,12 +106,24 @@ export class PostgresSigningKeyStore implements SigningKeyStore {
         const retired = await tx
           .update(signingKeys)
           .set({ status: 'retired', retiredAt: at, updatedAt: at })
-          .where(and(eq(signingKeys.id, plan.retireId), eq(signingKeys.status, 'active')))
+          .where(
+            and(
+              eq(signingKeys.id, plan.retireId),
+              eq(signingKeys.environmentId, environmentId),
+              eq(signingKeys.status, 'active')
+            )
+          )
           .returning({ id: signingKeys.id })
         const activated = await tx
           .update(signingKeys)
           .set({ status: 'active', activatedAt: at, updatedAt: at })
-          .where(and(eq(signingKeys.id, plan.activateId), eq(signingKeys.status, 'next')))
+          .where(
+            and(
+              eq(signingKeys.id, plan.activateId),
+              eq(signingKeys.environmentId, environmentId),
+              eq(signingKeys.status, 'next')
+            )
+          )
           .returning({ id: signingKeys.id })
         if (retired.length !== 1 || activated.length !== 1) {
           throw new LostRace()

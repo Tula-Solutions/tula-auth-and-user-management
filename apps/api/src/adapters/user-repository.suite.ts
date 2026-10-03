@@ -297,5 +297,30 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
       ).toEqual({ user: record(input), passwordHash: '$argon2id$hash' })
     })
+
+    test('a hash upgrade replaces the hash only if it is still the one that was verified', async () => {
+      const input = user(ctx.a, { passwordHash: '$argon2id$weak' })
+      await ctx.users.createWithPassword(input)
+      const env = ctx.a.environmentId
+      const stored = async () =>
+        (await ctx.users.findByEmailWithPassword(env, input.emailNormalized))?.passwordHash
+      const upgrade = (current: string, next: string, environmentId = env) =>
+        ctx.users.upgradePasswordHash(environmentId, input.id, current, next, later(1))
+
+      expect(await upgrade('$argon2id$weak', '$argon2id$strong')).toBe(true)
+      expect(await stored()).toBe('$argon2id$strong')
+
+      // The password was changed after the old hash was read: the upgrade must not undo that.
+      await ctx.users.setPasswordHash(env, input.id, '$argon2id$changed', later(2))
+      expect(await upgrade('$argon2id$strong', '$argon2id$stale')).toBe(false)
+      expect(await stored()).toBe('$argon2id$changed')
+
+      // Unknown user, or another environment: nothing happens.
+      expect(await upgrade('$argon2id$changed', '$argon2id$x', ctx.b.environmentId)).toBe(false)
+      expect(await ctx.users.upgradePasswordHash(env, Bun.randomUUIDv7(), 'a', 'b', later(3))).toBe(
+        false
+      )
+      expect(await stored()).toBe('$argon2id$changed')
+    })
   })
 }

@@ -11,7 +11,7 @@ export const API_KEY_KINDS = ['publishable', 'secret'] as const
  * Environment API keys, stored only as SHA-256 hashes.
  *
  * Deliberately **not** under row-level security: the key lookup is what *determines* the tenant,
- * so it has to run before any environment is known. Only the key-resolution middleware reads it.
+ * so it has to run before any environment is known. Only key resolution and the admin key routes touch it.
  */
 export const apiKeys = tula.table(
   'api_keys',

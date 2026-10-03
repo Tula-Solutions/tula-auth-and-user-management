@@ -5,8 +5,8 @@
 
 ## Context
 
-Sign-up and password reset prove control of an email address with a 6-digit code, optionally a
-magic link. A 6-digit code has only 10^6 values, so both its storage and the number of guesses
+Sign-up (and, once it exists, password reset) proves control of an email address with a 6-digit
+code, optionally a magic link. A 6-digit code has only 10^6 values, so both its storage and the number of guesses
 need care. The module is a service (`modules/verification`) that the flow engine calls; it has
 no routes of its own.
 

@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
-  "name": "password lockout",
-  "description": "Wrong passwords for one address are checked six times; after that every try is answered with rate_limited and a retry time, whatever password is given, including the right one. An address with no account locks out in exactly the same way.",
+  "name": "sign-up for an existing address",
+  "description": "Signing up with an address that already has an account answers exactly like a new address, cannot be completed, and changes nothing about the account.",
   "variables": {
     "email": {
       "generate": "email"
@@ -9,7 +9,10 @@
     "password": {
       "generate": "password"
     },
-    "stranger": {
+    "otherPassword": {
+      "generate": "password"
+    },
+    "fresh": {
       "generate": "email"
     }
   },
@@ -84,6 +87,77 @@
       }
     },
     {
+      "name": "let the per-address email cooldown pass",
+      "wait": "61s"
+    },
+    {
+      "name": "a sign-up for a new address, for comparison",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{fresh}}",
+          "password": "{{otherPassword}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"],
+            "userId": "$absent"
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a second sign-up for the existing address answers the same",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{otherPassword}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"],
+            "userId": "$absent"
+          },
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "secondSignUpId": "id"
+      }
+    },
+    {
+      "name": "it cannot be completed, even with a code that was valid for this address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{secondSignUpId}}/verify-email",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "verification.invalid_code"
+        }
+      }
+    },
+    {
       "name": "start a sign-in",
       "request": {
         "method": "POST",
@@ -94,24 +168,19 @@
         }
       },
       "expect": {
-        "status": 200,
-        "body": {
-          "step": {
-            "status": "needs_password"
-          }
-        }
+        "status": 200
       },
       "capture": {
         "signInId": "id"
       }
     },
     {
-      "name": "six wrong passwords are each auth.invalid_credentials",
+      "name": "the password from the second sign-up does not open the account",
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ins/{{signInId}}/password",
         "body": {
-          "password": "{{password}}-wrong"
+          "password": "{{otherPassword}}"
         }
       },
       "expect": {
@@ -119,84 +188,23 @@
         "body": {
           "code": "auth.invalid_credentials"
         }
-      },
-      "times": 6
+      }
     },
     {
-      "name": "the seventh try is locked out, even with the right password",
+      "name": "the original password still does",
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ins/{{signInId}}/password",
         "body": {
           "password": "{{password}}"
-        }
-      },
-      "expect": {
-        "status": 429,
-        "body": {
-          "status": 429,
-          "code": "rate_limited",
-          "params": {
-            "retryAfter": "$any"
-          }
-        }
-      }
-    },
-    {
-      "name": "start a sign-in for an address with no account",
-      "request": {
-        "method": "POST",
-        "path": "/v1/client/sign-ins",
-        "client": "ios",
-        "body": {
-          "identifier": "{{stranger}}"
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "step": {
-            "status": "needs_password"
-          }
-        }
-      },
-      "capture": {
-        "strangerSignInId": "id"
-      }
-    },
-    {
-      "name": "six tries are each auth.invalid_credentials, as for a real account",
-      "request": {
-        "method": "POST",
-        "path": "/v1/client/sign-ins/{{strangerSignInId}}/password",
-        "body": {
-          "password": "{{password}}-wrong"
-        }
-      },
-      "expect": {
-        "status": 401,
-        "body": {
-          "code": "auth.invalid_credentials"
-        }
-      },
-      "times": 6
-    },
-    {
-      "name": "the seventh is locked out, as for a real account",
-      "request": {
-        "method": "POST",
-        "path": "/v1/client/sign-ins/{{strangerSignInId}}/password",
-        "body": {
-          "password": "{{password}}"
-        }
-      },
-      "expect": {
-        "status": 429,
-        "body": {
-          "status": 429,
-          "code": "rate_limited",
-          "params": {
-            "retryAfter": "$any"
+            "status": "complete",
+            "userId": "{{userId}}"
           }
         }
       }

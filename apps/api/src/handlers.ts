@@ -13,6 +13,7 @@ import {
   ValidationError,
 } from '~/exceptions'
 import * as logger from '~/lib/logger'
+import { describeError } from '~/lib/safe-error'
 
 /** Contract code for errors Hono itself raises (e.g. malformed JSON), by status. */
 const HTTP_EXCEPTION_CODES: Partial<Record<number, ErrorCode>> = {
@@ -24,6 +25,13 @@ const HTTP_EXCEPTION_CODES: Partial<Record<number, ErrorCode>> = {
   413: 'request.too_large',
   429: 'rate_limited',
 }
+
+/**
+ * SQLSTATEs Postgres raises for a NUL character in text (22021) or in JSON (22P05). The value
+ * came from the request, so this is the client's malformed input, not a server fault; answering
+ * 500 would also let anyone fill the error log at will.
+ */
+const UNSTORABLE_INPUT: ReadonlySet<string> = new Set(['22021', '22P05'])
 
 function fromHttpException(err: HTTPException): ServiceException {
   const code = HTTP_EXCEPTION_CODES[err.status]
@@ -42,7 +50,9 @@ function fromHttpException(err: HTTPException): ServiceException {
  *
  * - `ServiceException`: sent as-is (its `internalMessage` is logged, never sent).
  * - Hono `HTTPException`: mapped to a contract code.
- * - Anything else: logged with its stack and returned as a generic `internal` 500.
+ * - A database error caused by input Postgres cannot store (a NUL character): `request.malformed`.
+ * - Anything else: logged (through `describeError`, which drops query parameters) and returned
+ *   as a generic `internal` 500.
  *
  * @param err - The thrown error.
  * @param c - The request context.
@@ -54,7 +64,9 @@ export function onError(err: Error, c: Context<AppEnv>): Response {
       ? err
       : err instanceof HTTPException
         ? fromHttpException(err)
-        : new InternalError({ cause: err })
+        : UNSTORABLE_INPUT.has(describeError(err).code ?? '')
+          ? new BadRequestError({ internalMessage: 'input contains a character Postgres rejects' })
+          : new InternalError({ cause: err })
 
   const context = {
     requestId: c.get('requestId'),
@@ -65,10 +77,8 @@ export function onError(err: Error, c: Context<AppEnv>): Response {
   }
   if (exception.status >= 500) {
     const cause = exception.cause instanceof Error ? exception.cause : exception
-    logger.error('request failed', {
-      ...context,
-      err: { message: cause.message, stack: cause.stack },
-    })
+    // Never the raw message: a failed query's message contains its parameters.
+    logger.error('request failed', { ...context, err: describeError(cause) })
   } else {
     logger.debug('request rejected', context)
   }

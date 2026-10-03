@@ -3,7 +3,7 @@ import type { Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import * as Project from '~/modules/project/service'
-import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import { createTestDeps, seedApiKey, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
 let deps: TestDeps
 const dev: Tenant = {
@@ -101,6 +101,39 @@ describe('active key cap', () => {
     await Project.revokeApiKey(deps, dev, keys[0]?.id ?? '', TEST_ACTOR)
     await Project.createApiKey(deps, dev, { kind: 'publishable', name: 'replacement' }, TEST_ACTOR)
     await Project.createApiKey(deps, prod, { kind: 'publishable', name: 'prod' }, TEST_ACTOR)
+  })
+})
+
+describe('total key cap', () => {
+  test('revoked keys cannot pile up without limit', async () => {
+    // A leaked secret key could otherwise create and revoke in a loop forever.
+    const createdAt = deps.clock.now()
+    for (let index = 0; index < Project.MAX_KEYS; index++) {
+      const key = await seedApiKey(deps, `tula_pk_dev_${index.toString().padStart(30, '0')}`, {
+        createdAt,
+      })
+      await deps.apiKeys.revoke(dev.environmentId, key.id, createdAt)
+    }
+    const over = Project.createApiKey(deps, dev, { kind: 'secret', name: 'one more' }, TEST_ACTOR)
+    await expect(over).rejects.toBeInstanceOf(ConflictError)
+    await expect(over).rejects.toMatchObject({ params: { max: Project.MAX_KEYS } })
+    // Another environment is unaffected.
+    await Project.createApiKey(deps, prod, { kind: 'secret', name: 'prod' }, TEST_ACTOR)
+  })
+
+  test('the cap is checked by counting, not by loading every key', async () => {
+    const list = deps.apiKeys.listByEnvironment.bind(deps.apiKeys)
+    let listed = 0
+    deps.apiKeys.listByEnvironment = (environmentId) => {
+      listed += 1
+      return list(environmentId)
+    }
+    await Project.createApiKey(deps, dev, { kind: 'secret', name: 'Backend' }, TEST_ACTOR)
+    expect(listed).toBe(0)
+    expect(await deps.apiKeys.countByEnvironment(dev.environmentId)).toEqual({
+      active: 1,
+      total: 1,
+    })
   })
 })
 

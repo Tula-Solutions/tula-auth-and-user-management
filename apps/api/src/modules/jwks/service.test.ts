@@ -3,6 +3,7 @@ import { ACCESS_TOKEN_VERSION, environmentIssuer } from '@tula/contract'
 import { SignJWT } from 'jose'
 import type { Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError } from '~/exceptions'
+import { createSecretBox } from '~/lib/secret-box'
 import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Jwks from '~/modules/jwks/service'
 import { RETIRED_KEY_RETENTION_MS } from '~/ports/signing-key-store'
@@ -253,6 +254,17 @@ describe('ensureAllEnvironments', () => {
     }
     expect(await Jwks.ensureAllEnvironments(deps)).toEqual({ ensured: 1, failed: 1 })
     expect(await statuses()).toEqual(['active', 'next'])
+  })
+})
+
+describe('start-up check', () => {
+  test('keys sealed under another master key are reported at boot, not at the first sign-in', async () => {
+    await Jwks.ensureKeys(deps, tenant.environmentId)
+    // The same database, started with a different TULA_MASTER_KEY.
+    const restarted = { ...deps, secretBox: createSecretBox('cd'.repeat(32)) }
+    expect(await Jwks.ensureAllEnvironments(restarted)).toEqual({ ensured: 0, failed: 1 })
+    // With the right key the same environment is fine.
+    expect(await Jwks.ensureAllEnvironments(deps)).toEqual({ ensured: 1, failed: 0 })
   })
 })
 

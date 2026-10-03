@@ -71,6 +71,7 @@ router.post(
       'unverified unless `emailVerified` is true. A taken email answers 409.',
     security: openapi.security.admin,
     responses: {
+      413: openapi.responses[413],
       201: { description: 'The created user.', content: json(UserSchema) },
       409: openapi.responses[409],
       422: openapi.responses[422],
@@ -187,8 +188,10 @@ router.put(
       'Replaces the password (it must meet the policy) and ends every session of the user.',
     security: openapi.security.admin,
     responses: {
+      413: openapi.responses[413],
       204: { description: 'The password was replaced.' },
       404: openapi.responses[404],
+      409: openapi.responses[409],
       422: openapi.responses[422],
       ...adminErrors,
     },
@@ -245,6 +248,7 @@ router.post(
       'device stays signed in. A wrong current password answers `auth.invalid_credentials`.',
     security: openapi.security.session,
     responses: {
+      413: openapi.responses[413],
       204: { description: 'The password was changed.' },
       401: openapi.responses[401],
       422: openapi.responses[422],

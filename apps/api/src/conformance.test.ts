@@ -54,6 +54,8 @@ describe('conformance scenarios, in process', () => {
       'password policy',
       'password lockout',
       'admin ban and audit log',
+      'sign-up for an existing address',
+      'verification code attempts',
     ])
   })
 

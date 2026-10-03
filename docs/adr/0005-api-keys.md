@@ -28,6 +28,13 @@ lookup has to run before any environment is known.
 
 ## Consequences
 
-- Secret keys are per environment, so a development key can never touch production data.
+- Secret keys are per environment, so a development key can never touch production data. It
+  can list the ids and kinds of its project's other environments (`GET /v1/admin/environments`),
+  which is read-only metadata.
+- An environment holds at most 100 active keys and 1,000 keys in total, revoked ones included.
+  Revoked keys are kept (the API's database role cannot delete them), so the total cap is what
+  stops a leaked secret key from growing the table in a create-and-revoke loop.
+- `touch` (recording a key's last use) is the one write not filtered by environment: its id
+  comes from the key lookup itself, never from a client.
 - Project-level credentials for the dashboard (managing several environments at once) are a
   Phase 1 decision.

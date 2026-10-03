@@ -4,7 +4,7 @@ import { RateLimitError, ServiceException } from '~/exceptions'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Users from '~/modules/user/service'
-import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
+import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
 const tenant: Tenant = {
@@ -530,5 +530,22 @@ describe('activity', () => {
     for (const secret of [PASSWORD, NEW_PASSWORD, 'northline', 'maya', '$argon2']) {
       expect(written).not.toContain(secret.toLowerCase())
     }
+  })
+})
+
+describe('an admin reset and the sign-in lockout', () => {
+  test('clears the lockout, so the user is not kept out of the password they were just given', async () => {
+    const user = await create()
+    const key = signInLockKey(tenant.environmentId, 'maya@northline.app')
+    for (let index = 0; index <= CREDENTIAL_LOCKOUT.freeAttempts; index++) {
+      await deps.lockout.attempt(key, CREDENTIAL_LOCKOUT, deps.clock.now())
+    }
+    expect((await deps.lockout.attempt(key, CREDENTIAL_LOCKOUT, deps.clock.now())).allowed).toBe(
+      false
+    )
+    await Users.setPassword(deps, tenant, user.id, NEW_PASSWORD, TEST_ACTOR)
+    expect((await deps.lockout.attempt(key, CREDENTIAL_LOCKOUT, deps.clock.now())).allowed).toBe(
+      true
+    )
   })
 })

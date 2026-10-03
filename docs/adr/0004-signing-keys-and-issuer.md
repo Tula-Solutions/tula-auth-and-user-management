@@ -33,7 +33,9 @@ API instances, and private keys that are useless if the database leaks.
 
 - `sessionAuth` verifies tokens with cached public keys and no database hit.
 - Rotation is manual (`POST /v1/admin/signing-keys/rotate`) until scheduled rotation lands.
-- Changing or losing `TULA_MASTER_KEY` makes stored signing keys unreadable. A boot-time
-  decryption check is planned with the session module.
+- Changing or losing `TULA_MASTER_KEY` makes stored signing keys unreadable. At start-up the
+  server decrypts each environment's active key and logs an error for any it cannot open, so a
+  wrong key is visible in the start-up log rather than at the first sign-in. It still starts:
+  one broken environment must not stop the others.
 - Custom domains per environment (Phase 1+) will change `PUBLIC_URL` per environment; the issuer
   format already accommodates that.

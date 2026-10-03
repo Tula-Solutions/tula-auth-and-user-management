@@ -3,8 +3,10 @@
 Open-source, self-hostable authentication and user management: Clerk-level developer experience
 and prebuilt UI, first-class native mobile, and data you own.
 
-> **Status: Phase 0 in progress.** The API skeleton, environments, API keys and access-token
-> signing keys work end to end. Sign-up, sign-in and sessions are next. Not ready for production.
+> **Status: Phase 0 is feature-complete.** Email and password sign-up and sign-in, sessions,
+> user administration, the audit log and self-hosting work end to end and are covered by the
+> conformance suite. Nothing is released yet, there is no dashboard or SDK, and a deployment is
+> a single instance: not ready for production.
 
 ## What's here
 
@@ -17,7 +19,9 @@ as the public contract that every SDK, the dashboard, the CLI and the MCP server
 | [`apps/api`](apps/api) | `@tula/api`, the auth server |
 | [`packages/contract`](packages/contract) | `@tula/contract`: schemas, flow protocol, error codes, token claims, password policy, [`openapi.json`](packages/contract/openapi.json) |
 | [`packages/db`](packages/db) | `@tula/db`: Drizzle schema, migrations, row-level security, tenant helpers |
-| [`docs/`](docs) | [Business plan](docs/business-plan.md), [architecture decisions](docs/adr), [designs](docs/design/Design.pdf) |
+| [`packages/conformance`](packages/conformance) | `@tula/conformance`: runs the conformance scenarios, in process or against a live server |
+| [`conformance/`](conformance) | Language-neutral [scenarios](conformance/README.md) every server and SDK must pass |
+| [`docs/`](docs) | [Self-hosting](docs/self-host.md), [business plan](docs/business-plan.md), [architecture decisions](docs/adr), [designs](docs/design/Design.pdf) |
 
 ## Quickstart (local)
 

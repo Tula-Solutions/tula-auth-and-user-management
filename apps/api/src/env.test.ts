@@ -112,6 +112,11 @@ describe('parseEnv', () => {
     expect(invalidVars({ ...base, MAIL_FROM: from })).toEqual(['MAIL_FROM'])
   })
 
+  test('the live-tier SMTP check also catches the Compose stack’s Mailpit', () => {
+    expect(invalidVars({ ...live, SMTP_URL: 'smtp://mailpit:1025' })).toEqual(['SMTP_URL'])
+    expect(invalidVars({ ...live, SMTP_URL: 'smtp://MAILPIT:1025' })).toEqual(['SMTP_URL'])
+  })
+
   test('dev tier may use local services', () => {
     expect(parseEnv({ ...base, ENVIRONMENT: 'dev' }).BREACH_CHECK).toBe('offline')
   })

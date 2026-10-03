@@ -168,7 +168,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - The API connects as `tula_api` (member of `tula_app`), never the schema owner: owners and
   superusers bypass RLS. Migrations run as the owner via `DATABASE_MIGRATION_URL`.
 - `api_keys` is the one table with tenant columns but no RLS: resolving a key is what determines
-  the tenant. Only key-resolution code may read it.
+  the tenant. Only key resolution and the admin key routes (`modules/project`) touch it, and
+  every query except the lookup by hash filters by environment.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 
@@ -205,7 +206,7 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - Revoking a session must go through `~/modules/session/service` so its id is denylisted:
   `sessionAuth` verifies access tokens without a database hit, and only the denylist stops a
   revoked session's token before it expires.
-- **Every state change is recorded, in the same transaction.** A store method that changes a
+- **Every change to who can do what is recorded, in the same transaction.** A store method that changes a
   user, session, API key or signing key takes an `Activity` (built with `Audit.entry` from
   `~/modules/audit/service`) and writes it with the change; services pass the `Actor` their
   router built with `adminActor(c)` / `userActor(c)` (`~/lib/actor`). Never write an audit entry
@@ -240,7 +241,7 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 A change is done only when all of these hold:
 
 1. **`bun run verify` is green** — Biome, harness tests, typecheck, tests with coverage,
-   `db:check` and `contract:check`.
+   `db:check`, `contract:check` and the conformance `schema:check`.
 2. **An otterbot-review pass reports no blocking findings.** Run the `otterbot-review` skill
    (github.com/otternaut/otterbot, installed globally) in local mode on the change. In Claude Code
    use `/review-loop`, which runs it on Sonnet 5.5 through the `ollie-reviewer` subagent. Fix every

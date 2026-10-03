@@ -39,6 +39,7 @@ router.post(
       'token again.',
     security: openapi.security.client,
     responses: {
+      413: openapi.responses[413],
       200: { description: 'New tokens.', content: json(SessionTokensSchema) },
       401: openapi.responses[401],
       403: openapi.responses[403],
@@ -103,6 +104,7 @@ router.post(
       'out with an expired access token.',
     security: openapi.security.client,
     responses: {
+      413: openapi.responses[413],
       204: { description: 'Signed out.' },
       401: openapi.responses[401],
       422: openapi.responses[422],
