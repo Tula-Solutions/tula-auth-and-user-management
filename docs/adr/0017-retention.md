@@ -88,6 +88,10 @@ log stays quiet.
 
 ## Consequences
 
+- The lock is a session-level advisory lock, so `DATABASE_URL` must be a direct connection or a
+  session-mode pooler. Behind a transaction-mode pooler (PgBouncer in `transaction` mode) the
+  lock and its release can land on different server connections, and retention would stop
+  without an error.
 - A session's row is gone 30 days after it ended, but the audit entries about it
   (`session.created`, `session.revoked`) stay and still name its id.
 - The retention periods are constants, the same for every environment. Per-environment

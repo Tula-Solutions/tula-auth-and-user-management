@@ -20,11 +20,14 @@ export interface RedisCommands {
 export const KEY_NAMESPACE = 'tula'
 
 /**
- * Extra lifetime given to every key beyond the moment the application stops needing it.
+ * Extra lifetime given to lockout and revoked-session keys beyond the moment the application
+ * stops needing them.
  *
  * Entries carry their own timestamps and are judged against the calling instance's clock; the
  * Redis expiry only reclaims memory. The allowance keeps an entry from disappearing while an
- * instance whose clock runs behind still considers it live.
+ * instance whose clock runs behind still considers it live. Rate-limit windows are the
+ * exception: their key expires exactly at the end of the window as the writer saw it, so clock
+ * skew only shifts where a window starts and no allowance is needed.
  */
 export const CLOCK_SKEW_ALLOWANCE_MS = 30_000
 

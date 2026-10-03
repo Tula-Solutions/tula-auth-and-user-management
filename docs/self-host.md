@@ -193,6 +193,9 @@ separately, and a restart forgets all three.
 every ten minutes one instance (whichever takes a PostgreSQL advisory lock first; the others
 skip that round) deletes:
 
+The lock needs `DATABASE_URL` to be a direct connection or a session-mode pooler. Behind a
+transaction-mode pooler (PgBouncer in `transaction` mode) retention can stop without an error.
+
 - sign-in and sign-up attempts that have expired;
 - emailed codes and links one hour after they expire;
 - sessions, with their refresh tokens, 30 days after they were revoked or expired.
