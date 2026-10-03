@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@tula/conformance": "workspace:*",
     "@tula/tsconfig": "workspace:*",
     "@types/nodemailer": "^8.0.2"
   }

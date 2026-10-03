@@ -31,8 +31,20 @@
       },
       "devDependencies": {
         "@electric-sql/pglite": "^0.5.8",
+        "@tula/conformance": "workspace:*",
         "@tula/tsconfig": "workspace:*",
         "@types/nodemailer": "^8.0.2",
+      },
+    },
+    "packages/conformance": {
+      "name": "@tula/conformance",
+      "version": "0.0.0",
+      "dependencies": {
+        "@tula/contract": "workspace:*",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "@tula/tsconfig": "workspace:*",
       },
     },
     "packages/contract": {
@@ -166,6 +178,8 @@
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
     "@tula/api": ["@tula/api@workspace:apps/api"],
+
+    "@tula/conformance": ["@tula/conformance@workspace:packages/conformance"],
 
     "@tula/contract": ["@tula/contract@workspace:packages/contract"],
 

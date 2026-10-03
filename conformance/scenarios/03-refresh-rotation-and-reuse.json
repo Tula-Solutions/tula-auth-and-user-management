@@ -1,0 +1,213 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "refresh rotation and reuse detection",
+  "description": "Refresh tokens are single-use. A retry inside the 10-second grace period gets the same next token; replaying a rotated token after it ends the whole session, including its newest token and its access tokens.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"]
+          },
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "signUpId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "the right code completes the sign-up and returns tokens in the body for a native client",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "sessionId": "step.sessionId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "refreshing returns a new access token and the next refresh token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "accessToken": "$any",
+          "refreshToken": {
+            "$not": "{{refreshToken}}"
+          }
+        }
+      },
+      "capture": {
+        "secondToken": "refreshToken"
+      }
+    },
+    {
+      "name": "retrying the same refresh at once returns the same next token, not a new one",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "refreshToken": "{{secondToken}}"
+        }
+      }
+    },
+    {
+      "name": "the next token rotates in turn",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{secondToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "refreshToken": {
+            "$not": "{{secondToken}}"
+          }
+        }
+      },
+      "capture": {
+        "thirdToken": "refreshToken",
+        "liveAccessToken": "accessToken"
+      }
+    },
+    {
+      "name": "let the reuse grace period pass",
+      "wait": "11s"
+    },
+    {
+      "name": "replaying the first token is detected as reuse",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "session.reuse_detected"
+        }
+      }
+    },
+    {
+      "name": "the newest token of that session no longer works either",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{thirdToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.reuse_detected"
+        }
+      }
+    },
+    {
+      "name": "and its unexpired access token is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{liveAccessToken}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "an unknown refresh token is session.invalid_token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "tula_rt_0000000000000000000000000000000000000000000"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.invalid_token"
+        }
+      }
+    }
+  ]
+}

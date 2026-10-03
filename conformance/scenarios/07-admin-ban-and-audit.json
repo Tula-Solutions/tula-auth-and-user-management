@@ -1,0 +1,262 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "admin ban and audit log",
+  "description": "Banning a user ends their sessions at once and keeps them out; lifting the ban lets them sign in again. Each admin action is in the audit log, without the user's email.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"]
+          },
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "signUpId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "the right code completes the sign-up and returns tokens in the body for a native client",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "sessionId": "step.sessionId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "an admin bans the user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/{{userId}}/ban",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "bannedAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "their access token stops working",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "their refresh token stops working",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signInId": "id"
+      }
+    },
+    {
+      "name": "the right password tells a banned user why they cannot sign in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "auth.user_banned"
+        }
+      }
+    },
+    {
+      "name": "the ban and the session it ended are in the audit log",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{userId}}&action=user.banned",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "user.banned",
+              "actor": {
+                "type": "admin",
+                "id": "$any"
+              },
+              "target": {
+                "type": "user",
+                "id": "{{userId}}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the ended session is recorded with its reason",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{sessionId}}&action=session.revoked",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "metadata": {
+                "userId": "{{userId}}",
+                "reason": "user_banned"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a publishable key cannot read the audit log",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "an admin lifts the ban",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/{{userId}}/unban",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": null
+        }
+      }
+    },
+    {
+      "name": "the user can sign in again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          }
+        }
+      }
+    }
+  ]
+}

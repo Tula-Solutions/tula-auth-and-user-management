@@ -85,7 +85,8 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/tsconfig` | Shared tsconfig bases. |
 | `packages/{core,react,nextjs,expo,config,cli,mcp}` | SDKs and tooling (Phase 1+). |
 | `native/{swift,android}` | Native SDKs (Phase 2). |
-| `conformance/` | Language-neutral JSON scenarios every SDK must pass. |
+| `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server. |
+| `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema. |
 
 ### API module pattern (hybrid hexagonal — see ADR 0001)
 
@@ -226,6 +227,11 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   bunfig from the test cwd, and Turborepo runs tests per package). Aim for 95% on
   security-sensitive modules. `bun run test:harness` enforces that every package with a
   `test:coverage` script has a threshold.
+- **Behaviour a client can observe belongs in a conformance scenario.** `conformance/scenarios/*.json`
+  run in process as part of `bun test` (`apps/api/src/conformance.test.ts`) and against a live
+  server with `bun run conformance`. When a route's request, response or error code changes, the
+  scenarios change with it. After editing the scenario format run
+  `bun run --filter @tula/conformance schema:generate`.
 - **Every bug fix and every addressed review finding gets a regression test that fails first.**
 
 ## Definition of done (the feedback loop)
@@ -297,4 +303,5 @@ bun run seed                # local workspace, default project, dev + prod envir
 bun run api-key:create --environment <id> [--kind secret|publishable]
                             # mint a key (printed once); bootstraps the first secret key
 bun run test:integration    # Postgres tests against docker compose (needs .env)
+bun run conformance         # run conformance/ scenarios against a live server (see conformance/README.md)
 ```
