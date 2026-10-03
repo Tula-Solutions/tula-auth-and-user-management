@@ -259,6 +259,12 @@ export async function consume(
 export interface VerifyLinkInput {
   purpose: VerificationPurpose
   linkToken: string
+  /**
+   * Pass `false` to leave a good link unconsumed, when more must be checked before it is spent
+   * (a sign-in link is only spent in the browser that asked for it). The caller then spends it
+   * with {@link consume}.
+   */
+  consume?: boolean
 }
 
 /**
@@ -270,7 +276,7 @@ export interface VerifyLinkInput {
  * @param deps - Clock and token store.
  * @param scope - The environment the request resolved to.
  * @param input - Purpose and the presented link token.
- * @returns The consumed token.
+ * @returns The token, consumed unless `input.consume` is `false`.
  * @throws AuthError `verification.expired` when the link is unknown, used, expired, from another
  *   environment or for another purpose.
  */
@@ -284,7 +290,12 @@ export async function verifyLink(
     scope.environmentId,
     sha256Hex(input.linkToken)
   )
-  if (!token || token.purpose !== input.purpose) {
+  if (
+    !token ||
+    token.purpose !== input.purpose ||
+    token.consumedAt ||
+    token.expiresAt.getTime() <= now.getTime()
+  ) {
     throw new AuthError('verification.expired')
   }
   // Two concurrent issues can both commit before either consumes the other's token; only the
@@ -294,11 +305,12 @@ export async function verifyLink(
     token.purpose,
     subjectOf(token)
   )
-  if (
-    latest?.id !== token.id ||
-    !(await deps.verificationTokens.consume(scope.environmentId, token.id, now))
-  ) {
+  if (latest?.id !== token.id) {
     throw new AuthError('verification.expired')
   }
+  if (input.consume === false) {
+    return token
+  }
+  await consume(deps, scope, token.id)
   return { ...token, consumedAt: now }
 }

@@ -24,6 +24,38 @@ export interface ChannelLike {
   postMessage(message: unknown): void
   /** Called with each message another tab posts. */
   onmessage: ((event: { data: unknown }) => void) | null
+  /** Stop receiving. A channel that is only posted to once is closed right after. */
+  close?(): void
+}
+
+/**
+ * The part of `localStorage` the client uses, for one thing only: the binding of an emailed
+ * sign-in link, which a new tab of the same browser has to be able to read.
+ */
+export interface LinkStorageLike {
+  /** @returns The stored value, or `null`. */
+  getItem(key: string): string | null
+  /** @param value - Stored under `key`, replacing what was there. */
+  setItem(key: string, value: string): void
+  /** @param key - The entry to delete. */
+  removeItem(key: string): void
+  /** How many entries the storage holds, to find the client's own expired ones. */
+  readonly length: number
+  /** @returns The name of the `index`-th entry, or `null`. */
+  key(index: number): string | null
+}
+
+/** The page's address, as far as the client reads and rewrites it. */
+export interface PageLike {
+  /** @returns The page's full URL, fragment included. */
+  url(): string
+  /**
+   * Replace the address shown for the page without loading anything
+   * (`history.replaceState`).
+   *
+   * @param url - The new URL.
+   */
+  replaceUrl(url: string): void
 }
 
 /**
@@ -37,11 +69,36 @@ export interface Environment {
   locks: LockManagerLike | undefined
   /** Opens a channel to the origin's other tabs, when the runtime can. */
   createChannel: ((name: string) => ChannelLike) | undefined
+  /**
+   * Storage shared by the tabs of one browser, when the runtime has it and allows it. Used for
+   * an emailed link's binding and nothing else: never a token, never an attempt's secret.
+   */
+  linkStorage: LinkStorageLike | undefined
+  /** The page's address, in a browser. */
+  page: PageLike | undefined
+  /**
+   * Run `callback` once after `ms` milliseconds.
+   *
+   * @returns A function that cancels it.
+   */
+  setTimer(callback: () => void, ms: number): () => void
 }
 
 interface RuntimeGlobals {
   navigator?: { locks?: LockManagerLike }
   BroadcastChannel?: new (name: string) => ChannelLike
+  localStorage?: LinkStorageLike
+  location?: { href: string }
+  history?: { state: unknown; replaceState(state: unknown, unused: string, url: string): void }
+}
+
+/** `localStorage`, when reading the property does not throw (it does in some sandboxed frames). */
+function linkStorageOf(globals: RuntimeGlobals): LinkStorageLike | undefined {
+  try {
+    return globals.localStorage
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -49,7 +106,8 @@ interface RuntimeGlobals {
  *
  * Browsers have both. Where one is missing the client simply coordinates less: without locks
  * two tabs can refresh at once (the server's reuse grace period makes that harmless), and
- * without a channel a tab learns of another tab's sign-out on its next refresh.
+ * without a channel a tab learns of another tab's sign-out on its next refresh. Without
+ * `localStorage` an emailed sign-in link cannot be honoured (the code in the same email can).
  *
  * @param globals - The global object to read (the real one unless a test passes its own).
  * @returns The environment.
@@ -58,9 +116,22 @@ export function runtimeEnvironment(
   globals: RuntimeGlobals = globalThis as unknown as RuntimeGlobals
 ): Environment {
   const Channel = globals.BroadcastChannel
+  const { location, history } = globals
   return {
     now: () => Date.now(),
     locks: globals.navigator?.locks,
     createChannel: Channel ? (name) => new Channel(name) : undefined,
+    linkStorage: linkStorageOf(globals),
+    page:
+      location && history
+        ? {
+            url: () => location.href,
+            replaceUrl: (url) => history.replaceState(history.state, '', url),
+          }
+        : undefined,
+    setTimer(callback, ms) {
+      const timer = setTimeout(callback, ms)
+      return () => clearTimeout(timer)
+    },
   }
 }

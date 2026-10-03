@@ -38,9 +38,9 @@ bun run conformance
 | `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
-audit entries, and leaves them there. A full run takes about two and a half minutes, most of it
-waiting: 61 seconds for an address's email cooldown (twice), 11 for the refresh grace period
-and 6 for a settings change to reach the second instance.
+audit entries, and leaves them there. A full run takes about three and a half minutes, most of
+it waiting: 61 seconds for an address's email cooldown (three times), 11 for the refresh grace
+period and 6 for a settings change to reach the second instance.
 
 The exit code is 0 when at least one scenario passed and none failed. A failing step prints the
 status, the error code and short plain values that differed. Tokens, long strings, objects and
@@ -115,9 +115,21 @@ included: use `attempt`).
 - **Email steps** read the 6-digit code from the newest email to an address. `captureWrong`
   also stores a code that is guaranteed not to be the right one. Right after a resend the
   newest email can still be the previous one; no scenario resends yet.
+- **Email-link steps** (`emailLink: { to, captureToken, captureAttempt?, url? }`) read the
+  sign-in link from the newest email to an address that carries a code, and take it apart as
+  the page it leads to does: the link token and the attempt id come from the URL's **fragment**
+  (`#tula_link=…&tula_attempt=…`). `url`, when given, is what the link must be without its
+  fragment, exactly: it shows that the link leads to the redirect URL that was asked for and
+  has nothing in its query. Against a live server the link is read from Mailpit (the one
+  message is fetched, since a link is not in a subject). A runner for another language needs a
+  way to read an email's text to run these steps.
 - **Wait steps** let time pass: a real sleep against a live server, a clock advance in process.
+- **`cleanup`** (optional, beside `steps`) lists steps that run after the scenario's steps
+  **whether or not they passed**, with whatever was captured before the failure. A scenario
+  that changes the environment's settings puts them back there, so a failure half-way cannot
+  break the scenarios after it. A cleanup step that fails fails the scenario.
 
-Steps run in order and a scenario stops at its first failing step.
+Steps run in order and a scenario stops at its first failing step (its cleanup still runs).
 
 ## What is covered
 
@@ -136,19 +148,27 @@ Steps run in order and a scenario stops at its first failing step.
 | `11-two-instances` | Two instances behave as one server: a token from one is accepted by the other, a sign-out on one is refused by the other at once, and wrong passwords sent to either share one lockout. |
 | `12-environment-settings` | Settings are replaced through the admin API, guarded by `If-Match` (428 without it, 412 when stale); the new password policy is enforced at sign-up and shown by `/v1/client/config` on both instances; the audit entry lists keys, not values (needs a secret key). |
 | `13-attempt-binding` | An attempt id alone does nothing: a call without the attempt's secret, with a wrong one or with another attempt's is answered exactly like an unknown attempt and uses up nothing; the right secret then completes it, and no later response repeats the secret. |
+| `14-email-code-sign-in` | With the email code enabled, a sign-in offers it whatever the address; asking for a code answers the same for an address with and without an account (and is rate limited the same); a wrong code is refused with the guesses left; a password-reset code is not a sign-in code; the right code signs in and proves the address; a user with no password gets the generic failure for any password (needs a secret key). |
+| `15-email-link-sign-in` | A link leads only to an allowed redirect URL, matched exactly, with its token in the fragment; without the asking client's binding it is refused and not used up; with it, it is accepted and returns no tokens; only the client holding the attempt's secret completes; a used link is dead; an address with no account looks the same (needs a secret key). |
+| `16-passwordless-sign-up` | A sign-up without a password is a validation error where one is required; where it is optional the account is created without one, signs in with an emailed code and never with a password; a sign-up that chooses a password works as before (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
 (the app name, and a 14-character minimum password that every generated password still meets)
 and puts the original document back in its last steps; if it fails before that, the changed
-settings stay until you restore them with `PUT /v1/admin/settings`. An environment that had
+settings stay until you restore them with `PUT /v1/admin/settings`. Scenarios 14 to 16 enable
+the email methods (and, in 16, an optional sign-up password) and restore the original document
+in `cleanup` steps, which run even when a step fails. An environment that had
 never saved settings ends the run with a saved copy of its defaults (the same behaviour, but
 `PASSWORD_POLICY` and `CORS_ORIGINS` no longer apply to it). Browser cookie delivery is not covered yet; scenarios use a native client
 kind so tokens arrive in the response body. For the same reason the origin rule for browser
 attempts (`request.origin_not_allowed`) is covered by the API's own tests, not by a scenario:
-which origins a deployment allows is not something a scenario can assume. `needs_first_factor`
-and `needs_second_factor` cannot be reached over HTTP until a second sign-in method or factor
-exists (steps 1.7 and 1.8).
+which origins a deployment allows is not something a scenario can assume. `needs_second_factor`
+cannot be reached over HTTP until a second factor exists (step 1.8). The email-link scenario
+uses the redirect URL `https://app.conformance.example/auth/link`, which it adds to the
+allow-list itself; nothing is ever fetched from it. That an address with no account is sent a
+notice with no code and no link is covered by the API's own tests: the runner cannot assert
+what an email does not contain.
 
 ## Adding a scenario
 

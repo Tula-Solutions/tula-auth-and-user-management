@@ -106,6 +106,39 @@ export function describeVerificationTokenStore(
       expect(await ctx.store.consume(ctx.a.environmentId, first.id, later(2_000))).toBe(false)
     })
 
+    test('a sign-in token is kept apart from the other purposes of the same attempt', async () => {
+      const flowAttemptId = await ctx.a.flowAttempt()
+      const verification = token(ctx.a, { flowAttemptId })
+      const signIn = token(ctx.a, {
+        flowAttemptId,
+        purpose: 'sign_in',
+        linkTokenHash: 'link-sign-in',
+      })
+      await ctx.store.replace(verification, now)
+      await ctx.store.replace(signIn, later(1_000))
+
+      // Storing the sign-in token did not retire the verification code, and each purpose finds
+      // only its own.
+      const found = await ctx.store.findLatest(ctx.a.environmentId, 'sign_in', { flowAttemptId })
+      expect(found).toMatchObject({ id: signIn.id, purpose: 'sign_in', consumedAt: null })
+      expect(
+        await ctx.store.findLatest(ctx.a.environmentId, 'email_verification', { flowAttemptId })
+      ).toMatchObject({ id: verification.id, consumedAt: null })
+      expect(
+        await ctx.store.findLatest(ctx.a.environmentId, 'password_reset', { flowAttemptId })
+      ).toBeNull()
+      expect((await ctx.store.findByLinkHash(ctx.a.environmentId, 'link-sign-in'))?.purpose).toBe(
+        'sign_in'
+      )
+      // It is purged with every other expired token.
+      expect(
+        await ctx.store.deleteExpired(ctx.a.environmentId, later(600_000), 10)
+      ).toBeGreaterThanOrEqual(2)
+      expect(
+        await ctx.store.findLatest(ctx.a.environmentId, 'sign_in', { flowAttemptId })
+      ).toBeNull()
+    })
+
     test('"latest" means the newest createdAt (then id), not the last one written', async () => {
       const flowAttemptId = await ctx.a.flowAttempt()
       const newer = token(ctx.a, { flowAttemptId, createdAt: later(60_000) })

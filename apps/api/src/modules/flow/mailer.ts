@@ -41,3 +41,22 @@ export async function sendNoAccountNotice(
 ): Promise<void> {
   await Email.send(deps, tenant, to, { type: 'no_account' })
 }
+
+/**
+ * Tell an address's owner that someone asked to sign in there by email, but it has no account.
+ *
+ * Sent instead of a sign-in code or link, so asking for one answers, costs and is rate limited
+ * the same for addresses with and without an account. It contains no code and no link.
+ *
+ * @param deps - The mailer, settings store and config.
+ * @param tenant - The environment the sign-in was started in.
+ * @param to - The address the sign-in was started for.
+ * @throws Error when the relay fails (see {@link Mailer.send}).
+ */
+export async function sendNoAccountSignInNotice(
+  deps: MailDeps,
+  tenant: Pick<Tenant, 'environmentId'>,
+  to: string
+): Promise<void> {
+  await Email.send(deps, tenant, to, { type: 'no_account_sign_in' })
+}

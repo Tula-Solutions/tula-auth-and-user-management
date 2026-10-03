@@ -1,0 +1,593 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "email link sign-in",
+  "description": "An emailed sign-in link leads only to a redirect URL the environment allows, exactly, and carries its token in the URL fragment. It works only together with the binding the asking client was given: opened without it (another browser or device), it is refused and nothing is used up. Accepting the link returns no tokens; the client that started the sign-in and holds the attempt's secret completes it. A used link is dead. The settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "stranger": {
+      "generate": "email"
+    },
+    "redirect": "https://app.conformance.example/auth/link"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "signIn": {
+              "methods": {
+                "password": {
+                  "enabled": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "origins": "settings.urls.allowedOrigins",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications"
+      }
+    },
+    {
+      "name": "enable the email code and the email link, and allow one redirect URL",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "emailLink": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "password": "required"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            },
+            "allowedRedirectUrls": ["{{redirect}}"]
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "emailCode": {
+                  "enabled": true
+                },
+                "emailLink": {
+                  "enabled": true
+                }
+              }
+            },
+            "signUp": {
+              "password": "required"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an admin creates a user with no password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "emailVerifiedAt": null
+        }
+      },
+      "capture": {
+        "userId": "id"
+      }
+    },
+    {
+      "name": "start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": ["password", "email_code", "email_link"]
+          }
+        }
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a link with no redirect URL is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/prepare",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_link"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "a URL under an allowed one is not allowed: the match is exact",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/prepare",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_link",
+          "redirectUrl": "{{redirect}}/extra"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "request.redirect_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "nor is an allowed URL with a query added",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/prepare",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_link",
+          "redirectUrl": "{{redirect}}?next=https://evil.example"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "request.redirect_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "nor another site",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/prepare",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_link",
+          "redirectUrl": "https://evil.example/auth/link"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "request.redirect_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "ask for a link to the allowed URL: the answer carries a binding, once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/prepare",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_link",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "prepared": {
+              "strategy": "email_link",
+              "destination": "$any"
+            }
+          },
+          "linkBinding": {
+            "$matches": "^tula_lb_[A-Za-z0-9_-]{43}$"
+          },
+          "attemptSecret": "$absent",
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "binding": "linkBinding"
+      }
+    },
+    {
+      "name": "read the emailed link: the allowed URL, with the token only in the fragment",
+      "emailLink": {
+        "to": "{{email}}",
+        "captureToken": "linkToken",
+        "captureAttempt": "linkAttempt",
+        "url": "{{redirect}}"
+      }
+    },
+    {
+      "name": "until the link is opened the waiting client is told nothing has changed",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/attempt",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_link"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor"
+          },
+          "session": "$absent",
+          "linkBinding": "$absent"
+        }
+      }
+    },
+    {
+      "name": "opened without the binding (another browser), the link is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/link",
+        "body": {
+          "token": "{{linkToken}}",
+          "attemptId": "{{linkAttempt}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "verification.different_browser",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "and with a made-up binding",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/link",
+        "body": {
+          "token": "{{linkToken}}",
+          "attemptId": "{{linkAttempt}}",
+          "binding": "tula_lb_not-the-binding"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "verification.different_browser"
+        }
+      }
+    },
+    {
+      "name": "the waiting client still gets nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/attempt",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_link"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor"
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a made-up token is answered like an expired link, even with the real binding",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/link",
+        "body": {
+          "token": "not-the-token-not-the-token-not-the-token-00",
+          "attemptId": "{{linkAttempt}}",
+          "binding": "{{binding}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "verification.expired"
+        }
+      }
+    },
+    {
+      "name": "refused elsewhere, the link was not used up: with its binding it is accepted, and returns no tokens",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/link",
+        "body": {
+          "token": "{{linkToken}}",
+          "attemptId": "{{linkAttempt}}",
+          "binding": "{{binding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "verified",
+          "session": "$absent",
+          "accessToken": "$absent",
+          "refreshToken": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a link works once: opening it again is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/link",
+        "body": {
+          "token": "{{linkToken}}",
+          "attemptId": "{{linkAttempt}}",
+          "binding": "{{binding}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "verification.expired"
+        }
+      }
+    },
+    {
+      "name": "the starting client, holding the attempt's secret, completes the sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/attempt",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_link"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the link proved the address: it is now verified",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "emailVerifiedAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "start a sign-in for an address with no account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{stranger}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": ["password", "email_code", "email_link"]
+          }
+        }
+      },
+      "capture": {
+        "strangerId": "id",
+        "strangerSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "asking for a link there gets the same answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{strangerId}}/first-factor/prepare",
+        "attempt": "{{strangerSecret}}",
+        "body": {
+          "strategy": "email_link",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "prepared": {
+              "strategy": "email_link",
+              "destination": "$any"
+            }
+          },
+          "linkBinding": {
+            "$matches": "^tula_lb_[A-Za-z0-9_-]{43}$"
+          },
+          "attemptSecret": "$absent",
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "strangerBinding": "linkBinding"
+      }
+    },
+    {
+      "name": "and waiting there looks the same, for ever",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{strangerId}}/first-factor/attempt",
+        "attempt": "{{strangerSecret}}",
+        "body": {
+          "strategy": "email_link"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor"
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the used token does not open that attempt either",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/link",
+        "body": {
+          "token": "{{linkToken}}",
+          "attemptId": "{{strangerId}}",
+          "binding": "{{strangerBinding}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "verification.expired"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "password": {
+                  "enabled": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

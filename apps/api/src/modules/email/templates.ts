@@ -11,7 +11,7 @@ export interface EmailBrand {
 
 /** An emailed 6-digit code, and optionally a link that does the same. */
 export interface CodeMessage {
-  type: 'email_verification' | 'password_reset'
+  type: 'email_verification' | 'password_reset' | 'sign_in'
   code: string
   /** Minutes until the code and link expire. */
   ttlMinutes: number
@@ -21,7 +21,7 @@ export interface CodeMessage {
 
 /** A notice that stands in for a code, so sign-up and reset answer alike for every address. */
 export interface NoticeMessage {
-  type: 'account_exists' | 'no_account'
+  type: 'account_exists' | 'no_account' | 'no_account_sign_in'
 }
 
 /**
@@ -73,6 +73,8 @@ interface Copy {
   lead: string[]
   /** Label of the link button of a code message. */
   action?: string
+  /** What introduces the link in the text part, when it needs more than "Or open this link". */
+  linkLead?: string
   /** Facts shown between the lead and the closing, one `label: value` per line. */
   details?: [label: string, value: string][]
   /** Paragraphs after the code. */
@@ -94,6 +96,18 @@ const COPY: Record<(CodeMessage | NoticeMessage)['type'], Copy> = {
     action: 'Reset password',
     closing: [IGNORE],
   },
+  sign_in: {
+    subject: 'is your {app} sign-in code',
+    lead: ['Enter this code to sign in to {app}:'],
+    action: 'Sign in to {app}',
+    // The link is bound to the browser that asked for it (ADR 0024), so the email says so
+    // rather than let someone on another device wonder why it did nothing.
+    linkLead:
+      'Or, in the browser where you asked to sign in, open this link (on any other device, use the code)',
+    closing: [
+      "If you didn't ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.",
+    ],
+  },
   account_exists: {
     subject: 'Your {app} account already exists',
     lead: [
@@ -106,6 +120,14 @@ const COPY: Record<(CodeMessage | NoticeMessage)['type'], Copy> = {
     subject: '{app} password reset requested',
     lead: [
       'Someone asked to reset the {app} password for this email address, but there is no account for it.',
+      'If that was you, you may have signed up with a different address, or you can create an account.',
+    ],
+    closing: ["If it wasn't you, you can safely ignore this email."],
+  },
+  no_account_sign_in: {
+    subject: '{app} sign-in requested',
+    lead: [
+      'Someone asked to sign in to {app} with this email address, but there is no account for it.',
       'If that was you, you may have signed up with a different address, or you can create an account.',
     ],
     closing: ["If it wasn't you, you can safely ignore this email."],
@@ -276,7 +298,7 @@ export function render(brand: EmailBrand, message: EmailMessage): Omit<MailMessa
       ...lead,
       ...(details.length > 0 ? [details.join('\n')] : []),
       ...(code ? [code.code] : []),
-      ...(code?.linkUrl ? [`Or open this link: ${code.linkUrl}`] : []),
+      ...(code?.linkUrl ? [`${copy.linkLead ?? 'Or open this link'}: ${code.linkUrl}`] : []),
       ...closing,
       ['--', app, ...(support ? [support] : [])].join('\n'),
     ].join('\n\n'),
@@ -287,7 +309,10 @@ export function render(brand: EmailBrand, message: EmailMessage): Omit<MailMessa
       ...(details.length > 0 ? [`<p>${details.map(escapeHtml).join('<br>')}</p>`] : []),
       ...(code ? [`<p style="${CODE_STYLE}">${escapeHtml(code.code)}</p>`] : []),
       ...(code?.linkUrl
-        ? [`<p><a href="${escapeHtml(code.linkUrl)}">${escapeHtml(copy.action ?? 'Open')}</a></p>`]
+        ? [
+            ...(copy.linkLead ? [paragraph(`${copy.linkLead}:`)] : []),
+            `<p><a href="${escapeHtml(code.linkUrl)}">${escapeHtml(named(copy.action ?? 'Open'))}</a></p>`,
+          ]
         : []),
       ...closing.map(paragraph),
       `<p style="${FOOTER_STYLE}">${escapeHtml(app)}${

@@ -1,4 +1,9 @@
-import { durationToMs, FLOW_ATTEMPT_HEADER } from '@tula/contract'
+import {
+  durationToMs,
+  EMAIL_LINK_ATTEMPT_PARAM,
+  EMAIL_LINK_TOKEN_PARAM,
+  FLOW_ATTEMPT_HEADER,
+} from '@tula/contract'
 import { match, pick } from './match'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
 import { expandJson, fill } from './template'
@@ -37,6 +42,15 @@ export interface Target {
    */
   emailCode: (to: string) => Promise<string>
   /**
+   * The sign-in link in the newest email to an address that carries a code. Optional: a target
+   * that cannot read email bodies fails the `emailLink` steps and runs everything else.
+   *
+   * @param to - The recipient.
+   * @returns The link's whole URL, fragment included.
+   * @throws Error when no such email arrived, or it holds no link.
+   */
+  emailLink?: (to: string) => Promise<string>
+  /**
    * Let time pass on the server: a real sleep for a live one, a clock advance in-process.
    *
    * @param ms - How long.
@@ -56,7 +70,10 @@ export interface StepResult {
 export interface ScenarioResult {
   name: string
   status: 'passed' | 'failed' | 'skipped'
-  /** Steps that ran, in order. A failed step is the last one. */
+  /**
+   * Steps that ran, in order. A failed step is the last of the scenario's own steps; the
+   * cleanup steps, when the scenario has them, follow it.
+   */
   steps: StepResult[]
   /** Why it was skipped, when it was. */
   reason?: string
@@ -188,6 +205,10 @@ async function runStep(
     }
     return
   }
+  if ('emailLink' in step) {
+    readEmailLink(await linkFor(target, fill(step.emailLink.to, variables)), step, variables)
+    return
+  }
   const request = fill(step.request, variables)
   const expected = fill(step.expect, variables)
   for (let attempt = 1; attempt <= (step.times ?? 1); attempt++) {
@@ -244,6 +265,40 @@ async function runStep(
   }
 }
 
+async function linkFor(target: Target, to: string): Promise<string> {
+  if (!target.emailLink) {
+    throw new StepFailure(['this target cannot read links from emails'])
+  }
+  return target.emailLink(to)
+}
+
+/**
+ * Take an emailed link apart and store its pieces. Nothing of the link is ever put in a
+ * problem: its token is a credential until it is used.
+ */
+function readEmailLink(
+  link: string,
+  step: Extract<Step, { emailLink: unknown }>,
+  variables: Record<string, string>
+): void {
+  const at = link.indexOf('#')
+  const fragment = new URLSearchParams(at === -1 ? '' : link.slice(at + 1))
+  const token = fragment.get(EMAIL_LINK_TOKEN_PARAM)
+  const attempt = fragment.get(EMAIL_LINK_ATTEMPT_PARAM)
+  if (!token || !attempt) {
+    throw new StepFailure(['the link carries no token and attempt id in its fragment'])
+  }
+  variables[step.emailLink.captureToken] = token
+  if (step.emailLink.captureAttempt) {
+    variables[step.emailLink.captureAttempt] = attempt
+  }
+  const expected =
+    step.emailLink.url === undefined ? undefined : fill(step.emailLink.url, variables)
+  if (expected !== undefined && link.slice(0, at) !== expected) {
+    throw new StepFailure(['the link, without its fragment, is not the expected URL'])
+  }
+}
+
 /** How many distinct addresses {@link nextOrigin} cycles through. */
 const ORIGINS = 250 * 250
 
@@ -276,7 +331,8 @@ export function exitCode(counts: { passed: number; failed: number; skipped: numb
 /**
  * Run one scenario against a server.
  *
- * Steps run in order and stop at the first failure. A failing step reports what differed: the
+ * Steps run in order and stop at the first failure; the scenario's `cleanup` steps then run
+ * in any case. A failing step reports what differed: the
  * status, the error code and short plain values. Tokens, long strings, objects and arrays are
  * described, never quoted, and any value the scenario generated or captured is shown as its
  * `{{placeholder}}`, because the report is read in CI logs.
@@ -297,24 +353,31 @@ export async function runScenario(scenario: Scenario, target: Target): Promise<S
   }
   const variables = initialVariables(scenario, nextOrigin())
   const steps: StepResult[] = []
-  for (const step of scenario.steps) {
-    try {
-      await runStep(target, step, variables)
-      steps.push({ name: step.name, ok: true, problems: [] })
-    } catch (error) {
-      const problems =
-        error instanceof StepFailure
-          ? error.problems
-          : [error instanceof Error ? error.message : String(error)]
-      steps.push({
-        name: step.name,
-        ok: false,
-        problems: problems.map((problem) => redact(problem, variables)),
-      })
-      return { name: scenario.name, status: 'failed', steps }
+  /** Run steps in order until one fails. Returns whether all of them passed. */
+  async function run(list: readonly Step[]): Promise<boolean> {
+    for (const step of list) {
+      try {
+        await runStep(target, step, variables)
+        steps.push({ name: step.name, ok: true, problems: [] })
+      } catch (error) {
+        const problems =
+          error instanceof StepFailure
+            ? error.problems
+            : [error instanceof Error ? error.message : String(error)]
+        steps.push({
+          name: step.name,
+          ok: false,
+          problems: problems.map((problem) => redact(problem, variables)),
+        })
+        return false
+      }
     }
+    return true
   }
-  return { name: scenario.name, status: 'passed', steps }
+  const passed = await run(scenario.steps)
+  // Whatever happened above: a scenario that changed the server's settings puts them back.
+  const cleaned = await run(scenario.cleanup ?? [])
+  return { name: scenario.name, status: passed && cleaned ? 'passed' : 'failed', steps }
 }
 
 /**

@@ -1326,7 +1326,9 @@ describe('a sign-in method the environment has switched off', () => {
       revision: 1,
       settings: {
         ...DEFAULT_ENVIRONMENT_SETTINGS,
-        signIn: { methods: { password: { enabled: false } } },
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, password: { enabled: false } },
+        },
       },
     })
   })
@@ -1386,7 +1388,9 @@ describe('an attempt started before password sign-in was switched off', () => {
       revision: 1,
       settings: {
         ...DEFAULT_ENVIRONMENT_SETTINGS,
-        signIn: { methods: { password: { enabled: false } } },
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, password: { enabled: false } },
+        },
       },
     })
   }

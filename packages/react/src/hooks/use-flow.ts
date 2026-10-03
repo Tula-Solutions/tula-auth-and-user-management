@@ -35,6 +35,8 @@ export interface FlowState {
 /** A flow object from `@tula/core`, as far as the hooks care. */
 interface CoreFlow {
   readonly step: FlowStep
+  /** Stops what the flow has running and forgets what it kept in the browser, if anything. */
+  discard?(): void
 }
 
 /** What a flow hook is built from. */
@@ -53,6 +55,15 @@ export interface FlowController<Flow extends CoreFlow> extends FlowState {
    * @returns The next step, or `null` when it failed or no flow has been started.
    */
   act(action: (flow: Flow) => Promise<FlowStep>): Promise<FlowStep | null>
+  /**
+   * Follow something the flow does in the background (waiting for an emailed link to be
+   * opened) and take its result as the new step. Unlike {@link FlowController.act} it does not
+   * mark the flow pending and does not stop other actions from being sent meanwhile.
+   *
+   * @param action - Calls the flow object.
+   * @returns The step it resolved with, or `null` when it failed or no flow has been started.
+   */
+  watch(action: (flow: Flow) => Promise<FlowStep>): Promise<FlowStep | null>
 }
 
 /**
@@ -146,8 +157,33 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
     [run, messages]
   )
 
+  const watch = useCallback(
+    async (action: (current: Flow) => Promise<FlowStep>): Promise<FlowStep | null> => {
+      const current = flow.current
+      if (!current) {
+        return null
+      }
+      const started = generation.current
+      try {
+        const next = await action(current)
+        if (mounted.current && generation.current === started) {
+          setStep(next)
+        }
+        return next
+      } catch (caught) {
+        if (mounted.current && generation.current === started) {
+          setError(toTulaError(caught))
+        }
+        return null
+      }
+    },
+    []
+  )
+
   const reset = useCallback(() => {
     generation.current += 1
+    // The attempt is being left: stop anything it has running and drop what it kept.
+    flow.current?.discard?.()
     flow.current = null
     setStep(null)
     setError(null)
@@ -164,5 +200,5 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
     }
   }, [client, reset])
 
-  return { step, isPending, error, start, act, reset, clearError }
+  return { step, isPending, error, start, act, watch, reset, clearError }
 }

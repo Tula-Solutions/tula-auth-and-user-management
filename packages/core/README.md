@@ -57,6 +57,49 @@ const flow = await tula.resetPassword.start({ email })
 await flow.submit({ code, password: newPassword })
 ```
 
+### Signing in by email
+
+Where the environment enables them, a sign-in start answers `needs_first_factor` with
+`email_code` and/or `email_link` among its `strategies`.
+
+```ts
+const flow = await tula.signIn.start({ identifier: email })
+
+// A 6-digit code
+await flow.prepareFirstFactor({ strategy: 'email_code' })     // emails it; step.prepared says where to
+await flow.attemptFirstFactor({ strategy: 'email_code', code })  // → 'complete' (or 'needs_second_factor')
+
+// A link (the same email carries the code as well)
+if (tula.signIn.canUseEmailLink()) {
+  await flow.prepareFirstFactor({
+    strategy: 'email_link',
+    redirectUrl: 'https://app.example.com/auth/link',   // one of the environment's allowed redirect URLs, exactly
+  })
+  const step = await flow.waitForEmailLink({ signal })  // resolves when the link was opened in this browser
+}
+flow.discard()   // when the user leaves the screen: stops waiting, forgets the link's binding
+
+// On the page the link leads to, once:
+const { status } = await tula.signIn.handleEmailLink()
+// 'signed_in' | 'verified' | 'different_browser' | 'expired' | 'none'
+```
+
+- **A link works only in the browser that asked for it.** `handleEmailLink()` takes the token
+  out of the URL fragment (and out of the address bar), and sends it with a binding this
+  browser was given when it asked. In any other browser there is no binding: the answer is
+  `different_browser`, nothing is used up, and the user types the code where they started.
+- Opening a link never signs the opening tab in by itself. The tab that started the sign-in
+  completes it (`waitForEmailLink`), and the landing tab then shares its session: `signed_in`.
+  `verified` means the link was accepted but the starting tab has not finished (it was closed,
+  perhaps): the user starts again.
+- `waitForEmailLink()` asks the server every few seconds, at once when the landing tab says the
+  link was accepted, and obeys `Retry-After`. It ends when the step moves on, on `signal`,
+  `discard()`, sign-out or an error (an expired attempt is `flow.not_found`); nothing keeps
+  running afterwards. The other actions keep working while it waits.
+- The answer to `prepareFirstFactor` is the same whether or not the address has an account.
+- `signUp.start({ email })` without a password is accepted where the environment's config says
+  `signUp.password === 'optional'`.
+
 Every step status, so that a `switch` can be exhaustive: `needs_identifier`, `needs_password`,
 `needs_first_factor`, `needs_email_verification`, `needs_new_password`, `needs_second_factor`,
 `complete`. `needs_second_factor` has no action yet (it arrives with TOTP).
@@ -175,6 +218,15 @@ tula.setMessages(otherLocale)      // switch later
   session ends with the process. A React Native secure-store adapter comes in Phase 2.
 - An attempt's secret stays inside its flow object, in memory. It is not in `JSON.stringify(flow)`,
   not in logs and not in errors.
+- **The one thing this SDK puts in `localStorage`** is the binding of an emailed sign-in link
+  (`tula.link.<attempt id>`), because a new tab of the same browser has to read it. It is not a
+  token and not the attempt's secret: alone it authorizes nothing, with the emailed token it
+  only marks the attempt as proven, and the session still goes to the tab holding the secret.
+  It is removed when the link is used, when the sign-in completes and on `discard()`, and after
+  fifteen minutes otherwise. Where storage is missing or refused, `canUseEmailLink()` is
+  `false` and only the code is available.
+- An emailed link's token travels in the URL **fragment**, which a browser never sends to a
+  server, and `handleEmailLink()` removes it from the address before it sends anything.
 
 **The app and the API must be same-site (browsers).** The refresh cookie is `SameSite=Lax` and
 belongs to the API's origin, so the browser only sends it when the page and the API are on the

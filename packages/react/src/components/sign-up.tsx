@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'
-import { usePasswordChecklist } from '../hooks/use-password-checklist'
+import { useClientConfig, usePasswordChecklist } from '../hooks/use-password-checklist'
 import { type UseSignUpResult, useSignUp } from '../hooks/use-sign-up'
 import { formatText } from '../localization'
 import {
@@ -65,6 +65,9 @@ function AccountScreen(props: SignUpProps & { signUp: UseSignUpResult; focusTitl
   const [password, setPassword] = useState('')
   const [local, setLocal] = useState<{ email?: string; password?: string } | null>(null)
   const checklist = usePasswordChecklist(password, { email, firstName, lastName })
+  // The environment decides whether a sign-up must choose a password. Until its configuration
+  // has arrived the field is required, which is also what the server assumes.
+  const optional = useClientConfig()?.signUp?.password === 'optional'
   const limits = useRetryAfter<'start'>(signUp.error)
   const placed = placeErrors(signUp.error, fieldResolver(FIELDS))
   const wait = limits.secondsLeft('start')
@@ -74,7 +77,7 @@ function AccountScreen(props: SignUpProps & { signUp: UseSignUpResult; focusTitl
   const submit = async () => {
     const problems = {
       ...(email.trim() === '' && { email: t.common.required }),
-      ...(password === '' && { password: t.common.required }),
+      ...(password === '' && !optional && { password: t.common.required }),
     }
     if (Object.keys(problems).length > 0) {
       setLocal(problems)
@@ -86,7 +89,8 @@ function AccountScreen(props: SignUpProps & { signUp: UseSignUpResult; focusTitl
     // same rules, shown live, so the two agree.
     const next = await signUp.start({
       email: email.trim(),
-      password,
+      // Left empty where it is optional: the account is created without one.
+      ...(password !== '' && { password }),
       ...(collectName && firstName.trim() !== '' && { firstName: firstName.trim() }),
       ...(collectName && lastName.trim() !== '' && { lastName: lastName.trim() }),
     })
@@ -151,7 +155,8 @@ function AccountScreen(props: SignUpProps & { signUp: UseSignUpResult; focusTitl
           required
         />
         <PasswordField
-          label={t.signUp.passwordLabel}
+          label={optional ? t.signUp.passwordOptionalLabel : t.signUp.passwordLabel}
+          hint={optional ? t.signUp.passwordOptionalHint : undefined}
           name='password'
           autoComplete='new-password'
           value={password}
@@ -160,8 +165,9 @@ function AccountScreen(props: SignUpProps & { signUp: UseSignUpResult; focusTitl
             setLocal(null)
           }}
           errors={errorsOf('password')}
-          checks={checklist.checks}
-          required
+          // An optional password has no rules to meet until one is being typed.
+          checks={optional && password === '' ? undefined : checklist.checks}
+          required={!optional}
         />
         <Button type='submit' pending={signUp.isPending} disabled={wait > 0}>
           {t.signUp.continue}
@@ -216,6 +222,10 @@ function SignUpScreens(props: SignUpProps) {
  * code. The checklist is the environment's own policy evaluated by the same function the
  * server runs; whatever the server still refuses (a breached password, say) is shown on the
  * field it is about.
+ *
+ * Where the environment makes the password optional (`signUp.password: 'optional'`), the field
+ * says so and may be left empty: the account is then created without a password and signs in
+ * with a code sent by email.
  *
  * @param props - URLs, callbacks and appearance; all optional.
  * @returns The component.

@@ -21,8 +21,10 @@ const signIn: EmailMessage = {
 const MESSAGES: EmailMessage[] = [
   code,
   { type: 'password_reset', code: '482913', ttlMinutes: 10 },
+  { type: 'sign_in', code: '482913', ttlMinutes: 10 },
   { type: 'account_exists' },
   { type: 'no_account' },
+  { type: 'no_account_sign_in' },
   signIn,
   { type: 'password_changed', by: 'self', added: false, at },
 ]
@@ -41,9 +43,10 @@ describe('render', () => {
     }
   )
 
-  test.each<['email_verification' | 'password_reset', string]>([
+  test.each<['email_verification' | 'password_reset' | 'sign_in', string]>([
     ['email_verification', '482913 is your Acme verification code'],
     ['password_reset', '482913 is your Acme password reset code'],
+    ['sign_in', '482913 is your Acme sign-in code'],
   ])('%s leads the subject with the code', (type, subject) => {
     const email = render(acme, { type, code: '482913', ttlMinutes: 10 })
     expect(email.subject).toBe(subject)
@@ -53,9 +56,10 @@ describe('render', () => {
     expect(email.html).toContain('>482913</p>')
   })
 
-  test.each<['account_exists' | 'no_account', string]>([
+  test.each<['account_exists' | 'no_account' | 'no_account_sign_in', string]>([
     ['account_exists', 'Your Acme account already exists'],
     ['no_account', 'Acme password reset requested'],
+    ['no_account_sign_in', 'Acme sign-in requested'],
   ])('%s is a notice with no code and no link', (type, subject) => {
     const email = render(acme, { type })
     expect(email.subject).toBe(subject)
@@ -194,6 +198,32 @@ describe('render', () => {
       render(acme, { type: 'password_reset', code: '1', ttlMinutes: 1, linkUrl: 'https://a.test' })
         .html
     ).toContain('>Reset password</a>')
+  })
+
+  test('a sign-in link says it works only in the asking browser, and that the code works anywhere', () => {
+    const link = 'https://app.acme.test/auth/link#tula_link=abc_-123&tula_attempt=0199a1b2'
+    const email = render(acme, { type: 'sign_in', code: '482913', ttlMinutes: 10, linkUrl: link })
+    expect(email.text).toContain(
+      `Or, in the browser where you asked to sign in, open this link (on any other device, use the code): ${link}`
+    )
+    expect(email.html).toContain(
+      '<a href="https://app.acme.test/auth/link#tula_link=abc_-123&amp;tula_attempt=0199a1b2">Sign in to Acme</a>'
+    )
+    expect(email.html).toContain('in the browser where you asked to sign in')
+    expect(email.text).toContain('Nobody can sign in without what is in it.')
+    // Without a link the same email is the code alone.
+    const codeOnly = render(acme, { type: 'sign_in', code: '482913', ttlMinutes: 10 })
+    expect(codeOnly.text).not.toContain('http')
+    expect(codeOnly.html).not.toContain('<a ')
+  })
+
+  test('an app name in a link’s label is escaped like everywhere else', () => {
+    const email = render(
+      { name: '<b>Acme</b>', supportEmail: null },
+      { type: 'sign_in', code: '482913', ttlMinutes: 10, linkUrl: 'https://a.test/#tula_link=x' }
+    )
+    expect(email.html).toContain('>Sign in to &lt;b&gt;Acme&lt;/b&gt;</a>')
+    expect(email.html).not.toContain('<b>')
   })
 
   test('an app name cannot add a header: line breaks never reach the subject', () => {

@@ -3,10 +3,12 @@ import { join } from 'node:path'
 
 /**
  * Largest the client may be in an application's bundle, minified and gzipped, with its part of
- * the contract included. It is about 6 kB today; the budget leaves room for the next sign-in
- * methods, and makes a dependency that drags a library in fail here rather than in someone's app.
+ * the contract included. It is about 9.7 kB today (7.7 kB before the emailed code and link:
+ * their actions, the link's binding store, the wait for a link and the landing-page handler
+ * cost about 2 kB). The budget leaves room for the next sign-in methods, and makes a
+ * dependency that drags a library in fail here rather than in someone's app.
  */
-const GZIP_BUDGET_BYTES = 9_000
+const GZIP_BUDGET_BYTES = 11_000
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

@@ -359,6 +359,213 @@ describe('runScenario', () => {
     expect(requests[0]?.body).toEqual({ code: '123459', bad: '123450' })
   })
 
+  test('reads the emailed link and takes it apart: token and attempt from the fragment', async () => {
+    const asked: string[] = []
+    const link = 'https://app.example.com/auth/link#tula_link=l1nk-t0k3n_x&tula_attempt=attempt-9'
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      emailLink: async (to) => {
+        asked.push(to)
+        return link
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'read',
+            emailLink: {
+              to: '{{email}}',
+              captureToken: 'token',
+              captureAttempt: 'attempt',
+              url: '{{redirect}}',
+            },
+          },
+          {
+            name: 'open',
+            request: {
+              method: 'POST',
+              path: '/v1/client/sign-ins/link',
+              body: { token: '{{token}}', attemptId: '{{attempt}}' },
+            },
+            expect: { status: 200 },
+          },
+          { name: 'token only', emailLink: { to: '{{email}}', captureToken: 'again' } },
+        ],
+        {
+          variables: {
+            email: 'maya@example.com',
+            redirect: 'https://app.example.com/auth/link',
+          },
+        }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(asked).toEqual(['maya@example.com', 'maya@example.com'])
+    expect(requests[0]?.body).toEqual({ token: 'l1nk-t0k3n_x', attemptId: 'attempt-9' })
+  })
+
+  test.each<[string, string, object, string]>([
+    [
+      'a link that leads somewhere else',
+      'https://evil.example/auth/link#tula_link=t0k3n-value&tula_attempt=a1',
+      { url: 'https://app.example.com/auth/link' },
+      'the link, without its fragment, is not the expected URL',
+    ],
+    [
+      'a link with something in its query',
+      'https://app.example.com/auth/link?tula_link=t0k3n-value#tula_link=t0k3n-value&tula_attempt=a1',
+      { url: 'https://app.example.com/auth/link' },
+      'the link, without its fragment, is not the expected URL',
+    ],
+    [
+      'a link with the token in the query instead of the fragment',
+      'https://app.example.com/auth/link?tula_link=t0k3n-value&tula_attempt=a1',
+      {},
+      'the link carries no token and attempt id in its fragment',
+    ],
+    [
+      'a link with no attempt id',
+      'https://app.example.com/auth/link#tula_link=t0k3n-value',
+      {},
+      'the link carries no token and attempt id in its fragment',
+    ],
+  ])('%s fails the step without printing the link', async (_, link, extra, problem) => {
+    const { target } = fakeTarget(() => ({ status: 200 }), { emailLink: async () => link })
+    const result = await runScenario(
+      scenario([
+        { name: 'read', emailLink: { to: 'maya@example.com', captureToken: 'token', ...extra } },
+      ]),
+      target
+    )
+    expect(result.status).toBe('failed')
+    expect(result.steps[0]?.problems).toEqual([problem])
+    expect(formatResult(result)).not.toContain('t0k3n-value')
+  })
+
+  test('a target that cannot read links fails the link step and says why', async () => {
+    const { target } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario([{ name: 'read', emailLink: { to: 'maya@example.com', captureToken: 'token' } }]),
+      target
+    )
+    expect(result.steps).toEqual([
+      { name: 'read', ok: false, problems: ['this target cannot read links from emails'] },
+    ])
+  })
+
+  test('cleanup steps run after the steps, when they all pass', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario([{ name: 'change', request: get('/change'), expect: { status: 200 } }], {
+        cleanup: [{ name: 'restore', request: get('/restore'), expect: { status: 200 } }],
+      }),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(requests.map((seen) => seen.path)).toEqual(['/change', '/restore'])
+    expect(result.steps.map((step) => step.name)).toEqual(['change', 'restore'])
+  })
+
+  test('cleanup steps run even when a step failed, with what was captured before it', async () => {
+    const { target, requests } = fakeTarget((seen) =>
+      seen.path === '/read'
+        ? { status: 200, body: { id: 'original-1' } }
+        : { status: seen.path === '/break' ? 500 : 200 }
+    )
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'read',
+            request: get('/read'),
+            expect: { status: 200 },
+            capture: { original: 'id' },
+          },
+          { name: 'break', request: get('/break'), expect: { status: 200 } },
+          { name: 'never runs', request: get('/next'), expect: { status: 200 } },
+        ],
+        {
+          cleanup: [
+            { name: 'restore', request: get('/restore/{{original}}'), expect: { status: 200 } },
+          ],
+        }
+      ),
+      target
+    )
+    expect(requests.map((seen) => seen.path)).toEqual(['/read', '/break', '/restore/original-1'])
+    expect(result.status).toBe('failed')
+    expect(result.steps.map((step) => [step.name, step.ok])).toEqual([
+      ['read', true],
+      ['break', false],
+      ['restore', true],
+    ])
+    expect(formatResult(result)).toBe(
+      [
+        'FAILED test',
+        '  ok   read',
+        '  FAIL break',
+        '         expected status 200, got 500',
+        '  ok   restore',
+      ].join('\n')
+    )
+  })
+
+  test('a cleanup that fails fails a scenario whose steps passed, and stops the cleanup', async () => {
+    const { target, requests } = fakeTarget((seen) => ({
+      status: seen.path === '/restore' ? 412 : 200,
+    }))
+    const result = await runScenario(
+      scenario([{ name: 'change', request: get('/change'), expect: { status: 200 } }], {
+        cleanup: [
+          { name: 'restore', request: get('/restore'), expect: { status: 200 } },
+          { name: 'check', request: get('/check'), expect: { status: 200 } },
+        ],
+      }),
+      target
+    )
+    expect(result.status).toBe('failed')
+    expect(requests.map((seen) => seen.path)).toEqual(['/change', '/restore'])
+    expect(result.steps.at(-1)).toEqual({
+      name: 'restore',
+      ok: false,
+      problems: ['expected status 200, got 412'],
+    })
+  })
+
+  test('a cleanup step that needs a value no step captured fails without sending anything', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 500 }))
+    const result = await runScenario(
+      scenario([{ name: 'read', request: get('/read'), expect: { status: 200 } }], {
+        cleanup: [
+          { name: 'restore', request: get('/restore/{{original}}'), expect: { status: 200 } },
+        ],
+      }),
+      target
+    )
+    expect(requests.map((seen) => seen.path)).toEqual(['/read'])
+    expect(result.steps.at(-1)?.problems).toEqual(['no value for {{original}}'])
+  })
+
+  test('a skipped scenario runs no cleanup', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), { secretKey: undefined })
+    const result = await runScenario(
+      scenario([{ name: 'read', request: get('/read'), expect: { status: 200 } }], {
+        needsSecretKey: true,
+        cleanup: [
+          {
+            name: 'restore',
+            request: get('/restore', { auth: 'secret' }),
+            expect: { status: 200 },
+          },
+        ],
+      }),
+      target
+    )
+    expect(result.status).toBe('skipped')
+    expect(requests).toEqual([])
+  })
+
   test('a wait step passes the duration to the target', async () => {
     const { target, waits } = fakeTarget(() => ({ status: 200 }))
     await runScenario(scenario([{ name: 'pause', wait: '11s' }]), target)

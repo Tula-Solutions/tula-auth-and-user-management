@@ -22,6 +22,12 @@ export interface NavigationOptions {
   signUpUrl?: string
   /** Where to go once a sign-in (or a password reset) completes. */
   afterSignInUrl?: string
+  /**
+   * The page emailed sign-in links lead to: the one that renders `<EmailLinkCallback>`. It must
+   * be one of the environment's allowed redirect URLs, exactly (a relative value is resolved
+   * against the page first). Without it `<SignIn>` does not offer "Email me a link".
+   */
+  emailLinkUrl?: string
   /** Where to go once a sign-up completes. */
   afterSignUpUrl?: string
   /** Where to go after signing out from `<UserButton>` or `<UserProfile>`. */

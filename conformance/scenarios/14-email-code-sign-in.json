@@ -1,0 +1,670 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "email code sign-in",
+  "description": "An environment that enables the email code offers it at sign-in, whatever the address. Asking for a code answers the same for an address with and without an account, a wrong code is refused with the guesses left, a code issued for another purpose is not a sign-in code, and the right code signs the user in and proves the address. A user with no password cannot be entered with one. The settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "stranger": {
+      "generate": "email"
+    },
+    "other": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "redirect": "https://app.conformance.example/auth/link"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "signIn": {
+              "methods": {
+                "password": {
+                  "enabled": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "origins": "settings.urls.allowedOrigins",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications"
+      }
+    },
+    {
+      "name": "before the method is enabled a sign-in asks for the password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "needs_password"
+          }
+        }
+      },
+      "capture": {
+        "earlyId": "id",
+        "earlySecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "enable the email code and the email link",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "emailLink": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "password": "required"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            },
+            "allowedRedirectUrls": ["{{redirect}}"]
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "emailCode": {
+                  "enabled": true
+                },
+                "emailLink": {
+                  "enabled": true
+                }
+              }
+            },
+            "signUp": {
+              "password": "required"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the client config lists the enabled methods",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "signIn": {
+            "methods": ["password", "emailCode", "emailLink"]
+          },
+          "signUp": {
+            "password": "required"
+          }
+        }
+      }
+    },
+    {
+      "name": "an admin creates a user with no password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "emailVerifiedAt": null
+        }
+      },
+      "capture": {
+        "userId": "id"
+      }
+    },
+    {
+      "name": "and a second one",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{other}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "emailVerifiedAt": null
+        }
+      },
+      "capture": {
+        "otherId": "id"
+      }
+    },
+    {
+      "name": "a sign-in now offers the enabled first factors",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": ["password", "email_code", "email_link"],
+            "prepared": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "an address with no account is offered exactly the same",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{stranger}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": ["password", "email_code", "email_link"],
+            "prepared": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "strangerId": "id",
+        "strangerSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "asking for a code without the attempt's secret is flow.not_found",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/prepare",
+        "body": {
+          "strategy": "email_code"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "flow.not_found"
+        }
+      }
+    },
+    {
+      "name": "ask for an email code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/prepare",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_code"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{signInId}}",
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": ["password", "email_code", "email_link"],
+            "prepared": {
+              "strategy": "email_code",
+              "destination": "$any"
+            }
+          },
+          "attemptSecret": "$absent",
+          "linkBinding": "$absent",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the address with no account gets the same answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{strangerId}}/first-factor/prepare",
+        "attempt": "{{strangerSecret}}",
+        "body": {
+          "strategy": "email_code"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{strangerId}}",
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": ["password", "email_code", "email_link"],
+            "prepared": {
+              "strategy": "email_code",
+              "destination": "$any"
+            }
+          },
+          "attemptSecret": "$absent",
+          "linkBinding": "$absent",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "asking again at once is rate limited",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/prepare",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_code"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "code": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "and just the same for the address with no account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{strangerId}}/first-factor/prepare",
+        "attempt": "{{strangerSecret}}",
+        "body": {
+          "strategy": "email_code"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "code": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "a wrong code is refused, with the guesses left",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/attempt",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_code",
+          "code": "{{wrongCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "verification.invalid_code",
+          "params": {
+            "attemptsRemaining": 4
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a guess for the address with no account is refused the same way",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{strangerId}}/first-factor/attempt",
+        "attempt": "{{strangerSecret}}",
+        "body": {
+          "strategy": "email_code",
+          "code": "{{wrongCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "verification.invalid_code",
+          "params": {
+            "attemptsRemaining": "$any"
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a code that is not six digits is a validation error",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/attempt",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_code",
+          "code": "12345"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "start a password reset for the second user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/password-resets",
+        "client": "ios",
+        "body": {
+          "email": "{{other}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_new_password"
+          }
+        }
+      }
+    },
+    {
+      "name": "read the reset code",
+      "emailCode": {
+        "to": "{{other}}",
+        "capture": "resetCode"
+      }
+    },
+    {
+      "name": "start a sign-in for the second user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{other}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "needs_first_factor"
+          }
+        }
+      },
+      "capture": {
+        "otherSignInId": "id",
+        "otherSignInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a password-reset code is not a sign-in code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{otherSignInId}}/first-factor/attempt",
+        "attempt": "{{otherSignInSecret}}",
+        "body": {
+          "strategy": "email_code",
+          "code": "{{resetCode}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "verification.expired",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a sign-in code is not accepted where an address is verified",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/verify-email",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "flow.invalid_step"
+        }
+      }
+    },
+    {
+      "name": "the right code signs the user in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/attempt",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the code proved the address: it is now verified",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "emailVerifiedAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "the completed attempt accepts nothing more",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/first-factor/attempt",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "strategy": "email_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "flow.not_found"
+        }
+      }
+    },
+    {
+      "name": "start another sign-in for the user, who has no password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "needs_first_factor"
+          }
+        }
+      },
+      "capture": {
+        "passwordSignInId": "id",
+        "passwordSignInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a password gets the same generic failure as any wrong password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{passwordSignInId}}/password",
+        "attempt": "{{passwordSignInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "password": {
+                  "enabled": true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -46,6 +46,15 @@ export const FlowStepSchema = z
        */
       status: z.literal('needs_first_factor'),
       strategies: z.array(FirstFactorStrategySchema).min(1),
+      /**
+       * Present once an email was asked for (`first-factor/prepare`): which email strategy, and
+       * the masked address it went to. The address is the identifier the attempt was started
+       * with, so it says nothing about any account. A client that does not know the field can
+       * ignore it: the step is otherwise unchanged.
+       */
+      prepared: z
+        .object({ strategy: EmailVerificationStrategySchema, destination: z.string() })
+        .optional(),
     }),
     z.object({
       status: z.literal('needs_email_verification'),
@@ -114,16 +123,27 @@ export const FlowAttemptSchema = z
      * again: keep it in memory and send it as `FLOW_ATTEMPT_HEADER` (`x-tula-attempt`) on every later call.
      */
     attemptSecret: z.string().optional(),
+    /**
+     * Present **only** in the response to `first-factor/prepare` with the `email_link` strategy.
+     * A random value that ties the emailed link to the browser that asked for it: a browser keeps
+     * it (it may be put in `localStorage`; on its own it authorizes nothing) and sends it back
+     * with the link's token. A link opened anywhere else has no binding to send and proves nothing.
+     */
+    linkBinding: z.string().optional(),
     /** Present only when `step.status === 'complete'`. */
     session: SessionTokensSchema.optional(),
   })
   .meta({ ref: 'FlowAttempt' })
 
-/** Start a sign-up with email and password. */
+/**
+ * Start a sign-up with an email address and, unless the environment makes it optional
+ * (`signUp.password: 'optional'`), a password. Without one the account is created with no
+ * password and signs in with an emailed code or link.
+ */
 export const SignUpRequestSchema = z
   .object({
     email: z.string().max(320),
-    password: z.string().max(1024),
+    password: z.string().max(1024).optional(),
     firstName: z.string().trim().max(100).optional(),
     lastName: z.string().trim().max(100).optional(),
   })
@@ -141,6 +161,60 @@ export const SignInStartRequestSchema = z
 export const PasswordAttemptRequestSchema = z
   .object({ password: z.string().max(1024) })
   .meta({ ref: 'PasswordAttemptRequest' })
+
+/** Longest redirect URL, link token or link binding a request may carry. */
+const MAX_LINK_FIELD_LENGTH = 2048
+
+/**
+ * Ask for the email that proves an email first factor, for a sign-in on `needs_first_factor`.
+ *
+ * - `email_code`: a 6-digit code.
+ * - `email_link`: the same code and a link to `redirectUrl`, which must be one of the
+ *   environment's `urls.allowedRedirectUrls`, exactly. The link carries its token in the URL
+ *   fragment and works only in the browser that asked for it.
+ */
+export const FirstFactorPrepareRequestSchema = z
+  .object({
+    strategy: EmailVerificationStrategySchema,
+    /** Where the emailed link leads. Required for `email_link`, ignored for `email_code`. */
+    redirectUrl: z.string().max(MAX_LINK_FIELD_LENGTH).optional(),
+  })
+  .meta({ ref: 'FirstFactorPrepareRequest' })
+
+/**
+ * Prove an email first factor.
+ *
+ * - `email_code`: the emailed code.
+ * - `email_link`: nothing to submit. It asks whether the emailed link has been opened (in this
+ *   browser) and completes the sign-in if so; until then the answer is the unchanged step.
+ */
+export const FirstFactorAttemptRequestSchema = z
+  .discriminatedUnion('strategy', [
+    z.object({ strategy: z.literal('email_code'), code: z.string().regex(/^\d{6}$/) }),
+    z.object({ strategy: z.literal('email_link') }),
+  ])
+  .meta({ ref: 'FirstFactorAttemptRequest' })
+
+/**
+ * What the page an emailed link leads to sends: the token and attempt id from the link's
+ * fragment, and the binding this browser was given when it asked for the link.
+ */
+export const EmailLinkRequestSchema = z
+  .object({
+    token: z.string().min(1).max(MAX_LINK_FIELD_LENGTH),
+    attemptId: z.uuid(),
+    /** Absent in a browser that did not ask for the link; such a request proves nothing. */
+    binding: z.string().max(MAX_LINK_FIELD_LENGTH).optional(),
+  })
+  .meta({ ref: 'EmailLinkRequest' })
+
+/**
+ * The link was accepted: the sign-in it belongs to may now be completed by the client that
+ * started it. Carries no tokens: opening a link never signs the opener in by itself.
+ */
+export const EmailLinkResultSchema = z
+  .object({ status: z.literal('verified') })
+  .meta({ ref: 'EmailLinkResult' })
 
 /** Submit an emailed verification code for an attempt waiting on `needs_email_verification`. */
 export const VerifyEmailRequestSchema = z
@@ -175,6 +249,14 @@ export type FlowAttempt = z.infer<typeof FlowAttemptSchema>
 export type SignUpRequest = z.infer<typeof SignUpRequestSchema>
 /** Sign-in start request body. */
 export type SignInStartRequest = z.infer<typeof SignInStartRequestSchema>
+/** First-factor prepare request body. */
+export type FirstFactorPrepareRequest = z.infer<typeof FirstFactorPrepareRequestSchema>
+/** First-factor attempt request body. */
+export type FirstFactorAttemptRequest = z.infer<typeof FirstFactorAttemptRequestSchema>
+/** Emailed-link request body. */
+export type EmailLinkRequest = z.infer<typeof EmailLinkRequestSchema>
+/** Emailed-link result. */
+export type EmailLinkResult = z.infer<typeof EmailLinkResultSchema>
 /** Password attempt request body. */
 export type PasswordAttemptRequest = z.infer<typeof PasswordAttemptRequestSchema>
 /** Email verification request body. */

@@ -13,6 +13,7 @@ export {
   type ElementName,
 } from './appearance'
 export { SignedIn, SignedOut, TulaLoading } from './components/control'
+export { EmailLinkCallback, type EmailLinkCallbackProps } from './components/email-link-callback'
 export type { FlowResult } from './components/flow-screens'
 export { SignIn, type SignInProps } from './components/sign-in'
 export { SignUp, type SignUpProps } from './components/sign-up'
@@ -21,6 +22,11 @@ export { UserButton, type UserButtonProps } from './components/user-button'
 export { UserProfile, type UserProfileProps } from './components/user-profile'
 export { TulaProvider, type TulaProviderProps } from './context'
 export { type UseAuthResult, useAuth } from './hooks/use-auth'
+export {
+  type EmailLinkStatus,
+  type UseEmailLinkCallbackResult,
+  useEmailLinkCallback,
+} from './hooks/use-email-link-callback'
 export type { FlowState } from './hooks/use-flow'
 export {
   type PasswordChecklist,

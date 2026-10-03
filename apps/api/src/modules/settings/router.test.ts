@@ -297,6 +297,7 @@ describe('GET /v1/client/config', () => {
     expect(ClientConfigSchema.parse(await res.json())).toEqual({
       app: { name: 'Tula', supportEmail: null },
       signIn: { methods: ['password'] },
+      signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
     })
   })
@@ -318,6 +319,7 @@ describe('GET /v1/client/config', () => {
     expect(JSON.parse(text)).toEqual({
       app: { name: 'Acme', supportEmail: 'help@acme.test' },
       signIn: { methods: ['password'] },
+      signUp: { password: 'required' },
       password: strictPolicy,
     })
     expect(text).not.toContain('https://acme.test')

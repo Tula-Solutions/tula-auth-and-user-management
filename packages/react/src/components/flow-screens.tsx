@@ -22,12 +22,15 @@ export interface FlowResult {
  * limit on emails. The component only counts down what the server said; it decides nothing.
  *
  * @param error - The flow's current error.
+ * @param arrivedWith - The action a limit belongs to when the screen appears with the error
+ *   already there (the previous screen ran that action on this one's behalf).
  * @returns `mark(action)` to call before running an action, and the seconds left per action.
  */
 export function useRetryAfter<Action extends string>(
-  error: TulaError | null
+  error: TulaError | null,
+  arrivedWith: Action | null = null
 ): { mark(action: Action): void; secondsLeft(action: Action): number } {
-  const last = useRef<Action | null>(null)
+  const last = useRef<Action | null>(arrivedWith)
   const [limits, setLimits] = useState<{ action: Action; until: number }[]>([])
   useEffect(() => {
     const action = last.current
@@ -171,16 +174,40 @@ export function CodeField(props: {
   )
 }
 
-/** The "Resend code" button with the server's cooldown counted down on it. */
-export function ResendButton(props: { secondsLeft: number; pending: boolean; onResend(): void }) {
+/**
+ * The "Resend code" button with the server's cooldown counted down on it. `label` and
+ * `waitingLabel` (with `{time}`) replace its words where what is resent is not a code alone.
+ */
+export function ResendButton(props: {
+  secondsLeft: number
+  pending: boolean
+  onResend(): void
+  label?: string
+  waitingLabel?: string
+}) {
   const { t } = useUi()
   const waiting = props.secondsLeft > 0
   return (
     <Button kind='link' pending={props.pending} disabled={waiting} onClick={props.onResend}>
       {waiting
-        ? formatText(t.verification.resendIn, { time: formatDuration(props.secondsLeft, t) })
-        : t.verification.resend}
+        ? formatText(props.waitingLabel ?? t.verification.resendIn, {
+            time: formatDuration(props.secondsLeft, t),
+          })
+        : (props.label ?? t.verification.resend)}
     </Button>
+  )
+}
+
+/** The address a sign-in is for, with a way back to change it. */
+export function IdentityRow(props: { email: string; onChange(): void }) {
+  const { el, t } = useUi()
+  return (
+    <p {...el('identity')}>
+      <span>{props.email}</span>
+      <Button kind='link' onClick={props.onChange}>
+        {t.signIn.changeEmail}
+      </Button>
+    </p>
   )
 }
 

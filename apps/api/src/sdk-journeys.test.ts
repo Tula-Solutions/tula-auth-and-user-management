@@ -5,6 +5,7 @@ import {
   type ClientKind,
   createTulaClient,
   evaluatePassword,
+  type FlowStep,
   isTulaError,
   memoryStorage,
   type TokenStorage,
@@ -1022,10 +1023,251 @@ describe('SDK journeys: two tabs sharing one cookie jar', () => {
   })
 })
 
+describe('SDK journeys: signing in by email', () => {
+  const REDIRECT = `${APP_ORIGIN}/auth/link`
+  const EMAIL_LINK = /https?:\/\/\S+#\S*tula_link=\S+/
+
+  /** A server whose environment has the email methods switched on. */
+  async function emailServer(signUpPassword: 'required' | 'optional' = 'required') {
+    const s = await server()
+    const saved = await s.admin(
+      'PUT',
+      '/v1/admin/settings',
+      {
+        signIn: {
+          methods: {
+            password: { enabled: true },
+            emailCode: { enabled: true },
+            emailLink: { enabled: true },
+          },
+        },
+        signUp: { password: signUpPassword },
+      },
+      { 'if-match': '"0"' }
+    )
+    expect(saved.status).toBe(200)
+    return s
+  }
+
+  /** A user an admin created, with no password. */
+  async function passwordlessUser(s: Server): Promise<string> {
+    const email = freshEmail()
+    expect((await s.admin('POST', '/v1/admin/users', { email })).status).toBe(201)
+    return email
+  }
+
+  /** What a browser gives every tab of one origin: storage they share, and each its address. */
+  function browser() {
+    const entries = new Map<string, string>()
+    const storage = {
+      get length() {
+        return entries.size
+      },
+      key: (index: number) => [...entries.keys()][index] ?? null,
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => void entries.set(key, value),
+      removeItem: (key: string) => void entries.delete(key),
+    }
+    return {
+      entries,
+      /** Open a tab at `url`: the next client created reads these globals. */
+      open(url: string) {
+        const location = { href: url }
+        const history = {
+          state: null,
+          replaceState(_state: unknown, _unused: string, next: string) {
+            location.href = next
+          },
+        }
+        Object.assign(globalThis, { localStorage: storage, location, history })
+        return location
+      },
+    }
+  }
+
+  afterEach(() => {
+    for (const name of ['localStorage', 'location', 'history']) {
+      Reflect.deleteProperty(globalThis, name)
+    }
+  })
+
+  journey(
+    'email code sign-in',
+    'email code: the offered strategies, a code by email, a wrong code, the right one signs in',
+    async () => {
+      const s = await emailServer()
+      const email = await passwordlessUser(s)
+      const { tula } = s.client('server')
+      expect((await tula.config.get()).signIn.methods).toEqual([
+        'password',
+        'emailCode',
+        'emailLink',
+      ])
+
+      const flow = await tula.signIn.start({ identifier: email })
+      const choice: FlowStep = {
+        status: 'needs_first_factor',
+        strategies: ['password', 'email_code', 'email_link'],
+      }
+      expect(flow.step).toEqual(choice)
+      // An address with no account is offered, and answered, exactly the same.
+      const ghost = await s.client('server').tula.signIn.start({ identifier: 'nobody@example.com' })
+      expect(ghost.step).toEqual(choice)
+      expect(await ghost.prepareFirstFactor({ strategy: 'email_code' })).toEqual({
+        ...choice,
+        prepared: { strategy: 'email_code', destination: 'n***@example.com' },
+      })
+
+      const prepared = await flow.prepareFirstFactor({ strategy: 'email_code' })
+      expect(prepared).toMatchObject({ ...choice, prepared: { strategy: 'email_code' } })
+      expect(await caught(flow.prepareFirstFactor({ strategy: 'email_code' }))).toMatchObject({
+        code: 'rate_limited',
+        retryAfterMs: 60_000,
+      })
+
+      const code = s.code(email)
+      const wrong = `${code.slice(0, -1)}${(Number(code.at(-1)) + 1) % 10}`
+      expect(
+        await caught(flow.attemptFirstFactor({ strategy: 'email_code', code: wrong }))
+      ).toMatchObject({ code: 'verification.invalid_code', params: { attemptsRemaining: 4 } })
+      expect(tula.state.status).toBe('loading')
+
+      const step = await flow.attemptFirstFactor({ strategy: 'email_code', code })
+      expect(step.status).toBe('complete')
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      // The code proved the address.
+      expect((await tula.user.get()).emailVerifiedAt).not.toBeNull()
+
+      // The account has no password: one never works for it.
+      const again = await s.client('server').tula.signIn.start({ identifier: email })
+      expect((await caught(again.submitPassword({ password: PASSWORD }))).code).toBe(
+        'auth.invalid_credentials'
+      )
+    }
+  )
+
+  journey(
+    'email link sign-in',
+    'email link: refused in another browser, accepted in the asking one, and the starting tab is the one signed in',
+    async () => {
+      const s = await emailServer()
+      const email = await passwordlessUser(s)
+      const mine = browser()
+
+      // The tab the user starts in.
+      mine.open(`${APP_ORIGIN}/sign-in`)
+      const original = s.client('web')
+      expect(original.tula.signIn.canUseEmailLink()).toBe(true)
+      const flow = await original.tula.signIn.start({ identifier: email })
+      expect(
+        await caught(
+          flow.prepareFirstFactor({ strategy: 'email_link', redirectUrl: 'https://evil.test/' })
+        )
+      ).toMatchObject({ code: 'request.redirect_not_allowed', status: 400 })
+      const prepared = await flow.prepareFirstFactor({
+        strategy: 'email_link',
+        redirectUrl: REDIRECT,
+      })
+      expect(prepared).toMatchObject({ prepared: { strategy: 'email_link' } })
+      // The browser keeps the link's binding, and only that: no token, no attempt secret.
+      expect([...mine.entries.keys()]).toEqual([`tula.link.${flow.id}`])
+      const kept = [...mine.entries.values()].join()
+      expect(kept).toContain('tula_lb_')
+      expect(kept).not.toContain('tula_at_')
+      const waiting = flow.waitForEmailLink()
+
+      const link = EMAIL_LINK.exec(s.deps.mailer.last().text)?.[0] ?? ''
+      expect(link.startsWith(`${REDIRECT}#tula_link=`)).toBe(true)
+
+      // Someone else's browser (or the user's phone): no binding there.
+      const theirs = browser()
+      const elsewhere = theirs.open(link)
+      const stranger = s.client('web')
+      expect(await stranger.tula.signIn.handleEmailLink()).toEqual({ status: 'different_browser' })
+      expect(stranger.tula.state.status).toBe('loading')
+      expect(elsewhere.href).toBe(REDIRECT)
+      expect(stranger.cookies.size).toBe(0)
+
+      // A new tab of the browser that asked.
+      const address = mine.open(link)
+      const landing = s.client('web', { cookies: original.cookies })
+      await landing.tula.load()
+      expect(landing.tula.state.status).toBe('signed-out')
+      const outcome = await landing.tula.signIn.handleEmailLink()
+      expect(outcome).toEqual({ status: 'signed_in' })
+      // The fragment is gone from the address, and nothing is left in storage.
+      expect(address.href).toBe(REDIRECT)
+      expect(mine.entries.size).toBe(0)
+
+      expect((await waiting).status).toBe('complete')
+      expect(original.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect(landing.tula.state).toMatchObject({ status: 'signed-in' })
+
+      // The link's token only ever travelled in a request body, to one route.
+      const token = new URLSearchParams(new URL(link).hash.slice(1)).get('tula_link') ?? 'none'
+      const carried = s.exchanges.filter((exchange) => exchange.requestBody.includes(token))
+      expect(carried.map((exchange) => exchange.path)).toEqual([
+        '/v1/client/sign-ins/link',
+        '/v1/client/sign-ins/link',
+      ])
+      expect(s.exchanges.some((exchange) => exchange.path.includes(token))).toBe(false)
+      // Accepting the link set no cookie and returned no tokens: only the completing call did.
+      const accepted = carried.at(-1)
+      expect(accepted?.setCookie).toBeNull()
+      expect(accepted?.responseBody).toBe('{"status":"verified"}')
+
+      // The same link again, in the same browser: dead.
+      mine.open(link)
+      const replay = s.client('web', { cookies: new Map() })
+      expect(await replay.tula.signIn.handleEmailLink()).toEqual({ status: 'expired' })
+    }
+  )
+
+  journey(
+    'passwordless sign-up',
+    'passwordless sign-up: an account with no password, which then signs in by emailed code',
+    async () => {
+      const required = await server()
+      const refused = await caught(
+        required.client('server').tula.signUp.start({ email: freshEmail() })
+      )
+      expect(refused).toMatchObject({ code: 'validation.failed', status: 422 })
+      expect(refused.errors).toContainEqual(expect.objectContaining({ field: 'password' }))
+
+      const s = await emailServer('optional')
+      const { tula } = s.client('server')
+      expect((await tula.config.get()).signUp).toEqual({ password: 'optional' })
+      const email = freshEmail()
+      const signUpFlow = await tula.signUp.start({ email, firstName: 'Ines' })
+      expect(signUpFlow.step.status).toBe('needs_email_verification')
+      expect((await signUpFlow.verifyEmail({ code: s.code(email) })).status).toBe('complete')
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: { email, firstName: 'Ines' } })
+      expect(
+        (
+          await caught(
+            tula.user.changePassword({ currentPassword: PASSWORD, newPassword: PASSWORD })
+          )
+        ).code
+      ).toBe('password.not_set')
+
+      s.advance(61_000)
+      const next = s.client('server')
+      const flow = await next.tula.signIn.start({ identifier: email })
+      expect((await caught(flow.submitPassword({ password: PASSWORD }))).code).toBe(
+        'auth.invalid_credentials'
+      )
+      await flow.prepareFirstFactor({ strategy: 'email_code' })
+      const step = await flow.attemptFirstFactor({ strategy: 'email_code', code: s.code(email) })
+      expect(step.status).toBe('complete')
+      expect(next.tula.state.status).toBe('signed-in')
+    }
+  )
+})
+
 describe('conformance scenarios and the SDK', () => {
   test('every scenario is covered by an SDK journey or listed as server-only with a reason', async () => {
     const names = (await loadScenarios()).map(({ scenario }) => scenario.name)
-    expect(names.length).toBeGreaterThanOrEqual(13)
+    expect(names.length).toBeGreaterThanOrEqual(16)
     for (const name of names) {
       const journeys = covered.get(name)
       const reason = SERVER_ONLY[name]

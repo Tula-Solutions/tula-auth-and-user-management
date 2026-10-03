@@ -19,11 +19,15 @@ export interface UseSignUpResult extends FlowState {
    * password the policy rejects fails with the first unmet rule's code, and `error.errors`
    * lists every unmet rule for the `password` field.
    *
+   * `password` may be left out only where the environment makes it optional
+   * (`useClientConfig()?.signUp?.password === 'optional'`); the account then signs in with an
+   * emailed code.
+   *
    * @param input - The new account's email, password and optional name.
    */
   start(input: {
     email: string
-    password: string
+    password?: string
     firstName?: string
     lastName?: string
   }): Promise<FlowStep | null>
@@ -57,9 +61,9 @@ export interface UseSignUpResult extends FlowState {
  */
 export function useSignUp(): UseSignUpResult {
   const { client } = useTulaContext()
-  const { start: begin, act, ...state } = useFlowController<SignUpFlow>()
+  const { start: begin, act, watch: _watch, ...state } = useFlowController<SignUpFlow>()
   const start = useCallback(
-    (input: { email: string; password: string; firstName?: string; lastName?: string }) =>
+    (input: { email: string; password?: string; firstName?: string; lastName?: string }) =>
       begin(() => client.signUp.start(input)),
     [begin, client]
   )

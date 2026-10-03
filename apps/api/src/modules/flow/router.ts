@@ -16,6 +16,10 @@ import {
   AttemptIdParamSchema,
   CLIENT_HEADER,
   ClientHeaderSchema,
+  EmailLinkRequestSchema,
+  EmailLinkResultSchema,
+  FirstFactorAttemptRequestSchema,
+  FirstFactorPrepareRequestSchema,
   FLOW_ATTEMPT_HEADER,
   FlowAttemptSchema,
   PasswordAttemptRequestSchema,
@@ -34,6 +38,13 @@ export const SIGN_UP_RATE_LIMIT = 10
  * email limits on top.
  */
 export const CREDENTIAL_RATE_LIMIT = 30
+/**
+ * Requests per minute from one IP to `first-factor/attempt`. Higher than
+ * {@link CREDENTIAL_RATE_LIMIT} because a client waiting for an emailed link to be opened asks
+ * every few seconds; what it guards is still bounded elsewhere (a code allows five guesses, an
+ * identifier locks out, an unopened link's answer costs one read).
+ */
+export const FIRST_FACTOR_ATTEMPT_RATE_LIMIT = 60
 
 const router = new Hono<AppEnv>()
 
@@ -110,7 +121,8 @@ router.post(
     description:
       'Checks the email and password and emails a 6-digit code. The account is created when ' +
       'the code is verified. The response is the same whether or not the address already has ' +
-      'an account. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how ' +
+      'an account. `password` may be left out only where the environment says ' +
+      '`signUp.password: optional`; the account then has no password and signs in by email. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how ' +
       'tokens are delivered when the flow completes.' +
       START,
     security: openapi.security.client,
@@ -211,6 +223,144 @@ router.post(
         await clientContext(c)
       )
     )
+)
+
+router.post(
+  '/sign-ins/:attemptId/first-factor/prepare',
+  describeRoute({
+    operationId: 'prepareSignInFirstFactor',
+    tags: ['Flows'],
+    summary: 'Email a sign-in code or link',
+    description:
+      'For an attempt on `needs_first_factor` offering `email_code` or `email_link`. Emails a ' +
+      '6-digit code and, for `email_link`, a link to `redirectUrl`, which must be exactly one ' +
+      'of the environment’s `urls.allowedRedirectUrls` (`request.redirect_not_allowed` ' +
+      'otherwise). The answer is the same whether or not the address has an account. The link ' +
+      'carries its token in the URL fragment and works only in the browser that asked: the ' +
+      'response carries `linkBinding`, once, which that browser sends back with the link’s ' +
+      'token to `sign-ins/link`. Calling it again sends a fresh email and retires the previous ' +
+      'one. Limited to one email a minute and five an hour per address.' +
+      BOUND,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The attempt, on `needs_first_factor` with `prepared`.'),
+      400: {
+        ...openapi.responses[400],
+        description:
+          'The redirect URL is not, exactly, one of the environment’s allowed redirect URLs ' +
+          '(`request.redirect_not_allowed`), or the request could not be read.',
+      },
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('sign_in_prepare', SIGN_UP_RATE_LIMIT),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
+  validator('json', FirstFactorPrepareRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.prepareFirstFactor(
+        c.get('deps'),
+        c.get('tenant'),
+        { id: c.req.valid('param').attemptId, secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER] },
+        c.req.valid('json'),
+        await clientContext(c)
+      )
+    )
+)
+
+router.post(
+  '/sign-ins/:attemptId/first-factor/attempt',
+  describeRoute({
+    operationId: 'attemptSignInFirstFactor',
+    tags: ['Flows'],
+    summary: 'Prove an email first factor',
+    description:
+      '`email_code`: submits the emailed code (five guesses, ten minutes; every try also ' +
+      'counts against the identifier’s lockout, shared with password sign-in). `email_link`: ' +
+      'asks whether the emailed link has been opened in the browser that asked for it; until ' +
+      'then the answer is the unchanged step, and asking costs no guess. On success the ' +
+      'sign-in completes, or moves to `needs_second_factor` (no tokens) for a user who has a ' +
+      'second factor. The email counts as verified.' +
+      BOUND +
+      DELIVERY,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The next step.'),
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      410: openapi.responses[410],
+      ...errors,
+    },
+  }),
+  limited('sign_in_first_factor', FIRST_FACTOR_ATTEMPT_RATE_LIMIT),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
+  validator('json', FirstFactorAttemptRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.attemptFirstFactor(
+        c.get('deps'),
+        c.get('tenant'),
+        { id: c.req.valid('param').attemptId, secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER] },
+        c.req.valid('json'),
+        await clientContext(c)
+      )
+    )
+)
+
+router.post(
+  '/sign-ins/link',
+  describeRoute({
+    operationId: 'verifySignInLink',
+    tags: ['Flows'],
+    summary: 'Accept an emailed sign-in link',
+    description:
+      'Called by the page an emailed link leads to, with the token and attempt id from the ' +
+      'link’s fragment and the `linkBinding` this browser was given when it asked for the ' +
+      'link. A link opened in any other browser has no binding: it answers ' +
+      '`verification.different_browser` and uses nothing up. A dead link answers ' +
+      '`verification.expired`. On success the answer is `verified` and **carries no tokens**: ' +
+      'the client that started the sign-in completes it with `first-factor/attempt`.',
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: {
+        description: 'The link was accepted.',
+        content: { 'application/json': { schema: resolver(EmailLinkResultSchema) } },
+      },
+      403: openapi.responses[403],
+      409: openapi.responses[409],
+      410: openapi.responses[410],
+      ...errors,
+    },
+  }),
+  limited('sign_in_link'),
+  publishableKey(),
+  validator('json', EmailLinkRequestSchema, validationHook),
+  async (c) => {
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      EmailLinkResultSchema.parse(
+        await Flows.verifyEmailLink(
+          c.get('deps'),
+          c.get('tenant'),
+          c.req.valid('json'),
+          await clientContext(c)
+        )
+      )
+    )
+  }
 )
 
 for (const [kind, path, tag] of [

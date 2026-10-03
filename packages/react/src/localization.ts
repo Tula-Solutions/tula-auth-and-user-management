@@ -49,6 +49,29 @@ export interface TulaLocalization {
     noAccount: string
     signUpLink: string
     signedIn: string
+    /** The accessible name of the list of other ways to sign in. */
+    otherMethods: string
+    usePassword: string
+    emailCode: string
+    emailLink: string
+    emailTitle: string
+    /** Before a code was asked for. */
+    emailCodePrompt: string
+    /** Before a link was asked for. */
+    emailLinkPrompt: string
+    /** `{destination}` is the masked address. */
+    emailCodeSubtitle: string
+    /** `{destination}`. */
+    emailLinkSubtitle: string
+    /** Shown while the page waits for the emailed link to be opened. */
+    emailLinkWaiting: string
+    /** Says that the code in the same email works from any device. */
+    emailLinkCodeHint: string
+    emailCodeSubmit: string
+    emailResend: string
+    /** `{time}`. */
+    emailResendIn: string
+    emailResent: string
   }
   /** `<SignUp>`. */
   signUp: {
@@ -58,9 +81,28 @@ export interface TulaLocalization {
     lastNameLabel: string
     emailLabel: string
     passwordLabel: string
+    /** The label where the environment lets a sign-up leave the password out. */
+    passwordOptionalLabel: string
+    passwordOptionalHint: string
     continue: string
     haveAccount: string
     signInLink: string
+  }
+  /** `<EmailLinkCallback>`: the page an emailed sign-in link leads to. */
+  emailLink: {
+    loadingTitle: string
+    loadingMessage: string
+    verifiedTitle: string
+    verifiedMessage: string
+    differentBrowserTitle: string
+    differentBrowserMessage: string
+    expiredTitle: string
+    expiredMessage: string
+    noneTitle: string
+    noneMessage: string
+    errorTitle: string
+    /** The link back to `<SignIn>`. */
+    signIn: string
   }
   /** The emailed-code screen of every flow. */
   verification: {
@@ -204,6 +246,23 @@ export const EN_LOCALIZATION: TulaLocalization = {
     noAccount: 'New here?',
     signUpLink: 'Create an account',
     signedIn: 'You are signed in.',
+    otherMethods: 'Other ways to sign in',
+    usePassword: 'Use your password',
+    emailCode: 'Email me a code',
+    emailLink: 'Email me a link',
+    emailTitle: 'Check your email',
+    emailCodePrompt: 'We will email you a 6-digit code to sign in with.',
+    emailLinkPrompt: 'We will email you a link that signs you in on this device.',
+    emailCodeSubtitle: 'Enter the 6-digit code we sent to {destination}.',
+    emailLinkSubtitle:
+      'We sent a sign-in link to {destination}. Open it in this browser and you will be signed in here.',
+    emailLinkWaiting: 'Waiting for you to open the link…',
+    emailLinkCodeHint:
+      'Reading the email on another device? Enter the 6-digit code from the same email here instead.',
+    emailCodeSubmit: 'Sign in',
+    emailResend: 'Send a new email',
+    emailResendIn: 'Send a new email in {time}',
+    emailResent: 'A new email is on its way.',
   },
   signUp: {
     title: 'Create your account',
@@ -212,9 +271,28 @@ export const EN_LOCALIZATION: TulaLocalization = {
     lastNameLabel: 'Last name',
     emailLabel: 'Email address',
     passwordLabel: 'Password',
+    passwordOptionalLabel: 'Password (optional)',
+    passwordOptionalHint: 'Leave it empty to sign in with a code we email you instead.',
     continue: 'Continue',
     haveAccount: 'Already have an account?',
     signInLink: 'Sign in',
+  },
+  emailLink: {
+    loadingTitle: 'Signing you in…',
+    loadingMessage: 'Checking your sign-in link.',
+    verifiedTitle: 'Continue in your other tab',
+    verifiedMessage:
+      'Your link was accepted. Go back to the tab where you started signing in: it finishes there. If you closed that tab, sign in again.',
+    differentBrowserTitle: 'Open this link where you started',
+    differentBrowserMessage:
+      'For your security this link only works in the browser where you asked for it. Open it there, or enter the 6-digit code from the same email there. You can also start again on this device.',
+    expiredTitle: 'This link has expired',
+    expiredMessage: 'A sign-in link works once, for ten minutes. Sign in again to get a new one.',
+    noneTitle: 'No sign-in link here',
+    noneMessage:
+      'This page finishes a sign-in started from an emailed link, and this address does not carry one.',
+    errorTitle: 'We could not check your link',
+    signIn: 'Sign in',
   },
   verification: {
     title: 'Check your email',

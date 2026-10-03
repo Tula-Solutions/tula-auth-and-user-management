@@ -3,6 +3,10 @@ import { z } from 'zod'
 
 /** Flow shapes are owned by the contract so every SDK renders the same steps. */
 export {
+  EmailLinkRequestSchema,
+  EmailLinkResultSchema,
+  FirstFactorAttemptRequestSchema,
+  FirstFactorPrepareRequestSchema,
   FlowAttemptSchema,
   PasswordAttemptRequestSchema,
   PasswordResetRequestSchema,

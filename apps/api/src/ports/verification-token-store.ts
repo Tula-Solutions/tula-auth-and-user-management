@@ -1,5 +1,9 @@
-/** What a verification token proves. */
-export type VerificationPurpose = 'email_verification' | 'password_reset'
+/**
+ * What a verification token proves: control of an address being verified, the right to reset
+ * its account's password, or (`sign_in`) the email first factor of a sign-in. A token issued for
+ * one purpose is never honoured for another.
+ */
+export type VerificationPurpose = 'email_verification' | 'password_reset' | 'sign_in'
 
 /** What a token belongs to: an in-progress flow attempt, or an existing user. */
 export type VerificationSubject = { flowAttemptId: string } | { userId: string }

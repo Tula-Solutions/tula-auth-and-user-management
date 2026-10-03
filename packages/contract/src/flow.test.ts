@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  EmailLinkRequestSchema,
+  EmailLinkResultSchema,
+  FirstFactorAttemptRequestSchema,
+  FirstFactorPrepareRequestSchema,
   FirstFactorStrategySchema,
   FlowAttemptSchema,
   FlowStepSchema,
+  SignUpRequestSchema,
   VerifyEmailRequestSchema,
 } from './flow'
-import { FLOW_ATTEMPT_HEADER } from './headers'
+import { EMAIL_LINK_ATTEMPT_PARAM, EMAIL_LINK_TOKEN_PARAM, FLOW_ATTEMPT_HEADER } from './headers'
 import { DEFAULT_WEB_SESSION_PROFILE, SessionProfileSchema } from './session-profile'
 import { AccessTokenClaimsSchema, JwksSchema } from './tokens'
 
@@ -88,6 +93,111 @@ describe('FlowStep', () => {
     expect(VerifyEmailRequestSchema.safeParse({ code: '123456' }).success).toBe(true)
     expect(VerifyEmailRequestSchema.safeParse({ code: '12345' }).success).toBe(false)
     expect(VerifyEmailRequestSchema.safeParse({ code: '12345a' }).success).toBe(false)
+  })
+})
+
+describe('email first factors', () => {
+  const ATTEMPT = '0199a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a2b'
+
+  test('needs_first_factor may say which email was sent, and where to, masked', () => {
+    const step = {
+      status: 'needs_first_factor',
+      strategies: ['password', 'email_code', 'email_link'],
+      prepared: { strategy: 'email_link', destination: 'm***@northline.app' },
+    }
+    expect(FlowStepSchema.parse(step)).toEqual(step as never)
+    // Only the email strategies can be "prepared".
+    expect(
+      FlowStepSchema.safeParse({ ...step, prepared: { strategy: 'password', destination: 'x' } })
+        .success
+    ).toBe(false)
+    expect(
+      FlowStepSchema.safeParse({ ...step, prepared: { strategy: 'email_code' } }).success
+    ).toBe(false)
+  })
+
+  test('an attempt may carry a link binding next to its step', () => {
+    const attempt = {
+      id: ATTEMPT,
+      kind: 'sign_in',
+      expiresAt: '2026-10-03T12:10:00.000Z',
+      step: { status: 'needs_first_factor', strategies: ['email_link'] },
+      linkBinding: 'tula_lb_x',
+    }
+    expect(FlowAttemptSchema.parse(attempt)).toEqual(attempt as never)
+  })
+
+  test('asking for an email names an email strategy, and a link may name where it leads', () => {
+    expect(FirstFactorPrepareRequestSchema.parse({ strategy: 'email_code' })).toEqual({
+      strategy: 'email_code',
+    })
+    expect(
+      FirstFactorPrepareRequestSchema.parse({
+        strategy: 'email_link',
+        redirectUrl: 'https://app.example.com/auth/link',
+      })
+    ).toEqual({ strategy: 'email_link', redirectUrl: 'https://app.example.com/auth/link' })
+    for (const body of [
+      {},
+      { strategy: 'password' },
+      { strategy: 'email_link', redirectUrl: `https://a.example/${'x'.repeat(2048)}` },
+    ]) {
+      expect(FirstFactorPrepareRequestSchema.safeParse(body).success).toBe(false)
+    }
+  })
+
+  test('proving one submits a 6-digit code, or nothing at all for a link', () => {
+    expect(FirstFactorAttemptRequestSchema.parse({ strategy: 'email_link' })).toEqual({
+      strategy: 'email_link',
+    })
+    expect(
+      FirstFactorAttemptRequestSchema.parse({ strategy: 'email_code', code: '004271' })
+    ).toEqual({ strategy: 'email_code', code: '004271' })
+    for (const body of [
+      { strategy: 'email_code' },
+      { strategy: 'email_code', code: '12345' },
+      { strategy: 'email_code', code: '12345a' },
+      { strategy: 'password', password: 'x' },
+      { code: '123456' },
+    ]) {
+      expect(FirstFactorAttemptRequestSchema.safeParse(body).success).toBe(false)
+    }
+  })
+
+  test('a link is presented with its token and attempt id; the binding may be missing', () => {
+    expect(EmailLinkRequestSchema.parse({ token: 't', attemptId: ATTEMPT })).toEqual({
+      token: 't',
+      attemptId: ATTEMPT,
+    })
+    expect(
+      EmailLinkRequestSchema.parse({ token: 't', attemptId: ATTEMPT, binding: 'tula_lb_x' }).binding
+    ).toBe('tula_lb_x')
+    for (const body of [
+      { attemptId: ATTEMPT },
+      { token: '', attemptId: ATTEMPT },
+      { token: 't', attemptId: 'not-a-uuid' },
+      { token: 'x'.repeat(2049), attemptId: ATTEMPT },
+    ]) {
+      expect(EmailLinkRequestSchema.safeParse(body).success).toBe(false)
+    }
+  })
+
+  test('an accepted link is answered with a status and nothing else', () => {
+    expect(EmailLinkResultSchema.parse({ status: 'verified' })).toEqual({ status: 'verified' })
+    expect(Object.keys(EmailLinkResultSchema.shape)).toEqual(['status'])
+    expect(EmailLinkResultSchema.safeParse({ status: 'complete' }).success).toBe(false)
+  })
+
+  test('the link’s fragment parameters have fixed names', () => {
+    expect(EMAIL_LINK_TOKEN_PARAM).toBe('tula_link')
+    expect(EMAIL_LINK_ATTEMPT_PARAM).toBe('tula_attempt')
+  })
+
+  test('a sign-up request may leave the password out', () => {
+    expect(SignUpRequestSchema.parse({ email: 'maya@northline.app' })).toEqual({
+      email: 'maya@northline.app',
+    })
+    expect(SignUpRequestSchema.parse({ email: 'a@b.co', password: 'pw' }).password).toBe('pw')
   })
 })
 

@@ -49,6 +49,69 @@ export async function latestCode(
   return code as string
 }
 
+/**
+ * The sign-in link in the newest email to an address, read from the fixture's outbox.
+ *
+ * @param request - Playwright's API client (the test process, not the page).
+ * @param email - The recipient.
+ * @returns The whole link, with the token in its fragment.
+ */
+export async function latestLink(request: APIRequestContext, email: string): Promise<string> {
+  let link: string | undefined
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(
+          `${API_URL}/__test/outbox?to=${encodeURIComponent(email)}`
+        )
+        const { data } = (await response.json()) as { data: { text: string }[] }
+        link = data
+          .map(({ text }) => /https?:\/\/\S+#\S*tula_link=\S+/.exec(text)?.[0])
+          .findLast((found) => found !== undefined)
+        return link
+      },
+      { message: `an email with a sign-in link for ${email}` }
+    )
+    .toBeTruthy()
+  return link as string
+}
+
+/** What a scenario may change about the environment (the rest stays at the defaults). */
+export interface TestSettings {
+  signIn?: {
+    methods: {
+      password: { enabled: boolean }
+      emailCode: { enabled: boolean }
+      emailLink: { enabled: boolean }
+    }
+  }
+  signUp?: { password: 'required' | 'optional' }
+}
+
+/**
+ * Replace the fixture environment's settings: the defaults plus `settings`. Call it with no
+ * argument to put the defaults back; a scenario that changes them must, since every scenario
+ * shares the one in-memory environment.
+ */
+export async function useSettings(
+  request: APIRequestContext,
+  settings: TestSettings = {}
+): Promise<void> {
+  const response = await request.post(`${API_URL}/__test/settings`, { data: settings })
+  expect(response.ok()).toBe(true)
+}
+
+/** Every email method on, beside the password. */
+export const EMAIL_METHODS: TestSettings = {
+  signIn: {
+    methods: {
+      password: { enabled: true },
+      emailCode: { enabled: true },
+      emailLink: { enabled: true },
+    },
+  },
+}
+
 /** How many emails an address has received. */
 export async function emailCount(request: APIRequestContext, email: string): Promise<number> {
   const response = await request.get(`${API_URL}/__test/outbox?to=${encodeURIComponent(email)}`)

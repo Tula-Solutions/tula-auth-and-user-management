@@ -296,13 +296,18 @@ describe('clientConfig', () => {
     expect(config).toEqual({
       app: { name: 'Acme', supportEmail: 'help@acme.test' },
       signIn: { methods: ['password'] },
+      signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
     })
     expect(JSON.stringify(config)).not.toContain('https://acme.test')
   })
 
   test('a method that is switched off is not listed', () => {
-    const settings = document({ signIn: { methods: { password: { enabled: false } } } })
+    const settings = document({
+      signIn: {
+        methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, password: { enabled: false } },
+      },
+    })
     expect(Settings.clientConfig(settings).signIn.methods).toEqual([])
   })
 })
@@ -317,7 +322,11 @@ describe('requireMethod', () => {
   test('refuses a method the environment has switched off, and only there', async () => {
     deps.environmentSettings.seed(tenant.environmentId, {
       revision: 1,
-      settings: document({ signIn: { methods: { password: { enabled: false } } } }),
+      settings: document({
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, password: { enabled: false } },
+        },
+      }),
     })
     const error = await rejection(Settings.requireMethod(deps, tenant, 'password'))
     expect(error.toJSON()).toEqual({

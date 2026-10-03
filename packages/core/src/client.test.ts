@@ -295,6 +295,8 @@ describe('the public surface', () => {
     expect(Object.keys(Core).sort()).toEqual([
       'ACCESS_TOKEN_EXPIRY_SKEW_MS',
       'DEFAULT_TIMEOUT_MS',
+      'EMAIL_LINK_POLL_INTERVAL_MS',
+      'EMAIL_LINK_SESSION_WAIT_MS',
       'EN_MESSAGES',
       'MAX_REFRESH_BACKOFF_MS',
       'REFRESH_RETRY_WINDOW_MS',

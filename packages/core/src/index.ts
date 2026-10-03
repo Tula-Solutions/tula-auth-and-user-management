@@ -19,6 +19,11 @@ export {
   type TulaClientOptions,
 } from './client'
 export {
+  EMAIL_LINK_POLL_INTERVAL_MS,
+  EMAIL_LINK_SESSION_WAIT_MS,
+  type EmailLinkOutcome,
+} from './email-link'
+export {
   type ClientErrorCode,
   EN_MESSAGES,
   type ErrorParams,

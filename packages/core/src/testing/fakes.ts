@@ -1,4 +1,10 @@
-import type { ChannelLike, Environment, LockManagerLike } from '../environment'
+import type {
+  ChannelLike,
+  Environment,
+  LinkStorageLike,
+  LockManagerLike,
+  PageLike,
+} from '../environment'
 import type { Schemas } from '../generated/api.gen'
 import type { FetchLike } from '../types'
 
@@ -288,19 +294,138 @@ export function fakeChannelHub(mode: 'immediate' | 'manual' = 'immediate'): Fake
   }
 }
 
+/** A `localStorage` stand-in shared by every client ("tab") it is given to. */
+export interface FakeLinkStorage extends LinkStorageLike {
+  /** Everything stored, by key. */
+  entries: Map<string, string>
+  /** Make every access throw, as a browser that refuses storage does. */
+  failing: boolean
+}
+
+/** @returns An empty shared storage. */
+export function fakeLinkStorage(): FakeLinkStorage {
+  const entries = new Map<string, string>()
+  const guard = (storage: FakeLinkStorage) => {
+    if (storage.failing) {
+      throw new DOMException('storage is not available', 'SecurityError')
+    }
+  }
+  const storage: FakeLinkStorage = {
+    entries,
+    failing: false,
+    get length() {
+      guard(storage)
+      return entries.size
+    },
+    key(index) {
+      guard(storage)
+      return [...entries.keys()][index] ?? null
+    },
+    getItem(key) {
+      guard(storage)
+      return entries.get(key) ?? null
+    },
+    setItem(key, value) {
+      guard(storage)
+      entries.set(key, value)
+    },
+    removeItem(key) {
+      guard(storage)
+      entries.delete(key)
+    },
+  }
+  return storage
+}
+
+/** A page address a test can read back after the client rewrote it. */
+export interface FakePage extends PageLike {
+  /** The current address. */
+  current: string
+  /** Every address `replaceUrl` was given. */
+  replaced: string[]
+}
+
+/**
+ * @param url - The address the "tab" was opened at.
+ * @returns The page.
+ */
+export function fakePage(url: string): FakePage {
+  const page: FakePage = {
+    current: url,
+    replaced: [],
+    url: () => page.current,
+    replaceUrl(next) {
+      page.replaced.push(next)
+      page.current = next
+    },
+  }
+  return page
+}
+
+/** Timers a test fires by hand. */
+export interface FakeTimers {
+  setTimer(callback: () => void, ms: number): () => void
+  /** The delays of the timers that are set and not yet fired or cancelled. */
+  pending(): number[]
+  /** Fire the oldest pending timer. Returns `false` when there is none. */
+  fire(): boolean
+  /** How many timers were cancelled before they fired. */
+  cancelled: number
+}
+
+/** @returns Timers that only run when the test says so. */
+export function fakeTimers(): FakeTimers {
+  let queue: { callback: () => void; ms: number }[] = []
+  const timers: FakeTimers = {
+    cancelled: 0,
+    setTimer(callback, ms) {
+      const entry = { callback, ms }
+      queue.push(entry)
+      return () => {
+        if (queue.includes(entry)) {
+          queue = queue.filter((other) => other !== entry)
+          timers.cancelled += 1
+        }
+      }
+    },
+    pending: () => queue.map((entry) => entry.ms),
+    fire() {
+      const next = queue.shift()
+      next?.callback()
+      return next !== undefined
+    },
+  }
+  return timers
+}
+
 /**
  * @param clock - The clock.
- * @param parts - Locks and a channel hub, when the test's "browser" has them.
+ * @param parts - Locks, a channel hub, shared storage, a page and timers, when the test's
+ *   "browser" has them. Without `timers`, real ones are used.
  * @returns The environment for one client.
  */
 export function fakeEnvironment(
   clock: ManualClock,
-  parts: { locks?: LockManagerLike; hub?: FakeChannelHub } = {}
+  parts: {
+    locks?: LockManagerLike
+    hub?: FakeChannelHub
+    linkStorage?: LinkStorageLike
+    page?: PageLike
+    timers?: FakeTimers
+  } = {}
 ): Environment {
   const hub = parts.hub
   return {
     now: () => clock.now(),
     locks: parts.locks,
     createChannel: hub ? (name) => hub.createChannel(name) : undefined,
+    linkStorage: parts.linkStorage,
+    page: parts.page,
+    setTimer:
+      parts.timers?.setTimer ??
+      ((callback, ms) => {
+        const timer = setTimeout(callback, ms)
+        return () => clearTimeout(timer)
+      }),
   }
 }

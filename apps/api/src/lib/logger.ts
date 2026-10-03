@@ -27,6 +27,12 @@ export const REDACTED_KEYS = [
   'x-tula-attempt',
   'attemptSecret',
   'secretHash',
+  // An emailed sign-in link's token and the browser binding that goes with it (ADR 0024). Both
+  // arrive in a JSON body, never in a URL; named here in case one is ever logged by mistake.
+  'linkToken',
+  'linkBinding',
+  'binding',
+  'tula_link',
 ] as const
 
 const REDACT_PATHS = REDACTED_KEYS.flatMap((key) => [`["${key}"]`, `*["${key}"]`])

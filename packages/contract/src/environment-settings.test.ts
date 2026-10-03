@@ -12,6 +12,7 @@ import {
   parseStoredEnvironmentSettings,
   RedirectUrlSchema,
   readStoredEnvironmentSettings,
+  SignUpPasswordModeSchema,
   WebOriginSchema,
 } from './environment-settings'
 import { PASSWORD_POLICY_PRESETS } from './password-policy'
@@ -29,7 +30,14 @@ describe('EnvironmentSettingsSchema', () => {
       version: 1,
       app: { name: DEFAULT_APP_NAME, supportEmail: null },
       password: PASSWORD_POLICY_PRESETS.recommended,
-      signIn: { methods: { password: { enabled: true } } },
+      signIn: {
+        methods: {
+          password: { enabled: true },
+          emailCode: { enabled: false },
+          emailLink: { enabled: false },
+        },
+      },
+      signUp: { password: 'required' },
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
       notifications: { passwordChanged: true, newSignIn: true },
@@ -293,7 +301,14 @@ describe('EnvironmentSettingsInputSchema', () => {
     expect(EnvironmentSettingsInputSchema.parse({})).toEqual({
       version: 1,
       app: { name: DEFAULT_APP_NAME, supportEmail: null },
-      signIn: { methods: { password: { enabled: true } } },
+      signIn: {
+        methods: {
+          password: { enabled: true },
+          emailCode: { enabled: false },
+          emailLink: { enabled: false },
+        },
+      },
+      signUp: { password: 'required' },
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
       notifications: { passwordChanged: true, newSignIn: true },
@@ -328,5 +343,101 @@ describe('EnvironmentSettingsInputSchema', () => {
     expect(EnvironmentSettingsInputSchema.parse(DEFAULT_ENVIRONMENT_SETTINGS)).toEqual(
       DEFAULT_ENVIRONMENT_SETTINGS
     )
+  })
+})
+
+describe('email sign-in methods and the sign-up password', () => {
+  const paths =
+    (schema: typeof EnvironmentSettingsSchema | typeof EnvironmentSettingsInputSchema) =>
+    (input: unknown) => {
+      const result = schema.safeParse(input)
+      return result.success ? [] : result.error.issues.map((issue) => issue.path.join('.'))
+    }
+  const methods = (password: boolean, emailCode: boolean, emailLink: boolean) => ({
+    signIn: {
+      methods: {
+        password: { enabled: password },
+        emailCode: { enabled: emailCode },
+        emailLink: { enabled: emailLink },
+      },
+    },
+  })
+
+  test('the email methods are off until an environment switches them on', () => {
+    const { signIn, signUp } = DEFAULT_ENVIRONMENT_SETTINGS
+    expect(signIn.methods.emailCode).toEqual({ enabled: false })
+    expect(signIn.methods.emailLink).toEqual({ enabled: false })
+    expect(signUp).toEqual({ password: 'required' })
+  })
+
+  test.each([EnvironmentSettingsSchema, EnvironmentSettingsInputSchema])(
+    'at least one method must stay enabled, counting every method (schema %#)',
+    (schema) => {
+      expect(paths(schema)(methods(false, false, false))).toEqual(['signIn.methods'])
+      // The email code alone is enough: the password may then be switched off.
+      expect(paths(schema)(methods(false, true, false))).toEqual([])
+      expect(paths(schema)(methods(false, true, true))).toEqual([])
+    }
+  )
+
+  test.each([EnvironmentSettingsSchema, EnvironmentSettingsInputSchema])(
+    'a link needs the code beside it (schema %#)',
+    (schema) => {
+      expect(paths(schema)(methods(true, false, true))).toEqual([
+        'signIn.methods.emailLink.enabled',
+      ])
+      expect(paths(schema)(methods(true, true, true))).toEqual([])
+    }
+  )
+
+  test.each([EnvironmentSettingsSchema, EnvironmentSettingsInputSchema])(
+    'an optional sign-up password needs the email code (schema %#)',
+    (schema) => {
+      expect(paths(schema)({ signUp: { password: 'optional' } })).toEqual(['signUp.password'])
+      expect(
+        paths(schema)({ ...methods(true, true, false), signUp: { password: 'optional' } })
+      ).toEqual([])
+      expect(paths(schema)({ signUp: { password: 'sometimes' } })).toEqual(['signUp.password'])
+      expect(paths(schema)({ signUp: { pasword: 'optional' } })).toEqual(['signUp'])
+    }
+  )
+
+  test('a method’s section takes only `enabled`', () => {
+    expect(
+      paths(EnvironmentSettingsSchema)({
+        signIn: { methods: { emailCode: { enabled: true, length: 8 } } },
+      })
+    ).toEqual(['signIn.methods.emailCode'])
+  })
+
+  test('a document stored before the methods existed reads with them off', () => {
+    const stored = {
+      version: 1,
+      app: { name: 'Acme', supportEmail: null },
+      signIn: { methods: { password: { enabled: true } } },
+    }
+    const { settings, dropped } = readStoredEnvironmentSettings(stored)
+    expect(dropped).toBe(0)
+    expect(settings.signIn.methods).toEqual({
+      password: { enabled: true },
+      emailCode: { enabled: false },
+      emailLink: { enabled: false },
+    })
+    expect(settings.signUp).toEqual({ password: 'required' })
+    // And what it reads is a document the strict schema accepts.
+    expect(EnvironmentSettingsSchema.parse(settings)).toEqual(settings)
+  })
+
+  test('the client config carries the sign-up mode, and tolerates a server that sends none', () => {
+    const config = {
+      app: { name: 'Acme', supportEmail: null },
+      signIn: { methods: ['password', 'emailCode'] },
+      password: PASSWORD_POLICY_PRESETS.recommended,
+    }
+    expect(ClientConfigSchema.parse(config).signUp).toBeUndefined()
+    expect(
+      ClientConfigSchema.parse({ ...config, signUp: { password: 'optional' } }).signUp
+    ).toEqual({ password: 'optional' })
+    expect(SignUpPasswordModeSchema.options).toEqual(['required', 'optional'])
   })
 })

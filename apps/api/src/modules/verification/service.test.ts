@@ -467,6 +467,61 @@ describe('verifyLink', () => {
     ).toBeNull()
   })
 
+  test('with `consume: false` a good link is returned unspent, and is spent by `consume`', async () => {
+    const linkToken = await issueLink()
+    const peek = () =>
+      Verification.verifyLink(deps, tenant, {
+        purpose: 'email_verification',
+        linkToken,
+        consume: false,
+      })
+    expect((await peek()).consumedAt).toBeNull()
+    // Looking twice changes nothing: the link and the code both still work.
+    const token = await peek()
+    expect(token.consumedAt).toBeNull()
+    await Verification.consume(deps, tenant, token.id)
+    expect((await rejection(peek())).code).toBe('verification.expired')
+    expect((await rejection(open(linkToken))).code).toBe('verification.expired')
+    expect((await rejection(verify(sentCode()))).code).toBe('verification.expired')
+  })
+
+  test('an unspent look still refuses a link that is used, expired or for another purpose', async () => {
+    const linkToken = await issueLink()
+    const peek = (purpose: 'email_verification' | 'sign_in', t = tenant) =>
+      Verification.verifyLink(deps, t, { purpose, linkToken, consume: false })
+    expect((await rejection(peek('sign_in'))).code).toBe('verification.expired')
+    expect((await rejection(peek('email_verification', otherTenant))).code).toBe(
+      'verification.expired'
+    )
+    await verify(sentCode())
+    expect((await rejection(peek('email_verification'))).code).toBe('verification.expired')
+  })
+
+  test('a sign-in token is its own purpose: its link and code open nothing else', async () => {
+    await issue({ purpose: 'sign_in', linkUrl: (token) => `https://auth.test/verify/${token}` })
+    const linkToken = /verify\/([\w-]+)/.exec(deps.mailer.last().text)?.[1] ?? ''
+    expect(deps.mailer.last().subject).toMatch(/^\d{6} is your Tula sign-in code$/)
+    for (const purpose of ['email_verification', 'password_reset'] as const) {
+      expect(
+        (await rejection(Verification.verifyLink(deps, tenant, { purpose, linkToken }))).code
+      ).toBe('verification.expired')
+      expect(
+        (
+          await rejection(
+            Verification.verifyCode(deps, tenant, {
+              purpose,
+              subject: { flowAttemptId: FLOW },
+              code: sentCode(),
+            })
+          )
+        ).code
+      ).toBe('verification.expired')
+    }
+    expect(
+      (await Verification.verifyLink(deps, tenant, { purpose: 'sign_in', linkToken })).purpose
+    ).toBe('sign_in')
+  })
+
   test('rejects unknown, expired, foreign-environment and wrong-purpose links alike', async () => {
     const linkToken = await issueLink()
     expect((await rejection(open('not-a-real-token'))).code).toBe('verification.expired')

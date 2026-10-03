@@ -1,4 +1,10 @@
-import type { EnvironmentSettings, FirstFactorStrategy, SecondFactorMethod } from '@tula/contract'
+import type {
+  EmailVerificationStrategy,
+  EnvironmentSettings,
+  FirstFactorStrategy,
+  SecondFactorMethod,
+  SignInMethod,
+} from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 
 /** One way to prove who you are first, and the setting that switches it on. */
@@ -11,13 +17,25 @@ interface FirstFactor {
 /**
  * Every first factor the server can offer, in the order a sign-in lists them.
  *
- * **The one place a sign-in method is registered.** Adding a method (email code, magic link,
- * OAuth, passkeys: steps 1.7 to 1.10) means adding an entry here and the route that proves it;
- * the transition function does not change.
+ * **The one place a sign-in method is registered.** Adding a method (OAuth, passkeys: steps 1.9
+ * and 1.10) means adding an entry here and the route that proves it; the transition function
+ * does not change. The email strategies (ADR 0024) are proven through
+ * `sign-ins/:attemptId/first-factor/*`.
  */
 const FIRST_FACTORS: readonly FirstFactor[] = [
   { strategy: 'password', enabled: (settings) => settings.signIn.methods.password.enabled },
+  { strategy: 'email_code', enabled: (settings) => settings.signIn.methods.emailCode.enabled },
+  { strategy: 'email_link', enabled: (settings) => settings.signIn.methods.emailLink.enabled },
 ]
+
+/**
+ * The setting that switches each first factor on, for the strategies proven through the email
+ * routes. A step that uses one checks it with `Settings.requireMethod` every time.
+ */
+export const EMAIL_FACTOR_METHODS = {
+  email_code: 'emailCode',
+  email_link: 'emailLink',
+} as const satisfies Record<EmailVerificationStrategy, SignInMethod>
 
 /**
  * The first factors an environment offers at sign-in.

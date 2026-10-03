@@ -35,6 +35,8 @@ export const ELEMENT_NAMES = [
   'link',
   'spinner',
   'identity',
+  'alternatives',
+  'waiting',
   'strengthBar',
   'checklist',
   'checklistItem',
