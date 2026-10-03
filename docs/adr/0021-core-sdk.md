@@ -55,6 +55,12 @@ await tula.config.get({ force? })
   between changes (it works as a `useSyncExternalStore` snapshot).
 - **`getToken()` returns `null` when nobody is signed in** and throws only when a refresh that
   was needed could not be made. "Signed out" is an answer, not an error.
+- **A flow sends one action at a time and none once complete.** A second action while one is in
+  flight is refused locally with `flow.busy` (a double click would otherwise spend two guesses
+  or send two emails); an action on a completed flow is refused locally with
+  `flow.invalid_step`, the server's own code for it. Both have `status: 0`, which is how a
+  locally raised error is told from the server's. The secret is dropped from the closure when
+  the step becomes `complete`.
 - **Flows cannot be resumed after a reload.** The attempt's secret is kept in a closure, in
   memory only. Persisting it (even in `sessionStorage`) would put a credential where any script
   on the page can read it, to save a user retyping an email within a ten-minute attempt. It is
@@ -89,8 +95,8 @@ One runtime dependency, `@tula/contract`, and only its Zod-free entry points
 
 | Import | Minified | Gzip |
 | --- | --- | --- |
-| `createTulaClient` | 17.5 kB | 5.9 kB |
-| `createTulaClient` + `evaluatePassword` (adds the common-password list) | 20.7 kB | 7.2 kB |
+| `createTulaClient` | 19.2 kB | 6.4 kB |
+| `createTulaClient` + `evaluatePassword` (adds the common-password list) | 22.5 kB | 7.7 kB |
 
 No Zod in either.
 
@@ -98,11 +104,14 @@ No Zod in either.
 
 Every failed call throws `TulaError`: `code`, `status`, `params`, field `errors`, `retryAfterMs`
 and a `message` from a locale table. Failures that never reached the API have their own codes
-(`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`, all `status: 0`),
+(`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`, `flow.busy`, all
+`status: 0`),
 so there is one thing to catch and one field to switch on. The English table is the contract's
 messages; an application passes `messages` (or calls `setMessages`) with any subset of codes,
 and messages may use params as `{name}` placeholders. A code this version does not know (a
-newer server) keeps the server's `detail`. An error is built only from the envelope's fields:
+newer server) keeps the server's `detail`. Server-supplied codes and placeholder names are
+looked up as own properties only, so a code such as `constructor` cannot reach an inherited
+function. An error is built only from the envelope's fields:
 it cannot contain a token, an attempt secret or a password.
 
 ### Where tokens live
@@ -150,6 +159,39 @@ memory; silently continuing would turn into an unexplained sign-out at the next 
   again. A token still inside its skew is handed out when the refresh could not be made.
 - **A 401 on an authenticated call** (a `session.*` code or `auth.unauthenticated`, not a
   wrong current password) triggers one refresh and one retry. A second 401 goes to the caller.
+- **The refresh request has its own timeout: 8 seconds** (`REFRESH_TIMEOUT_MS`, or `timeoutMs`
+  if the app set a smaller one), because the general 15 seconds is longer than the server's
+  10-second reuse grace period. A refresh the server rotated but whose answer was lost can only
+  be repeated safely inside that window; with a 15-second timeout the earliest possible retry
+  was already reuse, and a slow network signed the user out everywhere.
+- **The one automatic retry.** A refresh that gets no answer (`network.timeout` or
+  `network.failed`; never after an HTTP answer of any status, and never after an unreadable
+  200) is sent once more, at once, inside the same single flight, so every waiter sees one
+  outcome. This is the only exception to "nothing is retried automatically", and it is the one
+  request that is safe to repeat by design: the server answers a token re-presented inside the
+  grace period with the same next token. Leaving it to the application meant a slow network
+  signed users out on every device. The retry is given what is left of 10 seconds from the
+  start of the first try (`REFRESH_RETRY_WINDOW_MS`, the default grace period), at least one
+  second and at most the refresh timeout: after an 8-second timeout it has 2 seconds, so the
+  two tries end about when a retry stops being safe. If it fails too, the network error goes to
+  the callers, the session is kept, and nothing more is sent. A sign-out during the first try
+  cancels the retry. An operator who sets `refresh.reuseGracePeriod` below 8 seconds removes
+  the margin. One lost response, two lost responses retried inside the window, and the same
+  after the window are pinned by journeys against the real API.
+- **`Retry-After` is capped at five minutes** (`MAX_REFRESH_BACKOFF_MS`) for the fail-fast
+  window, and an explicit `session.refresh()` ignores the window and asks: a proxy answering
+  `Retry-After: 86400` must not lock a session for a day.
+- **A 200 is checked before it is installed.** Refresh answers and a completed flow's `session`
+  must have a string `accessToken`, a string `sessionId` and a readable expiry; a flow answer
+  must have an `id` and a `step.status`. Otherwise `response.invalid`, with nothing installed,
+  stored or broadcast. The guards are a few hand-written checks, not a schema library.
+- **Signed out stays signed out.** A 401 that arrives after a sign-out does not trigger the
+  refresh-and-retry. A tab remembers the ids of sessions it ended and ignores another tab's
+  `session` message for them (the echo of a refresh that was in flight); while its own sign-out
+  request is still on the way it ignores every `session` message, since a tab that never loaded
+  does not know which session its cookie holds. A new sign-in elsewhere (another session id)
+  still propagates, and the tab's own refresh can still restore a session whose sign-out never
+  reached the server.
 - **Generations.** Every change of session (sign-in, refresh, sign-out, a message from another
   tab) bumps a counter; a result that arrives for an older generation is discarded. This is
   what makes "refresh racing sign-out" safe: the late tokens are not installed, and the
@@ -197,6 +239,16 @@ and `types: []`; `typecheck:portable` runs with `typecheck` in `verify`. `fetch`
 - `baseUrl` must be absolute. A relative base for the first-party proxy comes with 1.12.
 - There is no `destroy()`: a `web` client's channel lives as long as the page. Creating many
   clients in one page (hot reload) leaves old channels open until the page goes.
+- **Without Web Locks, two orderings can still revoke a session family.** Both need one tab to
+  refresh twice while another tab's refresh with the original cookie is still in flight
+  (possible through an explicit `refresh()` or the 401 retry, not through `getToken()` alone,
+  which refreshes at most every 50 seconds): (1) tab A rotates P→C1 and at once C1→C2; tab B's
+  request carrying P reaches the server after that, and a used token whose child has itself
+  been rotated is reuse even inside the grace period. (2) The same, but B's request was
+  answered first (with C1) and its `Set-Cookie` is applied after A's C2: the jar now holds the
+  used C1, and the next refresh, typically 50 seconds later, is reuse. A request stalled in
+  transit for more than ten seconds is a third. Web Locks rule all three out; browsers lack
+  them only in insecure contexts (plain http off localhost) and very old versions.
 - If a refresh and a sign-in as someone else overlap across tabs, the cookie may end up
   belonging to either session. The next refresh makes every tab agree with the cookie, and
   the state is corrected (the user is fetched again when the session id changes).

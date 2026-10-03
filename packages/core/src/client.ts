@@ -8,7 +8,7 @@ import {
   signInFlow,
   signUpFlow,
 } from './flows'
-import { createSessionManager, LOCK_WAIT_MARGIN_MS } from './session'
+import { createSessionManager, LOCK_WAIT_MARGIN_MS, REFRESH_TIMEOUT_MS } from './session'
 import { memoryStorage, type TokenStorage } from './storage'
 import { createTransport } from './transport'
 import type { AuthState, ClientConfig, ClientKind, FetchLike, Session, User } from './types'
@@ -63,7 +63,11 @@ export interface TulaClientOptions {
   onSessionChange?: (state: AuthState) => void
   /** Messages by error code, for a language other than English. See {@link Messages}. */
   messages?: Messages
-  /** How long one request may take, in milliseconds. Defaults to {@link DEFAULT_TIMEOUT_MS}. */
+  /**
+   * How long one request may take, in milliseconds. Defaults to {@link DEFAULT_TIMEOUT_MS}.
+   * A refresh never waits longer than `REFRESH_TIMEOUT_MS` (8 seconds), whatever this says: it
+   * has to give up while a retry is still inside the server's reuse grace period.
+   */
   timeoutMs?: number
 }
 
@@ -155,10 +159,12 @@ export interface TulaClient {
      */
     getToken(): Promise<string | null>
     /**
-     * Refresh now, whatever the current token's age.
+     * Refresh now, whatever the current token's age, and even when an earlier refresh was told
+     * to wait (`Retry-After`): an explicit call always asks.
      *
      * @returns The new access token, or `null` when nobody is signed in.
-     * @throws TulaError when the refresh could not be made.
+     * @throws TulaError when the refresh could not be made, or `response.invalid` when the
+     *   answer was not session tokens (the session is left as it was).
      */
     refresh(): Promise<string | null>
     /**
@@ -278,6 +284,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     storage: options.storage ?? memoryStorage(),
     environment,
     lockWaitMs: timeoutMs + LOCK_WAIT_MARGIN_MS,
+    refreshTimeoutMs: Math.min(timeoutMs, REFRESH_TIMEOUT_MS),
     // One lock, channel and storage entry per API and environment, so two apps (or two
     // environments) on one origin do not share a session.
     scope: `${baseUrl}|${publishableKey}`,

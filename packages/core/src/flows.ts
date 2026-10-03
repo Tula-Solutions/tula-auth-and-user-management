@@ -1,6 +1,6 @@
-import { clientError, type Messages } from './errors'
+import { clientError, formatMessage, type Messages, TulaError } from './errors'
 import type { Schemas } from './generated/api.gen'
-import type { SessionManager } from './session'
+import { isSessionTokens, type SessionManager } from './session'
 import type { Transport } from './transport'
 import type { FlowKind, FlowStep } from './types'
 
@@ -26,7 +26,13 @@ export interface FlowSnapshot<Kind extends FlowKind = FlowKind> {
   readonly expiresAt: string
 }
 
-/** What every flow object has: its snapshot, kept current, and a way to resend the code. */
+/**
+ * What every flow object has: its snapshot, kept current, and a way to resend the code.
+ *
+ * A flow sends one action at a time. A second action while one is in flight is refused with
+ * `flow.busy`, and any action once the step is `complete` with `flow.invalid_step`; both are
+ * raised by the client (`status: 0`) without a request.
+ */
 interface Flow<Kind extends FlowKind> extends FlowSnapshot<Kind> {
   /**
    * Email a fresh code and retire the previous one. Limited by the server to one email a
@@ -144,19 +150,44 @@ interface Binding {
   attemptSecret: string
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Whether an answer has what a flow object is built from: the attempt's id and a step with a
+ * status, and, once the step is `complete`, session tokens the client can install. A 200 that
+ * lacks them is not this API (a wrong base URL, a proxy's page) and must not become a flow.
+ */
+function isUsableAttempt(value: unknown): value is FlowAttempt {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    value.id === '' ||
+    !isRecord(value.step) ||
+    typeof value.step.status !== 'string'
+  ) {
+    return false
+  }
+  return value.step.status === 'complete'
+    ? isSessionTokens(value.session)
+    : value.session === undefined
+}
+
 /**
  * The state every flow object shares, held in a closure: the attempt as the server last
- * described it, and its secret. The secret is kept only here, in memory. It is never written to
- * storage, and it is not a property of the flow object, so it cannot end up in a log line, a
- * serialised flow or an error.
+ * described it, and its secret. The secret is kept only here, in memory, and only until the
+ * flow completes. It is never written to storage, and it is not a property of the flow object,
+ * so it cannot end up in a log line, a serialised flow or an error.
  */
 function createAttempt(context: FlowContext, started: FlowAttempt) {
-  const secret = started.attemptSecret
-  if (!secret) {
+  if (!isUsableAttempt(started) || !started.attemptSecret) {
     // Without the secret no later call can succeed; fail here rather than with a puzzling
     // `flow.not_found` on the next step.
     throw clientError('response.invalid', context.messages())
   }
+  let secret: string | null = started.attemptSecret
+  let busy = false
   // Only what the snapshot shows is kept: not the secret, and not a completed flow's tokens.
   let current: FlowSnapshot = {
     id: started.id,
@@ -166,11 +197,25 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
   }
 
   async function accept(next: FlowAttempt): Promise<FlowStep> {
+    // Checked before anything changes: an answer that cannot be used leaves the flow on the
+    // step it was on, and signs nobody in.
+    if (!isUsableAttempt(next)) {
+      throw clientError('response.invalid', context.messages())
+    }
     current = { id: next.id, kind: next.kind, step: next.step, expiresAt: next.expiresAt }
+    if (next.step.status === 'complete') {
+      // A completed attempt accepts nothing more, so its secret has no further use.
+      secret = null
+    }
     if (next.session) {
       await context.session.adopt(next.session)
     }
     return next.step
+  }
+
+  /** An error the flow raises itself, before any request (`status: 0`). */
+  function refused(code: 'flow.invalid_step' | 'flow.busy'): TulaError {
+    return new TulaError({ code, message: formatMessage(code, { messages: context.messages() }) })
   }
 
   return {
@@ -179,14 +224,34 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
     /**
      * Send one call on this attempt and take the server's answer as the new step.
      *
+     * Two things are refused here, without a request, because the client knows the answer
+     * and a request could only do harm: an action on a completed flow (`flow.invalid_step`,
+     * the code the server uses for the same thing), and a second action while one is still
+     * being sent (`flow.busy`: a double-clicked button would otherwise spend two guesses, or
+     * send two emails).
+     *
      * @param send - Makes the call, given the attempt's id and secret.
      * @returns The next step.
+     * @throws TulaError `flow.invalid_step` or `flow.busy`, both with `status: 0`.
      */
     async step(send: (binding: Binding) => Promise<FlowAttempt>): Promise<FlowStep> {
-      // A step can complete the flow and set the session (and, in a browser, its cookie). It
-      // must not overlap a refresh of the session it replaces.
-      await context.session.idle()
-      return accept(await send({ params: { attemptId: current.id }, attemptSecret: secret }))
+      if (secret === null) {
+        throw refused('flow.invalid_step')
+      }
+      if (busy) {
+        throw refused('flow.busy')
+      }
+      busy = true
+      try {
+        // A step can complete the flow and set the session (and, in a browser, its cookie).
+        // It must not overlap a refresh of the session it replaces.
+        await context.session.idle()
+        return await accept(
+          await send({ params: { attemptId: current.id }, attemptSecret: secret })
+        )
+      } finally {
+        busy = false
+      }
     },
   }
 }

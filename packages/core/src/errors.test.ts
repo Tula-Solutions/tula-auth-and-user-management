@@ -15,7 +15,7 @@ describe('EN_MESSAGES', () => {
     ] as const) {
       expect(EN_MESSAGES[code].length).toBeGreaterThan(10)
     }
-    expect(Object.keys(EN_MESSAGES)).toHaveLength(ERROR_CODES.length + 4)
+    expect(Object.keys(EN_MESSAGES)).toHaveLength(ERROR_CODES.length + 5)
   })
 })
 
@@ -163,5 +163,30 @@ describe('clientError', () => {
       message: 'No se pudo guardar.',
     })
     expect(error.cause).toBe(cause)
+  })
+})
+
+describe('codes that name inherited object properties (review F3)', () => {
+  test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf'])(
+    'formatMessage(%p) is the fallback text, not an inherited function',
+    (code) => {
+      expect(formatMessage(code, { fallback: 'From the server.' })).toBe('From the server.')
+      expect(formatMessage(code)).toBe('Something went wrong on our side.')
+      expect(formatMessage(code, { messages: {}, params: { min: 1 } })).toBe(
+        'Something went wrong on our side.'
+      )
+    }
+  )
+
+  test('a placeholder that names an inherited property is left alone', () => {
+    const messages = { 'password.too_short': '{constructor} {toString} {__proto__} {min}' }
+    expect(formatMessage('password.too_short', { messages, params: { min: 3 } })).toBe(
+      '{constructor} {toString} {__proto__} 3'
+    )
+  })
+
+  test('a table entry that is not a string is skipped', () => {
+    const messages = { 'password.common': 7 } as unknown as Record<string, string>
+    expect(formatMessage('password.common', { messages })).toBe('This password is too common.')
   })
 })

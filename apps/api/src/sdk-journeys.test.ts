@@ -65,7 +65,18 @@ interface Server {
   /** A new client. A `web` client gets a browser-like cookie jar and an `Origin` header. */
   client(
     kind: ClientKind,
-    options?: { storage?: TokenStorage; origin?: string; tamper?: (request: Request) => Request }
+    options?: {
+      storage?: TokenStorage
+      origin?: string
+      tamper?: (request: Request) => Request
+      /** Share another client's cookie jar: two tabs of one browser. */
+      cookies?: Map<string, string>
+      /**
+       * Lose the response of a request the server has already handled: the client sees a
+       * network failure and the browser never applies the response's `Set-Cookie`.
+       */
+      loseResponse?: (request: Request) => boolean
+    }
   ): { tula: TulaClient; states: AuthState[]; cookies: Map<string, string> }
   code(email: string): string
   /** Move the server's clock and this process's clock together. */
@@ -100,7 +111,7 @@ async function server(): Promise<Server> {
     deps,
     exchanges,
     client(kind, options = {}) {
-      const cookies = new Map<string, string>()
+      const cookies = options.cookies ?? new Map<string, string>()
       const states: AuthState[] = []
       const fetch = async (original: Request): Promise<Response> => {
         const request = options.tamper ? options.tamper(original) : original
@@ -117,6 +128,18 @@ async function server(): Promise<Server> {
         }
         const requestBody = await request.clone().text()
         const response = await app.request(new Request(request, { headers }))
+        if (options.loseResponse?.(request)) {
+          exchanges.push({
+            method: request.method,
+            path: new URL(request.url).pathname,
+            headers,
+            requestBody,
+            status: response.status,
+            responseBody: await response.clone().text(),
+            setCookie: null,
+          })
+          throw new TypeError('the response was lost on the way back')
+        }
         const setCookie = response.headers.get('set-cookie')
         if (kind === 'web' && setCookie) {
           const [pair = ''] = setCookie.split(';')
@@ -773,6 +796,224 @@ describe('SDK journeys: a browser (web kind)', () => {
       status: 403,
       message: 'This origin is not allowed to sign in to this app.',
     })
+  })
+})
+
+describe('SDK journeys: a refresh whose response is lost (the reuse grace period)', () => {
+  const isRefresh = (request: Request) => request.url.endsWith('/sessions/refresh')
+
+  /** A signed-in browser whose next `count` refresh responses can be lost on the way back. */
+  async function signedInBrowser(s: Server) {
+    const email = freshEmail()
+    let toLose = 0
+    const context = s.client('web', {
+      loseResponse(request) {
+        if (!isRefresh(request) || toLose === 0) {
+          return false
+        }
+        toLose -= 1
+        return true
+      },
+    })
+    const flow = await context.tula.signUp.start({ email, password: PASSWORD })
+    await flow.verifyEmail({ code: s.code(email) })
+    return { ...context, loseNext: (count: number) => (toLose = count) }
+  }
+
+  test('one lost response: getToken() alone ends with a working session and the family intact', async () => {
+    const s = await server()
+    const { tula, states, loseNext } = await signedInBrowser(s)
+    s.advance(61_000)
+
+    // The server rotates the cookie's token; the answer never arrives. The SDK asks again at
+    // once with the cookie the browser still holds, and is given the same next token.
+    loseNext(1)
+    const token = await tula.session.getToken()
+    expect(token).toBeString()
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200])
+    expect(refreshes(s)[0]?.headers.get('cookie')).toBe(refreshes(s)[1]?.headers.get('cookie'))
+    expect(tula.state.status).toBe('signed-in')
+    expect(await tula.session.list()).toHaveLength(1)
+
+    // The family was not revoked: the next rotation works, with one request.
+    s.advance(61_000)
+    expect(await tula.session.getToken()).toBeString()
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200, 200])
+    expect(states.map((state) => state.status)).toEqual(['signed-in'])
+  })
+
+  test('both tries lost, then asked again inside the grace period: still the same next token, session intact', async () => {
+    const s = await server()
+    const { tula, states, loseNext } = await signedInBrowser(s)
+    s.advance(61_000)
+
+    loseNext(2)
+    expect(await caught(tula.session.getToken())).toMatchObject({ code: 'network.failed' })
+    // Two tries, no third.
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200])
+    expect(tula.state.status).toBe('signed-in')
+
+    s.advance(3_000)
+    expect(await tula.session.getToken()).toBeString()
+    expect(refreshes(s).map((exchange) => exchange.status)).toEqual([200, 200, 200])
+    s.advance(61_000)
+    expect(await tula.session.getToken()).toBeString()
+    expect(states.map((state) => state.status)).toEqual(['signed-in'])
+  })
+
+  test('both tries lost, then asked again after the grace period: the server sees reuse, the session is revoked and the client signs out once', async () => {
+    const s = await server()
+    const { tula, states, loseNext, cookies } = await signedInBrowser(s)
+    s.advance(61_000)
+    loseNext(2)
+    await caught(tula.session.getToken())
+
+    s.advance(11_000)
+    expect(await tula.session.getToken()).toBeNull()
+    expect(refreshes(s).at(-1)).toMatchObject({ status: 401 })
+    expect(refreshes(s).at(-1)?.responseBody).toContain('session.reuse_detected')
+    expect(states.map((state) => state.status)).toEqual(['signed-in', 'signed-out'])
+    expect(cookies.size).toBe(0)
+    // No retry loop.
+    expect(await tula.session.getToken()).toBeNull()
+    expect(refreshes(s)).toHaveLength(3)
+  })
+})
+
+describe('SDK journeys: two tabs sharing one cookie jar', () => {
+  const globals = globalThis as unknown as {
+    BroadcastChannel?: unknown
+    navigator: { locks?: unknown }
+  }
+  const original = {
+    channel: Object.getOwnPropertyDescriptor(globals, 'BroadcastChannel'),
+    locks: Object.getOwnPropertyDescriptor(globals.navigator, 'locks'),
+  }
+
+  /** What `createTulaClient` finds in a browser: Web Locks and BroadcastChannel, or neither. */
+  function browser(supported: boolean): void {
+    const tails = new Map<string, Promise<unknown>>()
+    const channels: { name: string; onmessage: ((event: { data: unknown }) => void) | null }[] = []
+    class Channel {
+      onmessage: ((event: { data: unknown }) => void) | null = null
+      readonly name: string
+      constructor(name: string) {
+        this.name = name
+        channels.push(this)
+      }
+      postMessage(message: unknown): void {
+        for (const other of channels) {
+          if (other !== this && other.name === this.name) {
+            other.onmessage?.({ data: structuredClone(message) })
+          }
+        }
+      }
+    }
+    const locks = {
+      request<T>(name: string, _options: unknown, callback: () => Promise<T>): Promise<T> {
+        const run = (tails.get(name) ?? Promise.resolve()).then(callback)
+        tails.set(
+          name,
+          run.then(
+            () => undefined,
+            () => undefined
+          )
+        )
+        return run
+      },
+    }
+    Object.defineProperty(globals, 'BroadcastChannel', {
+      configurable: true,
+      writable: true,
+      value: supported ? Channel : undefined,
+    })
+    Object.defineProperty(globals.navigator, 'locks', {
+      configurable: true,
+      value: supported ? locks : undefined,
+    })
+  }
+
+  afterEach(() => {
+    if (original.channel) {
+      Object.defineProperty(globals, 'BroadcastChannel', original.channel)
+    } else {
+      delete globals.BroadcastChannel
+    }
+    if (original.locks) {
+      Object.defineProperty(globals.navigator, 'locks', original.locks)
+    } else {
+      delete globals.navigator.locks
+    }
+  })
+
+  /** Tab A signs up; tab B is a second tab of the same browser, restored from the cookie. */
+  async function twoTabs(s: Server) {
+    const email = freshEmail()
+    const a = s.client('web')
+    const flow = await a.tula.signUp.start({ email, password: PASSWORD })
+    await flow.verifyEmail({ code: s.code(email) })
+    const b = s.client('web', { cookies: a.cookies })
+    expect((await b.tula.load()).status).toBe('signed-in')
+    return { a, b }
+  }
+
+  const presented = (s: Server) => refreshes(s).map((exchange) => exchange.headers.get('cookie'))
+
+  test('with Web Locks and BroadcastChannel, both tabs need a token at once and one refresh serves both', async () => {
+    browser(true)
+    const s = await server()
+    const { a, b } = await twoTabs(s)
+    const before = refreshes(s).length
+    s.advance(61_000)
+
+    const [fromA, fromB] = await Promise.all([a.tula.session.getToken(), b.tula.session.getToken()])
+    expect(refreshes(s).length).toBe(before + 1)
+    expect(fromA).toBeString()
+    expect(fromB).toBe(fromA)
+    expect(a.tula.state.status).toBe('signed-in')
+    expect(b.tula.state.status).toBe('signed-in')
+
+    // Round after round, every refresh presents a cookie no refresh presented before.
+    for (let round = 0; round < 3; round++) {
+      s.advance(61_000)
+      await Promise.all([b.tula.session.getToken(), a.tula.session.getToken()])
+    }
+    expect(refreshes(s).every((exchange) => exchange.status === 200)).toBe(true)
+    expect(new Set(presented(s)).size).toBe(presented(s).length)
+    expect(await a.tula.session.list()).toHaveLength(1)
+
+    // Signing out in one tab ends the other at once.
+    await b.tula.session.signOut()
+    expect(a.tula.state).toEqual({ status: 'signed-out' })
+    expect(a.cookies.size).toBe(0)
+  })
+
+  test('without either, both tabs present the same cookie at once and the grace period leaves both signed in', async () => {
+    browser(false)
+    const s = await server()
+    const { a, b } = await twoTabs(s)
+    const before = refreshes(s).length
+    s.advance(61_000)
+
+    const [fromA, fromB] = await Promise.all([a.tula.session.getToken(), b.tula.session.getToken()])
+    const racing = refreshes(s).slice(before)
+    expect(racing.map((exchange) => exchange.status)).toEqual([200, 200])
+    // The race this path cannot prevent: the same cookie, twice.
+    expect(racing[0]?.headers.get('cookie')).toBe(racing[1]?.headers.get('cookie'))
+    // Both were answered with the same next token, so the jar is right whichever lands last.
+    expect(racing[0]?.setCookie).toBe(racing[1]?.setCookie)
+    expect(fromA).toBeString()
+    expect(fromB).toBeString()
+    expect(a.tula.state.status).toBe('signed-in')
+    expect(b.tula.state.status).toBe('signed-in')
+
+    // The session family survived: later rotations work from either tab.
+    s.advance(61_000)
+    expect(await b.tula.session.getToken()).toBeString()
+    s.advance(61_000)
+    expect(await a.tula.session.getToken()).toBeString()
+    expect(refreshes(s).every((exchange) => exchange.status === 200)).toBe(true)
+    expect(await a.tula.session.list()).toHaveLength(1)
   })
 })
 

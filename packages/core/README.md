@@ -61,7 +61,9 @@ Every step status, so that a `switch` can be exhaustive: `needs_identifier`, `ne
 `needs_first_factor`, `needs_email_verification`, `needs_new_password`, `needs_second_factor`,
 `complete`. `needs_second_factor` has no action yet (it arrives with TOTP).
 
-When a step is `complete` the client is signed in: `tula.state.status === 'signed-in'`.
+When a step is `complete` the client is signed in: `tula.state.status === 'signed-in'`, and
+the flow object is spent (its secret is dropped; further actions are refused locally).
+Disable the submit button while an action is pending: a second one is refused with `flow.busy`.
 A flow cannot be resumed after a page reload; start again (attempts last ten minutes).
 
 ## Session
@@ -121,8 +123,14 @@ error.errors         // field errors: [{ field: 'password', code: 'password.too_
 error.retryAfterMs   // on a 429 or 503 that says when to try again
 ```
 
-Client-side codes: `network.failed`, `network.timeout`, `response.invalid`, `storage.failed`.
-The client never retries on its own. For another language, pass messages for any subset of
+Client-side codes (all `status: 0`): `network.failed`, `network.timeout`, `response.invalid`
+(the answer could not be read, or a 200 was not what the API sends: check `baseUrl`),
+`storage.failed`, and `flow.busy` (a second action on a flow while one is still being sent).
+One contract code is also raised locally: `flow.invalid_step` with `status: 0` for an action on
+a flow that has already completed. The client never retries on its own, with one exception: a refresh that got no answer is sent
+once more (see the security notes). After a 429 or 503
+with `Retry-After`, `getToken()` fails fast until then (at most five minutes,
+`MAX_REFRESH_BACKOFF_MS`); an explicit `session.refresh()` always asks. For another language, pass messages for any subset of
 codes (the rest stay English); a message may use the error's params as placeholders:
 
 ```ts
@@ -150,7 +158,7 @@ tula.setMessages(otherLocale)      // switch later
 | `fetch` | the global `fetch` | `(request: Request) => Promise<Response>`. |
 | `onSessionChange` | none | Same as a first `onChange` listener. |
 | `messages` | English | Messages by error code. |
-| `timeoutMs` | `15000` | Per request. |
+| `timeoutMs` | `15000` | Per request. A refresh uses `min(timeoutMs, 8000)`; see the security notes. |
 
 ## Security notes
 
@@ -179,6 +187,23 @@ allowed origins (`urls.allowedOrigins`), or flows answer `request.origin_not_all
 each other the result, and a sign-out in one tab signs the others out at once
 (`BroadcastChannel`). Where a browser lacks either, the server's short reuse grace period makes
 the leftover race harmless.
+
+**A lost refresh and the grace period.** Refresh tokens are single-use. If the server rotates
+one but its answer never arrives, the client still holds the old token, and presenting it again
+is forgiven only inside the server's reuse grace period (10 seconds by default); after that it
+is treated as theft and the whole session is revoked, on every device. So a refresh gives up
+after 8 seconds (`REFRESH_TIMEOUT_MS`), not the general 15, and if it got no answer at all (a
+timeout or a network failure, never an HTTP answer) the client sends it **once more, at once**,
+with what is left of the 10-second window (`REFRESH_RETRY_WINDOW_MS`). This is the only request
+the client ever repeats by itself. If the retry also fails, `getToken()` rejects with the
+network error and the session is kept; asking again later than the grace period may then sign
+the user out. An operator who shortens `refresh.reuseGracePeriod` below 8 seconds removes that
+margin.
+
+**A signed-out client stays signed out.** After `signOut()` (here or in another tab), a late
+401, a refresh that was in flight, or another tab's message about the session that ended
+cannot sign the client back in. Only a new sign-in, or this client's own `load()`/`refresh()`,
+can.
 
 **When a session ends.** If a refresh is refused (expired, revoked, signed out elsewhere, or a
 reused refresh token), the state becomes `signed-out`, listeners are told once, and nothing is

@@ -23,11 +23,68 @@ import type { AuthState, ClientKind, User } from './types'
 export const ACCESS_TOKEN_EXPIRY_SKEW_MS = 10_000
 
 /**
+ * How long a refresh request may take before it fails with `network.timeout`, unless the client
+ * was created with a smaller `timeoutMs`.
+ *
+ * It is deliberately shorter than the server's refresh reuse grace period (10 seconds by
+ * default, `refresh.reuseGracePeriod` in the session profile). A refresh whose response is lost
+ * may already have rotated the token on the server; presenting the same token again is forgiven
+ * only inside the grace period, and treated as theft (the whole session is revoked) after it.
+ * Giving up after 8 seconds leaves the application time to ask again while a retry is still
+ * safe. With the general 15-second timeout, every lost response would have ended the session.
+ *
+ * @example
+ * ```ts
+ * // A refresh that gets no answer fails after 8s; a getToken() made right away retries safely.
+ * REFRESH_TIMEOUT_MS // 8_000
+ * ```
+ */
+export const REFRESH_TIMEOUT_MS = 8_000
+
+/**
+ * How long, from the start of a refresh, its one automatic retry may still be running: the
+ * server's default refresh reuse grace period.
+ *
+ * A refresh that gets no answer (a timeout or a network failure, never an HTTP answer) is sent
+ * once more, at once. It is the only request the client repeats by itself, and it is safe by
+ * design: if the server did rotate the token, it answers the same token re-presented inside the
+ * grace period with the same next token. Leaving the retry to the application would mean a
+ * slow network signs users out on every device. The retry is given what is left of this window
+ * (at least one second), so the two tries together do not run far
+ * past the point where a retry stops being safe.
+ *
+ * @example
+ * ```ts
+ * // First try gives up after 8s (REFRESH_TIMEOUT_MS); the retry then has the remaining 2s.
+ * REFRESH_RETRY_WINDOW_MS // 10_000
+ * ```
+ */
+export const REFRESH_RETRY_WINDOW_MS = 10_000
+
+/** The least time the retry of a refresh is given, however long the first try took. */
+const MIN_REFRESH_RETRY_TIMEOUT_MS = 1_000
+
+/**
+ * The longest a `Retry-After` on a failed refresh makes `getToken()` fail fast without asking
+ * again. A proxy that answers `Retry-After: 86400` must not lock a signed-in user out of their
+ * session for a day. An explicit `session.refresh()` always asks.
+ *
+ * @example
+ * ```ts
+ * MAX_REFRESH_BACKOFF_MS // 300_000 (five minutes)
+ * ```
+ */
+export const MAX_REFRESH_BACKOFF_MS = 5 * 60_000
+
+/**
  * How much longer than one request's timeout a tab waits for the cross-tab lock before it goes
  * on without it. The tab holding the lock makes one request, so it frees the lock within the
  * timeout unless it has stalled; waiting for ever would let one stuck tab block the rest.
  */
 export const LOCK_WAIT_MARGIN_MS = 2_000
+
+/** How many ended session ids a client remembers. Far more than a page ever signs out of. */
+const MAX_ENDED_SESSIONS = 32
 
 /** Version of the messages tabs exchange. A tab ignores a message of a version it does not know. */
 const CHANNEL_VERSION = 1
@@ -69,6 +126,8 @@ export interface SessionOptions {
    * timeout plus {@link LOCK_WAIT_MARGIN_MS}.
    */
   lockWaitMs: number
+  /** The refresh request's own timeout: {@link REFRESH_TIMEOUT_MS}, or the client's if smaller. */
+  refreshTimeoutMs: number
   /** Names this client's lock, channel and storage entry: one per API and environment. */
   scope: string
   /** The current locale table. */
@@ -114,16 +173,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-/**
- * How long an access token is valid, measured by the server: `exp - iat` from the token itself.
- *
- * The lifetime, not the absolute expiry, is what the client keeps, because the device's clock
- * can be minutes off. With a 60-second token, a clock two minutes fast would see every token as
- * already expired, and a slow one would keep using dead tokens.
- */
-function accessTokenLifetimeMs(issued: SessionTokens, now: number): number {
+/** `exp - iat` of a JWT in milliseconds, or `undefined` when the token is not a readable JWT. */
+function jwtLifetimeMs(token: string): number | undefined {
   try {
-    const payload = issued.accessToken.split('.')[1] ?? ''
+    const payload = token.split('.')[1] ?? ''
     const claims: unknown = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
     if (
       isRecord(claims) &&
@@ -134,10 +187,44 @@ function accessTokenLifetimeMs(issued: SessionTokens, now: number): number {
       return (claims.exp - claims.iat) * 1000
     }
   } catch {
-    // Not a JWT this client can read: fall back to the expiry the server sent alongside it.
+    // Not a JWT this client can read: the caller falls back to the expiry sent alongside it.
   }
-  const untilExpiry = Date.parse(issued.accessTokenExpiresAt) - now
-  return Number.isNaN(untilExpiry) ? 0 : Math.max(0, untilExpiry)
+  return undefined
+}
+
+/**
+ * How long an access token is valid, measured by the server: `exp - iat` from the token itself.
+ *
+ * The lifetime, not the absolute expiry, is what the client keeps, because the device's clock
+ * can be minutes off. With a 60-second token, a clock two minutes fast would see every token as
+ * already expired, and a slow one would keep using dead tokens.
+ */
+function accessTokenLifetimeMs(issued: SessionTokens, now: number): number {
+  return (
+    jwtLifetimeMs(issued.accessToken) ?? Math.max(0, Date.parse(issued.accessTokenExpiresAt) - now)
+  )
+}
+
+/**
+ * Whether a value has what the client needs from session tokens: an access token, the session
+ * id and an expiry it can read. A successful answer is checked before it is installed, because
+ * a 200 is not proof of talking to the API: a wrong `baseUrl` or a proxy's page answers 200 too.
+ *
+ * @param value - The parsed body of a refresh, or a completed flow's `session`.
+ * @returns `true` when the tokens can be installed.
+ */
+export function isSessionTokens(value: unknown): value is SessionTokens {
+  return (
+    isRecord(value) &&
+    typeof value.accessToken === 'string' &&
+    value.accessToken !== '' &&
+    typeof value.sessionId === 'string' &&
+    value.sessionId !== '' &&
+    (value.refreshToken === undefined || typeof value.refreshToken === 'string') &&
+    (jwtLifetimeMs(value.accessToken) !== undefined ||
+      (typeof value.accessTokenExpiresAt === 'string' &&
+        !Number.isNaN(Date.parse(value.accessTokenExpiresAt))))
+  )
 }
 
 /**
@@ -151,6 +238,11 @@ function sessionIsGone(error: TulaError): boolean {
     error.code === 'auth.unauthenticated' ||
     error.code === 'auth.user_banned'
   )
+}
+
+/** Whether a request ended without any answer from the API: it timed out or never connected. */
+function gotNoAnswer(error: unknown): boolean {
+  return isTulaError(error) && (error.code === 'network.timeout' || error.code === 'network.failed')
 }
 
 /** Whether the API refused the access token itself, which a refresh may cure. */
@@ -176,6 +268,8 @@ function ignore(): void {
  *   Web Lock and share the result over a `BroadcastChannel`.
  * - A refused refresh ends the session once: state becomes `signed-out`, listeners hear of it
  *   once, nothing is retried.
+ * - A refresh that gets no answer at all is sent once more, at once, inside the same single
+ *   flight: the only automatic retry in the client, safe because of the server's grace period.
  * - Whatever finishes after a sign-out or a new sign-in is discarded: every change of session
  *   bumps a generation, and a result from an older generation is never installed.
  *
@@ -203,6 +297,14 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   let orphan: string | null = null
   let channel: ChannelLike | undefined
   let channelOpened = false
+  /**
+   * Sessions this client has ended. Another tab's `session` message for one of them is stale
+   * (posted by a refresh that was in flight when the session ended) and must not sign this
+   * client back in. Only this client's own refresh can bring such a session back.
+   */
+  const endedSessions = new Set<string>()
+  /** Sign-outs whose request to the server has not finished. */
+  let signingOut = 0
 
   function setState(next: AuthState): void {
     const same =
@@ -237,6 +339,17 @@ export function createSessionManager(options: SessionOptions): SessionManager {
 
   /** Forget the session in this client. `announce` tells the other tabs to do the same. */
   function endLocal(announce: boolean): void {
+    const sessionId = tokens?.sessionId
+    if (sessionId) {
+      endedSessions.add(sessionId)
+      if (endedSessions.size > MAX_ENDED_SESSIONS) {
+        // A Set iterates in insertion order: the first entry is the oldest.
+        for (const oldest of endedSessions) {
+          endedSessions.delete(oldest)
+          break
+        }
+      }
+    }
     generation += 1
     tokens = null
     refreshToken = null
@@ -276,6 +389,7 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   /** Install freshly issued tokens in memory and share the access token with other tabs. */
   function commit(issued: SessionTokens): number {
     generation += 1
+    endedSessions.delete(issued.sessionId)
     const now = environment.now()
     const lifetime = accessTokenLifetimeMs(issued, now)
     tokens = {
@@ -341,6 +455,13 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       typeof data.expiresAt === 'number' &&
       typeof data.refreshAt === 'number'
     ) {
+      // A message for a session this client ended is the echo of a refresh that was in flight
+      // elsewhere when it ended. And while a sign-out is still on its way to the server, no
+      // message is believed: the session it names may be the one being revoked (a client that
+      // never loaded does not know which session its cookie holds).
+      if (signingOut > 0 || endedSessions.has(data.sessionId)) {
+        return
+      }
       generation += 1
       tokens = {
         accessToken: data.accessToken,
@@ -418,11 +539,31 @@ export function createSessionManager(options: SessionOptions): SessionManager {
         return { token: null }
       }
     }
+    const body = presented ? { refreshToken: presented } : {}
+    const sentAt = environment.now()
     let issued: SessionTokens
     try {
-      issued = await transport.call('refreshSession', {
-        body: presented ? { refreshToken: presented } : {},
-      })
+      try {
+        issued = await transport.call('refreshSession', {
+          body,
+          timeoutMs: options.refreshTimeoutMs,
+        })
+      } catch (error) {
+        if (!gotNoAnswer(error) || generation !== started) {
+          throw error
+        }
+        // The one automatic retry (see REFRESH_RETRY_WINDOW_MS): no answer came, so the server
+        // may or may not have rotated the token. Presenting the same token again at once is
+        // answered with the same next token if it did, and is an ordinary refresh if it did not.
+        const left = REFRESH_RETRY_WINDOW_MS - (environment.now() - sentAt)
+        issued = await transport.call('refreshSession', {
+          body,
+          timeoutMs: Math.min(
+            options.refreshTimeoutMs,
+            Math.max(MIN_REFRESH_RETRY_TIMEOUT_MS, left)
+          ),
+        })
+      }
     } catch (error) {
       if (generation !== started) {
         return current()
@@ -438,9 +579,15 @@ export function createSessionManager(options: SessionOptions): SessionManager {
         return { token: null }
       }
       if (isTulaError(error) && error.retryAfterMs !== undefined) {
-        backoff = { until: environment.now() + error.retryAfterMs, error }
+        const wait = Math.min(error.retryAfterMs, MAX_REFRESH_BACKOFF_MS)
+        backoff = { until: environment.now() + wait, error }
       }
       throw error
+    }
+    if (!isSessionTokens(issued)) {
+      // A 200 that is not session tokens (a wrong base URL, a proxy's page). Nothing is
+      // installed, stored or announced, and the session this client has is left alone.
+      throw clientError('response.invalid', options.messages())
     }
     if (generation !== started) {
       // Signed out (or signed in as someone else) while the request was in flight. The tokens
@@ -454,8 +601,10 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     return { token: issued.accessToken, installed, failure: await persist(issued) }
   }
 
-  async function runRefresh(): Promise<string | null> {
-    if (backoff && environment.now() < backoff.until) {
+  async function runRefresh(explicit: boolean): Promise<string | null> {
+    // An explicit `refresh()` is the application (or the user) asking now: it always asks,
+    // and gets the fresh answer. Only the implicit refreshes wait out a `Retry-After`.
+    if (!explicit && backoff && environment.now() < backoff.until) {
       throw backoff.error
     }
     openChannel()
@@ -470,9 +619,9 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     return result.token
   }
 
-  function refresh(): Promise<string | null> {
+  function refresh(explicit = false): Promise<string | null> {
     if (!refreshing) {
-      const run = runRefresh()
+      const run = runRefresh(explicit)
       refreshing = run
       const clear = () => {
         if (refreshing === run) {
@@ -511,6 +660,9 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   }
 
   async function adopt(issued: SessionTokens): Promise<void> {
+    if (!isSessionTokens(issued)) {
+      throw clientError('response.invalid', options.messages())
+    }
     openChannel()
     const installed = commit(issued)
     const failure = await persist(issued)
@@ -521,6 +673,15 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   }
 
   async function signOut(): Promise<void> {
+    signingOut += 1
+    try {
+      await endEverywhere()
+    } finally {
+      signingOut -= 1
+    }
+  }
+
+  async function endEverywhere(): Promise<void> {
     openChannel()
     const pending = refreshing
     const unread = !web && !storageRead
@@ -599,6 +760,11 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       }
       // The API refused a token this client thought was good (it expired on the way, or the
       // session was revoked). One refresh, one retry; a second refusal goes to the caller.
+      // Unless the client was signed out while the call was in flight: then the refusal is
+      // simply true, and refreshing (a browser would send its cookie) could sign it back in.
+      if (state.status === 'signed-out') {
+        throw error
+      }
       const replaced = tokens && tokens.accessToken !== accessToken ? tokens.accessToken : null
       const next = replaced ?? (await refresh())
       if (!next) {
@@ -618,7 +784,7 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     },
     load,
     getToken,
-    refresh,
+    refresh: () => refresh(true),
     signOut,
     adopt,
     async idle() {

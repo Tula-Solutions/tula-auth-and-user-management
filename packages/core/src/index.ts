@@ -31,7 +31,12 @@ export {
   type TulaFieldError,
 } from './errors'
 export type { FlowSnapshot, PasswordResetFlow, SignInFlow, SignUpFlow } from './flows'
-export { ACCESS_TOKEN_EXPIRY_SKEW_MS } from './session'
+export {
+  ACCESS_TOKEN_EXPIRY_SKEW_MS,
+  MAX_REFRESH_BACKOFF_MS,
+  REFRESH_RETRY_WINDOW_MS,
+  REFRESH_TIMEOUT_MS,
+} from './session'
 export { memoryStorage, type TokenStorage } from './storage'
 export type {
   AuthState,

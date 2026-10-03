@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { DEFAULT_WEB_SESSION_PROFILE, durationToMs } from '@tula/contract'
 import { createClient, type TulaClient, type TulaClientOptions } from './client'
 import type { LockManagerLike } from './environment'
 import { isTulaError, type TulaError } from './errors'
-import { ACCESS_TOKEN_EXPIRY_SKEW_MS, createSessionManager } from './session'
+import {
+  ACCESS_TOKEN_EXPIRY_SKEW_MS,
+  createSessionManager,
+  MAX_REFRESH_BACKOFF_MS,
+  REFRESH_RETRY_WINDOW_MS,
+  REFRESH_TIMEOUT_MS,
+} from './session'
 import { memoryStorage, type TokenStorage } from './storage'
 import {
   accessToken,
@@ -88,10 +95,13 @@ function tab(
 }
 
 /** A `server` client that has restored a session from a stored refresh token. */
-async function signedIn(w: World, parts: { storage?: TokenStorage } = {}): Promise<Tab> {
+async function signedIn(
+  w: World,
+  parts: { storage?: TokenStorage; timeoutMs?: number } = {}
+): Promise<Tab> {
   const storage = parts.storage ?? memoryStorage()
   await storage.set(STORAGE_KEY, 'rt_0')
-  const t = tab(w, 'server', { storage })
+  const t = tab(w, 'server', { storage }, parts.timeoutMs ? { timeoutMs: parts.timeoutMs } : {})
   await t.tula.load()
   return t
 }
@@ -191,9 +201,9 @@ describe('getToken and the expiry skew', () => {
   })
 
   test.each([
-    ['an unreadable date', 'not a date', 'opaque'],
+    ['no JWT and a past expiry', '2000-01-01T00:00:00.000Z', 'opaque'],
     ['a payload without iat and exp', '2000-01-01T00:00:00.000Z', `x.${btoa('{"sub":"u"}')}.y`],
-    ['a payload that is not an object', 'not a date', `x.${btoa('7')}.y`],
+    ['a payload that is not an object', '2000-01-01T00:00:00.000Z', `x.${btoa('7')}.y`],
   ] as [string, string, string][])(
     'a token with %s is never trusted to be fresh',
     async (_name, accessTokenExpiresAt, token) => {
@@ -315,7 +325,7 @@ describe('single-flight refresh', () => {
       expect(first).toMatchObject({ code, status, retryAfterMs: 7_000 })
       w.clock.advance(6_999)
       expect(await caught(tula.session.getToken())).toBe(first)
-      expect(await caught(tula.session.refresh())).toBe(first)
+      expect(await caught(tula.session.getToken())).toBe(first)
       expect(w.refreshes()).toBe(2)
       w.clock.advance(1)
       await caught(tula.session.getToken())
@@ -514,6 +524,7 @@ describe('sign-out', () => {
       storage,
       environment: fakeEnvironment(w.clock),
       lockWaitMs: 1_000,
+      refreshTimeoutMs: 1_000,
       scope: `${TEST_BASE_URL}|${TEST_KEY}`,
       messages: () => ({}),
     })
@@ -863,6 +874,7 @@ describe('browser tabs', () => {
       storage: memoryStorage(),
       environment: fakeEnvironment(w.clock, { locks }),
       lockWaitMs: 20,
+      refreshTimeoutMs: 1_000,
       scope: `${TEST_BASE_URL}|${TEST_KEY}`,
       messages: () => ({}),
     })
@@ -1020,6 +1032,7 @@ describe('state and listeners', () => {
       storage,
       environment: fakeEnvironment(w.clock),
       lockWaitMs: 1_000,
+      refreshTimeoutMs: 1_000,
       scope: `${TEST_BASE_URL}|${TEST_KEY}`,
       messages: () => ({}),
     })
@@ -1054,6 +1067,7 @@ describe('state and listeners', () => {
       storage,
       environment: fakeEnvironment(w.clock),
       lockWaitMs: 1_000,
+      refreshTimeoutMs: 1_000,
       scope: `${TEST_BASE_URL}|${TEST_KEY}`,
       messages: () => ({}),
     })
@@ -1101,5 +1115,374 @@ describe('changes of session while something is in flight', () => {
     expect(states.slice(1)).toEqual([{ status: 'signed-out' }])
     // The token the refresh had just received is the one that was revoked.
     expect(w.api.calls(SIGN_OUT)[0]?.body).toEqual({ refreshToken: 'rt_2' })
+  })
+})
+
+describe('a signed-out client stays signed out (review F1)', () => {
+  test('a 401 that arrives after sign-out does not refresh: the caller gets the 401 and the client stays signed out', async () => {
+    const w = world()
+    const { tula, states } = tab(w, 'web')
+    await tula.load()
+    const held = deferred<Response>()
+    w.api.on(SESSIONS, () => held.promise)
+    const listing = tula.session.list()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await tula.session.signOut()
+    const refreshesAtSignOut = w.refreshes()
+    held.resolve(failure(401, 'session.revoked'))
+    expect(await caught(listing)).toMatchObject({ code: 'session.revoked', status: 401 })
+    expect(tula.state).toEqual({ status: 'signed-out' })
+    expect(w.refreshes()).toBe(refreshesAtSignOut)
+    expect(states.map((state) => state.status)).toEqual(['signed-in', 'signed-out'])
+  })
+
+  test('a session message another tab posted before this tab signed that session out cannot sign it back in', async () => {
+    const w = world()
+    const locks = fakeLocks()
+    const hub = fakeChannelHub('manual')
+    const a = tab(w, 'web', { locks, hub })
+    const b = tab(w, 'web', { locks, hub })
+    await a.tula.load()
+    await b.tula.load()
+    hub.flush()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(b.tula.state.status).toBe('signed-in')
+
+    // B refreshes session_1 and posts the result; before it is delivered, A signs out.
+    await b.tula.session.refresh()
+    await a.tula.session.signOut()
+    hub.flush()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(a.tula.state).toEqual({ status: 'signed-out' })
+    expect(b.tula.state).toEqual({ status: 'signed-out' })
+    expect(a.states.map((state) => state.status)).toEqual(['signed-in', 'signed-out'])
+    expect(await a.tula.session.getToken()).toBeNull()
+
+    // A genuinely new sign-in elsewhere (another session id) still reaches this tab.
+    const outsider = hub.createChannel(`tula:${TEST_BASE_URL}|${TEST_KEY}`)
+    outsider.postMessage({
+      v: 1,
+      type: 'session',
+      accessToken: accessToken('fresh'),
+      sessionId: 'session_2',
+      expiresAt: w.clock.now() + 60_000,
+      refreshAt: w.clock.now() + 50_000,
+    })
+    hub.flush()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(a.tula.state).toMatchObject({ status: 'signed-in', sessionId: 'session_2' })
+  })
+
+  test('while a sign-out is still being sent, no session message is taken, whatever its session', async () => {
+    const w = world()
+    const hub = fakeChannelHub()
+    const a = tab(w, 'web', { hub })
+    const held = deferred<Response>()
+    w.api.on(SIGN_OUT, () => held.promise)
+    // A never loaded, so it does not know which session its cookie belongs to.
+    const signingOut = a.tula.session.signOut()
+    const outsider = hub.createChannel(`tula:${TEST_BASE_URL}|${TEST_KEY}`)
+    outsider.postMessage({
+      v: 1,
+      type: 'session',
+      accessToken: accessToken('stale'),
+      sessionId: 'session_1',
+      expiresAt: w.clock.now() + 60_000,
+      refreshAt: w.clock.now() + 50_000,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(a.tula.state).toEqual({ status: 'signed-out' })
+    held.resolve(new Response(null, { status: 204 }))
+    await signingOut
+    expect(a.tula.state).toEqual({ status: 'signed-out' })
+  })
+
+  test('a refresh in flight in a tab that is told of a sign-out is discarded when it lands', async () => {
+    const w = world()
+    const hub = fakeChannelHub()
+    const a = tab(w, 'web', { hub })
+    const b = tab(w, 'web', { hub })
+    await a.tula.load()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const held = deferred<Response>()
+    w.api.on(REFRESH, () => held.promise)
+    const refreshing = b.tula.session.refresh()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await a.tula.session.signOut()
+    expect(b.tula.state).toEqual({ status: 'signed-out' })
+    const posted = hub.posted.length
+    held.resolve(json(200, sessionTokens('late')))
+    expect(await refreshing).toBeNull()
+    expect(b.tula.state).toEqual({ status: 'signed-out' })
+    expect(a.tula.state).toEqual({ status: 'signed-out' })
+    // The discarded result was not announced either.
+    expect(hub.posted).toHaveLength(posted)
+  })
+
+  test('a signed-out session can still be restored by this tab’s own refresh (the sign-out never reached the server)', async () => {
+    const w = world()
+    const hub = fakeChannelHub()
+    const a = tab(w, 'web', { hub })
+    await a.tula.load()
+    w.api.on(SIGN_OUT, () => Promise.reject(new TypeError('offline')))
+    await caught(a.tula.session.signOut())
+    expect(await a.tula.session.refresh()).toBe(accessToken('access_2'))
+    expect(a.tula.state.status).toBe('signed-in')
+  })
+})
+
+describe('the refresh request has its own, shorter timeout (review F2)', () => {
+  test('a refresh is given REFRESH_TIMEOUT_MS, below the server’s 10-second reuse grace period, not the 15-second default', async () => {
+    const w = world()
+    const { tula } = tab(w, 'web')
+    const timers = spyOn(globalThis, 'setTimeout')
+    await tula.session.refresh()
+    const refreshTimers = timers.mock.calls.map((call) => call[1]).slice(0, 1)
+    timers.mockRestore()
+    expect(REFRESH_TIMEOUT_MS).toBe(8_000)
+    expect(REFRESH_TIMEOUT_MS).toBeLessThan(
+      durationToMs(DEFAULT_WEB_SESSION_PROFILE.refresh.reuseGracePeriod)
+    )
+    expect(refreshTimers).toEqual([REFRESH_TIMEOUT_MS])
+  })
+
+  test('an app that sets a smaller timeoutMs gets that for refreshes too; other calls keep timeoutMs', async () => {
+    const w = world()
+    const { tula } = tab(w, 'web', {}, { timeoutMs: 3_000 })
+    const timers = spyOn(globalThis, 'setTimeout')
+    await tula.session.refresh()
+    const seen = timers.mock.calls.map((call) => call[1])
+    timers.mockRestore()
+    expect(seen[0]).toBe(3_000)
+
+    const slow = tab(w, 'web', {}, { timeoutMs: 20_000 })
+    const again = spyOn(globalThis, 'setTimeout')
+    await slow.tula.session.refresh()
+    const all = again.mock.calls.map((call) => call[1])
+    again.mockRestore()
+    // The refresh, then the user fetch that follows it.
+    expect(all).toEqual([REFRESH_TIMEOUT_MS, 20_000])
+  })
+})
+
+describe('successful answers are checked before they are installed (review F4)', () => {
+  test.each([
+    ['an empty object', {}],
+    [
+      'no session id',
+      { accessToken: accessToken('x'), accessTokenExpiresAt: '2030-01-01T00:00:00.000Z' },
+    ],
+    ['an access token that is not a string', { ...sessionTokens('x'), accessToken: 7 }],
+    ['an empty access token', { ...sessionTokens('x'), accessToken: '' }],
+    [
+      'no readable expiry',
+      { sessionId: 's', accessToken: 'opaque', accessTokenExpiresAt: 'not a date' },
+    ],
+    ['a refresh token that is not a string', { ...sessionTokens('x'), refreshToken: 7 }],
+  ] as [string, unknown][])(
+    'a 200 refresh answer with %s is response.invalid and changes nothing',
+    async (_name, body) => {
+      const w = world()
+      const hub = fakeChannelHub()
+      const { tula, states, storage } = await signedIn(w)
+      const other = tab(w, 'web', { hub })
+      await other.tula.load()
+      const posted = hub.posted.length
+      const before = tula.state
+      w.api.on(REFRESH, () => json(200, body))
+      expect(await caught(tula.session.refresh())).toMatchObject({ code: 'response.invalid' })
+      expect(await caught(other.tula.session.refresh())).toMatchObject({ code: 'response.invalid' })
+      expect(tula.state).toBe(before)
+      expect(states).toHaveLength(1)
+      expect(await storage.get(STORAGE_KEY)).toBe('rt_1')
+      expect(hub.posted).toHaveLength(posted)
+      expect(await tula.session.getToken()).toBe(accessToken('access_1'))
+    }
+  )
+
+  test('a first load answered with a page that is not the API stays loading', async () => {
+    const w = world()
+    const { tula } = tab(w, 'web')
+    w.api.on(REFRESH, () => json(200, { html: '<p>welcome</p>' }))
+    expect(await caught(tula.load())).toMatchObject({ code: 'response.invalid' })
+    expect(tula.state).toEqual({ status: 'loading' })
+  })
+})
+
+describe('Retry-After is capped, and an explicit refresh asks anyway (review F5)', () => {
+  test('a day-long Retry-After stops getToken for five minutes, not a day', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.clock.advance(61_000)
+    w.api.on(REFRESH, () => failure(503, 'service.unavailable', {}, { 'retry-after': '86400' }))
+    const first = await caught(tula.session.getToken())
+    expect(first.retryAfterMs).toBe(86_400_000)
+    w.clock.advance(MAX_REFRESH_BACKOFF_MS - 1)
+    expect(await caught(tula.session.getToken())).toBe(first)
+    expect(w.refreshes()).toBe(2)
+    w.clock.advance(1)
+    await caught(tula.session.getToken())
+    expect(w.refreshes()).toBe(3)
+    expect(MAX_REFRESH_BACKOFF_MS).toBe(300_000)
+  })
+
+  test('an explicit refresh() ignores the stored wait and surfaces the fresh answer', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.clock.advance(61_000)
+    w.api.on(REFRESH, () => failure(429, 'rate_limited', {}, { 'retry-after': '120' }))
+    const first = await caught(tula.session.getToken())
+    const second = await caught(tula.session.refresh())
+    expect(second).not.toBe(first)
+    expect(second).toMatchObject({ code: 'rate_limited', retryAfterMs: 120_000 })
+    expect(w.refreshes()).toBe(3)
+    // getToken still fails fast.
+    await caught(tula.session.getToken())
+    expect(w.refreshes()).toBe(3)
+    w.api.on(REFRESH, () => json(200, sessionTokens('back', { refreshToken: 'rt_back' })))
+    expect(await tula.session.refresh()).toBe(accessToken('back'))
+    expect(await tula.session.getToken()).toBe(accessToken('back'))
+  })
+})
+
+describe('a refresh that gets no answer is tried once more, at once (the one automatic retry)', () => {
+  /** A fetch answer that only ends when the request is aborted by its timeout. */
+  const untilAborted = (raw: Request) =>
+    new Promise<Response>((_resolve, reject) => {
+      raw.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    })
+
+  test('the first try times out, the second succeeds: two requests, every waiter gets the token, the state never changes', async () => {
+    const w = world()
+    const { tula, states } = await signedIn(w, { timeoutMs: 20 })
+    w.clock.advance(61_000)
+    let tries = 0
+    w.api.on(REFRESH, (_request, raw) => {
+      tries += 1
+      return tries === 1
+        ? untilAborted(raw)
+        : json(200, sessionTokens('second_try', { refreshToken: 'rt_next' }))
+    })
+    const tokens = await Promise.all(Array.from({ length: 10 }, () => tula.session.getToken()))
+    expect(new Set(tokens)).toEqual(new Set([accessToken('second_try')]))
+    expect(tries).toBe(2)
+    // The retry presents the same token: that is what the server's grace period forgives.
+    expect(
+      w.api
+        .calls(REFRESH)
+        .slice(-2)
+        .map((request) => request.body)
+    ).toEqual([{ refreshToken: 'rt_1' }, { refreshToken: 'rt_1' }])
+    expect(tula.state.status).toBe('signed-in')
+    expect(states).toHaveLength(1)
+  })
+
+  test('a fetch that fails outright is retried the same way', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    let tries = 0
+    w.api.on(REFRESH, () => {
+      tries += 1
+      return tries === 1
+        ? Promise.reject(new TypeError('connection reset'))
+        : json(200, sessionTokens('second_try', { refreshToken: 'rt_next' }))
+    })
+    expect(await tula.session.refresh()).toBe(accessToken('second_try'))
+    expect(tries).toBe(2)
+  })
+
+  test('both tries time out: one error for every waiter, the session is kept, and there is no third request', async () => {
+    const w = world()
+    const { tula, states, storage } = await signedIn(w, { timeoutMs: 20 })
+    w.clock.advance(61_000)
+    let tries = 0
+    w.api.on(REFRESH, (_request, raw) => {
+      tries += 1
+      return untilAborted(raw)
+    })
+    const results = await Promise.allSettled(
+      Array.from({ length: 10 }, () => tula.session.getToken())
+    )
+    const reasons = results.map((result) => (result.status === 'rejected' ? result.reason : null))
+    expect(new Set(reasons).size).toBe(1)
+    expect(reasons[0]).toMatchObject({ code: 'network.timeout', status: 0 })
+    expect(tries).toBe(2)
+    expect(tula.state.status).toBe('signed-in')
+    expect(states).toHaveLength(1)
+    expect(await storage.get(STORAGE_KEY)).toBe('rt_1')
+  })
+
+  test.each([
+    [503, 'service.unavailable'],
+    [429, 'rate_limited'],
+    [500, 'internal'],
+    [401, 'session.expired'],
+    [403, 'auth.user_banned'],
+  ] as [number, string][])('an HTTP %i answer is never retried', async (status, code) => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    let tries = 0
+    w.api.on(REFRESH, () => {
+      tries += 1
+      return failure(status, code)
+    })
+    await tula.session.refresh().catch(() => null)
+    expect(tries).toBe(1)
+  })
+
+  test('an unreadable 200 is not retried either', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    let tries = 0
+    w.api.on(REFRESH, () => {
+      tries += 1
+      return new Response('<html>', { status: 200 })
+    })
+    expect(await caught(tula.session.refresh())).toMatchObject({ code: 'response.invalid' })
+    expect(tries).toBe(1)
+  })
+
+  test.each([
+    ['at once', 0, REFRESH_TIMEOUT_MS],
+    ['after 8 seconds', 8_000, 2_000],
+    ['after the whole window', 9_900, 1_000],
+    ['later still', 30_000, 1_000],
+  ] as [string, number, number][])(
+    'a first try that failed %s leaves the retry what remains of the 10-second window',
+    async (_name, elapsed, expected) => {
+      const w = world()
+      const { tula } = await signedIn(w)
+      w.api.on(REFRESH, () => {
+        w.clock.advance(elapsed)
+        return Promise.reject(new TypeError('offline'))
+      })
+      const timers = spyOn(globalThis, 'setTimeout')
+      await caught(tula.session.refresh())
+      const seen = timers.mock.calls.map((call) => call[1])
+      timers.mockRestore()
+      expect(seen).toEqual([REFRESH_TIMEOUT_MS, expected])
+      expect(REFRESH_RETRY_WINDOW_MS).toBe(
+        durationToMs(DEFAULT_WEB_SESSION_PROFILE.refresh.reuseGracePeriod)
+      )
+    }
+  )
+
+  test('a sign-out while the first try is failing stops the retry', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const held = deferred<Response>()
+    let tries = 0
+    w.api.on(REFRESH, () => {
+      tries += 1
+      return held.promise
+    })
+    const refreshing = tula.session.refresh()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const signingOut = tula.session.signOut()
+    held.reject(new TypeError('offline'))
+    expect(await refreshing).toBeNull()
+    await signingOut
+    expect(tries).toBe(1)
+    expect(tula.state).toEqual({ status: 'signed-out' })
   })
 })

@@ -217,7 +217,7 @@ The changes every new method needs, made once.
   There is no `autoRefresh` option and a flow cannot be resumed after a reload; both are
   deliberate. `submitSecondFactor` waits for the route in 1.8. "A build per target" became one
   build plus a typecheck against web-platform types only (`typecheck:portable`). The package is
-  5.9 kB gzip (7.2 kB with the password checklist), with no Zod. A browser test bench lives in
+  6.4 kB gzip (7.7 kB with the password checklist), with no Zod. A browser test bench lives in
   `examples/core-playground` (`bun run playground`).
 
 ### 1.6 `@tula/react` — components for the Phase 0 flows

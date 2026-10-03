@@ -398,3 +398,154 @@ describe('the attempt secret stays inside the flow', () => {
     ])
   })
 })
+
+describe('answers are checked before a flow is built or a session installed (review F4)', () => {
+  test.each([
+    ['an empty object', {}],
+    [
+      'no id',
+      {
+        kind: 'sign_in',
+        expiresAt: EXPIRES,
+        step: { status: 'needs_password' },
+        attemptSecret: SECRET,
+      },
+    ],
+    ['no step', { id: 'a', kind: 'sign_in', expiresAt: EXPIRES, attemptSecret: SECRET }],
+    [
+      'a step without a status',
+      { id: 'a', kind: 'sign_in', expiresAt: EXPIRES, step: {}, attemptSecret: SECRET },
+    ],
+    ['an array', []],
+  ] as [string, unknown][])('a start answered with %s is response.invalid', async (_name, body) => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () => json(200, body))
+    expect(await caught(tula.signIn.start({ identifier: 'a@b.co' }))).toMatchObject({
+      code: 'response.invalid',
+      status: 0,
+    })
+    expect(tula.state.status).toBe('loading')
+  })
+
+  test.each([
+    ['no session', {}],
+    ['a session without tokens', { session: {} }],
+    [
+      'a session with no session id',
+      { session: { accessToken: 'a.b.c', accessTokenExpiresAt: EXPIRES } },
+    ],
+  ] as [string, Record<string, unknown>][])(
+    'a complete step with %s is response.invalid: the flow does not move and nobody is signed in',
+    async (_name, extra) => {
+      const { api, tula, states, storage } = setup()
+      api.on('POST /v1/client/sign-ins', () =>
+        json(200, attempt('sign_in', { status: 'needs_password' }, { attemptSecret: SECRET }))
+      )
+      api.on('POST /v1/client/sign-ins/attempt_1/password', () =>
+        json(200, attempt('sign_in', COMPLETE, extra))
+      )
+      const set = spyOn(storage, 'set')
+      const flow = await tula.signIn.start({ identifier: 'a@b.co' })
+      expect(await caught(flow.submitPassword({ password: 'pw' }))).toMatchObject({
+        code: 'response.invalid',
+      })
+      expect(flow.step).toEqual({ status: 'needs_password' })
+      expect(tula.state.status).toBe('loading')
+      expect(states).toEqual([])
+      expect(set).not.toHaveBeenCalled()
+      set.mockRestore()
+    }
+  )
+
+  test('a step answered with something that is not an attempt leaves the flow as it was', async () => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', { status: 'needs_password' }, { attemptSecret: SECRET }))
+    )
+    api.on('POST /v1/client/sign-ins/attempt_1/password', () => json(200, { ok: true }))
+    const flow = await tula.signIn.start({ identifier: 'a@b.co' })
+    expect(await caught(flow.submitPassword({ password: 'pw' }))).toMatchObject({
+      code: 'response.invalid',
+    })
+    expect(flow.step).toEqual({ status: 'needs_password' })
+  })
+})
+
+describe('a flow sends one action at a time, and none once it is complete (review F6)', () => {
+  async function completed() {
+    const context = setup()
+    context.api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', { status: 'needs_password' }, { attemptSecret: SECRET }))
+    )
+    context.api.on('POST /v1/client/sign-ins/attempt_1/password', () =>
+      json(
+        200,
+        attempt('sign_in', COMPLETE, { session: sessionTokens('done', { refreshToken: 'rt' }) })
+      )
+    )
+    const flow = await context.tula.signIn.start({ identifier: 'a@b.co' })
+    await flow.submitPassword({ password: 'pw' })
+    return { ...context, flow }
+  }
+
+  test('every action on a completed flow is refused locally, without a request', async () => {
+    const { api, flow } = await completed()
+    const requests = api.requests.length
+    for (const action of [
+      () => flow.submitPassword({ password: 'pw' }),
+      () => flow.verifyEmail({ code: '123456' }),
+      () => flow.resendCode(),
+    ]) {
+      expect(await caught(action())).toMatchObject({
+        code: 'flow.invalid_step',
+        status: 0,
+        message: 'That action is not valid at this step. Please start again.',
+      })
+    }
+    expect(api.requests).toHaveLength(requests)
+  })
+
+  test('a completed flow no longer holds its secret: a later request cannot carry it', async () => {
+    const { api, flow } = await completed()
+    await caught(flow.resendCode())
+    expect(
+      api.requests.filter((request) => request.headers.get('x-tula-attempt') === SECRET)
+    ).toHaveLength(1)
+  })
+
+  test('a second action while one is in flight is flow.busy, locally; the first is unaffected', async () => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', { status: 'needs_password' }, { attemptSecret: SECRET }))
+    )
+    let answer: (response: Response) => void = () => undefined
+    api.on(
+      'POST /v1/client/sign-ins/attempt_1/password',
+      () => new Promise<Response>((resolve) => (answer = resolve))
+    )
+    const flow = await tula.signIn.start({ identifier: 'a@b.co' })
+    const first = flow.submitPassword({ password: 'pw' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const busy = await caught(flow.submitPassword({ password: 'pw' }))
+    expect(busy).toMatchObject({ code: 'flow.busy', status: 0 })
+    expect(busy.message).toBe(
+      'Another step of this flow is still being sent. Wait for it to finish.'
+    )
+    expect((await caught(flow.resendCode())).code).toBe('flow.busy')
+    expect(api.requests).toHaveLength(2)
+    answer(failure(401, 'auth.invalid_credentials'))
+    expect((await caught(first)).code).toBe('auth.invalid_credentials')
+    // The failed action released the flow.
+    answer = () => undefined
+    const retry = flow.submitPassword({ password: 'pw' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(api.requests).toHaveLength(3)
+    answer(
+      json(
+        200,
+        attempt('sign_in', COMPLETE, { session: sessionTokens('ok', { refreshToken: 'rt' }) })
+      )
+    )
+    expect((await retry).status).toBe('complete')
+  })
+})

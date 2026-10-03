@@ -4,17 +4,24 @@ import { ERROR_DEFINITIONS, type ErrorCode } from '@tula/contract/error-codes'
  * Codes for failures that happen in the client, before or instead of an API answer. They sit
  * next to the contract's codes so that callers have one thing to catch and one field to switch
  * on. `status` is `0` for all of them.
+ *
+ * One contract code is also raised by the client itself: `flow.invalid_step`, with `status: 0`,
+ * for an action on a flow that has already completed (the server answers the same code, with
+ * 409, for any other out-of-order action).
  */
 const CLIENT_MESSAGES = {
   'network.failed': 'Could not reach the server. Check your connection and try again.',
   'network.timeout': 'The server took too long to answer. Try again.',
   'response.invalid': 'The server sent a response this app could not read.',
   'storage.failed': 'Your session could not be saved on this device.',
+  // A flow object refuses a second action while one is being sent (see `flows.ts`).
+  'flow.busy': 'Another step of this flow is still being sent. Wait for it to finish.',
 } as const
 
 /**
  * A code the client itself raises: the request never got an answer, the answer could not be
- * read, or the storage adapter failed.
+ * read (or was not what the API sends), the storage adapter failed, or a flow object was asked
+ * for a second action while one was still being sent (`flow.busy`).
  *
  * @example
  * ```ts
@@ -80,6 +87,22 @@ function englishMessages(): Record<TulaErrorCode, string> {
 export const EN_MESSAGES: Readonly<Record<TulaErrorCode, string>> = englishMessages()
 
 /**
+ * A table's own string entry for a key, or `undefined`.
+ *
+ * Codes and placeholder names come from the server. Read with plain indexing, a code such as
+ * `constructor` or `toString` finds the function every object inherits, and the caller fails
+ * with a `TypeError` instead of reporting the error it was given.
+ *
+ * @param table - A locale table or an error's params.
+ * @param key - The server-supplied key.
+ * @returns The entry when the table itself has it and it is a string.
+ */
+export function ownString(table: object, key: string): string | undefined {
+  const value = Object.hasOwn(table, key) ? (table as Record<string, unknown>)[key] : undefined
+  return typeof value === 'string' ? value : undefined
+}
+
+/**
  * The message for an error code in a locale table, with `{name}` placeholders filled from
  * `params`. A placeholder with no matching param is left as it is.
  *
@@ -100,14 +123,14 @@ export function formatMessage(
   code: string,
   options: { messages?: Messages; params?: ErrorParams; fallback?: string } = {}
 ): string {
-  const tables: Record<string, string | undefined>[] = [options.messages ?? {}, EN_MESSAGES]
   const template =
-    tables.map((table) => table[code]).find((message) => message !== undefined) ??
+    ownString(options.messages ?? {}, code) ??
+    ownString(EN_MESSAGES, code) ??
     options.fallback ??
     EN_MESSAGES.internal
-  const params = options.params ?? {}
+  const params: ErrorParams = options.params ?? {}
   return template.replace(/\{(\w+)\}/g, (placeholder, name: string) =>
-    name in params ? String(params[name]) : placeholder
+    Object.hasOwn(params, name) ? String(params[name]) : placeholder
   )
 }
 
@@ -155,7 +178,7 @@ export interface TulaErrorInit {
  *
  * `code` is a contract code (`auth.invalid_credentials`, `password.too_short`, `rate_limited`,
  * …) or one of the client's own (`network.failed`, `network.timeout`, `response.invalid`,
- * `storage.failed`). `message` is ready to show, taken from the client's locale table. An error
+ * `storage.failed`, `flow.busy`). An error the client raised itself has `status: 0`. `message` is ready to show, taken from the client's locale table. An error
  * never contains a token, an attempt's secret or a password.
  *
  * @example

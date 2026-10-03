@@ -292,3 +292,45 @@ describe('errors', () => {
     }
   })
 })
+
+describe('codes that name inherited object properties (review F3)', () => {
+  test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'an error answer with code %p is a TulaError carrying the server’s detail',
+    async (code) => {
+      const api = fakeApi()
+      api.on('GET /v1/client/config', () =>
+        json(400, {
+          status: 400,
+          code,
+          detail: 'x',
+          params: { constructor: 1, toString: 'y' },
+          errors: [
+            { field: 'f', code, message: 'm' },
+            { field: 'g', code },
+          ],
+        })
+      )
+      const error = await caught(transport(api.fetch).call('getClientConfig', {}))
+      expect(error).toMatchObject({ code, status: 400, message: 'x' })
+      expect(error.errors.map((problem) => problem.message)).toEqual([
+        'm',
+        'Something went wrong on our side.',
+      ])
+    }
+  )
+
+  test('a per-call timeout overrides the transport’s', async () => {
+    const never: FetchLike = (request) =>
+      new Promise((_resolve, reject) => {
+        request.signal.addEventListener('abort', () =>
+          reject(new DOMException('aborted', 'AbortError'))
+        )
+      })
+    const started = Date.now()
+    const error = await caught(
+      transport(never, { timeoutMs: 5_000 }).call('refreshSession', { body: {}, timeoutMs: 15 })
+    )
+    expect(error.code).toBe('network.timeout')
+    expect(Date.now() - started).toBeLessThan(1_000)
+  })
+})

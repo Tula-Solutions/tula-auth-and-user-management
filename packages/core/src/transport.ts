@@ -4,6 +4,7 @@ import {
   type ErrorParams,
   formatMessage,
   type Messages,
+  ownString,
   TulaError,
   type TulaFieldError,
 } from './errors'
@@ -30,6 +31,8 @@ export type CallInput<Id extends OperationId> = (Operations[Id]['params'] extend
     accessToken?: string
     /** Sent as `x-tula-attempt`. */
     attemptSecret?: string
+    /** This call's own timeout, in place of the transport's. */
+    timeoutMs?: number
   }
 
 /** Sends one operation and returns its parsed answer. */
@@ -84,7 +87,7 @@ function readFieldErrors(value: unknown, messages: Messages): TulaFieldError[] {
       const params = readParams(entry.params)
       // A translated message when the app's table has one; otherwise the server's own, which
       // for a validation problem says more than the code's generic message.
-      const translated = (messages as Record<string, string | undefined>)[entry.code]
+      const translated = ownString(messages, entry.code)
       const fallback = typeof entry.message === 'string' ? entry.message : undefined
       errors.push({
         field: entry.field,
@@ -182,7 +185,7 @@ export function createTransport(options: TransportOptions): Transport {
     }
 
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), options.timeoutMs)
+    const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? options.timeoutMs)
     let response: Response
     let payload: unknown
     try {
