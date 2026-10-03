@@ -1,4 +1,5 @@
 import type { SessionClient } from '@tula/contract'
+import type { Activity } from '~/ports/activity-log'
 
 /** Why a session ended early. */
 export type SessionRevokeReason =
@@ -79,6 +80,14 @@ export function isActive(
   )
 }
 
+/** Options of {@link SessionStore.revokeByUser}. */
+export interface RevokeByUserOptions {
+  /** A session to leave signed in. */
+  exceptSessionId?: string
+  /** Builds the activity for each revoked session; recorded in the same transaction. */
+  activity?: (sessionId: string) => Activity
+}
+
 /** Sessions and their refresh tokens, always read and written inside one environment. */
 export interface SessionStore {
   /**
@@ -86,8 +95,9 @@ export interface SessionStore {
    *
    * @param session - The session.
    * @param token - Its root refresh token (`parentId: null`).
+   * @param activity - Recorded in the same transaction.
    */
-  create(session: NewSession, token: NewRefreshToken): Promise<void>
+  create(session: NewSession, token: NewRefreshToken, activity?: Activity): Promise<void>
 
   /**
    * @param environmentId - The environment to look in.
@@ -139,9 +149,16 @@ export interface SessionStore {
    * @param id - Session id.
    * @param reason - Why it ended.
    * @param at - Revocation time.
+   * @param activity - Recorded in the same transaction, only if the session was revoked.
    * @returns `false` when it does not exist or was already revoked.
    */
-  revoke(environmentId: string, id: string, reason: SessionRevokeReason, at: Date): Promise<boolean>
+  revoke(
+    environmentId: string,
+    id: string,
+    reason: SessionRevokeReason,
+    at: Date,
+    activity?: Activity
+  ): Promise<boolean>
 
   /**
    * Revoke every unrevoked session of a user, optionally keeping one.
@@ -150,7 +167,7 @@ export interface SessionStore {
    * @param userId - The user.
    * @param reason - Why they ended.
    * @param at - Revocation time.
-   * @param exceptSessionId - A session to leave signed in.
+   * @param options - A session to leave signed in, and the activity to record.
    * @returns The ids that were revoked.
    */
   revokeByUser(
@@ -158,6 +175,6 @@ export interface SessionStore {
     userId: string,
     reason: SessionRevokeReason,
     at: Date,
-    exceptSessionId?: string
+    options?: RevokeByUserOptions
   ): Promise<string[]>
 }

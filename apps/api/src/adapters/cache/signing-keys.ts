@@ -61,8 +61,8 @@ export function cacheSigningKeys(
       entries.delete(environmentId)
       return inserted
     },
-    async rotate(environmentId, plan, at) {
-      const rotated = await store.rotate(environmentId, plan, at)
+    async rotate(environmentId, plan, at, activity) {
+      const rotated = await store.rotate(environmentId, plan, at, activity)
       entries.delete(environmentId)
       return rotated
     },

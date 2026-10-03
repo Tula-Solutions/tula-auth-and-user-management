@@ -1,3 +1,5 @@
+import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { Activity } from '~/ports/activity-log'
 import type {
   NewUserWithPassword,
   UserListCriteria,
@@ -9,12 +11,15 @@ import type {
 export class MemoryUserRepository implements UserRepository {
   readonly #users: Map<string, UserRecord>
   readonly #passwords: Map<string, string>
+  readonly #activityLog: MemoryActivityLog
 
-  constructor() {
+  /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
+  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.#users = new Map()
     this.#passwords = new Map()
+    this.#activityLog = activityLog
   }
 
   /** @inheritdoc */
@@ -39,7 +44,7 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async createWithPassword(user: NewUserWithPassword): Promise<boolean> {
+  async createWithPassword(user: NewUserWithPassword, activity?: Activity): Promise<boolean> {
     // Checked and written without an `await` in between, so concurrent creations behave like
     // the database's unique constraint: exactly one wins.
     if (this.#byEmail(user.environmentId, user.emailNormalized)) {
@@ -48,6 +53,7 @@ export class MemoryUserRepository implements UserRepository {
     const { identityId: _identityId, credentialId: _credentialId, passwordHash, ...record } = user
     this.#users.set(user.id, { ...record, bannedAt: null, lastSignInAt: null })
     this.#passwords.set(user.id, passwordHash)
+    this.#activityLog.record(activity ? [activity] : [])
     return true
   }
 
@@ -56,20 +62,28 @@ export class MemoryUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     passwordHash: string,
-    _at: Date
+    _at: Date,
+    activity?: Activity
   ): Promise<boolean> {
     if (!this.#user(environmentId, userId) || !this.#passwords.has(userId)) {
       return false
     }
     this.#passwords.set(userId, passwordHash)
+    this.#activityLog.record(activity ? [activity] : [])
     return true
   }
 
   /** @inheritdoc */
-  async markEmailVerified(environmentId: string, userId: string, at: Date): Promise<void> {
+  async markEmailVerified(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    activity?: Activity
+  ): Promise<void> {
     const user = this.#user(environmentId, userId)
     if (user && user.emailVerifiedAt === null) {
       user.emailVerifiedAt = at
+      this.#activityLog.record(activity ? [activity] : [])
     }
   }
 
@@ -123,23 +137,30 @@ export class MemoryUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     bannedAt: Date | null,
-    _at: Date
+    _at: Date,
+    activity?: Activity
   ): Promise<UserRecord | null> {
     const user = this.#user(environmentId, userId)
     if (!user) {
       return null
     }
-    user.bannedAt = bannedAt === null ? null : (user.bannedAt ?? bannedAt)
+    // Only a real change writes: a repeated ban keeps the original time and records nothing.
+    if ((user.bannedAt === null) !== (bannedAt === null)) {
+      user.bannedAt = bannedAt
+      this.#activityLog.record(activity ? [activity] : [])
+    }
     return { ...user }
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string): Promise<boolean> {
+  async delete(environmentId: string, userId: string, activity?: Activity): Promise<boolean> {
     if (!this.#user(environmentId, userId)) {
       return false
     }
     this.#passwords.delete(userId)
-    return this.#users.delete(userId)
+    this.#users.delete(userId)
+    this.#activityLog.record(activity ? [activity] : [])
+    return true
   }
 
   #byEmail(environmentId: string, emailNormalized: string): UserRecord | undefined {

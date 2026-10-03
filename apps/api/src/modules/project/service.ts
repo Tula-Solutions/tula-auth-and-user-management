@@ -1,7 +1,9 @@
 import { PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError } from '~/exceptions'
+import type { Actor } from '~/lib/actor'
 import { randomToken, sha256Hex } from '~/lib/crypto'
+import * as Audit from '~/modules/audit/service'
 import type {
   ApiKey,
   CreateApiKeyRequest,
@@ -71,6 +73,7 @@ export function listApiKeys(
  * @param deps - Key and environment repositories, id generator and clock.
  * @param tenant - The environment to create the key in.
  * @param input - Kind and display name.
+ * @param actor - Who is creating the key, for the audit log.
  * @returns The stored key plus the full key value.
  * @throws NotFoundError if the environment does not exist in the tenant's project.
  * @throws ConflictError when the environment already has {@link MAX_ACTIVE_KEYS} active keys.
@@ -78,7 +81,8 @@ export function listApiKeys(
 export async function createApiKey(
   deps: Pick<Deps, 'apiKeys' | 'environments' | 'ids' | 'clock'>,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
-  input: CreateApiKeyRequest
+  input: CreateApiKeyRequest,
+  actor: Actor
 ): Promise<CreatedApiKey> {
   const environment = await deps.environments.findById(tenant.environmentId)
   if (!environment || environment.projectId !== tenant.projectId) {
@@ -93,16 +97,25 @@ export async function createApiKey(
     })
   }
   const key = generateKey(input.kind, environment.kind)
-  const record = await deps.apiKeys.insert({
-    id: deps.ids.next(),
-    kind: input.kind,
-    name: input.name,
-    projectId: environment.projectId,
-    environmentId: environment.id,
-    lastFour: key.slice(-4),
-    createdAt: deps.clock.now(),
-    keyHash: sha256Hex(key),
-  })
+  const id = deps.ids.next()
+  const record = await deps.apiKeys.insert(
+    {
+      id,
+      kind: input.kind,
+      name: input.name,
+      projectId: environment.projectId,
+      environmentId: environment.id,
+      lastFour: key.slice(-4),
+      createdAt: deps.clock.now(),
+      keyHash: sha256Hex(key),
+    },
+    Audit.entry(deps, tenant, {
+      type: 'api_key.created',
+      actor,
+      target: { type: 'api_key', id },
+      data: { kind: input.kind },
+    })
+  )
   return { ...record, key }
 }
 
@@ -112,24 +125,31 @@ export async function createApiKey(
  * The key making the request cannot revoke itself: rotate by creating a new key, switching to
  * it, then revoking the old one with the new key.
  *
- * @param deps - Key repository and clock.
+ * @param deps - Key repository, ids and clock.
  * @param tenant - The resolved tenant, including the requesting key.
  * @param id - The key to revoke.
+ * @param actor - Who is revoking it, for the audit log.
  * @returns The revoked key.
  * @throws ConflictError when `id` is the requesting key.
  * @throws NotFoundError when no key with that id exists in this environment.
  */
 export async function revokeApiKey(
-  deps: Pick<Deps, 'apiKeys' | 'clock'>,
+  deps: Pick<Deps, 'apiKeys' | 'clock' | 'ids'>,
   tenant: Tenant,
-  id: string
+  id: string,
+  actor: Actor
 ): Promise<ApiKey> {
   if (id === tenant.apiKeyId) {
     throw new ConflictError({
       message: 'A key cannot revoke itself. Create a new key and revoke this one with it.',
     })
   }
-  const revoked = await deps.apiKeys.revoke(tenant.environmentId, id, deps.clock.now())
+  const revoked = await deps.apiKeys.revoke(
+    tenant.environmentId,
+    id,
+    deps.clock.now(),
+    Audit.entry(deps, tenant, { type: 'api_key.revoked', actor, target: { type: 'api_key', id } })
+  )
   if (!revoked) {
     throw new NotFoundError()
   }

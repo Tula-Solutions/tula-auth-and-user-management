@@ -1,4 +1,5 @@
 import type { UserSort } from '@tula/contract'
+import type { Activity } from '~/ports/activity-log'
 
 /** An end user of a customer's app, scoped to one environment. */
 export interface UserRecord {
@@ -71,9 +72,10 @@ export interface UserRepository {
    * Create a user, their email identity and their password credential atomically.
    *
    * @param user - The user and credential.
+   * @param activity - Recorded in the same transaction, only if the user was created.
    * @returns `false` when the email is already taken in that environment (nothing is written).
    */
-  createWithPassword(user: NewUserWithPassword): Promise<boolean>
+  createWithPassword(user: NewUserWithPassword, activity?: Activity): Promise<boolean>
 
   /**
    * Replace a user's password hash (password change, or a rehash with stronger parameters).
@@ -82,13 +84,16 @@ export interface UserRepository {
    * @param userId - The user.
    * @param passwordHash - The new argon2id hash.
    * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if the hash was replaced. Leave it
+   *   out for a rehash, which is not a password change.
    * @returns `false` when the user has no password credential to replace (nothing is written).
    */
   setPasswordHash(
     environmentId: string,
     userId: string,
     passwordHash: string,
-    at: Date
+    at: Date,
+    activity?: Activity
   ): Promise<boolean>
 
   /**
@@ -97,8 +102,14 @@ export interface UserRepository {
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param at - Verification time.
+   * @param activity - Recorded in the same transaction, only if the email was unverified before.
    */
-  markEmailVerified(environmentId: string, userId: string, at: Date): Promise<void>
+  markEmailVerified(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    activity?: Activity
+  ): Promise<void>
 
   /**
    * @param environmentId - The user's environment.
@@ -124,13 +135,15 @@ export interface UserRepository {
    * @param userId - The user.
    * @param bannedAt - Ban time, or `null` to unban.
    * @param at - Update time.
-   * @returns The updated user, or `null` when they do not exist.
+   * @param activity - Recorded in the same transaction, only if the ban state changed.
+   * @returns The user as they now are, or `null` when they do not exist.
    */
   setBanned(
     environmentId: string,
     userId: string,
     bannedAt: Date | null,
-    at: Date
+    at: Date,
+    activity?: Activity
   ): Promise<UserRecord | null>
 
   /**
@@ -138,7 +151,8 @@ export interface UserRepository {
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
+   * @param activity - Recorded in the same transaction, only if the user was deleted.
    * @returns `false` when they do not exist.
    */
-  delete(environmentId: string, userId: string): Promise<boolean>
+  delete(environmentId: string, userId: string, activity?: Activity): Promise<boolean>
 }

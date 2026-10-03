@@ -1,0 +1,2 @@
+CREATE INDEX "audit_logs_environment_target_idx" ON "tula"."audit_logs" USING btree ("environment_id","target_id","occurred_at");--> statement-breakpoint
+CREATE INDEX "audit_logs_environment_actor_idx" ON "tula"."audit_logs" USING btree ("environment_id","actor_id","occurred_at");

@@ -1,8 +1,11 @@
+import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { Activity } from '~/ports/activity-log'
 import {
   isActive,
   type NewRefreshToken,
   type NewSession,
   type RefreshTokenRecord,
+  type RevokeByUserOptions,
   type Rotation,
   type SessionRecord,
   type SessionRevokeReason,
@@ -13,18 +16,22 @@ import {
 export class MemorySessionStore implements SessionStore {
   readonly #sessions: Map<string, SessionRecord>
   readonly #tokens: Map<string, RefreshTokenRecord>
+  readonly #activityLog: MemoryActivityLog
 
-  constructor() {
+  /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
+  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.#sessions = new Map()
     this.#tokens = new Map()
+    this.#activityLog = activityLog
   }
 
   /** @inheritdoc */
-  async create(session: NewSession, token: NewRefreshToken): Promise<void> {
+  async create(session: NewSession, token: NewRefreshToken, activity?: Activity): Promise<void> {
     this.#sessions.set(session.id, { ...session, revokedAt: null, revokeReason: null })
     this.#tokens.set(token.id, { ...token, replacedById: null, usedAt: null })
+    this.#activityLog.record(activity ? [activity] : [])
   }
 
   /** @inheritdoc */
@@ -94,7 +101,8 @@ export class MemorySessionStore implements SessionStore {
     environmentId: string,
     id: string,
     reason: SessionRevokeReason,
-    at: Date
+    at: Date,
+    activity?: Activity
   ): Promise<boolean> {
     const session = this.#session(environmentId, id)
     if (!session || session.revokedAt !== null) {
@@ -102,6 +110,7 @@ export class MemorySessionStore implements SessionStore {
     }
     session.revokedAt = at
     session.revokeReason = reason
+    this.#activityLog.record(activity ? [activity] : [])
     return true
   }
 
@@ -111,8 +120,9 @@ export class MemorySessionStore implements SessionStore {
     userId: string,
     reason: SessionRevokeReason,
     at: Date,
-    exceptSessionId?: string
+    options: RevokeByUserOptions = {}
   ): Promise<string[]> {
+    const { exceptSessionId, activity } = options
     const revoked: string[] = []
     for (const session of this.#sessions.values()) {
       if (
@@ -126,6 +136,7 @@ export class MemorySessionStore implements SessionStore {
         revoked.push(session.id)
       }
     }
+    this.#activityLog.record(activity ? revoked.map(activity) : [])
     return revoked
   }
 

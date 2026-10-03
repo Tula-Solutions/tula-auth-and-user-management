@@ -36,6 +36,13 @@
       "when": 1790795361588,
       "tag": "0004_one_active_signing_key",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791038471614,
+      "tag": "0005_audit_log_filter_indexes",
+      "breakpoints": true
     }
   ]
 }

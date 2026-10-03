@@ -1,10 +1,13 @@
 import { type Database, refreshTokens, sessions, withTenant } from '@tula/db'
 import { and, desc, eq, gt, isNull, ne, or } from 'drizzle-orm'
+import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
+import type { Activity } from '~/ports/activity-log'
 import type {
   NewRefreshToken,
   NewSession,
   RefreshTokenRecord,
+  RevokeByUserOptions,
   Rotation,
   SessionRecord,
   SessionRevokeReason,
@@ -62,10 +65,11 @@ export class PostgresSessionStore implements SessionStore {
   constructor(private readonly db: Database) {}
 
   /** @inheritdoc */
-  async create(session: NewSession, token: NewRefreshToken): Promise<void> {
+  async create(session: NewSession, token: NewRefreshToken, activity?: Activity): Promise<void> {
     await withTenant(this.db, session.environmentId, async (tx) => {
       await tx.insert(sessions).values({ ...session, updatedAt: session.createdAt })
       await tx.insert(refreshTokens).values(tokenValues(session, token))
+      await recordActivity(tx, activity ? [activity] : [])
     })
   }
 
@@ -196,10 +200,11 @@ export class PostgresSessionStore implements SessionStore {
     environmentId: string,
     id: string,
     reason: SessionRevokeReason,
-    at: Date
+    at: Date,
+    activity?: Activity
   ): Promise<boolean> {
-    const rows = await withTenant(this.db, environmentId, (tx) =>
-      tx
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
         .update(sessions)
         .set({ revokedAt: at, revokeReason: reason, updatedAt: at })
         .where(
@@ -210,8 +215,10 @@ export class PostgresSessionStore implements SessionStore {
           )
         )
         .returning({ id: sessions.id })
-    )
-    return rows.length === 1
+      const revoked = rows.length === 1
+      await recordActivity(tx, revoked && activity ? [activity] : [])
+      return revoked
+    })
   }
 
   /** @inheritdoc */
@@ -220,10 +227,11 @@ export class PostgresSessionStore implements SessionStore {
     userId: string,
     reason: SessionRevokeReason,
     at: Date,
-    exceptSessionId?: string
+    options: RevokeByUserOptions = {}
   ): Promise<string[]> {
-    const rows = await withTenant(this.db, environmentId, (tx) =>
-      tx
+    const { exceptSessionId, activity } = options
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
         .update(sessions)
         .set({ revokedAt: at, revokeReason: reason, updatedAt: at })
         .where(
@@ -235,7 +243,9 @@ export class PostgresSessionStore implements SessionStore {
           )
         )
         .returning({ id: sessions.id })
-    )
-    return rows.map((row) => row.id)
+      const ids = rows.map((row) => row.id)
+      await recordActivity(tx, activity ? ids.map(activity) : [])
+      return ids
+    })
   }
 }

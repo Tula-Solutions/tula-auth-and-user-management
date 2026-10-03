@@ -69,6 +69,7 @@ export const documentation: GenerateSpecOptions['documentation'] = {
     },
     { name: 'Users', description: 'Manage users (admin) and the signed-in user’s own account.' },
     { name: 'Sessions', description: 'Refresh, sign-out and the signed-in user’s devices.' },
+    { name: 'Audit', description: 'The record of auth events and admin actions (admin).' },
   ],
   components: {
     securitySchemes: {

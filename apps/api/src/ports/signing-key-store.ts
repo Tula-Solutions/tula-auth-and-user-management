@@ -1,4 +1,5 @@
 import { DEFAULT_WEB_SESSION_PROFILE, durationToMs, type Jwk } from '@tula/contract'
+import type { Activity } from '~/ports/activity-log'
 
 /** Lifecycle of a signing key: `next` is published ahead of use, `active` signs, `retired` verifies. */
 export type SigningKeyStatus = 'next' | 'active' | 'retired'
@@ -100,8 +101,9 @@ export interface SigningKeyStore {
    * @param environmentId - The environment.
    * @param plan - Which key to retire, which to activate, and the new `next` key.
    * @param at - Rotation time (becomes `retiredAt` / `activatedAt`).
+   * @param activity - Recorded in the same transaction, only if the rotation happened.
    * @returns `false` when the keys are no longer in the expected states (a concurrent rotation
    *   won); nothing is changed in that case.
    */
-  rotate(environmentId: string, plan: RotationPlan, at: Date): Promise<boolean>
+  rotate(environmentId: string, plan: RotationPlan, at: Date, activity?: Activity): Promise<boolean>
 }

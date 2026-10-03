@@ -6,7 +6,7 @@ import { ConflictError, NotFoundError } from '~/exceptions'
 import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Jwks from '~/modules/jwks/service'
 import { RETIRED_KEY_RETENTION_MS } from '~/ports/signing-key-store'
-import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
+import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
 let deps: TestDeps
 const tenant: Tenant = {
@@ -170,7 +170,7 @@ describe('rotate', () => {
   test('refuses while the next key is too new for caches to have seen it', async () => {
     await Jwks.ensureKeys(deps, tenant.environmentId)
     deps.clock.advance(Jwks.NEXT_KEY_MIN_AGE_MS - 1000)
-    const attempt = Jwks.rotate(deps, tenant)
+    const attempt = Jwks.rotate(deps, tenant, TEST_ACTOR)
     await expect(attempt).rejects.toBeInstanceOf(ConflictError)
     await expect(attempt).rejects.toMatchObject({ params: { retryAfter: 1 } })
   })
@@ -181,7 +181,7 @@ describe('rotate', () => {
       (key) => key.status === 'next'
     )
     deps.clock.advance(Jwks.NEXT_KEY_MIN_AGE_MS)
-    const keys = await Jwks.rotate(deps, tenant)
+    const keys = await Jwks.rotate(deps, tenant, TEST_ACTOR)
     expect(keys.map((key) => key.status)).toEqual(['next', 'active', 'retired'])
     const after = await Jwks.activeSigningKey(deps, tenant.environmentId)
     expect(after.kid).toBe(next?.id ?? '')
@@ -192,7 +192,7 @@ describe('rotate', () => {
     const old = await Jwks.activeSigningKey(deps, tenant.environmentId)
     deps.clock.advance(Jwks.NEXT_KEY_MIN_AGE_MS)
     const token = await signWith(old)
-    await Jwks.rotate(deps, tenant)
+    await Jwks.rotate(deps, tenant, TEST_ACTOR)
     expect((await verifyAccessToken(deps, token, tenant)).sub).toBe('user-1')
     deps.clock.advance(RETIRED_KEY_RETENTION_MS)
     const later = await signWith(old)
@@ -204,7 +204,10 @@ describe('rotate', () => {
   test('a concurrent rotation loses cleanly instead of corrupting state', async () => {
     await Jwks.ensureKeys(deps, tenant.environmentId)
     deps.clock.advance(Jwks.NEXT_KEY_MIN_AGE_MS)
-    const results = await Promise.allSettled([Jwks.rotate(deps, tenant), Jwks.rotate(deps, tenant)])
+    const results = await Promise.allSettled([
+      Jwks.rotate(deps, tenant, TEST_ACTOR),
+      Jwks.rotate(deps, tenant, TEST_ACTOR),
+    ])
     expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected'])
     expect(
       (results.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason
@@ -213,7 +216,7 @@ describe('rotate', () => {
   })
 
   test('bootstraps an environment with no keys before rotating', async () => {
-    const attempt = Jwks.rotate(deps, tenant)
+    const attempt = Jwks.rotate(deps, tenant, TEST_ACTOR)
     await expect(attempt).rejects.toBeInstanceOf(ConflictError)
     expect(await statuses()).toEqual(['active', 'next'])
   })
@@ -250,5 +253,48 @@ describe('ensureAllEnvironments', () => {
     }
     expect(await Jwks.ensureAllEnvironments(deps)).toEqual({ ensured: 1, failed: 1 })
     expect(await statuses()).toEqual(['active', 'next'])
+  })
+})
+
+describe('activity', () => {
+  test('creating an environment’s first keys is not an admin action and records nothing', async () => {
+    await Jwks.ensureKeys(deps, tenant.environmentId)
+    await Jwks.publicKeySet(deps, tenant.environmentId)
+    expect(deps.activityLog.entries).toEqual([])
+  })
+
+  test('a rotation records which key was activated, retired and published; a refused one records nothing', async () => {
+    await Jwks.ensureKeys(deps, tenant.environmentId)
+    await expect(Jwks.rotate(deps, tenant, TEST_ACTOR)).rejects.toBeInstanceOf(ConflictError)
+    expect(deps.activityLog.entries).toEqual([])
+
+    const before = await deps.signingKeys.list(tenant.environmentId)
+    const active = before.find((key) => key.status === 'active')
+    const next = before.find((key) => key.status === 'next')
+    deps.clock.advance(Jwks.NEXT_KEY_MIN_AGE_MS)
+    const after = await Jwks.rotate(deps, tenant, TEST_ACTOR)
+    expect(deps.activityLog.entries).toEqual([
+      {
+        id: expect.any(String),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        type: 'signing_key.rotated',
+        actor: { type: 'admin', id: TEST_ACTOR.id },
+        target: { type: 'signing_key', id: next?.id ?? '' },
+        ipAddress: TEST_ACTOR.ipAddress,
+        userAgent: TEST_ACTOR.userAgent,
+        data: {
+          retiredKeyId: active?.id ?? '',
+          nextKeyId: after.find((key) => key.status === 'next')?.id ?? '',
+        },
+        occurredAt: deps.clock.now(),
+      },
+    ])
+    // Key material never reaches the record.
+    const stored = await deps.signingKeys.list(tenant.environmentId)
+    const written = JSON.stringify(deps.activityLog.entries)
+    for (const key of stored) {
+      expect(written).not.toContain(key.privateKeyCiphertext)
+    }
   })
 })

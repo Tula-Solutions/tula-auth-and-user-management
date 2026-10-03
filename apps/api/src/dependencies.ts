@@ -2,6 +2,7 @@ import type { AccessTokenClaims, PasswordPolicy } from '@tula/contract'
 import type { Tier } from '~/env'
 import type { KeyedHash } from '~/lib/keyed-hash'
 import type { SecretBox } from '~/lib/secret-box'
+import type { ActivityLog } from '~/ports/activity-log'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { BreachChecker } from '~/ports/breach-checker'
 import type { Clock } from '~/ports/clock'
@@ -46,6 +47,8 @@ export interface Deps {
   sessions: SessionStore
   users: UserRepository
   flowAttempts: FlowAttemptStore
+  /** Reads the audit log. Activity is written by the stores, with the change it records. */
+  activityLog: ActivityLog
   /** Revoked session ids whose access tokens may still be unexpired. */
   revokedSessions: RevokedSessions
   mailer: Mailer

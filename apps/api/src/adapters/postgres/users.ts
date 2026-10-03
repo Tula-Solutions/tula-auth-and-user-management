@@ -1,6 +1,8 @@
 import { credentials, type Database, identities, users, withTenant } from '@tula/db'
-import { and, asc, count, desc, eq, ilike, isNull, or, type SQL, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm'
+import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
+import type { Activity } from '~/ports/activity-log'
 import type {
   NewUserWithPassword,
   UserListCriteria,
@@ -103,7 +105,7 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async createWithPassword(user: NewUserWithPassword): Promise<boolean> {
+  async createWithPassword(user: NewUserWithPassword, activity?: Activity): Promise<boolean> {
     const { identityId, credentialId, passwordHash, ...record } = user
     const scope = { projectId: user.projectId, environmentId: user.environmentId }
     const stamps = { createdAt: user.createdAt, updatedAt: user.createdAt }
@@ -126,6 +128,7 @@ export class PostgresUserRepository implements UserRepository {
           secret: passwordHash,
           ...stamps,
         })
+        await recordActivity(tx, activity ? [activity] : [])
       })
       return true
     } catch (error) {
@@ -142,10 +145,11 @@ export class PostgresUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     passwordHash: string,
-    at: Date
+    at: Date,
+    activity?: Activity
   ): Promise<boolean> {
-    const rows = await withTenant(this.db, environmentId, (tx) =>
-      tx
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
         .update(credentials)
         .set({ secret: passwordHash, updatedAt: at })
         .where(
@@ -156,14 +160,21 @@ export class PostgresUserRepository implements UserRepository {
           )
         )
         .returning({ id: credentials.id })
-    )
-    return rows.length === 1
+      const replaced = rows.length === 1
+      await recordActivity(tx, replaced && activity ? [activity] : [])
+      return replaced
+    })
   }
 
   /** @inheritdoc */
-  async markEmailVerified(environmentId: string, userId: string, at: Date): Promise<void> {
-    await withTenant(this.db, environmentId, (tx) =>
-      tx
+  async markEmailVerified(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    activity?: Activity
+  ): Promise<void> {
+    await withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
         .update(users)
         .set({ emailVerifiedAt: at, updatedAt: at })
         .where(
@@ -173,7 +184,9 @@ export class PostgresUserRepository implements UserRepository {
             isNull(users.emailVerifiedAt)
           )
         )
-    )
+        .returning({ id: users.id })
+      await recordActivity(tx, rows.length === 1 && activity ? [activity] : [])
+    })
   }
 
   /** @inheritdoc */
@@ -221,33 +234,37 @@ export class PostgresUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     bannedAt: Date | null,
-    at: Date
+    at: Date,
+    activity?: Activity
   ): Promise<UserRecord | null> {
-    const [row] = await withTenant(this.db, environmentId, (tx) =>
-      tx
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      // Guarded so only a real change writes: banning an already-banned user keeps the original
+      // ban time, and neither a repeated ban nor a repeated unban is recorded twice.
+      const [changed] = await tx
         .update(users)
-        .set({
-          // Banning an already-banned user keeps the original ban time.
-          bannedAt:
-            bannedAt === null
-              ? null
-              : sql`coalesce(${users.bannedAt}, ${bannedAt.toISOString()}::timestamptz)`,
-          updatedAt: at,
-        })
-        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .set({ bannedAt, updatedAt: at })
+        .where(and(isUser, bannedAt === null ? isNotNull(users.bannedAt) : isNull(users.bannedAt)))
         .returning(columns)
-    )
-    return row ?? null
+      if (changed) {
+        await recordActivity(tx, activity ? [activity] : [])
+        return changed
+      }
+      const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
+      return unchanged ?? null
+    })
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string): Promise<boolean> {
-    const rows = await withTenant(this.db, environmentId, (tx) =>
-      tx
+  async delete(environmentId: string, userId: string, activity?: Activity): Promise<boolean> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
         .delete(users)
         .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
         .returning({ id: users.id })
-    )
-    return rows.length === 1
+      const deleted = rows.length === 1
+      await recordActivity(tx, deleted && activity ? [activity] : [])
+      return deleted
+    })
   }
 }

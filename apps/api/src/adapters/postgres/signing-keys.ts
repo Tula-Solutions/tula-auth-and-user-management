@@ -1,8 +1,10 @@
 import { type Jwk, JwkSchema } from '@tula/contract'
 import { type Database, signingKeys, withTenant } from '@tula/db'
 import { and, desc, eq } from 'drizzle-orm'
+import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
 import * as logger from '~/lib/logger'
+import type { Activity } from '~/ports/activity-log'
 import {
   canVerify,
   type NewSigningKey,
@@ -91,7 +93,12 @@ export class PostgresSigningKeyStore implements SigningKeyStore {
   }
 
   /** @inheritdoc */
-  async rotate(environmentId: string, plan: RotationPlan, at: Date): Promise<boolean> {
+  async rotate(
+    environmentId: string,
+    plan: RotationPlan,
+    at: Date,
+    activity?: Activity
+  ): Promise<boolean> {
     try {
       await withTenant(this.db, environmentId, async (tx) => {
         // Order matters under the partial unique indexes: free the active slot, then the next
@@ -110,6 +117,7 @@ export class PostgresSigningKeyStore implements SigningKeyStore {
           throw new LostRace()
         }
         await tx.insert(signingKeys).values(toValues(environmentId, plan.next))
+        await recordActivity(tx, activity ? [activity] : [])
       })
       return true
     } catch (error) {

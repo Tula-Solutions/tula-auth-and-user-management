@@ -3,6 +3,7 @@ import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { AuthError } from '~/exceptions'
 import { validationHook } from '~/handlers'
+import { requestOrigin, userActor } from '~/lib/actor'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
@@ -68,7 +69,12 @@ router.post(
     }
     c.header('Cache-Control', 'no-store')
     try {
-      const { refreshToken, ...tokens } = await Sessions.refresh(deps, tenant, presented)
+      const { refreshToken, ...tokens } = await Sessions.refresh(
+        deps,
+        tenant,
+        presented,
+        requestOrigin(c)
+      )
       if (fromCookie && refreshToken) {
         // Browsers never see the refresh token in JavaScript.
         setRefreshCookie(c, deps.config, tenant.environmentId, refreshToken)
@@ -111,7 +117,7 @@ router.post(
     const tenant = c.get('tenant')
     const presented =
       c.req.valid('json').refreshToken ?? readRefreshCookie(c, deps.config, tenant.environmentId)
-    await Sessions.signOut(deps, tenant, presented)
+    await Sessions.signOut(deps, tenant, presented, requestOrigin(c))
     clearRefreshCookie(c, deps.config, tenant.environmentId)
     return c.body(null, 204)
   }
@@ -166,6 +172,7 @@ router.post(
     const revoked = await Sessions.revokeOthers(c.get('deps'), c.get('tenant'), {
       userId: sub,
       currentSessionId: sid,
+      actor: userActor(c),
     })
     return c.json(RevokedSessionsSchema.parse({ revoked }))
   }
@@ -198,7 +205,7 @@ router.delete(
     const tenant = c.get('tenant')
     const { sub, sid } = c.get('session')
     const { sessionId } = c.req.valid('param')
-    await Sessions.revoke(deps, tenant, { userId: sub, sessionId })
+    await Sessions.revoke(deps, tenant, { userId: sub, sessionId, actor: userActor(c) })
     if (sessionId === sid) {
       clearRefreshCookie(c, deps.config, tenant.environmentId)
     }
