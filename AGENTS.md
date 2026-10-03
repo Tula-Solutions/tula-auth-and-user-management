@@ -284,6 +284,8 @@ apps/api/src/
 ```bash
 bun install
 docker compose up -d        # postgres, redis, mailpit (http://localhost:8025)
+docker compose --profile app up -d --build
+                            # also migrations + the packaged API image (docs/self-host.md)
                             # roles come from docker/postgres/init.sql on a FRESH volume only;
                             # after changing it: docker compose down -v (wipes local data)
 bun run dev                 # API on http://localhost:3003, docs at /v1/docs

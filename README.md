@@ -87,7 +87,7 @@ Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
 - [x] Sessions with rotating refresh tokens and reuse detection
 - [x] User admin, rate limiting and lockout, audit log
 - [x] Conformance suite
-- [ ] Self-host packaging
+- [x] Self-host packaging ([docs/self-host.md](docs/self-host.md))
 
 Phases 1 to 3 add social sign-in, passkeys, MFA, the web and native SDKs, the dashboard,
 organizations and importers.

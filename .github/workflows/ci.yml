@@ -42,3 +42,41 @@ jobs:
         run: psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
       - run: bun run db:migrate
       - run: bun run test:integration
+
+  # The packaged server, as a self-hoster runs it: build the image, start it with Compose, and
+  # run the conformance scenarios against it over HTTP.
+  self-host:
+    runs-on: ubuntu-latest
+    env:
+      # Throwaway values for this job's own containers.
+      TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      TRUST_PROXY: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: Build and start the stack
+        run: docker compose --profile app up -d --build
+      - name: Wait until the API is ready
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:3003/v1/ready > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose --profile app logs api migrate
+          exit 1
+      - name: Create an environment and its keys
+        run: |
+          environment=$(docker compose --profile app run --rm -T api bun run ../../packages/db/src/scripts/seed.ts | awk '/development environment/ {print $NF}')
+          for kind in publishable secret; do
+            key=$(docker compose --profile app run --rm -T api bun run src/scripts/create-api-key.ts --environment "$environment" --kind "$kind" | tail -1)
+            echo "::add-mask::$key"
+            name=$(echo "$kind" | tr '[:lower:]' '[:upper:]')
+            echo "CONFORMANCE_${name}_KEY=$key" >> "$GITHUB_ENV"
+          done
+      - run: bun run conformance
+      - name: Server logs
+        if: failure()
+        run: docker compose --profile app logs api
+
