@@ -69,6 +69,20 @@ describe('describeError', () => {
     expect(described.stack).toContain('TypeError: profile is not a function')
   })
 
+  test('a system error code such as EPIPE is not mistaken for a database error', () => {
+    for (const code of ['EPIPE', 'EPERM', 'EBUSY', 'ETIME']) {
+      const described = describeError(Object.assign(new Error(`write ${code}`), { code }))
+      expect(described).toMatchObject({ name: 'Error', message: `write ${code}` })
+    }
+    // Postgres classes that start with a letter are still recognised.
+    expect(describeError(Object.assign(new Error('x'), { code: 'P0001' })).name).toBe(
+      'DatabaseError'
+    )
+    expect(describeError(Object.assign(new Error('x'), { code: 'XX000' })).name).toBe(
+      'DatabaseError'
+    )
+  })
+
   test('something that is not an error is described as text', () => {
     expect(describeError('offline')).toEqual({ name: 'NonError', message: 'offline' })
     expect(describeError(undefined)).toEqual({ name: 'NonError', message: 'undefined' })

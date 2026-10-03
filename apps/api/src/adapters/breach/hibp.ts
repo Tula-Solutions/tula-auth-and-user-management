@@ -65,7 +65,8 @@ export class HibpBreachChecker implements BreachChecker {
       return 'clean'
     } catch (err) {
       logger.warn('breach check unavailable', {
-        err: err instanceof Error ? err.message : String(err),
+        // Not the message: a fetch error can quote the URL, which holds the hash prefix.
+        err: err instanceof Error ? err.name : 'unknown',
       })
       return 'unknown'
     }

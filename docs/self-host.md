@@ -169,6 +169,16 @@ API's sources and production dependencies. Build it from the repository root:
 docker build -f apps/api/Dockerfile -t tula-api .
 ```
 
+## Housekeeping
+
+**Old API keys.** An environment holds at most 100 active keys and 1,000 in total, revoked ones
+included, because the API cannot delete keys. If you reach the total, remove revoked keys as the
+schema owner (nothing else refers to them):
+
+```sql
+DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_at IS NOT NULL;
+```
+
 ## Not there yet
 
 - No published image; build it from source.

@@ -12,7 +12,9 @@ export interface ErrorDescription {
   stack?: string
 }
 
-const SQLSTATE = /^[0-9A-Z]{5}$/
+// Five characters, at least one of them a digit: every SQLSTATE Postgres emits has one, and it
+// keeps Node's all-letter system codes (`EPIPE`, `EPERM`) from being taken for database errors.
+const SQLSTATE = /^(?=.*[0-9])[0-9A-Z]{5}$/
 
 /** Names of database objects, as Postgres reports them. Never values. */
 const OBJECT_FIELDS = ['constraint', 'table', 'column'] as const

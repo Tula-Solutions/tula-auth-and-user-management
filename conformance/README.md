@@ -99,7 +99,7 @@ Steps run in order and a scenario stops at its first failing step.
 | `05-password-policy` | The published policy and stable `password.*` errors. |
 | `06-lockout` | Backoff after repeated wrong passwords, identical for an address with no account. |
 | `07-admin-ban-and-audit` | Ban (a banned user with the right password is told so), unban, and an audit log without email addresses (needs a secret key). |
-| `08-sign-up-existing-address` | Signing up with a taken address looks the same, cannot complete and changes nothing. |
+| `08-sign-up-existing-address` | Signing up with a taken address looks the same and changes nothing about the account. (That no usable code is sent for it is covered by the API's own tests; the runner cannot assert an email's absence.) |
 | `09-verification-attempts` | A code dies after five wrong guesses. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default

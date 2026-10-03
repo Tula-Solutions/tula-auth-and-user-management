@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "sign-up for an existing address",
-  "description": "Signing up with an address that already has an account answers exactly like a new address, cannot be completed, and changes nothing about the account.",
+  "description": "Signing up with an address that already has an account answers exactly like a new address, is not completed by a code that worked for that address before, and changes nothing about the account.",
   "variables": {
     "email": {
       "generate": "email"
@@ -142,7 +142,7 @@
       }
     },
     {
-      "name": "it cannot be completed, even with a code that was valid for this address",
+      "name": "the code that verified this address before does not complete it",
       "request": {
         "method": "POST",
         "path": "/v1/client/sign-ups/{{secondSignUpId}}/verify-email",
