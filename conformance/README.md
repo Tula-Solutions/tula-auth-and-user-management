@@ -30,8 +30,8 @@ bun run conformance
 | `CONFORMANCE_MAILPIT_URL` | `http://localhost:8025` | Mailpit's web address. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
-audit entries, and leaves them there. A full run takes about a minute and a half, most of it
-waiting: 61 seconds for an address's email cooldown and 11 for the refresh grace period.
+audit entries, and leaves them there. A full run takes about two and a half minutes, most of it
+waiting: 61 seconds for an address's email cooldown (twice) and 11 for the refresh grace period.
 
 The exit code is 0 when at least one scenario passed and none failed. A failing step prints the
 status, the error code and short plain values that differed. Tokens, long strings, objects and

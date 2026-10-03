@@ -16,6 +16,7 @@ import {
 } from '~/exceptions'
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
+import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
@@ -295,17 +296,21 @@ async function replacePassword(
   user: UserRecord,
   password: string,
   actor: Actor,
-  method: 'admin_reset' | 'self'
+  method: 'admin_reset' | 'self' | 'reset',
+  beforeStore?: () => Promise<void>
 ): Promise<void> {
   await Passwords.assess(deps, scope, password, {
     email: user.email,
     firstName: user.firstName ?? undefined,
     lastName: user.lastName ?? undefined,
   })
+  // Hash first: a failure here must leave whatever `beforeStore` spends untouched.
+  const passwordHash = await Passwords.hash(password)
+  await beforeStore?.()
   const replaced = await deps.users.setPasswordHash(
     scope.environmentId,
     user.id,
-    await Passwords.hash(password),
+    passwordHash,
     deps.clock.now(),
     Audit.entry(deps, scope, {
       type: 'user.password_changed',
@@ -350,6 +355,56 @@ export async function setPassword(
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
   // Guesses at the old password must not keep the user out of the new one they were just given.
   await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+}
+
+/**
+ * Replace a user's password after they proved control of their email (a forgotten password).
+ *
+ * Like {@link setPassword}, every session ends and the sign-in lockout is cleared. The caller's
+ * proof is spent by `claim`, which runs once the new password has passed the policy and been
+ * hashed, and before anything changes: a rejected password does not use the proof up, and of
+ * two requests with the same proof only one stores a password.
+ *
+ * The sessions end **before** the password is stored, and are swept once more after it. If the
+ * first sweep or the store fails, the account is never left with a new password and the old
+ * sessions still alive, which is the one state a reset exists to prevent; the second sweep
+ * catches a sign-in with the old password that landed in between. Clearing the lockout
+ * afterwards is best-effort.
+ *
+ * @param deps - Users, password policy, sessions, denylist, lockout, ids and clock.
+ * @param scope - The project and environment.
+ * @param userId - The user.
+ * @param password - The new password; must meet the policy.
+ * @param actor - The user themselves, with the request's origin, for the audit log.
+ * @param claim - Spends the proof; throw to refuse.
+ * @throws NotFoundError, a `password.*` ServiceException with per-field `errors`, whatever
+ *   `claim` throws, or ConflictError when the user has no password credential.
+ */
+export async function resetPassword(
+  deps: PasswordDeps & Pick<Deps, 'lockout'>,
+  scope: Scope,
+  userId: string,
+  password: string,
+  actor: Actor,
+  claim: () => Promise<void>
+): Promise<void> {
+  const user = await requireUser(deps, scope, userId)
+  await replacePassword(deps, scope, user, password, actor, 'reset', async () => {
+    await claim()
+    await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
+  })
+  // Again, now that the old password no longer works: someone who knew it could have signed in
+  // between the first sweep and the store, and that session must not outlive the reset.
+  await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
+  try {
+    await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+  } catch (error) {
+    // The password is stored; a lockout left in place only delays the next sign-in.
+    logger.warn('could not clear the sign-in lockout after a password reset', {
+      environmentId: scope.environmentId,
+      err: error instanceof Error ? error.name : 'unknown',
+    })
+  }
 }
 
 /**

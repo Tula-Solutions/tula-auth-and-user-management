@@ -66,9 +66,8 @@ a flow change only, planned for Phase 1.
   and the account keeps the first password.
 - Lockout is per identifier, so someone who keeps failing on purpose can make a known address
   wait before it can sign in with a password (ADR 0011 weighs this).
-- Password change, admin reset and banning live in the user module (ADR 0010). There is no
-  self-service password reset yet, so the notice sent for an existing address tells the owner to
-  contact the app's support, not to reset their password.
+- Password change, admin reset and banning live in the user module (ADR 0010). A forgotten
+  password is reset through a third flow kind, `password_reset` (ADR 0015).
 - Anyone can use up an address's email allowance (one a minute, five an hour) by starting
   sign-ups for it. Until the hour passes, that address's own sign-up, resend, or the code an
   unverified user needs at sign-in is refused with `rate_limited`. This is the cost of bounding

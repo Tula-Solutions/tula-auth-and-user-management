@@ -27,6 +27,16 @@ export const FlowStepSchema = z
       strategies: z.array(EmailVerificationStrategySchema).min(1),
     }),
     z.object({
+      /**
+       * A password reset: submit the emailed code together with the new password. They travel in
+       * one request so that a verified attempt id never works as a credential on its own.
+       */
+      status: z.literal('needs_new_password'),
+      /** Masked destination the code was sent to. */
+      destination: z.string(),
+      strategies: z.array(EmailVerificationStrategySchema).min(1),
+    }),
+    z.object({
       status: z.literal('needs_second_factor'),
       options: z.array(SecondFactorMethodSchema).min(1),
     }),
@@ -41,8 +51,10 @@ export const FlowStepSchema = z
 /** Status values of {@link FlowStepSchema}. */
 export type FlowStatus = FlowStep['status']
 
-/** Whether an attempt signs an existing user in or creates a new one. */
-export const FlowKindSchema = z.enum(['sign_in', 'sign_up']).meta({ ref: 'FlowKind' })
+/** Whether an attempt signs an existing user in, creates a new one, or resets a password. */
+export const FlowKindSchema = z
+  .enum(['sign_in', 'sign_up', 'password_reset'])
+  .meta({ ref: 'FlowKind' })
 
 /**
  * Tokens issued when a flow completes or a session is refreshed.
@@ -96,6 +108,16 @@ export const VerifyEmailRequestSchema = z
   .object({ code: z.string().regex(/^\d{6}$/) })
   .meta({ ref: 'VerifyEmailRequest' })
 
+/** Start a password reset for an email address. */
+export const PasswordResetStartRequestSchema = z
+  .object({ email: z.string().max(320) })
+  .meta({ ref: 'PasswordResetStartRequest' })
+
+/** Submit the emailed code and the new password for an attempt on `needs_new_password`. */
+export const PasswordResetRequestSchema = z
+  .object({ code: z.string().regex(/^\d{6}$/), password: z.string().max(1024) })
+  .meta({ ref: 'PasswordResetRequest' })
+
 /** Second-factor method. */
 export type SecondFactorMethod = z.infer<typeof SecondFactorMethodSchema>
 /** Email verification strategy. */
@@ -116,3 +138,7 @@ export type SignInStartRequest = z.infer<typeof SignInStartRequestSchema>
 export type PasswordAttemptRequest = z.infer<typeof PasswordAttemptRequestSchema>
 /** Email verification request body. */
 export type VerifyEmailRequest = z.infer<typeof VerifyEmailRequestSchema>
+/** Password reset start request body. */
+export type PasswordResetStartRequest = z.infer<typeof PasswordResetStartRequestSchema>
+/** Password reset request body. */
+export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>

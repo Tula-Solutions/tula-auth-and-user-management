@@ -303,3 +303,128 @@ describe('sign-in over HTTP', () => {
     expect(real.status).toBe(200)
   })
 })
+
+describe('password reset over HTTP', () => {
+  const NEW_PASSWORD = 'a brand new passphrase 42'
+
+  test('a browser resets its password and receives the refresh token only as a cookie', async () => {
+    await register()
+    deps.clock.advance('1m')
+    const started = await post('/password-resets', { email: EMAIL })
+    expect(started.status).toBe(200)
+    expect(started.headers.get('cache-control')).toBe('no-store')
+    const attempt = await json<FlowAttempt>(started)
+    expect(attempt).toMatchObject({
+      kind: 'password_reset',
+      step: { status: 'needs_new_password', destination: 'm***@northline.app' },
+    })
+
+    const done = await post(`/password-resets/${attempt.id}/password`, {
+      code: sentCode(),
+      password: NEW_PASSWORD,
+    })
+    expect(done.status).toBe(200)
+    const body = await json<FlowAttempt>(done)
+    expect(body.step.status).toBe('complete')
+    expect(body.session?.accessToken).toBeString()
+    expect(body.session?.refreshToken).toBeUndefined()
+    expect(setCookie(done)).toContain(`${COOKIE}=tula_rt_`)
+    expect(setCookie(done)).toContain('HttpOnly')
+  })
+
+  test('a native client receives the refresh token in the body', async () => {
+    await register()
+    deps.clock.advance('1m')
+    const attempt = await json<FlowAttempt>(
+      await post('/password-resets', { email: EMAIL }, { client: 'ios' })
+    )
+    const done = await post(`/password-resets/${attempt.id}/password`, {
+      code: sentCode(),
+      password: NEW_PASSWORD,
+    })
+    expect((await json<FlowAttempt>(done)).session?.refreshToken).toMatch(/^tula_rt_/)
+    expect(setCookie(done)).toBe('')
+  })
+
+  test('an unknown address gets the same response', async () => {
+    const res = await post('/password-resets', { email: 'nobody@northline.app' })
+    expect(res.status).toBe(200)
+    expect(await json<FlowAttempt>(res)).toMatchObject({
+      kind: 'password_reset',
+      step: { status: 'needs_new_password', strategies: ['email_code'] },
+    })
+  })
+
+  test('requires a publishable key and well-formed bodies', async () => {
+    expect((await post('/password-resets', { email: EMAIL }, { key: null })).status).toBe(401)
+    expect((await post('/password-resets', {})).status).toBe(422)
+    expect(await code(await post('/password-resets', { email: 'nope' }))).toBe('email.invalid')
+    const attempt = await json<FlowAttempt>(await post('/password-resets', { email: EMAIL }))
+    const submit = (body: unknown) => post(`/password-resets/${attempt.id}/password`, body)
+    expect((await submit({ code: '12345', password: NEW_PASSWORD })).status).toBe(422)
+    expect((await submit({ code: '123456' })).status).toBe(422)
+    expect((await post('/password-resets/not-a-uuid/password', {})).status).toBe(422)
+    expect(
+      await code(
+        await post(`/password-resets/${crypto.randomUUID()}/password`, {
+          code: '123456',
+          password: NEW_PASSWORD,
+        })
+      )
+    ).toBe('flow.not_found')
+  })
+
+  test('a wrong code is a 422 with the guesses left, and a weak password names the rule', async () => {
+    await register()
+    deps.clock.advance('1m')
+    const attempt = await json<FlowAttempt>(await post('/password-resets', { email: EMAIL }))
+    const right = sentCode()
+    const wrong = right === '000000' ? '000001' : '000000'
+    const guess = await post(`/password-resets/${attempt.id}/password`, {
+      code: wrong,
+      password: NEW_PASSWORD,
+    })
+    expect(guess.status).toBe(422)
+    expect(await json(guess)).toMatchObject({
+      code: 'verification.invalid_code',
+      params: { attemptsRemaining: 4 },
+    })
+    const weak = await post(`/password-resets/${attempt.id}/password`, {
+      code: right,
+      password: 'short',
+    })
+    expect(weak.status).toBe(422)
+    expect(await code(weak)).toBe('password.too_short')
+  })
+
+  test('resending is limited like any other email', async () => {
+    const attempt = await json<FlowAttempt>(await post('/password-resets', { email: EMAIL }))
+    expect((await post(`/password-resets/${attempt.id}/resend-code`)).status).toBe(429)
+    deps.clock.advance('1m')
+    const resent = await post(`/password-resets/${attempt.id}/resend-code`)
+    expect(resent.status).toBe(200)
+    expect((await json<FlowAttempt>(resent)).step.status).toBe('needs_new_password')
+  })
+
+  test('starting a reset is rate limited per IP', async () => {
+    for (let i = 0; i < Flows.SIGN_UP_RATE_LIMIT; i++) {
+      await post('/password-resets', {})
+    }
+    expect((await post('/password-resets', { email: EMAIL })).status).toBe(429)
+  })
+
+  test('submissions are rate limited per IP', async () => {
+    const attempt = await json<FlowAttempt>(await post('/password-resets', { email: EMAIL }))
+    for (let i = 0; i < Flows.CREDENTIAL_RATE_LIMIT; i++) {
+      await post(`/password-resets/${attempt.id}/password`, {})
+    }
+    expect(
+      (
+        await post(`/password-resets/${attempt.id}/password`, {
+          code: '123456',
+          password: NEW_PASSWORD,
+        })
+      ).status
+    ).toBe(429)
+  })
+})

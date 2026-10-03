@@ -3,6 +3,8 @@ import {
   type FlowAttempt,
   type FlowKind,
   type FlowStep,
+  type PasswordResetRequest,
+  type PasswordResetStartRequest,
   type SessionClient,
   SessionClientSchema,
   type SessionTokens,
@@ -12,15 +14,17 @@ import {
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InvalidEmailError, RateLimitError } from '~/exceptions'
+import { cleanOrigin } from '~/lib/actor'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
+import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import { sendAccountExistsNotice } from './mailer'
+import { sendAccountExistsNotice, sendNoAccountNotice } from './mailer'
 import { nextStatus } from './transitions'
 
 /** How long a sign-in or sign-up attempt can be continued. */
@@ -31,7 +35,12 @@ export const ATTEMPT_TTL = '10m'
  * that a botnet aimed at one tenant can't monopolise the server. Refresh has no ceiling: every
  * active user refreshes about once a minute, so one would throttle a large app in normal use.
  */
-export const ENVIRONMENT_RATE_LIMITS = { signUp: 600, password: 3_000, verify: 3_000 } as const
+export const ENVIRONMENT_RATE_LIMITS = {
+  signUp: 600,
+  passwordReset: 600,
+  password: 3_000,
+  verify: 3_000,
+} as const
 
 type CeilingStep = keyof typeof ENVIRONMENT_RATE_LIMITS
 
@@ -95,7 +104,10 @@ const StateSchema = z.object({
   lastName: z.string().nullable().optional(),
   /** argon2id hash of the password a sign-up will create the account with. */
   passwordHash: z.string().optional(),
-  /** The email already had an account when this sign-up started; it can never complete. */
+  /**
+   * The attempt can never complete: a sign-up for an email that already had an account, or a
+   * password reset for one that had none.
+   */
   decoy: z.boolean().optional(),
 })
 type State = z.infer<typeof StateSchema>
@@ -111,8 +123,15 @@ function stepFor(
       strategies: ['email_code'],
     }
   }
-  // Phase 0 only ever stores `needs_password` and `needs_email_verification` on open attempts;
-  // `complete` is built by `finish` with its ids.
+  if (attempt.status === 'needs_new_password') {
+    return {
+      status: 'needs_new_password',
+      destination: maskEmail(state.email ?? attempt.identifier),
+      strategies: ['email_code'],
+    }
+  }
+  // Open attempts are only ever stored on the steps above or `needs_password`; `complete` is
+  // built by `finish` with its ids.
   return { status: 'needs_password' }
 }
 
@@ -128,7 +147,10 @@ function toAttempt(attempt: FlowAttemptRecord, step: FlowStep): FlowAttempt {
 async function start(
   deps: Pick<Deps, 'flowAttempts' | 'clock' | 'ids'>,
   tenant: Tenant,
-  input: Pick<FlowAttemptRecord, 'kind' | 'status' | 'identifier'> & { state: State }
+  input: Pick<FlowAttemptRecord, 'kind' | 'status' | 'identifier'> & {
+    state: State
+    userId?: string
+  }
 ): Promise<FlowAttemptRecord> {
   const now = deps.clock.now()
   const attempt: FlowAttemptRecord = {
@@ -275,10 +297,11 @@ export async function signUp(
 }
 
 /**
- * Email the attempt's verification code, or the notice for a decoy sign-up.
+ * Email the attempt's code (a reset code for a password reset, otherwise a verification code),
+ * or the notice that stands in for it on a decoy attempt.
  *
  * @param options.userId - The user the code is for, once known.
- * @param options.charge - Count the email against the environment's sign-up ceiling, but only
+ * @param options.charge - Count the email against the environment's ceiling, but only
  *   once the per-address send limits have allowed it: a resend refused by the cooldown sends
  *   nothing and must not use the ceiling up.
  */
@@ -289,13 +312,17 @@ async function issueCode(
   state: State,
   options: { userId?: string; charge?: boolean } = {}
 ): Promise<void> {
+  const reset = attempt.kind === 'password_reset'
+  const notice = reset ? sendNoAccountNotice : sendAccountExistsNotice
   await Verification.issue(deps, tenant, {
-    purpose: 'email_verification',
+    purpose: reset ? 'password_reset' : 'email_verification',
     destination: state.email ?? attempt.identifier,
     flowAttemptId: attempt.id,
     userId: options.userId,
-    ...(state.decoy && { deliver: ({ to }) => sendAccountExistsNotice(deps, to) }),
-    ...(options.charge && { onAllowed: () => chargeEnvironment(deps, tenant, 'signUp') }),
+    ...(state.decoy && { deliver: ({ to }) => notice(deps, to) }),
+    ...(options.charge && {
+      onAllowed: () => chargeEnvironment(deps, tenant, reset ? 'passwordReset' : 'signUp'),
+    }),
   })
 }
 
@@ -512,27 +539,157 @@ export async function verifyEmail(
 }
 
 /**
- * Send a fresh verification code for an attempt waiting on `needs_email_verification`.
+ * Start a password reset: email a 6-digit code to the address.
  *
- * Subject to the same per-address send limits as the first email. A decoy sign-up resends its
- * notice, so resending cannot be used to tell new from existing addresses either.
+ * The response is the same whether or not the address has an account (no enumeration). An
+ * address without one is emailed a notice instead of a code, and the attempt is a decoy holding
+ * a code nobody knows, so guesses, resends and send limits behave identically and it can never
+ * complete. A banned user is sent a code like anyone else and learns of the ban only after
+ * proving they own the address.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param input - The email address.
+ * @param context - The requesting device.
+ * @returns The attempt, waiting on `needs_new_password`.
+ * @throws InvalidEmailError when the address is malformed.
+ * @throws RateLimitError when the address was emailed too recently or too often.
+ */
+export async function startPasswordReset(
+  deps: Deps,
+  tenant: Tenant,
+  input: PasswordResetStartRequest,
+  context: ClientContext
+): Promise<FlowResult> {
+  const parsed = parseEmail(input.email)
+  if (!parsed) {
+    throw new InvalidEmailError()
+  }
+  const { email, normalized: identifier } = parsed
+  await chargeEnvironment(deps, tenant, 'passwordReset')
+  const user = await deps.users.findByEmail(tenant.environmentId, identifier)
+  const state: State = { client: context.client, email, ...(!user && { decoy: true }) }
+  const attempt = await start(deps, tenant, {
+    kind: 'password_reset',
+    status: 'needs_new_password',
+    identifier,
+    state,
+    ...(user && { userId: user.id }),
+  })
+  try {
+    await issueCode(deps, tenant, attempt, state, { userId: user?.id })
+  } catch (error) {
+    // No email went out, so the attempt can never be completed.
+    await deps.flowAttempts.delete(tenant.environmentId, attempt.id)
+    throw error
+  }
+  return { attempt: toAttempt(attempt, stepFor(attempt, state)), client: state.client }
+}
+
+/**
+ * Finish a password reset: check the emailed code, store the new password and sign the user in.
+ *
+ * The code and the password arrive together, so no request ever leaves an attempt that could
+ * set a password without the code. The code is only spent once the new password has passed the
+ * policy: a rejected password costs one of the code's guesses but the user can try another.
+ * Every existing session of the user ends (before the password is stored, so a failure midway
+ * never leaves a new password with old sessions alive), the sign-in lockout for the address is
+ * cleared, and the email counts as verified, since the code proved control of it. If a step
+ * fails after the code is spent, the user starts a new reset.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param attemptId - The password-reset attempt.
+ * @param input - The emailed code and the new password.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, a `verification.*` code or
+ *   `auth.user_banned`.
+ * @throws ServiceException a `password.*` code when the new password fails the policy.
+ */
+export async function resetPassword(
+  deps: Deps,
+  tenant: Tenant,
+  attemptId: string,
+  input: PasswordResetRequest,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, 'password_reset', attemptId)
+  // Throws `flow.invalid_step` unless the attempt is waiting on the new password.
+  nextStatus(attempt.kind, attempt.status, { type: 'password_reset' })
+  await chargeEnvironment(deps, tenant, 'verify')
+
+  const token = await Verification.verifyCode(deps, tenant, {
+    purpose: 'password_reset',
+    subject: { flowAttemptId: attempt.id },
+    code: input.code,
+    consume: false,
+  })
+  const user =
+    !state.decoy && attempt.userId
+      ? await deps.users.findById(tenant.environmentId, attempt.userId)
+      : null
+  if (!user || user.emailNormalized !== attempt.identifier) {
+    // Someone guessed the decoy code of a reset for an address with no account, or the account
+    // was deleted or moved to another address meanwhile: a code proves control of the address
+    // it was sent to, not of the account. Answer as if the guess was wrong.
+    throw new AuthError('verification.invalid_code', { attemptsRemaining: 0 })
+  }
+  if (user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  const actor = { type: 'user', id: user.id, ...cleanOrigin(context) } as const
+  await Users.resetPassword(deps, tenant, user.id, input.password, actor, () =>
+    Verification.consume(deps, tenant, token.id)
+  )
+  if (user.emailVerifiedAt === null) {
+    try {
+      await deps.users.markEmailVerified(
+        tenant.environmentId,
+        user.id,
+        deps.clock.now(),
+        Audit.entry(deps, tenant, {
+          type: 'user.email_verified',
+          actor,
+          target: { type: 'user', id: user.id },
+        })
+      )
+    } catch (error) {
+      // The password is stored and the code is spent, so failing here would strand the user.
+      // Their next sign-in asks them to verify the address instead.
+      logger.warn('could not mark the email verified after a password reset', {
+        environmentId: tenant.environmentId,
+        err: error instanceof Error ? error.name : 'unknown',
+      })
+    }
+  }
+  return finish(deps, tenant, attempt, state, user.id, context)
+}
+
+/**
+ * Send a fresh code for an attempt waiting on an emailed code (`needs_email_verification`, or
+ * `needs_new_password` for a password reset).
+ *
+ * Subject to the same per-address send limits as the first email. A decoy attempt resends its
+ * notice, so resending cannot be used to tell which addresses have accounts either.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
  * @param kind - Which flow the route belongs to.
  * @param attemptId - The attempt.
- * @returns The attempt, still waiting on `needs_email_verification`.
+ * @returns The attempt, still waiting on the same step.
  * @throws AuthError `flow.not_found` or `flow.invalid_step`.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
-export async function resendVerification(
+export async function resendCode(
   deps: Deps,
   tenant: Tenant,
   kind: FlowKind,
   attemptId: string
 ): Promise<FlowResult> {
   const { attempt, state } = await load(deps, tenant, kind, attemptId)
-  if (attempt.status !== 'needs_email_verification') {
+  const waitsOn = kind === 'password_reset' ? 'needs_new_password' : 'needs_email_verification'
+  if (attempt.status !== waitsOn) {
     throw new AuthError('flow.invalid_step')
   }
   await issueCode(deps, tenant, attempt, state, {

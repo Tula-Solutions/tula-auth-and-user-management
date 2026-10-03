@@ -132,7 +132,8 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 ### Server-driven flows
 
 The API never tells a client which screen to draw; it returns the next **flow step** from
-`@tula/contract` (`needs_password`, `needs_email_verification`, `needs_second_factor`, `complete`).
+`@tula/contract` (`needs_password`, `needs_email_verification`, `needs_new_password`,
+`needs_second_factor`, `complete`).
 Flow transitions are pure functions so they can be table-tested. Adding a sign-in method means
 adding a step on the server, not logic in each SDK.
 
@@ -195,7 +196,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0007](docs/adr/0007-verification-codes.md); sessions: [ADR 0008](docs/adr/0008-sessions.md);
   flows: [ADR 0009](docs/adr/0009-flows.md); users: [ADR 0010](docs/adr/0010-user-management.md);
   rate limits and lockout: [ADR 0011](docs/adr/0011-rate-limits-and-lockout.md); events and the
-  audit log: [ADR 0012](docs/adr/0012-events-and-audit-log.md).
+  audit log: [ADR 0012](docs/adr/0012-events-and-audit-log.md); password reset:
+  [ADR 0015](docs/adr/0015-password-reset.md).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
