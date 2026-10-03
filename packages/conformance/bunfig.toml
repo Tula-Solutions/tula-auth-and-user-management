@@ -1,0 +1,5 @@
+[test]
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.8, functions = 0.8 }
+# Workspace packages measure their own coverage; count only this package's files here.
+coveragePathIgnorePatterns = ["../contract/**"]
