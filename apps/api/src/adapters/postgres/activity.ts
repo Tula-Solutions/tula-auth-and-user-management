@@ -3,6 +3,13 @@ import { and, count, desc, eq } from 'drizzle-orm'
 import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
 
 /**
+ * Rows per insert statement. Postgres allows 65,535 bind parameters per statement and an audit
+ * row uses 12, so one statement holds about 5,400 rows; revoking every session of one user can
+ * exceed that. The statements still share the caller's transaction.
+ */
+export const ACTIVITY_INSERT_BATCH = 500
+
+/**
  * Write activity inside the caller's transaction: one outbox event and one audit entry each.
  *
  * Every Postgres store calls this from the same `withTenant` transaction as the change the
@@ -16,36 +23,36 @@ export async function recordActivity(
   tx: Transaction,
   activities: readonly Activity[]
 ): Promise<void> {
-  if (activities.length === 0) {
-    return
+  for (let start = 0; start < activities.length; start += ACTIVITY_INSERT_BATCH) {
+    const batch = activities.slice(start, start + ACTIVITY_INSERT_BATCH)
+    await tx.insert(events).values(
+      batch.map((activity) => ({
+        id: activity.id,
+        projectId: activity.projectId,
+        environmentId: activity.environmentId,
+        type: activity.type,
+        // No IP or user agent: the outbox feeds webhooks, which get only what they need.
+        payload: { actor: activity.actor, target: activity.target, data: activity.data },
+        occurredAt: activity.occurredAt,
+      }))
+    )
+    await tx.insert(auditLogs).values(
+      batch.map((activity) => ({
+        id: activity.id,
+        projectId: activity.projectId,
+        environmentId: activity.environmentId,
+        actorType: activity.actor.type,
+        actorId: activity.actor.id,
+        action: activity.type,
+        targetType: activity.target.type,
+        targetId: activity.target.id,
+        ipAddress: activity.ipAddress,
+        userAgent: activity.userAgent,
+        metadata: activity.data,
+        occurredAt: activity.occurredAt,
+      }))
+    )
   }
-  await tx.insert(events).values(
-    activities.map((activity) => ({
-      id: activity.id,
-      projectId: activity.projectId,
-      environmentId: activity.environmentId,
-      type: activity.type,
-      // No IP or user agent: the outbox feeds webhooks, which get only what they need.
-      payload: { actor: activity.actor, target: activity.target, data: activity.data },
-      occurredAt: activity.occurredAt,
-    }))
-  )
-  await tx.insert(auditLogs).values(
-    activities.map((activity) => ({
-      id: activity.id,
-      projectId: activity.projectId,
-      environmentId: activity.environmentId,
-      actorType: activity.actor.type,
-      actorId: activity.actor.id,
-      action: activity.type,
-      targetType: activity.target.type,
-      targetId: activity.target.id,
-      ipAddress: activity.ipAddress,
-      userAgent: activity.userAgent,
-      metadata: activity.data,
-      occurredAt: activity.occurredAt,
-    }))
-  )
 }
 
 /** The audit log in Postgres, read inside the environment's RLS scope. */

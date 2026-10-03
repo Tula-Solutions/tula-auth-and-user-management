@@ -1204,13 +1204,7 @@
             "type": "object",
             "properties": {
               "type": {
-                "type": "string",
-                "enum": [
-                  "user",
-                  "admin",
-                  "system",
-                  "agent"
-                ]
+                "type": "string"
               },
               "id": {
                 "type": [

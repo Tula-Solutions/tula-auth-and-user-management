@@ -25,6 +25,9 @@ export const auditLogs = tula.table(
   },
   (t) => [
     index('audit_logs_environment_occurred_idx').on(t.environmentId, t.occurredAt),
+    // One per filter of the audit list ("what happened to X", "what did Y do"), newest first.
+    index('audit_logs_environment_target_idx').on(t.environmentId, t.targetId, t.occurredAt),
+    index('audit_logs_environment_actor_idx').on(t.environmentId, t.actorId, t.occurredAt),
     ...tenantConstraints('audit_logs', t),
   ]
 )

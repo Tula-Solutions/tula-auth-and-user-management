@@ -31,13 +31,14 @@ describe('AuditLog', () => {
     expect(AuditLogSchema.parse(system)).toEqual(system as never)
   })
 
-  test('accepts an action this version does not know, but not an unknown kind of actor', () => {
-    expect(AuditLogSchema.safeParse({ ...entry, action: 'organization.created' }).success).toBe(
-      true
-    )
-    expect(AuditLogSchema.safeParse({ ...entry, actor: { type: 'robot', id: null } }).success).toBe(
-      false
-    )
+  test('accepts an action, target or kind of actor this version does not know', () => {
+    for (const change of [
+      { action: 'organization.created' },
+      { target: { type: 'organization', id: 'o_1' } },
+      { actor: { type: 'service_account', id: 'sa_1' } },
+    ]) {
+      expect(AuditLogSchema.safeParse({ ...entry, ...change }).success).toBe(true)
+    }
   })
 
   test('a list carries paging details', () => {

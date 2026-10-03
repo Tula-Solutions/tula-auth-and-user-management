@@ -39,7 +39,7 @@ export const AUDIT_TARGET_TYPES = ['user', 'session', 'api_key', 'signing_key'] 
 /**
  * One audit log entry.
  *
- * `action` and `target.type` are plain strings, not enums, so a client built against this
+ * `action`, `actor.type` and `target.type` are plain strings, not enums, so a client built against this
  * version keeps working when a later server records new kinds of action.
  */
 export const AuditLogSchema = z
@@ -48,7 +48,8 @@ export const AuditLogSchema = z
     /** What happened, e.g. `user.banned`. See {@link ACTIVITY_TYPES}. */
     action: z.string(),
     actor: z.object({
-      type: z.enum(AUDIT_ACTOR_TYPES),
+      /** One of {@link AUDIT_ACTOR_TYPES} today. */
+      type: z.string(),
       /** User id or API key id; `null` for the system. */
       id: z.string().nullable(),
     }),

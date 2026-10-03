@@ -257,6 +257,12 @@ describe('ensureAllEnvironments', () => {
 })
 
 describe('activity', () => {
+  test('creating an environment’s first keys is not an admin action and records nothing', async () => {
+    await Jwks.ensureKeys(deps, tenant.environmentId)
+    await Jwks.publicKeySet(deps, tenant.environmentId)
+    expect(deps.activityLog.entries).toEqual([])
+  })
+
   test('a rotation records which key was activated, retired and published; a refused one records nothing', async () => {
     await Jwks.ensureKeys(deps, tenant.environmentId)
     await expect(Jwks.rotate(deps, tenant, TEST_ACTOR)).rejects.toBeInstanceOf(ConflictError)

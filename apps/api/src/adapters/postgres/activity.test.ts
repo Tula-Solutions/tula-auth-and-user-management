@@ -4,16 +4,18 @@ import { AUDIT_ACTOR_TYPES, auditLogs, events, withTenant } from '@tula/db'
 import {
   createTestDatabase,
   createTestTenant,
+  queryRows,
   type TestDatabase,
   type TestTenant,
 } from '@tula/db/testing'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { PostgresActivityLog, recordActivity } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
+import { cleanOrigin } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import type { Activity } from '~/ports/activity-log'
 
@@ -98,6 +100,25 @@ describe('the event outbox', () => {
     // Webhook payloads must not carry the caller's IP address or user agent.
     expect(JSON.stringify(event?.payload)).not.toContain('203.0.113.7')
     expect(JSON.stringify(event?.payload)).not.toContain('suite/1.0')
+  })
+
+  test('records more entries than fit in one statement (one user with thousands of sessions)', async () => {
+    const userId = Bun.randomUUIDv7()
+    // 6,000 rows x 12 audit columns is past Postgres's 65,535 bind parameters per statement.
+    const many = Array.from({ length: 6_000 }, () =>
+      activity(a, { type: 'session.revoked', actor: { type: 'admin', id: userId } })
+    )
+    await withTenant(testDb.db, a.environmentId, (tx) => recordActivity(tx, many))
+    const { totalCount } = await new PostgresActivityLog(testDb.db).listAudit(a.environmentId, {
+      actorId: userId,
+      page: 1,
+      size: 1,
+    })
+    expect(totalCount).toBe(6_000)
+    const outbox = await withTenant(testDb.db, a.environmentId, (tx) =>
+      tx.select({ id: events.id }).from(events).where(eq(events.type, 'session.revoked'))
+    )
+    expect(outbox.length).toBeGreaterThanOrEqual(6_000)
   })
 
   test('recording nothing touches neither table', async () => {
@@ -246,6 +267,35 @@ describe('the audit log is append-only and tenant-scoped', () => {
       data: {},
     })
   })
+})
+
+test('an origin the service accepts is always one the audit column accepts', async () => {
+  // Everything `cleanOrigin` lets through must insert; anything else would undo a real change.
+  const candidates = ['203.0.113.7', '2001:db8::1', '::ffff:203.0.113.7', 'fe80::1%eth0', '::1']
+  const entries = candidates.map((ipAddress) => activity(a, cleanOrigin({ ipAddress })))
+  await withTenant(testDb.db, a.environmentId, (tx) => recordActivity(tx, entries))
+  expect(entries.map((entry) => entry.ipAddress)).toEqual([
+    '203.0.113.7',
+    '2001:db8::1',
+    '::ffff:203.0.113.7',
+    null,
+    '::1',
+  ])
+})
+
+test('the audit log has an index for each filter', async () => {
+  await testDb.setRole('postgres')
+  const rows = await queryRows<{ indexname: string }>(
+    testDb.db,
+    sql`select indexname from pg_indexes where schemaname = 'tula' and tablename = 'audit_logs'`
+  )
+  await testDb.setRole('tula_app')
+  expect(rows.map((row) => row.indexname)).toEqual(
+    expect.arrayContaining([
+      'audit_logs_environment_target_idx',
+      'audit_logs_environment_actor_idx',
+    ])
+  )
 })
 
 test('the contract and the schema agree on who can act', () => {

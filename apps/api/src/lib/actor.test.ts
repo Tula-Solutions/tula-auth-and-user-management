@@ -27,6 +27,10 @@ describe('cleanOrigin', () => {
     ],
     [{ ipAddress: '203.0.113.7:8080' }, { ipAddress: null, userAgent: null }],
     [{}, { ipAddress: null, userAgent: null }],
+    // `isIP` accepts a zone id, the `inet` column does not: it must not reach the insert.
+    [{ ipAddress: 'fe80::1%eth0' }, { ipAddress: null, userAgent: null }],
+    [{ ipAddress: '203.0.113.7/8' }, { ipAddress: null, userAgent: null }],
+    [{ ipAddress: ' 203.0.113.7' }, { ipAddress: null, userAgent: null }],
   ] as [Parameters<typeof cleanOrigin>[0], ReturnType<typeof cleanOrigin>][])(
     '%j becomes %j',
     (origin, expected) => {

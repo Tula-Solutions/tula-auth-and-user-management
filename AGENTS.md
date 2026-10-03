@@ -207,7 +207,9 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   user, session, API key or signing key takes an `Activity` (built with `Audit.entry` from
   `~/modules/audit/service`) and writes it with the change; services pass the `Actor` their
   router built with `adminActor(c)` / `userActor(c)` (`~/lib/actor`). Never write an audit entry
-  as a separate step, and never put a secret or an email address in one.
+  as a separate step, and never put a secret or an email address in one. The only unrecorded
+  writes are a password-hash upgrade after sign-in and an environment's first signing keys
+  (ADR 0012).
 - Treat every change under `modules/{flow,session,password,jwks,verification}` or `lib/crypto.ts`
   as security-sensitive: it needs tests for the failure paths, not just the happy path.
 

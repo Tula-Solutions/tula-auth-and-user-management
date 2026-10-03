@@ -47,8 +47,14 @@ of.
   row-level security as the rest of the tenant data.
 - **Reading.** `GET /v1/admin/audit-logs` (secret key) lists an environment's entries newest
   first, with the usual `page`/`size` paging and exact-match filters `action`, `actorId` and
-  `targetId`. In the response `action` and `target.type` are strings, not enums, so a client
-  keeps working when a later server records new kinds of action.
+  `targetId`; the target and actor filters each have an index. In the response `action`,
+  `actor.type` and `target.type` are strings, not enums, so a client keeps working when a later
+  server records new kinds of action or actor.
+- **Two writes are deliberately not recorded.** Upgrading a weak password hash after a
+  successful sign-in (the password did not change), and creating an environment's first signing
+  keys (the server does it by itself, on boot or first use). Rotating keys *is* recorded.
+- **Large batches are split.** Ending every session of one user can produce thousands of
+  entries; they are inserted 500 per statement, inside the same transaction.
 
 ## Consequences
 
@@ -65,3 +71,9 @@ of.
   will be fixed when webhooks ship; until then treat `data` as informative.
 - Audit entries keep IP addresses after a user is deleted. A retention policy has to cover that.
 - Every write that records activity costs two more inserts in its transaction.
+- The list uses offset paging, like the user list: entries written while a client pages shift
+  later pages by that many rows, and deep pages are slow. Filtering by `action` alone scans the
+  environment's log. Cursor paging can be added without changing the response shape.
+- A repeated ban or key revocation answers with the row as read just after the guarded update;
+  a concurrent opposite change can make that answer momentarily stale. Nothing is recorded in
+  that case, so the log stays correct.

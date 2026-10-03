@@ -21,6 +21,14 @@ export interface Actor extends Origin {
 }
 
 /**
+ * Whether Postgres will accept a value in an `inet` column. `isIP` alone is not enough: it
+ * accepts an IPv6 zone id (`fe80::1%eth0`), which `inet` rejects.
+ */
+function isStorableIp(value: string): boolean {
+  return isIP(value) !== 0 && !value.includes('%')
+}
+
+/**
  * Make an origin safe to store: the IP must parse (the audit column is `inet`, and a bad value
  * would fail the insert and roll back the change it records), and the user agent is capped.
  *
@@ -29,7 +37,7 @@ export interface Actor extends Origin {
  */
 export function cleanOrigin(origin: Partial<Origin>): Origin {
   return {
-    ipAddress: origin.ipAddress && isIP(origin.ipAddress) ? origin.ipAddress : null,
+    ipAddress: origin.ipAddress && isStorableIp(origin.ipAddress) ? origin.ipAddress : null,
     userAgent: origin.userAgent?.slice(0, MAX_USER_AGENT_LENGTH) || null,
   }
 }
