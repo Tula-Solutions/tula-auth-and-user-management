@@ -54,6 +54,17 @@ belongs to (the server's `errors[].field`, else the code's area), that `retryAft
 countdown, and that `attemptsRemaining` is worth showing. The countdown only disables the
 action for as long as the server said; it decides nothing.
 
+A flow hook keeps its flow object for exactly as long as it keeps the step: an effect cleanup
+does not drop it. A cleanup is not proof of an unmount (React's `<Activity mode="hidden">`
+tears effects down and keeps state), and dropping the flow there left a screen whose next
+action could only answer `flow.invalid_step`.
+
+Results are tied to the session they were asked for. `useSession` shares one in-flight list
+request per session id and drops a result whose session is no longer the current one, so a
+sign-out, or another user signing in, while a request is pending never shows the earlier
+user's devices; `<UserProfile>`'s password and device sections are keyed by the session id;
+and `@tula/core`'s `user.get()` installs the user only into the session that asked.
+
 Completion (`onComplete`, or the after-URL) is reported from the action's result, not from an
 effect: an app that wraps `<SignIn>` in `<SignedOut>` unmounts it the moment the client is
 signed in, before an effect for the completed step could run.
@@ -83,6 +94,16 @@ relative or `http(s)`.
   Two names per colour, rather than one name redefined in a media query, is what lets a theme
   be applied **inline** (the `appearance` prop) for both schemes without knowing which is
   active, and without a style tag or a CSS-in-JS runtime.
+- **Theme values are untrusted.** A brand colour can come from a database a tenant edits, and
+  under server rendering an inline theme is text in a `style` attribute, where
+  `red; background:url(…)` would be a second declaration. `themeToCssVariables` therefore
+  validates every value against a strict grammar for its token's type (`isValidThemeValue`:
+  hex / `rgb()`-style functions / keywords; number + unit; a list of font names; shadow layers
+  of lengths and one colour) and **drops** what does not match rather than escaping it. No
+  value may contain `;` `{` `}` `<` `>` `\` `@` `!`, a line break, `/*`, `url(`,
+  `expression(` or `var(`. The check lives in the contract so every SDK shares it; every
+  default value is tested against its own validator. The price: no gradients, `calc()` or
+  `var()` through `appearance`; those belong in the app's own stylesheet.
 - Dark values never fall back to light ones: an app that only sets a light background must not
   get that background under dark text.
 - `data-tula-theme="light|dark"` on a root or any ancestor forces a scheme.
@@ -138,7 +159,14 @@ an install, core already depends on it). 13.3 kB gzip (21.2 kB with core, React 
 - **The fixture cannot reach production.** `e2e/server.ts` refuses to start without `E2E=1`,
   lives outside `apps/api` (the API image copies only `apps/api` and the packages it imports,
   and `.dockerignore` excludes `e2e/`), and nothing imports it. Its test routes
-  (`/__test/outbox`, `/__test/reset-limits`) refuse any request that carries an `Origin`.
+  (`/__test/outbox`, `/__test/reset-limits`) are for the test process only (`e2e/guard.ts`,
+  tested with the harness tests): they refuse a request that carries an `Origin`, one whose
+  `Host` is not exactly the loopback `host:port` the fixture bound to (a DNS-rebinding page
+  sends no `Origin` on a same-origin GET, but its `Host` names the attacker's domain), and
+  one whose `Sec-Fetch-Site` is anything but absent, `none` or `same-origin`.
+- **The API image contains no browser package.** The Dockerfile does not copy the manifests of
+  `packages/react` or `examples/*`: with them present, `bun install --production` installed
+  their dependencies and peers, React included. A harness test holds that.
 
 ## Consequences
 

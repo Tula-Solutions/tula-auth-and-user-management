@@ -184,6 +184,13 @@ memory; silently continuing would turn into an unexplained sign-out at the next 
 - **`Retry-After` is capped at five minutes** (`MAX_REFRESH_BACKOFF_MS`) for the fail-fast
   window, and an explicit `session.refresh()` ignores the window and asks: a proxy answering
   `Retry-After: 86400` must not lock a session for a day.
+- **A 204's empty body is read to its end.** Chromium records a `fetch` whose body nobody
+  consumed as `net::ERR_ABORTED` when the response is collected, with or without an
+  `AbortSignal` (a plain `fetch` of a 204 shows the same), so every successful sign-out and
+  password change looked like a failed request in the network panel. The client never aborts a
+  request that got its answer; the only abort is the timeout.
+- **`user.get()` belongs to the session that asked.** The user is installed into the state
+  only if the session that was current when the request started still is.
 - **A 200 is checked before it is installed.** Refresh answers and a completed flow's `session`
   must have a string `accessToken`, a string `sessionId` and a readable expiry; a flow answer
   must have an `id` and a `step.status`. Otherwise `response.invalid`, with nothing installed,

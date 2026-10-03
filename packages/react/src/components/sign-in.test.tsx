@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import { Activity } from 'react'
+import { TulaProvider } from '../context'
 import {
   attempt,
   CODE_STEP,
@@ -563,5 +565,37 @@ describe('<SignIn> navigation', () => {
     w.mount(<SignIn initialEmail={EMAIL} headingLevel={2} />)
     expect(await screen.findByRole('heading', { level: 2, name: 'Sign in' })).toBeTruthy()
     expect((screen.getByLabelText('Email address') as HTMLInputElement).value).toBe(EMAIL)
+  })
+})
+
+describe('<SignIn> inside <Activity> (F3)', () => {
+  test('hidden and shown again half-way: the screen and the attempt still agree, and it completes', async () => {
+    const w = world()
+    const onComplete = mock()
+    const tree = (mode: 'visible' | 'hidden') => (
+      <TulaProvider client={w.client}>
+        <Activity mode={mode}>
+          <SignIn onComplete={onComplete} />
+        </Activity>
+      </TulaProvider>
+    )
+    const { rerender } = render(tree('visible'))
+    await toPassword(w)
+    await screen.findByRole('heading', { name: 'Enter your password' })
+
+    // Hiding tears the component's effects down and keeps its state; showing runs them again.
+    rerender(tree('hidden'))
+    rerender(tree('visible'))
+    expect(screen.getByRole('heading', { name: 'Enter your password' })).toBeTruthy()
+
+    w.api.on(ROUTE.signInPassword, () => completed('sign_in'))
+    await w.user.type(screen.getByLabelText('Password'), PASSWORD)
+    await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+    // The step on screen was acted on with the attempt it belongs to: no local refusal.
+    expect(screen.queryByText(/not valid at this step/)).toBeNull()
+    expect(w.api.calls(ROUTE.signInPassword)[0]?.headers.get('x-tula-attempt')).toBe(
+      'tula_at_test_secret'
+    )
   })
 })

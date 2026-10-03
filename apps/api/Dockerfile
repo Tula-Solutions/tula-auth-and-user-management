@@ -12,8 +12,11 @@
 FROM oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS base
 WORKDIR /usr/src/app
 
-# Production dependencies only. Every workspace manifest is needed for the frozen lockfile to
-# resolve, including packages whose sources never reach the image.
+# Production dependencies only, for the workspaces the API is built from. The manifests of the
+# browser packages (`packages/react`, `examples/*`) are deliberately NOT copied: with them
+# present, `bun install --production` installs their dependencies and peers, and the API image
+# gains React. A frozen lockfile installs fine with workspaces missing (they are skipped); the
+# `self-host` CI job builds this image, so a Bun that stops tolerating that fails there.
 FROM base AS install
 COPY package.json bun.lock ./
 COPY apps/api/package.json apps/api/
@@ -22,8 +25,6 @@ COPY packages/db/package.json packages/db/
 COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/conformance/package.json packages/conformance/
 COPY packages/core/package.json packages/core/
-COPY packages/react/package.json packages/react/
-COPY examples/react-vite/package.json examples/react-vite/
 RUN bun install --frozen-lockfile --production --ignore-scripts
 
 FROM base AS release

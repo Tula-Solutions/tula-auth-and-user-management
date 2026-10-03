@@ -198,6 +198,23 @@ components) or on one component (which wins):
 />
 ```
 
+Theme values given through `appearance` are **validated, not trusted**, because a brand colour
+often comes from data a tenant can edit and a server-rendered theme is written into the page as
+text. Each value must be a plain value of its token's type or it is dropped and the default
+stays:
+
+| Type | Accepted |
+| --- | --- |
+| colour | `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`; `rgb()`, `rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()` with numeric arguments; a colour keyword |
+| length | `0`, or a number with `px rem em % ch ex pt vw vh vmin vmax` |
+| font family | a comma-separated list of quoted names or bare words |
+| shadow | `none`, or layers of an optional `inset`, two to four lengths and at most one colour |
+
+Nothing containing `;` `{` `}` `<` `>` `\` `@` `!`, a line break, `/*`, `url(`, `expression(`
+or `var(` passes, whatever the type (`isValidThemeValue` in `@tula/contract/theme`). For
+anything richer (a gradient, `calc()`, a web font), write it in your own stylesheet, which you
+control.
+
 **3. Your own CSS.** Every part has a stable class (`tula-card`) and a stable
 `data-tula-element` attribute (`card`), listed in `ELEMENT_NAMES`:
 `root`, `card`, `header`, `title`, `subtitle`, `form`, `field`, `label`, `inputGroup`, `input`,
@@ -303,6 +320,8 @@ Server-side session checks (`auth()`, middleware) come with `@tula/nextjs`.
 - Nothing from the server is rendered as HTML (no `dangerouslySetInnerHTML`); a session's user
   agent is only matched against fixed patterns to name the device.
 - Navigation targets are the developer's props only, checked to be relative or `http(s)`.
+- Theme values are validated against a strict grammar before they reach a `style` attribute
+  (see Theming): a value from tenant-editable data cannot inject CSS.
 
 ## Development
 

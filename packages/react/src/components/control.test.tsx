@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, jest, mock, spyOn, test } from 'bun:test'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { StrictMode } from 'react'
+import { renderToString } from 'react-dom/server'
 import { TulaProvider } from '../context'
 import { useAuth } from '../hooks/use-auth'
 import { useSession } from '../hooks/use-session'
@@ -182,6 +183,35 @@ describe('<TulaProvider> and the control components', () => {
     const card = root.querySelector('[data-tula-element="card"]') as HTMLElement
     expect(card.className).toBe('tula-card from-provider from-component')
     expect(screen.getByRole('heading', { name: 'Sign in' }).className).toBe('tula-title big')
+  })
+
+  test('a hostile theme value never reaches the page, rendered on a server or in the browser (F1)', async () => {
+    const appearance = {
+      theme: {
+        light: { primary: 'red; background:url(https://evil.example/x)', link: '#0f766e' },
+        dark: { shadow: '0 0 0 1px red;} body{display:none' },
+        radius: '1px}',
+        fontFamily: '</style><script>alert(1)</script>',
+      },
+    }
+    const w = world()
+    const tree = (
+      <TulaProvider client={w.client}>
+        <SignIn appearance={appearance} />
+      </TulaProvider>
+    )
+    const html = renderToString(tree)
+    expect(html.includes('url(')).toBe(false)
+    expect(html.includes(';background')).toBe(false)
+    expect(html.includes('display:none')).toBe(false)
+    expect(html.includes('<script>')).toBe(false)
+    // The one valid value of the theme is still applied.
+    expect(html.includes('--tula-color-link:#0f766e')).toBe(true)
+
+    const { container } = render(tree)
+    await screen.findByText('to continue to Northline')
+    const root = container.querySelector('.tula-root') as HTMLElement
+    expect(root.getAttribute('style')).toBe('--tula-color-link: #0f766e;')
   })
 
   test('with no appearance there is no inline style and no forced scheme', async () => {

@@ -15,8 +15,8 @@
 /**
  * The tokens that differ between light and dark: colours and the card's shadow.
  *
- * Colours are `#rrggbb` (or any CSS colour, for a web-only theme); the defaults are all
- * `#rrggbb` so that every platform can parse them and their contrast can be checked.
+ * Colours are `#rrggbb`, or on the web any form {@link isValidThemeValue} accepts (hex,
+ * `rgb()`-style functions, keywords); the defaults are all `#rrggbb` so that every platform can parse them and their contrast can be checked.
  */
 export interface ThemeScheme {
   /** Behind a component: the card, the menu, the dialog. */
@@ -88,7 +88,8 @@ export interface Theme {
 
 /**
  * Part of a theme: only the tokens an app wants to change. What it leaves out keeps the
- * default.
+ * default. Values are validated before use (see {@link isValidThemeValue}): one that is not a
+ * plain colour, length, font list or shadow is dropped and the default stays.
  *
  * @example
  * ```ts
@@ -260,11 +261,136 @@ export function darkCssVariable(cssVariable: `--tula-${string}`): `--tula-dark-$
   return `--tula-dark-${cssVariable.slice('--tula-'.length)}`
 }
 
+/** No value is longer than this: a real colour, length, font stack or shadow never is. */
+const MAX_VALUE_LENGTH = 200
+
+/**
+ * What no value may contain, whatever its type: anything that ends a declaration or a rule,
+ * starts a comment, an at-rule or an escape, opens markup, or loads a resource.
+ */
+const FORBIDDEN = /[;{}<>\\@!\n\r\f\0]|\/\*|url\(|expression\(|var\(/i
+
+const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+/** `rgb()`-style notation: a known function name and numbers, units, commas and one slash. */
+const FUNCTION_COLOR =
+  /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*[0-9a-z.%+-]+(?:\s*[\s,/]\s*[0-9a-z.%+-]+){2,4}\s*\)$/i
+/** A colour keyword (`rebeccapurple`, `transparent`, `currentcolor`): letters only. */
+const NAMED_COLOR = /^[a-z]{3,30}$/i
+const LENGTH = /^(?:0|[+-]?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|%|ch|ex|pt|vw|vh|vmin|vmax))$/i
+/** One family: a quoted name, or bare words (`Source Sans 3`, `-apple-system`). */
+const FONT_FAMILY = /^(?:"[\w .-]+"|'[\w .-]+'|-?[a-z_][\w-]*(?: [\w-]+)*)$/i
+
+function isColor(value: string): boolean {
+  return HEX_COLOR.test(value) || FUNCTION_COLOR.test(value) || NAMED_COLOR.test(value)
+}
+
+/** Split on `separator` wherever it is not inside parentheses. `null` for unbalanced ones. */
+function splitOutsideParentheses(value: string, separator: RegExp): string[] | null {
+  const parts: string[] = []
+  let depth = 0
+  let current = ''
+  for (const char of value) {
+    if (char === '(') {
+      depth += 1
+    } else if (char === ')') {
+      depth -= 1
+      if (depth < 0) {
+        return null
+      }
+    }
+    if (depth === 0 && separator.test(char)) {
+      parts.push(current)
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  parts.push(current)
+  return depth === 0 ? parts : null
+}
+
+/** One shadow: optional `inset`, two to four lengths and at most one colour, in any order. */
+function isShadowLayer(layer: string): boolean {
+  const parts = splitOutsideParentheses(layer.trim(), /\s/)?.filter((part) => part !== '')
+  if (!parts) {
+    return false
+  }
+  const rest = parts.filter((part) => part.toLowerCase() !== 'inset')
+  const lengths = rest.filter((part) => LENGTH.test(part))
+  const colors = rest.filter((part) => !LENGTH.test(part))
+  return (
+    parts.length - rest.length <= 1 &&
+    lengths.length >= 2 &&
+    lengths.length <= 4 &&
+    colors.length <= 1 &&
+    colors.every(isColor)
+  )
+}
+
+/**
+ * Whether a string is a plain value of a token's type, safe to write into a stylesheet or a
+ * `style` attribute.
+ *
+ * Theme values are **untrusted**: a brand colour can come from a database a tenant edits, and
+ * a server-rendered theme is written into the page as text, where `red; background: url(…)`
+ * would become a second declaration. So a value is not escaped, it is checked against a strict
+ * grammar for its type and dropped when it does not match:
+ *
+ * - `color`: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`; `rgb()`, `rgba()`, `hsl()`, `hsla()`,
+ *   `hwb()`, `lab()`, `lch()`, `oklab()`, `oklch()` with plain numeric arguments; or a colour
+ *   keyword (letters only).
+ * - `length`: `0`, or a number with one of `px rem em % ch ex pt vw vh vmin vmax`.
+ * - `fontFamily`: a comma-separated list of quoted names or bare words.
+ * - `shadow`: `none`, or comma-separated layers of an optional `inset`, two to four lengths
+ *   and at most one colour.
+ *
+ * Whatever the type, nothing longer than 200 characters and nothing containing `;` `{` `}`
+ * `<` `>` `\` `@` `!`, a line break, a comment opener, `url(`, `expression(` or `var(` passes.
+ *
+ * @param type - The token's type.
+ * @param value - The candidate value.
+ * @returns `true` when the value may be used.
+ *
+ * @example
+ * ```ts
+ * isValidThemeValue('color', '#0f766e') // true
+ * isValidThemeValue('color', 'red; background: url(https://evil.example/x)') // false
+ * ```
+ */
+export function isValidThemeValue(type: ThemeTokenType, value: string): boolean {
+  if (typeof value !== 'string' || value === '' || value.length > MAX_VALUE_LENGTH) {
+    return false
+  }
+  if (FORBIDDEN.test(value)) {
+    return false
+  }
+  const trimmed = value.trim()
+  switch (type) {
+    case 'color':
+      return isColor(trimmed)
+    case 'length':
+      return LENGTH.test(trimmed)
+    case 'fontFamily':
+      return (splitOutsideParentheses(trimmed, /,/) ?? ['']).every((family) =>
+        FONT_FAMILY.test(family.trim())
+      )
+    case 'shadow': {
+      const layers = splitOutsideParentheses(trimmed, /,/)
+      return trimmed.toLowerCase() === 'none' || (layers !== null && layers.every(isShadowLayer))
+    }
+    default:
+      return false
+  }
+}
+
 /**
  * Turn a theme, or part of one, into CSS custom properties.
  *
  * Only the tokens present in `theme` are returned, so the result of a partial theme can be
- * applied as an inline style on top of the stylesheet's defaults. Unknown keys are ignored.
+ * applied as an inline style on top of the stylesheet's defaults. Unknown keys are ignored,
+ * and so is any value that {@link isValidThemeValue} refuses: theme values are untrusted (they
+ * may come from tenant-editable data) and are never written out unless they are a plain value
+ * of their token's type.
  * Light values use each token's `cssVariable`; dark values its {@link darkCssVariable}.
  *
  * @param theme - A theme or overrides.
@@ -278,24 +404,29 @@ export function darkCssVariable(cssVariable: `--tula-${string}`): `--tula-dark-$
  */
 export function themeToCssVariables(theme: ThemeOverrides): Record<string, string> {
   const variables: Record<string, string> = {}
-  const own = (source: object | undefined, key: string): string | undefined => {
+  const own = (
+    source: object | undefined,
+    key: string,
+    type: ThemeTokenType
+  ): string | undefined => {
     const value =
       source && Object.hasOwn(source, key) ? (source as Record<string, unknown>)[key] : undefined
-    return typeof value === 'string' && value !== '' ? value : undefined
+    // Untrusted input: a value that is not a plain value of the token's type is dropped.
+    return typeof value === 'string' && isValidThemeValue(type, value) ? value.trim() : undefined
   }
   for (const token of THEME_TOKENS) {
     if (token.scope === 'shared') {
-      const value = own(theme, token.key)
+      const value = own(theme, token.key, token.type)
       if (value !== undefined) {
         variables[token.cssVariable] = value
       }
       continue
     }
-    const light = own(theme.light, token.key)
+    const light = own(theme.light, token.key, token.type)
     if (light !== undefined) {
       variables[token.cssVariable] = light
     }
-    const dark = own(theme.dark, token.key)
+    const dark = own(theme.dark, token.key, token.type)
     if (dark !== undefined) {
       variables[darkCssVariable(token.cssVariable)] = dark
     }

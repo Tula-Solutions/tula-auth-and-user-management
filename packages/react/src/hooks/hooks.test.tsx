@@ -4,8 +4,19 @@ import { renderToString } from 'react-dom/server'
 import { SignedIn, SignedOut, TulaLoading } from '../components/control'
 import { SignUp } from '../components/sign-up'
 import { TulaProvider } from '../context'
-import { completed, failure, json, ROUTE, started, TEST_USER, world } from '../testing/harness'
+import {
+  attempt,
+  completed,
+  failure,
+  json,
+  ROUTE,
+  sessionTokens,
+  started,
+  TEST_USER,
+  world,
+} from '../testing/harness'
 import { useResetPassword } from './use-reset-password'
+import { useSession } from './use-session'
 import { useSignIn } from './use-sign-in'
 import { useSignUp } from './use-sign-up'
 import { useUser } from './use-user'
@@ -201,5 +212,118 @@ describe('hydration', () => {
     expect(errors).toEqual([])
     unmount()
     container.remove()
+  })
+})
+
+describe('a result that arrives for a session that is no longer the current one is dropped (F2)', () => {
+  const device = (id: string) => ({
+    id,
+    client: 'web',
+    userAgent: null,
+    ipAddress: null,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    lastActiveAt: '2026-10-01T00:00:00.000Z',
+    expiresAt: '2030-01-01T00:00:00.000Z',
+    current: true,
+  })
+
+  /** Sign the client in as someone else: a completed sign-in with a new session id. */
+  async function signInAs(w: ReturnType<typeof world>, sessionId: string) {
+    w.api.on(ROUTE.signIn, () =>
+      attempt(
+        'sign_in',
+        { status: 'complete', userId: 'user_2', sessionId },
+        { attemptSecret: 'tula_at_test_secret', session: sessionTokens('other', { sessionId }) }
+      )
+    )
+    await w.client.signIn.start({ identifier: 'other@northline.app' })
+  }
+
+  function mountSessions(w: ReturnType<typeof world>) {
+    const seen: (string[] | null)[] = []
+    function Probe() {
+      const { sessions } = useSession()
+      seen.push(sessions ? sessions.map((entry) => entry.id) : null)
+      return null
+    }
+    w.mount(<Probe />)
+    return seen
+  }
+
+  test('sign out while the device list is on its way: the late list is not shown', async () => {
+    const w = world({ signedIn: true })
+    let release: (response: Response) => void = () => undefined
+    w.api.on(ROUTE.sessions, () => new Promise<Response>((resolve) => (release = resolve)))
+    const seen = mountSessions(w)
+    await waitFor(() => expect(w.api.calls(ROUTE.sessions)).toHaveLength(1))
+    await act(async () => {
+      await w.client.session.signOut()
+    })
+    await act(async () => {
+      release(json(200, { data: [device('session_1')] }))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    expect(seen.at(-1)).toBeNull()
+    expect(seen.filter((list) => list !== null)).toEqual([])
+  })
+
+  test('another user signs in while the list is on its way: they never see the first user’s devices', async () => {
+    const w = world({ signedIn: true })
+    const pending: ((response: Response) => void)[] = []
+    w.api.on(ROUTE.sessions, () => new Promise<Response>((resolve) => pending.push(resolve)))
+    const seen = mountSessions(w)
+    await waitFor(() => expect(pending).toHaveLength(1))
+    await act(async () => {
+      await w.client.session.signOut()
+      await signInAs(w, 'session_2')
+    })
+    // The new session asks for its own list instead of sharing the request still in flight.
+    await waitFor(() => expect(pending).toHaveLength(2))
+    await act(async () => {
+      pending[0]?.(json(200, { data: [device('first_users_phone')] }))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    expect(seen.flat()).not.toContain('first_users_phone')
+    await act(async () => {
+      pending[1]?.(json(200, { data: [device('session_2')] }))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    expect(seen.at(-1)).toEqual(['session_2'])
+    expect(seen.flat()).not.toContain('first_users_phone')
+  })
+
+  test('a user fetched for one session is not installed into the next', async () => {
+    const w = world({ signedIn: true })
+    w.api.on(ROUTE.sessions, () => json(200, { data: [] }))
+    const users: (string | null)[] = []
+    let reload: () => Promise<unknown> = async () => undefined
+    function Probe() {
+      const result = useUser()
+      reload = result.reload
+      users.push(result.user?.email ?? null)
+      return null
+    }
+    w.mount(<Probe />)
+    await waitFor(() => expect(users.at(-1)).toBe(TEST_USER.email))
+    let release: (response: Response) => void = () => undefined
+    w.api.on(ROUTE.me, () => new Promise<Response>((resolve) => (release = resolve)))
+    let reloading: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      reloading = reload().catch(() => undefined)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    w.api.on(ROUTE.me, () =>
+      json(200, { ...TEST_USER, id: 'user_2', email: 'other@northline.app' })
+    )
+    await act(async () => {
+      await w.client.session.signOut()
+      await signInAs(w, 'session_2')
+    })
+    await waitFor(() => expect(users.at(-1)).toBe('other@northline.app'))
+    await act(async () => {
+      release(json(200, TEST_USER))
+      await reloading
+    })
+    expect(users.at(-1)).toBe('other@northline.app')
   })
 })

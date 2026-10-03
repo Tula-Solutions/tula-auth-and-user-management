@@ -26,6 +26,8 @@ export function useClientConfig(): ClientConfig | null {
   const [config, setConfig] = useState<ClientConfig | null>(null)
   useEffect(() => {
     let current = true
+    // Another client is another environment: its predecessor's policy is not shown meanwhile.
+    setConfig(null)
     client.config.get().then(
       (loaded) => {
         if (current) {

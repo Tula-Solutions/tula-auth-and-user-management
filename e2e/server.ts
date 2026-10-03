@@ -5,6 +5,7 @@ import { createApp, MAX_BODY_BYTES } from '../apps/api/src/index'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '../apps/api/src/testing'
+import { testRouteRefusal } from './guard'
 
 // The server the browser tests run against: the REAL API (`createApp`, every route and
 // middleware) on memory adapters, plus the built example app, on two local ports. Nothing is
@@ -88,9 +89,10 @@ function testRoute(request: Request): Response | null {
   if (!url.pathname.startsWith('/__test/')) {
     return null
   }
-  if (request.headers.has('origin')) {
-    // A page has no business here; only the test process (no Origin header) asks.
-    return json({ error: 'test routes are not for pages' }, 403)
+  // Only the test process asks: never a page, not even one rebound onto this port.
+  const refusal = testRouteRefusal(request, `localhost:${API_PORT}`)
+  if (refusal !== null) {
+    return json({ error: refusal }, 403)
   }
   if (request.method === 'GET' && url.pathname === '/__test/outbox') {
     const to = url.searchParams.get('to')

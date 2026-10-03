@@ -3,6 +3,7 @@ import {
   contrastRatio,
   DEFAULT_THEME,
   darkCssVariable,
+  isValidThemeValue,
   THEME_TOKENS,
   type ThemeScheme,
   themeToCssVariables,
@@ -123,5 +124,103 @@ describe('themeToCssVariables', () => {
 
   test('darkCssVariable keeps the token’s name', () => {
     expect(darkCssVariable('--tula-shadow')).toBe('--tula-dark-shadow')
+  })
+})
+
+describe('theme values are untrusted: anything that is not a plain value of its type is dropped (F1)', () => {
+  test('a value that would add a declaration or close the rule yields no entry', () => {
+    expect(
+      themeToCssVariables({
+        light: { primary: 'red; background:url(https://evil.example/x)' },
+        radius: '1px}',
+      })
+    ).toEqual({})
+  })
+
+  test('every default value passes the validator of its own type', () => {
+    for (const token of THEME_TOKENS) {
+      const values =
+        token.scope === 'scheme'
+          ? [
+              DEFAULT_THEME.light[token.key as keyof ThemeScheme],
+              DEFAULT_THEME.dark[token.key as keyof ThemeScheme],
+            ]
+          : [DEFAULT_THEME[token.key as 'radius']]
+      for (const value of values) {
+        expect(`${token.key}: ${isValidThemeValue(token.type, value)}`).toBe(`${token.key}: true`)
+      }
+    }
+  })
+
+  test.each([
+    ['color', '#0f766e'],
+    ['color', '#FFF'],
+    ['color', '#0f766e80'],
+    ['color', 'rgb(15, 118, 110)'],
+    ['color', 'rgba(15 118 110 / 0.5)'],
+    ['color', 'hsl(175deg 77% 26%)'],
+    ['color', 'oklch(0.7 0.1 180 / 50%)'],
+    ['color', 'rebeccapurple'],
+    ['color', 'transparent'],
+    ['length', '12px'],
+    ['length', '0'],
+    ['length', '0.9375rem'],
+    ['length', '.5em'],
+    ['length', '100%'],
+    ['fontFamily', 'Inter'],
+    ['fontFamily', '"Helvetica Neue", Arial, sans-serif'],
+    ['fontFamily', "'Segoe UI', -apple-system, system-ui"],
+    ['fontFamily', 'Source Sans 3, sans-serif'],
+    ['shadow', 'none'],
+    ['shadow', '0 1px 2px rgba(0, 0, 0, 0.4)'],
+    ['shadow', 'inset 0 0 0 1px #e3e0d8, 0 12px 32px -4px rgb(23 23 28 / 10%)'],
+  ] as ['color' | 'length' | 'fontFamily' | 'shadow', string][])('%s %p is kept', (type, value) => {
+    expect(isValidThemeValue(type, value)).toBe(true)
+  })
+
+  test.each([
+    ['color', 'red; background: blue'],
+    ['color', 'url(https://evil.example/x)'],
+    ['color', 'rgb(0,0,0) url(x)'],
+    ['color', 'rgb(url(x))'],
+    ['color', 'var(--anything)'],
+    ['color', 'expression(alert(1))'],
+    ['color', '#12345'],
+    ['color', '#ggg'],
+    ['color', 'red}'],
+    ['color', 'red/*'],
+    ['color', 'r\\65 d'],
+    ['color', 'red\n'],
+    ['color', '</style><script>'],
+    ['color', 'red !important'],
+    ['color', ''],
+    ['color', `#${'a'.repeat(300)}`],
+    ['length', '1px}'],
+    ['length', '1px; color: red'],
+    ['length', 'calc(1px + 1px)'],
+    ['length', '12'],
+    ['length', '1px 2px'],
+    ['length', '@import'],
+    ['fontFamily', 'Inter; color: red'],
+    ['fontFamily', '"Inter'],
+    ['fontFamily', '"In"ter"'],
+    ['fontFamily', 'Inter, url(x)'],
+    ['fontFamily', 'Inter,, Arial'],
+    ['fontFamily', '<b>'],
+    ['shadow', '0 1px 2px red; color: red'],
+    ['shadow', '0 1px 2px url(x)'],
+    ['shadow', '1px'],
+    ['shadow', '0 1px 2px 3px 4px red'],
+    ['shadow', '0 1px red blue'],
+    ['shadow', '0 1px 2px rgba(0,0,0,0.4)) , x'],
+  ] as ['color' | 'length' | 'fontFamily' | 'shadow', string][])(
+    '%s %p is dropped',
+    (type, value) => {
+      expect(isValidThemeValue(type, value)).toBe(false)
+    }
+  )
+
+  test('a non-string is never valid', () => {
+    expect(isValidThemeValue('color', 7 as unknown as string)).toBe(false)
   })
 })

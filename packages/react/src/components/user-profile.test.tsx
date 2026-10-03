@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import type { Session } from '@tula/core'
 import { StrictMode } from 'react'
-import { failure, json, ROUTE, TEST_USER, type World, world } from '../testing/harness'
+import {
+  attempt,
+  failure,
+  json,
+  ROUTE,
+  sessionTokens,
+  TEST_USER,
+  type World,
+  world,
+} from '../testing/harness'
 import { UserProfile } from './user-profile'
 
 const CHROME_MAC =
@@ -212,6 +221,34 @@ describe('<UserProfile>', () => {
       expect(field.value).toBe(label === 'Current password' ? '' : 'short')
     }
   )
+
+  test('a half-typed password and its messages do not carry over to another user (F2)', async () => {
+    const w = signedInWorld([session('session_1', { current: true })])
+    w.mount(<UserProfile />)
+    await w.user.type(await screen.findByLabelText('Current password'), 'first-users-password')
+    await w.user.click(screen.getByRole('button', { name: 'Update password' }))
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+
+    w.api.on(ROUTE.me, () =>
+      json(200, { ...TEST_USER, id: 'user_2', email: 'other@northline.app' })
+    )
+    w.api.on(ROUTE.signIn, () =>
+      attempt(
+        'sign_in',
+        { status: 'complete', userId: 'user_2', sessionId: 'session_2' },
+        {
+          attemptSecret: 'tula_at_test_secret',
+          session: sessionTokens('other', { sessionId: 'session_2' }),
+        }
+      )
+    )
+    await act(async () => {
+      await w.client.signIn.start({ identifier: 'other@northline.app' })
+    })
+    expect(await screen.findByText('other@northline.app')).toBeTruthy()
+    expect((screen.getByLabelText('Current password') as HTMLInputElement).value).toBe('')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
 
   test('the device list is fetched once, however often effects run', async () => {
     const w = signedInWorld([session('session_1', { current: true })])

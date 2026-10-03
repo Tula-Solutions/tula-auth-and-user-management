@@ -80,9 +80,13 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
   useEffect(() => {
     mounted.current = true
     return () => {
+      // Only the flag: the flow object stays in its ref. An effect's cleanup is not proof of
+      // an unmount (React's `<Activity mode="hidden">` tears effects down, keeps state and
+      // runs them again), and dropping the flow here left the screen on a step whose next
+      // action could only answer `flow.invalid_step`. The step in state and the flow object
+      // now live and die together: both are released with the component, and with them the
+      // attempt's secret, which only the flow object's closure holds.
       mounted.current = false
-      // The flow object holds the attempt's secret; nothing should outlive the component.
-      flow.current = null
     }
   }, [])
 

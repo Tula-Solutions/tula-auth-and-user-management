@@ -64,6 +64,12 @@ paths:
 - Nothing during render touches `window`, `document`, `Date.now()` or storage (`ssr-render.tsx`
   proves it in a process without a DOM). No `dangerouslySetInnerHTML`. No `console`.
 - Destinations are developer-supplied props only, passed through `go()` / `safeUrl()`.
+- Theme values reach the page only through `themeToCssVariables`, which validates them
+  (`isValidThemeValue`). They are untrusted: never interpolate one into CSS or a style
+  attribute yourself.
+- After an `await` on the API, check the session is still the one the call started under
+  before setting state; never share an in-flight request across sessions. Do not drop a flow
+  object in an effect cleanup (`<Activity>` re-runs effects with state kept).
 - Passwords and codes: component state only while the form is on screen; cleared on submit of
   a sign-in password and on completion.
 - Accessibility: a real `<form>` and `<label>` per field (`TextField`), errors through

@@ -334,3 +334,64 @@ describe('codes that name inherited object properties (review F3)', () => {
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 })
+
+describe('a bodiless answer (204) is a finished request', () => {
+  test('the request is never aborted after it succeeded, even once the timeout has passed', async () => {
+    let signal: AbortSignal | undefined
+    const t = transport(
+      async (request) => {
+        signal = request.signal
+        return new Response(null, { status: 204 })
+      },
+      { timeoutMs: 20 }
+    )
+    expect(await t.call('signOut', { body: {} })).toBeUndefined()
+    expect(signal?.aborted).toBe(false)
+    // The timer was cleared with the answer: it does not fire later either.
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(signal?.aborted).toBe(false)
+  })
+
+  test('its (empty) body is read to the end, so a browser records the request as finished, not cancelled', async () => {
+    // Chromium reports a fetch whose body was never consumed as `net::ERR_ABORTED` in the
+    // network panel when the response is collected, with or without an AbortSignal.
+    let answered: Response | undefined
+    const t = transport(async () => {
+      answered = new Response(new ReadableStream({ start: (controller) => controller.close() }), {
+        status: 204,
+      })
+      return answered
+    })
+    await t.call('signOut', { body: {} })
+    expect(answered?.bodyUsed).toBe(true)
+  })
+
+  test('a 204 whose body stalls is still a timeout', async () => {
+    const t = transport(
+      async (request) =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              request.signal.addEventListener('abort', () => controller.error(new Error('aborted')))
+            },
+          }),
+          { status: 204 }
+        ),
+      { timeoutMs: 20 }
+    )
+    expect((await caught(t.call('signOut', { body: {} }))).code).toBe('network.timeout')
+  })
+
+  test('a 204 whose body cannot be read is still a success', async () => {
+    const t = transport(
+      async () =>
+        new Response(
+          new ReadableStream({ start: (controller) => controller.error(new Error('x')) }),
+          {
+            status: 204,
+          }
+        )
+    )
+    expect(await t.call('signOut', { body: {} })).toBeUndefined()
+  })
+})

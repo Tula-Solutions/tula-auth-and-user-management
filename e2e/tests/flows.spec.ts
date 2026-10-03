@@ -34,6 +34,12 @@ test('sign up, verify the emailed code, signed in; sign out; sign in again', asy
     }
   })
   page.on('pageerror', (error) => problems.push(String(error)))
+  // A request that got its answer must not show as failed: the client reads a 204's empty
+  // body, which is what keeps Chromium from recording sign-out as `net::ERR_ABORTED`.
+  const failed: string[] = []
+  page.on('requestfailed', (sent) => {
+    failed.push(`${sent.method()} ${new URL(sent.url()).pathname}: ${sent.failure()?.errorText}`)
+  })
 
   const email = uniqueEmail('maya')
   await signUp(page, request, { email, firstName: 'Maya' })
@@ -63,6 +69,7 @@ test('sign up, verify the emailed code, signed in; sign out; sign in again', asy
     { httpOnly: true, sameSite: 'Lax' },
   ])
   expect(await page.evaluate(() => document.cookie)).toBe('')
+  expect(failed).toEqual([])
   // A fresh visitor's first refresh answers 401 by design; the browser logs that one line.
   expect(problems.filter((line) => !line.includes('401'))).toEqual([])
 })

@@ -307,12 +307,18 @@ export function UserProfileSections(props: { afterSignOutUrl?: string }) {
       {user ? (
         <>
           <ProfileSection user={user} />
-          <PasswordSection user={user} onChanged={() => void sessions.reload()} />
+          {/* Keyed by the session: half-typed passwords, a pending change and its messages
+              belong to whoever was signed in when they began, and go with them. */}
+          <PasswordSection
+            key={state.sessionId}
+            user={user}
+            onChanged={() => void sessions.reload()}
+          />
         </>
       ) : (
         <p className='tula-text'>{t.common.loading}</p>
       )}
-      <SessionsSection sessions={sessions} />
+      <SessionsSection key={state.sessionId} sessions={sessions} />
       <section {...el('section')} aria-labelledby={signOutTitleId}>
         <Heading offset={1} {...el('sectionTitle')} id={signOutTitleId}>
           {t.userProfile.signOutTitle}

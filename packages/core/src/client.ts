@@ -338,8 +338,21 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     },
     user: {
       async get() {
+        // Settle who is signed in first (a client that has not loaded yet restores its
+        // session here), so that the answer can be tied to that session.
+        await session.getToken()
+        const asked = session.state()
         const user = await session.authorized('getMe', {})
-        session.setUser(user)
+        const now = session.state()
+        // The user belongs to the session that asked. If that session ended, or someone else
+        // signed in, while the request was in flight, it must not become the new state's user.
+        if (
+          asked.status === 'signed-in' &&
+          now.status === 'signed-in' &&
+          now.sessionId === asked.sessionId
+        ) {
+          session.setUser(user)
+        }
         return user
       },
       async changePassword(input) {

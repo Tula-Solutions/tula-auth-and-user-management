@@ -82,7 +82,14 @@ export type ElementName = (typeof ELEMENT_NAMES)[number]
  * ```
  */
 export interface Appearance {
-  /** Theme tokens to change. Applied as CSS custom properties on the component's root. */
+  /**
+   * Theme tokens to change. Applied as CSS custom properties on the component's root.
+   *
+   * Values are treated as untrusted (a brand colour may come from data a tenant edits): each
+   * is checked against a strict grammar for its token's type (`isValidThemeValue` in
+   * `@tula/contract/theme`) and one that is not a plain colour, length, font list or shadow is
+   * dropped, so the default stays. Nothing here can add a declaration or load a resource.
+   */
   theme?: ThemeOverrides
   /**
    * `system` (the default) follows `prefers-color-scheme` and any `data-tula-theme` attribute

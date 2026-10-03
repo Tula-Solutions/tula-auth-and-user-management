@@ -128,6 +128,14 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   properties only, never a literal colour. Every selector is wrapped in `:where()` so an app's
   CSS always wins. Tests enforce all three, and the contract's tests compute the default
   colours' contrast (4.5:1 text, 3:1 edges and focus) in both schemes.
+- **Theme values are untrusted input** (a tenant's brand colour). `themeToCssVariables` drops
+  any value `isValidThemeValue` refuses for its token's type; never write a theme value into a
+  `style` attribute, a stylesheet or native UI by any other path, and never loosen the grammar
+  to allow `url(`, `var(`, `;` or braces. A new token type gets a validator and tests.
+- **A result belongs to the session it was asked for.** A hook or handler that awaits the API
+  checks, before it sets state, that the session it started under is still the current one
+  (see `use-session.ts`); state that is one user's (half-typed passwords, messages) is keyed
+  by the session id.
 - **Every user-visible string is in `localization.ts`**; server error messages come from
   `@tula/core`'s table by code. Strings are rendered as text, never as HTML.
 - **A destination is only ever a prop** (`afterSignInUrl`, …), checked to be relative or
@@ -396,7 +404,10 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   light and dark. It is its own CI job and **not** part of `bun run verify`. A component that
   gains a screen or a state gets a scenario and an axe check there. The fixture refuses to
   start without `E2E=1`, lives outside `apps/api` and is excluded from the Docker build
-  context: keep it that way.
+  context: keep it that way. Its `/__test/*` routes go through `e2e/guard.ts` (no `Origin`,
+  the exact loopback `Host`, no cross-site `Sec-Fetch-Site`), which `bun run test:harness`
+  tests. The API image's install stage copies no manifest of a browser package
+  (`packages/react`, `examples/*`): `bun install --production` would install React into it.
 - Component tests (`packages/react`) run in happy-dom through a preload
   (`src/testing/setup.ts`) with Testing Library, against `@tula/core`'s own fake API
   (`src/testing/harness.tsx`).

@@ -227,6 +227,46 @@ describe('session and user calls', () => {
   })
 })
 
+describe('user.get belongs to the session that asked', () => {
+  test('a user fetched for one session is not installed into the next one', async () => {
+    const { api, tula } = await signedIn()
+    let release: (response: Response) => void = () => undefined
+    api.on('GET /v1/client/me', () => new Promise<Response>((resolve) => (release = resolve)))
+    const fetching = tula.user.get()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Someone else signs in while the request is on its way.
+    const other = { ...TEST_USER, id: 'user_2', email: 'other@northline.app' }
+    api.on('GET /v1/client/me', () => json(200, other))
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, {
+        id: 'attempt_1',
+        kind: 'sign_in',
+        expiresAt: '2030-01-01T00:10:00.000Z',
+        step: { status: 'complete', userId: 'user_2', sessionId: 'session_2' },
+        attemptSecret: 'tula_at_secret',
+        session: sessionTokens('b', { sessionId: 'session_2', refreshToken: 'rt_2' }),
+      })
+    )
+    await tula.signIn.start({ identifier: other.email })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(tula.state).toMatchObject({ sessionId: 'session_2', user: other })
+
+    release(json(200, TEST_USER))
+    // The caller still gets what it asked for; the state keeps the new session's user.
+    expect(await fetching).toEqual(TEST_USER)
+    expect(tula.state).toMatchObject({ sessionId: 'session_2', user: other })
+  })
+
+  test('a client that has not loaded yet restores its session and installs the user', async () => {
+    const storage = memoryStorage()
+    await storage.set(`tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`, 'rt_0')
+    const { tula } = setup({ storage })
+    expect(await tula.user.get()).toEqual(TEST_USER)
+    expect(tula.state).toMatchObject({ status: 'signed-in', user: TEST_USER })
+  })
+})
+
 describe('messages', () => {
   test('the messages option and setMessages decide the language of every error', async () => {
     const { api, tula } = setup({ messages: { 'auth.method_disabled': 'No disponible.' } })

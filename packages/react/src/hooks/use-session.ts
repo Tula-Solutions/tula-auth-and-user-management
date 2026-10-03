@@ -80,78 +80,99 @@ export function useSession(): UseSessionResult {
     }
   }, [])
 
-  // One list request at a time: callers that ask while one is on its way share its answer.
-  // (React's StrictMode runs the effect below twice in development; a refetch after a change
-  // can coincide with the first load.)
-  const inFlight = useRef<Promise<void> | null>(null)
+  /** The session the client has right now, read at the moment of asking (not from a render). */
+  const current = useCallback(
+    () => (client.state.status === 'signed-in' ? client.state.sessionId : null),
+    [client]
+  )
+
+  // One list request at a time per session: callers that ask while one is on its way share
+  // its answer. (React's StrictMode runs the effect below twice in development; a refetch
+  // after a change can coincide with the first load.) A request belongs to the session it
+  // was started under: it is never shared with, and its result never shown to, another one.
+  const inFlight = useRef<{ sessionId: string; done: Promise<void> } | null>(null)
   const reload = useCallback(() => {
-    if (inFlight.current) {
-      return inFlight.current
+    const startedFor = current()
+    if (startedFor === null) {
+      return Promise.resolve()
     }
+    if (inFlight.current?.sessionId === startedFor) {
+      return inFlight.current.done
+    }
+    /** Still mounted, and still the session this request was made for. */
+    const stillWanted = () => mounted.current && current() === startedFor
     const run = async () => {
       setLoading(true)
       try {
         const list = await client.session.list()
-        if (mounted.current) {
+        if (stillWanted()) {
           setSessions(list)
           setError(null)
         }
       } catch (caught) {
-        if (mounted.current) {
+        if (stillWanted()) {
           setError(toTulaError(caught))
         }
       } finally {
-        inFlight.current = null
-        if (mounted.current) {
+        if (inFlight.current?.done === done) {
+          inFlight.current = null
+        }
+        if (stillWanted()) {
           setLoading(false)
         }
       }
     }
-    inFlight.current = run()
-    return inFlight.current
-  }, [client])
+    const done = run()
+    inFlight.current = { sessionId: startedFor, done }
+    return done
+  }, [client, current])
 
   useEffect(() => {
-    if (sessionId === null) {
-      setSessions(null)
-      return
+    // Whoever was signed in before, their list, error and pending flag are not this
+    // session's: start clean, then ask for this one's.
+    setSessions(null)
+    setError(null)
+    setLoading(false)
+    if (sessionId !== null) {
+      void reload()
     }
-    void reload()
   }, [sessionId, reload])
 
   const revoke = useCallback(
     async (id: string) => {
+      const startedFor = current()
       try {
         await client.session.revoke(id)
       } catch (caught) {
-        if (mounted.current) {
+        if (mounted.current && current() === startedFor) {
           setError(toTulaError(caught))
         }
         return false
       }
-      if (mounted.current && client.state.status === 'signed-in') {
+      if (mounted.current && current() === startedFor) {
         await reload()
       }
       return true
     },
-    [client, reload]
+    [client, current, reload]
   )
 
   const revokeOthers = useCallback(async () => {
+    const startedFor = current()
     let ended: number
     try {
       ended = await client.session.revokeOthers()
     } catch (caught) {
-      if (mounted.current) {
+      if (mounted.current && current() === startedFor) {
         setError(toTulaError(caught))
       }
       return null
     }
-    if (mounted.current) {
+    if (mounted.current && current() === startedFor) {
       await reload()
     }
     return ended
-  }, [client, reload])
+  }, [client, current, reload])
 
   return { sessionId, sessions, isLoading, error, reload, revoke, revokeOthers }
 }
