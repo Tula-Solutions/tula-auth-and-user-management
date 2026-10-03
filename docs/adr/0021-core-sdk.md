@@ -146,8 +146,11 @@ memory; silently continuing would turn into an unexplained sign-out at the next 
 - **Fallbacks.** Without Web Locks, tabs may refresh at the same moment; the server's reuse
   grace period ([ADR 0008](0008-sessions.md)) answers both with the same next token. Without a
   channel, each tab refreshes for itself, one after the other. A tab that cannot get the lock
-  within one request timeout plus two seconds goes on without it, so a stalled tab cannot
-  block the rest.
+  within the longest the holder can need plus two seconds goes on without it, so a stalled
+  tab cannot block the rest. "The longest the holder can need" is a request's timeout or the
+  refresh budget (`refreshBudgetMs`: a refresh may be tried twice), whichever is longer; with
+  only the request timeout, an app that set `timeoutMs: 5000` had a waiter give up at 7
+  seconds while the holder's retry ran until 10, and both refreshed at once.
 - **A refused refresh ends the session once.** `session.*`, `auth.unauthenticated` and
   `auth.user_banned` set the state to `signed-out`, clear storage, notify listeners once and
   resolve every waiter with `null`. Nothing is retried. This covers reuse detection outside the

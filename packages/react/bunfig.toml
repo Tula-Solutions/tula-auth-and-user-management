@@ -1,0 +1,7 @@
+[test]
+# A DOM for component tests: registers happy-dom's globals before any test file loads.
+preload = ["./src/testing/setup.ts"]
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.9, functions = 0.9 }
+# The contract and the core client measure their own coverage; count only this package's files.
+coveragePathIgnorePatterns = ["../contract/**", "../core/**", "src/testing/**", "scripts/**"]

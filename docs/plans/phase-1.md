@@ -237,6 +237,18 @@ The changes every new method needs, made once.
   sign-in from a new device.
 - **Done when:** a Vite example app signs up, verifies, signs in, resets a password and manages
   sessions using only the components, in Playwright, against the in-process API.
+  *As built ([ADR 0022](../adr/0022-react-sdk.md)):* besides the planned surface:
+  `useResetPassword`, `usePasswordChecklist`, `useClientConfig`, `useTula`, `<TulaLoading>`, a
+  typed localization table, and "Manage account" opening `<UserProfile>` in a dialog. The
+  tokens file is `@tula/contract/theme`; the stylesheet's defaults are generated from it and
+  every selector has zero specificity. Navigation is by props only: no `redirect_url`
+  parameter is read. A step the components do not know (a second factor until 1.8) renders a
+  "not supported" screen. The Playwright suite (`bun run e2e`, its own CI job) runs the example
+  app against the real API in process on memory adapters (`e2e/server.ts`), including axe on
+  every screen in light and dark; the components were also walked through by hand against the
+  packaged Compose stack. `@tula/core`'s cross-tab lock wait now covers a refresh that is
+  tried twice (review finding F7). **Not in this step:** the security notice emails
+  (password changed, reset completed, new device), which follow as their own change.
 
 ---
 

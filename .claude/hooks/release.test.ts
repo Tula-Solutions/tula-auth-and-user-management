@@ -72,15 +72,21 @@ describe('nothing can be published yet', () => {
 })
 
 describe('publishable packages', () => {
-  test('are the contract and the core client, dependencies first', () => {
-    expect([...PUBLISHABLE_PACKAGES]).toEqual(['packages/contract', 'packages/core'])
+  test('are the contract, the core client and the React SDK, dependencies first', () => {
+    expect([...PUBLISHABLE_PACKAGES]).toEqual([
+      'packages/contract',
+      'packages/core',
+      'packages/react',
+    ])
   })
 
   test.each([...PUBLISHABLE_PACKAGES])(
     '%s resolves from source in the repository and from dist when published',
     async (dir) => {
       const pkg = await manifest(dir)
-      expect(pkg.sideEffects).toBe(false)
+      // Nothing but a stylesheet may have side effects: a bundler must keep
+      // `import '@tula/react/styles.css'` and may drop any script that is not used.
+      expect([false, ['**/*.css']] as unknown[]).toContainEqual(pkg.sideEffects)
       expect(pkg.type).toBe('module')
       expect(pkg.files).toContain('dist')
       const source = pkg.exports as Record<string, string>
@@ -95,6 +101,10 @@ describe('publishable packages', () => {
             types: `./dist/${name}.d.ts`,
             default: `./dist/${name}.js`,
           })
+          expect(existsSync(join(root, dir, target))).toBe(true)
+        } else if (target.startsWith('./src/')) {
+          // A file shipped as it is (a stylesheet): the build copies it into dist.
+          expect(published[subpath]).toBe(`./dist/${target.slice('./src/'.length)}`)
           expect(existsSync(join(root, dir, target))).toBe(true)
         }
       }

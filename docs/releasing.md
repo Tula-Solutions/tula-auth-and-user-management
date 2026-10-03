@@ -44,7 +44,7 @@ bunx changeset           # which packages, which bump, the changelog line
 bunx changeset status    # what the next release would contain
 ```
 
-- `@tula/contract` and `@tula/core` are a **fixed** group: they always share one version. The
+- `@tula/contract`, `@tula/core` and `@tula/react` are a **fixed** group: they always share one version. The
   client is written against one version of the protocol, so "0.1.0 of the SDK" should mean one
   thing.
 - The repository is in **prerelease mode** (`.changeset/pre.json`, tag `alpha`). The pending

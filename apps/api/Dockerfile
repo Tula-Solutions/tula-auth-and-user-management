@@ -22,6 +22,8 @@ COPY packages/db/package.json packages/db/
 COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/conformance/package.json packages/conformance/
 COPY packages/core/package.json packages/core/
+COPY packages/react/package.json packages/react/
+COPY examples/react-vite/package.json examples/react-vite/
 RUN bun install --frozen-lockfile --production --ignore-scripts
 
 FROM base AS release

@@ -1,10 +1,12 @@
 ---
 paths:
   - "apps/dashboard/**"
-  - "packages/react/**"
 ---
 
 # Frontend rules (payhub-portal conventions)
+
+These are for the dashboard application. `packages/react` is a library with different
+constraints (no Tailwind, no generated API hooks, `bun test`): see `sdk.md`.
 
 - Vite + React 19, TanStack Router + Query, Tailwind v4 + shadcn, Zustand for client state.
 - API access only through Orval-generated hooks from `/v1/openapi.json` (`bun run codegen`).

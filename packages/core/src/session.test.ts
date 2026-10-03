@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, describe, expect, jest, spyOn, test } from 'bun:test'
 import { DEFAULT_WEB_SESSION_PROFILE, durationToMs } from '@tula/contract'
 import { createClient, type TulaClient, type TulaClientOptions } from './client'
 import type { LockManagerLike } from './environment'
@@ -9,6 +9,7 @@ import {
   MAX_REFRESH_BACKOFF_MS,
   REFRESH_RETRY_WINDOW_MS,
   REFRESH_TIMEOUT_MS,
+  refreshBudgetMs,
 } from './session'
 import { memoryStorage, type TokenStorage } from './storage'
 import {
@@ -1485,4 +1486,74 @@ describe('a refresh that gets no answer is tried once more, at once (the one aut
     expect(tries).toBe(1)
     expect(tula.state).toEqual({ status: 'signed-out' })
   })
+})
+
+describe('the cross-tab lock outlasts a refresh that is tried twice (F7)', () => {
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  test('with timeoutMs 5000, a tab waiting for the lock sends nothing while the holder retries', async () => {
+    jest.useFakeTimers()
+    const w = world()
+    const locks = fakeLocks()
+    let active = 0
+    let max = 0
+    let tries = 0
+    w.api.on(REFRESH, (_request, raw) => {
+      tries += 1
+      if (tries > 2) {
+        return json(200, sessionTokens(`access_${tries}`))
+      }
+      // The holder's two tries get no answer: each ends only when its timeout aborts it.
+      active += 1
+      max = Math.max(max, active)
+      return new Promise<Response>((_resolve, reject) => {
+        raw.signal.addEventListener('abort', () => {
+          active -= 1
+          reject(new DOMException('aborted', 'AbortError'))
+        })
+      })
+    })
+    /** Move the timers and the client's clock together, letting promise chains run. */
+    const pass = async (ms: number) => {
+      for (let done = 0; done < ms; done += 500) {
+        jest.advanceTimersByTime(500)
+        w.clock.advance(500)
+        for (let turn = 0; turn < 50; turn++) {
+          await Promise.resolve()
+        }
+      }
+    }
+    // No channel: the waiting tab has to refresh for itself once it gets the lock.
+    const a = tab(w, 'web', { locks }, { timeoutMs: 5_000 })
+    const b = tab(w, 'web', { locks }, { timeoutMs: 5_000 })
+    const fromA = caught(a.tula.session.getToken())
+    await pass(0)
+    const fromB = b.tula.session.getToken()
+
+    // The holder: 5 s for the first try, then a retry with the 5 s left of the window.
+    await pass(9_500)
+    expect(tries).toBe(2)
+    expect(max).toBe(1)
+
+    await pass(1_000)
+    expect(await fromA).toMatchObject({ code: 'network.timeout' })
+    expect(await fromB).toBe(accessToken('access_3'))
+    // The waiting tab's request went out only after the holder's had ended.
+    expect(max).toBe(1)
+    expect(tries).toBe(3)
+  })
+
+  test.each([
+    [8_000, 10_000],
+    [5_000, 10_000],
+    [3_000, 6_000],
+    [500, 1_000],
+  ] as [number, number][])(
+    'a refresh with a %i ms timeout can hold the lock for %i ms',
+    (refreshTimeoutMs, budget) => {
+      expect(refreshBudgetMs(refreshTimeoutMs)).toBe(budget)
+    }
+  )
 })

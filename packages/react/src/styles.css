@@ -1,0 +1,772 @@
+/*
+ * @tula/react: the one stylesheet of the components.
+ *
+ *   import '@tula/react/styles.css'
+ *
+ * Theming. Set the public custom properties anywhere above a component, or pass a theme
+ * through the `appearance` prop:
+ *
+ *   :root {
+ *     --tula-color-primary: #0f766e;        (light)
+ *     --tula-dark-color-primary: #5eead4;   (dark)
+ *     --tula-radius: 6px;
+ *   }
+ *
+ * The scheme follows `prefers-color-scheme`; `data-tula-theme="light|dark"` on a component's
+ * root or on any ancestor forces one.
+ *
+ * Every selector is wrapped in `:where()`, so it has no specificity: any rule of the app's own
+ * (`.tula-card { … }`, or a class passed through `appearance.elements`) wins without
+ * `!important`.
+ */
+
+/* tokens:start (generated from @tula/contract/theme by `bun run generate`; do not edit) */
+:where(.tula-root) {
+  color-scheme: light;
+  --_tula-color-background: var(--tula-color-background, #ffffff);
+  --_tula-color-surface: var(--tula-color-surface, #f5f4f0);
+  --_tula-color-input: var(--tula-color-input, #ffffff);
+  --_tula-color-text: var(--tula-color-text, #17171c);
+  --_tula-color-text-muted: var(--tula-color-text-muted, #5c5a55);
+  --_tula-color-primary: var(--tula-color-primary, #5b4cf0);
+  --_tula-color-primary-hover: var(--tula-color-primary-hover, #4a3bdc);
+  --_tula-color-primary-text: var(--tula-color-primary-text, #ffffff);
+  --_tula-color-link: var(--tula-color-link, #4a3bdc);
+  --_tula-color-border: var(--tula-color-border, #e3e0d8);
+  --_tula-color-border-strong: var(--tula-color-border-strong, #8a877e);
+  --_tula-color-danger: var(--tula-color-danger, #b42318);
+  --_tula-color-danger-surface: var(--tula-color-danger-surface, #fdecea);
+  --_tula-color-success: var(--tula-color-success, #1a6b3c);
+  --_tula-color-focus: var(--tula-color-focus, #5b4cf0);
+  --_tula-color-overlay: var(--tula-color-overlay, rgba(23, 23, 28, 0.55));
+  --_tula-shadow: var(
+    --tula-shadow,
+    0 1px 2px rgba(23, 23, 28, 0.06),
+    0 12px 32px rgba(23, 23, 28, 0.1)
+  );
+  --_tula-radius: var(--tula-radius, 12px);
+  --_tula-radius-small: var(--tula-radius-small, 8px);
+  --_tula-font-family: var(
+    --tula-font-family,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif
+  );
+  --_tula-font-family-mono: var(
+    --tula-font-family-mono,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    "Liberation Mono",
+    monospace
+  );
+  --_tula-font-size: var(--tula-font-size, 0.9375rem);
+  --_tula-font-size-small: var(--tula-font-size-small, 0.8125rem);
+  --_tula-font-size-title: var(--tula-font-size-title, 1.5rem);
+  --_tula-spacing: var(--tula-spacing, 1rem);
+}
+
+@media (prefers-color-scheme: dark) {
+  :where(.tula-root:not([data-tula-theme="light"], [data-tula-theme="light"] *)) {
+    color-scheme: dark;
+    --_tula-color-background: var(--tula-dark-color-background, #17171c);
+    --_tula-color-surface: var(--tula-dark-color-surface, #202128);
+    --_tula-color-input: var(--tula-dark-color-input, #101014);
+    --_tula-color-text: var(--tula-dark-color-text, #f4f4f6);
+    --_tula-color-text-muted: var(--tula-dark-color-text-muted, #a9a9b4);
+    --_tula-color-primary: var(--tula-dark-color-primary, #8f84ff);
+    --_tula-color-primary-hover: var(--tula-dark-color-primary-hover, #a59cff);
+    --_tula-color-primary-text: var(--tula-dark-color-primary-text, #121117);
+    --_tula-color-link: var(--tula-dark-color-link, #aaa2ff);
+    --_tula-color-border: var(--tula-dark-color-border, #2e2f39);
+    --_tula-color-border-strong: var(--tula-dark-color-border-strong, #74758a);
+    --_tula-color-danger: var(--tula-dark-color-danger, #ff8a80);
+    --_tula-color-danger-surface: var(--tula-dark-color-danger-surface, #3a1a1c);
+    --_tula-color-success: var(--tula-dark-color-success, #6fd49a);
+    --_tula-color-focus: var(--tula-dark-color-focus, #aaa2ff);
+    --_tula-color-overlay: var(--tula-dark-color-overlay, rgba(0, 0, 0, 0.65));
+    --_tula-shadow: var(
+      --tula-dark-shadow,
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 12px 32px rgba(0, 0, 0, 0.5)
+    );
+  }
+}
+
+:where(.tula-root[data-tula-theme="dark"], [data-tula-theme="dark"] .tula-root) {
+  color-scheme: dark;
+  --_tula-color-background: var(--tula-dark-color-background, #17171c);
+  --_tula-color-surface: var(--tula-dark-color-surface, #202128);
+  --_tula-color-input: var(--tula-dark-color-input, #101014);
+  --_tula-color-text: var(--tula-dark-color-text, #f4f4f6);
+  --_tula-color-text-muted: var(--tula-dark-color-text-muted, #a9a9b4);
+  --_tula-color-primary: var(--tula-dark-color-primary, #8f84ff);
+  --_tula-color-primary-hover: var(--tula-dark-color-primary-hover, #a59cff);
+  --_tula-color-primary-text: var(--tula-dark-color-primary-text, #121117);
+  --_tula-color-link: var(--tula-dark-color-link, #aaa2ff);
+  --_tula-color-border: var(--tula-dark-color-border, #2e2f39);
+  --_tula-color-border-strong: var(--tula-dark-color-border-strong, #74758a);
+  --_tula-color-danger: var(--tula-dark-color-danger, #ff8a80);
+  --_tula-color-danger-surface: var(--tula-dark-color-danger-surface, #3a1a1c);
+  --_tula-color-success: var(--tula-dark-color-success, #6fd49a);
+  --_tula-color-focus: var(--tula-dark-color-focus, #aaa2ff);
+  --_tula-color-overlay: var(--tula-dark-color-overlay, rgba(0, 0, 0, 0.65));
+  --_tula-shadow: var(
+    --tula-dark-shadow,
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 12px 32px rgba(0, 0, 0, 0.5)
+  );
+}
+/* tokens:end */
+
+/* Base */
+
+:where(.tula-root) {
+  box-sizing: border-box;
+  color: var(--_tula-color-text);
+  font-family: var(--_tula-font-family);
+  font-size: var(--_tula-font-size);
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+:where(.tula-root) :where(*, *::before, *::after) {
+  box-sizing: border-box;
+}
+
+:where(.tula-root) :where(h1, h2, h3, h4, p, ul) {
+  margin: 0;
+}
+
+:where(.tula-root) :where(ul) {
+  padding: 0;
+  list-style: none;
+}
+
+:where(.tula-root) :where(button, input) {
+  color: inherit;
+  font: inherit;
+}
+
+:where(.tula-root) :where(a, button, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--_tula-color-focus);
+  outline-offset: 2px;
+}
+
+:where(.tula-root) :where([tabindex="-1"]):focus:not(:focus-visible) {
+  outline: none;
+}
+
+:where(.tula-visually-hidden) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:where(.tula-icon) {
+  flex: none;
+}
+
+/* Card */
+
+:where(.tula-card) {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--_tula-spacing) * 1.25);
+  width: 100%;
+  max-width: 26rem;
+  padding: calc(var(--_tula-spacing) * 2);
+  border: 1px solid var(--_tula-color-border);
+  border-radius: calc(var(--_tula-radius) + 4px);
+  background: var(--_tula-color-background);
+  box-shadow: var(--_tula-shadow);
+}
+
+:where(.tula-card-wide) {
+  max-width: 36rem;
+}
+
+:where(.tula-header) {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--_tula-spacing) * 0.375);
+}
+
+:where(.tula-title) {
+  font-size: var(--_tula-font-size-title);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+/* The title takes focus when a step changes, so that the change is announced and Tab continues
+   from the top of the card. It is not a control: no ring is drawn around it. */
+:where(.tula-title):focus-visible {
+  outline: none;
+}
+
+:where(.tula-subtitle, .tula-text, .tula-switch) {
+  color: var(--_tula-color-text-muted);
+}
+
+:where(.tula-footer) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--_tula-spacing) * 0.5);
+}
+
+:where(.tula-branding) {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--_tula-color-text-muted);
+  font-size: var(--_tula-font-size-small);
+}
+
+/* Forms */
+
+:where(.tula-form) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--_tula-spacing);
+}
+
+:where(.tula-field) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+:where(.tula-field-row) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--_tula-spacing);
+}
+
+:where(.tula-label-row) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+:where(.tula-label) {
+  font-size: var(--_tula-font-size-small);
+  font-weight: 600;
+}
+
+:where(.tula-input-group) {
+  position: relative;
+  display: flex;
+}
+
+:where(.tula-input, .tula-code-input) {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--_tula-color-border-strong);
+  border-radius: var(--_tula-radius);
+  background: var(--_tula-color-input);
+  color: var(--_tula-color-text);
+  /* 16px at least: a smaller font makes iOS zoom the page when a field takes focus. */
+  font-size: max(1rem, var(--_tula-font-size));
+  transition: border-color 0.12s ease;
+}
+
+:where(.tula-input-group:has(> .tula-password-toggle)) > :where(.tula-input) {
+  padding-inline-end: 3rem;
+}
+
+:where(.tula-input, .tula-code-input):focus-visible {
+  border-color: var(--_tula-color-focus);
+  outline-offset: 1px;
+}
+
+:where(.tula-input, .tula-code-input)[aria-invalid="true"] {
+  border-color: var(--_tula-color-danger);
+}
+
+:where(.tula-code-input) {
+  font-family: var(--_tula-font-family-mono);
+  font-size: 1.375rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+
+:where(.tula-password-toggle) {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  margin-block: auto;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--_tula-radius-small);
+  background: none;
+  color: var(--_tula-color-text-muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+:where(.tula-password-toggle):hover,
+:where(.tula-password-toggle)[aria-pressed="true"] {
+  color: var(--_tula-color-text);
+}
+
+:where(.tula-hint) {
+  color: var(--_tula-color-text-muted);
+  font-size: var(--_tula-font-size-small);
+}
+
+:where(.tula-field-error) {
+  color: var(--_tula-color-danger);
+  font-size: var(--_tula-font-size-small);
+}
+
+:where(.tula-field-error) :where(ul) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+:where(.tula-error) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.875rem;
+  border-inline-start: 3px solid var(--_tula-color-danger);
+  border-radius: var(--_tula-radius-small);
+  background: var(--_tula-color-danger-surface);
+  color: var(--_tula-color-text);
+  font-size: var(--_tula-font-size-small);
+}
+
+:where(.tula-status) {
+  display: block;
+  color: var(--_tula-color-success);
+  font-size: var(--_tula-font-size-small);
+}
+
+/* An empty status stays in the page as a live region but takes no room in the layout. */
+:where(.tula-status.tula-is-empty) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+:where(.tula-actions) {
+  display: flex;
+  justify-content: center;
+}
+
+:where(.tula-field-action) {
+  display: flex;
+  justify-content: flex-end;
+}
+
+:where(.tula-identity) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--_tula-radius-small);
+  background: var(--_tula-color-surface);
+  font-size: var(--_tula-font-size-small);
+}
+
+:where(.tula-identity) > :where(span) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Buttons */
+
+:where(.tula-primary-button, .tula-secondary-button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid transparent;
+  border-radius: var(--_tula-radius);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+:where(.tula-primary-button) {
+  background: var(--_tula-color-primary);
+  color: var(--_tula-color-primary-text);
+}
+
+:where(.tula-primary-button):hover {
+  background: var(--_tula-color-primary-hover);
+}
+
+:where(.tula-secondary-button) {
+  border-color: var(--_tula-color-border-strong);
+  background: var(--_tula-color-background);
+  color: var(--_tula-color-text);
+}
+
+:where(.tula-secondary-button):hover {
+  background: var(--_tula-color-surface);
+}
+
+:where(.tula-link-button, .tula-danger-button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  /* 24px at least: the minimum target size (WCAG 2.5.8). */
+  min-height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--_tula-font-size-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+:where(.tula-link-button, .tula-link) {
+  color: var(--_tula-color-link);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+:where(.tula-danger-button) {
+  flex: none;
+  align-self: flex-start;
+  min-height: 2rem;
+  padding: 0 0.5rem;
+  border-radius: var(--_tula-radius-small);
+  color: var(--_tula-color-danger);
+}
+
+:where(.tula-danger-button):hover {
+  background: var(--_tula-color-danger-surface);
+}
+
+:where(.tula-root) :where(button)[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+:where(.tula-spinner) {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentcolor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: tula-spin 0.7s linear infinite;
+}
+
+@keyframes tula-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Password checklist */
+
+:where(.tula-password-rules) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin-top: 0.25rem;
+}
+
+:where(.tula-strength-bar) {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.375rem;
+}
+
+:where(.tula-strength-bar) > :where(span) {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--_tula-color-border);
+  transition: background-color 0.15s ease;
+}
+
+:where(.tula-strength-bar) > :where(span)[data-filled] {
+  background: var(--_tula-color-success);
+}
+
+:where(.tula-checklist) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.375rem 1rem;
+  color: var(--_tula-color-text-muted);
+  font-size: var(--_tula-font-size-small);
+}
+
+:where(.tula-checklist-item) {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+:where(.tula-checklist-item) > :where(.tula-icon) {
+  margin-top: 0.125em;
+  font-size: 1.15em;
+}
+
+:where(.tula-checklist-item.tula-is-met) {
+  color: var(--_tula-color-success);
+}
+
+/* User button */
+
+:where(.tula-user-button) {
+  position: relative;
+  display: inline-block;
+}
+
+:where(.tula-user-button-trigger) {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  cursor: pointer;
+}
+
+:where(.tula-avatar) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  background: var(--_tula-color-primary);
+  color: var(--_tula-color-primary-text);
+  font-size: var(--_tula-font-size-small);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+:where(.tula-menu) {
+  position: absolute;
+  z-index: 50;
+  inset-block-start: calc(100% + 0.5rem);
+  inset-inline-end: 0;
+  width: max-content;
+  min-width: 15rem;
+  max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.5rem;
+  border: 1px solid var(--_tula-color-border);
+  border-radius: var(--_tula-radius);
+  background: var(--_tula-color-background);
+  box-shadow: var(--_tula-shadow);
+}
+
+:where(.tula-menu-header) {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--_tula-color-border);
+}
+
+:where(.tula-menu-items) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+:where(.tula-menu-item) {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: var(--_tula-radius-small);
+  background: none;
+  text-align: start;
+  cursor: pointer;
+}
+
+:where(.tula-menu-item):hover,
+:where(.tula-menu-item):focus-visible {
+  background: var(--_tula-color-surface);
+}
+
+:where(.tula-dialog) {
+  width: 100%;
+  max-width: min(36rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  overflow: auto;
+  border: 0;
+  border-radius: calc(var(--_tula-radius) + 4px);
+  background: transparent;
+  color: var(--_tula-color-text);
+}
+
+:where(.tula-dialog)::backdrop {
+  background: var(--_tula-color-overlay, rgba(0, 0, 0, 0.55));
+}
+
+:where(.tula-dialog-close) {
+  position: absolute;
+  inset-block-start: 1rem;
+  inset-inline-end: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--_tula-color-surface);
+  font-size: 1.125rem;
+  cursor: pointer;
+}
+
+/* User profile */
+
+:where(.tula-section) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: calc(var(--_tula-spacing) * 1.25);
+  border-top: 1px solid var(--_tula-color-border);
+}
+
+:where(.tula-section-title) {
+  color: var(--_tula-color-text-muted);
+  font-size: var(--_tula-font-size-small);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+:where(.tula-profile) {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+:where(.tula-profile) > :where(.tula-avatar) {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1rem;
+}
+
+:where(.tula-profile-text) {
+  min-width: 0;
+}
+
+:where(.tula-profile-name, .tula-session-device) {
+  font-weight: 600;
+}
+
+:where(.tula-profile-email) {
+  color: var(--_tula-color-text-muted);
+  font-size: var(--_tula-font-size-small);
+  overflow-wrap: anywhere;
+}
+
+:where(.tula-badge) {
+  display: inline-block;
+  padding: 0.0625rem 0.5rem;
+  border: 1px solid var(--_tula-color-border);
+  border-radius: 999px;
+  background: var(--_tula-color-surface);
+  color: var(--_tula-color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+:where(.tula-is-positive) {
+  color: var(--_tula-color-success);
+}
+
+:where(.tula-session-list) {
+  border: 1px solid var(--_tula-color-border);
+  border-radius: var(--_tula-radius);
+}
+
+:where(.tula-session-item) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+:where(.tula-session-item) + :where(.tula-session-item) {
+  border-top: 1px solid var(--_tula-color-border);
+}
+
+:where(.tula-session-item) > :where(.tula-danger-button) {
+  align-self: center;
+}
+
+:where(.tula-session-text) {
+  min-width: 0;
+}
+
+:where(.tula-session-meta) {
+  color: var(--_tula-color-text-muted);
+  font-size: var(--_tula-font-size-small);
+}
+
+:where(.tula-session-meta.tula-is-positive) {
+  color: var(--_tula-color-success);
+}
+
+/* Small screens */
+
+@media (max-width: 30rem) {
+  :where(.tula-card) {
+    padding: calc(var(--_tula-spacing) * 1.25);
+  }
+}
+
+/* Motion */
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.tula-root) :where(*, *::before, *::after) {
+    transition: none;
+    animation: none;
+  }
+
+  /* A pending button still shows it is working, without spinning. */
+  :where(.tula-spinner) {
+    border-style: dotted;
+    border-inline-end-color: currentcolor;
+  }
+}
