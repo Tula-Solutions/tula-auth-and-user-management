@@ -1,0 +1,115 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.4;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 60rem;
+  padding: 1rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0;
+}
+
+h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.5rem;
+}
+
+section {
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+}
+
+form,
+.row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+label {
+  display: grid;
+  font-size: 0.85rem;
+  gap: 0.15rem;
+}
+
+input {
+  font: inherit;
+  min-width: 14rem;
+  padding: 0.3rem 0.4rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.35rem 0.7rem;
+}
+
+pre {
+  margin: 0;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+dl {
+  display: grid;
+  gap: 0.25rem 1rem;
+  grid-template-columns: max-content 1fr;
+  margin: 0 0 0.5rem;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+}
+
+.hint {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.flow {
+  font-size: 0.85rem;
+}
+
+.checklist {
+  font-size: 0.85rem;
+  list-style: none;
+  padding: 0;
+}
+
+.checklist .passed::before {
+  content: "✓ ";
+}
+
+.checklist .failed::before {
+  content: "✗ ";
+}
+
+#log {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  max-height: 24rem;
+  overflow-y: auto;
+  padding-left: 2.5rem;
+}
+
+#log .error {
+  color: #c62828;
+}
+
+#log .ok {
+  color: #2e7d32;
+}

@@ -1,0 +1,4 @@
+{
+  "extends": "../packages/tsconfig/base.json",
+  "include": ["./**/*.ts", "../.claude/hooks/release.test.ts"]
+}

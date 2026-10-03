@@ -4,11 +4,42 @@
   "private": true,
   "type": "module",
   "description": "Tula's public, language-neutral contract: schemas, flow protocol, error codes, token claims, password policy.",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./error-codes": "./src/error-codes.ts",
+    "./headers": "./src/headers.ts",
+    "./password-rules": "./src/password-rules.ts",
     "./openapi.json": "./openapi.json"
   },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./error-codes": {
+        "types": "./dist/error-codes.d.ts",
+        "default": "./dist/error-codes.js"
+      },
+      "./headers": {
+        "types": "./dist/headers.d.ts",
+        "default": "./dist/headers.js"
+      },
+      "./password-rules": {
+        "types": "./dist/password-rules.d.ts",
+        "default": "./dist/password-rules.js"
+      },
+      "./openapi.json": "./openapi.json",
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist",
+    "openapi.json"
+  ],
   "scripts": {
+    "build": "bunup",
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test",
     "test:coverage": "bun test --coverage"

@@ -6,24 +6,6 @@ export const SecondFactorMethodSchema = z
   .meta({ ref: 'SecondFactorMethod' })
 
 /**
- * Request header carrying an attempt's secret.
- *
- * Starting a sign-up, sign-in or password reset returns `attemptSecret` once; every later call
- * on that attempt sends it in this header. Without it (or with another attempt's) the attempt
- * answers `flow.not_found`, so an attempt id seen in a URL, a log or an email is useless alone.
- *
- * @example
- * ```ts
- * await fetch(`${api}/v1/client/sign-ins/${attempt.id}/password`, {
- *   method: 'POST',
- *   headers: { [FLOW_ATTEMPT_HEADER]: attempt.attemptSecret, ...others },
- *   body: JSON.stringify({ password }),
- * })
- * ```
- */
-export const FLOW_ATTEMPT_HEADER = 'x-tula-attempt'
-
-/**
  * Ways to prove who you are as the first step of a sign-in.
  *
  * Which ones a sign-in offers depends only on the environment's settings, never on the
@@ -129,7 +111,7 @@ export const FlowAttemptSchema = z
     step: FlowStepSchema,
     /**
      * The attempt's secret. Present **only** in the response that starts the attempt, never
-     * again: keep it in memory and send it as {@link FLOW_ATTEMPT_HEADER} on every later call.
+     * again: keep it in memory and send it as `FLOW_ATTEMPT_HEADER` (`x-tula-attempt`) on every later call.
      */
     attemptSecret: z.string().optional(),
     /** Present only when `step.status === 'complete'`. */

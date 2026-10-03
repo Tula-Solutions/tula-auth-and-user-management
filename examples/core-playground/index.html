@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@tula/core playground</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>@tula/core playground</h1>
+      <p>A test bench for the headless client against a running Tula API. Not a product.</p>
+    </header>
+
+    <main>
+      <section id="connect">
+        <h2>1. Connect</h2>
+        <form id="connect-form">
+          <label>API URL <input name="api" type="url" placeholder="http://localhost:3003" required /></label>
+          <label>Publishable key <input name="key" placeholder="tula_pk_dev_…" autocomplete="off" required /></label>
+          <button type="submit">Connect</button>
+        </form>
+        <p class="hint">
+          Both are kept in this page's address (publishable keys are public). Open the same address in a
+          second tab to try cross-tab refresh and sign-out.
+        </p>
+      </section>
+
+      <section id="status">
+        <h2>State</h2>
+        <dl>
+          <dt>Client state</dt>
+          <dd><pre id="state">not connected</pre></dd>
+          <dt>Access token this tab last saw</dt>
+          <dd id="token">none</dd>
+          <dt>Refresh requests sent by this tab</dt>
+          <dd id="refresh-count">0</dd>
+          <dt>App config</dt>
+          <dd id="config">not loaded</dd>
+        </dl>
+        <div class="row">
+          <button type="button" id="load">load()</button>
+          <button type="button" id="get-token">getToken()</button>
+          <button type="button" id="get-token-10">getToken() ×10 concurrently</button>
+          <button type="button" id="refresh">refresh()</button>
+          <button type="button" id="get-user">user.get()</button>
+          <button type="button" id="sign-out">signOut()</button>
+        </div>
+        <p class="hint" id="concurrency-result"></p>
+      </section>
+
+      <section>
+        <h2>2. Sign up</h2>
+        <form id="sign-up-form">
+          <label>Email <input name="email" type="email" autocomplete="username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="new-password" required /></label>
+          <label>First name <input name="firstName" autocomplete="given-name" /></label>
+          <button type="submit">signUp.start()</button>
+        </form>
+        <ul id="checklist" class="checklist"></ul>
+        <form id="sign-up-code-form">
+          <label>Emailed code <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" required /></label>
+          <button type="submit">verifyEmail()</button>
+          <button type="button" id="sign-up-resend">resendCode()</button>
+        </form>
+        <pre id="sign-up-flow" class="flow">no flow</pre>
+      </section>
+
+      <section>
+        <h2>3. Sign in</h2>
+        <form id="sign-in-form">
+          <label>Email <input name="identifier" type="email" autocomplete="username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <button type="submit">signIn.start() + submitPassword()</button>
+        </form>
+        <form id="sign-in-code-form">
+          <label>Emailed code <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" required /></label>
+          <button type="submit">verifyEmail()</button>
+        </form>
+        <pre id="sign-in-flow" class="flow">no flow</pre>
+      </section>
+
+      <section>
+        <h2>4. Sessions</h2>
+        <div class="row">
+          <button type="button" id="list-sessions">session.list()</button>
+          <button type="button" id="revoke-others">session.revokeOthers()</button>
+        </div>
+        <ul id="sessions"></ul>
+      </section>
+
+      <section>
+        <h2>5. Change password</h2>
+        <form id="change-password-form">
+          <label>Current <input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+          <label>New <input name="newPassword" type="password" autocomplete="new-password" required /></label>
+          <button type="submit">user.changePassword()</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>6. Reset password</h2>
+        <form id="reset-form">
+          <label>Email <input name="email" type="email" autocomplete="username" required /></label>
+          <button type="submit">resetPassword.start()</button>
+        </form>
+        <form id="reset-submit-form">
+          <label>Emailed code <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" required /></label>
+          <label>New password <input name="password" type="password" autocomplete="new-password" required /></label>
+          <button type="submit">submit()</button>
+        </form>
+        <pre id="reset-flow" class="flow">no flow</pre>
+      </section>
+
+      <section>
+        <h2>Log</h2>
+        <p class="hint">Every call, and every error with its code. Newest first.</p>
+        <ol id="log" reversed></ol>
+      </section>
+    </main>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

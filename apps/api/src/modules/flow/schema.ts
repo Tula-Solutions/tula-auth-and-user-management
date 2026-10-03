@@ -1,4 +1,4 @@
-import { FLOW_ATTEMPT_HEADER, SessionClientSchema } from '@tula/contract'
+import { CLIENT_HEADER, FLOW_ATTEMPT_HEADER, SessionClientSchema } from '@tula/contract'
 import { z } from 'zod'
 
 /** Flow shapes are owned by the contract so every SDK renders the same steps. */
@@ -12,14 +12,14 @@ export {
   VerifyEmailRequestSchema,
 } from '@tula/contract'
 
-/** Header carrying an attempt's secret; defined by the contract so every SDK sends the same one. */
-export { FLOW_ATTEMPT_HEADER }
+/**
+ * Headers the flow routes read: the attempt's secret, and the kind of client (which decides how
+ * the refresh token is delivered). Defined by the contract so every SDK sends the same ones.
+ */
+export { CLIENT_HEADER, FLOW_ATTEMPT_HEADER }
 
 /** Longest attempt secret the API reads. A real one is 51 characters. */
 export const MAX_ATTEMPT_SECRET_LENGTH = 256
-
-/** Header naming the kind of client, which decides how the refresh token is delivered. */
-export const CLIENT_HEADER = 'x-tula-client'
 
 /** Path parameter naming a sign-in, sign-up or password-reset attempt. */
 export const AttemptIdParamSchema = z.object({ attemptId: z.uuid() })

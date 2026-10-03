@@ -41,6 +41,13 @@ Three rules are new:
 2. **Each SDK runs the conformance scenarios.** `@tula/core` gets a runner target that drives
    the scenarios through the SDK instead of raw `fetch`. A scenario the SDK cannot express is a
    bug in the SDK or in the scenario.
+   *As built ([ADR 0021](../adr/0021-core-sdk.md)):* the scenarios are HTTP-level (paths,
+   headers, bodies), which is exactly what an SDK hides, so the TypeScript SDK does not run the
+   JSON files. They stay the conformance suite for servers and native SDKs. Instead,
+   `apps/api/src/sdk-journeys.test.ts` drives the SDK's public API against the real API in
+   process, and a guard test requires every scenario name to be covered by a named journey or
+   listed as server-only with a reason. A new scenario cannot be added without deciding its
+   SDK coverage. Twelve of the thirteen are covered; `two instances` is server-only.
 3. **Browser behaviour is tested in a browser.** Components and the dashboard get Playwright
    tests against the in-process API; they run in CI as their own job, not inside `verify`.
 
@@ -173,6 +180,15 @@ The changes every new method needs, made once.
   (`0.1.0-alpha`).
 - **Nothing is published in Phase 1** until the licence and the npm scope are settled (see
   Decisions); the release workflow is built and exercised with a dry run only.
+  *As built ([ADR 0020](../adr/0020-packaging-and-release.md), [releasing](../releasing.md)):*
+  packages resolve from source inside the repository (`exports` → `src`) and from `dist` when
+  published (`publishConfig.exports`, applied by `scripts/packages.ts`, which stages, packs and
+  runs publint and arethetypeswrong on the tarball; `bun run packages:check` is in `verify`).
+  Changesets is in prerelease mode with contract and core as a fixed group; the pending
+  changeset gives `0.1.0-alpha.0` and has not been applied. The release workflow has no
+  provenance step yet: it has no credentials at all, and every package stays private. The
+  contract gained Zod-free entry points (`/error-codes`, `/headers`, `/password-rules`): the
+  same imports cost a browser bundle 31.9 kB gzip before and 2.5 kB after.
 
 ### 1.5 `@tula/core` — headless TypeScript client
 
@@ -191,6 +207,18 @@ The changes every new method needs, made once.
 - Runs in browsers, Node, Bun and edge runtimes: no Node-only APIs, checked by a build per
   target.
 - **Conformance through the SDK** (rule 2 above).
+  *As built ([ADR 0021](../adr/0021-core-sdk.md)):* the generated layer is types plus one
+  table of methods and paths, produced by the package's own generator (`openapi-typescript`
+  needs the TypeScript 5 compiler API; the repository is on 7), with a hand-written typed
+  transport. Besides the planned surface: `load()`, `state`, `onChange`, `user.get()`,
+  `user.changePassword()`, `config.get()`, `setMessages()`. Cross-tab refresh uses a Web Lock
+  **and** a `BroadcastChannel` together (the channel shares the result so a waiting tab skips
+  its own refresh), with the server's grace period as the fallback when either is missing.
+  There is no `autoRefresh` option and a flow cannot be resumed after a reload; both are
+  deliberate. `submitSecondFactor` waits for the route in 1.8. "A build per target" became one
+  build plus a typecheck against web-platform types only (`typecheck:portable`). The package is
+  5.9 kB gzip (7.2 kB with the password checklist), with no Zod. A browser test bench lives in
+  `examples/core-playground` (`bun run playground`).
 
 ### 1.6 `@tula/react` — components for the Phase 0 flows
 

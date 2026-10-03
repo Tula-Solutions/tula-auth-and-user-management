@@ -7,8 +7,14 @@ The same files are run:
   `bun run verify`), against memory adapters and a controllable clock (the second instance is a
   second app over the same stores);
 - **against a live server**, with `bun run conformance`;
-- later, by each SDK's test suite (TypeScript, Swift, Kotlin), so every client is checked
-  against the same behaviour.
+- later, by each native SDK's test suite (Swift, Kotlin), so every client is checked against
+  the same behaviour.
+
+The TypeScript SDK does not run the JSON files: they describe HTTP exchanges, which
+`@tula/core` exists to hide. Instead `apps/api/src/sdk-journeys.test.ts` drives the SDK's
+public API against the same in-process server, and a guard there requires every scenario in
+`scenarios/` to be covered by a named journey or listed as server-only with the reason
+([ADR 0021](../docs/adr/0021-core-sdk.md)). **Adding a scenario means adding its journey.**
 
 ## Running against a live server
 

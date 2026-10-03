@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import {
   FirstFactorStrategySchema,
-  FLOW_ATTEMPT_HEADER,
   FlowAttemptSchema,
   FlowStepSchema,
   VerifyEmailRequestSchema,
 } from './flow'
+import { FLOW_ATTEMPT_HEADER } from './headers'
 import { DEFAULT_WEB_SESSION_PROFILE, SessionProfileSchema } from './session-profile'
 import { AccessTokenClaimsSchema, JwksSchema } from './tokens'
 
