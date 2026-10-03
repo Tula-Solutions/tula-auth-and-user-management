@@ -1,14 +1,14 @@
 # Tula Auth — Phase 1 plan
 
 Social sign-in, passkeys, MFA, the web SDKs, the dashboard, config-as-code, the CLI and the MCP
-server. Status: **proposed** (2026-10-03). Nothing here is started.
+server. Status: **accepted** (2026-10-03).
 
 ## Where Phase 0 left things
 
 Merged to `develop`: email and password sign-up, sign-in and password reset as server-driven
 flows; rotating refresh tokens with reuse detection; per-environment EdDSA keys and JWKS; user
 admin; rate limits and lockout; the audit log and event outbox; ten conformance scenarios run in
-process and against the packaged Docker image (the password reset and its tenth scenario are in PR #12). `bun run verify` is the gate; coverage is above
+process and against the packaged Docker image. `bun run verify` is the gate; coverage is above
 99%.
 
 What Phase 0 deliberately left open, and Phase 1 has to close:
@@ -140,8 +140,8 @@ The changes every new method needs, made once.
 - Changesets for versions and changelogs; a `release` workflow that publishes on merge to
   `main` with npm provenance. `@tula/contract` is the first published package
   (`0.1.0-alpha`).
-- **Needs decisions first** (see the table at the end): the licence, and that the `@tula` npm
-  scope is ours. Nothing is published until both are settled.
+- **Nothing is published in Phase 1** until the licence and the npm scope are settled (see
+  Decisions); the release workflow is built and exercised with a dry run only.
 
 ### 1.5 `@tula/core` — headless TypeScript client
 
@@ -303,9 +303,8 @@ The changes every new method needs, made once.
   and providers, password policy, session profiles, API keys, signing keys, audit log,
   settings.
 - Served by the API as static files at `/dashboard` in the self-host image.
-- **Needs a decision** (see the table): how an operator signs in, and what authorizes creating
-  projects and environments. The workspace- and project-level admin routes this needs do not
-  exist yet and are part of this step.
+- An operator signs in with the instance admin token (see Decisions). The workspace- and
+  project-level admin routes this needs do not exist yet and are part of this step.
 
 ### 1.16 MCP server (`packages/mcp`)
 
@@ -344,14 +343,19 @@ JWT templates and server hooks, SMS codes, the email template editor, more provi
 (Microsoft, Discord, X, Facebook, LinkedIn) and MCP write tools are Phase 2. Organizations,
 RBAC, invitations and importers are Phase 3.
 
-## Open decisions
+## Decisions
 
-| # | Decision | Recommendation | Blocks |
-| --- | --- | --- | --- |
-| 1 | Licence: Apache-2.0, or AGPL / ELv2 | Decide before any package is published | 1.4 |
-| 2 | Is the `@tula` npm scope ours? | Check and reserve it now | 1.4 |
-| 3 | How an operator signs in to the dashboard, and what may create projects and environments | An instance admin token from the server's environment, exchanged for a short dashboard session; operator accounts wait for the V2 control plane | 1.15 |
-| 4 | OAuth library | `arctic` for the protocol and `jose` for ID tokens | 1.9 |
-| 5 | Build order: the SDK slice before the new methods (as planned here), or all server work first | SDK first, so each method is proven through a real client | Milestone B |
-| 6 | Redis required in production, or a Postgres fallback for small self-hosters | Required in `staging` and `prod`; add a fallback only if self-hosters ask | 1.1 |
-| 7 | SMS codes: the business plan's MVP lists them, the Phase 1 milestone does not | Phase 2, with the SMS port and a Twilio adapter | scope |
+Settled on 2026-10-03, when the plan was approved to start.
+
+| # | Decision | Outcome |
+| --- | --- | --- |
+| 1 | Licence | **Deferred.** Step 1.4 builds and checks the packages but publishes nothing. |
+| 2 | The `@tula` npm scope | **Deferred** with the licence. Packages keep the `@tula/*` names inside the workspace. |
+| 3 | Dashboard sign-in and instance-level authority | An instance admin token from the server's environment (`TULA_ADMIN_TOKEN`), exchanged for a short dashboard session. Operator accounts wait for the V2 control plane. |
+| 4 | OAuth library | `arctic` for the protocol and `jose` for ID tokens. |
+| 5 | Build order | The SDK slice comes before the new methods, so each method is proven through a real client. |
+| 6 | Redis in production | Required in `staging` and `prod`; memory adapters remain for `local` and tests. |
+| 7 | SMS codes | Phase 2, with the SMS port and a Twilio adapter. |
+
+Components and SDKs are also checked by hand in a real browser as they are built, in addition
+to the Playwright job.
