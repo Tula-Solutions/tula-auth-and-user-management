@@ -148,7 +148,7 @@ history and the process list: put them in a file only you can read and pass
 only reachable on a Docker network.
 
 **HTTPS and the proxy.** Put the API behind a TLS-terminating reverse proxy and set
-`PUBLIC_URL` to the public https address. Refresh cookies are `Secure` when `PUBLIC_URL` is
+`PUBLIC_URL` to the public https address (with the Compose file, set `API_PUBLIC_URL`). Refresh cookies are `Secure` when `PUBLIC_URL` is
 https. Set `TRUST_PROXY=true` so rate limits and the audit log see the client's address, and
 make sure the proxy **overwrites** `X-Forwarded-For`; if the API is also reachable without the
 proxy, clients can forge their address.
