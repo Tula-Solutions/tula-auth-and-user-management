@@ -1,4 +1,11 @@
-# Local V1 stack (business plan §5.8). `docker compose up -d` then `bun run dev`.
+# Local V1 stack (business plan §5.8).
+#   Development:  `docker compose up -d` then `bun run dev` (Postgres, Redis and Mailpit only).
+#   Packaged API: `docker compose --profile app up -d --build` also runs the migrations and the
+#                 API image. See docs/self-host.md.
+# Host ports can be moved with POSTGRES_PORT, REDIS_PORT, MAILPIT_SMTP_PORT, MAILPIT_UI_PORT and
+# API_PORT, e.g. to run a second stack next to this one.
+# After using the profile, stop with it too: `docker compose --profile app down`. A plain
+# `docker compose down` leaves the API container running and holding the network.
 # Ports bind to 127.0.0.1 only: Docker bypasses host firewalls, and these services use dev
 # credentials (Redis and Mailpit have none), so they must not be reachable from the LAN.
 services:
@@ -8,7 +15,7 @@ services:
       POSTGRES_USER: tula
       POSTGRES_PASSWORD: tula
       POSTGRES_DB: tula
-    ports: ['127.0.0.1:5432:5432']
+    ports: ['127.0.0.1:${POSTGRES_PORT:-5432}:5432']
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
@@ -20,7 +27,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ['127.0.0.1:6379:6379']
+    ports: ['127.0.0.1:${REDIS_PORT:-6379}:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -30,7 +37,55 @@ services:
   # Local inbox for verification emails: SMTP on 1025, web UI on http://localhost:8025
   mailpit:
     image: axllent/mailpit:v1.31.3
-    ports: ['127.0.0.1:1025:1025', '127.0.0.1:8025:8025']
+    ports: ['127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025', '127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025']
+
+  # Applies pending migrations as the schema owner, then exits. The API waits for it.
+  migrate:
+    profiles: ['app']
+    image: tula-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ['bun', 'run', '../../packages/db/src/scripts/migrate.ts']
+    environment:
+      DATABASE_MIGRATION_URL: postgres://tula:tula@postgres:5432/tula
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  # The packaged API. Connects as the non-owner `tula_api` role, so row-level security applies.
+  api:
+    profiles: ['app']
+    image: tula-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      DATABASE_URL: postgres://tula_api:tula_api@postgres:5432/tula
+      # Required: 32 bytes as hex (`openssl rand -hex 32`). The API refuses to start without it.
+      TULA_MASTER_KEY: ${TULA_MASTER_KEY:-}
+      # Not `PUBLIC_URL` / `SMTP_URL`: Compose also reads the repository's `.env`, where a
+      # developer's values describe `bun run dev` on the host (port 3003, mail at 127.0.0.1, which
+      # inside this container is the container itself).
+      PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
+      SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
+      MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
+      BREACH_CHECK: ${BREACH_CHECK:-offline}
+      PASSWORD_POLICY: ${PASSWORD_POLICY:-recommended}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports: ['127.0.0.1:${API_PORT:-3003}:3003']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   postgres-data:

@@ -50,5 +50,5 @@ language-neutral suite every server and SDK must pass.
 - Browser cookie delivery, concurrent refresh and the SDK-side behaviour (single-flight refresh)
   are not expressible yet; the runner has no cookie jar and no parallel steps. They are needed
   before the web SDK ships (Phase 1).
-- CI runs the scenarios in process only. Running them against the packaged server arrives with
-  self-host packaging (Step 5.11).
+- CI runs the scenarios in process in the `verify` job, and against the packaged server
+  (Docker Compose) in the `self-host` job.
