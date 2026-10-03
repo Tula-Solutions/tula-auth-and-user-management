@@ -43,9 +43,9 @@ language-neutral suite every server and SDK must pass.
 - A live run needs the server to trust `X-Forwarded-For` (`TRUST_PROXY=true`). That is a test
   deployment setting; a server that ignores the header still passes unless a run exceeds a
   per-IP limit (ten sign-ups a minute).
-- A live run leaves its users and audit entries behind and takes about a minute and a half,
-  because two scenarios really wait: 61 seconds for an address's email cooldown and 11 for the
-  refresh grace period.
+- A live run leaves its users and audit entries behind and takes about two and a half
+  minutes, because three scenarios really wait: 61 seconds for an address's email cooldown
+  (twice) and 11 for the refresh grace period.
 - Scenarios assume the default password policy and session profile. A deployment with other
   settings may fail the lockout or reuse scenario for reasons that are not bugs.
 - Browser cookie delivery, concurrent refresh and the SDK-side behaviour (single-flight refresh)

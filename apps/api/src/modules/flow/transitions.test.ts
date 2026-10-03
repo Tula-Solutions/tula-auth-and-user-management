@@ -6,6 +6,7 @@ import { type FlowEvent, nextStatus } from '~/modules/flow/transitions'
 const verifiedPassword: FlowEvent = { type: 'password_verified', emailVerified: true }
 const unverifiedPassword: FlowEvent = { type: 'password_verified', emailVerified: false }
 const emailVerified: FlowEvent = { type: 'email_verified' }
+const passwordReset: FlowEvent = { type: 'password_reset' }
 
 describe('nextStatus', () => {
   const allowed: [FlowKind, FlowStatus, FlowEvent, FlowStatus][] = [
@@ -13,6 +14,7 @@ describe('nextStatus', () => {
     ['sign_in', 'needs_password', verifiedPassword, 'complete'],
     ['sign_in', 'needs_password', unverifiedPassword, 'needs_email_verification'],
     ['sign_in', 'needs_email_verification', emailVerified, 'complete'],
+    ['password_reset', 'needs_new_password', passwordReset, 'complete'],
   ]
   test.each(allowed)('%s: %s + %o → %s', (kind, status, event, expected) => {
     expect(nextStatus(kind, status, event)).toBe(expected)
@@ -30,6 +32,16 @@ describe('nextStatus', () => {
     ['sign_in', 'complete', verifiedPassword],
     ['sign_in', 'complete', emailVerified],
     ['sign_up', 'complete', emailVerified],
+    // A reset completes only with the code and a new password, and no other flow can use that.
+    ['password_reset', 'needs_new_password', emailVerified],
+    ['password_reset', 'needs_new_password', verifiedPassword],
+    ['password_reset', 'needs_email_verification', emailVerified],
+    ['password_reset', 'needs_password', verifiedPassword],
+    ['password_reset', 'complete', passwordReset],
+    ['sign_in', 'needs_new_password', passwordReset],
+    ['sign_up', 'needs_new_password', passwordReset],
+    ['sign_in', 'needs_password', passwordReset],
+    ['sign_up', 'needs_email_verification', passwordReset],
     // Steps Phase 0 does not issue.
     ['sign_in', 'needs_identifier', verifiedPassword],
     ['sign_in', 'needs_second_factor', emailVerified],

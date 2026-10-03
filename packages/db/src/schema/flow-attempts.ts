@@ -9,13 +9,13 @@ import {
 import { tula } from './pg-schema'
 import { users } from './users'
 
-/** In-progress sign-in / sign-up attempts driving the server-side flow state machine (§5.2). */
+/** In-progress sign-in, sign-up and password-reset attempts driving the server-side flow state machine (§5.2). */
 export const flowAttempts = tula.table(
   'flow_attempts',
   {
     id: primaryKey(),
     ...tenantColumns(),
-    kind: text('kind', { enum: ['sign_in', 'sign_up'] }).notNull(),
+    kind: text('kind', { enum: ['sign_in', 'sign_up', 'password_reset'] }).notNull(),
     /** The current `FlowStep` status from `@tula/contract`. */
     status: text('status').notNull(),
     /** Set once the identifier resolves to a user (never exposed to the client before then). */

@@ -21,15 +21,16 @@ limited too.
 | --- | --- |
 | Every `/v1/client/*` route (shared bucket) | 600 |
 | Every `/v1/admin/*` route (shared bucket) | 300 |
-| Sign-up, resend code | 10 |
-| Sign-in start, password, verify code | 30 |
+| Sign-up, start a password reset, resend code | 10 |
+| Sign-in start, password, verify code, submit a password reset | 30 |
 | Refresh | 300 |
 | Change my password | 10 |
 | Public JWKS | 600 |
 | Readiness check (`/v1/ready`) | 120 |
 
 **2. Per environment**, across all callers, on steps that cost an argon2id hash or an email:
-sign-up and resend 600, password 3,000, verify code 3,000 per minute. This bounds what a
+sign-up and its resends 600, password-reset emails 600, password 3,000, verify code (including
+the code of a password reset) 3,000 per minute. This bounds what a
 distributed attack on one tenant can make the server do. The ceiling is counted **inside the
 flow service**, after the request is validated and its attempt found and just before the
 expensive work, so requests that cost nothing can't use it up: malformed requests, made-up

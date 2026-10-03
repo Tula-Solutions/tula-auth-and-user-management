@@ -5,6 +5,8 @@ import { z } from 'zod'
 export {
   FlowAttemptSchema,
   PasswordAttemptRequestSchema,
+  PasswordResetRequestSchema,
+  PasswordResetStartRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
   VerifyEmailRequestSchema,
@@ -13,7 +15,7 @@ export {
 /** Header naming the kind of client, which decides how the refresh token is delivered. */
 export const CLIENT_HEADER = 'x-tula-client'
 
-/** Path parameter naming a sign-in or sign-up attempt. */
+/** Path parameter naming a sign-in, sign-up or password-reset attempt. */
 export const AttemptIdParamSchema = z.object({ attemptId: z.uuid() })
 
 /**

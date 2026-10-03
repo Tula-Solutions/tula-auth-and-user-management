@@ -3,7 +3,8 @@
 Open-source, self-hostable authentication and user management: Clerk-level developer experience
 and prebuilt UI, first-class native mobile, and data you own.
 
-> **Status: Phase 0 is feature-complete.** Email and password sign-up and sign-in, sessions,
+> **Status: Phase 0 is feature-complete.** Email and password sign-up, sign-in and password
+> reset, sessions,
 > user administration, the audit log and self-hosting work end to end and are covered by the
 > conformance suite. Nothing is released yet, there is no dashboard or SDK, and a deployment is
 > a single instance: not ready for production.
@@ -88,6 +89,7 @@ Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
 - [x] Passwords (argon2id, policy, breach checks)
 - [x] Server-driven sign-up / sign-in flows
 - [x] Email verification (codes; magic links in Phase 1)
+- [x] Forgotten-password reset by emailed code
 - [x] Sessions with rotating refresh tokens and reuse detection
 - [x] User admin, rate limiting and lockout, audit log
 - [x] Conformance suite

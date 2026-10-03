@@ -185,6 +185,12 @@ export interface VerifyCodeInput {
   purpose: VerificationPurpose
   subject: VerificationSubject
   code: string
+  /**
+   * Pass `false` to leave a correct code unconsumed, when more must be checked before the code
+   * is spent (a password reset checks the new password first). The caller then spends it with
+   * {@link consume}; the guess is still counted, so the code allows no extra tries.
+   */
+  consume?: boolean
 }
 
 /**
@@ -197,7 +203,8 @@ export interface VerifyCodeInput {
  * @param deps - Clock, keyed hash and token store.
  * @param scope - The environment the request resolved to.
  * @param input - Purpose, subject and the presented code.
- * @returns The consumed token (its `userId`, `flowAttemptId` and `destination`).
+ * @returns The token (its `userId`, `flowAttemptId` and `destination`), consumed unless
+ *   `input.consume` is `false`.
  * @throws AuthError `verification.expired` (410), `verification.too_many_attempts` (429) or
  *   `verification.invalid_code` (422, with `attemptsRemaining`).
  */
@@ -226,10 +233,31 @@ export async function verifyCode(
       attemptsRemaining: counted.maxAttempts - counted.attempts,
     })
   }
-  if (!(await deps.verificationTokens.consume(scope.environmentId, token.id, now))) {
+  if (input.consume === false) {
+    return counted
+  }
+  await consume(deps, scope, token.id)
+  return { ...counted, consumedAt: now }
+}
+
+/**
+ * Spend a token whose code {@link verifyCode} accepted with `consume: false`.
+ *
+ * Single-use: of two requests holding the same correct code, only the first gets past this.
+ *
+ * @param deps - Clock and token store.
+ * @param scope - The environment the request resolved to.
+ * @param tokenId - The token.
+ * @throws AuthError `verification.expired` when it was already used or has expired.
+ */
+export async function consume(
+  deps: Pick<Deps, 'clock' | 'verificationTokens'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  tokenId: string
+): Promise<void> {
+  if (!(await deps.verificationTokens.consume(scope.environmentId, tokenId, deps.clock.now()))) {
     throw new AuthError('verification.expired')
   }
-  return { ...counted, consumedAt: now }
 }
 
 /** A magic-link token presented for a purpose. */

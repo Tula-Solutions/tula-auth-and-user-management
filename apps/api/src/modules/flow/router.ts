@@ -16,6 +16,8 @@ import {
   ClientHeaderSchema,
   FlowAttemptSchema,
   PasswordAttemptRequestSchema,
+  PasswordResetRequestSchema,
+  PasswordResetStartRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
   VerifyEmailRequestSchema,
@@ -178,7 +180,7 @@ router.post(
 for (const [kind, path, tag] of [
   ['sign_up', '/sign-ups', 'SignUp'],
   ['sign_in', '/sign-ins', 'SignIn'],
-] as const satisfies readonly (readonly [FlowKind, string, string])[]) {
+] as const satisfies readonly (readonly [Exclude<FlowKind, 'password_reset'>, string, string])[]) {
   router.post(
     `${path}/:attemptId/verify-email`,
     describeRoute({
@@ -217,7 +219,82 @@ for (const [kind, path, tag] of [
         )
       )
   )
+}
 
+router.post(
+  '/password-resets',
+  describeRoute({
+    operationId: 'startPasswordReset',
+    tags: ['Flows'],
+    summary: 'Start a password reset',
+    description:
+      'Emails a 6-digit code to the address. The response is the same whether or not the ' +
+      'address has an account. Send `x-tula-client` to choose how tokens are delivered when ' +
+      'the reset completes.',
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The attempt, waiting on the code and a new password.'),
+      ...errors,
+    },
+  }),
+  limited('password_reset', SIGN_UP_RATE_LIMIT),
+  publishableKey(),
+  validator('header', ClientHeaderSchema, validationHook),
+  validator('json', PasswordResetStartRequestSchema, validationHook),
+  async (c) => {
+    const context = clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    return respond(
+      c,
+      await Flows.startPasswordReset(c.get('deps'), c.get('tenant'), c.req.valid('json'), context)
+    )
+  }
+)
+
+router.post(
+  '/password-resets/:attemptId/password',
+  describeRoute({
+    operationId: 'submitPasswordReset',
+    tags: ['Flows'],
+    summary: 'Submit the emailed code and a new password',
+    description:
+      'Checks the 6-digit code, stores the new password, ends every existing session of the ' +
+      'user and signs them in. A code allows five guesses and lasts ten minutes; a new ' +
+      'password the policy rejects uses one guess but not the code.' +
+      DELIVERY,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The completed attempt.'),
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      410: openapi.responses[410],
+      ...errors,
+    },
+  }),
+  limited('password_reset_submit'),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('json', PasswordResetRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.resetPassword(
+        c.get('deps'),
+        c.get('tenant'),
+        c.req.valid('param').attemptId,
+        c.req.valid('json'),
+        clientContext(c, undefined)
+      )
+    )
+)
+
+for (const [kind, path, tag] of [
+  ['sign_up', '/sign-ups', 'SignUp'],
+  ['sign_in', '/sign-ins', 'SignIn'],
+  ['password_reset', '/password-resets', 'PasswordReset'],
+] as const satisfies readonly (readonly [FlowKind, string, string])[]) {
   router.post(
     `${path}/:attemptId/resend-code`,
     describeRoute({
@@ -229,7 +306,7 @@ for (const [kind, path, tag] of [
         'five an hour per address.',
       security: openapi.security.client,
       responses: {
-        200: attemptResponse('The attempt, still waiting on email verification.'),
+        200: attemptResponse('The attempt, still waiting on the emailed code.'),
         404: openapi.responses[404],
         409: openapi.responses[409],
         ...errors,
@@ -241,12 +318,7 @@ for (const [kind, path, tag] of [
     async (c) =>
       respond(
         c,
-        await Flows.resendVerification(
-          c.get('deps'),
-          c.get('tenant'),
-          kind,
-          c.req.valid('param').attemptId
-        )
+        await Flows.resendCode(c.get('deps'), c.get('tenant'), kind, c.req.valid('param').attemptId)
       )
   )
 }

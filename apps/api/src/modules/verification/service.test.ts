@@ -358,6 +358,56 @@ function input(): Verification.VerifyCodeInput {
   return { purpose: 'email_verification', subject, code: sentCode() }
 }
 
+describe('verifyCode without consuming', () => {
+  async function issued() {
+    await Verification.issue(deps, tenant, {
+      purpose: 'password_reset',
+      destination: 'maya@northline.app',
+      flowAttemptId: 'fa_reset',
+    })
+    const code = /\b(\d{6})\b/.exec(deps.mailer.last().text)?.[1] as string
+    const check = (consume?: boolean) =>
+      Verification.verifyCode(deps, tenant, {
+        purpose: 'password_reset',
+        subject: { flowAttemptId: 'fa_reset' },
+        code,
+        consume,
+      })
+    return { check }
+  }
+
+  test('a correct code stays usable until it is consumed, then works no more', async () => {
+    const { check } = await issued()
+    const token = await check(false)
+    expect(token.consumedAt).toBeNull()
+    expect((await check(false)).id).toBe(token.id)
+
+    await Verification.consume(deps, tenant, token.id)
+    expect(await check(false).catch((err) => err.code)).toBe('verification.expired')
+    expect(await Verification.consume(deps, tenant, token.id).catch((err) => err.code)).toBe(
+      'verification.expired'
+    )
+  })
+
+  test('unconsumed checks still count as guesses', async () => {
+    const { check } = await issued()
+    for (let i = 0; i < Verification.MAX_ATTEMPTS; i++) {
+      await check(false)
+    }
+    expect(await check(false).catch((err) => err.code)).toBe('verification.too_many_attempts')
+  })
+
+  test('a token from another environment cannot be consumed', async () => {
+    const { check } = await issued()
+    const token = await check(false)
+    const other = { environmentId: TEST_TENANT.productionEnvironmentId }
+    expect(await Verification.consume(deps, other, token.id).catch((err) => err.code)).toBe(
+      'verification.expired'
+    )
+    expect((await check()).consumedAt).toEqual(deps.clock.now())
+  })
+})
+
 describe('verifyLink', () => {
   async function issueLink(): Promise<string> {
     await issue({ linkUrl: (token) => `https://auth.test/verify/${token}` })

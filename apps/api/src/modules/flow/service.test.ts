@@ -630,11 +630,11 @@ describe('resendVerification', () => {
     const { attempt } = await signUp()
     const first = sentCode()
     expect(
-      await Flows.resendVerification(deps, tenant, 'sign_up', attempt.id).catch((err) => err)
+      await Flows.resendCode(deps, tenant, 'sign_up', attempt.id).catch((err) => err)
     ).toBeInstanceOf(RateLimitError)
 
     deps.clock.advance(Verification.RESEND_COOLDOWN)
-    const resent = await Flows.resendVerification(deps, tenant, 'sign_up', attempt.id)
+    const resent = await Flows.resendCode(deps, tenant, 'sign_up', attempt.id)
     expect(resent.attempt.step).toEqual(attempt.step)
     const second = sentCode()
     if (first !== second) {
@@ -652,7 +652,7 @@ describe('resendVerification', () => {
     await registered()
     const { attempt } = await signUp()
     deps.clock.advance(Verification.RESEND_COOLDOWN)
-    await Flows.resendVerification(deps, tenant, 'sign_up', attempt.id)
+    await Flows.resendCode(deps, tenant, 'sign_up', attempt.id)
     expect(deps.mailer.last().subject.toLowerCase()).toContain('already')
     expect(deps.mailer.last().text).not.toMatch(/\d{6}/)
   })
@@ -662,7 +662,7 @@ describe('resendVerification', () => {
     const attempt = await startSignIn()
     await password(attempt.id)
     deps.clock.advance(Verification.RESEND_COOLDOWN)
-    await Flows.resendVerification(deps, tenant, 'sign_in', attempt.id)
+    await Flows.resendCode(deps, tenant, 'sign_in', attempt.id)
     expect(deps.mailer.last().to).toBe(EMAIL)
     const done = await Flows.verifyEmail(deps, tenant, 'sign_in', attempt.id, sentCode(), web)
     expect(done.attempt.step.status).toBe('complete')
@@ -670,11 +670,11 @@ describe('resendVerification', () => {
 
   test('is refused when the attempt is not waiting on email verification', async () => {
     const attempt = await startSignIn()
-    const err = await rejection(Flows.resendVerification(deps, tenant, 'sign_in', attempt.id))
+    const err = await rejection(Flows.resendCode(deps, tenant, 'sign_in', attempt.id))
     expect(err.code).toBe('flow.invalid_step')
-    expect(
-      (await rejection(Flows.resendVerification(deps, tenant, 'sign_up', attempt.id))).code
-    ).toBe('flow.not_found')
+    expect((await rejection(Flows.resendCode(deps, tenant, 'sign_up', attempt.id))).code).toBe(
+      'flow.not_found'
+    )
   })
 })
 
@@ -747,7 +747,7 @@ describe('per-environment ceilings', () => {
       await rejection(signUp({ email: 'not-an-email' }))
       await rejection(password(missing))
       await rejection(Flows.verifyEmail(deps, tenant, 'sign_up', missing, '123456', web))
-      await rejection(Flows.resendVerification(deps, tenant, 'sign_up', missing))
+      await rejection(Flows.resendCode(deps, tenant, 'sign_up', missing))
     }
     // Real requests still go through.
     expect((await password((await startSignIn()).id)).attempt.step.status).toBe('complete')
@@ -780,7 +780,7 @@ describe('per-environment ceilings', () => {
     const { attempt } = await signUp()
     for (let i = 0; i <= Flows.ENVIRONMENT_RATE_LIMITS.signUp; i++) {
       expect(
-        await Flows.resendVerification(deps, tenant, 'sign_up', attempt.id).catch((err) => err)
+        await Flows.resendCode(deps, tenant, 'sign_up', attempt.id).catch((err) => err)
       ).toBeInstanceOf(RateLimitError)
     }
     const other = await signUp({ email: 'someone-else@northline.app' })
@@ -927,11 +927,385 @@ describe('hash upgrade after sign-in', () => {
 })
 
 describe('the account-exists notice', () => {
-  test('does not point people at a password reset that does not exist yet', async () => {
+  test('points people who forgot their password at the reset, without a code or a link', async () => {
     await registered()
     await signUp()
     const notice = deps.mailer.last()
     expect(notice.subject).toBe('You already have an account')
-    expect(`${notice.text} ${notice.html}`.toLowerCase()).not.toContain('reset')
+    expect(notice.text).toContain('reset it from the sign-in screen')
+    expect(`${notice.text} ${notice.html}`).not.toMatch(/\d{6}|https?:/)
+  })
+})
+
+describe('password reset', () => {
+  const NEW_PASSWORD = 'a brand new passphrase 42'
+  const startReset = (email = EMAIL, ctx = web, t = tenant) =>
+    Flows.startPasswordReset(deps, t, { email }, ctx)
+  const reset = (attemptId: string, code: string, pw = NEW_PASSWORD, ctx = web, t = tenant) =>
+    Flows.resetPassword(deps, t, attemptId, { code, password: pw }, ctx)
+  async function signInWith(pw: string) {
+    return password((await startSignIn()).id, pw)
+  }
+
+  test('emails a reset code and waits on the code and a new password', async () => {
+    await registered()
+    const { attempt, tokens } = await startReset()
+    expect(attempt).toEqual({
+      id: expect.any(String),
+      kind: 'password_reset',
+      expiresAt: new Date(deps.clock.now().getTime() + 10 * 60_000).toISOString(),
+      step: {
+        status: 'needs_new_password',
+        destination: 'M***@Northline.app',
+        strategies: ['email_code'],
+      },
+    })
+    expect(tokens).toBeUndefined()
+    expect(deps.mailer.last().subject).toContain('is your password reset code')
+  })
+
+  test('the code and a new password replace the password, end every session and sign in', async () => {
+    const { userId, tokens: before } = await registered()
+    const { attempt } = await startReset(EMAIL, ios)
+    const done = await reset(attempt.id, sentCode(), NEW_PASSWORD, ios)
+
+    expect(done.attempt.step).toEqual({
+      status: 'complete',
+      userId,
+      sessionId: done.tokens?.sessionId as string,
+    })
+    expect(done.client).toBe('ios')
+    expect(done.tokens?.refreshToken).toMatch(/^tula_rt_/)
+    // The session from before the reset is gone; the new one is the only live session.
+    const sessions = await deps.sessions.listActiveByUser(
+      tenant.environmentId,
+      userId,
+      deps.clock.now()
+    )
+    expect(sessions.map((s) => s.id)).toEqual([done.tokens?.sessionId as string])
+    expect(await deps.revokedSessions.has(before?.sessionId as string, deps.clock.now())).toBe(true)
+
+    expect((await rejection(signInWith(PASSWORD))).code).toBe('auth.invalid_credentials')
+    expect((await signInWith(NEW_PASSWORD)).attempt.step.status).toBe('complete')
+  })
+
+  test('an address with no account answers the same, gets a notice and can never complete', async () => {
+    await registered()
+    const known = await startReset()
+    const unknown = await startReset('nobody@northline.app')
+    const expected: unknown = {
+      ...shape(known.attempt),
+      step: { ...known.attempt.step, destination: 'n***@northline.app' },
+    }
+    expect(shape(unknown.attempt)).toEqual(expected as never)
+    const notice = deps.mailer.last()
+    expect(notice.to).toBe('nobody@northline.app')
+    expect(notice.subject).toBe('Password reset requested')
+    expect(notice.text).not.toMatch(/\d{6}/)
+
+    // A wrong guess counts down exactly as it does for a real account.
+    const guess = await rejection(reset(unknown.attempt.id, '000000'))
+    expect(guess.code).toBe('verification.invalid_code')
+    expect(guess.params).toEqual({ attemptsRemaining: 4 })
+  })
+
+  test('guessing a decoy’s code does not complete it', async () => {
+    const hmac = spyOn(deps.keyedHash, 'hmac').mockResolvedValue('same')
+    spy = hmac
+    const { attempt } = await startReset('nobody@northline.app')
+    const guess = await rejection(reset(attempt.id, '123456'))
+    expect(guess.code).toBe('verification.invalid_code')
+    expect(guess.params).toEqual({ attemptsRemaining: 0 })
+    expect(await deps.users.findByEmail(tenant.environmentId, 'nobody@northline.app')).toBeNull()
+  })
+
+  test('a wrong code changes nothing and counts down the guesses', async () => {
+    const { userId } = await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    const error = await rejection(reset(attempt.id, wrong(code)))
+    expect(error.code).toBe('verification.invalid_code')
+    expect(error.params).toEqual({ attemptsRemaining: 4 })
+    expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+    expect(
+      await deps.sessions.listActiveByUser(tenant.environmentId, userId, deps.clock.now())
+    ).toHaveLength(1)
+    expect((await signInWith(PASSWORD)).attempt.step.status).toBe('complete')
+  })
+
+  test('five wrong codes exhaust the code, even for the right one', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    for (let i = 0; i < Verification.MAX_ATTEMPTS; i++) {
+      await rejection(reset(attempt.id, wrong(code)))
+    }
+    expect((await rejection(reset(attempt.id, code))).code).toBe('verification.too_many_attempts')
+  })
+
+  test('a new password the policy rejects does not spend the code', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    expect((await rejection(reset(attempt.id, code, 'short'))).code).toBe('password.too_short')
+    // Names count too: the check uses the account's details, not just the address.
+    expect((await rejection(reset(attempt.id, code, 'Okafor Okafor Okafor'))).code).toMatch(
+      /^password\./
+    )
+    expect((await signInWith(PASSWORD)).attempt.step.status).toBe('complete')
+    expect((await reset(attempt.id, code)).attempt.step.status).toBe('complete')
+  })
+
+  test('a code works once: a second reset with it is refused', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    await reset(attempt.id, code)
+    expect((await rejection(reset(attempt.id, code, 'yet another passphrase 77'))).code).toBe(
+      'flow.not_found'
+    )
+    expect((await signInWith(NEW_PASSWORD)).attempt.step.status).toBe('complete')
+  })
+
+  test('of two racing resets with the same code only one stores a password', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    const results = await Promise.allSettled([
+      reset(attempt.id, code, 'first racing passphrase 11'),
+      reset(attempt.id, code, 'second racing passphrase 22'),
+    ])
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    expect(deps.activityLog.ofType('user.password_changed')).toHaveLength(1)
+  })
+
+  test('an expired code or attempt is refused', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    deps.clock.advance(Flows.ATTEMPT_TTL)
+    expect((await rejection(reset(attempt.id, code))).code).toBe('flow.not_found')
+  })
+
+  test('an attempt cannot be used from another environment or as another kind', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    expect((await rejection(reset(attempt.id, code, NEW_PASSWORD, web, otherTenant))).code).toBe(
+      'flow.not_found'
+    )
+    expect(
+      (await rejection(Flows.verifyEmail(deps, tenant, 'sign_up', attempt.id, code, web))).code
+    ).toBe('flow.not_found')
+    const signUpAttempt = (await signUp({ email: 'other@northline.app' })).attempt
+    expect((await rejection(reset(signUpAttempt.id, sentCode()))).code).toBe('flow.not_found')
+  })
+
+  test('a code emailed for verifying an address does not reset its password', async () => {
+    await seedUser({ verified: false })
+    const signIn = await password((await startSignIn()).id)
+    expect(signIn.attempt.step.status).toBe('needs_email_verification')
+    const verificationCode = sentCode()
+    deps.clock.advance(Verification.RESEND_COOLDOWN)
+    const { attempt } = await startReset()
+    // Two random codes are equal one time in a million; only then is there nothing to check.
+    if (verificationCode !== sentCode()) {
+      expect((await rejection(reset(attempt.id, verificationCode))).code).toBe(
+        'verification.invalid_code'
+      )
+    }
+    expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+  })
+
+  test('a banned user learns of the ban only after the right code, and keeps their password', async () => {
+    const { userId } = await registered()
+    await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
+    const { attempt } = await startReset()
+    expect(deps.mailer.last().subject).toContain('is your password reset code')
+    const code = sentCode()
+    expect((await rejection(reset(attempt.id, wrong(code)))).code).toBe('verification.invalid_code')
+    expect((await rejection(reset(attempt.id, code))).code).toBe('auth.user_banned')
+    expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+  })
+
+  test('a reset proves the address: an unverified email becomes verified', async () => {
+    const userId = await seedUser({ verified: false })
+    const { attempt } = await startReset()
+    const done = await reset(attempt.id, sentCode())
+    expect(done.attempt.step.status).toBe('complete')
+    const user = await deps.users.findById(tenant.environmentId, userId)
+    expect(user?.emailVerifiedAt).toEqual(deps.clock.now())
+    expect(deps.activityLog.ofType('user.email_verified')).toMatchObject([
+      { actor: { type: 'user', id: userId }, target: { type: 'user', id: userId } },
+    ])
+  })
+
+  test('a reset clears the sign-in lockout for the address', async () => {
+    await registered()
+    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts + 2; i++) {
+      await rejection(signInWith('wrong password entirely'))
+    }
+    expect(await rejection(signInWith(PASSWORD))).toBeInstanceOf(RateLimitError)
+    const { attempt } = await startReset()
+    await reset(attempt.id, sentCode())
+    expect((await signInWith(NEW_PASSWORD)).attempt.step.status).toBe('complete')
+  })
+
+  test('the change is recorded with the user as actor and the request origin', async () => {
+    const { userId } = await registered()
+    const { attempt } = await startReset()
+    await reset(attempt.id, sentCode())
+    expect(deps.activityLog.ofType('user.password_changed')).toMatchObject([
+      {
+        actor: { type: 'user', id: userId },
+        target: { type: 'user', id: userId },
+        ipAddress: web.ipAddress,
+        userAgent: web.userAgent,
+        data: { method: 'reset' },
+      },
+    ])
+    expect(deps.activityLog.ofType('session.revoked').map((entry) => entry.data)).toContainEqual(
+      expect.objectContaining({ reason: 'password_changed' })
+    )
+  })
+
+  test('if ending the old sessions fails, the password is not changed', async () => {
+    const { userId } = await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    spy = spyOn(deps.sessions, 'revokeByUser').mockRejectedValueOnce(new Error('database blip'))
+    await expect(reset(attempt.id, code)).rejects.toThrow('database blip')
+    // Never the dangerous half-state: a new password with the old sessions still alive.
+    expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+    // What is left fails safe: the session row survives but its access tokens are already
+    // denylisted, and the code is spent, so the user starts a new reset.
+    const [session] = await deps.sessions.listActiveByUser(
+      tenant.environmentId,
+      userId,
+      deps.clock.now()
+    )
+    expect(await deps.revokedSessions.has(session?.id as string, deps.clock.now())).toBe(true)
+    expect((await rejection(reset(attempt.id, code))).code).toBe('verification.expired')
+    expect((await signInWith(PASSWORD)).attempt.step.status).toBe('complete')
+  })
+
+  test('a sign-in with the old password that lands mid-reset does not survive it', async () => {
+    const { userId } = await registered()
+    const { attempt } = await startReset()
+    const store = deps.users.setPasswordHash.bind(deps.users)
+    spy = spyOn(deps.users, 'setPasswordHash').mockImplementation(async (...args) => {
+      // After the old sessions ended and just before the new password is stored.
+      expect((await signInWith(PASSWORD)).attempt.step.status).toBe('complete')
+      return store(...args)
+    })
+    const done = await reset(attempt.id, sentCode())
+    const active = await deps.sessions.listActiveByUser(
+      tenant.environmentId,
+      userId,
+      deps.clock.now()
+    )
+    expect(active.map((s) => s.id)).toEqual([done.tokens?.sessionId as string])
+  })
+
+  test('a failure while hashing the new password does not spend the code', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    spy = spyOn(Passwords, 'hash').mockRejectedValueOnce(new Error('out of memory'))
+    await expect(reset(attempt.id, code)).rejects.toThrow('out of memory')
+    expect((await reset(attempt.id, code)).attempt.step.status).toBe('complete')
+  })
+
+  test('bookkeeping failures after the password is stored do not fail the reset', async () => {
+    const userId = await seedUser({ verified: false })
+    const { attempt } = await startReset()
+    const verified = spyOn(deps.users, 'markEmailVerified').mockRejectedValueOnce(new Error('x'))
+    const cleared = spyOn(deps.lockout, 'clear').mockRejectedValueOnce(new Error('y'))
+    const done = await reset(attempt.id, sentCode())
+    expect(verified).toHaveBeenCalledTimes(1)
+    expect(cleared).toHaveBeenCalledTimes(1)
+    verified.mockRestore()
+    cleared.mockRestore()
+    expect(done.attempt.step).toMatchObject({ status: 'complete', userId })
+    expect(deps.activityLog.ofType('user.password_changed')).toHaveLength(1)
+  })
+
+  test('a code sent to an address the account no longer uses cannot reset it', async () => {
+    const { userId } = await registered()
+    const { attempt } = await startReset()
+    const code = sentCode()
+    const user = await deps.users.findById(tenant.environmentId, userId)
+    spy = spyOn(deps.users, 'findById').mockResolvedValue(
+      user && { ...user, email: 'new@northline.app', emailNormalized: 'new@northline.app' }
+    )
+    const error = await rejection(reset(attempt.id, code))
+    expect(error.code).toBe('verification.invalid_code')
+    expect(error.params).toEqual({ attemptsRemaining: 0 })
+    expect(deps.activityLog.ofType('user.password_changed')).toEqual([])
+  })
+
+  test('a malformed address is refused before anything is sent', async () => {
+    const sent = deps.mailer.outbox.length
+    expect((await rejection(startReset('not-an-email'))).code).toBe('email.invalid')
+    expect(deps.mailer.outbox).toHaveLength(sent)
+  })
+
+  test('reset emails share the per-address cooldown, and a refused send leaves no attempt', async () => {
+    await registered()
+    await startReset()
+    expect(await rejection(startReset())).toBeInstanceOf(RateLimitError)
+    // Unknown addresses are limited the same way.
+    await startReset('nobody@northline.app')
+    expect(await rejection(startReset('nobody@northline.app'))).toBeInstanceOf(RateLimitError)
+  })
+
+  test('an attempt whose email could not be sent is deleted', async () => {
+    await registered()
+    spy = spyOn(deps.mailer, 'send').mockRejectedValue(new Error('relay down'))
+    const create = spyOn(deps.flowAttempts, 'create')
+    const error = await rejection(startReset())
+    expect(error.status).toBe(500)
+    const [created] = create.mock.calls.at(-1) ?? []
+    create.mockRestore()
+    expect(await deps.flowAttempts.findById(tenant.environmentId, created?.id as string)).toBeNull()
+  })
+
+  test('resending sends a fresh reset code and retires the old one; a decoy resends its notice', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    const first = sentCode()
+    deps.clock.advance(Verification.RESEND_COOLDOWN)
+    const resent = await Flows.resendCode(deps, tenant, 'password_reset', attempt.id)
+    expect(resent.attempt.step.status).toBe('needs_new_password')
+    expect(deps.mailer.last().subject).toContain('is your password reset code')
+    const second = sentCode()
+    if (first !== second) {
+      expect((await rejection(reset(attempt.id, first))).code).toBe('verification.invalid_code')
+    }
+    expect((await reset(attempt.id, second)).attempt.step.status).toBe('complete')
+
+    const decoy = await startReset('nobody@northline.app')
+    deps.clock.advance(Verification.RESEND_COOLDOWN)
+    await Flows.resendCode(deps, tenant, 'password_reset', decoy.attempt.id)
+    expect(deps.mailer.last().subject).toBe('Password reset requested')
+  })
+
+  test('a sign-up attempt cannot be resent as a reset, nor a reset as a sign-up', async () => {
+    await registered()
+    const { attempt } = await startReset()
+    expect((await rejection(Flows.resendCode(deps, tenant, 'sign_up', attempt.id))).code).toBe(
+      'flow.not_found'
+    )
+  })
+
+  test('starting a reset counts against the environment’s ceiling', async () => {
+    for (let i = 0; i < Flows.ENVIRONMENT_RATE_LIMITS.passwordReset; i++) {
+      await deps.rateLimiter.hit(Flows.environmentKey('passwordReset', tenant), 600, 60_000)
+    }
+    expect(await rejection(startReset())).toBeInstanceOf(RateLimitError)
+    // Another environment is unaffected.
+    expect((await startReset(EMAIL, web, otherTenant)).attempt.step.status).toBe(
+      'needs_new_password'
+    )
   })
 })

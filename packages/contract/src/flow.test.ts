@@ -12,6 +12,11 @@ describe('FlowStep', () => {
       destination: 'm***@northline.app',
       strategies: ['email_code'],
     },
+    {
+      status: 'needs_new_password',
+      destination: 'm***@northline.app',
+      strategies: ['email_code'],
+    },
     { status: 'needs_second_factor', options: ['totp', 'passkey'] },
     { status: 'complete', userId: 'u_1', sessionId: 's_1' },
   ])('accepts $status', (step) => {

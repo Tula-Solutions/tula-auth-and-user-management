@@ -184,7 +184,6 @@ DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_
 - No published image; build it from source.
 - No retention job: audit entries, outbox events, and expired or revoked sessions accumulate.
 - Nothing delivers the event outbox (webhooks arrive in Phase 2).
-- No self-service "forgot password"; an administrator resets passwords with a secret key.
 - A `TULA_MASTER_KEY` that does not match the stored signing keys does not stop the server. It
   logs `signing keys are unusable in some environments` at start-up, and sign-in fails in those
   environments until the right key is restored.
