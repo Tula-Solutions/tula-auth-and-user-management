@@ -56,6 +56,10 @@ access the old password gave.
 
 ## Consequences
 
+- If the second session sweep fails, the request errors with the password already changed and
+  the code spent. A session started with the old password in the instant between the first
+  sweep and the store would then outlive the reset until the next one; it takes that failure and
+  that sign-in together. The user's new password works, and a fresh reset sweeps again.
 - An address with no account can be sent a notice by anyone, bounded by the per-address send
   limits. Sign-up already lets anyone send a code to any address, so this adds no new reach.
 - Reset, verification and sign-up emails share one per-address allowance, so a burst of one
