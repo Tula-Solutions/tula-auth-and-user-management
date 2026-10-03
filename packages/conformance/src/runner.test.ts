@@ -381,6 +381,61 @@ describe('what a failure may print', () => {
   })
 })
 
+describe('values the runner knows are never printed', () => {
+  test('an echoed password or emailed code is named by its variable, not quoted', async () => {
+    let password = ''
+    const { target } = fakeTarget((seen, index) => {
+      if (index === 0) {
+        password = (seen.body as { password: string }).password
+        return { status: 200, body: { id: 'attempt-1234' } }
+      }
+      // A broken server that echoes what it was sent.
+      return { status: 200, body: { echoed: password, code: '482913', attempt: 'attempt-1234' } }
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'start',
+            request: { method: 'POST', path: '/a', body: { password: '{{password}}' } },
+            expect: { status: 200 },
+            capture: { attemptId: 'id' },
+          },
+          { name: 'read', emailCode: { to: 'maya@example.com', capture: 'code' } },
+          {
+            name: 'verify',
+            request: { method: 'POST', path: '/b', body: { code: '{{code}}' } },
+            expect: { status: 200, body: { echoed: '$absent', code: 'ok', attempt: 'other' } },
+          },
+        ],
+        { variables: { password: { generate: 'password' } } }
+      ),
+      { ...target, emailCode: async () => '482913' }
+    )
+    const printed = formatResult(result)
+    expect(password).toHaveLength(32)
+    expect(printed).not.toContain(password)
+    expect(printed).not.toContain('482913')
+    expect(result.steps.at(-1)?.problems).toEqual([
+      'expected echoed to be absent, got "{{password}}"',
+      'expected code to be "ok", got "{{code}}"',
+      'expected attempt to be "other", got "{{attemptId}}"',
+    ])
+  })
+
+  test('the status line only shows a code that looks like an error code', async () => {
+    const { target } = fakeTarget((_seen, index) => ({
+      status: 500,
+      body: { code: index === 0 ? 'Tu-0123456789abcdef-Zq7!' : 'session.revoked' },
+    }))
+    const call = { name: 'call', request: get('/a'), expect: { status: 200 } }
+    const leaky = await runScenario(scenario([call]), target)
+    expect(leaky.steps[0]?.problems).toEqual(['expected status 200, got 500'])
+    const plain = await runScenario(scenario([call]), target)
+    expect(plain.steps[0]?.problems).toEqual(['expected status 200, got 500 (session.revoked)'])
+  })
+})
+
 describe('nextOrigin', () => {
   test('every address is a valid IPv4 in the benchmarking range, with no repeats in a long run', () => {
     const seen = new Set<string>()

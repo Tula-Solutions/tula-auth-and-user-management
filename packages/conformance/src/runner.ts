@@ -59,6 +59,21 @@ class StepFailure extends Error {
   }
 }
 
+/** What a contract error code looks like; anything else in `code` is not printed. */
+const ERROR_CODE = /^[a-z_]{1,40}(\.[a-z_]{1,40})?$/
+
+/**
+ * Replace every value the scenario knows (generated passwords, emailed codes, captured tokens
+ * and ids) with its placeholder, so a server that echoes one back cannot get it printed.
+ * Longest first, so a value containing another is replaced whole.
+ */
+function redact(message: string, variables: Readonly<Record<string, string>>): string {
+  return Object.entries(variables)
+    .filter(([name, value]) => name !== 'origin' && value.length >= 4)
+    .sort(([, a], [, b]) => b.length - a.length)
+    .reduce((text, [name, value]) => text.replaceAll(value, `{{${name}}}`), message)
+}
+
 /** A code of the same length that cannot be the right one: its last digit is shifted by one. */
 function wrongCode(code: string): string {
   return `${code.slice(0, -1)}${(Number(code.at(-1)) + 1) % 10}`
@@ -160,7 +175,7 @@ async function runStep(
       const code = pick(body, 'code')
       problems.unshift(
         `expected status ${expected.status}, got ${response.status}${
-          typeof code === 'string' ? ` (${code})` : ''
+          typeof code === 'string' && ERROR_CODE.test(code) ? ` (${code})` : ''
         }`
       )
     }
@@ -213,7 +228,8 @@ export function exitCode(counts: { passed: number; failed: number; skipped: numb
  *
  * Steps run in order and stop at the first failure. A failing step reports what differed: the
  * status, the error code and short plain values. Tokens, long strings, objects and arrays are
- * described, never quoted, because the report is read in CI logs.
+ * described, never quoted, and any value the scenario generated or captured is shown as its
+ * `{{placeholder}}`, because the report is read in CI logs.
  *
  * @param scenario - A parsed scenario.
  * @param target - The server and its test doubles.
@@ -240,7 +256,11 @@ export async function runScenario(scenario: Scenario, target: Target): Promise<S
         error instanceof StepFailure
           ? error.problems
           : [error instanceof Error ? error.message : String(error)]
-      steps.push({ name: step.name, ok: false, problems })
+      steps.push({
+        name: step.name,
+        ok: false,
+        problems: problems.map((problem) => redact(problem, variables)),
+      })
       return { name: scenario.name, status: 'failed', steps }
     }
   }

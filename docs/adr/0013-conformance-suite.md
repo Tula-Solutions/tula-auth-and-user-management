@@ -33,7 +33,8 @@ language-neutral suite every server and SDK must pass.
   none passed.
 - **Failures never quote secrets.** A failing step reports the status, the error code and the
   fields that differed. Short plain values are quoted; long or token-shaped strings, objects and
-  arrays are only described. Bodies hold tokens, and CI logs are widely readable.
+  arrays are only described, and anything the scenario generated or captured is shown as its
+  placeholder. Bodies hold tokens, and CI logs are widely readable.
 - **The in-process run is part of the quality gate.** It is an ordinary test file in
   `apps/api`, so `bun run verify` and CI run every scenario on every change.
 

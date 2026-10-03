@@ -35,15 +35,18 @@ for the refresh grace period to pass.
 
 The exit code is 0 when at least one scenario passed and none failed. A failing step prints the
 status, the error code and short plain values that differed. Tokens, long strings, objects and
-arrays are described (`a string of 52 characters`), never quoted, because the output ends up in
-CI logs.
+arrays are described (`a string of 52 characters`), never quoted, and a value the scenario
+generated or captured appears as its placeholder (`{{password}}`), because the output ends up
+in CI logs.
 
 ## Scenario format
 
 A scenario is one JSON file in `scenarios/`, validated against
 [`scenario.schema.json`](scenario.schema.json) (generated from
-`packages/conformance/src/scenario.ts`; do not edit it by hand). A scenario with an
-`auth: "secret"` step must set `needsSecretKey: true`.
+`packages/conformance/src/scenario.ts`; do not edit it by hand). The JSON Schema describes the
+shape only. The loader also enforces two rules it cannot express: a scenario with an
+`auth: "secret"` step must set `needsSecretKey: true`, and such a request cannot also carry an
+`accessToken`.
 
 ```json
 {
