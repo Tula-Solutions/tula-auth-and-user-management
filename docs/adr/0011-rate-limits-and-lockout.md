@@ -26,6 +26,7 @@ limited too.
 | Refresh | 300 |
 | Change my password | 10 |
 | Public JWKS | 600 |
+| Readiness check (`/v1/ready`) | 120 |
 
 **2. Per environment**, across all callers, on steps that cost an argon2id hash or an email:
 sign-up and resend 600, password 3,000, verify code 3,000 per minute. This bounds what a
@@ -54,6 +55,18 @@ use, and refresh tokens are 256-bit, so per-IP limits are enough.
 - *Verification codes* have their own counter: 5 guesses per code, and sends are limited to one
   a minute and five an hour per address (ADR 0007).
 - *API keys and refresh tokens* are 256-bit; they need no per-secret limit.
+- A user's password can be guessed through two doors with separate budgets: sign-in, and
+  changing their own password (which also needs a valid access token). An admin reset clears
+  the sign-in lockout, so wrong guesses at the old password don't keep the user out of the new
+  one.
+
+**What "per IP" means.** An IPv4 address is one bucket. An IPv6 address is counted by its /64,
+because one subscriber normally holds all 2^64 addresses of it, and an IPv4 address written as
+IPv6 (`::ffff:a.b.c.d`) is counted as that IPv4 address. The audit log still records the full
+address. The /64 is a compromise: someone holding a larger block (a /56 is 256 of them) gets
+that many buckets, and clients that genuinely share a /64 (a data-centre network, a NAT64
+gateway) share one. The per-identifier lockout and per-environment ceilings do not depend on
+the address at all.
 
 ## Consequences
 

@@ -44,15 +44,20 @@ of.
   Anything that does not parse is stored as `null`; the user agent is cut at 512 characters.
 - **Append-only for the server.** The runtime database role has only `SELECT` and `INSERT` on
   `audit_logs` (and no `DELETE` on `events`), and both tables are under the same fail-closed
-  row-level security as the rest of the tenant data.
+  row-level security as the rest of the tenant data. The schema owner is not restricted:
+  deleting an environment, project or workspace as the owner deletes its audit log with it, so
+  export first.
 - **Reading.** `GET /v1/admin/audit-logs` (secret key) lists an environment's entries newest
   first, with the usual `page`/`size` paging and exact-match filters `action`, `actorId` and
   `targetId`; the target and actor filters each have an index. In the response `action`,
   `actor.type` and `target.type` are strings, not enums, so a client keeps working when a later
   server records new kinds of action or actor.
-- **Two writes are deliberately not recorded.** Upgrading a weak password hash after a
-  successful sign-in (the password did not change), and creating an environment's first signing
-  keys (the server does it by itself, on boot or first use). Rotating keys *is* recorded.
+- **What is deliberately not recorded.** Writes that change no one's access: upgrading a weak
+  password hash after a successful sign-in (the password did not change); creating an
+  environment's first signing keys (the server does it by itself); the bookkeeping timestamps
+  `last_sign_in_at` (the sign-in itself is `session.created`) and an API key's `last_used_at`;
+  and transient rows (flow attempts, verification tokens). Workspaces, projects and
+  environments are created by the seed script, outside the API. Rotating keys *is* recorded.
 - **Large batches are split.** Ending every session of one user can produce thousands of
   entries; they are inserted 500 per statement, inside the same transaction.
 

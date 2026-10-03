@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { HIBP_MAX_RESPONSE_BYTES, HIBP_TIMEOUT_MS, HibpBreachChecker } from '~/adapters/breach/hibp'
 
 // SHA-1('password') = 5BAA6 1E4C9B93F3F0682250B6CF8331B7EE68FD8
@@ -98,4 +98,23 @@ describe('HibpBreachChecker', () => {
     expect(HIBP_TIMEOUT_MS).toBeGreaterThan(0)
     expect(HIBP_TIMEOUT_MS).toBeLessThanOrEqual(3_000)
   })
+})
+
+test('a failed lookup is logged without the hash prefix it was asking about', async () => {
+  const logger = await import('~/lib/logger')
+  const warned = spyOn(logger, 'warn').mockImplementation(() => undefined)
+  try {
+    const failing = (async (input: string | URL | Request) => {
+      throw new Error(`unable to connect to ${String(input)}`)
+    }) as unknown as typeof globalThis.fetch
+    expect(await new HibpBreachChecker({ fetch: failing }).check('a distinctive passphrase')).toBe(
+      'unknown'
+    )
+    expect(warned).toHaveBeenCalledTimes(1)
+    const written = JSON.stringify(warned.mock.calls[0])
+    expect(written).not.toContain('/range/')
+    expect(written).not.toMatch(/[0-9A-F]{5}\b/)
+  } finally {
+    warned.mockRestore()
+  }
 })

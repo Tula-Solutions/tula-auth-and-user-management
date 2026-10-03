@@ -30,8 +30,8 @@ bun run conformance
 | `CONFORMANCE_MAILPIT_URL` | `http://localhost:8025` | Mailpit's web address. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
-audit entries, and leaves them there. A full run takes about 15 seconds, most of it the wait
-for the refresh grace period to pass.
+audit entries, and leaves them there. A full run takes about a minute and a half, most of it
+waiting: 61 seconds for an address's email cooldown and 11 for the refresh grace period.
 
 The exit code is 0 when at least one scenario passed and none failed. A failing step prints the
 status, the error code and short plain values that differed. Tokens, long strings, objects and
@@ -97,8 +97,10 @@ Steps run in order and a scenario stops at its first failing step.
 | `03-refresh-rotation-and-reuse` | Single-use refresh tokens, the grace period, reuse revoking the session. |
 | `04-sign-out` | Sign-out ends the refresh token and the unexpired access token. |
 | `05-password-policy` | The published policy and stable `password.*` errors. |
-| `06-lockout` | Backoff after repeated wrong passwords. |
+| `06-lockout` | Backoff after repeated wrong passwords, identical for an address with no account. |
 | `07-admin-ban-and-audit` | Ban (a banned user with the right password is told so), unban, and an audit log without email addresses (needs a secret key). |
+| `08-sign-up-existing-address` | Signing up with a taken address looks the same and changes nothing about the account. (That no usable code is sent for it is covered by the API's own tests; the runner cannot assert an email's absence.) |
+| `09-verification-attempts` | A code dies after five wrong guesses. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). Browser cookie delivery is not covered yet; scenarios use a native client

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { HTTPException } from 'hono/http-exception'
 import { validator } from 'hono-openapi'
 import { z } from 'zod'
@@ -222,5 +222,106 @@ describe('documentation routes', () => {
     const res = await appWithTestRoutes().request('/v1/docs')
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/html')
+  })
+})
+
+describe('what a 500 logs', () => {
+  test('a failed database query is logged without its SQL parameters', async () => {
+    const { DrizzleQueryError } = await import('drizzle-orm/errors')
+    const logger = await import('~/lib/logger')
+    const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+    try {
+      const app = createApp(createTestDeps())
+      app.get('/test/db-crash', () => {
+        throw new DrizzleQueryError(
+          'insert into "tula"."users" ("email", "secret") values ($1, $2)',
+          ['maya@northline.app', '$argon2id$v=19$secret-hash'],
+          Object.assign(new Error('connection terminated unexpectedly'), { code: '08006' })
+        )
+      })
+      const res = await app.request('/test/db-crash')
+      expect(res.status).toBe(500)
+      expect(await res.json()).toMatchObject({ code: 'internal' })
+      expect(logged).toHaveBeenCalledTimes(1)
+      const written = JSON.stringify(logged.mock.calls[0])
+      expect(written).toContain('08006')
+      for (const secret of ['maya@northline.app', 'argon2id', 'secret-hash', 'Failed query']) {
+        expect(written).not.toContain(secret)
+      }
+    } finally {
+      logged.mockRestore()
+    }
+  })
+})
+
+describe('input the database cannot store', () => {
+  // Postgres rejects a NUL character in text (SQLSTATE 22021) and in JSON (22P05). That is the
+  // client's input, not a server fault.
+  test.each(['22021', '22P05'])('SQLSTATE %s is a 400, not a 500', async (code) => {
+    const app = createApp(createTestDeps())
+    app.get('/test/nul', () => {
+      throw new Error('Failed query', {
+        cause: Object.assign(new Error('invalid byte sequence for encoding "UTF8": 0x00'), {
+          code,
+        }),
+      })
+    })
+    const res = await app.request('/test/nul')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({
+      status: 400,
+      code: 'request.malformed',
+      detail: 'The request could not be read.',
+    })
+  })
+
+  test('any other database error is still a 500', async () => {
+    const app = createApp(createTestDeps())
+    app.get('/test/db', () => {
+      throw Object.assign(new Error('deadlock detected'), { code: '40P01' })
+    })
+    expect((await app.request('/test/db')).status).toBe(500)
+  })
+})
+
+describe('CORS methods', () => {
+  test('a browser may call every method the API has routes for, including PUT', async () => {
+    const app = createApp(
+      createTestDeps({ config: { ...TEST_CONFIG, corsOrigins: ['https://app.test'] } })
+    )
+    const res = await app.request('/v1/admin/users/00000000-0000-7000-8000-000000000001/password', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://app.test', 'access-control-request-method': 'PUT' },
+    })
+    const allowed = res.headers.get('access-control-allow-methods') ?? ''
+    for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+      expect(allowed).toContain(method)
+    }
+  })
+})
+
+describe('the API document', () => {
+  test('every operation that takes a body documents the 413 it can answer', async () => {
+    const res = await createApp(createTestDeps()).request(OPENAPI_PATH)
+    const doc = (await res.json()) as {
+      paths: Record<string, Record<string, { requestBody?: unknown; responses: object }>>
+    }
+    const missing: string[] = []
+    for (const [path, operations] of Object.entries(doc.paths)) {
+      for (const [method, operation] of Object.entries(operations)) {
+        if (operation.requestBody && !('413' in operation.responses)) {
+          missing.push(`${method.toUpperCase()} ${path}`)
+        }
+      }
+    }
+    expect(missing).toEqual([])
+  })
+
+  test('setting a password documents the 409 for a user with no password', async () => {
+    const res = await createApp(createTestDeps()).request(OPENAPI_PATH)
+    const doc = (await res.json()) as {
+      paths: Record<string, Record<string, { responses: object }>>
+    }
+    expect(doc.paths['/v1/admin/users/{userId}/password']?.put?.responses).toHaveProperty('409')
   })
 })

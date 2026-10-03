@@ -5,8 +5,8 @@ import type { AppConfig } from '~/dependencies'
 import { profile } from '~/modules/session/service'
 
 /**
- * Path the refresh cookie is sent to: only the session endpoints (refresh, sign-out), so it is
- * never attached to any other API call.
+ * Path the refresh cookie is sent to: only the endpoints under `/v1/client/sessions` (refresh,
+ * sign-out and the device list, which ignores it), never the rest of the API.
  */
 export const REFRESH_COOKIE_PATH = '/v1/client/sessions'
 

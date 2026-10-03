@@ -3,7 +3,7 @@ import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, TenantVariables } from '~/dependencies'
 import { RateLimitError } from '~/exceptions'
-import { clientIp } from '~/lib/client-ip'
+import { clientIp, ipBucket } from '~/lib/client-ip'
 
 /** One rate-limit bucket family. */
 export interface RateLimitRule {
@@ -20,13 +20,13 @@ export interface RateLimitRule {
 }
 
 /**
- * Bucket by client IP.
+ * Bucket by client IP: the address for IPv4, the /64 for IPv6 (see `ipBucket`).
  *
  * @param c - The request context.
- * @returns `ip:<address>`.
+ * @returns `ip:<bucket>`.
  */
 export function byIp(c: Context<AppEnv>): string {
-  return `ip:${clientIp(c, c.get('deps').config.trustProxy)}`
+  return `ip:${ipBucket(clientIp(c, c.get('deps').config.trustProxy))}`
 }
 
 /**

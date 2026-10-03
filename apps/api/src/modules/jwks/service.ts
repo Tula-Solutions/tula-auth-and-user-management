@@ -3,6 +3,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { ConflictError, InternalError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
+import { errorReason } from '~/lib/safe-error'
 import * as Audit from '~/modules/audit/service'
 import type { SigningKey } from '~/modules/jwks/schema'
 import type { NewSigningKey, SigningKeyStatus } from '~/ports/signing-key-store'
@@ -258,8 +259,9 @@ export async function rotate(deps: KeyDeps, tenant: Tenant, actor: Actor): Promi
 /**
  * Boot-time bootstrap: ensure every environment has keys before the instance takes traffic.
  *
- * Failures are logged and counted, not thrown, so one broken environment cannot stop boot; its
- * keys are created lazily on first use instead.
+ * Each environment's active key is also decrypted, so a `TULA_MASTER_KEY` that does not match
+ * the stored keys shows up here. Failures are logged and counted, not thrown, so one broken
+ * environment cannot stop boot; missing keys are created lazily on first use instead.
  *
  * @param deps - Stores, secret box, ids and clock.
  * @returns How many environments were ensured and how many failed.
@@ -272,12 +274,15 @@ export async function ensureAllEnvironments(
   for (const environment of await deps.environments.listAll()) {
     try {
       await ensureKeys(deps, environment.id)
+      // Also decrypt the active key. If `TULA_MASTER_KEY` is not the one the keys were sealed
+      // with, say so now, in the start-up log, instead of failing the first sign-in.
+      await activeSigningKey(deps, environment.id)
       ensured += 1
     } catch (error) {
       failed += 1
       logger.error('signing key bootstrap failed', {
         environmentId: environment.id,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: errorReason(error),
       })
     }
   }

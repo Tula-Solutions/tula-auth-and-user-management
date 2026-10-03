@@ -38,8 +38,10 @@ password, and sign-in that doesn't reveal which accounts exist.
 
 ## Consequences
 
-- Each hash or verify costs ~64 MiB for a moment; sign-in endpoints need the per-IP and
-  per-identifier rate limits of Step 5.8 before launch.
+- Each hash or verify costs ~64 MiB for a moment, which is why the endpoints that hash are
+  rate limited per IP, per identifier and per environment (ADR 0011).
+- A weak hash is upgraded after a successful sign-in only if it is still the hash that was
+  verified, so an upgrade can never overwrite a password changed in the same moment.
 - Failing open means a password set during an HIBP outage may be breached; the policy check
   still applies, and a later change or reset is checked again.
 - `password.*` codes are detailed on purpose, and are only returned when a password is being

@@ -6,7 +6,13 @@ export const SessionTypeSchema = z
   .enum(['hybrid', 'stateful', 'stateless', 'long-lived', 'kiosk'])
   .meta({ ref: 'SessionType' })
 
-/** Session types the server can issue today. Others are accepted in config and rejected at use. */
+/**
+ * Session types the server can issue today.
+ *
+ * Phase 0 issues only {@link DEFAULT_WEB_SESSION_PROFILE}: no configuration path selects another
+ * profile yet, so the other types and the `refresh.rotate`, `refresh.reuseDetection`,
+ * `multiSession` and `maxConcurrent` fields are not read by the server until named profiles land.
+ */
 export const IMPLEMENTED_SESSION_TYPES: ReadonlySet<SessionType> = new Set(['hybrid'])
 
 /**

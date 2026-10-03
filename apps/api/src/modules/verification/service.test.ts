@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { RateLimitError, ServiceException } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import * as Verification from '~/modules/verification/service'
@@ -429,5 +429,21 @@ describe('verifyLink', () => {
     ).toBe('verification.expired')
     deps.clock.advance('10m')
     expect((await rejection(open(linkToken))).code).toBe('verification.expired')
+  })
+})
+
+describe('code comparison', () => {
+  test('goes through the constant-time comparison, for right and wrong codes alike', async () => {
+    const crypto = await import('~/lib/crypto')
+    const compared = spyOn(crypto, 'timingSafeEqual')
+    try {
+      await issue()
+      const code = sentCode()
+      expect((await rejection(verify(wrong(code)))).code).toBe('verification.invalid_code')
+      await verify(code)
+      expect(compared).toHaveBeenCalledTimes(2)
+    } finally {
+      compared.mockRestore()
+    }
   })
 })

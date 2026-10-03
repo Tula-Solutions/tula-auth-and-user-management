@@ -74,6 +74,21 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async upgradePasswordHash(
+    environmentId: string,
+    userId: string,
+    currentHash: string,
+    passwordHash: string,
+    _at: Date
+  ): Promise<boolean> {
+    if (!this.#user(environmentId, userId) || this.#passwords.get(userId) !== currentHash) {
+      return false
+    }
+    this.#passwords.set(userId, passwordHash)
+    return true
+  }
+
+  /** @inheritdoc */
   async markEmailVerified(
     environmentId: string,
     userId: string,

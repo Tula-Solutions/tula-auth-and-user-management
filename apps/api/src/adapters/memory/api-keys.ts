@@ -49,6 +49,12 @@ export class MemoryApiKeyRepository implements ApiKeyRepository {
   }
 
   /** @inheritdoc */
+  async countByEnvironment(environmentId: string): Promise<{ active: number; total: number }> {
+    const keys = this.#keys.filter((key) => key.environmentId === environmentId)
+    return { active: keys.filter((key) => key.revokedAt === null).length, total: keys.length }
+  }
+
+  /** @inheritdoc */
   async touch(id: string, at: Date): Promise<void> {
     const key = this.#keys.find((candidate) => candidate.id === id)
     if (key) {

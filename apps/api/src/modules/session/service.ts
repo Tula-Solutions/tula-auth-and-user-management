@@ -68,13 +68,22 @@ async function deriveToken(
   return `${REFRESH_TOKEN_PREFIX}${await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, message)}`
 }
 
+type SigningKey = Awaited<ReturnType<typeof Jwks.activeSigningKey>>
+
+/**
+ * Sign an access token with a key the caller has already loaded.
+ *
+ * The key is loaded **before** a session is stored or a refresh token rotated: loading it reads
+ * the key store and decrypts with the master key, and if that failed after the write, the client
+ * would be left without the token the database says it has (and its retry would look like reuse).
+ */
 async function signAccessToken(
-  deps: TokenDeps,
+  deps: Pick<Deps, 'config'>,
   scope: Scope,
   session: { id: string; userId: string },
-  now: Date
+  now: Date,
+  { kid, privateKey }: SigningKey
 ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
-  const { kid, privateKey } = await Jwks.activeSigningKey(deps, scope.environmentId)
   const issuedAt = Math.floor(now.getTime() / 1000)
   const expiresAt = issuedAt + durationToMs(profile().accessTokenTtl) / 1000
   const accessToken = await new SignJWT({
@@ -170,6 +179,7 @@ export async function create(
   const sessionId = deps.ids.next()
   const refreshToken = await deriveToken(deps, { sessionId })
   const origin = cleanOrigin(input)
+  const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
 
   await deps.sessions.create(
     {
@@ -200,7 +210,13 @@ export async function create(
       data: { userId: input.userId, client: input.client },
     })
   )
-  const access = await signAccessToken(deps, scope, { id: sessionId, userId: input.userId }, now)
+  const access = await signAccessToken(
+    deps,
+    scope,
+    { id: sessionId, userId: input.userId },
+    now,
+    signingKey
+  )
   return { sessionId, ...access, refreshToken }
 }
 
@@ -299,6 +315,7 @@ export async function refresh(
 
     const idleExpiresAt = idleExpiry(now, session.absoluteExpiresAt)
     const child = await deriveToken(deps, { parentId: token.id })
+    const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
     const rotated = await deps.sessions.rotate(scope.environmentId, {
       parentId: token.id,
       child: {
@@ -313,7 +330,7 @@ export async function refresh(
       idleExpiresAt,
     })
     if (rotated) {
-      const access = await signAccessToken(deps, scope, session, now)
+      const access = await signAccessToken(deps, scope, session, now, signingKey)
       return { sessionId: session.id, ...access, refreshToken: child }
     }
   }
@@ -336,7 +353,8 @@ async function replayOrRevoke(
       ? await deps.sessions.findTokenById(scope.environmentId, token.replacedById)
       : null
   if (child && child.usedAt === null) {
-    const access = await signAccessToken(deps, scope, session, now)
+    const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
+    const access = await signAccessToken(deps, scope, session, now, signingKey)
     return {
       sessionId: session.id,
       ...access,

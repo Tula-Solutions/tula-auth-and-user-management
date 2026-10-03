@@ -25,6 +25,7 @@ export const responses = {
   404: errorResponse('The resource does not exist in this environment.'),
   409: errorResponse('The change conflicts with existing data.'),
   410: errorResponse('The code or link has expired; request a new one.'),
+  413: errorResponse('The request body is larger than 64 KiB (`request.too_large`).'),
   422: errorResponse('The input is invalid; `errors` lists each field.'),
   429: errorResponse('Rate limited; retry after `params.retryAfter` seconds.'),
   500: errorResponse('Unexpected server error.'),

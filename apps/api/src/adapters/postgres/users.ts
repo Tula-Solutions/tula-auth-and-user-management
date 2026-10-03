@@ -167,6 +167,32 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async upgradePasswordHash(
+    environmentId: string,
+    userId: string,
+    currentHash: string,
+    passwordHash: string,
+    at: Date
+  ): Promise<boolean> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(credentials)
+        .set({ secret: passwordHash, updatedAt: at })
+        .where(
+          and(
+            eq(credentials.userId, userId),
+            eq(credentials.environmentId, environmentId),
+            eq(credentials.type, 'password'),
+            // The compare-and-set: only the hash that was verified may be replaced.
+            eq(credentials.secret, currentHash)
+          )
+        )
+        .returning({ id: credentials.id })
+    )
+    return rows.length === 1
+  }
+
+  /** @inheritdoc */
   async markEmailVerified(
     environmentId: string,
     userId: string,

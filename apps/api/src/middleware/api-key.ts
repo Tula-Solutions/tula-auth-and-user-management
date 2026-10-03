@@ -2,6 +2,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
+import { errorReason } from '~/lib/safe-error'
 import type { ApiKeyKind } from '~/ports/api-key-repository'
 
 /** Longer values are rejected before hashing so huge headers cost nothing. */
@@ -48,7 +49,7 @@ export async function resolveApiKey(
     await deps.apiKeys.touch(key.id, now).catch((error: unknown) => {
       logger.warn('could not record api key usage', {
         apiKeyId: key.id,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: errorReason(error),
       })
     })
   }

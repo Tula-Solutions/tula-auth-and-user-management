@@ -56,6 +56,14 @@ export interface ApiKeyRepository {
   listByEnvironment(environmentId: string): Promise<ApiKeyRecord[]>
 
   /**
+   * How many keys an environment holds, without loading them.
+   *
+   * @param environmentId - The environment.
+   * @returns The number of unrevoked keys and of all keys, revoked ones included.
+   */
+  countByEnvironment(environmentId: string): Promise<{ active: number; total: number }>
+
+  /**
    * Record that a key was just used. Called after successful resolution, so the id comes from
    * `findByHash`, not from a client.
    *

@@ -42,3 +42,17 @@ describe('GET /v1/ready', () => {
     expect(text).not.toContain('tula_api')
   })
 })
+
+describe('rate limits', () => {
+  test('readiness checks are limited per IP; liveness is not', async () => {
+    const { READY_RATE_LIMIT } = await import('~/modules/status/router')
+    const app = createApp(createTestDeps())
+    for (let index = 0; index < READY_RATE_LIMIT; index++) {
+      expect((await app.request('/v1/ready')).status).toBe(200)
+    }
+    const blocked = await app.request('/v1/ready')
+    expect(blocked.status).toBe(429)
+    expect(await blocked.json()).toMatchObject({ code: 'rate_limited' })
+    expect((await app.request('/v1/status')).status).toBe(200)
+  })
+})

@@ -1397,6 +1397,16 @@
               }
             }
           },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Unexpected server error.",
             "content": {
@@ -1578,6 +1588,16 @@
           },
           "409": {
             "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2112,6 +2132,16 @@
               }
             }
           },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "422": {
             "description": "The input is invalid; `errors` lists each field.",
             "content": {
@@ -2202,6 +2232,16 @@
           },
           "401": {
             "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2542,6 +2582,16 @@
               }
             }
           },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "422": {
             "description": "The input is invalid; `errors` lists each field.",
             "content": {
@@ -2648,6 +2698,16 @@
           },
           "401": {
             "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2792,6 +2852,16 @@
           },
           "409": {
             "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2949,6 +3019,16 @@
           },
           "410": {
             "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3233,6 +3313,16 @@
           },
           "410": {
             "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3617,6 +3707,16 @@
           },
           "409": {
             "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -4191,6 +4291,26 @@
               }
             }
           },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "422": {
             "description": "The input is invalid; `errors` lists each field.",
             "content": {
@@ -4361,6 +4481,16 @@
           },
           "401": {
             "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
               "application/json": {
                 "schema": {

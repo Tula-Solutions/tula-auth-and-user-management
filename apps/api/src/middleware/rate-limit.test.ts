@@ -39,6 +39,24 @@ describe('rateLimit', () => {
     expect((await from('203.0.113.1')).status).toBe(429)
   })
 
+  test('addresses in one IPv6 /64, and the IPv4-mapped form of an address, share a bucket', async () => {
+    const deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true } })
+    const app = createApp(deps)
+    app.get('/test', rateLimit({ name: 't', limit: 2, window: '1m', key: byIp }), (c) =>
+      c.text('ok')
+    )
+    const from = (ip: string) => app.request('/test', { headers: { 'x-forwarded-for': ip } })
+    expect((await from('2001:db8:1:2::1')).status).toBe(200)
+    expect((await from('2001:db8:1:2::2')).status).toBe(200)
+    // A third address from the same subscriber is still the same client.
+    expect((await from('2001:db8:1:2:aaaa:bbbb:cccc:dddd')).status).toBe(429)
+    expect((await from('2001:db8:1:3::1')).status).toBe(200)
+
+    expect((await from('203.0.113.7')).status).toBe(200)
+    expect((await from('::ffff:203.0.113.7')).status).toBe(200)
+    expect((await from('203.0.113.7')).status).toBe(429)
+  })
+
   test('buckets by environment after key resolution and skips when there is none', async () => {
     const deps = createTestDeps()
     const key = 'tula_pk_dev_publishable0000000000000000000'

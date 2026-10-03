@@ -725,3 +725,41 @@ describe('activity', () => {
     }
   })
 })
+
+describe('when the signing key cannot be loaded', () => {
+  /** Make the key store fail until the returned function is called. */
+  function breakKeyStore() {
+    const list = deps.signingKeys.list.bind(deps.signingKeys)
+    deps.signingKeys.list = async () => {
+      throw new Error('key store unavailable')
+    }
+    return () => {
+      deps.signingKeys.list = list
+    }
+  }
+
+  test('no session is created, so nothing is left that nobody holds a token for', async () => {
+    const restore = breakKeyStore()
+    await expect(create()).rejects.toThrow('key store unavailable')
+    restore()
+    expect(
+      await deps.sessions.listActiveByUser(tenant.environmentId, USER, deps.clock.now())
+    ).toEqual([])
+    expect(deps.activityLog.entries).toEqual([])
+  })
+
+  test('a refresh fails before rotating, so the same token still works afterwards', async () => {
+    const tokens = await create()
+    const restore = breakKeyStore()
+    await expect(refresh(rt(tokens))).rejects.toThrow('key store unavailable')
+    restore()
+    // Well past the grace period: had the token been rotated, this retry would be "reuse" and
+    // would sign the user out.
+    deps.clock.advance('5m')
+    const next = await refresh(rt(tokens))
+    expect(next.sessionId).toBe(tokens.sessionId)
+    expect(rt(next)).not.toBe(rt(tokens))
+    expect(deps.activityLog.ofType('session.reuse_detected')).toEqual([])
+    expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
+  })
+})

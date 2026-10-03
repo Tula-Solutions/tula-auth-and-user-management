@@ -17,7 +17,7 @@ export async function sendAccountExistsNotice(
 ): Promise<void> {
   const lines = [
     'Someone tried to create an account with this email address, but you already have one.',
-    'If that was you, sign in instead, or reset your password if you have forgotten it.',
+    'If that was you, sign in instead. If you have forgotten your password, contact the support of the app you were signing up for.',
     "If it wasn't you, you can safely ignore this email. Your account has not changed.",
   ]
   await deps.mailer.send({

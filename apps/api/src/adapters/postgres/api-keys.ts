@@ -1,5 +1,5 @@
 import { apiKeys, type Database, withTenant } from '@tula/db'
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import type { Activity } from '~/ports/activity-log'
 import type { ApiKeyRecord, ApiKeyRepository, NewApiKey } from '~/ports/api-key-repository'
@@ -61,8 +61,21 @@ export class PostgresApiKeyRepository implements ApiKeyRepository {
   }
 
   /** @inheritdoc */
+  async countByEnvironment(environmentId: string): Promise<{ active: number; total: number }> {
+    const [row] = await this.db
+      .select({
+        active: sql<number>`count(*) filter (where ${apiKeys.revokedAt} is null)::int`,
+        total: sql<number>`count(*)::int`,
+      })
+      .from(apiKeys)
+      .where(eq(apiKeys.environmentId, environmentId))
+    return { active: row?.active ?? 0, total: row?.total ?? 0 }
+  }
+
+  /** @inheritdoc */
   async touch(id: string, at: Date): Promise<void> {
-    // updated_at is left alone: usage is not an edit of the key.
+    // The id comes from `findByHash`, never from a client, which is why this one write is not
+    // filtered by environment. (`updated_at` moves too: the column updates itself on any write.)
     await this.db.update(apiKeys).set({ lastUsedAt: at }).where(eq(apiKeys.id, id))
   }
 

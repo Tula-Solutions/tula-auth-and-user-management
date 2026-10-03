@@ -81,6 +81,7 @@ router.post(
       'Creates a key in the secret key’s environment. The full key is in this response only.',
     security: openapi.security.admin,
     responses: {
+      413: openapi.responses[413],
       201: { description: 'The new key, including its value.', content: json(CreatedApiKeySchema) },
       400: openapi.responses[400],
       401: openapi.responses[401],

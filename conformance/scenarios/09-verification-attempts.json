@@ -1,0 +1,116 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "verification code attempts",
+  "description": "An emailed code can be guessed at five times. After that the code is dead: even the right one is refused, and a new code has to be requested.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"]
+          },
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "signUpId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "five wrong codes are each verification.invalid_code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "body": {
+          "code": "{{wrongCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "verification.invalid_code"
+        }
+      },
+      "times": 5
+    },
+    {
+      "name": "after that the right code is refused too",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "status": 429,
+          "code": "verification.too_many_attempts"
+        }
+      }
+    },
+    {
+      "name": "start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signInId": "id"
+      }
+    },
+    {
+      "name": "and no account was created",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    }
+  ]
+}

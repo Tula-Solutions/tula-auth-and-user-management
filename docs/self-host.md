@@ -62,7 +62,7 @@ packaged stack:
 | `TULA_MASTER_KEY` | none | Required. |
 | `API_PORT` | `3003` | Host port of the API. |
 | `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The API's `PUBLIC_URL`. A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
-| `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
+| `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. Required in `staging` and `prod`, where the bundled Mailpit is refused. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
 | `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. |
 | `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `5432`, `6379`, `1025`, `8025` | Host ports of the other services. |
 
@@ -84,7 +84,7 @@ The API reads its settings from the environment and refuses to start if one is i
 
 | Variable | Required | Default | |
 | --- | --- | --- | --- |
-| `ENVIRONMENT` | yes | | `local`, `dev`, `staging` or `prod`. `staging` and `prod` require https, a real mail sender and breach checks. |
+| `ENVIRONMENT` | yes | | `local`, `dev`, `staging` or `prod`. `staging` and `prod` require https, a real mail relay and sender (not Mailpit) and breach checks. |
 | `DATABASE_URL` | yes | | PostgreSQL connection as the **non-owner** runtime role (see below). |
 | `TULA_MASTER_KEY` | yes | | 64 hex characters (`openssl rand -hex 32`). Encrypts signing keys and keys the hashes of emailed codes. |
 | `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API. It is part of every access token's issuer. |
@@ -169,11 +169,22 @@ API's sources and production dependencies. Build it from the repository root:
 docker build -f apps/api/Dockerfile -t tula-api .
 ```
 
+## Housekeeping
+
+**Old API keys.** An environment holds at most 100 active keys and 1,000 in total, revoked ones
+included, because the API cannot delete keys. If you reach the total, remove revoked keys as the
+schema owner (nothing else refers to them):
+
+```sql
+DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_at IS NOT NULL;
+```
+
 ## Not there yet
 
 - No published image; build it from source.
 - No retention job: audit entries, outbox events, and expired or revoked sessions accumulate.
 - Nothing delivers the event outbox (webhooks arrive in Phase 2).
 - No self-service "forgot password"; an administrator resets passwords with a secret key.
-- The API does not check at start-up that `TULA_MASTER_KEY` matches the stored signing keys. If
-  the key was changed, the first sign-in or refresh fails with a 500.
+- A `TULA_MASTER_KEY` that does not match the stored signing keys does not stop the server. It
+  logs `signing keys are unusable in some environments` at start-up, and sign-in fails in those
+  environments until the right key is restored.

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { describeRoute, resolver } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
+import { byIp, rateLimit } from '~/middleware/rate-limit'
 import * as Status from '~/modules/status/service'
 import * as openapi from '~/openapi'
 import { ReadinessResponseSchema, StatusResponseSchema } from './schema'
@@ -26,6 +27,13 @@ router.get(
   (c) => c.json(StatusResponseSchema.parse(Status.status()))
 )
 
+/**
+ * Readiness checks per minute from one IP. Each one queries the database, and the route is
+ * public, so it is limited like the other unauthenticated database-backed route (JWKS). Two a
+ * second is far above any health checker's cadence. `/v1/status` touches nothing and has no limit.
+ */
+export const READY_RATE_LIMIT = 120
+
 router.get(
   '/ready',
   describeRoute({
@@ -44,8 +52,10 @@ router.get(
         description: 'A dependency is unavailable.',
         content: { 'application/json': { schema: resolver(ReadinessResponseSchema) } },
       },
+      429: openapi.responses[429],
     },
   }),
+  rateLimit({ name: 'ready', limit: READY_RATE_LIMIT, window: '1m', key: byIp }),
   async (c) => {
     const result = ReadinessResponseSchema.parse(await Status.ready(c.get('deps')))
     return c.json(result, result.status === 'ready' ? 200 : 503)

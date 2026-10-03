@@ -24,8 +24,8 @@ import {
 /** Sign-ups per minute from one IP. Each one hashes a password and sends an email. */
 export const SIGN_UP_RATE_LIMIT = 10
 /**
- * Requests per minute from one IP to each credential step (sign-in start, password, code,
- * resend). The service adds per-environment ceilings, per-identifier lockout and per-address
+ * Requests per minute from one IP to each credential step (sign-in start, password, code).
+ * Resending a code uses the tighter sign-up limit, since it sends an email. The service adds per-environment ceilings, per-identifier lockout and per-address
  * email limits on top.
  */
 export const CREDENTIAL_RATE_LIMIT = 30
@@ -90,7 +90,11 @@ router.post(
       'an account. Send `x-tula-client` (`web`, `ios`, `android` or `server`) to choose how ' +
       'tokens are delivered when the flow completes.',
     security: openapi.security.client,
-    responses: { 200: attemptResponse('The attempt, waiting on email verification.'), ...errors },
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The attempt, waiting on email verification.'),
+      ...errors,
+    },
   }),
   limited('sign_up', SIGN_UP_RATE_LIMIT),
   publishableKey(),
@@ -115,7 +119,11 @@ router.post(
       'Always answers `needs_password`, whether or not the identifier belongs to an account. ' +
       'Send `x-tula-client` to choose how tokens are delivered when the flow completes.',
     security: openapi.security.client,
-    responses: { 200: attemptResponse('The attempt, waiting on a password.'), ...errors },
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The attempt, waiting on a password.'),
+      ...errors,
+    },
   }),
   limited('sign_in'),
   publishableKey(),
@@ -142,6 +150,7 @@ router.post(
       DELIVERY,
     security: openapi.security.client,
     responses: {
+      413: openapi.responses[413],
       200: attemptResponse('The next step.'),
       403: openapi.responses[403],
       404: openapi.responses[404],
@@ -182,6 +191,7 @@ for (const [kind, path, tag] of [
         DELIVERY,
       security: openapi.security.client,
       responses: {
+        413: openapi.responses[413],
         200: attemptResponse('The completed attempt.'),
         403: openapi.responses[403],
         404: openapi.responses[404],
