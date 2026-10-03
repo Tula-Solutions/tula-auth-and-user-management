@@ -132,7 +132,7 @@ export async function me(
  * @throws InvalidEmailError, a `password.*` ServiceException, or ConflictError.
  */
 export async function create(
-  deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'config' | 'breachChecker'>,
+  deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'config' | 'environmentSettings' | 'breachChecker'>,
   scope: Scope,
   input: CreateUserRequest,
   actor: Actor
@@ -288,7 +288,7 @@ export async function remove(
   }
 }
 
-type PasswordDeps = RevocationDeps & Pick<Deps, 'config' | 'breachChecker'>
+type PasswordDeps = RevocationDeps & Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker'>
 
 async function replacePassword(
   deps: PasswordDeps,

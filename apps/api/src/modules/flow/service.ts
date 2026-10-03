@@ -20,6 +20,7 @@ import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
+import * as Settings from '~/modules/settings/service'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
@@ -253,6 +254,7 @@ async function finish(
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_email_verification`.
  * @throws InvalidEmailError, or a `password.*` ServiceException with per-field `errors`.
+ * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function signUp(
@@ -266,6 +268,7 @@ export async function signUp(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  await Settings.requireMethod(deps, tenant, 'password')
   await chargeEnvironment(deps, tenant, 'signUp')
   const firstName = input.firstName?.trim() || null
   const lastName = input.lastName?.trim() || null
@@ -319,7 +322,7 @@ async function issueCode(
     destination: state.email ?? attempt.identifier,
     flowAttemptId: attempt.id,
     userId: options.userId,
-    ...(state.decoy && { deliver: ({ to }) => notice(deps, to) }),
+    ...(state.decoy && { deliver: ({ to }) => notice(deps, tenant, to) }),
     ...(options.charge && {
       onAllowed: () => chargeEnvironment(deps, tenant, reset ? 'passwordReset' : 'signUp'),
     }),
@@ -330,18 +333,23 @@ async function issueCode(
  * Start a sign-in. Always answers `needs_password`, whoever the identifier belongs to and
  * whether or not it exists: the identifier is not looked up until a password is submitted.
  *
- * @param deps - Flow attempt store, clock and ids.
+ * Password is the only first factor today, so an environment that has switched it off refuses
+ * the start. Step 1.3 turns this into the choice of first factor (`needs_first_factor`).
+ *
+ * @param deps - Flow attempt store, clock, ids and settings.
  * @param tenant - The environment the publishable key resolved to.
  * @param input - The identifier (email).
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_password`.
+ * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
  */
 export async function signIn(
-  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'ids'>,
+  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config'>,
   tenant: Tenant,
   input: SignInStartRequest,
   context: ClientContext
 ): Promise<FlowResult> {
+  await Settings.requireMethod(deps, tenant, 'password')
   const state: State = { client: context.client }
   const attempt = await start(deps, tenant, {
     kind: 'sign_in',
@@ -553,6 +561,7 @@ export async function verifyEmail(
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_new_password`.
  * @throws InvalidEmailError when the address is malformed.
+ * @throws AuthError `auth.method_disabled` when the environment has switched passwords off.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function startPasswordReset(
@@ -566,6 +575,7 @@ export async function startPasswordReset(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  await Settings.requireMethod(deps, tenant, 'password')
   await chargeEnvironment(deps, tenant, 'passwordReset')
   const user = await deps.users.findByEmail(tenant.environmentId, identifier)
   const state: State = { client: context.client, email, ...(!user && { decoy: true }) }

@@ -60,3 +60,57 @@ test('a request cannot carry both the secret key and an access token', () => {
     }).success
   ).toBe(false)
 })
+
+const withRequest = (request: object, step: object = {}) => ({
+  name: 'x',
+  description: 'y',
+  steps: [{ name: 's', request, expect: { status: 200 }, ...step }],
+})
+
+test('a request can carry extra headers, and a step can capture headers and whole values', () => {
+  const parsed = ScenarioSchema.safeParse(
+    withRequest(
+      {
+        method: 'PUT',
+        path: '/v1/x',
+        headers: { 'If-Match': '{{etag}}', Origin: 'https://a.test' },
+      },
+      { captureHeaders: { etag: 'ETag' }, captureJson: { original: 'settings' } }
+    )
+  )
+  expect(parsed.success).toBe(true)
+})
+
+test.each([
+  ['Authorization'],
+  ['authorization'],
+  ['X-Tula-Publishable-Key'],
+  ['x-tula-client'],
+  ['X-Forwarded-For'],
+  ['Content-Type'],
+  ['User-Agent'],
+])('a request cannot override the %s header the runner sets', (name) => {
+  expect(
+    ScenarioSchema.safeParse(
+      withRequest({ method: 'GET', path: '/v1/x', headers: { [name]: 'x' } })
+    ).success
+  ).toBe(false)
+})
+
+test.each([
+  ['a space', 'If Match'],
+  ['a colon', 'If-Match:'],
+  ['a line break', 'X-A\r\nX-B'],
+  ['nothing', ''],
+])('a header name with %s is refused', (_name, header) => {
+  expect(
+    ScenarioSchema.safeParse(
+      withRequest({ method: 'GET', path: '/v1/x', headers: { [header]: 'x' } })
+    ).success
+  ).toBe(false)
+  expect(
+    ScenarioSchema.safeParse(
+      withRequest({ method: 'GET', path: '/v1/x' }, { captureHeaders: { v: header } })
+    ).success
+  ).toBe(false)
+})

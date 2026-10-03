@@ -1,18 +1,15 @@
 import { Scalar } from '@scalar/hono-api-reference'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
-import { cors } from 'hono/cors'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
 import { openAPIRouteHandler } from 'hono-openapi'
 import type { AppEnv, Deps } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { notFound, onError } from '~/handlers'
-import { allowedOrigin } from '~/lib/cors'
-import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
+import { cors } from '~/middleware/cors'
 import { clientRateLimit } from '~/middleware/rate-limit'
 import { requestLog } from '~/middleware/request-log'
-import { CLIENT_HEADER } from '~/modules/flow/schema'
 import { documentation } from '~/openapi'
 
 /**
@@ -35,6 +32,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1/client', (await import('~/modules/flow/router')).default],
   ['/v1', (await import('~/modules/user/router')).default],
   ['/v1/admin/audit-logs', (await import('~/modules/audit/router')).default],
+  ['/v1', (await import('~/modules/settings/router')).default],
 ]
 
 /**
@@ -57,16 +55,7 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   app.use(requestId())
   app.use(requestLog())
   app.use(secureHeaders())
-  app.use(
-    cors({
-      origin: (origin) => allowedOrigin(origin, deps.config),
-      credentials: true,
-      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization', PUBLISHABLE_KEY_HEADER, CLIENT_HEADER],
-      exposeHeaders: ['Retry-After', 'X-Request-Id'],
-      maxAge: 600,
-    })
-  )
+  app.use(cors(deps))
   // After cors() so a 413 still carries CORS headers and browsers can read the error code.
   app.use(
     bodyLimit({

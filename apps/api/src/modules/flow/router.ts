@@ -96,6 +96,8 @@ router.post(
     responses: {
       413: openapi.responses[413],
       200: attemptResponse('The attempt, waiting on email verification.'),
+      // `auth.method_disabled`: the environment has switched password sign-in off.
+      403: openapi.responses[403],
       ...errors,
     },
   }),
@@ -125,6 +127,8 @@ router.post(
     responses: {
       413: openapi.responses[413],
       200: attemptResponse('The attempt, waiting on a password.'),
+      // `auth.method_disabled`: the environment has switched password sign-in off.
+      403: openapi.responses[403],
       ...errors,
     },
   }),
@@ -236,6 +240,8 @@ router.post(
     responses: {
       413: openapi.responses[413],
       200: attemptResponse('The attempt, waiting on the code and a new password.'),
+      // `auth.method_disabled`: the environment has switched password sign-in off.
+      403: openapi.responses[403],
       ...errors,
     },
   }),

@@ -22,6 +22,7 @@ export const ACTIVITY_TYPES = [
   'api_key.created',
   'api_key.revoked',
   'signing_key.rotated',
+  'environment.settings_updated',
 ] as const
 
 /** One of {@link ACTIVITY_TYPES}. */
@@ -34,7 +35,13 @@ export const ActivityTypeSchema = z.enum(ACTIVITY_TYPES).meta({ ref: 'ActivityTy
 export const AUDIT_ACTOR_TYPES = ['user', 'admin', 'system', 'agent'] as const
 
 /** What a recorded action can be about. */
-export const AUDIT_TARGET_TYPES = ['user', 'session', 'api_key', 'signing_key'] as const
+export const AUDIT_TARGET_TYPES = [
+  'user',
+  'session',
+  'api_key',
+  'signing_key',
+  'environment',
+] as const
 
 /**
  * One audit log entry.

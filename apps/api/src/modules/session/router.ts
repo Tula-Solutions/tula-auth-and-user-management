@@ -4,6 +4,7 @@ import type { AppEnv } from '~/dependencies'
 import { AuthError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { requestOrigin, userActor } from '~/lib/actor'
+import { originMayUseCookies } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
@@ -34,7 +35,8 @@ router.post(
       'Exchanges a refresh token for a new access token and the next refresh token. Native and ' +
       'server clients send `refreshToken` in the body and receive the next one in the response. ' +
       'Browsers send no body: the token travels in an httpOnly cookie and the next one is set ' +
-      'the same way. Refresh tokens are single-use; presenting a used one signs the session ' +
+      'the same way. The cookie is honoured only from an origin the environment allows ' +
+      '(`urls.allowedOrigins`). Refresh tokens are single-use; presenting a used one signs the session ' +
       'out (`session.reuse_detected`), except for an immediate retry, which returns the same ' +
       'token again.',
     security: openapi.security.client,
@@ -66,9 +68,12 @@ router.post(
     const deps = c.get('deps')
     const tenant = c.get('tenant')
     const fromBody = c.req.valid('json').refreshToken
-    const fromCookie = fromBody
-      ? undefined
-      : readRefreshCookie(c, deps.config, tenant.environmentId)
+    // The cookie counts only from an origin this environment allows: the browser attaches it
+    // to any request, whoever wrote the page that made it.
+    const fromCookie =
+      fromBody || !(await originMayUseCookies(c))
+        ? undefined
+        : readRefreshCookie(c, deps.config, tenant.environmentId)
     const presented = fromBody ?? fromCookie
     if (!presented) {
       throw new AuthError('auth.unauthenticated')
@@ -123,10 +128,16 @@ router.post(
   async (c) => {
     const deps = c.get('deps')
     const tenant = c.get('tenant')
+    // A page on an origin this environment does not allow can neither end the cookie's session
+    // nor make the browser drop the cookie.
+    const cookies = await originMayUseCookies(c)
     const presented =
-      c.req.valid('json').refreshToken ?? readRefreshCookie(c, deps.config, tenant.environmentId)
+      c.req.valid('json').refreshToken ??
+      (cookies ? readRefreshCookie(c, deps.config, tenant.environmentId) : undefined)
     await Sessions.signOut(deps, tenant, presented, requestOrigin(c))
-    clearRefreshCookie(c, deps.config, tenant.environmentId)
+    if (cookies) {
+      clearRefreshCookie(c, deps.config, tenant.environmentId)
+    }
     return c.body(null, 204)
   }
 )

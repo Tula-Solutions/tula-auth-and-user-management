@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { SessionTokens } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type SessionTokens } from '@tula/contract'
 import { createApp } from '~/index'
 import { CLIENT_RATE_LIMIT } from '~/middleware/rate-limit'
 import { refreshCookieName } from '~/modules/session/cookies'
@@ -48,6 +48,7 @@ function rt(tokens: SessionTokens): string {
 interface CallOptions {
   body?: unknown
   cookie?: string
+  origin?: string
   accessToken?: string
   key?: string | null
 }
@@ -62,6 +63,9 @@ function call(method: string, path: string, options: CallOptions = {}) {
   }
   if (options.cookie) {
     headers.cookie = options.cookie
+  }
+  if (options.origin) {
+    headers.origin = options.origin
   }
   if (options.accessToken) {
     headers.authorization = `Bearer ${options.accessToken}`
@@ -294,5 +298,104 @@ describe('client route group', () => {
     const tokens = await signIn()
     expect((await call('GET', '', { accessToken: tokens.accessToken })).status).toBe(429)
     expect((await call('POST', '/sign-out')).status).toBe(429)
+  })
+})
+
+describe('the refresh cookie and the origin of the request', () => {
+  const APP = 'https://app.northline.app'
+  const OTHER = 'https://blog.northline.app'
+
+  beforeEach(async () => {
+    await build({ ...TEST_CONFIG, tier: 'prod', publicUrl: 'https://auth.northline.app' })
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        urls: { allowedOrigins: [APP], allowedRedirectUrls: [] },
+      },
+    })
+  })
+
+  const cookieName = () => refreshCookieName(deps.config, tenant.environmentId)
+  const cookieFor = (tokens: SessionTokens) => `${cookieName()}=${rt(tokens)}`
+
+  test('refresh by cookie works from an origin the environment allows, with CORS headers', async () => {
+    const first = await signIn()
+    const res = await call('POST', '/refresh', { cookie: cookieFor(first), origin: APP })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('access-control-allow-origin')).toBe(APP)
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true')
+    expect(setCookie(res)).toContain(`${cookieName()}=tula_rt_`)
+  })
+
+  test.each<[string, string]>([
+    ['another origin of the same site', OTHER],
+    ['an unrelated origin', 'https://evil.test'],
+    ['the literal null origin', 'null'],
+  ])(
+    'refresh by cookie from %s is refused, and the session and cookie are left alone',
+    async (_, origin) => {
+      const first = await signIn()
+      const res = await call('POST', '/refresh', { cookie: cookieFor(first), origin })
+      expect(res.status).toBe(401)
+      expect(await code(res)).toBe('auth.unauthenticated')
+      expect(res.headers.get('access-control-allow-origin')).toBeNull()
+      // Neither rotated nor cleared: the page that asked gets nothing and changes nothing.
+      expect(setCookie(res)).toBe('')
+      const allowed = await call('POST', '/refresh', { cookie: cookieFor(first), origin: APP })
+      expect(allowed.status).toBe(200)
+    }
+  )
+
+  test('a request with no Origin (not a cross-origin browser request) may use the cookie', async () => {
+    const first = await signIn()
+    expect((await call('POST', '/refresh', { cookie: cookieFor(first) })).status).toBe(200)
+  })
+
+  test('the API’s own origin may use the cookie', async () => {
+    const first = await signIn()
+    const res = await call('POST', '/refresh', {
+      cookie: cookieFor(first),
+      origin: 'https://auth.northline.app',
+    })
+    expect(res.status).toBe(200)
+  })
+
+  test('a token in the body is not affected by the origin: JavaScript had to hold it', async () => {
+    const first = await signIn(USER, 'ios')
+    const res = await call('POST', '/refresh', { body: { refreshToken: rt(first) }, origin: OTHER })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  test('sign-out by cookie from a disallowed origin ends nothing and clears nothing', async () => {
+    const tokens = await signIn()
+    const res = await call('POST', '/sign-out', { cookie: cookieFor(tokens), origin: OTHER })
+    expect(res.status).toBe(204)
+    expect(setCookie(res)).toBe('')
+    expect(
+      (await deps.sessions.findById(tenant.environmentId, tokens.sessionId))?.revokedAt
+    ).toBeNull()
+
+    const allowed = await call('POST', '/sign-out', { cookie: cookieFor(tokens), origin: APP })
+    expect(allowed.status).toBe(204)
+    expect(setCookie(allowed)).toContain('Max-Age=0')
+    expect(
+      (await deps.sessions.findById(tenant.environmentId, tokens.sessionId))?.revokeReason
+    ).toBe('sign_out')
+  })
+
+  test('an origin allowed by another environment only cannot use this one’s cookie', async () => {
+    deps.environmentSettings.seed(TEST_TENANT.productionEnvironmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        urls: { allowedOrigins: [OTHER], allowedRedirectUrls: [] },
+      },
+    })
+    const first = await signIn()
+    const res = await call('POST', '/refresh', { cookie: cookieFor(first), origin: OTHER })
+    expect(res.status).toBe(401)
+    expect(res.headers.get('access-control-allow-origin')).toBeNull()
   })
 })

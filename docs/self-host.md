@@ -105,11 +105,60 @@ The API reads its settings from the environment and refuses to start if one is i
 | `SMTP_URL` | | `smtp://127.0.0.1:1025` | Your mail relay, e.g. `smtps://user:pass@smtp.example.com:465`. |
 | `MAIL_FROM` | | `Tula Auth <no-reply@localhost>` | Sender of verification emails. |
 | `BREACH_CHECK` | | `offline` | `hibp` checks new passwords against Have I Been Pwned (only a 5-character hash prefix leaves the server). |
-| `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. |
-| `CORS_ORIGINS` | | none | Comma-separated browser origins allowed to call the API with credentials. |
+| `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. The **default** password policy: it applies to an environment until that environment saves its own settings (below). |
+| `CORS_ORIGINS` | | none | Comma-separated browser origins. Allowed for `/v1/admin/*`, and the **default** allowed origins of an environment until it saves its own settings (below). |
 | `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. |
 | `REDIS_URL` | in `staging` and `prod` | none | Redis (or Valkey) shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
+
+## Settings of an environment
+
+What differs between tenants is not an environment variable: each environment (the thing an
+API key belongs to) has a settings document, read and replaced with its secret key.
+
+| Section | |
+| --- | --- |
+| `app.name`, `app.supportEmail` | The product's name and help address. Every email names the app; the default name is `Tula`. |
+| `password` | The password policy. |
+| `signIn.methods` | Which sign-in methods are offered (`password` today). |
+| `urls.allowedOrigins` | Browser origins that may call the client API: exact origins such as `https://app.example.com`, no paths or wildcards, `http` only for localhost. |
+| `urls.allowedRedirectUrls` | URLs a flow may send users back to. Stored for the sign-in methods that redirect; nothing uses it yet. |
+| `audit.retentionDays` | How long audit entries are kept (`null`: for ever). Stored; nothing is deleted yet. |
+
+Read the document; the `ETag` is its revision:
+
+```bash
+curl -si http://localhost:3003/v1/admin/settings -H "Authorization: Bearer $TULA_SECRET_KEY"
+# ETag: "0"
+# {"revision":0,"settings":{"version":1,"app":{"name":"Tula","supportEmail":null},"password":{…},…}}
+```
+
+Replace it, naming the revision you read in `If-Match`. The body is the **whole** document:
+anything you leave out goes back to its default, and an unknown key is refused.
+
+```bash
+curl -s -X PUT http://localhost:3003/v1/admin/settings \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" \
+  -H 'Content-Type: application/json' -H 'If-Match: "0"' \
+  -d '{
+    "app": { "name": "Acme", "supportEmail": "help@acme.example" },
+    "urls": { "allowedOrigins": ["https://app.acme.example"] }
+  }'
+```
+
+Without `If-Match` the answer is 428 (`precondition.required`); with a revision that is no
+longer current, 412 (`precondition.failed`): read again and retry. Each change is in the audit
+log as `environment.settings_updated`, listing the keys that changed and never their values.
+
+An environment that has never saved settings is at revision 0 and uses the defaults, including
+`PASSWORD_POLICY` and `CORS_ORIGINS` from the table above. Once it saves a document, those two
+variables no longer apply to it. A change takes effect at once on the instance that received
+it and within 5 seconds on the others (30 if Redis is unreachable). Apps read the public part
+(app name, sign-in methods, password policy) from `GET /v1/client/config`.
+
+**Browsers.** An origin has to be in the environment's `urls.allowedOrigins` to read the
+client API's responses and to use the refresh cookie. `/v1/admin/*` only ever allows the
+origins in `CORS_ORIGINS`. See [ADR 0018](adr/0018-environment-settings.md).
 
 ## Running it for real
 
@@ -200,7 +249,8 @@ transaction-mode pooler (PgBouncer in `transaction` mode) retention can stop wit
 - emailed codes and links one hour after they expire;
 - sessions, with their refresh tokens, 30 days after they were revoked or expired.
 
-It never deletes audit entries or outbox events. Each run logs one line, `retention run
+It never deletes audit entries or outbox events (an environment's `audit.retentionDays`
+setting is stored but not applied yet). Each run logs one line, `retention run
 finished`, with counts only (at `debug` level when there was nothing to delete). The periods
 are fixed for now. See [ADR 0017](adr/0017-retention.md).
 

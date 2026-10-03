@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import type { FlowAttempt } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type FlowAttempt } from '@tula/contract'
 import { createApp } from '~/index'
 import * as Flows from '~/modules/flow/router'
 import { ENVIRONMENT_RATE_LIMITS } from '~/modules/flow/service'
@@ -426,5 +426,30 @@ describe('password reset over HTTP', () => {
         })
       ).status
     ).toBe(429)
+  })
+})
+
+describe('password sign-in switched off for the environment', () => {
+  test.each<[string, string, object]>([
+    ['sign-up', '/sign-ups', { email: EMAIL, password: PASSWORD }],
+    ['sign-in', '/sign-ins', { identifier: EMAIL }],
+    ['password reset', '/password-resets', { email: EMAIL }],
+  ])('starting a %s answers 403 auth.method_disabled', async (_, path, body) => {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        signIn: { methods: { password: { enabled: false } } },
+      },
+    })
+    const res = await post(path, body)
+    expect(res.status).toBe(403)
+    expect(await json<unknown>(res)).toEqual({
+      status: 403,
+      code: 'auth.method_disabled',
+      detail: 'This sign-in method is not available.',
+      params: { method: 'password' },
+    })
+    expect(deps.mailer.outbox).toEqual([])
   })
 })

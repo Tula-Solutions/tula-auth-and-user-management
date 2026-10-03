@@ -9,6 +9,7 @@ import {
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, ServiceException } from '~/exceptions'
+import * as Settings from '~/modules/settings/service'
 
 /**
  * argon2id parameters for every stored password, pinned so a Bun upgrade can't silently change
@@ -99,20 +100,20 @@ export function needsRehash(storedHash: string): boolean {
 }
 
 /**
- * The password policy that applies in an environment.
+ * The password policy that applies in an environment: the `password` section of its settings.
  *
- * Phase 0 has one policy per deployment (`PASSWORD_POLICY`); per-environment policies arrive with
- * the dashboard, which is why this already takes the tenant.
+ * Each environment has its own, so two environments of one deployment can enforce different
+ * rules. An environment that has saved no settings uses the deployment's `PASSWORD_POLICY`.
  *
- * @param deps - App config.
- * @param _tenant - The environment asking.
+ * @param deps - Settings store and config.
+ * @param tenant - The environment asking.
  * @returns The active policy.
  */
 export async function policy(
-  deps: Pick<Deps, 'config'>,
-  _tenant: Pick<Tenant, 'environmentId'>
+  deps: Pick<Deps, 'config' | 'environmentSettings'>,
+  tenant: Pick<Tenant, 'environmentId'>
 ): Promise<PasswordPolicy> {
-  return deps.config.passwordPolicy
+  return (await Settings.current(deps, tenant)).password
 }
 
 /** Result of a password that is allowed to be set. */
@@ -138,7 +139,7 @@ function fieldError(code: ErrorCode, params?: FieldError['params']): FieldError 
  * and fails open when the source is unavailable: blocking every sign-up during a third-party
  * outage is worse than missing one check.
  *
- * @param deps - Config and breach checker.
+ * @param deps - Settings store, config and breach checker.
  * @param tenant - The environment whose policy applies.
  * @param password - The candidate password.
  * @param userInfo - Details the password must not contain.
@@ -147,7 +148,7 @@ function fieldError(code: ErrorCode, params?: FieldError['params']): FieldError 
  *   `errors`, or `password.breached` when the policy blocks breached passwords.
  */
 export async function assess(
-  deps: Pick<Deps, 'config' | 'breachChecker'>,
+  deps: Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker'>,
   tenant: Pick<Tenant, 'environmentId'>,
   password: string,
   userInfo: PasswordUserInfo = {}

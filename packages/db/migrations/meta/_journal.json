@@ -50,6 +50,13 @@
       "when": 1791045243336,
       "tag": "0006_api_keys_tenant_foreign_key",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791046871224,
+      "tag": "0007_environment_settings",
+      "breakpoints": true
     }
   ]
 }

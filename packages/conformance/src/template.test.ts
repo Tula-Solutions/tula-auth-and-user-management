@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { fill } from './template'
+import { expandJson, fill } from './template'
 
 const variables = { attemptId: 'a1', email: 'maya@example.com' }
 
@@ -31,5 +31,37 @@ describe('fill', () => {
 
   test('text that only looks like a placeholder is left alone', () => {
     expect(fill('{{ 1bad }} {single} {{}}', variables)).toBe('{{ 1bad }} {single} {{}}')
+  })
+})
+
+describe('expandJson', () => {
+  test('replaces a $json object by the value its text encodes, at any depth', () => {
+    expect(
+      expandJson({
+        a: { $json: '{"x":[1,2],"y":null}' },
+        b: [{ $json: '"text"' }, { $json: '7' }],
+        c: 'plain',
+        d: null,
+        e: 3,
+      })
+    ).toEqual({ a: { x: [1, 2], y: null }, b: ['text', 7], c: 'plain', d: null, e: 3 })
+    expect(expandJson({ $json: '{"whole":true}' })).toEqual({ whole: true })
+  })
+
+  test('leaves an object alone unless $json is its only key', () => {
+    const value = { $json: '1', and: 'more' }
+    expect(expandJson(value)).toEqual(value)
+    expect(expandJson({})).toEqual({})
+  })
+
+  test('does not expand inside the value it produced', () => {
+    expect(expandJson({ $json: '{"$json":"1"}' })).toEqual({ $json: '1' })
+  })
+
+  test('refuses a $json that is not a string of JSON, without quoting it', () => {
+    expect(() => expandJson({ $json: 5 })).toThrow('$json takes a string holding JSON')
+    expect(() => expandJson({ $json: 'tula_sk_dev_secret{' })).toThrow(
+      /^\$json does not hold valid JSON$/
+    )
   })
 })

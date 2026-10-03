@@ -1,6 +1,7 @@
 export * from './api-keys'
 export * from './audit-logs'
 export * from './credentials'
+export * from './environment-settings'
 export * from './environments'
 export * from './events'
 export * from './flow-attempts'

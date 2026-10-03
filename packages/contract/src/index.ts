@@ -1,6 +1,7 @@
 export * from './audit'
 export * from './common-passwords'
 export * from './duration'
+export * from './environment-settings'
 export * from './errors'
 export * from './flow'
 export * from './password-policy'

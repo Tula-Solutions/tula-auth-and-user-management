@@ -25,8 +25,12 @@ export const responses = {
   404: errorResponse('The resource does not exist in this environment.'),
   409: errorResponse('The change conflicts with existing data.'),
   410: errorResponse('The code or link has expired; request a new one.'),
+  412: errorResponse(
+    'The resource is no longer at the revision in `If-Match` (`precondition.failed`); read it again.'
+  ),
   413: errorResponse('The request body is larger than 64 KiB (`request.too_large`).'),
   422: errorResponse('The input is invalid; `errors` lists each field.'),
+  428: errorResponse('The request needs an `If-Match` header (`precondition.required`).'),
   429: errorResponse('Rate limited; retry after `params.retryAfter` seconds.'),
   500: errorResponse('Unexpected server error.'),
   501: errorResponse('Capability not implemented yet.'),
@@ -73,6 +77,11 @@ export const documentation: GenerateSpecOptions['documentation'] = {
     },
     { name: 'Users', description: 'Manage users (admin) and the signed-in user’s own account.' },
     { name: 'Sessions', description: 'Refresh, sign-out and the signed-in user’s devices.' },
+    {
+      name: 'Settings',
+      description:
+        'Per-environment settings (admin) and the public configuration clients draw from them.',
+    },
     { name: 'Audit', description: 'The record of auth events and admin actions (admin).' },
   ],
   components: {

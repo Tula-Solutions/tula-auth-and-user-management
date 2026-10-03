@@ -1,6 +1,19 @@
 import { DurationSchema } from '@tula/contract'
 import { z } from 'zod'
 
+/** An HTTP header name. */
+const HEADER_NAME = /^[A-Za-z][A-Za-z0-9-]*$/
+
+/** Headers the runner sets from other fields of a request; `headers` may not replace them. */
+export const RESERVED_HEADERS: ReadonlySet<string> = new Set([
+  'authorization',
+  'content-type',
+  'user-agent',
+  'x-forwarded-for',
+  'x-tula-client',
+  'x-tula-publishable-key',
+])
+
 /** Which credential a request carries. */
 export const AuthSchema = z.enum(['publishable', 'secret', 'none']).meta({ ref: 'ConformanceAuth' })
 
@@ -22,8 +35,18 @@ export const RequestSchema = z
     accessToken: z.string().optional(),
     /** Value of `x-tula-client`. Scenarios use a native kind so tokens arrive in the body. */
     client: z.enum(['web', 'ios', 'android', 'server']).optional(),
-    /** JSON body. */
+    /**
+     * JSON body. An object of the form `{ "$json": "{{name}}" }`, anywhere in it, is replaced
+     * by the JSON value a `captureJson` stored in that variable, so a document read in one step
+     * can be sent back whole in a later one.
+     */
     body: z.unknown().optional(),
+    /**
+     * Extra request headers, e.g. `{ "If-Match": "{{etag}}" }` or `{ "Origin": "…" }`. The
+     * headers the runner sets itself (keys, client kind, content type, forwarded address) cannot
+     * be set here.
+     */
+    headers: z.record(z.string().regex(HEADER_NAME), z.string()).optional(),
     /**
      * Which API instance receives the request, for behaviour that must hold across instances of
      * one deployment (a session ended on one is refused by the other). `second` goes to the
@@ -35,6 +58,11 @@ export const RequestSchema = z
   .refine((request) => !(request.auth === 'secret' && request.accessToken !== undefined), {
     message: 'a request carries the secret key or an access token, not both',
   })
+  .refine(
+    (request) =>
+      Object.keys(request.headers ?? {}).every((name) => !RESERVED_HEADERS.has(name.toLowerCase())),
+    { message: 'a request cannot override a header the runner sets itself', path: ['headers'] }
+  )
   .meta({ ref: 'ConformanceRequest' })
 
 /**
@@ -69,6 +97,13 @@ export const RequestStepSchema = z
     times: z.number().int().min(1).max(100).optional(),
     /** Variables to set from the response body: `{ "attemptId": "id", "token": "session.refreshToken" }`. */
     capture: z.record(z.string(), z.string()).optional(),
+    /** Variables to set from response headers: `{ "etag": "ETag" }`. */
+    captureHeaders: z.record(z.string(), z.string().regex(HEADER_NAME)).optional(),
+    /**
+     * Variables to set to the JSON text of any value in the response body, objects included:
+     * `{ "original": "settings" }`. Send it back with `{ "$json": "{{original}}" }` in a body.
+     */
+    captureJson: z.record(z.string(), z.string()).optional(),
   })
   .strict()
   .meta({ ref: 'ConformanceRequestStep' })

@@ -1,5 +1,9 @@
 import type { Jwk } from '@tula/contract'
-import * as logger from '~/lib/logger'
+import {
+  createVersionedCache,
+  type SharedInvalidation,
+  type Versions,
+} from '~/adapters/cache/versioned'
 import type { Clock } from '~/ports/clock'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 
@@ -7,42 +11,9 @@ import type { SigningKeyStore } from '~/ports/signing-key-store'
  * A marker per environment, shared by every API instance, that changes whenever the
  * environment's signing keys do. Redis holds it in production (`RedisSigningKeyVersions`).
  */
-export interface SigningKeyVersions {
-  /**
-   * @param environmentId - The environment.
-   * @returns The current marker, or `null` when the keys have not changed since it was last lost.
-   * @throws When the shared store cannot be read.
-   */
-  current(environmentId: string): Promise<string | null>
+export type SigningKeyVersions = Versions
 
-  /**
-   * Replace the marker after the environment's keys changed.
-   *
-   * @param environmentId - The environment.
-   * @throws When the shared store cannot be written.
-   */
-  bump(environmentId: string): Promise<void>
-}
-
-/** How instances tell each other that an environment's keys changed. */
-export interface SharedInvalidation {
-  versions: SigningKeyVersions
-  /** How often a cached key set is compared with the shared marker, in milliseconds. */
-  checkEveryMs: number
-}
-
-interface Entry {
-  fetchedAt: number
-  /** When the marker was last compared (or the keys fetched). */
-  checkedAt: number
-  /** The marker read just before the keys; resolves to `undefined` when it could not be read. */
-  marker: Promise<string | null | undefined> | undefined
-  keys: Promise<Jwk[]>
-}
-
-function unreadable(): undefined {
-  return undefined
-}
+export type { SharedInvalidation }
 
 /**
  * Cache an environment's verification keys so `sessionAuth` verifies JWTs without a database hit.
@@ -79,89 +50,31 @@ export function cacheSigningKeys(
   ttlMs: number,
   shared?: SharedInvalidation
 ): SigningKeyStore {
-  const entries = new Map<string, Entry>()
-
-  function load(environmentId: string, now: Date, at: number): Promise<Jwk[]> {
-    // The marker is read before the keys: a rotation that lands between the two reads then
-    // shows as a changed marker at the next check instead of being missed.
-    const marker = shared?.versions.current(environmentId).catch(unreadable)
-    const keys = marker
-      ? marker.then(() => store.verificationKeys(environmentId, now))
-      : store.verificationKeys(environmentId, now)
-    entries.set(environmentId, { fetchedAt: at, checkedAt: at, marker, keys })
-    const evict = () => {
-      if (entries.get(environmentId)?.keys === keys) {
-        entries.delete(environmentId)
-      }
-    }
-    keys.then((found) => {
-      if (found.length === 0) {
-        evict()
-      }
-    }, evict)
-    return keys
-  }
-
-  async function changed(
-    versions: SigningKeyVersions,
-    environmentId: string,
-    entry: Entry
-  ): Promise<boolean> {
-    try {
-      const [seen, current] = await Promise.all([entry.marker, versions.current(environmentId)])
-      return seen !== current
-    } catch {
-      // The marker cannot be read: keep the cached keys. The TTL still bounds how stale they get.
-      return false
-    }
-  }
-
-  async function announce(environmentId: string): Promise<void> {
-    try {
-      await shared?.versions.bump(environmentId)
-    } catch (error) {
-      // The write itself succeeded, so it must not fail here; other instances fall back to the TTL.
-      logger.warn('could not announce new signing keys; other instances catch up at cache expiry', {
-        environmentId,
-        reason: error instanceof Error ? error.name : 'NonError',
-      })
-    }
-  }
+  const cache = createVersionedCache<Jwk[]>({
+    clock,
+    ttlMs,
+    shared,
+    subject: 'signing keys',
+    keep: (keys) => keys.length > 0,
+  })
 
   return {
-    verificationKeys(environmentId, now) {
-      const at = clock.now().getTime()
-      const cached = entries.get(environmentId)
-      if (!cached || at - cached.fetchedAt >= ttlMs) {
-        return load(environmentId, now, at)
-      }
-      if (!shared || at - cached.checkedAt < shared.checkEveryMs) {
-        return cached.keys
-      }
-      // Set before the read, so requests arriving meanwhile use the cache instead of all checking.
-      cached.checkedAt = at
-      return changed(shared.versions, environmentId, cached).then((stale) => {
-        if (!stale) {
-          return cached.keys
-        }
-        const latest = entries.get(environmentId)
-        return latest && latest !== cached ? latest.keys : load(environmentId, now, at)
-      })
-    },
+    verificationKeys: (environmentId, now) =>
+      cache.get(environmentId, () => store.verificationKeys(environmentId, now)),
     list: (environmentId) => store.list(environmentId),
     async insert(environmentId, keys) {
       const inserted = await store.insert(environmentId, keys)
-      entries.delete(environmentId)
+      cache.drop(environmentId)
       if (inserted) {
-        await announce(environmentId)
+        await cache.announce(environmentId)
       }
       return inserted
     },
     async rotate(environmentId, plan, at, activity) {
       const rotated = await store.rotate(environmentId, plan, at, activity)
-      entries.delete(environmentId)
+      cache.drop(environmentId)
       if (rotated) {
-        await announce(environmentId)
+        await cache.announce(environmentId)
       }
       return rotated
     },

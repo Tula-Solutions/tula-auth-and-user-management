@@ -53,7 +53,7 @@ async function inProcessTarget(): Promise<Target> {
 const scenarios = await loadScenarios()
 
 describe('conformance scenarios, in process', () => {
-  test('the suite covers the Phase 0 journey', () => {
+  test('the suite covers the Phase 0 journey and each Phase 1 step', () => {
     expect(scenarios.map(({ scenario }) => scenario.name)).toEqual([
       'sign-up',
       'sign-in',
@@ -66,6 +66,7 @@ describe('conformance scenarios, in process', () => {
       'verification code attempts',
       'password reset',
       'two instances',
+      'environment settings',
     ])
   })
 

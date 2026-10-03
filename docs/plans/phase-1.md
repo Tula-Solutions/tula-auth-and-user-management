@@ -116,6 +116,14 @@ Everything that is an env var today but belongs to a tenant.
   copy for each message type lives in one place. No editor yet (Phase 2).
 - **Done when:** two environments in one deployment enforce different password policies and
   CORS origins, covered by tests and one scenario.
+  *As built ([ADR 0018](../adr/0018-environment-settings.md)):* the email module is
+  `modules/email`, not `templates`. Session profiles are not in the document yet; 1.11 adds
+  the section. `audit.retentionDays` and `urls.allowedRedirectUrls` are validated and stored
+  but nothing acts on them yet. The redirect list accepts `https` (and loopback `http`) URLs
+  only; custom schemes for native apps come with the first method that redirects. The
+  scenario covers the password policy across two instances; different CORS origins per
+  environment are covered by the API's tests, since the suite runs against one environment.
+  Beyond the plan: the refresh cookie is honoured only from an origin the environment allows.
 
 ### 1.3 Flow engine v2
 

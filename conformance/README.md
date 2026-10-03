@@ -33,7 +33,8 @@ bun run conformance
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
 audit entries, and leaves them there. A full run takes about two and a half minutes, most of it
-waiting: 61 seconds for an address's email cooldown (twice) and 11 for the refresh grace period.
+waiting: 61 seconds for an address's email cooldown (twice), 11 for the refresh grace period
+and 6 for a settings change to reach the second instance.
 
 The exit code is 0 when at least one scenario passed and none failed. A failing step prints the
 status, the error code and short plain values that differed. Tokens, long strings, objects and
@@ -46,9 +47,9 @@ in CI logs.
 A scenario is one JSON file in `scenarios/`, validated against
 [`scenario.schema.json`](scenario.schema.json) (generated from
 `packages/conformance/src/scenario.ts`; do not edit it by hand). The JSON Schema describes the
-shape only. The loader also enforces two rules it cannot express: a scenario with an
-`auth: "secret"` step must set `needsSecretKey: true`, and such a request cannot also carry an
-`accessToken`.
+shape only. The loader also enforces three rules it cannot express: a scenario with an
+`auth: "secret"` step must set `needsSecretKey: true`, such a request cannot also carry an
+`accessToken`, and `headers` cannot name a header the runner sets itself.
 
 ```json
 {
@@ -77,7 +78,9 @@ shape only. The loader also enforces two rules it cannot express: a scenario wit
   a generated value (`email`: a unique address; `password`: a long random password that passes
   every built-in policy), or a value an earlier step captured.
 - **Request steps.** `auth` is `publishable` (the default), `secret` or `none`; `accessToken`
-  adds `Authorization: Bearer …`; `client` sets `x-tula-client`. `times` repeats the request.
+  adds `Authorization: Bearer …`; `client` sets `x-tula-client`. `headers` adds any other
+  header (`{ "If-Match": "{{etag}}" }`); the ones the runner sets itself cannot be replaced.
+  `times` repeats the request.
   `instance` is `first` (the default) or `second`: which API instance of the deployment gets
   the request. A runner with only one instance sends both to it, so a scenario that uses
   `second` must also be true of a single server.
@@ -85,7 +88,10 @@ shape only. The loader also enforces two rules it cannot express: a scenario wit
   out are not checked. Values compare literally, except `"$any"` (present and not null),
   `"$absent"` (missing or null), `{ "$not": value }` and `{ "$matches": "regex" }` (both need
   the value to be present). `bodyExcludes` lists strings the raw response must not contain.
-- **Capture.** `{ "variable": "dot.path" }` stores a string from the response body.
+- **Capture.** `capture: { "variable": "dot.path" }` stores a string from the response body.
+  `captureHeaders: { "variable": "ETag" }` stores a response header. `captureJson:
+  { "variable": "dot.path" }` stores any value, objects included, as JSON text; a later body
+  sends it back with `{ "$json": "{{variable}}" }` in place of the value.
 - **Email steps** read the 6-digit code from the newest email to an address. `captureWrong`
   also stores a code that is guaranteed not to be the right one. Right after a resend the
   newest email can still be the previous one; no scenario resends yet.
@@ -108,9 +114,15 @@ Steps run in order and a scenario stops at its first failing step.
 | `09-verification-attempts` | A code dies after five wrong guesses. |
 | `10-password-reset` | A forgotten password is replaced with an emailed code, and the old sessions end. |
 | `11-two-instances` | Two instances behave as one server: a token from one is accepted by the other, a sign-out on one is refused by the other at once, and wrong passwords sent to either share one lockout. |
+| `12-environment-settings` | Settings are replaced through the admin API, guarded by `If-Match` (428 without it, 412 when stale); the new password policy is enforced at sign-up and shown by `/v1/client/config` on both instances; the audit entry lists keys, not values (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
-session profile). Browser cookie delivery is not covered yet; scenarios use a native client
+session profile). `12-environment-settings` changes the environment's settings while it runs
+(the app name, and a 14-character minimum password that every generated password still meets)
+and puts the original document back in its last steps; if it fails before that, the changed
+settings stay until you restore them with `PUT /v1/admin/settings`. An environment that had
+never saved settings ends the run with a saved copy of its defaults (the same behaviour, but
+`PASSWORD_POLICY` and `CORS_ORIGINS` no longer apply to it). Browser cookie delivery is not covered yet; scenarios use a native client
 kind so tokens arrive in the response body.
 
 ## Adding a scenario

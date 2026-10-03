@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import type { FlowAttempt, SessionTokens } from '@tula/contract'
+import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { cacheSigningKeys } from '~/adapters/cache/signing-keys'
 import { redisProbe } from '~/adapters/redis/connection'
 import { FakeRedis } from '~/adapters/redis/fake'
@@ -7,6 +8,7 @@ import { RedisLockout } from '~/adapters/redis/lockout'
 import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
 import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
+import { RedisVersions } from '~/adapters/redis/versions'
 import type { Deps } from '~/dependencies'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
@@ -50,6 +52,15 @@ function instance(overrides: Partial<Deps> = {}): Deps {
       versions: new RedisSigningKeyVersions(redis),
       checkEveryMs: 5_000,
     }),
+    environmentSettings: cacheEnvironmentSettings(
+      shared.environmentSettings,
+      shared.clock,
+      30_000,
+      {
+        versions: new RedisVersions(redis, 'es'),
+        checkEveryMs: 5_000,
+      }
+    ),
     probes: [redisProbe(redis)],
     ...overrides,
   }
@@ -337,5 +348,62 @@ describe('when Redis is down', () => {
     }
     redis.recover()
     expect((await guess(a, PASSWORD)).status).toBe(200)
+  })
+})
+
+describe('environment settings across instances', () => {
+  const config = async (app: App, origin?: string) =>
+    app.request('/v1/client/config', {
+      headers: { 'x-tula-publishable-key': PK, ...(origin && { origin }) },
+    })
+  const appName = async (app: App) =>
+    (await json<{ app: { name: string } }>(await config(app))).app.name
+  const save = (app: App, revision: number, body: unknown) =>
+    app.request('/v1/admin/settings', {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${SK}`,
+        'content-type': 'application/json',
+        'if-match': `"${revision}"`,
+      },
+      body: JSON.stringify(body),
+    })
+
+  test('a change made on one instance applies on the other within five seconds', async () => {
+    expect(await appName(b)).toBe('Tula')
+    const saved = await save(a, 0, {
+      app: { name: 'Northline' },
+      urls: { allowedOrigins: ['https://app.northline.app'] },
+    })
+    expect(saved.status).toBe(200)
+    // The instance that wrote sees it at once.
+    expect(await appName(a)).toBe('Northline')
+    shared.clock.advance(4_999)
+    expect(await appName(b)).toBe('Tula')
+    shared.clock.advance(1)
+    expect(await appName(b)).toBe('Northline')
+    const res = await config(b, 'https://app.northline.app')
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://app.northline.app')
+  })
+
+  test('the admin API reads past the cache, so a revision read on either instance can be written on either', async () => {
+    await save(a, 0, { app: { name: 'One' } })
+    // B has not noticed yet, but its admin read is authoritative.
+    const read = await b.request('/v1/admin/settings', {
+      headers: { authorization: `Bearer ${SK}` },
+    })
+    expect(read.headers.get('etag')).toBe('"1"')
+    expect((await save(b, 1, { app: { name: 'Two' } })).status).toBe(200)
+    expect((await save(a, 1, { app: { name: 'Stale' } })).status).toBe(412)
+  })
+
+  test('while Redis is down the other instance catches up when its cached copy expires', async () => {
+    expect(await appName(b)).toBe('Tula')
+    expect((await save(a, 0, { app: { name: 'Northline' } })).status).toBe(200)
+    redis.fail()
+    shared.clock.advance(29_999)
+    expect(await appName(b)).toBe('Tula')
+    shared.clock.advance(1)
+    expect(await appName(b)).toBe('Northline')
   })
 })

@@ -79,6 +79,16 @@
                     "enum": ["web", "ios", "android", "server"]
                   },
                   "body": {},
+                  "headers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
                   "instance": {
                     "type": "string",
                     "enum": ["first", "second"]
@@ -113,6 +123,25 @@
                 "maximum": 100
               },
               "capture": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "captureHeaders": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                }
+              },
+              "captureJson": {
                 "type": "object",
                 "propertyNames": {
                   "type": "string"

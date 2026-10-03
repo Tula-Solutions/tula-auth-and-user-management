@@ -35,6 +35,10 @@
       "description": "Refresh, sign-out and the signed-in user’s devices."
     },
     {
+      "name": "Settings",
+      "description": "Per-environment settings (admin) and the public configuration clients draw from them."
+    },
+    {
       "name": "Audit",
       "description": "The record of auth events and admin actions (admin)."
     }
@@ -84,6 +88,7 @@
           "auth.invalid_key",
           "auth.forbidden",
           "auth.user_banned",
+          "auth.method_disabled",
           "flow.not_found",
           "flow.invalid_step",
           "email.invalid",
@@ -112,6 +117,8 @@
           "validation.failed",
           "resource.not_found",
           "resource.conflict",
+          "precondition.required",
+          "precondition.failed",
           "not_implemented",
           "service.unavailable",
           "internal"
@@ -1363,7 +1370,8 @@
           "session.reuse_detected",
           "api_key.created",
           "api_key.revoked",
-          "signing_key.rotated"
+          "signing_key.rotated",
+          "environment.settings_updated"
         ]
       },
       "AuditLogQuery": {
@@ -1395,6 +1403,185 @@
             "maximum": 100
           }
         }
+      },
+      "WebOrigin": {
+        "type": "string",
+        "maxLength": 255
+      },
+      "RedirectUrl": {
+        "type": "string",
+        "maxLength": 2048
+      },
+      "EnvironmentSettings": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "default": 1,
+            "type": "number",
+            "const": 1
+          },
+          "app": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "name": {
+                "default": "Tula",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "supportEmail": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email",
+                    "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "password": {
+            "$ref": "#/components/schemas/PasswordPolicy"
+          },
+          "signIn": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "methods": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "default": {},
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "default": true,
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "urls": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "allowedOrigins": {
+                "default": [],
+                "maxItems": 50,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WebOrigin"
+                }
+              },
+              "allowedRedirectUrls": {
+                "default": [],
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RedirectUrl"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "audit": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "retentionDays": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3650
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "EnvironmentSettingsState": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "settings": {
+            "$ref": "#/components/schemas/EnvironmentSettings"
+          }
+        },
+        "required": [
+          "revision",
+          "settings"
+        ]
+      },
+      "ClientConfig": {
+        "type": "object",
+        "properties": {
+          "app": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "supportEmail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "supportEmail"
+            ]
+          },
+          "signIn": {
+            "type": "object",
+            "properties": {
+              "methods": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "methods"
+            ]
+          },
+          "password": {
+            "$ref": "#/components/schemas/PasswordPolicy"
+          }
+        },
+        "required": [
+          "app",
+          "signIn",
+          "password"
+        ]
       }
     }
   },
@@ -2182,7 +2369,7 @@
           "Sessions"
         ],
         "summary": "Refresh a session",
-        "description": "Exchanges a refresh token for a new access token and the next refresh token. Native and server clients send `refreshToken` in the body and receive the next one in the response. Browsers send no body: the token travels in an httpOnly cookie and the next one is set the same way. Refresh tokens are single-use; presenting a used one signs the session out (`session.reuse_detected`), except for an immediate retry, which returns the same token again.",
+        "description": "Exchanges a refresh token for a new access token and the next refresh token. Native and server clients send `refreshToken` in the body and receive the next one in the response. Browsers send no body: the token travels in an httpOnly cookie and the next one is set the same way. The cookie is honoured only from an origin the environment allows (`urls.allowedOrigins`). Refresh tokens are single-use; presenting a used one signs the session out (`session.reuse_detected`), except for an immediate retry, which returns the same token again.",
         "security": [
           {
             "publishableKey": []
@@ -2747,6 +2934,16 @@
               }
             }
           },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "413": {
             "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
@@ -2873,6 +3070,16 @@
           },
           "401": {
             "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3528,6 +3735,16 @@
           },
           "401": {
             "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5465,6 +5682,284 @@
             }
           }
         ]
+      }
+    },
+    "/v1/admin/settings": {
+      "get": {
+        "operationId": "getEnvironmentSettings",
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Read the environment’s settings",
+        "description": "The settings of the secret key’s environment: app name, password policy, sign-in methods, allowed origins and redirect URLs, audit retention. An environment that has saved none answers revision 0 with the deployment’s defaults.",
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The settings and their revision.",
+            "headers": {
+              "ETag": {
+                "description": "The revision, quoted: the value to send as `If-Match` when replacing.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentSettingsState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "replaceEnvironmentSettings",
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Replace the environment’s settings",
+        "description": "Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values. Other API instances apply it within a few seconds.",
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "The revision being replaced, quoted, e.g. `\"3\"` (`\"0\"` for the first save).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The settings now in force and their revision.",
+            "headers": {
+              "ETag": {
+                "description": "The revision, quoted: the value to send as `If-Match` when replacing.",
+                "schema": {
+                  "type": "string",
+                  "example": "\"3\""
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentSettingsState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "The resource is no longer at the revision in `If-Match` (`precondition.failed`); read it again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "The request needs an `If-Match` header (`precondition.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentSettings"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/config": {
+      "get": {
+        "operationId": "getClientConfig",
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Client configuration",
+        "description": "What a client needs to draw a sign-in screen for this environment: the app’s name and support address, the enabled sign-in methods and the password policy. Ignore methods you do not know. Nothing here is secret.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The configuration.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientConfig"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

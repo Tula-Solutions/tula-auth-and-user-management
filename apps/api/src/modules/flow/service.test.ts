@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
-import type { FlowAttempt } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type FlowAttempt } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
 import { verifyAccessToken } from '~/middleware/session-auth'
@@ -896,7 +896,7 @@ describe('the account-exists notice', () => {
     await registered()
     await signUp()
     const notice = deps.mailer.last()
-    expect(notice.subject).toBe('You already have an account')
+    expect(notice.subject).toBe('Your Tula account already exists')
     expect(notice.text).toContain('reset it from the sign-in screen')
     expect(`${notice.text} ${notice.html}`).not.toMatch(/\d{6}|https?:/)
   })
@@ -926,7 +926,7 @@ describe('password reset', () => {
       },
     })
     expect(tokens).toBeUndefined()
-    expect(deps.mailer.last().subject).toContain('is your password reset code')
+    expect(deps.mailer.last().subject).toContain('is your Tula password reset code')
   })
 
   test('the code and a new password replace the password, end every session and sign in', async () => {
@@ -965,7 +965,7 @@ describe('password reset', () => {
     expect(shape(unknown.attempt)).toEqual(expected as never)
     const notice = deps.mailer.last()
     expect(notice.to).toBe('nobody@northline.app')
-    expect(notice.subject).toBe('Password reset requested')
+    expect(notice.subject).toBe('Tula password reset requested')
     expect(notice.text).not.toMatch(/\d{6}/)
 
     // A wrong guess counts down exactly as it does for a real account.
@@ -1086,7 +1086,7 @@ describe('password reset', () => {
     const { userId } = await registered()
     await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
     const { attempt } = await startReset()
-    expect(deps.mailer.last().subject).toContain('is your password reset code')
+    expect(deps.mailer.last().subject).toContain('is your Tula password reset code')
     const code = sentCode()
     expect((await rejection(reset(attempt.id, wrong(code)))).code).toBe('verification.invalid_code')
     expect((await rejection(reset(attempt.id, code))).code).toBe('auth.user_banned')
@@ -1242,7 +1242,7 @@ describe('password reset', () => {
     deps.clock.advance(Verification.RESEND_COOLDOWN)
     const resent = await Flows.resendCode(deps, tenant, 'password_reset', attempt.id)
     expect(resent.attempt.step.status).toBe('needs_new_password')
-    expect(deps.mailer.last().subject).toContain('is your password reset code')
+    expect(deps.mailer.last().subject).toContain('is your Tula password reset code')
     const second = sentCode()
     if (first !== second) {
       expect((await rejection(reset(attempt.id, first))).code).toBe('verification.invalid_code')
@@ -1252,7 +1252,7 @@ describe('password reset', () => {
     const decoy = await startReset('nobody@northline.app')
     deps.clock.advance(Verification.RESEND_COOLDOWN)
     await Flows.resendCode(deps, tenant, 'password_reset', decoy.attempt.id)
-    expect(deps.mailer.last().subject).toBe('Password reset requested')
+    expect(deps.mailer.last().subject).toBe('Tula password reset requested')
   })
 
   test('a sign-up attempt cannot be resent as a reset, nor a reset as a sign-up', async () => {
@@ -1272,5 +1272,64 @@ describe('password reset', () => {
     expect((await startReset(EMAIL, web, otherTenant)).attempt.step.status).toBe(
       'needs_new_password'
     )
+  })
+})
+
+describe('a sign-in method the environment has switched off', () => {
+  beforeEach(() => {
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        signIn: { methods: { password: { enabled: false } } },
+      },
+    })
+  })
+
+  test.each<[string, () => Promise<unknown>]>([
+    ['sign-up', () => signUp()],
+    ['sign-in', () => Flows.signIn(deps, tenant, { identifier: EMAIL }, web)],
+    ['password reset', () => Flows.startPasswordReset(deps, tenant, { email: EMAIL }, web)],
+  ])('%s is refused before anything is stored, counted or sent', async (_, start) => {
+    const err = await rejection(start())
+    expect(err.toJSON()).toMatchObject({
+      status: 403,
+      code: 'auth.method_disabled',
+      params: { method: 'password' },
+    })
+    expect(deps.mailer.outbox).toEqual([])
+    expect(deps.activityLog.entries).toEqual([])
+    // The environment's ceilings were not charged for a refused request.
+    for (const step of ['signUp', 'passwordReset'] as const) {
+      const key = Flows.environmentKey(step, tenant)
+      expect((await deps.rateLimiter.hit(key, 10, 60_000)).remaining).toBe(9)
+    }
+  })
+
+  test('the answer is the same for an address with an account and one without', async () => {
+    await deps.users.createWithPassword({
+      id: '00000000-0000-7000-8000-0000000000a1',
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: EMAIL,
+      emailNormalized: NORMALIZED,
+      emailVerifiedAt: deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: '00000000-0000-7000-8000-0000000000b1',
+      credentialId: '00000000-0000-7000-8000-0000000000c1',
+      passwordHash: 'x',
+    })
+    const known = await rejection(Flows.signIn(deps, tenant, { identifier: EMAIL }, web))
+    const unknown = await rejection(
+      Flows.signIn(deps, tenant, { identifier: 'nobody@northline.app' }, web)
+    )
+    expect(known.toJSON()).toEqual(unknown.toJSON())
+  })
+
+  test('another environment of the same deployment is unaffected', async () => {
+    const started = await Flows.signIn(deps, otherTenant, { identifier: EMAIL }, web)
+    expect(started.attempt.step.status).toBe('needs_password')
   })
 })

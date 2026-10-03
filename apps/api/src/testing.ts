@@ -3,6 +3,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
+import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-settings'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
 import { SequentialIds } from '~/adapters/memory/ids'
@@ -28,6 +29,7 @@ export interface TestDeps extends Deps {
   ids: SequentialIds
   apiKeys: MemoryApiKeyRepository
   environments: MemoryEnvironmentRepository
+  environmentSettings: MemoryEnvironmentSettingsStore
   signingKeys: MemorySigningKeyStore
   verificationTokens: MemoryVerificationTokenStore
   sessions: MemorySessionStore
@@ -75,6 +77,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     ids: new SequentialIds(),
     apiKeys: new MemoryApiKeyRepository(activityLog),
     environments: new MemoryEnvironmentRepository(),
+    environmentSettings: new MemoryEnvironmentSettingsStore(activityLog),
     signingKeys: new MemorySigningKeyStore(activityLog),
     verificationTokens: new MemoryVerificationTokenStore(),
     sessions: new MemorySessionStore(activityLog),

@@ -1,0 +1,361 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "environment settings",
+  "description": "An environment's settings are replaced through the admin API, guarded by If-Match so a stale writer is refused. The new password policy is enforced at sign-up and published in the client config, on every instance. The change is in the audit log by key, never by value. The last steps put the original settings back.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "appName": "Conformance Suite 7f3a"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "version": 1,
+            "app": {
+              "name": "$any"
+            },
+            "password": {
+              "minLength": "$any"
+            },
+            "signIn": {
+              "methods": {
+                "password": {
+                  "enabled": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "capture": {
+        "originalName": "settings.app.name"
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings"
+      }
+    },
+    {
+      "name": "a publishable key cannot read them",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "a replace without If-Match is precondition.required",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 428,
+        "body": {
+          "status": 428,
+          "code": "precondition.required"
+        }
+      }
+    },
+    {
+      "name": "an unknown key is refused, not ignored",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "pasword": {}
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "replace the settings: a new app name and a 14-character minimum password",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "name": "{{appName}}"
+          },
+          "password": {
+            "preset": "custom",
+            "minLength": 14,
+            "maxLength": 128,
+            "requireLowercase": false,
+            "requireUppercase": false,
+            "requireNumber": false,
+            "requireSpecial": false,
+            "minCharacterClasses": 0,
+            "specialChars": "!@#$%^&*()-_=+[]{};:,.?/\\|'\"`~<>",
+            "disallowUserInfo": true,
+            "disallowCommon": true,
+            "breachCheck": "block",
+            "maxRepeatedChars": null,
+            "blockSequences": false,
+            "history": 0,
+            "expiryDays": null
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "app": {
+              "name": "{{appName}}",
+              "supportEmail": null
+            },
+            "password": {
+              "preset": "custom",
+              "minLength": 14
+            },
+            "urls": {
+              "allowedOrigins": [],
+              "allowedRedirectUrls": []
+            },
+            "audit": {
+              "retentionDays": null
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "changedEtag": "ETag"
+      }
+    },
+    {
+      "name": "a writer still holding the old revision is precondition.failed",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "name": "A stale writer"
+          }
+        }
+      },
+      "expect": {
+        "status": 412,
+        "body": {
+          "status": 412,
+          "code": "precondition.failed"
+        }
+      }
+    },
+    {
+      "name": "the client config shows the new name and policy, and no allow-list",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": {
+            "name": "{{appName}}"
+          },
+          "signIn": {
+            "methods": ["password"]
+          },
+          "password": {
+            "minLength": 14
+          },
+          "urls": "$absent",
+          "audit": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the password policy endpoint answers from the same settings",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/password-policy"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "preset": "custom",
+          "minLength": 14
+        }
+      }
+    },
+    {
+      "name": "a 12-character password is now password.too_short, naming the new minimum",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "Tu-9fK2m!xQ7"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "password.too_short",
+          "params": {
+            "min": 14
+          }
+        }
+      }
+    },
+    {
+      "name": "a long password still starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_email_verification"
+          }
+        }
+      }
+    },
+    {
+      "name": "let the other instance notice the change",
+      "wait": "6s"
+    },
+    {
+      "name": "the second instance serves the new config too",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config",
+        "instance": "second"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": {
+            "name": "{{appName}}"
+          },
+          "password": {
+            "minLength": 14
+          }
+        }
+      }
+    },
+    {
+      "name": "the change is in the audit log by key, never by value",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=environment.settings_updated&size=1",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "action": "environment.settings_updated",
+              "actor": {
+                "type": "admin",
+                "id": "$any"
+              },
+              "target": {
+                "type": "environment",
+                "id": "$any"
+              },
+              "metadata": {
+                "revision": "$any",
+                "changed": "$any"
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{appName}}"]
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{changedEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "app": {
+              "name": "{{originalName}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the client config is back to the original name",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": {
+            "name": "{{originalName}}"
+          }
+        }
+      }
+    }
+  ]
+}
