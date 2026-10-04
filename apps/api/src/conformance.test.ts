@@ -124,6 +124,11 @@ describe('conformance scenarios, in process', () => {
       'the last way to sign in cannot be removed',
       'passkeys switched off mid-attempt',
       'the admin reset removes passkeys and says whether the user can still sign in',
+      'session profile timeouts',
+      'session profile selection',
+      'concurrent session limit',
+      'stateful session',
+      'step-up window per profile',
     ])
   })
 

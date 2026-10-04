@@ -1,10 +1,14 @@
 import {
   ACCESS_TOKEN_ALGORITHM,
   ACCESS_TOKEN_VERSION,
-  DEFAULT_WEB_SESSION_PROFILE,
+  type AccessTokenClaims,
   durationToMs,
   environmentIssuer,
+  MAX_ACCESS_TOKEN_TTL,
+  type NamedSessionProfile,
+  profileOfSession,
   REFRESH_TOKEN_PREFIX,
+  resolveSessionProfile,
   type Session,
   type SessionClient,
   type SessionProfile,
@@ -12,14 +16,16 @@ import {
 } from '@tula/contract'
 import { SignJWT } from 'jose'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, InternalError, NotFoundError } from '~/exceptions'
+import { AuthError, InternalError, NotFoundError, ServiceUnavailableError } from '~/exceptions'
 import { type Actor, cleanOrigin, type Origin, systemActor } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Jwks from '~/modules/jwks/service'
+import * as Settings from '~/modules/settings/service'
 import {
   authenticatedAt,
+  beganBefore,
   isActive,
   mergeAuthMethods,
   type RefreshTokenRecord,
@@ -29,8 +35,21 @@ import {
 
 /** Keyed-hash purpose for deriving refresh tokens. */
 export const KEYED_HASH_PURPOSE = 'refresh-tokens'
-/** Name stored on sessions issued with {@link profile}. */
-export const PROFILE_NAME = 'web'
+/**
+ * Prefix of a `stateful` session's token: the value of its cookie. Never a refresh token: the
+ * two are derived apart and each is refused where the other is expected.
+ */
+export const SESSION_TOKEN_PREFIX = 'tula_st_'
+/**
+ * How long a session cookie is kept by a browser when its profile has no absolute timeout: the
+ * most browsers allow (400 days). The server's own timeouts are what end the session.
+ */
+export const MAX_COOKIE_AGE_SECONDS = 400 * 86_400
+/**
+ * How many times a sign-in at the session limit re-reads the user's sessions when another
+ * sign-in of the same user got in between (`end_oldest`). Each pass needs to lose a race.
+ */
+const LIMIT_ATTEMPTS = 4
 /**
  * Refreshes per minute from one IP. A client refreshes about once a minute per tab; this leaves
  * room for offices behind one address while bounding unauthenticated database lookups.
@@ -42,18 +61,41 @@ type TokenDeps = Pick<
   Deps,
   'clock' | 'ids' | 'config' | 'signingKeys' | 'environments' | 'secretBox'
 >
-type SessionDeps = TokenDeps & Pick<Deps, 'sessions' | 'revokedSessions' | 'keyedHash' | 'users'>
+type ProfileDeps = Pick<Deps, 'environmentSettings' | 'config'>
+type SessionDeps = TokenDeps &
+  ProfileDeps &
+  Pick<Deps, 'sessions' | 'revokedSessions' | 'keyedHash' | 'users'>
 
 /**
- * The session profile in force.
+ * What the service hands a router when a session is created, refreshed or stepped up.
  *
- * Phase 0 issues one profile (hybrid: 60s access tokens, rotating refresh tokens, 7 days idle,
- * 30 days absolute). Named per-project profiles arrive with the dashboard.
- *
- * @returns The profile.
+ * A `hybrid` session carries `accessToken` and (from create and refresh) `refreshToken`. A
+ * `stateful` one carries neither; from create it carries `sessionToken`, which the router puts
+ * in the session cookie and **never** in a body.
  */
-export function profile(): SessionProfile {
-  return DEFAULT_WEB_SESSION_PROFILE
+export interface IssuedSession extends SessionTokens {
+  /** A new `stateful` session's token: the cookie's value. */
+  sessionToken?: string
+  /** How long the browser should keep the session's cookie, in seconds. */
+  cookieMaxAge?: number
+}
+
+/**
+ * The profile whose limits apply to a session now: the one it names as the environment has it
+ * configured at this moment, or the built-in for its client kind when that profile is gone
+ * (ADR 0028).
+ *
+ * @param deps - Settings store and config.
+ * @param scope - The environment.
+ * @param session - The session's stored profile name and client kind.
+ * @returns The profile and its name.
+ */
+export async function profileOf(
+  deps: ProfileDeps,
+  scope: Pick<Tenant, 'environmentId'>,
+  session: Pick<SessionRecord, 'profile' | 'client'>
+): Promise<NamedSessionProfile> {
+  return profileOfSession((await Settings.current(deps, scope)).sessions, session)
 }
 
 /**
@@ -70,6 +112,53 @@ async function deriveToken(
   return `${REFRESH_TOKEN_PREFIX}${await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, message)}`
 }
 
+/**
+ * The token of a `stateful` session, derived like a refresh token but from a message no
+ * refresh token uses, so the two can never be equal. Only its SHA-256 is stored.
+ */
+async function deriveSessionToken(
+  deps: Pick<Deps, 'keyedHash'>,
+  sessionId: string
+): Promise<string> {
+  const mac = await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, `stateful:${sessionId}`)
+  return `${SESSION_TOKEN_PREFIX}${mac}`
+}
+
+type ClaimSource = Pick<
+  SessionRecord,
+  'id' | 'userId' | 'profile' | 'factorVerifiedAt' | 'authMethods' | 'createdAt'
+>
+
+/**
+ * The claims of a session at `now`, for a token that lives as long as its profile says: what
+ * an access token carries, and what a `stateful` session's check answers with.
+ */
+function claimsOf(
+  deps: Pick<Deps, 'config'>,
+  scope: Scope,
+  session: ClaimSource,
+  profile: SessionProfile,
+  now: Date
+): AccessTokenClaims {
+  const iat = Math.floor(now.getTime() / 1000)
+  return {
+    iss: environmentIssuer(deps.config.publicUrl, scope.environmentId),
+    sub: session.userId,
+    aud: scope.environmentId,
+    sid: session.id,
+    pid: scope.projectId,
+    eid: scope.environmentId,
+    iat,
+    exp: iat + durationToMs(profile.accessTokenTtl) / 1000,
+    v: ACCESS_TOKEN_VERSION,
+    // From the session row, never from "now": a refresh must not make an old sign-in look
+    // recent (ADR 0025).
+    auth_time: Math.floor(authenticatedAt(session).getTime() / 1000),
+    amr: session.authMethods,
+    sp: session.profile,
+  }
+}
+
 type SigningKey = Awaited<ReturnType<typeof Jwks.activeSigningKey>>
 
 /**
@@ -82,30 +171,21 @@ type SigningKey = Awaited<ReturnType<typeof Jwks.activeSigningKey>>
 async function signAccessToken(
   deps: Pick<Deps, 'config'>,
   scope: Scope,
-  session: Pick<SessionRecord, 'id' | 'userId' | 'factorVerifiedAt' | 'authMethods' | 'createdAt'>,
+  session: ClaimSource,
+  profile: SessionProfile,
   now: Date,
   { kid, privateKey }: SigningKey
 ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
-  const issuedAt = Math.floor(now.getTime() / 1000)
-  const expiresAt = issuedAt + durationToMs(profile().accessTokenTtl) / 1000
-  const accessToken = await new SignJWT({
-    sid: session.id,
-    pid: scope.projectId,
-    eid: scope.environmentId,
-    v: ACCESS_TOKEN_VERSION,
-    // From the session row, never from "now": a refresh must not make an old sign-in look
-    // recent (ADR 0025).
-    auth_time: Math.floor(authenticatedAt(session).getTime() / 1000),
-    amr: session.authMethods,
-  })
+  const { iss, sub, aud, iat, exp, ...claims } = claimsOf(deps, scope, session, profile, now)
+  const accessToken = await new SignJWT(claims)
     .setProtectedHeader({ alg: ACCESS_TOKEN_ALGORITHM, kid, typ: 'JWT' })
-    .setIssuer(environmentIssuer(deps.config.publicUrl, scope.environmentId))
-    .setSubject(session.userId)
-    .setAudience(scope.environmentId)
-    .setIssuedAt(issuedAt)
-    .setExpirationTime(expiresAt)
+    .setIssuer(iss)
+    .setSubject(sub)
+    .setAudience(aud)
+    .setIssuedAt(iat)
+    .setExpirationTime(exp)
     .sign(privateKey)
-  return { accessToken, accessTokenExpiresAt: new Date(expiresAt * 1000).toISOString() }
+  return { accessToken, accessTokenExpiresAt: new Date(exp * 1000).toISOString() }
 }
 
 /**
@@ -128,10 +208,40 @@ function revoked(
   })
 }
 
-/** `now + idle timeout`, never past the session's absolute limit. */
-function idleExpiry(now: Date, absoluteExpiresAt: Date | null): Date {
-  const idle = now.getTime() + durationToMs(profile().idleTimeout)
+/** `now + the profile's idle timeout`, never past the session's absolute limit. */
+function idleExpiry(profile: SessionProfile, now: Date, absoluteExpiresAt: Date | null): Date {
+  const idle = now.getTime() + durationToMs(profile.idleTimeout)
   return new Date(absoluteExpiresAt ? Math.min(idle, absoluteExpiresAt.getTime()) : idle)
+}
+
+/**
+ * When a session ends under its profile **as configured now**: the earlier of what was stored
+ * when it was created or last active and what the profile says today.
+ *
+ * Tightening a profile therefore reaches sessions that already exist, at their next refresh or
+ * request. Loosening one does not move the absolute limit a session was created with (the
+ * stored value still caps it); a longer idle timeout applies from the next activity on.
+ */
+function limitsNow(
+  profile: SessionProfile,
+  session: Pick<SessionRecord, 'createdAt' | 'lastActiveAt' | 'idleExpiresAt' | 'absoluteExpiresAt'>
+): { idleExpiresAt: Date; absoluteExpiresAt: Date | null } {
+  const earliest = (...times: (number | null)[]) =>
+    Math.min(...times.filter((time) => time !== null))
+  const configured = profile.absoluteTimeout
+    ? session.createdAt.getTime() + durationToMs(profile.absoluteTimeout)
+    : null
+  const stored = session.absoluteExpiresAt?.getTime() ?? null
+  const absolute = configured === null && stored === null ? null : earliest(configured, stored)
+  const idle = earliest(
+    session.idleExpiresAt.getTime(),
+    session.lastActiveAt.getTime() + durationToMs(profile.idleTimeout),
+    absolute
+  )
+  return {
+    idleExpiresAt: new Date(idle),
+    absoluteExpiresAt: absolute === null ? null : new Date(absolute),
+  }
 }
 
 /**
@@ -147,7 +257,9 @@ async function denylist(
   sessionIds: readonly string[],
   now: Date
 ): Promise<void> {
-  const until = new Date(now.getTime() + durationToMs(profile().accessTokenTtl))
+  // The longest any profile may let an access token live, not the session's own profile: the
+  // profile may have been shortened since the token was signed.
+  const until = new Date(now.getTime() + durationToMs(MAX_ACCESS_TOKEN_TTL))
   await Promise.all(sessionIds.map((id) => deps.revokedSessions.add(id, until)))
 }
 
@@ -163,76 +275,170 @@ export interface CreateInput {
    * `['pwd', 'otp', 'mfa']`. Defaults to none.
    */
   authMethods?: readonly string[]
+  /**
+   * The profile the client asked for (`x-tula-session-profile`), if any. Honoured only when
+   * the environment marks it `clientSelectable`; anything else gets the client kind's built-in.
+   */
+  profile?: string | null
 }
 
 /**
  * Start a session for a user who has just proven who they are, and issue its first tokens.
  *
- * The refresh token is always returned; the router decides whether a client receives it in the
- * body (native) or as an httpOnly cookie (browser).
+ * The session's profile is chosen here ({@link resolveSessionProfile}): by client kind, or the
+ * one the client asked for when the environment offers it. A `hybrid` session gets an access
+ * token and a refresh token (always returned; the router decides whether a client receives it
+ * in the body or as an httpOnly cookie). A `stateful` session gets a session token only, which
+ * the router puts in a cookie.
  *
- * @param deps - Session store, keyed hash, signing keys, clock and ids.
+ * **The concurrent-session rule is enforced here** (`sessions.maxPerUser`), atomically: the
+ * store ends the sessions named to it, counts and inserts in one step that sign-ins of one
+ * user take in turn, so simultaneous sign-ins can never leave a user over the limit. With
+ * `end_oldest` the user's oldest sessions (by sign-in time) are ended for the new one, each
+ * put on the revoked-session list **before** the store ends it; with `refuse_newest` nothing
+ * is created.
+ *
+ * @param deps - Session store, settings, keyed hash, signing keys, clock and ids.
  * @param scope - The project and environment.
- * @param input - The user and device.
- * @returns The session id, access token and refresh token.
+ * @param input - The user, the device and the profile asked for.
+ * @returns The session id and its tokens.
+ * @throws AuthError `session.limit_reached` when the user is at the limit and the environment
+ *   refuses the newest.
+ * @throws ServiceUnavailableError when sign-ins of the same user kept getting in between.
  */
 export async function create(
   deps: SessionDeps,
   scope: Scope,
   input: CreateInput
-): Promise<SessionTokens> {
+): Promise<IssuedSession> {
   const now = deps.clock.now()
-  const absoluteTimeout = profile().absoluteTimeout
-  const absoluteExpiresAt = absoluteTimeout
-    ? new Date(now.getTime() + durationToMs(absoluteTimeout))
+  const { sessions: settings } = await Settings.current(deps, scope)
+  const { name, profile } = resolveSessionProfile(settings, {
+    client: input.client,
+    requested: input.profile,
+  })
+  const absoluteExpiresAt = profile.absoluteTimeout
+    ? new Date(now.getTime() + durationToMs(profile.absoluteTimeout))
     : null
-  const idleExpiresAt = idleExpiry(now, absoluteExpiresAt)
+  const idleExpiresAt = idleExpiry(profile, now, absoluteExpiresAt)
   const sessionId = deps.ids.next()
-  const refreshToken = await deriveToken(deps, { sessionId })
+  const stateful = profile.type === 'stateful'
+  const token = stateful
+    ? await deriveSessionToken(deps, sessionId)
+    : await deriveToken(deps, { sessionId })
   const origin = cleanOrigin(input)
-  const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
+  // A stateful session signs nothing, so it does not depend on the signing keys.
+  const signingKey = stateful ? null : await Jwks.activeSigningKey(deps, scope.environmentId)
   const authMethods = mergeAuthMethods([], input.authMethods ?? [])
+  const session = {
+    id: sessionId,
+    projectId: scope.projectId,
+    environmentId: scope.environmentId,
+    userId: input.userId,
+    profile: name,
+    type: profile.type,
+    client: input.client,
+    ...origin,
+    lastActiveAt: now,
+    idleExpiresAt,
+    absoluteExpiresAt,
+    // A session begins with a sign-in: that is its first proof.
+    factorVerifiedAt: now,
+    authMethods,
+    createdAt: now,
+  }
+  const root = {
+    id: deps.ids.next(),
+    sessionId,
+    tokenHash: sha256Hex(token),
+    parentId: null,
+    expiresAt: idleExpiresAt,
+    createdAt: now,
+  }
+  const activity = Audit.entry(deps, scope, {
+    type: 'session.created',
+    actor: { type: 'user', id: input.userId, ...origin },
+    target: { type: 'session', id: sessionId },
+    data: { userId: input.userId, client: input.client },
+  })
 
-  await deps.sessions.create(
-    {
-      id: sessionId,
-      projectId: scope.projectId,
-      environmentId: scope.environmentId,
-      userId: input.userId,
-      profile: PROFILE_NAME,
-      client: input.client,
-      ...origin,
-      lastActiveAt: now,
-      idleExpiresAt,
-      absoluteExpiresAt,
-      // A session begins with a sign-in: that is its first proof.
-      factorVerifiedAt: now,
-      authMethods,
-      createdAt: now,
-    },
-    {
-      id: deps.ids.next(),
-      sessionId,
-      tokenHash: sha256Hex(refreshToken),
-      parentId: null,
-      expiresAt: idleExpiresAt,
-      createdAt: now,
-    },
-    Audit.entry(deps, scope, {
-      type: 'session.created',
-      actor: { type: 'user', id: input.userId, ...origin },
-      target: { type: 'session', id: sessionId },
-      data: { userId: input.userId, client: input.client },
+  if (settings.maxPerUser === null) {
+    await deps.sessions.create(session, root, activity)
+  } else {
+    await createWithinLimit(deps, scope, { session, root, activity, origin, now }, settings)
+  }
+
+  const cookieMaxAge = absoluteExpiresAt
+    ? Math.ceil((absoluteExpiresAt.getTime() - now.getTime()) / 1000)
+    : MAX_COOKIE_AGE_SECONDS
+  if (!signingKey) {
+    return { sessionId, sessionToken: token, cookieMaxAge }
+  }
+  const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+  return {
+    sessionId,
+    ...access,
+    refreshToken: token,
+    cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
+  }
+}
+
+/** A session about to be stored, with what is recorded about it. */
+interface Pending {
+  session: Parameters<Deps['sessions']['create']>[0]
+  root: Parameters<Deps['sessions']['create']>[1]
+  activity: Parameters<Deps['sessions']['create']>[2]
+  origin: Partial<Origin>
+  now: Date
+}
+
+/**
+ * Store a session under the environment's concurrent-session rule.
+ *
+ * The store decides (it is the only place that can, atomically); this function names the
+ * sessions to end. They are the user's oldest by sign-in time, read just before, and each is
+ * put on the revoked-session list before the store is asked to end it, as every revocation is.
+ * When another sign-in of the same user got in between, the store writes nothing and the list
+ * is read again: the sessions already denylisted are still the oldest, so they are named again.
+ */
+async function createWithinLimit(
+  deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'ids' | 'clock'>,
+  scope: Scope,
+  pending: Pending,
+  rule: { maxPerUser: number | null; onLimit: 'end_oldest' | 'refuse_newest' }
+): Promise<void> {
+  const { session, root, activity, origin, now } = pending
+  const max = rule.maxPerUser ?? Number.POSITIVE_INFINITY
+  for (let pass = 0; pass < LIMIT_ATTEMPTS; pass++) {
+    const active = await deps.sessions.listActiveByUser(scope.environmentId, session.userId, now)
+    const excess = active.length - max + 1
+    if (excess > 0 && rule.onLimit === 'refuse_newest') {
+      throw new AuthError('session.limit_reached')
+    }
+    const end = [...active]
+      .sort((x, y) => (beganBefore(x, y) ? -1 : 1))
+      .slice(0, Math.max(excess, 0))
+      .map((oldest) => oldest.id)
+    await denylist(deps, end, now)
+    const result = await deps.sessions.create(session, root, activity, {
+      max,
+      end,
+      at: now,
+      // The system ends them: the rule did, on behalf of nobody in particular. The origin of
+      // the sign-in that took the place is kept.
+      activity: (id) =>
+        revoked(deps, scope, { id, userId: session.userId }, 'session_limit', systemActor(origin)),
     })
-  )
-  const access = await signAccessToken(
-    deps,
-    scope,
-    { id: sessionId, userId: input.userId, factorVerifiedAt: now, authMethods, createdAt: now },
-    now,
-    signingKey
-  )
-  return { sessionId, ...access, refreshToken }
+    if (result.created) {
+      return
+    }
+    if (rule.onLimit === 'refuse_newest') {
+      throw new AuthError('session.limit_reached')
+    }
+  }
+  throw new ServiceUnavailableError({
+    internalMessage: 'sign-ins of one user kept racing at the session limit',
+  })
 }
 
 /**
@@ -249,19 +455,23 @@ export async function create(
  * @param self - The signed-in user and their session, from the access token.
  * @param methods - What was just proven, e.g. `['otp', 'mfa']`.
  * @param actor - The user, for the audit log.
- * @returns The session id and a fresh access token. No refresh token.
+ * @returns The session id and a fresh access token (none for a `stateful` session, whose next
+ *   request reads the row). No refresh token.
  * @throws AuthError `session.revoked` when the session has ended or is not this user's.
  */
 export async function recordAuthentication(
-  deps: TokenDeps & Pick<Deps, 'sessions'>,
+  deps: TokenDeps & ProfileDeps & Pick<Deps, 'sessions'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
   methods: readonly string[],
   actor: Actor
 ): Promise<SessionTokens> {
   const now = deps.clock.now()
-  const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
   const current = await deps.sessions.findById(scope.environmentId, self.sessionId)
+  // Loaded before the write, like every signing key (see `signAccessToken`); a stateful
+  // session signs nothing.
+  const signingKey =
+    current?.type === 'stateful' ? null : await Jwks.activeSigningKey(deps, scope.environmentId)
   const session =
     current && current.userId === self.userId
       ? await deps.sessions.recordAuthentication(
@@ -279,23 +489,30 @@ export async function recordAuthentication(
   if (!session) {
     throw new AuthError('session.revoked')
   }
-  const access = await signAccessToken(deps, scope, session, now, signingKey)
+  if (!signingKey) {
+    // The next request reads `auth_time` and `amr` from the row just updated.
+    return { sessionId: session.id }
+  }
+  const { profile } = await profileOf(deps, scope, session)
+  const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
   return { sessionId: session.id, ...access }
 }
 
 /**
- * Refuse a session that has ended, with the error the client should see.
+ * Refuse a session that has ended, with the error the client should see: revoked, or past its
+ * idle or absolute limit under its profile as configured now ({@link limitsNow}).
  *
  * A session revoked for reuse keeps answering `session.reuse_detected`, so the legitimate
  * holder of the newest token learns why they were signed out.
  */
-function rejectEnded(session: SessionRecord, now: Date): void {
+function rejectEnded(session: SessionRecord, profile: SessionProfile, now: Date): void {
   if (session.revokedAt !== null) {
     throw new AuthError(
       session.revokeReason === 'reuse_detected' ? 'session.reuse_detected' : 'session.revoked'
     )
   }
-  if (!isActive(session, now)) {
+  // Under the profile as it is configured now, not only as it was when the row was written.
+  if (!isActive({ ...session, ...limitsNow(profile, session) }, now)) {
     throw new AuthError('session.expired')
   }
 }
@@ -332,7 +549,8 @@ async function rejectBanned(
  *
  * Refresh tokens are single-use. Presenting one that was already rotated revokes the whole
  * session (`session.reuse_detected`): either the token was stolen or the client is broken, and
- * we cannot tell which. The **only** exception is the profile's `reuseGracePeriod`: inside it,
+ * we cannot tell which. The **only** exception is the `reuseGracePeriod` of the session's
+ * profile (none at all when the profile sets `null`): inside it,
  * and only while the child has not itself been rotated, the caller gets the *same* child token
  * again (re-derived, never newly minted) with a fresh access token. That makes racing tabs and
  * retried requests idempotent.
@@ -353,7 +571,7 @@ export async function refresh(
   scope: Scope,
   refreshToken: string,
   origin: Partial<Origin> = {}
-): Promise<SessionTokens> {
+): Promise<IssuedSession> {
   const tokenHash = sha256Hex(refreshToken)
   // A second pass only happens when a concurrent request won the rotation between our read and
   // our write; the re-read then sees the token as used and takes the grace path.
@@ -364,19 +582,24 @@ export async function refresh(
       throw new AuthError('session.invalid_token')
     }
     const { token, session } = found
-    rejectEnded(session, now)
+    if (session.type !== 'hybrid') {
+      // A stateful session's token is a cookie checked on every request, never exchanged.
+      throw new AuthError('session.invalid_token')
+    }
+    const { profile } = await profileOf(deps, scope, session)
+    rejectEnded(session, profile, now)
     await rejectBanned(deps, scope, session, now, origin)
 
     // Reuse is judged before the token's own expiry: a rotated token replayed on a live session
     // is theft however old it is, and must not be waved through as merely "expired".
     if (token.usedAt !== null) {
-      return replayOrRevoke(deps, scope, session, token, token.usedAt, now, origin)
+      return replayOrRevoke(deps, scope, { session, profile, token }, token.usedAt, now, origin)
     }
     if (token.expiresAt.getTime() <= now.getTime()) {
       throw new AuthError('session.expired')
     }
 
-    const idleExpiresAt = idleExpiry(now, session.absoluteExpiresAt)
+    const idleExpiresAt = idleExpiry(profile, now, limitsNow(profile, session).absoluteExpiresAt)
     const child = await deriveToken(deps, { parentId: token.id })
     const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
     const rotated = await deps.sessions.rotate(scope.environmentId, {
@@ -393,8 +616,13 @@ export async function refresh(
       idleExpiresAt,
     })
     if (rotated) {
-      const access = await signAccessToken(deps, scope, session, now, signingKey)
-      return { sessionId: session.id, ...access, refreshToken: child }
+      const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+      return {
+        sessionId: session.id,
+        ...access,
+        refreshToken: child,
+        cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
+      }
     }
   }
   throw new InternalError({ internalMessage: 'refresh rotation lost the race twice' })
@@ -403,25 +631,27 @@ export async function refresh(
 async function replayOrRevoke(
   deps: SessionDeps,
   scope: Scope,
-  session: SessionRecord,
-  token: RefreshTokenRecord,
+  presented: { session: SessionRecord; profile: SessionProfile; token: RefreshTokenRecord },
   usedAt: Date,
   now: Date,
   origin: Partial<Origin>
-): Promise<SessionTokens> {
-  const withinGrace =
-    now.getTime() - usedAt.getTime() < durationToMs(profile().refresh.reuseGracePeriod)
+): Promise<IssuedSession> {
+  const { session, profile, token } = presented
+  // No grace period (`null`) is strict rotation: every replay is reuse.
+  const grace = profile.refresh.reuseGracePeriod
+  const withinGrace = grace !== null && now.getTime() - usedAt.getTime() < durationToMs(grace)
   const child =
     withinGrace && token.replacedById
       ? await deps.sessions.findTokenById(scope.environmentId, token.replacedById)
       : null
   if (child && child.usedAt === null) {
     const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
-    const access = await signAccessToken(deps, scope, session, now, signingKey)
+    const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
     return {
       sessionId: session.id,
       ...access,
       refreshToken: await deriveToken(deps, { parentId: token.id }),
+      cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
     }
   }
   await denylist(deps, [session.id], now)
@@ -440,6 +670,55 @@ async function replayOrRevoke(
     userId: session.userId,
   })
   throw new AuthError('session.reuse_detected')
+}
+
+/**
+ * Check a `stateful` session's token (the value of its cookie) against the session store, and
+ * answer with the claims an access token would carry.
+ *
+ * This runs on every request of such a session, which is the point of the type: a revocation
+ * is seen by the very next one, on every instance, with no denylist and no token lifetime in
+ * between. The limits are those of the session's profile as configured now.
+ *
+ * Activity is written down at most once per `accessTokenTtl` of the profile (so the idle
+ * timeout has that precision, as it has for a `hybrid` session), and that write is also when a
+ * ban is caught, as a refresh catches it for a `hybrid` session.
+ *
+ * @param deps - Session store, settings, users, denylist, clock and ids.
+ * @param scope - The environment the request resolved to.
+ * @param sessionToken - The presented token.
+ * @param origin - Where the request came from, recorded if the session has to be revoked.
+ * @returns The session's claims: `sub`, `sid`, `auth_time`, `amr`, `sp` and the rest, with
+ *   `iat` now and `exp` one `accessTokenTtl` from now (how long a caller may rely on them).
+ * @throws AuthError `session.invalid_token` (unknown, another environment's, or a refresh
+ *   token), `session.revoked`, `session.reuse_detected`, `session.expired` or
+ *   `auth.user_banned`.
+ */
+export async function authenticate(
+  deps: ProfileDeps & Pick<Deps, 'sessions' | 'revokedSessions' | 'users' | 'clock' | 'ids'>,
+  scope: Scope,
+  sessionToken: string,
+  origin: Partial<Origin> = {}
+): Promise<AccessTokenClaims> {
+  const now = deps.clock.now()
+  const found = await deps.sessions.findToken(scope.environmentId, sha256Hex(sessionToken))
+  if (!found || found.session.type !== 'stateful') {
+    throw new AuthError('session.invalid_token')
+  }
+  const { session } = found
+  const { profile } = await profileOf(deps, scope, session)
+  rejectEnded(session, profile, now)
+  if (now.getTime() - session.lastActiveAt.getTime() < durationToMs(profile.accessTokenTtl)) {
+    return claimsOf(deps, scope, session, profile, now)
+  }
+  await rejectBanned(deps, scope, session, now, origin)
+  const idleExpiresAt = idleExpiry(profile, now, limitsNow(profile, session).absoluteExpiresAt)
+  if (!(await deps.sessions.touch(scope.environmentId, session.id, now, idleExpiresAt))) {
+    // It ended between the read and the write.
+    const ended = await deps.sessions.findById(scope.environmentId, session.id)
+    throw new AuthError(ended?.revokedAt === null ? 'session.expired' : 'session.revoked')
+  }
+  return claimsOf(deps, scope, session, profile, now)
 }
 
 function toSession(record: SessionRecord, currentSessionId: string): Session {
@@ -585,7 +864,7 @@ export async function revokeAllForUser(
 }
 
 /**
- * Sign out the session a refresh token belongs to.
+ * Sign out the session a refresh token, or a `stateful` session's token, belongs to.
  *
  * Never fails: a missing, unknown or foreign token is a no-op, so sign-out always succeeds from
  * the client's point of view and reveals nothing about which tokens exist. Any token of the

@@ -819,6 +819,56 @@ describe('exitCode', () => {
   })
 })
 
+describe('cookies', () => {
+  const signIn = {
+    name: 'sign in',
+    request: get('/v1/client/me'),
+    expect: { status: 200 },
+    captureCookie: { match: 'tula_session_', pair: 'cookie', value: 'token' },
+  }
+  const setCookie =
+    '__Host-tula_session_e1=tula_st_abc; Max-Age=60; Path=/; HttpOnly; Secure; SameSite=Lax'
+
+  test('a cookie is captured as the pair a browser sends back and as its value alone', async () => {
+    const { target, requests } = fakeTarget((_seen, index) =>
+      index === 0 ? { status: 200, headers: { 'set-cookie': setCookie } } : { status: 200 }
+    )
+    const result = await runScenario(
+      scenario([
+        signIn,
+        {
+          name: 'use it',
+          request: {
+            ...get('/v1/client/me'),
+            headers: { Cookie: '{{cookie}}', 'x-seen': '{{token}}' },
+          },
+          expect: { status: 200 },
+        },
+      ]),
+      target
+    )
+    expect(result.steps.flatMap((step) => step.problems ?? [])).toEqual([])
+    expect(requests[1]?.headers.cookie).toBe('__Host-tula_session_e1=tula_st_abc')
+    expect(requests[1]?.headers['x-seen']).toBe('tula_st_abc')
+  })
+
+  test('a missing cookie, and one being cleared, fail the step without printing a value', async () => {
+    const none = fakeTarget(() => ({ status: 200 }))
+    const missing = await runScenario(scenario([signIn]), none.target)
+    expect(missing.steps.at(-1)?.problems).toEqual([
+      'cannot capture a cookie: none set whose name contains tula_session_',
+    ])
+    const cleared = fakeTarget(() => ({
+      status: 200,
+      headers: { 'set-cookie': '__Host-tula_session_e1=; Max-Age=0; Path=/' },
+    }))
+    const empty = await runScenario(scenario([signIn]), cleared.target)
+    expect(empty.steps.at(-1)?.problems).toEqual([
+      'cannot capture a cookie: none set whose name contains tula_session_',
+    ])
+  })
+})
+
 describe('headers and whole values', () => {
   const read = {
     name: 'read',

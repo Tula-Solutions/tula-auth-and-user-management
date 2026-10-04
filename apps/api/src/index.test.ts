@@ -197,6 +197,8 @@ describe('documentation routes', () => {
       '/v1/client/sessions/step-up',
       '/v1/client/sessions/step-up/email-code',
       '/v1/client/sessions/step-up/passkey',
+      '/v1/admin/sessions/verify',
+      '/v1/admin/users/{userId}/sessions',
       '/v1/client/sign-ups',
       '/v1/client/sign-ins',
       '/v1/client/sign-ins/{attemptId}/password',

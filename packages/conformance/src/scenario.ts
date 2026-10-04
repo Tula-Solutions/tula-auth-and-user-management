@@ -129,6 +129,21 @@ export const RequestStepSchema = z
      * `{ "original": "settings" }`. Send it back with `{ "$json": "{{original}}" }` in a body.
      */
     captureJson: z.record(z.string(), z.string()).optional(),
+    /**
+     * Variables to set from a cookie the response sets (`Set-Cookie`): the first one whose
+     * name contains `match` and whose value is not empty. `pair` receives `name=value`, what a
+     * browser sends back in `Cookie`; `value` receives the value alone. Cookie names depend on
+     * the deployment (the environment id, a `__Host-` prefix over https), hence the match by
+     * part of the name: `{ "match": "tula_session_", "pair": "cookie", "value": "token" }`.
+     */
+    captureCookie: z
+      .object({
+        match: z.string().min(1),
+        pair: z.string().min(1).optional(),
+        value: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .meta({ ref: 'ConformanceRequestStep' })

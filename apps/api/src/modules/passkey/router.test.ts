@@ -12,7 +12,7 @@ import {
   type PasskeyList,
   type PasskeyRequestOptions,
   type PasskeySignInStart,
-  type SessionTokens,
+  type HybridSessionTokens as SessionTokens,
   type TotpEnrolment,
 } from '@tula/contract'
 import { decodeJwt } from 'jose'

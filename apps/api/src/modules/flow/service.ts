@@ -28,7 +28,6 @@ import {
   SecondFactorMethodSchema,
   type SessionClient,
   SessionClientSchema,
-  type SessionTokens,
   type SignInStartRequest,
   type SignUpRequest,
   type TotpEnrolment,
@@ -189,6 +188,11 @@ export interface ClientContext {
    * attempt starts; later calls use the kind the attempt was started with.
    */
   client: SessionClient
+  /**
+   * The session profile the client asked for (`x-tula-session-profile`), if any. Like `client`
+   * it is read only when an attempt starts and kept on the attempt.
+   */
+  profile?: string
   userAgent: string | null
   ipAddress: string | null
   /**
@@ -220,14 +224,27 @@ export interface AttemptRef {
 export interface FlowResult {
   attempt: FlowAttempt
   /** Present only when the step is `complete`. The router delivers the refresh token. */
-  tokens?: SessionTokens
+  tokens?: Sessions.IssuedSession
   /** The client kind the attempt was started from. */
   client: SessionClient
 }
 
 /** Server-only state kept on an attempt. Never sent to clients. */
+/** What an attempt remembers of the client that started it: its kind and the profile it asked for. */
+function asked(context: Pick<ClientContext, 'client' | 'profile'>): {
+  client: SessionClient
+  profile?: string
+} {
+  return { client: context.client, ...(context.profile && { profile: context.profile }) }
+}
+
 const StateSchema = z.object({
   client: SessionClientSchema,
+  /**
+   * The session profile the client asked for when the attempt started. Only a request: the
+   * session service decides at `finish` whether the environment offers it (ADR 0028).
+   */
+  profile: z.string().max(64).optional(),
   /** Email as entered, for sending and for the masked destination. */
   email: z.string().optional(),
   firstName: z.string().nullable().optional(),
@@ -510,6 +527,11 @@ async function load(
  * The attempt is moved to `complete` first, as a compare-and-set, so of two racing requests
  * only one creates a session. Pending sign-up data (the password hash) is dropped from it.
  *
+ * The session's profile and the environment's concurrent-session rule are applied by
+ * `Sessions.create` (ADR 0028). Where the rule refuses the newest session the answer is
+ * `session.limit_reached`: every factor was proven by then, so it tells nothing to someone who
+ * could not sign in, and the attempt is spent (the client starts again once a place is free).
+ *
  * The only place a flow creates a session, and so the only place the "new sign-in" notice is
  * started (ADR 0023): after `Sessions.create` has returned, so a request that lost the race,
  * stopped at a second factor or failed before this point created no session and sends nothing.
@@ -548,6 +570,7 @@ async function finish(
     userAgent: context.userAgent,
     ipAddress: context.ipAddress,
     authMethods: state.amr ?? [],
+    profile: state.profile,
   })
   if (
     attempt.kind !== 'sign_up' &&
@@ -707,7 +730,7 @@ export async function signUp(
   }
 
   const decoy = (await deps.users.findByEmail(tenant.environmentId, identifier)) !== null
-  const base = { client: context.client, email, ...(passwordless && { passwordless }) }
+  const base = { ...asked(context), email, ...(passwordless && { passwordless }) }
   const state: State = decoy
     ? { ...base, decoy: true }
     : { ...base, firstName, lastName, ...(passwordHash !== undefined && { passwordHash }) }
@@ -793,7 +816,7 @@ export async function signIn(
   if (strategies.length === 0) {
     throw new AuthError('auth.method_disabled')
   }
-  const state: State = { client: context.client, strategies }
+  const state: State = { ...asked(context), strategies }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'sign_in',
     status:
@@ -1311,7 +1334,7 @@ export async function startOAuth(
   const nonce = randomToken()
   const binding = `${OAUTH_BINDING_PREFIX}${randomToken()}`
   const state: State = {
-    client: context.client,
+    ...asked(context),
     strategies: [OAuth.strategyOf(provider)],
     oauthPhase: 'started',
     oauth: {
@@ -1910,7 +1933,7 @@ export async function startPasswordReset(
   await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'passwordReset')
   const user = await deps.users.findByEmail(tenant.environmentId, identifier)
-  const state: State = { client: context.client, email, ...(!user && { decoy: true }) }
+  const state: State = { ...asked(context), email, ...(!user && { decoy: true }) }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'password_reset',
     status: 'needs_new_password',
@@ -2230,7 +2253,7 @@ export async function startPasskeySignIn(
   await chargeEnvironment(deps, tenant, 'passkeyStart')
   const challenge = WebAuthn.newChallenge()
   const state: State = {
-    client: context.client,
+    ...asked(context),
     strategies: ['passkey'],
     passkeyChallenge: challenge,
     passkeyChallengeExpiresAt: deps.clock.now().getTime() + PASSKEY_CHALLENGE_TTL_MS,

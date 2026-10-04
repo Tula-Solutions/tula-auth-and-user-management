@@ -2,12 +2,16 @@ import {
   AT_LEAST_ONE_SIGN_IN_METHOD,
   type ClientConfig,
   DEFAULT_ENVIRONMENT_SETTINGS,
+  DEFAULT_STEP_UP_AFTER,
+  durationToMs,
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
   EnvironmentSettingsSchema,
   hasEnabledSignInMethod,
   type OAuthProvider,
   type PasswordPolicy,
+  type SessionProfile,
+  type SessionSettings,
   type SignInMethod,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
@@ -161,7 +165,8 @@ const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> 
  * True when a security notice that was on is switched off (`notifications.passwordChanged`,
  * `notifications.newSignIn`, `notifications.mfaChanged`, `notifications.identityChanged`: the
  * owner would no longer be told),
- * when the MFA policy moves towards `off` (`required` → `optional` → `off`), or when the new password
+ * when the MFA policy moves towards `off` (`required` → `optional` → `off`), when the session
+ * settings let sessions live longer or be had more freely (see `sessionsWeakened`), or when the new password
  * policy, compared with the old one:
  * - allows a shorter password (`minLength` is lower);
  * - checks breached passwords less strictly (`block` → `warn` → `off`);
@@ -191,7 +196,50 @@ export function weakened(before: EnvironmentSettings, after: EnvironmentSettings
     repeats(is) > repeats(was) ||
     is.history < was.history ||
     NOTICES.some((notice) => before.notifications[notice] && !after.notifications[notice]) ||
-    MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy]
+    MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy] ||
+    sessionsWeakened(before.sessions, after.sessions)
+  )
+}
+
+/** A duration in milliseconds, with what "none" means for the field it came from. */
+function span(duration: string | null, none: number): number {
+  return duration === null ? none : durationToMs(duration)
+}
+
+/** Whether a profile lets a session live longer, or be chosen more freely, than it did. */
+function profileWeakened(was: SessionProfile, is: SessionProfile): boolean {
+  const never = Number.POSITIVE_INFINITY
+  const stepUp = durationToMs(DEFAULT_STEP_UP_AFTER)
+  return (
+    span(is.idleTimeout, never) > span(was.idleTimeout, never) ||
+    span(is.absoluteTimeout, never) > span(was.absoluteTimeout, never) ||
+    span(is.accessTokenTtl, never) > span(was.accessTokenTtl, never) ||
+    span(is.refresh.reuseGracePeriod, 0) > span(was.refresh.reuseGracePeriod, 0) ||
+    span(is.stepUpAfter, stepUp) > span(was.stepUpAfter, stepUp) ||
+    (is.clientSelectable && !was.clientSelectable)
+  )
+}
+
+/**
+ * Whether the `sessions` section got weaker: the concurrent-session limit was raised or
+ * removed, or a profile that existed now lets its sessions live longer (idle or absolute
+ * timeout, access-token lifetime, refresh grace window), asks for a step-up later, or became
+ * selectable by clients. A profile that was removed is compared with the built-in `web`
+ * profile its sessions fall back to. A new profile weakens nothing that existed; changing
+ * `onLimit` or a profile's `type` is not a weakening either way.
+ */
+function sessionsWeakened(before: SessionSettings, after: SessionSettings): boolean {
+  if (
+    before.maxPerUser !== null &&
+    (after.maxPerUser === null || after.maxPerUser > before.maxPerUser)
+  ) {
+    return true
+  }
+  return Object.entries(before.profiles).some(([name, was]) =>
+    profileWeakened(
+      was,
+      Object.hasOwn(after.profiles, name) ? (after.profiles[name] ?? was) : after.profiles.web
+    )
   )
 }
 

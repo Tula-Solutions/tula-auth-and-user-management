@@ -29,6 +29,23 @@ function issuePaths(input: unknown): string[] {
   return result.success ? [] : result.error.issues.map((issue) => issue.path.join('.'))
 }
 
+import type { SessionProfile, SessionSettings } from './session-profile'
+
+const DEFAULT_PROFILE: SessionProfile = {
+  type: 'hybrid',
+  accessTokenTtl: '60s',
+  idleTimeout: '7d',
+  absoluteTimeout: '30d',
+  refresh: { reuseGracePeriod: '10s' },
+  stepUpAfter: null,
+  clientSelectable: false,
+}
+const DEFAULT_SESSIONS: SessionSettings = {
+  profiles: { web: DEFAULT_PROFILE, mobile: DEFAULT_PROFILE },
+  maxPerUser: null,
+  onLimit: 'end_oldest',
+}
+
 describe('EnvironmentSettingsSchema', () => {
   test('an empty document is the defaults', () => {
     expect(EnvironmentSettingsSchema.parse({})).toEqual({
@@ -54,6 +71,7 @@ describe('EnvironmentSettingsSchema', () => {
       },
       mfa: { policy: 'optional' },
       passkeys: { rpId: null },
+      sessions: DEFAULT_SESSIONS,
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -337,6 +355,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       },
       mfa: { policy: 'optional' },
       passkeys: { rpId: null },
+      sessions: DEFAULT_SESSIONS,
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,

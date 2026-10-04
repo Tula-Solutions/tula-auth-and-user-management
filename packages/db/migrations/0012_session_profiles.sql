@@ -1,0 +1,1 @@
+ALTER TABLE "tula"."sessions" ADD COLUMN "type" text DEFAULT 'hybrid' NOT NULL;

@@ -3,6 +3,7 @@ import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { describeRoute, resolver, validator } from 'hono-openapi'
+import type { z } from 'zod'
 import type { AppEnv, TenantVariables } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { clientIp } from '~/lib/client-ip'
@@ -10,7 +11,7 @@ import { originMayUseCookies } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import * as Flows from '~/modules/flow/service'
-import { setRefreshCookie } from '~/modules/session/cookies'
+import { setRefreshCookie, setSessionCookie } from '~/modules/session/cookies'
 import * as openapi from '~/openapi'
 import {
   AttemptHeaderSchema,
@@ -32,6 +33,7 @@ import {
   PasswordAttemptRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetStartRequestSchema,
+  SESSION_PROFILE_HEADER,
   SecondFactorRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
@@ -110,10 +112,11 @@ const BOUND =
  */
 async function clientContext(
   c: FlowContext,
-  client?: Flows.ClientContext['client']
+  start: z.infer<typeof ClientHeaderSchema> = {}
 ): Promise<Flows.ClientContext> {
   return {
-    client: client ?? 'web',
+    client: start[CLIENT_HEADER] ?? 'web',
+    profile: start[SESSION_PROFILE_HEADER],
     userAgent: c.req.header('user-agent') ?? null,
     ipAddress: clientIp(c, c.get('deps').config.trustProxy),
     originAllowed: await originMayUseCookies(c),
@@ -123,19 +126,29 @@ async function clientContext(
 
 /**
  * Send a flow result. On `complete`, a browser's refresh token is moved out of the body into
- * its cookie; every flow response is uncacheable.
+ * its cookie, and a `stateful` session's token goes only into the session cookie; every flow
+ * response is uncacheable.
  */
 function respond(c: FlowContext, result: Flows.FlowResult): Response {
   c.header('Cache-Control', 'no-store')
   if (!result.tokens) {
     return c.json(FlowAttemptSchema.parse(result.attempt))
   }
-  const { refreshToken, ...session } = result.tokens
-  if (result.client === 'web' && refreshToken) {
-    setRefreshCookie(c, c.get('deps').config, c.get('tenant').environmentId, refreshToken)
+  const { refreshToken, sessionToken, cookieMaxAge, ...session } = result.tokens
+  const [config, { environmentId }] = [c.get('deps').config, c.get('tenant')]
+  if (sessionToken && cookieMaxAge) {
+    // A stateful session (always a browser's): its one token goes into the cookie and nothing
+    // of it into the body, which holds the session id only.
+    setSessionCookie(c, config, environmentId, sessionToken, cookieMaxAge)
     return c.json(FlowAttemptSchema.parse({ ...result.attempt, session }))
   }
-  return c.json(FlowAttemptSchema.parse({ ...result.attempt, session: result.tokens }))
+  if (result.client === 'web' && refreshToken && cookieMaxAge) {
+    setRefreshCookie(c, config, environmentId, refreshToken, cookieMaxAge)
+    return c.json(FlowAttemptSchema.parse({ ...result.attempt, session }))
+  }
+  return c.json(
+    FlowAttemptSchema.parse({ ...result.attempt, session: { ...session, refreshToken } })
+  )
 }
 
 router.post(
@@ -166,7 +179,7 @@ router.post(
   validator('header', ClientHeaderSchema, validationHook),
   validator('json', SignUpRequestSchema, validationHook),
   async (c) => {
-    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const context = await clientContext(c, c.req.valid('header'))
     return respond(
       c,
       await Flows.signUp(c.get('deps'), c.get('tenant'), c.req.valid('json'), context)
@@ -202,7 +215,7 @@ router.post(
   validator('header', ClientHeaderSchema, validationHook),
   validator('json', SignInStartRequestSchema, validationHook),
   async (c) => {
-    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const context = await clientContext(c, c.req.valid('header'))
     return respond(
       c,
       await Flows.signIn(c.get('deps'), c.get('tenant'), c.req.valid('json'), context)
@@ -426,7 +439,7 @@ router.post(
   publishableKey(),
   validator('header', ClientHeaderSchema, validationHook),
   async (c) => {
-    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const context = await clientContext(c, c.req.valid('header'))
     const { client: _client, ...started } = await Flows.startPasskeySignIn(
       c.get('deps'),
       c.get('tenant'),
@@ -518,7 +531,7 @@ router.post(
   validator('header', ClientHeaderSchema, validationHook),
   validator('json', OAuthStartRequestSchema, validationHook),
   async (c) => {
-    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const context = await clientContext(c, c.req.valid('header'))
     const { client: _client, ...started } = await Flows.startOAuth(
       c.get('deps'),
       c.get('tenant'),
@@ -647,7 +660,7 @@ router.post(
   validator('header', ClientHeaderSchema, validationHook),
   validator('json', PasswordResetStartRequestSchema, validationHook),
   async (c) => {
-    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const context = await clientContext(c, c.req.valid('header'))
     return respond(
       c,
       await Flows.startPasswordReset(c.get('deps'), c.get('tenant'), c.req.valid('json'), context)

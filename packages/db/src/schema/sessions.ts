@@ -22,7 +22,11 @@ export const SESSION_REVOKE_REASONS = [
   'reuse_detected',
   'user_banned',
   'mfa_changed',
+  'session_limit',
 ] as const
+
+/** How a session is held: `hybrid` (access + refresh tokens) or `stateful` (one cookie). */
+export const SESSION_TYPES = ['hybrid', 'stateful'] as const
 
 /**
  * A signed-in device. A session is also the refresh-token *family*: reuse detection revokes the
@@ -36,6 +40,12 @@ export const sessions = tula.table(
     userId: uuid('user_id').notNull(),
     /** Session profile name from config (`web`, `mobile`, …). */
     profile: text('profile').notNull(),
+    /**
+     * How the session is held, fixed when it is created (its profile's type at that moment).
+     * A `stateful` session has exactly one token row, never rotated: the hash of its cookie.
+     * Rows written before the column existed are `hybrid`, which is all there was.
+     */
+    type: text('type', { enum: SESSION_TYPES }).notNull().default('hybrid'),
     client: text('client', { enum: SESSION_CLIENTS }).notNull(),
     userAgent: text('user_agent'),
     ipAddress: inet('ip_address'),

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, jest, spyOn, test } from 'bun:test'
-import { DEFAULT_WEB_SESSION_PROFILE, durationToMs } from '@tula/contract'
+import { DEFAULT_WEB_SESSION_PROFILE, durationToMs, MIN_REUSE_GRACE_PERIOD } from '@tula/contract'
 import { createClient, type TulaClient, type TulaClientOptions } from './client'
 import type { LockManagerLike } from './environment'
 import { isTulaError, type TulaError } from './errors'
@@ -1241,9 +1241,10 @@ describe('the refresh request has its own, shorter timeout (review F2)', () => {
     const refreshTimers = timers.mock.calls.map((call) => call[1]).slice(0, 1)
     timers.mockRestore()
     expect(REFRESH_TIMEOUT_MS).toBe(8_000)
-    expect(REFRESH_TIMEOUT_MS).toBeLessThan(
-      durationToMs(DEFAULT_WEB_SESSION_PROFILE.refresh.reuseGracePeriod)
-    )
+    // Below the smallest grace window a profile may set (other than none at all), so that no
+    // configurable profile turns one slow refresh and its retry into `session.reuse_detected`.
+    expect(REFRESH_TIMEOUT_MS).toBeLessThan(durationToMs(MIN_REUSE_GRACE_PERIOD))
+    expect(DEFAULT_WEB_SESSION_PROFILE.refresh.reuseGracePeriod).toBe(MIN_REUSE_GRACE_PERIOD)
     expect(refreshTimers).toEqual([REFRESH_TIMEOUT_MS])
   })
 
@@ -1462,9 +1463,7 @@ describe('a refresh that gets no answer is tried once more, at once (the one aut
       const seen = timers.mock.calls.map((call) => call[1])
       timers.mockRestore()
       expect(seen).toEqual([REFRESH_TIMEOUT_MS, expected])
-      expect(REFRESH_RETRY_WINDOW_MS).toBe(
-        durationToMs(DEFAULT_WEB_SESSION_PROFILE.refresh.reuseGracePeriod)
-      )
+      expect(REFRESH_RETRY_WINDOW_MS).toBe(durationToMs(MIN_REUSE_GRACE_PERIOD))
     }
   )
 

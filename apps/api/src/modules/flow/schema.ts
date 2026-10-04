@@ -1,4 +1,10 @@
-import { CLIENT_HEADER, FLOW_ATTEMPT_HEADER, SessionClientSchema } from '@tula/contract'
+import {
+  CLIENT_HEADER,
+  FLOW_ATTEMPT_HEADER,
+  SESSION_PROFILE_HEADER,
+  SessionClientSchema,
+  SessionProfileNameSchema,
+} from '@tula/contract'
 import { z } from 'zod'
 
 /** Flow shapes are owned by the contract so every SDK renders the same steps. */
@@ -29,7 +35,7 @@ export {
  * Headers the flow routes read: the attempt's secret, and the kind of client (which decides how
  * the refresh token is delivered). Defined by the contract so every SDK sends the same ones.
  */
-export { CLIENT_HEADER, FLOW_ATTEMPT_HEADER }
+export { CLIENT_HEADER, FLOW_ATTEMPT_HEADER, SESSION_PROFILE_HEADER }
 
 /** Longest attempt secret the API reads. A real one is 51 characters. */
 export const MAX_ATTEMPT_SECRET_LENGTH = 256
@@ -40,8 +46,18 @@ export const AttemptIdParamSchema = z.object({ attemptId: z.uuid() })
 /**
  * Request headers the flow routes read. `x-tula-client` defaults to `web`, the safer delivery:
  * the refresh token then goes into an httpOnly cookie instead of the response body.
+ * `x-tula-session-profile` asks for a session profile (ADR 0028); both are read only when an
+ * attempt starts.
  */
-export const ClientHeaderSchema = z.object({ [CLIENT_HEADER]: SessionClientSchema.optional() })
+export const ClientHeaderSchema = z.object({
+  [CLIENT_HEADER]: SessionClientSchema.optional(),
+  [SESSION_PROFILE_HEADER]: SessionProfileNameSchema.optional().meta({
+    description:
+      'The session profile the client would like. Honoured only when the environment marks ' +
+      'that profile `clientSelectable`; any other name is ignored and the session gets the ' +
+      'profile of its client kind (`web`, or `mobile` for every other client).',
+  }),
+})
 
 /**
  * The header every call after an attempt's start carries. Optional in the schema on purpose: a

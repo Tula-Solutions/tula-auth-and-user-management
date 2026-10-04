@@ -5,7 +5,7 @@ import type { AppEnv, Deps, Tenant, TenantVariables } from '~/dependencies'
 import { allowedOrigin } from '~/lib/cors'
 import * as logger from '~/lib/logger'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
-import { CLIENT_HEADER, FLOW_ATTEMPT_HEADER } from '~/modules/flow/schema'
+import { CLIENT_HEADER, FLOW_ATTEMPT_HEADER, SESSION_PROFILE_HEADER } from '~/modules/flow/schema'
 import * as Settings from '~/modules/settings/service'
 
 /** Methods a browser may use. Every method the API has routes for. */
@@ -19,6 +19,7 @@ export const CORS_REQUEST_HEADERS = [
   PUBLISHABLE_KEY_HEADER,
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
+  SESSION_PROFILE_HEADER,
 ] as const
 
 /**
@@ -104,6 +105,45 @@ export async function originMayUseCookies<E extends AppEnv & { Variables: Tenant
 ): Promise<boolean> {
   const origin = c.req.header('origin')
   return !origin || environmentAllowsOrigin(c.get('deps'), c.get('tenant'), origin)
+}
+
+const SAFE_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD', 'OPTIONS'])
+
+/**
+ * Whether a request may be authenticated by a `stateful` session's cookie (ADR 0028).
+ *
+ * That cookie signs every `/v1/client/*` request, so each of them is a target for cross-site
+ * request forgery in a way a Bearer token never is: the browser attaches a cookie whoever
+ * wrote the page. The cookie counts only when all of these hold:
+ *
+ * - the browser does not mark the request `Sec-Fetch-Site: cross-site`;
+ * - its `Origin` is one the environment allows (`urls.allowedOrigins`); and
+ * - a request that changes state (anything but `GET`, `HEAD`, `OPTIONS`) **has** an `Origin`.
+ *   Browsers send one on every such request; one without it is not a page's `fetch`.
+ *
+ * A read with no `Origin` is served: a same-origin `GET` carries none, and its response is
+ * readable only where CORS allows. Underneath these checks, `SameSite=Lax` keeps the cookie
+ * off cross-site subrequests, and every client route requires the `x-tula-publishable-key`
+ * header, which a form cannot send and a cross-origin `fetch` may send only after a preflight
+ * this middleware answers for allowed origins alone.
+ *
+ * When this says no, the cookie is **ignored**, not refused: the request is simply not signed
+ * in, and nothing tells the page whether a cookie was there.
+ *
+ * @param c - A context `publishableKey()` has run on.
+ * @returns `false` when the session cookie must be ignored.
+ */
+export async function requestMayUseSessionCookie<E extends AppEnv & { Variables: TenantVariables }>(
+  c: Context<E>
+): Promise<boolean> {
+  if (c.req.header('sec-fetch-site') === 'cross-site') {
+    return false
+  }
+  const origin = c.req.header('origin')
+  if (!origin) {
+    return SAFE_METHODS.has(c.req.method)
+  }
+  return environmentAllowsOrigin(c.get('deps'), c.get('tenant'), origin)
 }
 
 function isAdminPath(path: string): boolean {

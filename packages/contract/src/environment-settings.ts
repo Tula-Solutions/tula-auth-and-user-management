@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from './password-policy'
+import { SessionSettingsSchema, StoredSessionSettingsSchema } from './session-profile'
 
 /** App name used until an environment sets its own. Emails and prebuilt screens show it. */
 export const DEFAULT_APP_NAME = 'Tula'
@@ -381,6 +382,8 @@ const minLengthFloor = {
  * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
  *   `required`.
  * - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
+ * - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
+ *   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({
@@ -394,6 +397,7 @@ export const EnvironmentSettingsSchema = z
     notifications: Notifications.strict().prefault({}),
     mfa: Mfa.strict().prefault({}),
     passkeys: Passkeys.strict().prefault({}),
+    sessions: SessionSettingsSchema.prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
@@ -439,6 +443,7 @@ export const EnvironmentSettingsInputSchema = z
     notifications: Notifications.strict().prefault({}),
     mfa: Mfa.strict().prefault({}),
     passkeys: Passkeys.strict().prefault({}),
+    sessions: SessionSettingsSchema.prefault({}),
   })
   .refine(
     (settings) =>
@@ -479,6 +484,7 @@ const Stored = z.object({
   notifications: Notifications.prefault({}),
   mfa: Mfa.prefault({}),
   passkeys: Passkeys.prefault({}),
+  sessions: StoredSessionSettingsSchema.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */
@@ -597,8 +603,9 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
  * - `mfa.policy` says whether a profile screen should offer two-step verification (`off`: hide
  *   it) and whether it can be turned off (`required`: it cannot). Optional in the schema, so a
  *   client reading an older server's answer treats a missing one as `off`.
- * - The allow-lists (`urls`), the audit settings and the notice switches (`notifications`) are
- *   deliberately absent.
+ * - The allow-lists (`urls`), the audit settings, the notice switches (`notifications`) and
+ *   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
+ *   absent: a client learns how its session is held from the response that starts it.
  */
 export const ClientConfigSchema = z
   .object({

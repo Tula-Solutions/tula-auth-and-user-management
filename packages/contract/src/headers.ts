@@ -1,5 +1,6 @@
 /**
- * Names of the request headers the client API reads, of the response header the admin factor
+ * Names of the request headers the client API reads (the key, the client kind, the session
+ * profile, an attempt's secret), of the response header the admin factor
  * reset answers with, and of the parameters an emailed sign-in link and an OAuth sign-in carry
  * in a URL fragment.
  *
@@ -33,6 +34,26 @@ export const PUBLISHABLE_KEY_HEADER = 'x-tula-publishable-key'
  * ```
  */
 export const CLIENT_HEADER = 'x-tula-client'
+
+/**
+ * Request header naming the session profile a client would like, read when an attempt starts
+ * (next to {@link CLIENT_HEADER}). Optional.
+ *
+ * It is a request, not a choice: the session gets that profile only when the environment marks
+ * it `clientSelectable`. Any other name (unknown, not offered, a built-in) is ignored and the
+ * session gets the profile of its client kind, so a client can never give itself a
+ * longer-lived session than the operator offered (ADR 0028).
+ *
+ * @example
+ * ```ts
+ * await fetch(`${api}/v1/client/sign-ins`, {
+ *   method: 'POST',
+ *   headers: { [SESSION_PROFILE_HEADER]: 'admin', ...others },
+ *   body: JSON.stringify({ identifier }),
+ * })
+ * ```
+ */
+export const SESSION_PROFILE_HEADER = 'x-tula-session-profile'
 
 /**
  * Request header carrying an attempt's secret.

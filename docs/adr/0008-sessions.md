@@ -48,6 +48,13 @@ access tokens are still unexpired.
 - **Device management.** A user can list their active sessions and revoke one or all others.
   Another user's session and a missing one both answer 404.
 
+> **Since ADR 0028** the numbers in this record (60 seconds, 7 and 30 days, the 10-second grace
+> window) are the *defaults* of a session profile, which an environment can change per profile;
+> a session's limits are read from its profile as configured now; denylist entries live for the
+> longest access-token lifetime any profile may set (15 minutes); and a second session type,
+> `stateful`, is checked against the store on every request instead of carrying tokens. See
+> [ADR 0028](0028-session-profiles.md).
+
 ## Consequences
 
 - The denylist is shared through Redis when `REDIS_URL` is set, which `staging` and `prod`

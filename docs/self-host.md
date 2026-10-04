@@ -128,6 +128,8 @@ API key belongs to) has a settings document, read and replaced with its secret k
 | `urls.allowedRedirectUrls` | URLs a flow may send users to, matched **exactly**. An emailed sign-in link leads only to a URL listed here. |
 | `audit.retentionDays` | How long audit entries are kept (`null`: for ever). Stored; nothing is deleted yet. |
 | `notifications.passwordChanged` | Email a user when their password is changed, reset, set by an administrator or added. On by default. |
+| `sessions.profiles` | Named session profiles. `web` (browsers) and `mobile` (every other client) always exist; add up to ten more. Each has `type` (`hybrid` or `stateful`), `accessTokenTtl` (30s to 15m), `idleTimeout` (1m to 365d), `absoluteTimeout` (at least the idle timeout, or `null`), `refresh.reuseGracePeriod` (10s to 60s, or `null` for none), `stepUpAfter` (1m to 24h, or `null` for ten minutes) and `clientSelectable`. See [Sessions](#sessions). |
+| `sessions.maxPerUser`, `sessions.onLimit` | The most live sessions one user may have (`null`: no limit), and what a sign-in at the limit does: `end_oldest` (default) or `refuse_newest`. |
 | `notifications.newSignIn` | Email a user when their account is signed in to from a browser and operating system (or a native app) none of their other sessions has. On by default. |
 
 Read the document; the `ETag` is its revision:
@@ -291,6 +293,57 @@ redirect URI `GET /v1/admin/oauth-providers` lists as `callbackUrl`
 with `TULA_MASTER_KEY` and never returned; no provider token is stored at all.
 `DELETE /v1/admin/oauth-providers/<provider>` removes the credentials (users keep their
 connected accounts). To try the flow without credentials, see `OAUTH_MOCK_PROVIDER` above.
+
+## Sessions
+
+How long a session lives, and how it is held, is set per environment in `sessions`
+([ADR 0028](adr/0028-session-profiles.md)). Left alone, every session is what it always was:
+60-second access tokens, a rotating refresh token, 7 days idle, 30 days in all.
+
+```json
+{
+  "sessions": {
+    "profiles": {
+      "web": { "idleTimeout": "1d", "absoluteTimeout": "14d" },
+      "mobile": { "idleTimeout": "30d", "absoluteTimeout": null },
+      "back-office": { "idleTimeout": "15m", "absoluteTimeout": "8h", "stepUpAfter": "5m", "clientSelectable": true }
+    },
+    "maxPerUser": 5,
+    "onLimit": "end_oldest"
+  }
+}
+```
+
+- A browser gets `web`, every other client `mobile`. An app asks for another profile with
+  `createTulaClient({ sessionProfile: 'back-office' })` (the `x-tula-session-profile` header)
+  and gets it only if you set `clientSelectable`; otherwise it silently gets its default.
+- Changing a profile reaches sessions that already exist: tighten a timeout and an over-age
+  session ends at its next refresh. Loosening never extends a session past the absolute limit
+  it was created with.
+- **`"type": "stateful"`** (browsers only) gives the browser one httpOnly cookie and no token
+  at all; every request is checked against the database, so signing a session out takes
+  effect on its very next request. The cookie is host-only (`__Host-…`, `SameSite=Lax`): the
+  app and the API must be on the same site, and a backend of yours sees the cookie only when
+  the API is served under the app's own host (a reverse proxy). It checks it with:
+
+  ```bash
+  curl -s -X POST http://localhost:3003/v1/admin/sessions/verify \
+    -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'Content-Type: application/json' \
+    -d '{"token":"<the cookie\'s value>"}'
+  ```
+
+  which answers with the claims an access token would carry (`sub`, `sid`, `auth_time`,
+  `amr`, `sp`), or 401. It costs one database read per request; keep `hybrid` unless you need
+  instant revocation or no token in the browser.
+- **`maxPerUser`** limits a user's live sessions. With `refuse_newest` a user at the limit is
+  told to sign out elsewhere or reset their password; you can end their sessions yourself:
+
+  ```bash
+  curl -s -X DELETE http://localhost:3003/v1/admin/users/<user id>/sessions \
+    -H "Authorization: Bearer $TULA_SECRET_KEY"
+  ```
+- A longer timeout, token lifetime or step-up window, a raised limit and a profile opened to
+  clients are recorded in the audit log with `weakened: true`.
 
 ## Passkeys
 

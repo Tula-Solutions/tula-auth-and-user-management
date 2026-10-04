@@ -99,6 +99,19 @@ export interface TulaClientOptions {
    * allowed for `web`, whose refresh token is not available to JavaScript at all.
    */
   storage?: TokenStorage
+  /**
+   * The session profile to ask for, by name (ADR 0028). The session gets it only where the
+   * environment marks that profile `clientSelectable`; any other name is ignored by the API
+   * and the session gets the profile of its client kind (`web`, or `mobile` for the others).
+   * Leave it out to take that default. A name is lowercase letters, digits and single hyphens,
+   * at most 32 characters.
+   *
+   * @example
+   * ```ts
+   * const admin = createTulaClient({ publishableKey, baseUrl, sessionProfile: 'back-office' })
+   * ```
+   */
+  sessionProfile?: string
   /** The `fetch` to use. Defaults to the global one. */
   fetch?: FetchLike
   /** Called after every change of {@link AuthState}; the same as a first `onChange` listener. */
@@ -112,6 +125,10 @@ export interface TulaClientOptions {
    */
   timeoutMs?: number
 }
+
+// The shape of a session profile's name (`SessionProfileNameSchema` in the contract, which this
+// package cannot import: it is a Zod schema).
+const SESSION_PROFILE_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 
 /**
  * The headless Tula client. See {@link createTulaClient}.
@@ -349,6 +366,12 @@ export interface TulaClient {
     /**
      * An access token to send to your own backend, refreshed first when it is missing or about
      * to expire. Any number of concurrent calls share one refresh.
+     *
+     * **`null` while signed in on a `stateful` session profile** (ADR 0028). Such a session is
+     * an httpOnly cookie the browser holds and this client never sees: there is no token, so
+     * there is nothing to return and nothing is asked of the API. Use `state.status` to know
+     * whether the user is signed in; a backend on the API's own host receives the cookie and
+     * checks it with `POST /v1/admin/sessions/verify`.
      *
      * @returns The token, or `null` when nobody is signed in.
      * @throws TulaError when a needed refresh could not be made (offline, rate limited). The
@@ -695,6 +718,17 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError('createTulaClient: `timeoutMs` must be a positive number')
   }
+  const { sessionProfile } = options
+  if (
+    sessionProfile !== undefined &&
+    (typeof sessionProfile !== 'string' ||
+      sessionProfile.length > 32 ||
+      !SESSION_PROFILE_NAME.test(sessionProfile))
+  ) {
+    throw new TypeError(
+      'createTulaClient: `sessionProfile` must be a profile name: lowercase letters, digits and single hyphens, at most 32 characters'
+    )
+  }
   const refreshTimeoutMs = Math.min(timeoutMs, REFRESH_TIMEOUT_MS)
   const send = options.fetch ?? ((request: Request) => globalThis.fetch(request))
 
@@ -711,6 +745,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     fetch: send,
     timeoutMs,
     messages: currentMessages,
+    ...(sessionProfile && { sessionProfile }),
   })
   const session = createSessionManager({
     client,

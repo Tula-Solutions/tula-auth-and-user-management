@@ -14,7 +14,6 @@ import {
   VerifyEmailRequestSchema,
 } from './flow'
 import { EMAIL_LINK_ATTEMPT_PARAM, EMAIL_LINK_TOKEN_PARAM, FLOW_ATTEMPT_HEADER } from './headers'
-import { DEFAULT_WEB_SESSION_PROFILE, SessionProfileSchema } from './session-profile'
 import { AccessTokenClaimsSchema, JwksSchema } from './tokens'
 
 describe('FlowStep', () => {
@@ -217,28 +216,6 @@ describe('tokens', () => {
     const key = { kty: 'OKP', crv: 'Ed25519', x: 'abc', kid: 'k1', alg: 'EdDSA', use: 'sig' }
     expect(JwksSchema.safeParse({ keys: [key] }).success).toBe(true)
     expect(JwksSchema.safeParse({ keys: [{ ...key, alg: 'RS256' }] }).success).toBe(false)
-  })
-})
-
-describe('session profile', () => {
-  test('default web profile matches §5.3', () => {
-    expect(SessionProfileSchema.parse(DEFAULT_WEB_SESSION_PROFILE)).toMatchObject({
-      type: 'hybrid',
-      accessTokenTtl: '60s',
-      idleTimeout: '7d',
-      absoluteTimeout: '30d',
-    })
-  })
-})
-
-describe('refresh reuse grace window (F8)', () => {
-  test('is part of the profile contract with a 10s default', () => {
-    expect(DEFAULT_WEB_SESSION_PROFILE.refresh.reuseGracePeriod).toBe('10s')
-    const { reuseGracePeriod: _, ...withoutGrace } = DEFAULT_WEB_SESSION_PROFILE.refresh
-    expect(
-      SessionProfileSchema.safeParse({ ...DEFAULT_WEB_SESSION_PROFILE, refresh: withoutGrace })
-        .success
-    ).toBe(false)
   })
 })
 

@@ -207,6 +207,14 @@ export const ERROR_DEFINITIONS = {
     status: 401,
     message: 'For your security this session was signed out. Sign in again.',
   },
+  // The environment limits how many sessions one user may have (`sessions.maxPerUser`) and
+  // refuses the newest (`sessions.onLimit: refuse_newest`). Answered only after every factor
+  // was proven, so it says nothing to someone who cannot sign in anyway. No session exists.
+  'session.limit_reached': {
+    status: 403,
+    message:
+      'You are signed in on too many devices. Sign out on another device, or reset your password to sign out everywhere, then try again.',
+  },
 
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },

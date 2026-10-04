@@ -3,6 +3,7 @@ import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   EnvironmentSettingsInputSchema,
+  EnvironmentSettingsSchema,
   PASSWORD_POLICY_PRESETS,
 } from '@tula/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
@@ -658,5 +659,81 @@ describe('sections a replace leaves out take the deployment’s defaults', () =>
   test('the stored list is a copy of the deployment list', async () => {
     const { settings } = await send(0, { app: { name: 'Acme' } })
     expect(settings.urls.allowedOrigins).not.toBe(config.corsOrigins)
+  })
+})
+
+describe('weakened: sessions', () => {
+  const sessions = (value: unknown) =>
+    EnvironmentSettingsSchema.parse({ ...DEFAULT_ENVIRONMENT_SETTINGS, sessions: value })
+  const base = sessions({
+    maxPerUser: 3,
+    profiles: { web: { stepUpAfter: '5m' }, admin: { idleTimeout: '30m', absoluteTimeout: '8h' } },
+  })
+  const change = (value: Record<string, unknown>) =>
+    sessions({
+      maxPerUser: 3,
+      profiles: {
+        web: { stepUpAfter: '5m' },
+        admin: { idleTimeout: '30m', absoluteTimeout: '8h' },
+      },
+      ...value,
+    })
+  const admin = (profile: Record<string, unknown>) =>
+    change({
+      profiles: {
+        web: { stepUpAfter: '5m' },
+        admin: { idleTimeout: '30m', absoluteTimeout: '8h', ...profile },
+      },
+    })
+
+  test.each<[string, EnvironmentSettings, boolean]>([
+    ['nothing changed', change({}), false],
+    ['a higher session limit', change({ maxPerUser: 4 }), true],
+    ['the session limit removed', change({ maxPerUser: null }), true],
+    ['a lower session limit', change({ maxPerUser: 2 }), false],
+    ['refusing instead of ending', change({ onLimit: 'refuse_newest' }), false],
+    ['a longer idle timeout', admin({ idleTimeout: '1h' }), true],
+    ['a shorter idle timeout', admin({ idleTimeout: '10m' }), false],
+    ['a longer absolute timeout', admin({ absoluteTimeout: '9h' }), true],
+    ['no absolute timeout', admin({ idleTimeout: '30m', absoluteTimeout: null }), true],
+    ['a longer access token', admin({ accessTokenTtl: '5m' }), true],
+    ['a shorter access token', admin({ accessTokenTtl: '30s' }), false],
+    ['a longer refresh grace', admin({ refresh: { reuseGracePeriod: '30s' } }), true],
+    ['no refresh grace', admin({ refresh: { reuseGracePeriod: null } }), false],
+    ['a profile opened to clients', admin({ clientSelectable: true }), true],
+    ['a profile made stateful', admin({ type: 'stateful' }), false],
+    [
+      'a longer step-up window',
+      change({
+        profiles: {
+          web: { stepUpAfter: '20m' },
+          admin: { idleTimeout: '30m', absoluteTimeout: '8h' },
+        },
+      }),
+      true,
+    ],
+    [
+      'the step-up window back to the default (longer than it was)',
+      change({ profiles: { web: {}, admin: { idleTimeout: '30m', absoluteTimeout: '8h' } } }),
+      true,
+    ],
+    [
+      'a profile removed (its sessions fall back to the built-in)',
+      change({ profiles: { web: { stepUpAfter: '5m' } } }),
+      true,
+    ],
+    [
+      'a new profile (nothing that existed got weaker)',
+      change({
+        profiles: {
+          web: { stepUpAfter: '5m' },
+          admin: { idleTimeout: '30m', absoluteTimeout: '8h' },
+          kiosk: { idleTimeout: '365d', absoluteTimeout: null },
+        },
+      }),
+      false,
+    ],
+  ])('%s', (_name, after, expected) => {
+    expect(Settings.weakened(base, after)).toBe(expected)
   })
 })

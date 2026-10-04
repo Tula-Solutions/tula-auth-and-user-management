@@ -1,0 +1,499 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "stateful session",
+  "description": "On a profile of type stateful a browser holds only an opaque, httpOnly session cookie: the sign-in returns no access token and no refresh token, and the cookie authenticates every client route by a lookup in the session store. A backend checks it with POST /v1/admin/sessions/verify and gets the claims an access token would carry. The cookie counts only from an origin the environment allows, never on a request the browser marks cross-site, and never on a state-changing request that does not say where it comes from. Ending the session takes effect on the very next request, on every instance. The settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urls": "settings.urls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeySettings": "settings.passkeys",
+        "original": "settings"
+      }
+    },
+    {
+      "name": "allow the app's origin and make the web profile stateful",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["https://app.sessions.example"],
+            "allowedRedirectUrls": []
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeySettings}}"
+          },
+          "sessions": {
+            "profiles": {
+              "web": {
+                "type": "stateful"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sessions": {
+              "profiles": {
+                "web": {
+                  "type": "stateful"
+                },
+                "mobile": {
+                  "type": "hybrid"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "web",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "headers": {
+          "Origin": "https://app.sessions.example"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "verify the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        },
+        "headers": {
+          "Origin": "https://app.sessions.example"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$absent",
+            "accessTokenExpiresAt": "$absent",
+            "refreshToken": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "sessionId": "session.sessionId"
+      },
+      "captureCookie": {
+        "match": "tula_session_",
+        "pair": "cookie",
+        "value": "sessionToken"
+      }
+    },
+    {
+      "name": "the sign-in set one cookie, httpOnly and SameSite=Lax, and put no token in the body",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "headers": {
+          "Origin": "https://app.sessions.example",
+          "Cookie": "{{cookie}}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "accessToken": "$absent",
+          "refreshToken": "$absent"
+        },
+        "bodyExcludes": ["tula_st_", "tula_rt_"],
+        "headers": {
+          "set-cookie": "$absent",
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "the cookie authenticates a client route",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "headers": {
+          "Origin": "https://app.sessions.example",
+          "Cookie": "{{cookie}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}"
+        }
+      }
+    },
+    {
+      "name": "without the cookie there is no session",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "headers": {
+          "Origin": "https://app.sessions.example"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.unauthenticated"
+        }
+      }
+    },
+    {
+      "name": "a backend verifies the cookie's value and gets the session's claims",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sessions/verify",
+        "auth": "secret",
+        "body": {
+          "token": "{{sessionToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sub": "{{userId}}",
+          "sid": "{{sessionId}}",
+          "sp": "web",
+          "auth_time": "$any",
+          "exp": "$any",
+          "amr": "$any"
+        }
+      }
+    },
+    {
+      "name": "the session token is not a refresh token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{sessionToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "session.invalid_token"
+        }
+      }
+    },
+    {
+      "name": "from another origin the cookie is ignored",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "headers": {
+          "Origin": "https://evil.sessions.example",
+          "Cookie": "{{cookie}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.unauthenticated"
+        }
+      }
+    },
+    {
+      "name": "another origin cannot act as the user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/revoke-others",
+        "headers": {
+          "Origin": "https://evil.sessions.example",
+          "Cookie": "{{cookie}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.unauthenticated"
+        }
+      }
+    },
+    {
+      "name": "a request the browser marks cross-site is refused whatever its Origin",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/revoke-others",
+        "headers": {
+          "Origin": "https://app.sessions.example",
+          "Sec-Fetch-Site": "cross-site",
+          "Cookie": "{{cookie}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.unauthenticated"
+        }
+      }
+    },
+    {
+      "name": "a state-changing request that names no origin is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/revoke-others",
+        "headers": {
+          "Cookie": "{{cookie}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.unauthenticated"
+        }
+      }
+    },
+    {
+      "name": "another origin cannot sign the user out",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/sign-out",
+        "headers": {
+          "Origin": "https://evil.sessions.example",
+          "Cookie": "{{cookie}}"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "none of that touched the session",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "headers": {
+          "Origin": "https://app.sessions.example",
+          "Cookie": "{{cookie}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}"
+        }
+      }
+    },
+    {
+      "name": "let the second instance learn the settings",
+      "wait": "6s"
+    },
+    {
+      "name": "the second instance accepts the cookie",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "headers": {
+          "Origin": "https://app.sessions.example",
+          "Cookie": "{{cookie}}"
+        },
+        "instance": "second"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}"
+        }
+      }
+    },
+    {
+      "name": "an operator ends the user's sessions",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{userId}}/sessions",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revoked": 1
+        }
+      }
+    },
+    {
+      "name": "the very next request on the second instance is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "headers": {
+          "Origin": "https://app.sessions.example",
+          "Cookie": "{{cookie}}"
+        },
+        "instance": "second"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "and on the first",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "headers": {
+          "Origin": "https://app.sessions.example",
+          "Cookie": "{{cookie}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "a backend is told the same",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sessions/verify",
+        "auth": "secret",
+        "body": {
+          "token": "{{sessionToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "session.revoked"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

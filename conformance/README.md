@@ -120,7 +120,12 @@ included: use `attempt`).
   value against the header's text: `"headers": { "x-tula-can-still-sign-in": "false" }`.
 - **Capture.** `capture: { "variable": "dot.path" }` stores a string from the response body;
   a path can index an array (`codes[0]`).
-  `captureHeaders: { "variable": "ETag" }` stores a response header. `captureJson:
+  `captureHeaders: { "variable": "ETag" }` stores a response header.
+  `captureCookie: { "match": "tula_session_", "pair": "cookie", "value": "token" }` reads a
+  cookie the response sets (the first whose name contains `match` and whose value is not
+  empty): `pair` gets `name=value`, to send back in a `Cookie` header, and `value` the value
+  alone. Cookie names depend on the deployment (the environment id, a `__Host-` prefix over
+  https), which is why a cookie is found by part of its name. `captureJson:
   { "variable": "dot.path" }` stores any value, objects included, as JSON text; a later body
   sends it back with `{ "$json": "{{variable}}" }` in place of the value.
 - **Email steps** read the 6-digit code from the newest email to an address. `captureWrong`
@@ -193,6 +198,11 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `26-oauth-account-linking` | Which account a provider identity signs in to: connected automatically only when both the provider's and the account's address are verified (`oauth.account_exists` otherwise); a signed-in user connects one from their profile unless it belongs to someone else; disconnecting the last way to sign in is refused (needs a secret key and the mock provider). |
 | `27-oauth-second-factor` | A provider is a first factor: for a user with an authenticator the ticket exchange answers `needs_second_factor`, no tokens and a fresh attempt secret; the session exists only once the second factor is proven, and its `amr` names both (needs a secret key and the mock provider). |
 | `28-step-up-email-code` | A user with no password and no second factor steps up with a 6-digit code emailed on request: the receipt never holds the code; asking again within a minute is `rate_limited`; a wrong code and a method the user does not have are refused; the right code returns a fresh access token (no refresh token) whose `amr` gains `email`, and works once. With a second factor, asking for a code and presenting one both answer `auth.step_up_required` naming the factor (needs a secret key and the mock provider). |
+| `38-session-profile-timeouts` | A session lives by its profile as configured now: the token names it (`sp`), the absolute timeout ends an active session, and tightening the profile ends an older session at its next refresh. Waits 95 seconds. |
+| `39-session-profile-selection` | `x-tula-session-profile` gets a profile only when the environment offers it (`clientSelectable`); anything else gets the client kind's built-in, never an error. |
+| `40-concurrent-session-limit` | `sessions.maxPerUser`: `end_oldest` ends the oldest session at once; `refuse_newest` answers `session.limit_reached` until a place is free; an operator ends a user's sessions. |
+| `41-stateful-session` | A `stateful` profile: sign-in sets one httpOnly cookie and returns no token; the cookie authenticates `/v1/client/me`; `POST /v1/admin/sessions/verify` returns the claims; another origin, a cross-site request and an unsafe request with no `Origin` are refused; ending the session is seen by the very next request, on both instances. |
+| `42-step-up-window-per-profile` | A profile's `stepUpAfter` replaces the ten-minute window of routes that require recent authentication. Waits 61 seconds. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
@@ -203,7 +213,7 @@ the email methods (and, in 16, an optional sign-up password) and 24 requires two
 verification; each restores the original document in `cleanup` steps, which run even when a
 step fails. The other two-step scenarios (17 to 23) assume the default `mfa.policy`, `optional`. An environment that had
 never saved settings ends the run with a saved copy of its defaults (the same behaviour, but
-`PASSWORD_POLICY` and `CORS_ORIGINS` no longer apply to it). Browser cookie delivery is not covered yet; scenarios use a native client
+`PASSWORD_POLICY` and `CORS_ORIGINS` no longer apply to it). Browser delivery of the refresh cookie is not covered; apart from `41-stateful-session` (which allows its own origin, `https://app.sessions.example`, and sends it as `Origin`) scenarios use a native client
 kind so tokens arrive in the response body. For the same reason the origin rule for browser
 attempts (`request.origin_not_allowed`) is covered by the API's own tests, not by a scenario:
 which origins a deployment allows is not something a scenario can assume. That a session older

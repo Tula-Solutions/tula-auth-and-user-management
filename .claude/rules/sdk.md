@@ -64,8 +64,14 @@ paths:
   about an ended session may sign it back in. A 200 is validated (hand-written guards) before
   tokens or a flow are built from it. Look server-supplied keys up with `ownString` /
   `Object.hasOwn`, never by plain indexing.
-- The refresh request's timeout (`REFRESH_TIMEOUT_MS`) must stay below the default
-  `refresh.reuseGracePeriod` in `packages/contract/src/session-profile.ts`; a test holds it.
+- The refresh request's timeout (`REFRESH_TIMEOUT_MS`) must stay below `MIN_REUSE_GRACE_PERIOD`
+  in `packages/contract/src/session-profile.ts`: the smallest refresh grace window a session
+  profile may set, other than none at all (ADR 0028); a test holds it.
+- **A `stateful` session has no token.** Only a `web` client accepts a session without an
+  access token (`isStatefulSession`); for it `getToken()` returns `null` and asks nothing,
+  calls go out without `Authorization` and rely on the httpOnly cookie, a 401 signs the client
+  and its other tabs out at once (no refresh, no retry), and nothing of the session is ever
+  put in storage or a cross-tab message beyond its id. Never synthesize a token for it.
 - One error class: every failed call throws `TulaError` with a contract code or one of the
   client's own (`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`,
   `flow.busy`, `link.cross_origin`, `passkey.unsupported`, `passkey.cancelled`,
