@@ -162,33 +162,45 @@ async function expectUnavailable(res: Response): Promise<void> {
   expect(text).not.toMatch(/redis|stack|EVAL/i)
 }
 
-describe('two instances sharing one Redis', () => {
-  test('password guesses are counted once each, whichever instance receives them', async () => {
-    await register()
-    const statuses: number[] = []
-    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts + 2; i++) {
-      statuses.push((await guess(i % 2 === 0 ? a : b, 'not the password')).status)
-    }
-    // Five free tries and the one that starts the wait, across both instances together: counted
-    // per instance there would be twice as many.
-    expect(statuses).toEqual([401, 401, 401, 401, 401, 401, 429])
-    // Locked on both, even for the right password.
-    expect((await guess(a, PASSWORD)).status).toBe(429)
-    expect((await guess(b, PASSWORD)).status).toBe(429)
-    shared.clock.advance('30s')
-    expect((await guess(b, PASSWORD)).status).toBe(200)
-  })
+// Ten or more real argon2 verifications in a row: about two seconds each on a slow CI runner.
+// It is CPU work, not waiting, so these tests get the time it takes instead of the default.
+const ARGON2_HEAVY_MS = 90_000
 
-  test('a successful sign-in on one instance clears the failures counted by the other', async () => {
-    await register()
-    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts - 1; i++) {
-      expect((await guess(a, 'not the password')).status).toBe(401)
-    }
-    expect((await guess(b, PASSWORD)).status).toBe(200)
-    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts; i++) {
-      expect((await guess(a, 'not the password')).status).toBe(401)
-    }
-  })
+describe('two instances sharing one Redis', () => {
+  test(
+    'password guesses are counted once each, whichever instance receives them',
+    async () => {
+      await register()
+      const statuses: number[] = []
+      for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts + 2; i++) {
+        statuses.push((await guess(i % 2 === 0 ? a : b, 'not the password')).status)
+      }
+      // Five free tries and the one that starts the wait, across both instances together: counted
+      // per instance there would be twice as many.
+      expect(statuses).toEqual([401, 401, 401, 401, 401, 401, 429])
+      // Locked on both, even for the right password.
+      expect((await guess(a, PASSWORD)).status).toBe(429)
+      expect((await guess(b, PASSWORD)).status).toBe(429)
+      shared.clock.advance('30s')
+      expect((await guess(b, PASSWORD)).status).toBe(200)
+    },
+    ARGON2_HEAVY_MS
+  )
+
+  test(
+    'a successful sign-in on one instance clears the failures counted by the other',
+    async () => {
+      await register()
+      for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts - 1; i++) {
+        expect((await guess(a, 'not the password')).status).toBe(401)
+      }
+      expect((await guess(b, PASSWORD)).status).toBe(200)
+      for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+        expect((await guess(a, 'not the password')).status).toBe(401)
+      }
+    },
+    ARGON2_HEAVY_MS
+  )
 
   test('a per-IP limit is one budget for both instances', async () => {
     const statuses: number[] = []

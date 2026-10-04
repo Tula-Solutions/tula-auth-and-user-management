@@ -25,8 +25,8 @@ const useToasts = create<ToastState>((set) => ({
   dismiss: (id) => set((state) => ({ toasts: state.toasts.filter((toast) => toast.id !== id) })),
 }))
 
-/** How long a confirmation stays on screen. */
-const TOAST_MS = 5000
+/** How long a confirmation stays on screen, in milliseconds. */
+export const TOAST_MS = 5000
 
 /**
  * Say that something was done ("User banned").
