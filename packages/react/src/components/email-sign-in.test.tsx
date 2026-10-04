@@ -132,7 +132,7 @@ describe('<SignIn> with an emailed code', () => {
     // Choosing it asks for the email: one click.
     await w.user.click(screen.getByRole('button', { name: 'Email me a code' }))
     const title = await screen.findByRole('heading', { name: 'Check your email' })
-    await waitFor(() => expect(document.activeElement).toBe(title))
+    await waitFor(() => expect(document.activeElement === title).toBe(true))
     expect(screen.getByLabelText('Verification code')).toBeTruthy()
     expect(w.api.calls(ROUTE.signInPrepare)).toHaveLength(1)
     expect(alternatives()).toEqual(['Use your password'])
@@ -153,7 +153,7 @@ describe('<SignIn> with an emailed code', () => {
     w.api.on(ROUTE.signInPrepare, () => failure(429, 'rate_limited', {}, { 'retry-after': '60' }))
     await w.user.click(await screen.findByRole('button', { name: 'Email me a code' }))
     const title = await screen.findByRole('heading', { name: 'Email me a code' })
-    await waitFor(() => expect(document.activeElement).toBe(title))
+    await waitFor(() => expect(document.activeElement === title).toBe(true))
     expect((await screen.findByRole('alert')).textContent).toMatch(/Try again in (1m 0s|59s)\./)
     const button = screen.getByRole('button', { name: 'Email me a code' })
     expect(button.getAttribute('aria-disabled')).toBe('true')
@@ -252,7 +252,7 @@ describe('<SignIn> with an emailed link', () => {
 
     const title = await screen.findByRole('heading', { name: 'Check your email' })
     // "About to send" became "sent": the new title takes focus so the change is announced.
-    await waitFor(() => expect(document.activeElement).toBe(title))
+    await waitFor(() => expect(document.activeElement === title).toBe(true))
     expect(w.api.calls(ROUTE.signInPrepare)[0]?.body).toEqual({
       strategy: 'email_link',
       redirectUrl: LINK_URL,

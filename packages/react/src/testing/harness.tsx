@@ -1,4 +1,4 @@
-import { type RenderResult, render } from '@testing-library/react'
+import { type RenderResult, render, screen } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { PASSWORD_POLICY_PRESETS, type PasswordPolicy } from '@tula/contract'
 import type { FlowKind, FlowStep, TulaClient } from '@tula/core'
@@ -64,6 +64,21 @@ export const ROUTE = {
   resetSubmit: 'POST /v1/client/password-resets/attempt_1/password',
   resetResend: 'POST /v1/client/password-resets/attempt_1/resend-code',
 } as const
+
+/**
+ * How many dialogs are on the page, for waiting until one has closed:
+ * `await waitFor(() => expect(openDialogs()).toBe(0))`.
+ *
+ * Never hand `expect` the element itself inside a `waitFor`. A matcher that fails formats what
+ * it received, and a happy-dom element drags its whole window along: one failed poll builds a
+ * message of over a hundred megabytes, synchronously, which takes about a second on a laptop
+ * and long enough on a CI runner that the test dies at its timeout while the page was right.
+ *
+ * @returns The number of elements with the `dialog` role.
+ */
+export function openDialogs(): number {
+  return screen.queryAllByRole('dialog').length
+}
 
 /** A step as any answer after the start carries it. */
 export function attempt(kind: FlowKind, step: FlowStep | { status: string }, extra: object = {}) {
