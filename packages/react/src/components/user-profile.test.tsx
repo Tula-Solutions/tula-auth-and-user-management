@@ -4,6 +4,7 @@ import type { Session } from '@tula/core'
 import { StrictMode } from 'react'
 import {
   attempt,
+  expectFocus,
   failure,
   json,
   ROUTE,
@@ -160,7 +161,7 @@ describe('<UserProfile>', () => {
 
     await w.user.click(screen.getByRole('button', { name: 'Update password' }))
     expect(screen.getAllByRole('alert')).toHaveLength(2)
-    expect(document.activeElement).toBe(current)
+    await expectFocus(current)
 
     const before = w.api.calls(ROUTE.sessions).length
     await w.user.type(current, 'old-password-123')
@@ -216,7 +217,7 @@ describe('<UserProfile>', () => {
       expect((await screen.findByRole('alert')).textContent).toBe(message)
       const field = screen.getByLabelText(label) as HTMLInputElement
       expect(field.getAttribute('aria-invalid')).toBe('true')
-      expect(document.activeElement).toBe(field)
+      expect(document.activeElement === field).toBe(true)
       // A wrong current password is retyped from scratch; a refused new one is kept to be fixed.
       expect(field.value).toBe(label === 'Current password' ? '' : 'short')
     }
