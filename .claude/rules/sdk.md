@@ -213,6 +213,9 @@ paths:
   retries. The secret key stays in the closure of `createAdminClient`: never a property, an
   error, a log line or a `toJSON`; it is set after caller-supplied headers; `redirect:
   'manual'`. A failed request keeps the failure's name, never its message or the error itself.
+  `normalizeBaseUrl` allows plain http for loopback hosts only (else `allowInsecureHttp`), and
+  `buildUrl` refuses a path parameter that is not one path segment (`client.invalid_param`,
+  thrown before the request and outside the network `try`): keep both and their tests.
   Keep the three browser refusals (publishable key, run-time check, `browser` export
   condition) and their tests.
 - `@tula/config` may use Zod (tooling only). The config's `settings` is the contract's
@@ -221,7 +224,11 @@ paths:
   compile and the run-time test that it is refused without being repeated. No error of this
   package carries a value from the file or the environment.
 - `@tula/cli`: commands take a `CommandContext` and write through `output`; no `console`, no
-  `process.stdout` outside `process-io.ts`. No option takes a secret. Exit codes are `EXIT`
+  `process.stdout` outside `process-io.ts` (built by `createProcessIo` from injectable parts,
+  unit-tested with fake streams and file modes). No option takes a secret. `apply` refuses
+  `plan.unknown` without `--allow-unknown` and, under `--yes`, `plan.weakened` without
+  `--allow-weaker`, before any write: a new kind of destructive plan gets the same treatment
+  and a zero-writes test. Exit codes are `EXIT`
   (`diff`: 0 / 2 / 1). The diff engine (`src/diff.ts`) is pure and table-tested; a change to
   how a field is compared, to the write order, or to when a secret is sent needs a row there
   and a line in `docs/config.md`. Behaviour against the real API is tested in

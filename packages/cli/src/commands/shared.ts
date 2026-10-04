@@ -31,11 +31,16 @@ export const PLAN_OPTIONS = {
     value: '<url>',
     description: 'The Tula API. Default: TULA_API_URL_<NAME>, then TULA_API_URL.',
   },
+  'insecure-http': {
+    type: 'boolean',
+    description:
+      'Allow a plain http API URL that is not localhost: the secret key then crosses the network in clear text. For a private network you trust.',
+  },
   'secret-key-file': {
     type: 'string',
     value: '<path>',
     description:
-      'Read the secret key from a file (- for standard input). Default: TULA_SECRET_KEY_<NAME>, then TULA_SECRET_KEY.',
+      'Read the secret key from a file (- for standard input, piped; apply then needs --yes). Default: TULA_SECRET_KEY_<NAME>, then TULA_SECRET_KEY.',
   },
   prune: {
     type: 'boolean',

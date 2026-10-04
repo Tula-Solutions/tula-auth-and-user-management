@@ -122,7 +122,10 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - **`@tula/admin` is Zod-free at run time and server-side only.** It refuses a publishable key,
   refuses to be created where `window` and `document` exist, and its published `browser`
   export condition resolves to a module that throws. The secret key lives in a closure: never
-  a property, an error, a log line or a `toJSON`; redirects are not followed.
+  a property, an error, a log line or a `toJSON`; redirects are not followed. Plain `http:`
+  is refused except for loopback hosts unless `allowInsecureHttp` is set (`@tula/nextjs`
+  does the same when it holds a secret key), and a path parameter that is not a single path
+  segment (empty, `.`, `..`, a slash, a control character) is refused before any request.
 - **The CLI never prints a secret and never takes one as an argument** ([ADR 0030](docs/adr/0030-config-and-apply.md)).
   The API URL and secret key come from the environment (`TULA_API_URL[_<NAME>]`,
   `TULA_SECRET_KEY[_<NAME>]`) or `--secret-key-file`, never from the config file. All output
@@ -132,6 +135,10 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - **`tula apply` never overwrites a change made elsewhere**: the settings are replaced under
   `If-Match` with the plan's revision, writes are ordered so no intermediate state lacks a way
   to sign in (`orderOperations`), and a partial failure reports what was and was not applied.
+  It refuses, before any write, a plan that would reset settings this version does not know
+  (unless `--allow-unknown`) and, under `--yes`, a plan that weakens security (unless
+  `--allow-weaker`). A key read from standard input is never typed at a terminal, and then
+  `apply` needs `--yes`.
   A new diff rule (a list that is a set, a field kept from the server) is documented in
   `docs/config.md` and gets a table test in `packages/cli/src/diff.test.ts`.
 - A package whose declaration build would compile files outside its own tree (tests importing
@@ -342,6 +349,8 @@ nothing.
   the store records it with the revision that write produced, and the answer's `managedBy`
   carries `drifted` once the settings are replaced without the headers. A replace without them
   keeps the record (and its audit entry says `outsideConfig: true`); `none` removes it. The
+  stored record is read only through `readStoredManager` (`~/adapters/settings-manager`), in
+  every adapter: one that the answer's schema would refuse reads as unmanaged, never as a 500. The
   definition of "weakened" is the contract's `settingsWeakenings`, shared with `tula diff`.
 - CORS is decided per request in `~/middleware/cors`: a preflight passes when any environment
   allows the origin, the response is readable only when the key's environment does.

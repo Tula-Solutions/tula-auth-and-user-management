@@ -40,12 +40,20 @@ try {
 - **One error.** Every failure throws `TulaAdminError`: `code` is a contract code
   (`validation.failed`, `precondition.failed`, `rate_limited`, …) or one of the client's own
   (`network.failed`, `network.timeout`, `network.aborted`, `response.invalid`,
-  `client.invalid_key`, `client.publishable_key`, `client.invalid_url`, `client.browser`);
+  `client.invalid_key`, `client.publishable_key`, `client.invalid_url`, `client.browser`,
+  `client.invalid_param`);
   `errors` lists each refused field with its path; `retryAfterMs` carries `Retry-After`. The
   client never retries.
 - **The key stays put.** It lives in a closure: it is not a property of the client and is in
   no error, log line or `JSON.stringify`. It is sent to `baseUrl` only; redirects are not
   followed.
+- **https, unless it is this machine.** A plain `http:` `baseUrl` is refused
+  (`client.invalid_url`, nothing sent) except for `localhost`, `*.localhost`, `127.0.0.1` and
+  `[::1]`: over http the key crosses the network in clear text. `allowInsecureHttp: true`
+  lifts that for a private network you trust.
+- **A path parameter is one path segment.** Empty, `.`, `..`, or a value with a slash, a
+  backslash or a control character is refused before any request (`client.invalid_param`,
+  naming the parameter, not its value): `..` would otherwise be resolved into another route.
 - **No dependencies at run time** beyond the contract's Zod-free entry points; web platform
   APIs only (Node, Bun, Deno, edge workers).
 

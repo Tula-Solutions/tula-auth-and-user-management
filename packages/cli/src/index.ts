@@ -31,7 +31,13 @@ export {
   runCli,
 } from './framework'
 export { createOutput, type Output, type Sink, type Styles, shouldUseColor } from './output'
-export { describeOperation, planToJson, planWarnings, renderPlan } from './render'
+export {
+  applyRequirements,
+  describeOperation,
+  planToJson,
+  planWarnings,
+  renderPlan,
+} from './render'
 export { resolveTarget, type Target } from './target'
 export { VERSION } from './version'
 

@@ -117,6 +117,17 @@ The name only picks the entry and the variables:
 There is no `--secret-key` option, on purpose: a command line is saved in shell history and
 visible in process lists and CI logs. Mint a key with `bun run api-key:create --environment <id>`.
 
+- **The API URL must be https**, or this machine (`localhost`, `*.localhost`, `127.0.0.1`,
+  `[::1]`). Over plain http the secret key and every provider secret cross the network in
+  clear text, so `http://auth.example.com` is refused before anything is sent
+  (`client.invalid_url`). `--insecure-http` allows it, for a private network you trust.
+- **A key file should be yours alone.** If the file given as `--secret-key-file` can be read by
+  the group or by others, the CLI warns once on standard error (`chmod 600 <file>`). The check
+  is skipped on Windows.
+- **`--secret-key-file -` reads a pipe, never a terminal**: typed at a terminal the key would
+  be shown on screen, so that is refused. Standard input then cannot answer a question either,
+  so `tula apply --secret-key-file -` needs `--yes`.
+
 ## `tula diff`
 
 ```sh
@@ -149,10 +160,16 @@ Changes pending. Run `tula apply` to make them.
   `stored secret kept`. `diff` does not even read the variable.
 - `! weakens security` uses the server's own definition (the one behind the audit log's
   `weakened` flag): a weaker password policy, a security notice switched off, an MFA policy
-  moved towards `off`, sessions that live longer.
+  moved towards `off`, sessions that live longer. `tula apply --yes` refuses such a plan
+  without `--allow-weaker`, and `diff` says so under the plan.
+- `! the server has settings this version of tula does not know (…)`: the server is newer
+  than the CLI. Applying would reset those settings to their defaults, so `tula apply` refuses
+  without `--allow-unknown`. Upgrade `tula` instead.
 - `! the settings were changed outside the config file since the last apply`: someone saved
   in the dashboard or through the API. The differences are in the plan.
-- `--json` prints the same plan as data.
+- `--json` prints the same plan as data: `weakened` and `unknown` list the paths, and
+  `applyRequires` (`{ "allowUnknown": false, "allowWeaker": true }`) says which of the two
+  flags `apply` will ask for.
 
 | Exit code | Meaning |
 | --- | --- |
@@ -167,8 +184,23 @@ tula apply --env prod          # prints the plan, asks, then applies
 tula apply --env prod --yes    # no question: for CI
 ```
 
-- It asks before changing anything; only the word `yes` continues. Without a terminal it
-  refuses unless `--yes` is given, so a pipeline never hangs on a question.
+- It asks before changing anything; only the word `yes` continues. The question is written
+  to standard error, so `tula apply > plan.txt` still asks. Without a terminal (standard input
+  and standard error) it refuses unless `--yes` is given, so a pipeline never hangs on a
+  question.
+- **A plan that weakens security needs a person, or a flag.** At a terminal the question
+  itself names it (`This WEAKENS security (mfa.policy). Apply these changes …?`). With `--yes`
+  nobody reads the warning, so the run is refused and nothing is written unless
+  `--allow-weaker` is given too:
+
+  ```
+  error: This plan weakens security (mfa.policy), and with --yes nobody is asked. Nothing was
+  changed. Pass --allow-weaker with --yes to apply it.
+  ```
+- **Settings this version does not know are never reset silently.** When the server has a
+  setting the CLI's version of the contract does not (a newer server), replacing the document
+  would put it back to its default. `apply` refuses, with or without `--yes`, names the paths
+  and writes nothing. Upgrade `tula`; `--allow-unknown` applies anyway.
 - **It never overwrites a change made elsewhere.** The settings are replaced only if they are
   still at the revision the plan was made against (`If-Match`). If someone saved in between:
 
@@ -203,6 +235,10 @@ tula apply --env prod --yes    # no question: for CI
 | `--prune` | delete providers the server has and the file does not |
 | `--rotate-secrets` | send every managed provider's secret again |
 | `--expect-revision <n>` | apply only if the settings are still at this revision |
+| `--allow-weaker` | with `--yes`: apply a plan that weakens security |
+| `--allow-unknown` | apply although the server has settings this version does not know (they are reset) |
+| `--insecure-http` | allow a plain http API URL that is not localhost (a private network you trust) |
+| `--secret-key-file <path>` | read the secret key from a file; `-` for standard input (piped, with `--yes`) |
 | `--json` | print the plan (and what was applied) as JSON |
 
 Exit code `0`: applied, or nothing to do. `1`: an error, or the confirmation was declined.
@@ -255,8 +291,16 @@ jobs:
           TULA_SECRET_KEY: ${{ secrets.TULA_SECRET_KEY_PROD }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
+        # --yes alone never weakens security and never resets a setting a newer server has:
+        # such a plan fails this step. Weakening on purpose is its own, reviewed change:
+        #   bunx tula apply --env prod --yes --allow-weaker
         run: bunx tula apply --env prod --yes
 ```
+
+A plan that weakens security (the pull request's `diff` output says
+`tula apply --yes refuses this plan without --allow-weaker`) fails the apply job as written.
+That is deliberate: add `--allow-weaker` in the same pull request that weakens the config, so
+the flag is reviewed with the change, and take it out again afterwards.
 
 To fail a scheduled job when production has drifted from the file, use the exit code as it
 is: `tula diff --env prod` fails the step on `2`.
@@ -281,7 +325,9 @@ admin API then answers:
 
 A dashboard uses this to say the settings come from a file. `drifted` turns `true` when the
 settings are saved again *without* going through `apply`; the audit entry of that save carries
-`outsideConfig: true`. The next `apply` puts the file back in charge. The fingerprint is
+`outsideConfig: true`. The next `apply` puts the file back in charge. A write that only
+changes this record (a first apply over identical settings, a new version of the file) still
+bumps the settings revision. The fingerprint is
 computed over the file's content with each secret as its variable's **name**; it says nothing
 about a secret's value. Providers are not covered by `drifted` (they have no revision):
 `tula diff` is the full check.

@@ -107,7 +107,9 @@ export interface AdminClient {
    * @param id - The operation's id in the OpenAPI document.
    * @param input - Its parameters and body.
    * @returns The answer's body, status and `ETag`.
-   * @throws TulaAdminError for every failure: an error answer, no answer, or an unreadable one.
+   * @throws TulaAdminError for every failure: an error answer, no answer, an unreadable one, or
+   *   a path parameter that is not a single path segment (`client.invalid_param`, before any
+   *   request).
    */
   call<Id extends AdminOperationId>(id: Id, ...input: CallArguments<Id>): Promise<AdminResponse<Id>>
 }
@@ -134,6 +136,13 @@ export interface AdminClientOptions {
   timeoutMs?: number
   /** Sent as `User-Agent`, so the API's logs say which tool called. */
   userAgent?: string
+  /**
+   * Allow a plain `http:` `baseUrl` for a host that is not this machine. Off by default: over
+   * http the secret key, and every provider secret a call carries, cross the network in clear
+   * text. For a private network you trust (a service mesh, a cluster-internal address) only.
+   * Loopback hosts (`localhost`, `*.localhost`, `127.0.0.1`, `[::1]`) never need it.
+   */
+  allowInsecureHttp?: boolean
 }
 
 type Json = Record<string, unknown>
@@ -214,7 +223,15 @@ function errorFromResponse(
   })
 }
 
-function normalizeBaseUrl(baseUrl: string): string {
+/** Hosts that are this machine: plain http to them never leaves it. */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  return (
+    host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '[::1]'
+  )
+}
+
+function normalizeBaseUrl(baseUrl: string, allowInsecureHttp: boolean): string {
   let url: URL
   try {
     url = new URL(baseUrl)
@@ -222,6 +239,11 @@ function normalizeBaseUrl(baseUrl: string): string {
     throw clientError('client.invalid_url')
   }
   if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) {
+    throw clientError('client.invalid_url')
+  }
+  // Every request carries the secret key, and some carry a provider's secret: over http to
+  // another machine both are readable on the way. A mistyped scheme must fail, not leak.
+  if (url.protocol === 'http:' && !allowInsecureHttp && !isLoopbackHost(url.hostname)) {
     throw clientError('client.invalid_url')
   }
   return `${url.origin}${url.pathname.replace(/\/+$/, '')}`
@@ -240,15 +262,33 @@ function checkSecretKey(secretKey: string): void {
   }
 }
 
+/**
+ * Whether a value can stand as one path segment. `encodeURIComponent` leaves `.` and `..`
+ * as they are, and `fetch` then resolves them: `/users/../ban` is sent as `/ban`, another
+ * route. A slash or backslash would be encoded, but a proxy that decodes `%2F` before routing
+ * splits the segment again, and no id of this API has one. Control characters have no place
+ * in a path at all.
+ */
+function isPathSegment(value: string): boolean {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
+  return value !== '' && value !== '.' && value !== '..' && !/[/\\\u0000-\u001f\u007f]/.test(value)
+}
+
 function buildUrl(
+  operation: string,
   baseUrl: string,
   path: string,
   params: Record<string, string>,
   query: Record<string, unknown>
 ): string {
-  const filled = path.replace(/\{(\w+)\}/g, (_placeholder, name: string) =>
-    encodeURIComponent(Object.hasOwn(params, name) ? String(params[name]) : '')
-  )
+  const filled = path.replace(/\{(\w+)\}/g, (_placeholder, name: string) => {
+    const value = Object.hasOwn(params, name) ? params[name] : undefined
+    if (typeof value !== 'string' || !isPathSegment(value)) {
+      // The parameter's name, never its value: what was passed may be anything.
+      throw clientError('client.invalid_param', { operation, param: name })
+    }
+    return encodeURIComponent(value)
+  })
   const search = new URLSearchParams()
   for (const [name, value] of Object.entries(query)) {
     if (value !== undefined && value !== null) {
@@ -284,8 +324,9 @@ function failureName(cause: unknown): string | undefined {
  *   user agent.
  * @returns The client.
  * @throws TulaAdminError `client.publishable_key` for a publishable key, `client.invalid_key`
- *   for anything else that is not a secret key, `client.invalid_url` for a bad `baseUrl`,
- *   `client.browser` in a browser.
+ *   for anything else that is not a secret key, `client.invalid_url` for a bad `baseUrl`
+ *   (not http(s), with credentials, or plain http to a host other than this machine without
+ *   `allowInsecureHttp`), `client.browser` in a browser.
  *
  * @example
  * ```ts
@@ -308,7 +349,7 @@ export function createAdminClient(options: AdminClientOptions): AdminClient {
     throw clientError('client.browser')
   }
   checkSecretKey(options.secretKey)
-  const baseUrl = normalizeBaseUrl(options.baseUrl)
+  const baseUrl = normalizeBaseUrl(options.baseUrl, options.allowInsecureHttp === true)
   const secretKey = options.secretKey
   const send: AdminFetch = options.fetch ?? ((url, init) => fetch(url, init))
   const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -327,6 +368,9 @@ export function createAdminClient(options: AdminClientOptions): AdminClient {
       timeoutMs?: number
     }
     const route = OPERATIONS[id]
+    // Before anything is sent or timed: a refused parameter is the caller's mistake, not a
+    // network failure.
+    const url = buildUrl(id, baseUrl, route.path, input.params ?? {}, input.query ?? {})
     const headers = new Headers({ accept: 'application/json' })
     for (const [name, value] of Object.entries(input.headers ?? {})) {
       if (value !== undefined) {
@@ -357,7 +401,7 @@ export function createAdminClient(options: AdminClientOptions): AdminClient {
     let response: Response
     let payload: unknown
     try {
-      response = await send(buildUrl(baseUrl, route.path, input.params ?? {}, input.query ?? {}), {
+      response = await send(url, {
         method: route.method,
         headers,
         body: input.body === undefined ? undefined : JSON.stringify(input.body),

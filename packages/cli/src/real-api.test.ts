@@ -431,11 +431,29 @@ describe('tula diff / tula apply against the API', () => {
     const loose = await dev({ settings: { mfa: { policy: 'off' } } })
     const plan = await tula(['diff', '--config', loose])
     expect(plan.stdout).toContain('! weakens security: mfa.policy')
-    expect((await tula(['apply', '--config', loose, '--yes'])).code).toBe(0)
+    expect((await tula(['apply', '--config', loose, '--yes', '--allow-weaker'])).code).toBe(0)
     const log = (await (
       await admin('/v1/admin/audit-logs?action=environment.settings_updated')
     ).json()) as { data: { metadata: Record<string, unknown> }[] }
     expect(log.data[0]?.metadata).toMatchObject({ weakened: true, managedBy: 'tula-apply' })
+  })
+
+  test('a weakening plan is not applied by --yes alone: it takes --allow-weaker', async () => {
+    const strict = await dev({ settings: { mfa: { policy: 'required' } } })
+    expect((await tula(['apply', '--config', strict, '--yes'])).code).toBe(0)
+    const before = await state()
+    const loose = await dev({ settings: { mfa: { policy: 'off' } } })
+
+    const refused = await tula(['apply', '--config', loose, '--yes'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain('weakens security (mfa.policy)')
+    expect(refused.stderr).toContain('--allow-weaker')
+    expect(writes(refused)).toEqual([])
+    expect(await state()).toEqual(before)
+
+    const allowed = await tula(['apply', '--config', loose, '--yes', '--allow-weaker'])
+    expect(allowed.code).toBe(0)
+    expect((await state()).settings.mfa.policy).toBe('off')
   })
 
   test('without a terminal and without --yes, apply refuses instead of waiting', async () => {

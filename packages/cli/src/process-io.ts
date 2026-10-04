@@ -1,12 +1,108 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import type { CliIo } from './framework'
 
 /**
+ * What {@link createProcessIo} builds a run's surroundings from: the process's streams,
+ * environment, directory and platform, and how a file is read and looked at. A test passes
+ * its own streams and file modes.
+ *
+ * @example
+ * ```ts
+ * const parts: ProcessParts = { stdin, stdout, stderr, env: {}, cwd: '/work', platform: 'linux', readFile, stat }
+ * ```
+ */
+export interface ProcessParts {
+  /** Standard input. */
+  stdin: NodeJS.ReadableStream & { isTTY?: boolean }
+  /** Standard output. */
+  stdout: NodeJS.WritableStream & { isTTY?: boolean }
+  /** Standard error. */
+  stderr: NodeJS.WritableStream & { isTTY?: boolean }
+  /** The environment. */
+  env: Readonly<Record<string, string | undefined>>
+  /** The working directory. */
+  cwd: string
+  /** `process.platform`. */
+  platform: string
+  /** Read a file as text. */
+  readFile: (path: string) => Promise<string>
+  /** A file's mode bits. */
+  stat: (path: string) => Promise<{ mode: number }>
+}
+
+/**
+ * The surroundings of a run, from the given parts.
+ *
+ * @param parts - The streams, environment, directory, platform and file access.
+ * @returns The io `runCli` runs with.
+ *
+ * @example
+ * ```ts
+ * await runCli(argv, createProcessIo(parts), COMMANDS)
+ * ```
+ */
+export function createProcessIo(parts: ProcessParts): CliIo {
+  let warned = false
+  /**
+   * Say, once, that the key file can be read by other users of the machine. The run goes on:
+   * the key has been exposed already, and refusing would not take that back. Skipped where
+   * there are no POSIX modes (Windows reports 0666 for every file).
+   */
+  async function checkMode(path: string): Promise<void> {
+    if (warned || parts.platform === 'win32') {
+      return
+    }
+    // A file that cannot be looked at cannot be read either: the read reports that.
+    const mode = await parts.stat(path).then(
+      (stats) => stats.mode,
+      () => undefined
+    )
+    if (mode !== undefined && (mode & 0o077) !== 0) {
+      warned = true
+      parts.stderr.write(
+        `warning: the file given as --secret-key-file is readable by other users (mode ${(mode & 0o777).toString(8).padStart(4, '0')}). Restrict it: chmod 600 <file>.\n`
+      )
+    }
+  }
+  return {
+    stdout: parts.stdout,
+    stderr: parts.stderr,
+    env: parts.env,
+    cwd: parts.cwd,
+    // The question is written to standard error, so that is the stream a person must be
+    // watching: `tula apply > plan.txt` can still ask.
+    isTTY: parts.stdin.isTTY === true && parts.stderr.isTTY === true,
+    stdinIsTTY: parts.stdin.isTTY === true,
+    prompt: async (question) => {
+      // The question goes to standard error, so `tula apply > plan.txt` still shows it.
+      const reader = createInterface({ input: parts.stdin, output: parts.stderr })
+      try {
+        return await reader.question(question)
+      } finally {
+        reader.close()
+      }
+    },
+    readStdin: async () => {
+      let text = ''
+      for await (const chunk of parts.stdin) {
+        text += String(chunk)
+      }
+      return text
+    },
+    readFile: async (path) => {
+      const absolute = isAbsolute(path) ? path : resolve(parts.cwd, path)
+      await checkMode(absolute)
+      return parts.readFile(absolute)
+    },
+  }
+}
+
+/**
  * The surroundings of a real run: the process's streams, environment and directory, a prompt
  * on the terminal, and the two ways a secret key can be read without being on the command
- * line (a file, standard input).
+ * line (a file, standard input). A key file that other users can read is warned about.
  *
  * @returns The io `main` runs with.
  *
@@ -16,28 +112,14 @@ import type { CliIo } from './framework'
  * ```
  */
 export function processIo(): CliIo {
-  return {
+  return createProcessIo({
+    stdin: process.stdin,
     stdout: process.stdout,
     stderr: process.stderr,
     env: process.env,
     cwd: process.cwd(),
-    isTTY: process.stdin.isTTY === true && process.stdout.isTTY === true,
-    prompt: async (question) => {
-      // The question goes to standard error, so `tula apply > plan.txt` still shows it.
-      const reader = createInterface({ input: process.stdin, output: process.stderr })
-      try {
-        return await reader.question(question)
-      } finally {
-        reader.close()
-      }
-    },
-    readStdin: async () => {
-      let text = ''
-      for await (const chunk of process.stdin) {
-        text += String(chunk)
-      }
-      return text
-    },
-    readFile: (path) => readFile(isAbsolute(path) ? path : resolve(process.cwd(), path), 'utf8'),
-  }
+    platform: process.platform,
+    readFile: (path) => readFile(path, 'utf8'),
+    stat: (path) => stat(path),
+  })
 }

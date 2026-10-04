@@ -1,10 +1,12 @@
 import type { EnvironmentSettings } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import { readStoredManager } from '~/adapters/settings-manager'
 import type { Activity } from '~/ports/activity-log'
 import type {
   EnvironmentSettingsStore,
   SettingsManagerInput,
   StoredEnvironmentSettings,
+  StoredSettingsManager,
 } from '~/ports/environment-settings-store'
 
 /** In-memory environment settings. */
@@ -30,10 +32,40 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
     this.#documents.set(environmentId, structuredClone(stored))
   }
 
+  /**
+   * Put a managing-tool record on a stored document directly, whatever its shape. Tests use it
+   * to stand in for a record another version, or a hand, left in the database.
+   *
+   * @param environmentId - The environment; it must have a stored document.
+   * @param manager - The record, as it would sit in the column.
+   */
+  seedManager(environmentId: string, manager: unknown): void {
+    const stored = this.#documents.get(environmentId)
+    if (stored) {
+      this.#documents.set(environmentId, {
+        ...stored,
+        managedBy: structuredClone(manager) as StoredSettingsManager,
+      })
+    }
+  }
+
   /** @inheritdoc */
   async get(environmentId: string): Promise<StoredEnvironmentSettings | null> {
     const stored = this.#documents.get(environmentId)
-    return stored ? structuredClone(stored) : null
+    return stored ? this.#read(environmentId, stored) : null
+  }
+
+  /**
+   * A stored document as the store answers it: a copy, with the managing tool only when its
+   * record is one the API would answer (the same rule as the Postgres adapter's read).
+   */
+  #read(environmentId: string, stored: StoredEnvironmentSettings): StoredEnvironmentSettings {
+    const managedBy = readStoredManager(environmentId, stored.managedBy)
+    return {
+      revision: stored.revision,
+      settings: structuredClone(stored.settings),
+      ...(managedBy && { managedBy }),
+    }
   }
 
   /** @inheritdoc */
@@ -63,7 +95,7 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
     }
     this.#documents.set(environmentId, stored)
     this.#activityLog.record([activity])
-    return structuredClone(stored)
+    return this.#read(environmentId, stored)
   }
 
   /** @inheritdoc */

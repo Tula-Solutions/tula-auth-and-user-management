@@ -1,5 +1,5 @@
 import { type Command, EXIT } from '../framework'
-import { planToJson, renderPlan } from '../render'
+import { applyRequirements, planToJson, renderPlan } from '../render'
 import { PLAN_OPTIONS, prepare } from './shared'
 
 /**
@@ -15,7 +15,7 @@ import { PLAN_OPTIONS, prepare } from './shared'
 export const diffCommand: Command = {
   name: 'diff',
   summary: 'Show what `tula apply` would change. Writes nothing.',
-  usage: 'tula diff [--env <name>] [--config <path>] [--prune] [--json]',
+  usage: 'tula diff [--env <name>] [--config <path>] [--prune] [--rotate-secrets] [--json]',
   description:
     'Compares tula.config.ts with the environment’s settings and OAuth providers and prints ' +
     'the plan: what would be added, changed and removed, by path. Secrets are never shown.\n\n' +
@@ -33,6 +33,17 @@ export const diffCommand: Command = {
           ? 'Changes pending. Run `tula apply` to make them.'
           : 'No changes: the environment is as the config says.'
       )
+      const needs = applyRequirements(plan)
+      if (needs.allowUnknown) {
+        context.output.line(
+          '`tula apply` refuses this plan without --allow-unknown: it would reset settings this version does not know.'
+        )
+      }
+      if (needs.allowWeaker) {
+        context.output.line(
+          '`tula apply --yes` refuses this plan without --allow-weaker: it weakens security.'
+        )
+      }
     }
     return plan.changes ? EXIT.changes : EXIT.ok
   },

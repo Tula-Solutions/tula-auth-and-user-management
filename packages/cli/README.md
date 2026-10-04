@@ -22,6 +22,10 @@ tula apply --env prod --yes         # in CI
 | `1` | an error | an error, or the confirmation was declined |
 | `2` | changes pending | (not used) |
 
+`apply --yes` never weakens security and never resets a setting a newer server has: those
+plans are refused unless `--allow-weaker` / `--allow-unknown` say so. The API URL must be
+https (or localhost; `--insecure-http` for a private network you trust).
+
 `tula` runs on **Bun** (`#!/usr/bin/env bun`): the first thing every command does is import
 the project's `tula.config.ts`, which Bun runs as it is.
 

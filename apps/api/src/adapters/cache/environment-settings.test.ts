@@ -20,13 +20,11 @@ const E2 = '00000000-0000-7000-8000-00000000e002'
 // The cache must behave exactly like the store it wraps.
 describeEnvironmentSettingsStore('cacheEnvironmentSettings over memory', async () => {
   const log = new MemoryActivityLog()
+  const inner = new MemoryEnvironmentSettingsStore(log)
   return {
-    store: cacheEnvironmentSettings(
-      new MemoryEnvironmentSettingsStore(log),
-      new FixedClock(),
-      TTL_MS
-    ),
+    store: cacheEnvironmentSettings(inner, new FixedClock(), TTL_MS),
     log,
+    storeManager: async (tenant, manager) => inner.seedManager(tenant.environmentId, manager),
     freshTenant: async () => ({
       projectId: '00000000-0000-7000-8000-00000000a001',
       environmentId: Bun.randomUUIDv7(),

@@ -41,6 +41,17 @@ Three new publishable packages (ADR 0020), all `"private": true` like the others
   header, and is in no property, error or `toJSON`. An error for a request that got no answer
   keeps the failure's *name* only, because a runtime's network error may quote the request.
   Redirects are not followed, so the key goes to `baseUrl` and nowhere else.
+- **https, unless it is this machine.** A plain `http:` `baseUrl` is `client.invalid_url`
+  except for `localhost`, `*.localhost`, `127.0.0.1` and `[::1]`: a mistyped scheme must
+  fail, not send the key and provider secrets in clear text. `allowInsecureHttp: true`
+  (`--insecure-http` in the CLI) is the opt-in for a private network. `@tula/nextjs` applies
+  the same rule to `apiUrl` when a secret key is configured (`TULA_ALLOW_INSECURE_HTTP=true`).
+- **A path parameter is one path segment.** `encodeURIComponent` leaves `.` and `..` alone
+  and `fetch` resolves them, so `banUser` with `userId: '..'` would have reached another
+  route. Empty, `.`, `..`, a slash, a backslash or a control character is refused before the
+  request (`client.invalid_param`, naming the parameter, never its value). A slash is refused
+  rather than sent encoded: no id of this API has one, and a proxy that decodes `%2F` before
+  routing would split the segment again.
 - **Server-side only, three ways.** A publishable key is refused by name
   (`client.publishable_key`); the client refuses to be created where `window` and `document`
   exist (`client.browser`); and the published `browser` export condition resolves to a module
@@ -98,7 +109,14 @@ export default defineConfig({
 ### Apply
 
 - The same plan as `diff`, then a confirmation: the literal word `yes` at a terminal, or
-  `--yes`. Not at a terminal and without `--yes` it refuses instead of waiting.
+  `--yes`. Not at a terminal and without `--yes` it refuses instead of waiting. "At a
+  terminal" means standard input and standard error: the question goes to standard error.
+- **Two plans are refused unless asked for by name.** One that would reset settings this
+  version of the CLI does not know (`plan.unknown`: the `PUT` replaces the whole document as
+  this version knows it) needs `--allow-unknown`, with or without `--yes`. One that weakens
+  security (`plan.weakened`) needs `--allow-weaker` under `--yes`, where nobody reads the
+  warning; at a terminal the confirmation question names the weakening instead. Both refusals
+  come before any write, and `diff` reports both (text, and `applyRequires` in `--json`).
 - The settings are replaced with `If-Match: "<revision>"` of the plan. A 412 is reported as
   "changed by someone else; run `tula diff` again"; nothing is overwritten.
   `--expect-revision <n>` applies only if the settings are still at the revision an earlier
@@ -115,7 +133,10 @@ export default defineConfig({
   nothing to do, 1 error or declined.
 - **The secret key is never an argument.** A command line is in shell history, `ps` and CI
   logs. It comes from the environment, or `--secret-key-file <path>` (`-` for standard input).
-  `--secret-key` does not exist and says why. Every line the CLI writes goes through one
+  `--secret-key` does not exist and says why. A key file readable by group or others is
+  warned about once (POSIX modes only); `--secret-key-file -` is refused when standard input
+  is a terminal (the key would be echoed), and with it `apply` requires `--yes`, because
+  standard input cannot carry both the key and the answer. Every line the CLI writes goes through one
   writer (`src/output.ts`) that replaces the key and any resolved provider secret with
   `[redacted]`: nothing prints one on purpose; this is the net under mistakes. It is also how
   the `noConsole` rule is met: commands receive an `Output`, never a stream.
@@ -134,6 +155,13 @@ settings) with `drifted`: the settings' revision is past the one that apply prod
   apply over identical settings, a new version of the file, an apply after drift): a new
   revision and an audit entry with `managedBy: <tool>` and `changed: []`.
 - `x-tula-managed-by: none` removes the record.
+- **The stored record is validated on read, by the answer's own schema.** The column is
+  free-form JSON. Both adapters read it through `readStoredManager`
+  (`apps/api/src/adapters/settings-manager.ts`), which applies `SettingsManagedBySchema`
+  (minus `drifted`); a record that fails (another version's, a hand's) is treated as
+  unmanaged and warned about once per environment, with no value in the log. So a stored
+  record can fail neither `GET /v1/admin/settings` nor the answer of a `PUT` that has already
+  been committed.
 - The hash is computed over the file's content for the environment with each secret as its
   variable's *name*, so it says which version of the file was applied and nothing about a
   secret.

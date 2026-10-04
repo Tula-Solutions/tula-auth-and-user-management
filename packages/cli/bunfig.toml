@@ -3,6 +3,5 @@ coverageSkipTestFiles = true
 coverageThreshold = { lines = 0.9, functions = 0.9 }
 # Other packages measure their own coverage; count only this package's files here. `bin.ts` is
 # the three lines that hand the process to `main`; a test runs it as a child process, which
-# coverage does not see. `process-io.ts` is the process's own streams, prompt and files, which
-# only that child process uses (`bin.test.ts` reads a key from a file and from standard input).
-coveragePathIgnorePatterns = ["../contract/**", "../admin/**", "../config/**", "src/testing/**", "src/bin.ts", "src/process-io.ts", "../../apps/**", "../db/**", "../conformance/**"]
+# coverage does not see.
+coveragePathIgnorePatterns = ["../contract/**", "../admin/**", "../config/**", "src/testing/**", "src/bin.ts", "../../apps/**", "../db/**", "../conformance/**"]

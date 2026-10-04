@@ -12,7 +12,10 @@ const CLIENT_MESSAGES = {
   'client.invalid_key': 'The secret key is not a Tula secret key (tula_sk_…).',
   'client.publishable_key':
     'That is a publishable key (tula_pk_…). The admin API takes a secret key (tula_sk_…).',
-  'client.invalid_url': 'The API URL must be an http(s) URL without credentials.',
+  'client.invalid_url':
+    'The API URL must be an https URL without credentials (plain http only for localhost, or with allowInsecureHttp on a private network you trust).',
+  'client.invalid_param':
+    'A path parameter is missing or is not a single path segment (empty, ".", "..", or it has a slash or a control character).',
   'client.browser':
     '@tula/admin holds a secret key and must not run in a browser. Call it from your server.',
 } as const
@@ -21,7 +24,8 @@ const CLIENT_MESSAGES = {
  * A code the admin client itself raises: no answer (`network.failed`, `network.timeout`,
  * `network.aborted`), an answer that is not the API's (`response.invalid`), or a client that
  * was refused before any request (`client.invalid_key`, `client.publishable_key`,
- * `client.invalid_url`, `client.browser`).
+ * `client.invalid_url`, `client.browser`), or a call refused before its request
+ * (`client.invalid_param`).
  *
  * @example
  * ```ts
@@ -222,12 +226,20 @@ export function defaultMessage(code: string): string | undefined {
  * Build one of the client's own errors.
  *
  * @param code - The client code.
- * @param details - The operation being called and, for a missing answer, the failure's name.
+ * @param details - The operation being called, for a missing answer the failure's name, and
+ *   for a refused path parameter its name (`param`, never its value).
  * @returns The error.
  */
 export function clientError(
   code: AdminClientErrorCode,
-  details: { operation?: string; reason?: string; status?: number } = {}
+  details: { operation?: string; reason?: string; status?: number; param?: string } = {}
 ): TulaAdminError {
-  return new TulaAdminError({ code, message: CLIENT_MESSAGES[code], ...details })
+  const { param, ...rest } = details
+  return new TulaAdminError({
+    code,
+    message:
+      param === undefined ? CLIENT_MESSAGES[code] : `${CLIENT_MESSAGES[code]} Parameter: ${param}.`,
+    ...rest,
+    ...(param !== undefined && { params: { param } }),
+  })
 }

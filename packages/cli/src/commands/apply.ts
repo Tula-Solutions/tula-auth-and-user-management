@@ -14,6 +14,15 @@ const APPLY_OPTIONS = {
     short: 'y',
     description: 'Apply without asking. Required when not at a terminal (CI).',
   },
+  'allow-unknown': {
+    type: 'boolean',
+    description:
+      'Apply although the server has settings this version of tula does not know: they are reset to their defaults.',
+  },
+  'allow-weaker': {
+    type: 'boolean',
+    description: 'With --yes: apply although the plan weakens security (it is listed in the plan).',
+  },
   'expect-revision': {
     type: 'string',
     value: '<n>',
@@ -117,6 +126,9 @@ const STALE =
  *
  * It prints the same plan as `tula diff`, asks before changing anything (`--yes` skips the
  * question; without it a run that is not at a terminal refuses instead of hanging), and
+ * refuses two plans unless told otherwise: one that would reset settings this version does not
+ * know (`--allow-unknown`), and, under `--yes`, where nobody reads the warning, one that
+ * weakens security (`--allow-weaker`). It
  * replaces the settings with `If-Match` on the revision the plan was made against, so a change
  * someone else made in between is never overwritten. If a write fails part-way, it says
  * exactly what was applied and what was not; running it again finishes the job.
@@ -130,17 +142,27 @@ export const applyCommand: Command = {
   name: 'apply',
   summary: 'Make the environment what tula.config.ts says.',
   usage:
-    'tula apply [--env <name>] [--config <path>] [--yes] [--prune] [--rotate-secrets] [--expect-revision <n>] [--json]',
+    'tula apply [--env <name>] [--config <path>] [--yes] [--prune] [--rotate-secrets] [--expect-revision <n>] [--allow-unknown] [--allow-weaker] [--json]',
   description:
     'Prints the plan, asks for confirmation, then replaces the environment’s settings (only if ' +
     'nobody changed them since the plan was made) and creates, updates or deletes OAuth ' +
     'providers. Provider secrets are read from the environment variables the config names.\n\n' +
+    'It refuses a plan that would reset settings this version of tula does not know (unless ' +
+    '--allow-unknown), and with --yes a plan that weakens security (unless --allow-weaker).\n\n' +
     'Exit codes: 0 applied (or nothing to do), 1 an error or a declined confirmation.',
   options: APPLY_OPTIONS,
   run: async (context) => {
     const { flags, io, output } = context
     const json = flags.json === true
     const expected = expectedRevision(flags['expect-revision'])
+    // Standard input can carry the key or the answer to the question, not both. Said before
+    // anything is read, so the key is not consumed by a run that cannot finish.
+    if (flags['secret-key-file'] === '-' && flags.yes !== true) {
+      throw new UsageError(
+        'The secret key is read from standard input, so standard input cannot also answer the ' +
+          'confirmation: pass --yes as well. Nothing was read or changed.'
+      )
+    }
     const { name, environment, target, plan } = await prepare(context)
     const header = { environment: name, apiUrl: target.apiUrl }
     if (!json) {
@@ -183,6 +205,26 @@ export const applyCommand: Command = {
       return EXIT.ok
     }
 
+    // The replace sends the whole document as this version knows it: a setting a newer server
+    // has would silently go back to its default. Never without being asked to, --yes or not.
+    if (plan.unknown.length > 0 && flags['allow-unknown'] !== true) {
+      output.error(
+        `${output.errorStyle.red('error:')} The server has settings this version of tula does ` +
+          `not know (${plan.unknown.join(', ')}); applying would reset them to their defaults. ` +
+          'Nothing was changed. Upgrade tula, or pass --allow-unknown to reset them.'
+      )
+      return EXIT.error
+    }
+    // With --yes nobody reads the plan's warning, so a weakening needs its own word.
+    if (flags.yes === true && plan.weakened.length > 0 && flags['allow-weaker'] !== true) {
+      output.error(
+        `${output.errorStyle.red('error:')} This plan weakens security ` +
+          `(${plan.weakened.join(', ')}), and with --yes nobody is asked. Nothing was changed. ` +
+          'Pass --allow-weaker with --yes to apply it.'
+      )
+      return EXIT.error
+    }
+
     // Before the question and before any write: a run that cannot finish must not start.
     const secrets = resolveSecrets(context, environment, operations)
 
@@ -192,8 +234,10 @@ export const applyCommand: Command = {
           'Not at a terminal, so there is nobody to confirm: pass --yes to apply without asking. Nothing was changed.'
         )
       }
+      const weakening =
+        plan.weakened.length > 0 ? `This WEAKENS security (${plan.weakened.join(', ')}). ` : ''
       const answer = await io.prompt(
-        `Apply these changes to "${name}" at ${target.apiUrl}? Type yes to continue: `
+        `${weakening}Apply these changes to "${name}" at ${target.apiUrl}? Type yes to continue: `
       )
       if (answer.trim().toLowerCase() !== 'yes') {
         output.error('Cancelled. Nothing was changed.')

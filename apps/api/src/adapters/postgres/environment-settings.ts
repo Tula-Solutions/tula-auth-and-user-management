@@ -12,40 +12,19 @@ import {
 } from '@tula/db'
 import { and, eq, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
+import { readStoredManager } from '~/adapters/settings-manager'
 import * as logger from '~/lib/logger'
 import type { Activity } from '~/ports/activity-log'
 import type {
   EnvironmentSettingsStore,
   SettingsManagerInput,
   StoredEnvironmentSettings,
-  StoredSettingsManager,
 } from '~/ports/environment-settings-store'
 
 const columns = {
   revision: environmentSettings.revision,
   settings: environmentSettings.settings,
   managedBy: environmentSettings.managedBy,
-}
-
-/**
- * The manager on a row, if it is one this version can read. Anything else (a shape another
- * version wrote) counts as "not managed": the marker is advice for a dashboard, and settings
- * are read on the request path, so it must never fail a read.
- */
-function toManager(value: unknown): StoredSettingsManager | undefined {
-  const manager = value as Partial<StoredSettingsManager> | null
-  return manager &&
-    typeof manager.tool === 'string' &&
-    typeof manager.configHash === 'string' &&
-    typeof manager.at === 'string' &&
-    typeof manager.revision === 'number'
-    ? {
-        tool: manager.tool,
-        configHash: manager.configHash,
-        at: manager.at,
-        revision: manager.revision,
-      }
-    : undefined
 }
 
 function toStored(
@@ -63,7 +42,8 @@ function toStored(
       { environmentId, dropped }
     )
   }
-  const managedBy = toManager(row.managedBy)
+  // The column is free-form JSON: only a record the answer's own schema accepts is passed on.
+  const managedBy = readStoredManager(environmentId, row.managedBy)
   return { revision: row.revision, settings, ...(managedBy && { managedBy }) }
 }
 

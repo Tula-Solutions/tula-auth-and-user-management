@@ -104,6 +104,52 @@ describe('createAdminClient', () => {
     )
   })
 
+  test.each([
+    ['a public host', 'http://auth.example.com'],
+    ['a private address', 'http://10.0.0.5:3003'],
+    ['a host that only starts like localhost', 'http://localhost.example.com'],
+    ['a host that only ends like localhost', 'http://notlocalhost'],
+    ['an address that only starts like loopback', 'http://127.0.0.1.example.com'],
+  ])('refuses plain http to %s, and sends nothing', async (_name, baseUrl) => {
+    const { fetch, seen } = fakeFetch(() => json({}))
+    const error = refusal(() => createAdminClient({ baseUrl, secretKey: SECRET_KEY, fetch }))
+    expect(error.code).toBe('client.invalid_url')
+    expect(error.status).toBe(0)
+    expect(seen).toEqual([])
+  })
+
+  test.each([
+    ['localhost', 'http://localhost:3003'],
+    ['a name under .localhost', 'http://api.tula.localhost:3003'],
+    ['127.0.0.1', 'http://127.0.0.1:3003'],
+    ['[::1]', 'http://[::1]:3003'],
+    ['LOCALHOST in capitals', 'http://LOCALHOST:3003'],
+  ])('allows plain http to %s', async (_name, baseUrl) => {
+    const { fetch, seen } = fakeFetch(() => json({ data: [] }))
+    await createAdminClient({ baseUrl, secretKey: SECRET_KEY, fetch }).call('listOAuthProviders')
+    expect(seen).toHaveLength(1)
+  })
+
+  test('allowInsecureHttp is the explicit way to use plain http on a private network', async () => {
+    const { fetch, seen } = fakeFetch(() => json({ data: [] }))
+    const admin = createAdminClient({
+      baseUrl: 'http://tula.internal:3003',
+      secretKey: SECRET_KEY,
+      fetch,
+      allowInsecureHttp: true,
+    })
+    await admin.call('listOAuthProviders')
+    expect(seen[0]?.url).toBe('http://tula.internal:3003/v1/admin/oauth-providers')
+    // It widens http only: another scheme and credentials stay refused.
+    for (const baseUrl of ['ftp://tula.internal', 'http://user:pass@tula.internal']) {
+      expect(
+        refusal(() =>
+          createAdminClient({ baseUrl, secretKey: SECRET_KEY, allowInsecureHttp: true })
+        ).code
+      ).toBe('client.invalid_url')
+    }
+  })
+
   test('refuses to be created in a browser', () => {
     const globals = globalThis as { window?: unknown; document?: unknown }
     globals.window = {}
@@ -164,8 +210,64 @@ describe('call', () => {
     expect(seen[0]?.body).toBeNull()
     expect(seen[0]?.headers.has('content-type')).toBe(false)
 
-    await admin.call('getUser', { params: { userId: '../settings' } })
-    expect(seen[1]?.url).toBe('http://localhost:3003/v1/admin/users/..%2Fsettings')
+    await admin.call('getUser', { params: { userId: 'a b?c#d%2e' } })
+    expect(seen[1]?.url).toBe('http://localhost:3003/v1/admin/users/a%20b%3Fc%23d%252e')
+  })
+
+  test.each([
+    ['..', '..'],
+    ['.', '.'],
+    ['empty', ''],
+    ['a value with a slash', '../settings'],
+    ['a value with a backslash', '..\\settings'],
+    ['a value with a control character', 'abc\u0000def'],
+    ['a value with a line break', 'abc\ndef'],
+  ])(
+    'a path parameter that is %s is refused before any request, naming the parameter only',
+    async (_name, userId) => {
+      const { fetch, seen } = fakeFetch(() => json({}))
+      const admin = createAdminClient({
+        baseUrl: 'https://auth.example.com',
+        secretKey: SECRET_KEY,
+        fetch,
+      })
+      const error = await failure(admin.call('banUser', { params: { userId } }))
+      expect(error.code).toBe('client.invalid_param')
+      expect(error.status).toBe(0)
+      expect(error.operation).toBe('banUser')
+      expect(error.params).toEqual({ param: 'userId' })
+      expect(error.message).toContain('userId')
+      if (userId.length > 2) {
+        expect(JSON.stringify(error)).not.toContain(JSON.stringify(userId).slice(1, -1))
+      }
+      expect(seen).toEqual([])
+    }
+  )
+
+  test('a path parameter that is missing is refused the same way', async () => {
+    const { fetch, seen } = fakeFetch(() => json({}))
+    const admin = createAdminClient({
+      baseUrl: 'https://auth.example.com',
+      secretKey: SECRET_KEY,
+      fetch,
+    })
+    const error = await failure(admin.call('banUser', { params: {} } as never))
+    expect(error.code).toBe('client.invalid_param')
+    expect(seen).toEqual([])
+  })
+
+  test('an ordinary id fills its place in the path', async () => {
+    const { fetch, seen } = fakeFetch(() => json({}))
+    const admin = createAdminClient({
+      baseUrl: 'https://auth.example.com',
+      secretKey: SECRET_KEY,
+      fetch,
+    })
+    const userId = '0198c2de-7b1a-7c3e-9f00-5a1b2c3d4e5f'
+    await admin.call('banUser', { params: { userId } })
+    expect(seen.map((request) => request.url)).toEqual([
+      `https://auth.example.com/v1/admin/users/${userId}/ban`,
+    ])
   })
 
   test('an operation with no input takes none, and a 204 answers undefined', async () => {

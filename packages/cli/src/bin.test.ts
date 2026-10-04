@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { VERSION } from './version'
@@ -54,6 +54,7 @@ describe('the tula executable', () => {
     try {
       writeFileSync(join(dir, 'tula.config.ts'), 'export default { environments: { dev: {} } }\n')
       writeFileSync(join(dir, 'key.txt'), `${SECRET_KEY}\n`)
+      chmodSync(join(dir, 'key.txt'), 0o600)
       // A port nothing listens on: the run gets as far as its first request.
       const env = { TULA_API_URL: 'http://127.0.0.1:9' }
       for (const run of [
@@ -64,6 +65,21 @@ describe('the tula executable', () => {
         expect(run.stderr).toContain('network.failed')
         expect(run.stdout + run.stderr).not.toContain(SECRET_KEY)
       }
+      if (process.platform !== 'win32') {
+        // A key file other users can read is used, with a warning that shows none of it.
+        expect(
+          tula(['diff', '--secret-key-file', 'key.txt'], { env, cwd: dir }).stderr
+        ).not.toContain('warning:')
+        chmodSync(join(dir, 'key.txt'), 0o644)
+        const open = tula(['diff', '--secret-key-file', 'key.txt'], { env, cwd: dir })
+        expect(open.stderr).toContain('readable by other users (mode 0644)')
+        expect(open.stderr).toContain('network.failed')
+        expect(open.stdout + open.stderr).not.toContain(SECRET_KEY)
+      }
+      // Standard input carries the key, so it cannot confirm: apply needs --yes.
+      const piped = tula(['apply', '--secret-key-file', '-'], { env, cwd: dir, stdin: SECRET_KEY })
+      expect(piped.code).toBe(1)
+      expect(piped.stderr).toContain('pass --yes as well')
       // Not at a terminal and no --yes: refused before anything, never a hang.
       const missing = tula(['apply'], { env, cwd: dir })
       expect(missing.code).toBe(1)

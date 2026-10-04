@@ -674,3 +674,208 @@ describe('apply', () => {
     expect(JSON.parse(noop.stdout)).toMatchObject({ changes: false, applied: [], failed: null })
   })
 })
+
+describe('plain http', () => {
+  test.each([
+    ['TULA_API_URL', [], { TULA_API_URL: 'http://auth.example.test', TULA_SECRET_KEY: SECRET_KEY }],
+    ['--api-url', ['--api-url', 'http://auth.example.test'], { TULA_SECRET_KEY: SECRET_KEY }],
+  ] as [string, string[], Record<string, string>][])(
+    'a plain http URL for another machine in %s is refused before the key is sent anywhere',
+    async (_name, flags, env) => {
+      const config = await configFile({ dev: {} })
+      const plain = createFakeApi('http://auth.example.test')
+      const run = await tula(['diff', '--config', config, ...flags], { env, fetch: plain.fetch })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('client.invalid_url')
+      expect(run.stderr).toContain('--insecure-http')
+      expect(plain.requests).toEqual([])
+    }
+  )
+
+  test('--insecure-http is the explicit way to use it on a private network', async () => {
+    const config = await configFile({ dev: {} })
+    const plain = createFakeApi('http://tula.internal:3003')
+    const run = await tula(['diff', '--config', config, '--insecure-http'], {
+      env: { TULA_API_URL: 'http://tula.internal:3003', TULA_SECRET_KEY: SECRET_KEY },
+      fetch: plain.fetch,
+    })
+    expect(run.code).toBe(2)
+    expect(plain.requests[0]).toBe('GET /v1/admin/settings')
+  })
+
+  test('localhost needs no flag', async () => {
+    const config = await configFile({ dev: {} })
+    const local = createFakeApi('http://localhost:3003')
+    const run = await tula(['diff', '--config', config], {
+      env: { TULA_API_URL: 'http://localhost:3003', TULA_SECRET_KEY: SECRET_KEY },
+      fetch: local.fetch,
+    })
+    expect(run.code).toBe(2)
+  })
+})
+
+describe('settings this version does not know', () => {
+  const future = () => {
+    api.revision = 3
+    ;(api.settings as unknown as Record<string, unknown>).future = { feature: true }
+    ;(api.settings.mfa as unknown as Record<string, unknown>).methods = ['sms']
+  }
+
+  test('apply refuses to reset them, even with --yes, and writes nothing', async () => {
+    future()
+    const config = await configFile({ dev: { settings: { app: { name: 'Northline' } } } })
+    const run = await tula(['apply', '--config', config, '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('future')
+    expect(run.stderr).toContain('mfa.methods')
+    expect(run.stderr).toContain('--allow-unknown')
+    expect(run.stderr).toContain('Nothing was changed.')
+    expect(writes()).toEqual([])
+    expect(api.revision).toBe(3)
+  })
+
+  test('at a terminal it refuses before asking', async () => {
+    future()
+    const config = await configFile({ dev: { settings: { app: { name: 'Northline' } } } })
+    const asked: string[] = []
+    const run = await tula(['apply', '--config', config], {
+      isTTY: true,
+      prompt: async (question) => {
+        asked.push(question)
+        return 'yes'
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(asked).toEqual([])
+    expect(writes()).toEqual([])
+  })
+
+  test('--allow-unknown applies, resetting them', async () => {
+    future()
+    const config = await configFile({ dev: { settings: { app: { name: 'Northline' } } } })
+    const run = await tula(['apply', '--config', config, '--yes', '--allow-unknown'])
+    expect(run.code).toBe(0)
+    expect(writes()).toEqual(['PUT /v1/admin/settings'])
+    expect((api.settings as unknown as Record<string, unknown>).future).toBeUndefined()
+  })
+
+  test('diff says what apply will need, in text and in --json', async () => {
+    future()
+    const config = await configFile({ dev: { settings: { app: { name: 'Northline' } } } })
+    const text = await tula(['diff', '--config', config])
+    expect(text.code).toBe(2)
+    expect(text.stdout).toContain('`tula apply` refuses this plan without --allow-unknown')
+    const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
+      unknown: string[]
+      applyRequires: { allowUnknown: boolean; allowWeaker: boolean }
+    }
+    expect(json.unknown).toEqual(['mfa.methods', 'future'])
+    expect(json.applyRequires).toEqual({ allowUnknown: true, allowWeaker: false })
+  })
+})
+
+describe('a plan that weakens security', () => {
+  const strict = () => {
+    api.revision = 2
+    api.settings.mfa.policy = 'required'
+  }
+
+  test('apply --yes refuses it: nobody is there to read the warning', async () => {
+    strict()
+    const config = await configFile({ dev: { settings: { mfa: { policy: 'off' } } } })
+    const run = await tula(['apply', '--config', config, '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('mfa.policy')
+    expect(run.stderr).toContain('--allow-weaker')
+    expect(run.stderr).toContain('Nothing was changed.')
+    expect(writes()).toEqual([])
+    expect(api.settings.mfa.policy).toBe('required')
+  })
+
+  test('apply --yes --allow-weaker applies it', async () => {
+    strict()
+    const config = await configFile({ dev: { settings: { mfa: { policy: 'off' } } } })
+    const run = await tula(['apply', '--config', config, '--yes', '--allow-weaker'])
+    expect(run.code).toBe(0)
+    expect(api.settings.mfa.policy).toBe('off')
+  })
+
+  test('at a terminal the question itself names the weakening', async () => {
+    strict()
+    const config = await configFile({ dev: { settings: { mfa: { policy: 'off' } } } })
+    const asked: string[] = []
+    const run = await tula(['apply', '--config', config], {
+      isTTY: true,
+      prompt: async (question) => {
+        asked.push(question)
+        return 'yes'
+      },
+    })
+    expect(run.code).toBe(0)
+    expect(asked).toEqual([
+      `This WEAKENS security (mfa.policy). Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
+    expect(api.settings.mfa.policy).toBe('off')
+  })
+
+  test('diff says what apply --yes will need, in text and in --json', async () => {
+    strict()
+    const config = await configFile({ dev: { settings: { mfa: { policy: 'off' } } } })
+    const text = await tula(['diff', '--config', config])
+    expect(text.stdout).toContain('`tula apply --yes` refuses this plan without --allow-weaker')
+    const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
+      weakened: string[]
+      applyRequires: { allowUnknown: boolean; allowWeaker: boolean }
+    }
+    expect(json.weakened).toEqual(['mfa.policy'])
+    expect(json.applyRequires).toEqual({ allowUnknown: false, allowWeaker: true })
+  })
+})
+
+describe('the key on standard input', () => {
+  test('is refused when standard input is a terminal: the key would be echoed', async () => {
+    const config = await configFile({ dev: {} })
+    let read = 0
+    const run = await tula(['diff', '--config', config, '--secret-key-file', '-'], {
+      env: { TULA_API_URL: BASE_URL },
+      stdinIsTTY: true,
+      readStdin: async () => {
+        read += 1
+        return SECRET_KEY
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('standard input is a terminal')
+    expect(run.stderr).toContain('Pipe')
+    expect(read).toBe(0)
+    expect(api.requests).toEqual([])
+  })
+
+  test('apply then needs --yes: standard input cannot also answer the question', async () => {
+    const config = await configFile({ dev: { settings: { app: { name: 'Northline' } } } })
+    let read = 0
+    let asked = 0
+    const io = {
+      env: { TULA_API_URL: BASE_URL },
+      isTTY: true,
+      readStdin: async () => {
+        read += 1
+        return SECRET_KEY
+      },
+      prompt: async () => {
+        asked += 1
+        return 'yes'
+      },
+    }
+    const run = await tula(['apply', '--config', config, '--secret-key-file', '-'], io)
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('--yes')
+    expect(run.stderr).toContain('standard input')
+    expect([read, asked]).toEqual([0, 0])
+    expect(api.requests).toEqual([])
+
+    const confirmed = await tula(['apply', '--config', config, '--secret-key-file=-', '--yes'], io)
+    expect(confirmed.code).toBe(0)
+    expect([read, asked]).toEqual([1, 0])
+  })
+})

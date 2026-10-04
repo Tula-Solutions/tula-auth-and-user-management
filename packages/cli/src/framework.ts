@@ -34,8 +34,16 @@ export interface CliIo {
   env: Readonly<Record<string, string | undefined>>
   /** The directory a relative `--config` is resolved against. */
   cwd: string
-  /** Whether a person is at the terminal: both standard input and output are one. */
+  /**
+   * Whether a person can be asked a question: standard input and standard error are both a
+   * terminal (the question is written to standard error, so standard output may be a file).
+   */
   isTTY: boolean
+  /**
+   * Whether standard input is a terminal. A secret key is never read from one
+   * (`--secret-key-file -`): it would be shown as it is typed.
+   */
+  stdinIsTTY?: boolean
   /** The `fetch` the admin client uses. Defaults to the platform's. */
   fetch?: AdminFetch
   /** Ask a question and read one line. Required only where a command prompts on a terminal. */

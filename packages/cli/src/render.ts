@@ -82,7 +82,9 @@ const MARKER_REASONS: Record<Plan['marker']['reason'], string> = {
 export function planWarnings(plan: Plan): string[] {
   const warnings: string[] = []
   if (plan.weakened.length > 0) {
-    warnings.push(`weakens security: ${plan.weakened.join(', ')}`)
+    warnings.push(
+      `weakens security: ${plan.weakened.join(', ')} (\`tula apply --yes\` needs --allow-weaker)`
+    )
   }
   if (plan.marker.reason === 'other-tool') {
     warnings.push(MARKER_REASONS['other-tool'])
@@ -94,10 +96,28 @@ export function planWarnings(plan: Plan): string[] {
   if (plan.unknown.length > 0) {
     warnings.push(
       `the server has settings this version of tula does not know (${plan.unknown.join(', ')}); ` +
-        'applying resets them to their defaults. Upgrade tula first.'
+        'applying resets them to their defaults, so `tula apply` refuses without ' +
+        '--allow-unknown. Upgrade tula first.'
     )
   }
   return warnings
+}
+
+/**
+ * What `tula apply` will not do to a plan without being told to: reset settings this version
+ * does not know (`--allow-unknown`), and, when nobody is asked (`--yes`), weaken security
+ * (`--allow-weaker`).
+ *
+ * @param plan - The plan.
+ * @returns Which of the two flags the plan needs.
+ *
+ * @example
+ * ```ts
+ * applyRequirements(plan) // { allowUnknown: false, allowWeaker: true }
+ * ```
+ */
+export function applyRequirements(plan: Plan): { allowUnknown: boolean; allowWeaker: boolean } {
+  return { allowUnknown: plan.unknown.length > 0, allowWeaker: plan.weakened.length > 0 }
 }
 
 /**
@@ -209,5 +229,6 @@ export function planToJson(
       configHash: plan.marker.configHash,
     },
     warnings: planWarnings(plan),
+    applyRequires: applyRequirements(plan),
   }
 }

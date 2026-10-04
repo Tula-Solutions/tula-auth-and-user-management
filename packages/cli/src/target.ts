@@ -1,4 +1,4 @@
-import { type AdminClient, createAdminClient } from '@tula/admin'
+import { type AdminClient, createAdminClient, isTulaAdminError } from '@tula/admin'
 import { type EnvironmentConfig, secretKeyMatchesKind } from '@tula/config'
 import { UsageError } from './args'
 import type { CliIo } from './framework'
@@ -33,9 +33,13 @@ function own(env: CliIo['env'], name: string): string | undefined {
 /**
  * Work out which API a run talks to and with which key.
  *
- * - **URL**: `--api-url`, else `TULA_API_URL_<NAME>`, else `TULA_API_URL`.
- * - **Secret key**: `--secret-key-file <path>` (`-` reads standard input), else
- *   `TULA_SECRET_KEY_<NAME>`, else `TULA_SECRET_KEY`.
+ * - **URL**: `--api-url`, else `TULA_API_URL_<NAME>`, else `TULA_API_URL`. It must be https,
+ *   or this machine (`localhost`, `*.localhost`, `127.0.0.1`, `[::1]`): over plain http the
+ *   secret key and provider secrets cross the network in clear text. `--insecure-http` allows
+ *   it for a private network you trust.
+ * - **Secret key**: `--secret-key-file <path>` (`-` reads standard input, which must then be
+ *   a pipe: a terminal would show the key as it is typed), else `TULA_SECRET_KEY_<NAME>`, else
+ *   `TULA_SECRET_KEY`.
  *
  * `<NAME>` is the environment's name in the config, upper-cased, so one CI job can hold the
  * keys of several environments. Neither is ever read from the config file (it is committed),
@@ -49,7 +53,8 @@ function own(env: CliIo['env'], name: string): string | undefined {
  *
  * @param input - The environment's name and entry, the command's flags, and the run's io.
  * @returns The API's URL and an admin client.
- * @throws UsageError when the URL or the key is missing, or the key is of the wrong kind.
+ * @throws UsageError when the URL or the key is missing, the key is of the wrong kind, the key
+ *   would be typed at a terminal, or the URL is plain http for another machine.
  * @throws TulaAdminError when the key is not a secret key or the URL is not usable.
  *
  * @example
@@ -71,6 +76,13 @@ export async function resolveTarget(input: {
     typeof flags['secret-key-file'] === 'string' ? flags['secret-key-file'] : undefined
   let secretKey: string | undefined
   if (keyFile !== undefined) {
+    if (keyFile === '-' && io.stdinIsTTY) {
+      throw new UsageError(
+        '--secret-key-file - reads the key from standard input, and standard input is a ' +
+          'terminal: the key would be shown as you type it. Pipe it in instead ' +
+          '(e.g. `your-secret-store read tula | tula diff --secret-key-file -`), or use a file.'
+      )
+    }
     const read = keyFile === '-' ? io.readStdin : io.readFile
     if (!read) {
       throw new UsageError('--secret-key-file cannot be read here.')
@@ -104,12 +116,30 @@ export async function resolveTarget(input: {
     )
   }
 
-  const admin = createAdminClient({
-    baseUrl: apiUrl,
-    secretKey,
-    fetch: io.fetch,
-    userAgent: `tula-cli/${VERSION}`,
-  })
+  let admin: AdminClient
+  try {
+    admin = createAdminClient({
+      baseUrl: apiUrl,
+      secretKey,
+      fetch: io.fetch,
+      userAgent: `tula-cli/${VERSION}`,
+      allowInsecureHttp: flags['insecure-http'] === true,
+    })
+  } catch (error) {
+    if (
+      isTulaAdminError(error) &&
+      error.code === 'client.invalid_url' &&
+      /^http:/i.test(apiUrl) &&
+      flags['insecure-http'] !== true
+    ) {
+      throw new UsageError(
+        'The API URL is plain http and is not this machine: the secret key and provider ' +
+          'secrets would cross the network in clear text (client.invalid_url). Use an https ' +
+          'URL, or pass --insecure-http for a private network you trust. Nothing was sent.'
+      )
+    }
+    throw error
+  }
   if (!secretKeyMatchesKind(environment.kind, secretKey)) {
     throw new UsageError(
       `The config says "${name}" is a ${environment.kind} environment, and the secret key is not ` +
