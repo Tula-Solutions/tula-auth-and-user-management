@@ -53,7 +53,8 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/db/migrations/**` (once merged to `develop`) | Applied migrations are immutable; add a new one. |
 | `**/*.gen.ts`, `**/routeTree.gen.ts` | Code generators own these. `packages/core/src/generated/api.gen.ts`: `bun run core:generate`; `packages/admin/src/generated/api.gen.ts`: `bun run admin:generate` (both from `openapi.json`, by `packages/core/scripts/openapi-types.ts`). |
 | The `tokens:start` … `tokens:end` block of `packages/react/src/styles.css` | Generated from `@tula/contract/theme` by `bun run --filter @tula/react generate`. Change a token in the contract, then regenerate. |
-| `apps/dashboard/src/components/ui/**` | shadcn primitives — wrap or extend, don't modify. |
+| `apps/dashboard/src/api/generated/api.gen.ts`, `apps/dashboard/src/routeTree.gen.ts`, `apps/dashboard/src/styles/tokens.gen.css` | Orval's hooks, TanStack Router's route tree and the theme tokens: `bun run dashboard:generate` (after `contract:generate`, after adding a route file, after changing a theme token). |
+| `apps/dashboard/src/components/ui/**` | shadcn primitives, written by its CLI (`bunx shadcn@latest add <name>` in `apps/dashboard`) — wrap or extend, don't modify. They import `cn` from the bare specifier `cn`, as the registry ships them; `tsconfig.json` and `vite.config.ts` map it to `src/lib/utils.ts`. |
 | `bun.lock` | Manage via `bun add` / `bun remove`. |
 | `.env*` (except `.env.example`) | Local secrets; never read, print or commit them. |
 
@@ -81,7 +82,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | Path | What |
 | --- | --- |
 | `apps/api` | `@tula/api` — the Bun + Hono auth server (data plane). |
-| `apps/dashboard` | Local admin UI (Phase 1; payhub-portal stack). |
+| `apps/dashboard` | `@tula/dashboard` — the operator's dashboard: a Vite + React single-page app the API serves at `/dashboard` ([ADR 0032](docs/adr/0032-dashboard.md), [docs/dashboard.md](docs/dashboard.md), `apps/dashboard/README.md`). Private, never published. |
 | `packages/contract` | `@tula/contract` — Zod schemas, flow protocol, error codes, token claims, password policy, OpenAPI snapshot. Imported by the API and every TS SDK. |
 | `packages/db` | `@tula/db` — Drizzle schema, committed migrations, RLS policies, tenant helpers, seed. |
 | `packages/tsconfig` | Shared tsconfig bases. |
@@ -231,6 +232,42 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - **Accessibility is part of done**: labelled fields, errors associated and announced, focus
   moved on a step change and on failure, state as text and not only colour, keyboard operation
   of everything. axe runs on every screen in the browser tests with no rule disabled.
+
+### Dashboard app (`apps/dashboard`, see ADR 0032)
+
+- **Every API call goes through an Orval-generated hook and `dashboardFetch`**
+  (`src/api/mutator.ts`): `x-tula-dashboard: 1`, the cookie, never `Authorization`, the
+  selected environment on admin calls, and one error type (`ApiError`). A 401
+  `auth.unauthenticated` ends the session; the shell returns to sign-in and back to the same
+  address. Only `/v1/admin/*` and `/v1/instance/*` get hooks.
+- **The address is the selection** (`/w/<id>/p/<id>/e/<id>/…`, filters and pages as search
+  parameters); the Zustand scope store mirrors it through `syncScope` in each route's
+  `beforeLoad`, which also drops cached admin answers when the environment changes (admin
+  queries are keyed by path, the environment travels in a header).
+- **It runs under the API's strict Content-Security-Policy, and the browser tests fail on any
+  violation.** No inline script or style, no `eval`, no library that injects a `<style>`:
+  dialogs are the platform's `<dialog>` (`components/modal.tsx`; Radix's dialog and select
+  inject styles), toasts are the app's own live region, selects are shadcn's `native-select`,
+  and Zod runs in its interpreter (`src/lib/zod-csp.ts`, imported first by `main.tsx`: Zod
+  otherwise probes `new Function`). Never loosen `DASHBOARD_CSP` for a library.
+- **No secret outlives its form.** The admin token, a created API key, a typed password and a
+  provider secret are component state only while their form or dialog is open: never
+  `localStorage`, `sessionStorage`, the address or a log. A mutation that carries one uses
+  `gcTime: 0` and is `reset()` when the form lets go (the query client keeps a mutation's
+  variables), and the router's scroll restoration stays off (it writes to `sessionStorage`).
+  `src/app.test.tsx` and the browser tests walk the app and assert storage, the address, the
+  document and the query caches are clean.
+- **One save model for settings** (`features/settings/settings-editor.tsx`): load with the
+  revision, replace with `If-Match`, 412 is "changed elsewhere" with a reload and never a
+  retry, a weaker policy (`settingsWeakenings`) or managed settings ask first. A settings
+  screen is a `SettingsFrame`.
+- **Destructive actions name what they act on** and, in a production environment, ask for it
+  to be typed (`ConfirmDialog`'s `requireText`). Server text is rendered as text; a link is
+  an app route or a validated `https:` URL.
+- **Accessibility as in the React SDK**: labelled fields with associated, announced errors
+  (`Field`), focus on the heading after a navigation (`PageHeader`), dialogs that trap and
+  restore focus, state in words as well as colour, tables that stack under 640 px. Colours
+  come from `@tula/contract/theme` through `tokens.gen.css`.
 
 ### Next.js SDK (see ADR 0029)
 
@@ -814,6 +851,14 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   `next start`, against the same fixture; the build is part of `bun run e2e`, never of
   `verify`. Its server is started with `exec` so that Playwright stops it: a Next.js server
   left running keeps the keys of a fixture that is gone.
+- **The dashboard is tested as the image serves it.** The `dashboard` Playwright project
+  (`e2e/tests/dashboard/`) drives the built app served by the API's own static handler at
+  `/dashboard`, under its real Content-Security-Policy, against the real API in process; the
+  fixture generates an admin token per run (`/__test/admin-token`, behind `e2e/guard.ts`).
+  Every test fails on a policy violation, a console error or an uncaught exception
+  (`support.ts`). Its component tests (`bun test`, happy-dom) render the whole app against
+  `src/testing/fake-api.ts`. The API image builds the app in its own `dashboard` stage and
+  copies only `dist`: the `install` stage still gets no manifest of a browser package.
 - Component tests (`packages/react`) run in happy-dom through a preload
   (`src/testing/setup.ts`) with Testing Library, against `@tula/core`'s own fake API
   (`src/testing/harness.tsx`).
@@ -910,6 +955,9 @@ bun run tula -- doctor      # check a deployment (TULA_API_URL, TULA_ADMIN_TOKEN
 bun run --filter create-tula templates:sync
                             # copy examples/* into create-tula's templates (after changing an example)
                             # the CLI from source: needs TULA_API_URL and TULA_SECRET_KEY (docs/config.md)
+bun run dashboard:generate  # regenerate the dashboard's hooks, route tree and theme tokens
+bun run dashboard:dev       # the dashboard on http://localhost:5175/dashboard/, proxying /v1 to the API
+bun run dashboard:build     # apps/dashboard/dist, which `bun run dev` then serves at /dashboard
 bun run packages:check      # build, pack, publint + attw every publishable package (part of verify)
 bun run release:dry-run     # the same, then report what a release would publish (publishes nothing)
 bun run playground          # @tula/core test bench on http://localhost:5173 (examples/core-playground)
@@ -919,8 +967,8 @@ bun run --filter @tula/example-react-vite dev
 bun run --filter @tula/react generate
                             # rewrite the stylesheet's token block from @tula/contract/theme
 bun run e2e:install         # once: download Chromium for Playwright
-bun run e2e                 # browser tests: both example apps against the real API in process, with axe
-bun run e2e:screenshots     # regenerate the screenshots in examples/{react-vite,nextjs-app-router}/docs
+bun run e2e                 # browser tests: both example apps and the dashboard against the real API in process, with axe
+bun run e2e:screenshots     # regenerate the screenshots in examples/{react-vite,nextjs-app-router}/docs and apps/dashboard/docs
 bun run db:generate         # generate a migration from schema changes (then read the SQL)
 bun run db:check            # fail if src/schema changed without a migration
 bun run db:migrate          # apply migrations as the schema owner (DATABASE_MIGRATION_URL)

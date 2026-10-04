@@ -1,0 +1,132 @@
+@import "tailwindcss";
+@import "./styles/tokens.gen.css";
+
+/*
+ * The dashboard's look: shadcn's variables, filled from the product's design tokens
+ * (@tula/contract/theme, generated into styles/tokens.gen.css) so that the dashboard and the
+ * sign-in components share one palette. No colour is written here as a literal.
+ */
+:root {
+  color-scheme: light dark;
+  --background: var(--tula-surface);
+  --foreground: var(--tula-text);
+  --card: var(--tula-background);
+  --card-foreground: var(--tula-text);
+  --popover: var(--tula-background);
+  --popover-foreground: var(--tula-text);
+  --primary: var(--tula-primary);
+  --primary-foreground: var(--tula-primary-text);
+  --secondary: var(--tula-surface);
+  --secondary-foreground: var(--tula-text);
+  --muted: var(--tula-surface);
+  --muted-foreground: var(--tula-text-muted);
+  --accent: var(--tula-surface);
+  --accent-foreground: var(--tula-text);
+  --destructive: var(--tula-danger);
+  --destructive-surface: var(--tula-danger-surface);
+  --success: var(--tula-success);
+  --link: var(--tula-link);
+  --border: var(--tula-border);
+  --input: var(--tula-border-strong);
+  --field: var(--tula-input);
+  --ring: var(--tula-focus);
+  --overlay: var(--tula-overlay);
+  --radius: var(--tula-radius-small);
+  /* The navigation is dark in both schemes (Design.pdf page 6). */
+  --sidebar: var(--tula-dark-background);
+  --sidebar-foreground: var(--tula-dark-text);
+  --sidebar-muted: var(--tula-dark-text-muted);
+  --sidebar-accent: var(--tula-dark-surface);
+  --sidebar-border: var(--tula-dark-border);
+  --sidebar-ring: var(--tula-dark-focus);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: var(--tula-background);
+    --card: var(--tula-surface);
+    --popover: var(--tula-surface);
+    --secondary: var(--tula-border);
+    --muted: var(--tula-border);
+    --accent: var(--tula-border);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-surface: var(--destructive-surface);
+  --color-success: var(--success);
+  --color-link: var(--link);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-field: var(--field);
+  --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: var(--tula-radius);
+  --radius-xl: calc(var(--tula-radius) + 4px);
+  --font-sans: var(--tula-font-family);
+  --font-mono: var(--tula-font-family-mono);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    font-family: var(--tula-font-family);
+  }
+  body {
+    margin: 0;
+    background-color: var(--background);
+    color: var(--foreground);
+    font-size: var(--tula-font-size);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* One visible focus ring everywhere, 3:1 against both surfaces. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  dialog {
+    color: var(--foreground);
+  }
+  dialog::backdrop {
+    background-color: var(--overlay);
+  }
+}
+
+/*
+ * Reduced motion: nothing animates or eases. Outside any layer, so that it wins over every
+ * utility's own duration without `!important`.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation: none;
+    transition: none;
+    scroll-behavior: auto;
+  }
+}

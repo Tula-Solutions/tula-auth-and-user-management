@@ -3,6 +3,8 @@ import { FixedClock } from '../apps/api/src/adapters/memory/clock'
 import { MemoryRateLimiter } from '../apps/api/src/adapters/memory/rate-limiter'
 import { mockOAuthProviders } from '../apps/api/src/adapters/oauth/mock'
 import { createApp, MAX_BODY_BYTES } from '../apps/api/src/index'
+import { sha256Hex } from '../apps/api/src/lib/crypto'
+import { findDashboardDir } from '../apps/api/src/lib/dashboard-files'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
 import * as OAuth from '../apps/api/src/modules/oauth/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
@@ -84,6 +86,20 @@ class ResettableRateLimiter implements RateLimiter {
   }
 }
 
+/**
+ * The instance admin token of this run (ADR 0031), which the dashboard's tests sign in with.
+ * Generated when the fixture starts and kept in memory; the test runner reads it from
+ * `/__test/admin-token`, behind the same guard as every other test route.
+ */
+const ADMIN_TOKEN = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex')
+
+/**
+ * The dashboard's build output, served by the API's own static handler at `/dashboard` with
+ * its real Content-Security-Policy (ADR 0032): the browser tests run the app as the image
+ * serves it. `null` (no dashboard) when it was not built.
+ */
+const DASHBOARD_DIR = findDashboardDir(join(import.meta.dir, '..', 'apps', 'dashboard', 'dist'))
+
 const clock = new WallClock()
 const rateLimiter = new ResettableRateLimiter(clock)
 const deps = createTestDeps({
@@ -92,7 +108,13 @@ const deps = createTestDeps({
   // OAuth runs against the API's own mock provider (ADR 0026), as a local deployment with
   // `OAUTH_MOCK_PROVIDER=true` does: the real callback, ticket and exchange, and a consent page
   // the tests fill in.
-  config: { ...TEST_CONFIG, publicUrl: `http://localhost:${API_PORT}`, oauthMock: true },
+  config: {
+    ...TEST_CONFIG,
+    publicUrl: `http://localhost:${API_PORT}`,
+    oauthMock: true,
+    instanceAdminTokenHash: sha256Hex(ADMIN_TOKEN),
+    dashboardDir: DASHBOARD_DIR,
+  },
 })
 Object.assign(deps, {
   oauth: mockOAuthProviders({
@@ -106,6 +128,21 @@ deps.environments.add({
   projectId: TEST_TENANT.projectId,
   kind: 'development',
   createdAt: clock.now(),
+})
+// The fixture's environment belongs to a project of a workspace, so that the dashboard's
+// switcher reaches it (the control plane lists what it holds; the seed does the same).
+const FIXTURE_WORKSPACE_ID = '00000000-0000-7000-8000-00000000f001'
+deps.controlPlane.workspaces.push({
+  id: FIXTURE_WORKSPACE_ID,
+  name: 'Acme Studio',
+  createdAt: clock.now(),
+})
+deps.controlPlane.projects.push({
+  id: TEST_TENANT.projectId,
+  workspaceId: FIXTURE_WORKSPACE_ID,
+  name: 'Mobile app',
+  createdAt: clock.now(),
+  updatedAt: clock.now(),
 })
 await seedApiKey(deps, PUBLISHABLE_KEY)
 await seedApiKey(deps, SECRET_KEY)
@@ -260,6 +297,9 @@ function testRoute(request: Request): Response | Promise<Response> | null {
   }
   if (request.method === 'POST' && url.pathname === '/__test/oauth') {
     return request.json().then(enableProviders)
+  }
+  if (request.method === 'GET' && url.pathname === '/__test/admin-token') {
+    return json({ token: ADMIN_TOKEN })
   }
   if (request.method === 'GET' && url.pathname === '/__test/now') {
     // What the API takes the time to be: an authenticator code is computed from it.

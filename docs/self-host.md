@@ -5,7 +5,8 @@ Redis. This guide covers trying it locally with Docker Compose, and what to chan
 deployment.
 
 Phase 0 status: email and password sign-up and sign-in, sessions, user administration and the
-audit log. No dashboard yet; administration is through the HTTP API (`/v1/docs` lists it).
+audit log. Administration is through the dashboard at `/dashboard` ([dashboard.md](dashboard.md))
+or the HTTP API (`/v1/docs` lists it).
 
 ## Try it locally
 
@@ -428,7 +429,9 @@ tula doctor
 
 The API serves the dashboard at `/dashboard` when its build output is present: the directory
 named by `DASHBOARD_DIR`, or `apps/dashboard/dist` next to the API. Without one, `/dashboard`
-is an unknown path and everything else works as before.
+is an unknown path and everything else works as before. The image ships the build, so a
+deployment from the image has it at `https://<your API>/dashboard/`; what it can do is in
+[dashboard.md](dashboard.md).
 
 You sign in with the **instance admin token** (`TULA_ADMIN_TOKEN`, as for `tula doctor`); a
 deployment that sets none has no dashboard sign-in. The token is sent once and exchanged for a

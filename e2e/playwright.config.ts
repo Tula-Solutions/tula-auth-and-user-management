@@ -45,12 +45,25 @@ export default defineConfig({
       testMatch: /nextjs\/.*\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: NEXT_URL },
     },
-    { name: 'chromium', testIgnore: /nextjs\//, use: { ...devices['Desktop Chrome'] } },
+    // The dashboard (apps/dashboard), served by the API itself at /dashboard under its real
+    // Content-Security-Policy. Before `chromium` for the same reason as `nextjs`: its session
+    // lasts eight hours by the fixture's clock.
+    {
+      name: 'dashboard',
+      testMatch: /dashboard\/.*\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: `${API_URL}/dashboard/` },
+    },
+    {
+      name: 'chromium',
+      testIgnore: [/nextjs\//, /dashboard\//],
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
   webServer: [
     {
-      // The example is built with the fixture's fixed API URL and key, then both are served.
-      command: `VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula/example-react-vite build && E2E=1 bun run server.ts`,
+      // The example is built with the fixture's fixed API URL and key, and the dashboard as the
+      // image builds it; then the fixture serves both.
+      command: `VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula/example-react-vite build && bun run --filter @tula/dashboard build && E2E=1 bun run server.ts`,
       cwd: import.meta.dirname,
       url: `${API_URL}/v1/status`,
       reuseExistingServer: !process.env.CI,

@@ -11,6 +11,7 @@
     "includes": [
       "**",
       "!**/*.gen.ts",
+      "!**/*.gen.css",
       "!**/routeTree.gen.ts",
       "!**/components/ui",
       "!packages/db/migrations",
@@ -48,6 +49,7 @@
     }
   },
   "json": { "formatter": { "trailingCommas": "none" } },
+  "css": { "parser": { "tailwindDirectives": true } },
   "overrides": [
     {
       "includes": ["**/scripts/**", "conformance/**", "**/*.test.ts"],
