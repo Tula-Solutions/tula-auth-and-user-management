@@ -710,6 +710,30 @@ describe('what a failure may print', () => {
   })
 })
 
+describe('response headers', () => {
+  test('expect.headers matches a response header by name, whatever its case, like a body value', async () => {
+    const { target } = fakeTarget(() => ({
+      status: 204,
+      headers: { 'x-tula-can-still-sign-in': 'false' },
+    }))
+    const steps = (headers: Record<string, unknown>) => [
+      { name: 'reset', request: get('/reset'), expect: { status: 204, headers } },
+    ]
+    const run = (headers: Record<string, unknown>) => runScenario(scenario(steps(headers)), target)
+    expect((await run({ 'X-Tula-Can-Still-Sign-In': 'false' })).status).toBe('passed')
+    expect((await run({ 'x-tula-can-still-sign-in': { $matches: '^(true|false)$' } })).status).toBe(
+      'passed'
+    )
+    expect((await run({ 'x-missing': '$absent' })).status).toBe('passed')
+    expect((await run({ 'x-tula-can-still-sign-in': 'true' })).steps[0]?.problems).toEqual([
+      'expected header(x-tula-can-still-sign-in) to be "true", got "false"',
+    ])
+    expect((await run({ 'x-missing': '$any' })).steps[0]?.problems).toEqual([
+      'expected header(x-missing) to be present',
+    ])
+  })
+})
+
 describe('values the runner knows are never printed', () => {
   test('an echoed password or emailed code is named by its variable, not quoted', async () => {
     let password = ''

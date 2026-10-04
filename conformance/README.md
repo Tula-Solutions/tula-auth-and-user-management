@@ -116,6 +116,8 @@ included: use `attempt`).
   `{ "$set": [...] }` matches an array with exactly those members **in any order**: `amr` is a
   set, and its order is not part of the contract.
   The signature is not verified; an array, as everywhere, must match item by item.
+  `headers` checks response headers by name (case does not matter), each matched like a `body`
+  value against the header's text: `"headers": { "x-tula-can-still-sign-in": "false" }`.
 - **Capture.** `capture: { "variable": "dot.path" }` stores a string from the response body;
   a path can index an array (`codes[0]`).
   `captureHeaders: { "variable": "ETag" }` stores a response header. `captureJson:
@@ -140,6 +142,17 @@ included: use `attempt`).
   `now`). `captureWrong` also stores a code that is not the right one for the current step or
   the two either side. A server accepts a step's code once, the code that confirms an enrolment
   included, so a second use of the same secret needs a `wait` of `30s` before its `totp` step.
+- `passkey`: play the user's authenticator in a WebAuthn ceremony (ADR 0027). The step names an
+  `authenticator` (created on first use, kept for the scenario's run), takes the options a
+  request step stored with `captureJson` (`create` or `get`, as `{{name}}`), the page's
+  `origin`, and stores the browser-shaped response as JSON text in `capture`; send it with
+  `{ "$json": "{{name}}" }`. A runner needs a software authenticator for it: a P-256 (ES256)
+  discoverable credential, attestation format `none`, an ASN.1 DER ECDSA signature over the
+  authenticator data and the SHA-256 of the client data. `userVerified: false`, `counter` and
+  `synced` set the flags and the signature counter. The TypeScript runner's is
+  `VirtualAuthenticator` (`packages/conformance/src/passkey.ts`, Web Crypto only). The request
+  steps of a ceremony send the `Origin` header themselves (`"headers": { "Origin": "…" }`): the
+  API verifies a response against the origin of the request that carries it.
 - **Wait steps** let time pass: a real sleep against a live server, a clock advance in process.
 - **`cleanup`** (optional, beside `steps`) lists steps that run after the scenario's steps
   **whether or not they passed**, with whatever was captured before the failure. A scenario

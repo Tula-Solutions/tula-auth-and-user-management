@@ -66,6 +66,10 @@ export const ELEMENT_NAMES = [
   'divider',
   'identityList',
   'identityItem',
+  'passkeyIcon',
+  'passkeyList',
+  'passkeyItem',
+  'confirmation',
 ] as const
 
 /**

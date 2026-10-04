@@ -1,3 +1,5 @@
+import type { PasskeyGlobals } from './passkey'
+
 /**
  * The part of the Web Locks API the client uses: one named, exclusive lock shared by every tab
  * of an origin.
@@ -90,6 +92,11 @@ export interface Environment {
   /** The page's address, in a browser. */
   page: PageLike | undefined
   /**
+   * Where `navigator.credentials` and `PublicKeyCredential` are looked up when a passkey is
+   * asked for (ADR 0027). Read lazily: a runtime without WebAuthn simply has neither.
+   */
+  passkeys: PasskeyGlobals | undefined
+  /**
    * Run `callback` once after `ms` milliseconds.
    *
    * @returns A function that cancels it.
@@ -146,6 +153,7 @@ export function runtimeEnvironment(
     createChannel: Channel ? (name) => new Channel(name) : undefined,
     linkStorage: linkStorageOf(globals),
     tabStorage: tabStorageOf(globals),
+    passkeys: globals as PasskeyGlobals,
     page:
       location && history
         ? {

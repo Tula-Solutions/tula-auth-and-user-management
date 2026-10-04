@@ -1,4 +1,4 @@
-import type { FlowStep, SecondFactorProof, SignInFlow } from '@tula/core'
+import type { FlowStep, PasskeyRequest, SecondFactorProof, SignInFlow } from '@tula/core'
 import { useCallback, useMemo } from 'react'
 import { useTulaContext } from '../context'
 import {
@@ -82,9 +82,31 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    */
   submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
   /**
-   * Continue a sign-in that was started elsewhere: the flow `signIn.handleOAuthCallback()`
-   * answers with, positioned on the step the OAuth round trip ended on. `step` becomes that
-   * flow's, and the actions above act on it.
+   * Prove a passkey as the second factor (step `needs_second_factor` whose `options` include
+   * `passkey`): runs the browser's passkey dialog and submits what it returns. A dialog the
+   * user dismissed leaves `error.code` at `passkey.cancelled`; nothing was sent.
+   *
+   * @param request - `signal`: ends the dialog.
+   */
+  submitSecondFactorWithPasskey(request?: Pick<PasskeyRequest, 'signal'>): Promise<FlowStep | null>
+  /**
+   * Sign in with a passkey: no identifier is needed, and the attempt is one of its own (a
+   * sign-in already started here is left). Runs the browser's passkey dialog; a passkey
+   * satisfies two-step verification, so the step it resolves with is usually `complete`.
+   * Offer it only where `canUsePasskey()` is `true`.
+   *
+   * @param request - `signal`: ends the dialog.
+   */
+  withPasskey(request?: Pick<PasskeyRequest, 'signal'>): Promise<FlowStep | null>
+  /**
+   * Whether this browser can ask for a passkey at all. Call it after mount (in an effect or a
+   * handler), never while rendering: a server has no WebAuthn.
+   */
+  canUsePasskey(): boolean
+  /**
+   * Continue a sign-in that was started elsewhere: the flow `signIn.handleOAuthCallback()` or
+   * `signIn.withPasskey()` of the client answers with, positioned on its step. `step` becomes
+   * that flow's, and the actions above act on it.
    */
   adopt(flow: SignInFlow): void
 }
@@ -153,6 +175,17 @@ export function useSignIn(): UseSignInResult {
       act((flow) => flow.submitSecondFactor(input).then((result) => result.step)),
     [act]
   )
+  const submitSecondFactorWithPasskey = useCallback(
+    (request?: Pick<PasskeyRequest, 'signal'>) =>
+      act((flow) => flow.submitSecondFactorWithPasskey(request).then((result) => result.step)),
+    [act]
+  )
+  const withPasskey = useCallback(
+    (request?: Pick<PasskeyRequest, 'signal'>) =>
+      begin(() => client.signIn.withPasskey({ signal: request?.signal })),
+    [begin, client]
+  )
+  const canUsePasskey = useCallback(() => client.signIn.canUsePasskey(), [client])
   const enrolment = useMemo(() => enrolmentActions(act), [act])
   return {
     ...state,
@@ -165,6 +198,9 @@ export function useSignIn(): UseSignInResult {
     waitForEmailLink,
     canUseEmailLink,
     submitSecondFactor,
+    submitSecondFactorWithPasskey,
+    withPasskey,
+    canUsePasskey,
     ...enrolment,
   }
 }

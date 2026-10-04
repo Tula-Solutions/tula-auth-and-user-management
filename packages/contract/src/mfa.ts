@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PasskeyAssertionCredentialSchema } from './passkey'
 
 /** Digits in an authenticator (TOTP) code. */
 export const TOTP_DIGITS = 6
@@ -55,17 +56,18 @@ export const BackupCodesSchema = z
  *
  * `email_code` is a 6-digit code emailed on request
  * (`POST /v1/client/sessions/step-up/email-code`); it exists only for a user with a verified
- * email address and **no** second factor.
+ * email address and **no** second factor. `passkey` is an assertion for the options of
+ * `POST /v1/client/sessions/step-up/passkey`, for a user who has a passkey (ADR 0027).
  */
 export const StepUpMethodSchema = z
-  .enum(['password', 'totp', 'backup_code', 'email_code'])
+  .enum(['password', 'totp', 'backup_code', 'email_code', 'passkey'])
   .meta({ ref: 'StepUpMethod' })
 
 /**
  * Prove a factor again for the current session (`POST /v1/client/sessions/step-up`).
  *
- * A user with two-step verification must use `totp` or `backup_code`: their password alone is
- * refused. A user without it uses `password`, or an `email_code` they asked for from this
+ * A user with two-step verification must use `totp`, `backup_code` or a `passkey`: their
+ * password alone is refused. A user without it uses `password`, or an `email_code` they asked for from this
  * session.
  */
 export const StepUpRequestSchema = z
@@ -74,6 +76,7 @@ export const StepUpRequestSchema = z
     z.object({ method: z.literal('totp'), code: z.string().regex(/^\d{6}$/) }),
     z.object({ method: z.literal('backup_code'), code: z.string().min(1).max(64) }),
     z.object({ method: z.literal('email_code'), code: z.string().regex(/^\d{6}$/) }),
+    z.object({ method: z.literal('passkey'), credential: PasskeyAssertionCredentialSchema }),
   ])
   .meta({ ref: 'StepUpRequest' })
 

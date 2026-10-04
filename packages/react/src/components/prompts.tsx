@@ -7,6 +7,7 @@ import { formatText } from '../localization'
 import { CODE_LENGTH, CodeField, ResendButton, useRetryAfter } from './flow-screens'
 import { attemptsLeft, formatDuration } from './form-errors'
 import { BackupCodesPanel, drawableFactors, SecondFactorForm } from './mfa'
+import { PasskeyPanel, usePasskeySupport } from './passkey'
 import { Button, Form, FormError, Heading, PasswordField, Root, Status, useUi } from './ui'
 
 /**
@@ -294,9 +295,10 @@ function EmailCodeStepUp(props: {
  * it (`client.session.stepUp`) and reports whether the session was stepped up. What is typed
  * lives in the dialog's state and goes when it closes.
  *
- * A user with a second factor is asked for it and nothing else. Without one: the password
- * when they have one, with a code by email as the other way when the server lists it (sent
- * only when they choose it); the emailed code at once when it is all they have.
+ * A user with a second factor is asked for it and nothing else (their passkey is one of the
+ * ways, where they have one). Without one: their passkey when they have one and the browser
+ * can use it, else the password, with the other ways the server lists one click away (a code
+ * by email is sent only when they choose it, or at once when it is all they have).
  */
 function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: boolean): void }) {
   const { t } = useUi()
@@ -306,10 +308,23 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
   const [isPending, setPending] = useState(false)
   const [error, setError] = useState<TulaError | null>(null)
   const second = drawableFactors(methods)
+  // A code factor means the user has two-step verification: nothing weaker is offered.
+  const strong = second.some((method) => method !== 'passkey')
   const signedIn = state.status === 'signed-in'
-  const canPassword = second.length === 0 && methods.includes('password')
-  const canEmail = second.length === 0 && methods.includes('email_code')
-  const [byEmail, setByEmail] = useState(!canPassword)
+  const passkeySupported = usePasskeySupport()
+  type View = 'passkey' | 'password' | 'email'
+  const views: View[] = strong
+    ? []
+    : [
+        // Not ruled out until the browser has been asked; then only where it can.
+        ...(methods.includes('passkey') && passkeySupported !== false
+          ? (['passkey'] as const)
+          : []),
+        ...(methods.includes('password') ? (['password'] as const) : []),
+        ...(methods.includes('email_code') ? (['email'] as const) : []),
+      ]
+  const [chosen, setChosen] = useState<View | null>(null)
+  const view: View | undefined = chosen && views.includes(chosen) ? chosen : views[0]
   // The receipt of the code this dialog sent. Held here, not in the form, so that looking at
   // the password form and coming back neither sends a second email nor forgets the first.
   const [receipt, setReceipt] = useState<{ sessionId: string; value: StepUpPrepared } | null>(null)
@@ -317,16 +332,16 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
   const body = useRef<HTMLDivElement>(null)
   const switched = useRef(false)
   useEffect(() => {
-    // Switching between the password and the emailed code: focus follows to the new form's
-    // field (the emailed code's field focuses itself once the email was sent).
-    if (switched.current && !byEmail) {
-      body.current?.querySelector<HTMLElement>('input')?.focus()
+    // Switching between the ways: focus follows to the new form's field, or to the passkey's
+    // button (the emailed code's field focuses itself once the email was sent).
+    if (switched.current && view !== 'email') {
+      body.current?.querySelector<HTMLElement>('input, button')?.focus()
     }
-  }, [byEmail])
-  const choose = (email: boolean) => {
+  }, [view])
+  const choose = (next: View) => {
     switched.current = true
     setError(null)
-    setByEmail(email)
+    setChosen(next)
   }
 
   useEffect(() => {
@@ -349,10 +364,33 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
     onDone(true)
     return true
   }
+  const submitPasskey = async (signal: AbortSignal): Promise<boolean> => {
+    setPending(true)
+    setError(null)
+    try {
+      await client.session.stepUpWithPasskey({ signal })
+    } catch (caught) {
+      setError(toTulaError(caught))
+      setPending(false)
+      return false
+    }
+    onDone(true)
+    return true
+  }
   const cancel = () => onDone(false)
+  const labels: Record<View, string> = {
+    passkey: t.passkey.useInstead,
+    password: t.stepUp.passwordInstead,
+    email: t.stepUp.emailInstead,
+  }
+  const others = views.filter(
+    (other) => other !== view && (other !== 'passkey' || passkeySupported === true)
+  )
+  // A passkey is all this user could step up with, and this browser cannot use one.
+  const passkeyOnly = !strong && views.length === 0 && methods.includes('passkey')
   return (
     <Modal title={t.stepUp.title} onCancel={cancel}>
-      {second.length > 0 ? (
+      {strong ? (
         <SecondFactorForm
           methods={second}
           isPending={isPending}
@@ -360,42 +398,46 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
           submitLabel={t.stepUp.submit}
           totpSubtitle={t.stepUp.totpSubtitle}
           backupSubtitle={t.stepUp.backupSubtitle}
+          passkeySubtitle={t.passkey.stepUpSubtitle}
           submit={submit}
+          submitPasskey={submitPasskey}
         />
-      ) : canEmail && (byEmail || !canPassword) ? (
+      ) : view !== undefined ? (
         <div ref={body}>
-          <EmailCodeStepUp
-            isPending={isPending}
-            error={error}
-            // A receipt belongs to the session that asked for it.
-            receipt={receipt?.sessionId === sessionId ? receipt.value : null}
-            onReceipt={(value) => setReceipt(sessionId === null ? null : { sessionId, value })}
-            submit={submit}
-          />
-          {canPassword ? (
+          {view === 'passkey' ? (
+            <PasskeyPanel
+              subtitle={t.passkey.stepUpSubtitle}
+              isPending={isPending}
+              error={error}
+              use={submitPasskey}
+            />
+          ) : view === 'email' ? (
+            <EmailCodeStepUp
+              isPending={isPending}
+              error={error}
+              // A receipt belongs to the session that asked for it.
+              receipt={receipt?.sessionId === sessionId ? receipt.value : null}
+              onReceipt={(value) => setReceipt(sessionId === null ? null : { sessionId, value })}
+              submit={submit}
+            />
+          ) : (
+            <PasswordStepUp isPending={isPending} error={error} submit={submit} />
+          )}
+          {others.length > 0 ? (
             <div className='tula-actions'>
-              <Button kind='link' onClick={() => choose(false)}>
-                {t.stepUp.passwordInstead}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      ) : canPassword ? (
-        <div ref={body}>
-          <PasswordStepUp isPending={isPending} error={error} submit={submit} />
-          {canEmail ? (
-            <div className='tula-actions'>
-              <Button kind='link' onClick={() => choose(true)}>
-                {t.stepUp.emailInstead}
-              </Button>
+              {others.map((other) => (
+                <Button key={other} kind='link' onClick={() => choose(other)}>
+                  {labels[other]}
+                </Button>
+              ))}
             </div>
           ) : null}
         </div>
       ) : (
-        <p className='tula-text'>{t.stepUp.noMethod}</p>
+        <p className='tula-text'>{passkeyOnly ? t.passkey.unsupported : t.stepUp.noMethod}</p>
       )}
       <Button kind='secondary' onClick={cancel}>
-        {second.length > 0 || canPassword || canEmail ? t.stepUp.cancel : t.stepUp.close}
+        {strong || view !== undefined ? t.stepUp.cancel : t.stepUp.close}
       </Button>
     </Modal>
   )

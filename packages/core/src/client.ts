@@ -3,6 +3,7 @@ import { type Environment, runtimeEnvironment } from './environment'
 import { clientError, type Messages } from './errors'
 import {
   type PasswordResetFlow,
+  passkeySignIn,
   passwordResetFlow,
   type SignInFlow,
   type SignUpFlow,
@@ -22,6 +23,16 @@ import {
   startOAuth,
 } from './oauth'
 import {
+  browserAuthenticator,
+  isCreationOptions,
+  isPasskeyAnswer,
+  isPasskeyList,
+  isRequestOptions,
+  type PasskeyAuthenticator,
+  type PasskeyRequest,
+  toPasskey,
+} from './passkey'
+import {
   createSessionManager,
   LOCK_WAIT_MARGIN_MS,
   REFRESH_TIMEOUT_MS,
@@ -36,6 +47,7 @@ import type {
   ClientKind,
   Factors,
   FetchLike,
+  Passkey,
   Session,
   StepUpPrepared,
   StepUpProof,
@@ -206,6 +218,54 @@ export interface TulaClient {
      */
     canUseOAuth(): boolean
     /**
+     * Whether this runtime can ask for a passkey at all (`navigator.credentials` and
+     * `PublicKeyCredential` exist). `false` on a server and in a browser without WebAuthn.
+     *
+     * @example
+     * ```ts
+     * passkeyButton.hidden = !tula.signIn.canUsePasskey()
+     * ```
+     */
+    canUsePasskey(): boolean
+    /**
+     * Whether the browser can offer passkeys in a field's autofill (conditional mediation).
+     *
+     * @example
+     * ```ts
+     * if (await tula.signIn.canAutofillPasskey()) {
+     *   void tula.signIn.withPasskey({ autofill: true, signal })
+     * }
+     * ```
+     */
+    canAutofillPasskey(): Promise<boolean>
+    /**
+     * Sign in with a passkey: no identifier is needed. Starts an attempt of its own, runs the
+     * browser's passkey dialog and submits what it returns. A passkey satisfies two-step
+     * verification, so the flow comes back `complete` (or, for an account whose address was
+     * never verified, on `needs_email_verification`).
+     *
+     * With `autofill: true` there is no dialog: the request waits, for as long as `signal`
+     * allows, until the user picks a passkey the browser offers on a field with
+     * `autocomplete="username webauthn"`. Give it a signal and abort it when the page goes
+     * away or another way of signing in is used.
+     *
+     * @param request - A signal that ends the request, and whether to ask through autofill.
+     * @returns The sign-in flow, past its first factor.
+     * @throws TulaError `passkey.unsupported`, `passkey.cancelled` or `passkey.failed` from
+     *   the browser; `auth.invalid_credentials` for a passkey the API does not accept (every
+     *   reason is the same), `auth.method_disabled` where passkeys are off,
+     *   `request.origin_not_allowed` for a page outside the environment's relying party.
+     *
+     * @example
+     * ```ts
+     * const flow = await tula.signIn.withPasskey()
+     * if (flow.step.status === 'complete') {
+     *   showApp()
+     * }
+     * ```
+     */
+    withPasskey(request?: PasskeyRequest): Promise<SignInFlow>
+    /**
      * "Continue with Google, GitHub or Apple": a sign-in that creates the account when the
      * provider's verified address has none.
      *
@@ -356,6 +416,24 @@ export interface TulaClient {
      */
     stepUp(proof: StepUpProof): Promise<void>
     /**
+     * Step up with a passkey, when `stepUpMethods` lists `passkey`: asks the API for the
+     * options, runs the browser's passkey dialog and proves what it returns. Like `stepUp`,
+     * it replaces the access token with one that carries the proof.
+     *
+     * @param request - A signal that ends the dialog.
+     * @throws TulaError `passkey.unsupported`, `passkey.cancelled` or `passkey.failed` from
+     *   the browser (nothing was sent to be judged), `auth.invalid_credentials` for an
+     *   assertion the API refuses, `auth.step_up_required` for a user with no passkey.
+     *
+     * @example
+     * ```ts
+     * if (stepUpMethods(error).includes('passkey')) {
+     *   await tula.session.stepUpWithPasskey()
+     * }
+     * ```
+     */
+    stepUpWithPasskey(request?: Pick<PasskeyRequest, 'signal'>): Promise<void>
+    /**
      * Email the signed-in user a 6-digit code to step up with, when `stepUpMethods` lists
      * `email_code`: a user with a verified address and no two-step verification (someone who
      * signed up through a provider or by email has no password to prove). The code works for
@@ -406,6 +484,59 @@ export interface TulaClient {
      *   has not proven it recently, `auth.step_up_required` (see `session.stepUp`).
      */
     changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
+    /**
+     * The signed-in user's passkeys (ADR 0027). Adding, renaming and removing one may answer
+     * `auth.step_up_required`; see `session.stepUp`.
+     */
+    readonly passkeys: {
+      /**
+       * The user's passkeys, oldest first: a name, whether it is synced, when it was added
+       * and last used. Never key material.
+       *
+       * @example
+       * ```ts
+       * const passkeys = await tula.user.passkeys.list()
+       * ```
+       */
+      list(): Promise<Passkey[]>
+      /**
+       * Create a passkey on this device and save it to the account: asks the API for the
+       * options, runs the browser's dialog and sends what it returns.
+       *
+       * @param input - An optional name, and a signal that ends the dialog.
+       * @returns The saved passkey.
+       * @throws TulaError `passkey.unsupported`, `passkey.cancelled`,
+       *   `passkey.already_on_device` or `passkey.failed` from the browser;
+       *   `passkey.registration_failed`, `passkey.limit_reached`, `auth.method_disabled` or
+       *   `auth.step_up_required` from the API.
+       *
+       * @example
+       * ```ts
+       * const passkey = await tula.user.passkeys.add({ name: 'MacBook' })
+       * ```
+       */
+      add(input?: { name?: string; signal?: AbortSignal }): Promise<Passkey>
+      /**
+       * Give a passkey another name.
+       *
+       * @example
+       * ```ts
+       * await tula.user.passkeys.rename({ passkeyId, name: 'Work phone' })
+       * ```
+       */
+      rename(input: { passkeyId: string; name: string }): Promise<Passkey>
+      /**
+       * Remove a passkey from the account.
+       *
+       * @throws TulaError `passkey.last_sign_in_method` when it is the only way to sign in.
+       *
+       * @example
+       * ```ts
+       * await tula.user.passkeys.remove({ passkeyId })
+       * ```
+       */
+      remove(input: { passkeyId: string }): Promise<void>
+    }
     /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
     readonly identities: {
       /**
@@ -597,7 +728,28 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     session.subscribe(options.onSessionChange)
   }
   const links = createLinkStore(environment, scope)
-  const flows = { transport, session, messages: currentMessages, environment, links, scope }
+  // Looked up when a passkey is asked for, not when the client is made: a page may gain or
+  // lose WebAuthn (an extension, a test) after that.
+  const passkeys = () =>
+    environment.passkeys ? browserAuthenticator(environment.passkeys, currentMessages) : undefined
+  const flows = {
+    transport,
+    session,
+    messages: currentMessages,
+    environment,
+    links,
+    scope,
+    passkeys,
+  }
+
+  /** The browser's ceremonies, or the error that says there are none. */
+  function authenticator(): PasskeyAuthenticator {
+    const found = passkeys()
+    if (!found) {
+      throw clientError('passkey.unsupported', messages)
+    }
+    return found
+  }
   const oauth = {
     ...flows,
     oauth: createOAuthStore(environment, scope),
@@ -646,6 +798,9 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         }
         return handlingLink
       },
+      canUsePasskey: () => passkeys() !== undefined,
+      canAutofillPasskey: async () => (await passkeys()?.autofillAvailable()) ?? false,
+      withPasskey: (request) => passkeySignIn(flows, request),
       canUseOAuth: () => oauth.oauth.available(),
       withOAuth: (input) => startOAuth(oauth, input, 'sign_in'),
       handleOAuthCallback() {
@@ -682,6 +837,15 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       },
       revokeOthers: async () => (await session.authorized('revokeOtherSessions', {})).revoked,
       stepUp: (proof) => session.stepUp(proof),
+      async stepUpWithPasskey(request = {}) {
+        const ceremonies = authenticator()
+        const options = checked(
+          await session.authorized('getStepUpPasskeyOptions', {}),
+          isRequestOptions
+        )
+        const credential = await ceremonies.get(options, { signal: request.signal })
+        await session.stepUp({ method: 'passkey', credential })
+      },
       async prepareStepUp() {
         const { destination, expiresAt } = checked(
           await session.authorized('sendStepUpEmailCode', {}),
@@ -719,6 +883,38 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         link: (input) => startOAuth(oauth, input, 'link'),
         async unlink({ identityId }) {
           await session.authorized('deleteMyIdentity', { params: { identityId } })
+        },
+      },
+      passkeys: {
+        list: async () =>
+          checked(await session.authorized('listMyPasskeys', {}), isPasskeyList).passkeys.map(
+            toPasskey
+          ),
+        async add(input = {}) {
+          const ceremonies = authenticator()
+          const options = checked(
+            await session.authorized('startPasskeyRegistration', {}),
+            isCreationOptions
+          )
+          const credential = await ceremonies.create(options, { signal: input.signal })
+          return toPasskey(
+            checked(
+              await session.authorized('finishPasskeyRegistration', {
+                body: { credential, ...(input.name !== undefined && { name: input.name }) },
+              }),
+              isPasskeyAnswer
+            )
+          )
+        },
+        rename: async ({ passkeyId, name }) =>
+          toPasskey(
+            checked(
+              await session.authorized('renamePasskey', { params: { passkeyId }, body: { name } }),
+              isPasskeyAnswer
+            )
+          ),
+        async remove({ passkeyId }) {
+          await session.authorized('removePasskey', { params: { passkeyId } })
         },
       },
     },

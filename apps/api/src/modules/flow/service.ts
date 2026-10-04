@@ -19,6 +19,9 @@ import {
   type OAuthProvider,
   OAuthProviderSchema,
   type OAuthStartRequest,
+  PASSKEY_CHALLENGE_TTL_MS,
+  type PasskeyAssertionCredential,
+  type PasskeyRequestOptions,
   type PasswordResetRequest,
   type PasswordResetStartRequest,
   type SecondFactorMethod,
@@ -37,11 +40,13 @@ import { type Actor, cleanOrigin, systemActor } from '~/lib/actor'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
+import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
+import * as Passkeys from '~/modules/passkey/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
@@ -80,6 +85,13 @@ const NO_SECRET_HASH = 'x'.repeat(64)
  * argon2id hash or an email. Generous for real traffic (ten sign-ups a second), tight enough
  * that a botnet aimed at one tenant can't monopolise the server. Refresh has no ceiling: every
  * active user refreshes about once a minute, so one would throttle a large app in normal use.
+ *
+ * `passkeyStart` is apart from `verify` on purpose. A passkey start is asked for by every open
+ * sign-in page, signed in to nothing: once when the page loads (the autofill request) and again
+ * every four minutes while it sits idle. Counted under `verify`, idle pages (or anyone
+ * requesting starts) would use up the ceiling that real users' code and second-factor steps
+ * need. 6,000 a minute is 100 sign-in page loads a second, or 24,000 pages left open; a start
+ * costs one attempt row and no hash or email, so it can be twice as generous as `verify`.
  */
 export const ENVIRONMENT_RATE_LIMITS = {
   signUp: 600,
@@ -88,6 +100,7 @@ export const ENVIRONMENT_RATE_LIMITS = {
   password: 3_000,
   verify: 3_000,
   oauth: 3_000,
+  passkeyStart: 6_000,
 } as const
 
 type CeilingStep = keyof typeof ENVIRONMENT_RATE_LIMITS
@@ -184,6 +197,11 @@ export interface ClientContext {
    * the refresh cookie is read under (`originMayUseCookies`).
    */
   originAllowed: boolean
+  /**
+   * The request's `Origin` header, for a passkey step: a WebAuthn response is verified against
+   * the origin of the page that made the request (ADR 0027). Unused by every other step.
+   */
+  origin?: string | null
 }
 
 /**
@@ -244,6 +262,14 @@ const StateSchema = z.object({
    * session's `authMethods` when the attempt completes.
    */
   amr: z.array(z.string()).optional(),
+  /**
+   * The WebAuthn challenge an attempt issued and has not used yet (ADR 0027), and when it stops
+   * being accepted (epoch milliseconds). Top-level, because taking it is a compare-and-set on
+   * its value (`StateGuard`): a challenge is used up by the first request that presents an
+   * assertion for it, whatever that assertion turns out to be.
+   */
+  passkeyChallenge: z.string().optional(),
+  passkeyChallengeExpiresAt: z.number().optional(),
   /**
    * Where an OAuth attempt is in its round trip (ADR 0026). Top-level, because each move is a
    * compare-and-set on it (`StateGuard`): the attempt's `status` stays `needs_first_factor`
@@ -369,7 +395,7 @@ interface Requirement {
 
 /** Ask what a user still has to do: prove a second factor, enrol one, or nothing. */
 async function requirement(
-  deps: Pick<Deps, 'factors' | 'environmentSettings' | 'config'>,
+  deps: Pick<Deps, 'factors' | 'passkeys' | 'environmentSettings' | 'config'>,
   tenant: Tenant,
   userId: string
 ): Promise<Requirement> {
@@ -2021,8 +2047,9 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * cannot slip through), the environment's ceiling, the ban check and the compare-and-set that
  * lets exactly one request create the session. The proof itself is checked by the verifier
  * registered for its method (`Factors.verify`): an authenticator code (accepted once per time
- * step) or a backup code (spent, recorded, and the owner told how many are left; the response
- * says so too, as `backupCodesRemaining`).
+ * step), a backup code (spent, recorded, and the owner told how many are left; the response
+ * says so too, as `backupCodesRemaining`) or a passkey (an assertion for the challenge of
+ * {@link secondFactorPasskeyOptions}, which is used up whatever the assertion turns out to be).
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -2050,6 +2077,11 @@ export async function submitSecondFactor(
   if (!userId || !state.secondFactors?.includes(proof.method)) {
     throw new AuthError('flow.invalid_step')
   }
+  if (proof.method === 'passkey') {
+    // Passkeys switched off since the attempt was offered one, or a foreign origin: refused
+    // before the guess is counted or the challenge used.
+    await Passkeys.relyingParty(deps, tenant, context.origin)
+  }
   const lockKey = secondFactorLockKey(tenant.environmentId, userId)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
@@ -2059,7 +2091,21 @@ export async function submitSecondFactor(
 
   const user = await deps.users.findById(tenant.environmentId, userId)
   const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
-  const outcome = user ? await Factors.verify(deps, tenant, userId, proof, actor) : null
+  let current = state
+  let checked = proof
+  if (proof.method === 'passkey') {
+    // The challenge is used up before the assertion is looked at: a response works once.
+    const taken = await takePasskeyChallenge(deps, tenant, attempt, state, context)
+    current = taken.state
+    checked = {
+      method: 'passkey',
+      response: { credential: proof.response, expected: taken.expected },
+    }
+    if (!taken.expected) {
+      throw new AuthError('mfa.invalid_code')
+    }
+  }
+  const outcome = user ? await Factors.verify(deps, tenant, userId, checked, actor) : null
   if (!user || !outcome) {
     throw new AuthError('mfa.invalid_code')
   }
@@ -2071,13 +2117,264 @@ export async function submitSecondFactor(
     deps,
     tenant,
     attempt,
-    proven(state, ...outcome.methods, 'mfa'),
+    proven(current, ...outcome.methods, 'mfa'),
     user.id,
     context,
     outcome.backupCodesRemaining === undefined
       ? {}
       : { backupCodesRemaining: outcome.backupCodesRemaining }
   )
+}
+
+/**
+ * Put a fresh WebAuthn challenge on an attempt, replacing an unused one. The attempt's step
+ * does not change.
+ */
+async function issuePasskeyChallenge(
+  deps: Pick<Deps, 'flowAttempts' | 'clock'>,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State
+): Promise<string> {
+  const now = deps.clock.now()
+  const challenge = WebAuthn.newChallenge()
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    {
+      status: attempt.status,
+      state: {
+        ...state,
+        passkeyChallenge: challenge,
+        passkeyChallengeExpiresAt: now.getTime() + PASSKEY_CHALLENGE_TTL_MS,
+      },
+    },
+    now
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return challenge
+}
+
+/**
+ * Take an attempt's WebAuthn challenge: a compare-and-set on its value, so of any number of
+ * requests presenting an assertion for it exactly one gets it, and a replay finds none.
+ *
+ * The relying party is resolved first (`Passkeys.relyingParty`: passkeys still on, the
+ * request's origin allowed and matching), so a step refused for that uses nothing up.
+ *
+ * @returns The attempt's state without the challenge, and what an assertion must match; no
+ *   `expected` when the attempt has no challenge, it expired, or another request took it.
+ */
+async function takePasskeyChallenge(
+  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'environmentSettings' | 'config'>,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  context: Pick<ClientContext, 'origin'>
+): Promise<{ state: State; expected?: WebAuthn.Expected }> {
+  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  const { passkeyChallenge: challenge, passkeyChallengeExpiresAt: expiresAt, ...rest } = state
+  const now = deps.clock.now()
+  if (challenge === undefined) {
+    return { state: rest }
+  }
+  const taken = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: attempt.status, state: rest },
+    now,
+    { key: 'passkeyChallenge', value: challenge }
+  )
+  if (!taken || expiresAt === undefined || expiresAt <= now.getTime()) {
+    return { state: rest }
+  }
+  return { state: rest, expected: { challenge, ...rp } }
+}
+
+/**
+ * Start a sign-in by passkey: an attempt of its own, and the options for
+ * `navigator.credentials.get()`.
+ *
+ * **Usernameless, and the same for every caller.** There is no identifier and the options
+ * carry no `allowCredentials`: the authenticator finds the credential (it is discoverable), so
+ * nothing here depends on, or says anything about, any account. The challenge is 32 random
+ * bytes kept on the attempt, which binds it to the attempt's secret and, for a browser, its
+ * origin; it is honoured once and for five minutes.
+ *
+ * @param deps - Attempt store, settings, config, rate limiter, ids and clock.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param context - The requesting device, with the request's `Origin`.
+ * @returns The attempt on `needs_first_factor` (`strategies: ['passkey']`) with its secret, and
+ *   the request options.
+ * @throws AuthError `auth.method_disabled` when passkeys are off, or
+ *   `request.origin_not_allowed` for an origin the environment does not allow or that does not
+ *   belong to its relying-party id.
+ * @throws RateLimitError when the environment's ceiling for starts (`passkeyStart`, its own:
+ *   never the one code steps are counted under) is reached.
+ */
+export async function startPasskeySignIn(
+  deps: Pick<
+    Deps,
+    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'rateLimiter'
+  >,
+  tenant: Tenant,
+  context: ClientContext
+): Promise<{ attempt: FlowAttempt; options: PasskeyRequestOptions; client: SessionClient }> {
+  requireAllowedOrigin(context.client, context)
+  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  // Its own ceiling: every idle sign-in page asks for a start (see ENVIRONMENT_RATE_LIMITS).
+  await chargeEnvironment(deps, tenant, 'passkeyStart')
+  const challenge = WebAuthn.newChallenge()
+  const state: State = {
+    client: context.client,
+    strategies: ['passkey'],
+    passkeyChallenge: challenge,
+    passkeyChallengeExpiresAt: deps.clock.now().getTime() + PASSKEY_CHALLENGE_TTL_MS,
+  }
+  const { attempt, secret } = await start(deps, tenant, {
+    kind: 'sign_in',
+    status: 'needs_first_factor',
+    // No identifier: the passkey says who is signing in.
+    identifier: '',
+    state,
+  })
+  return {
+    attempt: toAttempt(attempt, stepFor(attempt, state), secret),
+    options: Passkeys.requestOptions(rp, challenge),
+    client: state.client,
+  }
+}
+
+/**
+ * Prove a passkey for an attempt started with {@link startPasskeySignIn}, and sign the user in.
+ *
+ * **Every failure is the same `auth.invalid_credentials`**: an unknown credential, another
+ * environment's, a wrong signature, a response made for another origin, relying party or
+ * challenge, one without user verification, a used or expired challenge, a counter that went
+ * backwards. The challenge is used up by the first response presented for it; a request that
+ * is refused before that (passkeys off, the origin, the environment's ceiling or a limiter that
+ * cannot answer) uses nothing up.
+ *
+ * **A passkey satisfies two-step verification on its own** (ADR 0027): it is something the
+ * user has, unlocked by something they are or know, and it cannot be phished. So this step
+ * never stops at `needs_second_factor` or `needs_factor_enrolment`, whatever the user has
+ * enrolled and whatever the environment's policy; the session records `hwk` or `swk`, `user`
+ * and `mfa`. A user whose email address is not verified is still asked to verify it.
+ *
+ * There is no identifier, so there is no per-identifier lockout: a credential id is not a
+ * guessable secret and a signature cannot be guessed. Tries are bounded per IP by the route
+ * and per environment here.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The attempt and its secret.
+ * @param credential - The browser's assertion.
+ * @param context - The requesting device, with the request's `Origin`.
+ * @returns `complete` with tokens, or `needs_email_verification`.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step`,
+ *   `auth.method_disabled`, `auth.invalid_credentials` or `auth.user_banned`.
+ * @throws RateLimitError when the environment's ceiling is reached.
+ */
+export async function submitPasskey(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  credential: PasskeyAssertionCredential,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  const strategies = state.strategies ?? []
+  const event = { type: 'first_factor_verified', strategy: 'passkey' } as const
+  assertAccepts(attempt.kind, attempt.status, event, strategies)
+  // The relying party first (passkeys still on, origin allowed), then the ceiling, and only
+  // then the challenge: a request refused by either leaves the challenge to be used.
+  await Passkeys.relyingParty(deps, tenant, context.origin)
+  await chargeEnvironment(deps, tenant, 'verify')
+  const taken = await takePasskeyChallenge(deps, tenant, attempt, state, context)
+  const { challenge, ...rp } = taken.expected ?? { challenge: null, rpId: '', origin: '' }
+  const asserted =
+    challenge === null
+      ? null
+      : await Passkeys.assert(deps, tenant, {
+          credential,
+          challenge,
+          rp,
+          actor: systemActor(context),
+        })
+  const user = asserted
+    ? await deps.users.findById(tenant.environmentId, asserted.passkey.userId)
+    : null
+  if (!asserted || !user) {
+    throw new AuthError('auth.invalid_credentials')
+  }
+  if (user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  // Nothing more is asked of a user who proved a passkey: no second factor, no enrolment.
+  const required: Requirement = { secondFactors: [], enrolmentRequired: false }
+  const next = nextStatus(attempt.kind, attempt.status, event, {
+    strategies,
+    emailVerified: user.emailVerifiedAt !== null,
+    ...required,
+  })
+  const done = proven(taken.state, ...asserted.methods, 'mfa')
+  if (next !== 'needs_email_verification') {
+    return advance(deps, tenant, attempt, done, user.id, next, required, context)
+  }
+  const pending: State = { ...done, email: user.email }
+  const waiting = { ...attempt, status: next, userId: user.id, identifier: user.emailNormalized }
+  await issueCode(deps, tenant, waiting, pending, { userId: user.id })
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: next, userId: user.id, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return { attempt: toAttempt(waiting, stepFor(waiting, pending)), client: state.client }
+}
+
+/**
+ * The options for proving a passkey as the second factor of an attempt waiting on
+ * `needs_second_factor` whose options include `passkey`.
+ *
+ * They name the user's own passkeys (`allowCredentials`): the caller holds the attempt's secret
+ * and has already proven the first factor. The challenge is kept on the attempt and used up by
+ * the next `second-factor` call with `method: 'passkey'`; asking again replaces it.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param kind - Which flow the route belongs to (`sign_in` or `password_reset`).
+ * @param ref - The attempt and its secret.
+ * @param context - The requesting device, with the request's `Origin`.
+ * @returns `PublicKeyCredentialRequestOptionsJSON`.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `auth.method_disabled`, or
+ *   `flow.invalid_step` (wrong step, or an attempt that was not offered a passkey).
+ */
+export async function secondFactorPasskeyOptions(
+  deps: Deps,
+  tenant: Tenant,
+  kind: FlowKind,
+  ref: AttemptRef,
+  context: ClientContext
+): Promise<PasskeyRequestOptions> {
+  const { attempt, state } = await load(deps, tenant, kind, ref, context)
+  assertAccepts(attempt.kind, attempt.status, { type: 'second_factor_verified' })
+  if (!attempt.userId || !state.secondFactors?.includes('passkey')) {
+    throw new AuthError('flow.invalid_step')
+  }
+  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  await chargeEnvironment(deps, tenant, 'verify')
+  const owned = await deps.passkeys.listForUser(tenant.environmentId, attempt.userId)
+  const challenge = await issuePasskeyChallenge(deps, tenant, attempt, state)
+  return Passkeys.requestOptions(rp, challenge, owned)
 }
 
 /** The attempt of an enrolment step, and the user it belongs to. */

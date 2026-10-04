@@ -21,13 +21,21 @@ const CLIENT_MESSAGES = {
   // The link's binding is kept in this origin's storage, so such a link could never be honoured.
   'link.cross_origin':
     'A sign-in link has to lead to a page on the site where the sign-in was started.',
+  // Passkeys (WebAuthn): what the browser or the authenticator did, before any request.
+  'passkey.unsupported': 'This browser or device cannot use passkeys.',
+  'passkey.cancelled': 'The passkey request was cancelled or timed out. Try again.',
+  'passkey.already_on_device': 'This device already has a passkey for this account.',
+  'passkey.failed': 'The passkey could not be used. Try again, or sign in another way.',
 } as const
 
 /**
  * A code the client itself raises: the request never got an answer, the answer could not be
  * read (or was not what the API sends), the storage adapter failed, a flow object was asked
- * for a second action while one was still being sent (`flow.busy`), or an emailed sign-in link
- * was asked for with a page on another origin (`link.cross_origin`).
+ * for a second action while one was still being sent (`flow.busy`), an emailed sign-in link
+ * was asked for with a page on another origin (`link.cross_origin`), or a passkey ceremony
+ * ended in the browser: no WebAuthn here (`passkey.unsupported`), the user dismissed it or it
+ * timed out (`passkey.cancelled`), the authenticator already holds a passkey of the account
+ * (`passkey.already_on_device`), or anything else (`passkey.failed`).
  *
  * @example
  * ```ts
@@ -299,7 +307,13 @@ export function isStepUpRequired(value: unknown): value is TulaError {
   return isTulaError(value) && value.code === 'auth.step_up_required'
 }
 
-const STEP_UP_METHODS: readonly string[] = ['password', 'totp', 'backup_code', 'email_code']
+const STEP_UP_METHODS: readonly string[] = [
+  'password',
+  'totp',
+  'backup_code',
+  'email_code',
+  'passkey',
+]
 
 /**
  * What the user may step up with, read from an `auth.step_up_required` error (the API sends

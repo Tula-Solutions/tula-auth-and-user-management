@@ -1,4 +1,4 @@
-import type { FlowStep, PasswordResetFlow, SecondFactorProof } from '@tula/core'
+import type { FlowStep, PasskeyRequest, PasswordResetFlow, SecondFactorProof } from '@tula/core'
 import { useCallback, useMemo } from 'react'
 import { useTulaContext } from '../context'
 import {
@@ -42,6 +42,13 @@ export interface UseResetPasswordResult extends FlowState, FactorEnrolmentHookAc
    * @param input - The method and its code.
    */
   submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
+  /**
+   * Prove a passkey as the second factor (step `needs_second_factor` whose `options` include
+   * `passkey`): runs the browser's passkey dialog and submits what it returns.
+   *
+   * @param request - `signal`: ends the dialog.
+   */
+  submitSecondFactorWithPasskey(request?: Pick<PasskeyRequest, 'signal'>): Promise<FlowStep | null>
 }
 
 /**
@@ -85,6 +92,19 @@ export function useResetPassword(): UseResetPasswordResult {
       act((flow) => flow.submitSecondFactor(input).then((result) => result.step)),
     [act]
   )
+  const submitSecondFactorWithPasskey = useCallback(
+    (request?: Pick<PasskeyRequest, 'signal'>) =>
+      act((flow) => flow.submitSecondFactorWithPasskey(request).then((result) => result.step)),
+    [act]
+  )
   const enrolment = useMemo(() => enrolmentActions(act), [act])
-  return { ...state, ...enrolment, start, submit, resendCode, submitSecondFactor }
+  return {
+    ...state,
+    ...enrolment,
+    start,
+    submit,
+    resendCode,
+    submitSecondFactor,
+    submitSecondFactorWithPasskey,
+  }
 }

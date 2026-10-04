@@ -84,6 +84,8 @@ export interface TestSettings {
       password: { enabled: boolean }
       emailCode: { enabled: boolean }
       emailLink: { enabled: boolean }
+      /** Passkeys; the fixture's relying party is `localhost`. Off when left out. */
+      passkey?: { enabled: boolean }
     }
   }
   signUp?: { password: 'required' | 'optional' }
@@ -112,6 +114,123 @@ export const EMAIL_METHODS: TestSettings = {
       emailLink: { enabled: true },
     },
   },
+}
+
+/** The password and passkeys, and no email method. */
+export const PASSKEY_METHODS: TestSettings = {
+  signIn: {
+    methods: {
+      password: { enabled: true },
+      emailCode: { enabled: false },
+      emailLink: { enabled: false },
+      passkey: { enabled: true },
+    },
+  },
+}
+
+/** Where a page keeps the number of autofill (conditional) WebAuthn requests it has pending. */
+interface AutofillCount {
+  __autofillRequests?: number
+}
+
+/**
+ * Runs in the page before its own scripts: counts the conditional `navigator.credentials.get`
+ * requests that are pending. The request itself is passed to the browser untouched; this only
+ * lets a scenario see that one has been made (`VirtualAuthenticator.autofillWaiting`), which
+ * the DevTools protocol does not report.
+ */
+function countAutofillRequests(): void {
+  const container = navigator.credentials as CredentialsContainer | undefined
+  if (!container) {
+    return
+  }
+  const state = window as unknown as AutofillCount
+  const get = container.get.bind(container)
+  state.__autofillRequests = 0
+  container.get = (options) => {
+    const request = get(options)
+    if (options?.mediation === 'conditional') {
+      const settled = () => {
+        state.__autofillRequests = (state.__autofillRequests ?? 1) - 1
+      }
+      state.__autofillRequests = (state.__autofillRequests ?? 0) + 1
+      request.then(settled, settled)
+    }
+    return request
+  }
+}
+
+/** A software authenticator attached to a page through the DevTools protocol. */
+export interface VirtualAuthenticator {
+  /** Whether it verifies the user when asked. Unverified, every passkey ceremony is refused. */
+  setUserVerified(verified: boolean): Promise<void>
+  /**
+   * Whether it answers a request by itself. It does to begin with, and that includes the
+   * request waiting in a field's autofill (conditional mediation), which a person would have to
+   * pick a passkey for: with `false` a request waits, as it does in front of a person who has
+   * not chosen yet.
+   */
+  setAnswering(answering: boolean): Promise<void>
+  /**
+   * Wait until the page's autofill request is with the browser. A request made while the
+   * authenticator answers by itself is answered at once, so a scenario that switches answering
+   * back on to press a button first waits here: otherwise, on a slow machine, the switch can
+   * land before the sign-in screen has asked, the autofill request then signs in by itself, and
+   * the button the scenario is about to press is gone.
+   */
+  autofillWaiting(): Promise<void>
+  /** How many passkeys it holds. */
+  credentialCount(): Promise<number>
+  /** Take it away: the browser is left with no authenticator. */
+  remove(): Promise<void>
+}
+
+/**
+ * Give the page's browser an authenticator of its own: a platform one (like Touch ID) that
+ * keeps discoverable credentials, verifies the user and answers without anyone touching it.
+ * The ceremonies are the browser's real ones (`navigator.credentials`); only the device is
+ * simulated. It lasts as long as the page's context.
+ *
+ * @param page - The page whose browser gets the authenticator.
+ * @returns A handle on it.
+ */
+export async function addVirtualAuthenticator(page: Page): Promise<VirtualAuthenticator> {
+  await page.addInitScript(countAutofillRequests)
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('WebAuthn.enable')
+  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: {
+      protocol: 'ctap2',
+      transport: 'internal',
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  })
+  return {
+    async setUserVerified(verified) {
+      await cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: verified })
+    },
+    async setAnswering(answering) {
+      await cdp.send('WebAuthn.setAutomaticPresenceSimulation', {
+        authenticatorId,
+        enabled: answering,
+      })
+    },
+    async autofillWaiting() {
+      await page.waitForFunction(
+        () => ((window as unknown as AutofillCount).__autofillRequests ?? 0) > 0
+      )
+    },
+    async credentialCount() {
+      const { credentials } = await cdp.send('WebAuthn.getCredentials', { authenticatorId })
+      return credentials.length
+    },
+    async remove() {
+      await cdp.send('WebAuthn.removeVirtualAuthenticator', { authenticatorId })
+    },
+  }
 }
 
 /** What the fixture's API takes the time to be, in milliseconds. */
@@ -215,7 +334,8 @@ export async function signIn(page: Page, email: string, password = PASSWORD): Pr
   await page.getByLabel('Email address').fill(email)
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await page.getByLabel('Password', { exact: true }).fill(password)
-  await page.getByRole('button', { name: 'Sign in' }).click()
+  // Exactly: where passkeys are on, "Sign in with a passkey" is on the same screen.
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 }
 
 /** Sign out through the user button's menu. */

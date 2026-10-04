@@ -291,7 +291,7 @@ describe('second factors and enrolment inside an attempt', () => {
     ['a code as a number', { method: 'totp', code: 123456 }],
     ['an empty backup code', { method: 'backup_code', code: '' }],
     ['a backup code of 65 characters', { method: 'backup_code', code: 'a'.repeat(65) }],
-    ['a passkey, which has no verifier yet', { method: 'passkey', code: '123456' }],
+    ['a passkey with a code and no assertion', { method: 'passkey', code: '123456' }],
     ['an SMS code', { method: 'sms_code', code: '123456' }],
     ['a password', { method: 'password', password: 'x' }],
   ])('a second-factor request refuses %s', (_, body) => {

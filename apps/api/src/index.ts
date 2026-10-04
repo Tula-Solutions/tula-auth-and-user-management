@@ -35,6 +35,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1/admin/audit-logs', (await import('~/modules/audit/router')).default],
   ['/v1', (await import('~/modules/settings/router')).default],
   ['/v1', (await import('~/modules/oauth/router')).default],
+  ['/v1', (await import('~/modules/passkey/router')).default],
 ]
 
 // Mounted only where the deployment runs the mock OAuth provider (`ENVIRONMENT=local` with

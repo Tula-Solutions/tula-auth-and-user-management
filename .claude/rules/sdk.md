@@ -68,7 +68,16 @@ paths:
   `refresh.reuseGracePeriod` in `packages/contract/src/session-profile.ts`; a test holds it.
 - One error class: every failed call throws `TulaError` with a contract code or one of the
   client's own (`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`,
-  `flow.busy`, `link.cross_origin`), all `status: 0`.
+  `flow.busy`, `link.cross_origin`, `passkey.unsupported`, `passkey.cancelled`,
+  `passkey.already_on_device`, `passkey.failed`), all `status: 0`.
+- **Passkeys (ADR 0027) use no WebAuthn dependency.** `packages/core/src/passkey.ts` calls
+  `navigator.credentials` through `Environment.passkeys`, with the browser's JSON helpers where
+  they exist and its own base64url conversion otherwise. A ceremony's failure is one of the
+  four `passkey.*` client codes and never carries the browser's message or the credential;
+  nothing of a ceremony (challenge, response) is kept. What the authenticator returns is
+  checked before it is sent, and a 200 from a passkey route before anything is built from it.
+  An autofill request (`withPasskey({ autofill: true })`) takes the caller's signal, restarts
+  with a fresh attempt before its challenge lapses, and leaves no timer behind.
 - Types come from `src/generated/api.gen.ts` (run `bun run core:generate` after
   `contract:generate`); run-time imports from the contract use its Zod-free entry points only.
   No `Buffer`, `process` or `node:` import: `typecheck:portable` must pass.
@@ -116,6 +125,21 @@ paths:
 - Browser tests live in `e2e/tests`. A new screen or state gets a scenario and an
   `expectAccessible` call in both colour schemes; no axe rule is disabled without a comment
   saying why. `e2e/server.ts` must keep refusing to start without `E2E=1`.
+- Passkeys (ADR 0027): every ceremony the components start is in `components/passkey.tsx`.
+  Support is asked after mount (`usePasskeySupport`), never while rendering; the sign-in button
+  and the profile's "Add a passkey" are left out where the browser has no WebAuthn, and a
+  second factor or step-up that is only a passkey says so. The autofill request is started
+  from an effect with a signal per run, never marks the form pending, and is aborted before
+  the button's own ceremony (one WebAuthn request per page) and started again after every
+  ceremony of the button that did not sign in. A sign-in the component runs outside the flow
+  hook (`client.signIn.withPasskey`) takes `useCompletion`'s `hold` before its first await and
+  releases it after handing its flow on: never a timer. `passkey.cancelled` goes to
+  `Status` with `tone='neutral'` (not the success colour, not an alert), and focus returns to
+  the button. The profile's section always loads the list: with the method off it shows what
+  the user has (rename, remove) without "Add". Component tests fake
+  `navigator.credentials` through the world's `passkeys` option; browser tests use a DevTools
+  virtual authenticator (`addVirtualAuthenticator` in `e2e/tests/support.ts`), which answers a
+  conditional request by itself unless told to wait (`setAnswering(false)`).
 - Two-step verification (ADR 0025): `needs_second_factor` and `needs_factor_enrolment` have
   screens (`components/mfa.tsx`); an option this version does not know is left out, never
   guessed. The setup key, its QR code and backup codes are state only while their screen is

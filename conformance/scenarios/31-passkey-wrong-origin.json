@@ -1,0 +1,581 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "passkey origin and relying party",
+  "description": "A WebAuthn response is honoured only when it was made on the page that sent it: the request\u2019s Origin must be one the environment allows and belong to its relying-party id, and the response\u2019s client data must name that same origin. Anything else registers nothing and signs nobody in.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address: the account exists and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "passwordMethod": "settings.signIn.methods.password",
+        "emailCodeMethod": "settings.signIn.methods.emailCode",
+        "emailLinkMethod": "settings.signIn.methods.emailLink",
+        "signUpSettings": "settings.signUp",
+        "redirects": "settings.urls.allowedRedirectUrls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa"
+      }
+    },
+    {
+      "name": "switch passkeys on, with a relying-party id and an origin that belongs to it",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["https://app.passkeys.example"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "passkeys.example"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "passkeys": {
+              "rpId": "passkeys.example"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "creation options are refused for an origin the environment does not allow",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://evil.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "ask for the options to create a passkey",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureJson": {
+        "phishOptions": ""
+      }
+    },
+    {
+      "name": "the authenticator makes a passkey on another site",
+      "passkey": {
+        "authenticator": "phished",
+        "create": "{{phishOptions}}",
+        "origin": "https://app.passkeys.example.evil.example",
+        "capture": "phished"
+      }
+    },
+    {
+      "name": "a registration made on another origin is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{phished}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "passkey.registration_failed"
+        }
+      }
+    },
+    {
+      "name": "nothing was stored",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "passkeys": []
+        }
+      }
+    },
+    {
+      "name": "ask for the options to create a passkey",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "passkeys.example",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          },
+          "authenticatorSelection": {
+            "residentKey": "required",
+            "requireResidentKey": true,
+            "userVerification": "required"
+          },
+          "attestation": "none"
+        }
+      },
+      "captureJson": {
+        "creationOptions": ""
+      }
+    },
+    {
+      "name": "the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "phone",
+        "create": "{{creationOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "registration"
+      }
+    },
+    {
+      "name": "finish: the passkey is stored, and the answer holds no key material",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{registration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "name": "Passkey",
+          "synced": false,
+          "createdAt": "$any",
+          "lastUsedAt": null,
+          "publicKey": "$absent",
+          "credentialId": "$absent"
+        }
+      },
+      "capture": {
+        "passkeyId": "id"
+      }
+    },
+    {
+      "name": "a passkey sign-in cannot start from an origin the environment does not allow",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://evil.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "nor without an Origin",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "signInId": "attempt.id",
+        "signInSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "signInOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs on a look-alike site",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{signInOptions}}",
+        "origin": "https://app.passkeys.example.evil.example",
+        "capture": "phishedAssertion"
+      }
+    },
+    {
+      "name": "an assertion made on another origin is the generic failure",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/passkey",
+        "attempt": "{{signInSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{phishedAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "foreignId": "attempt.id",
+        "foreignSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "foreignOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{foreignOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "foreignAssertion"
+      }
+    },
+    {
+      "name": "a right assertion sent from a page the environment does not allow is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{foreignId}}/passkey",
+        "attempt": "{{foreignSecret}}",
+        "headers": {
+          "Origin": "https://evil.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{foreignAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "nothing was used up: from the allowed page it signs in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{foreignId}}/passkey",
+        "attempt": "{{foreignSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{foreignAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

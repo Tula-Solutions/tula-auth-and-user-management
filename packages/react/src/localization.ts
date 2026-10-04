@@ -131,6 +131,63 @@ export interface TulaLocalization {
     /** The link back to the account page after connecting an account. */
     backToAccount: string
   }
+  /** Passkeys: the sign-in button, the second-factor and step-up screens, the profile section. */
+  passkey: {
+    /** The button on `<SignIn>`, and the title of the screen that offers it after an address. */
+    signIn: string
+    /** Under the title of that screen. */
+    signInPrompt: string
+    /** Shown quietly when the browser's passkey dialog was dismissed or timed out. */
+    cancelled: string
+    /** The second-factor screen's text, above its button. */
+    secondFactorSubtitle: string
+    /** The step-up dialog's text, above its button. */
+    stepUpSubtitle: string
+    /** The button that opens the browser's passkey dialog for a second factor or a step-up. */
+    use: string
+    /** The link that switches to the passkey from another method. */
+    useInstead: string
+    /** Where a passkey is the only method on offer and the browser has no WebAuthn. */
+    unsupported: string
+    /** The profile section. */
+    sectionTitle: string
+    intro: string
+    loading: string
+    empty: string
+    add: string
+    added: string
+    /** In place of "Add a passkey" in a browser without WebAuthn. */
+    addUnsupported: string
+    /**
+     * In place of "Add a passkey" where the environment has passkeys switched off and the user
+     * still has some: they can be renamed and removed, not added.
+     */
+    addUnavailable: string
+    /** A passkey its authenticator keeps on more than one device. */
+    synced: string
+    /** A passkey that lives on one device or security key. */
+    deviceBound: string
+    /** `{date}`. */
+    created: string
+    /** `{date}`. */
+    lastUsed: string
+    neverUsed: string
+    rename: string
+    /** `{name}`: the accessible name of a row's "Rename". */
+    renameLabel: string
+    nameLabel: string
+    nameRequired: string
+    save: string
+    cancel: string
+    renamed: string
+    remove: string
+    /** `{name}`: the accessible name of a row's "Remove". */
+    removeLabel: string
+    /** `{name}`: asked before a passkey is removed. */
+    removeConfirm: string
+    removeConfirmButton: string
+    removed: string
+  }
   /** The emailed-code screen of every flow. */
   verification: {
     title: string
@@ -439,6 +496,46 @@ export const EN_LOCALIZATION: TulaLocalization = {
     tryAgain: 'Try again',
     signIn: 'Sign in',
     backToAccount: 'Back to your account',
+  },
+  passkey: {
+    signIn: 'Sign in with a passkey',
+    signInPrompt:
+      'Use the passkey saved on this device, in your password manager or on a security key.',
+    cancelled:
+      'The passkey request was cancelled or timed out. Nothing was changed; you can try again.',
+    secondFactorSubtitle: 'Use your passkey to finish signing in.',
+    stepUpSubtitle: 'Use your passkey to continue.',
+    use: 'Use your passkey',
+    useInstead: 'Use your passkey instead',
+    unsupported: 'This browser cannot use passkeys. Open this page in a browser that can.',
+    sectionTitle: 'Passkeys',
+    intro:
+      'A passkey signs you in with your fingerprint, face or screen lock instead of a password.',
+    loading: 'Loading your passkeys…',
+    empty: 'You have no passkeys yet.',
+    add: 'Add a passkey',
+    added: 'Your passkey was added.',
+    addUnsupported:
+      'This browser cannot create passkeys. You can still rename or remove the ones you have.',
+    addUnavailable:
+      'New passkeys cannot be added right now. You can still rename or remove the ones you have.',
+    synced: 'Synced across your devices',
+    deviceBound: 'On this device only',
+    created: 'Added {date}',
+    lastUsed: 'Last used {date}',
+    neverUsed: 'Not used yet',
+    rename: 'Rename',
+    renameLabel: 'Rename {name}',
+    nameLabel: 'Passkey name',
+    nameRequired: 'Enter a name.',
+    save: 'Save',
+    cancel: 'Cancel',
+    renamed: 'The passkey was renamed.',
+    remove: 'Remove',
+    removeLabel: 'Remove {name}',
+    removeConfirm: 'Remove “{name}”? You will no longer be able to sign in with it.',
+    removeConfirmButton: 'Remove passkey',
+    removed: 'The passkey was removed.',
   },
   verification: {
     title: 'Check your email',

@@ -69,18 +69,34 @@ export function useRetryAfter<Action extends string>(
  * A user who is already signed in when the component mounts (and has started nothing) is sent
  * to `url` as well.
  *
+ * **A sign-in that runs outside the flow hook says so with `hold`.** A passkey sign-in is an
+ * attempt of its own (`client.signIn.withPasskey`): the client is signed in some time before
+ * its flow reaches `finish`, with nothing pending in the flow hook meanwhile, and that looks
+ * exactly like "was already signed in". So the component takes a hold before it starts and
+ * releases it when the call has settled and its result, if any, went through `finish`; while a
+ * hold is out nobody is sent anywhere, and the release decides again. No timing is involved.
+ *
  * @param flow - The flow's current step and whether an action is pending.
  * @param options - The callback and the URL.
  * @returns `signedIn`: draw the "signed in" notice instead of a form. `finish`: pass every
- *   action's result through it.
+ *   action's result through it. `hold`: call before a sign-in that does not go through the
+ *   flow hook; it returns the release, to call (once is enough) when that sign-in has settled.
  */
 export function useCompletion(
   flow: { step: FlowStep | null; isPending: boolean },
   options: { onComplete?: (result: FlowResult) => void; url: string | undefined }
-): { signedIn: boolean; finish(next: FlowStep | null): FlowStep | null } {
+): {
+  signedIn: boolean
+  finish(next: FlowStep | null): FlowStep | null
+  hold(): () => void
+} {
   const { client, navigation } = useTulaContext()
   const state = useAuthState(client)
   const done = useRef(false)
+  // Sign-ins in flight outside the flow hook. A ref, so that a hold counts from the very call
+  // that takes it; `released` only makes the effect below look again once one has ended.
+  const holds = useRef(0)
+  const [released, setReleased] = useState(0)
   const latest = useRef({ ...options, navigate: navigation.navigate })
   latest.current = { ...options, navigate: navigation.navigate }
   const { step, isPending } = flow
@@ -99,14 +115,32 @@ export function useCompletion(
     return next
   }, [])
 
-  useEffect(() => {
-    if (alreadySignedIn && !done.current) {
-      done.current = true
-      go(latest.current.url, latest.current.navigate)
+  const hold = useCallback(() => {
+    holds.current += 1
+    let held = true
+    return () => {
+      if (held) {
+        held = false
+        holds.current -= 1
+        setReleased((count) => count + 1)
+      }
     }
-  }, [alreadySignedIn])
+  }, [])
 
-  return { signedIn: step?.status === 'complete' || alreadySignedIn, finish }
+  useEffect(() => {
+    // Named so that a release, which changes nothing else, runs this again.
+    void released
+    // While a sign-in of this component's own is in flight, the client being signed in is
+    // (or may be) its doing: its completion, with the app's `onComplete`, comes through
+    // `finish`. Whatever it ends with, its release brings this effect back.
+    if (!alreadySignedIn || done.current || holds.current > 0) {
+      return
+    }
+    done.current = true
+    go(latest.current.url, latest.current.navigate)
+  }, [alreadySignedIn, released])
+
+  return { signedIn: step?.status === 'complete' || alreadySignedIn, finish, hold }
 }
 
 /**

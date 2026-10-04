@@ -33,6 +33,7 @@ function settings(overrides: Partial<EnvironmentSettings> = {}): EnvironmentSett
         password: { enabled: true },
         emailCode: { enabled: true },
         emailLink: { enabled: true },
+        passkey: { enabled: false },
       },
     },
     urls: { allowedOrigins: [APP_ORIGIN], allowedRedirectUrls: [REDIRECT] },

@@ -7,11 +7,13 @@ import {
   EnvironmentSettingsInputSchema,
   EnvironmentSettingsSchema,
   hasEnabledSignInMethod,
+  isRelyingPartyId,
   MAX_ALLOWED_ORIGINS,
   MAX_ALLOWED_REDIRECT_URLS,
   MAX_APP_NAME_LENGTH,
   MfaPolicySchema,
   MIN_PASSWORD_MIN_LENGTH,
+  originMatchesRelyingParty,
   parseStoredEnvironmentSettings,
   RedirectUrlSchema,
   readStoredEnvironmentSettings,
@@ -38,6 +40,7 @@ describe('EnvironmentSettingsSchema', () => {
           password: { enabled: true },
           emailCode: { enabled: false },
           emailLink: { enabled: false },
+          passkey: { enabled: false },
         },
       },
       signUp: { password: 'required' },
@@ -50,6 +53,7 @@ describe('EnvironmentSettingsSchema', () => {
         identityChanged: true,
       },
       mfa: { policy: 'optional' },
+      passkeys: { rpId: null },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -216,7 +220,7 @@ describe('parseStoredEnvironmentSettings', () => {
     const stored = {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
       app: { name: 'Acme', supportEmail: null, logoUrl: 'https://acme.test/logo.png' },
-      signIn: { methods: { password: { enabled: true }, passkey: { enabled: true } } },
+      signIn: { methods: { password: { enabled: true }, carrierPigeon: { enabled: true } } },
       branding: { colour: 'teal' },
     }
     expect(parseStoredEnvironmentSettings(stored)).toEqual({
@@ -319,6 +323,7 @@ describe('EnvironmentSettingsInputSchema', () => {
           password: { enabled: true },
           emailCode: { enabled: false },
           emailLink: { enabled: false },
+          passkey: { enabled: false },
         },
       },
       signUp: { password: 'required' },
@@ -331,6 +336,7 @@ describe('EnvironmentSettingsInputSchema', () => {
         identityChanged: true,
       },
       mfa: { policy: 'optional' },
+      passkeys: { rpId: null },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -441,6 +447,7 @@ describe('email sign-in methods and the sign-up password', () => {
       password: { enabled: true },
       emailCode: { enabled: false },
       emailLink: { enabled: false },
+      passkey: { enabled: false },
     })
     expect(settings.signUp).toEqual({ password: 'required' })
     // And what it reads is a document the strict schema accepts.
@@ -554,5 +561,69 @@ describe('two-step verification: the policy and its notice', () => {
     expect(
       ClientConfigSchema.parse({ ...config, notifications: { mfaChanged: false } })
     ).not.toHaveProperty('notifications')
+  })
+})
+
+describe('passkeys', () => {
+  const withPasskeys = (rpId: unknown, enabled = true) => ({
+    signIn: { methods: { passkey: { enabled } } },
+    passkeys: { rpId },
+  })
+
+  test('the method is off and there is no relying-party id until an environment sets them', () => {
+    const settings = EnvironmentSettingsSchema.parse({})
+    expect(settings.signIn.methods.passkey).toEqual({ enabled: false })
+    expect(settings.passkeys).toEqual({ rpId: null })
+  })
+
+  test('switching passkeys on needs a relying-party id, in both schemas', () => {
+    for (const schema of [EnvironmentSettingsSchema, EnvironmentSettingsInputSchema]) {
+      const refused = schema.safeParse({ signIn: { methods: { passkey: { enabled: true } } } })
+      expect(refused.success).toBe(false)
+      expect(refused.error?.issues[0]?.path).toEqual(['signIn', 'methods', 'passkey', 'enabled'])
+      expect(schema.safeParse(withPasskeys('northline.app')).success).toBe(true)
+      // An id alone switches nothing on.
+      expect(schema.safeParse(withPasskeys('northline.app', false)).success).toBe(true)
+    }
+  })
+
+  test.each([
+    'https://northline.app',
+    'northline.app:443',
+    'northline.app/path',
+    'Northline.app',
+    '127.0.0.1',
+    '10.0.0.1',
+    'app',
+    '*.northline.app',
+    'northline..app',
+    '',
+    `${'a'.repeat(250)}.app`,
+  ])('refuses %p as a relying-party id', (rpId) => {
+    expect(isRelyingPartyId(rpId)).toBe(false)
+    expect(EnvironmentSettingsSchema.safeParse(withPasskeys(rpId)).success).toBe(false)
+  })
+
+  test.each(['localhost', 'northline.app', 'auth.northline.co.uk'])('accepts %p', (rpId) => {
+    expect(isRelyingPartyId(rpId)).toBe(true)
+  })
+
+  test.each([
+    ['https://northline.app', 'northline.app', true],
+    ['https://app.northline.app', 'northline.app', true],
+    ['https://app.northline.app:8443', 'northline.app', true],
+    ['http://localhost:5174', 'localhost', true],
+    ['https://northline.app.evil.test', 'northline.app', false],
+    ['https://evilnorthline.app', 'northline.app', false],
+    ['https://northline.app', 'app.northline.app', false],
+    ['not an origin', 'northline.app', false],
+  ])('an origin %p and the relying party %p: %p', (origin, rpId, expected) => {
+    expect(originMatchesRelyingParty(origin, rpId)).toBe(expected)
+  })
+
+  test('a stored document from before passkeys reads with them off', () => {
+    const { settings } = readStoredEnvironmentSettings({ app: { name: 'Acme' } })
+    expect(settings.signIn.methods.passkey).toEqual({ enabled: false })
+    expect(settings.passkeys).toEqual({ rpId: null })
   })
 })

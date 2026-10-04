@@ -155,6 +155,27 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   gets its own `AbortSignal` and is aborted in the cleanup; StrictMode, Fast Refresh and
   `<Activity>` clean up and set up again in one tick, and the second wait must not die with
   the first one's signal.
+- **One WebAuthn request at a time, and never during render** ([ADR 0027](docs/adr/0027-passkeys.md)).
+  Whether the browser can use a passkey is asked after mount (`usePasskeySupport`), and a
+  passkey control is hidden, not broken, where it cannot: a method that is the user's only
+  one says so in words. The request that waits in the address field's autofill
+  (`autocomplete="username webauthn"`, `withPasskey({ autofill: true })`) is an effect that
+  waits: its own signal per run, aborted in the cleanup, and **aborted before any other
+  ceremony starts** (`components/passkey.tsx` is the one place that starts one). It never sets
+  a pending state: the form it sits behind must stay usable.
+- **A dismissed passkey dialog is not an error, and not a success.** `passkey.cancelled` is
+  said through the quiet `Status` in its neutral tone (`tone='neutral'`: the muted text
+  colour, not the success one), never `role="alert"`, the button works again and takes the
+  focus back, and the autofill request is started again after any try that did not sign in; every
+  other failure is the message its code has. Nothing of a ceremony (options, the credential,
+  the browser's own error text) is kept in state, rendered or logged.
+- **A passkey sign-in is an attempt of its own.** Its flow reaches the screens through
+  `adopt()`, which discards the attempt it replaces, and its completion is delivered even if
+  the screen has gone meanwhile (the client is signed in before the flow comes back, and an
+  app takes `<SignIn>` away at that moment). Because the flow hook is not pending meanwhile,
+  the component takes `useCompletion`'s `hold` before its first await and releases it after
+  its flow went through `finish`: while a hold is out, a signed-in client is never treated as
+  "was already signed in". Never order these with a timer.
 - **Accessibility is part of done**: labelled fields, errors associated and announced, focus
   moved on a step change and on failure, state as text and not only colour, keyboard operation
   of everything. axe runs on every screen in the browser tests with no rule disabled.
@@ -222,12 +243,13 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 Anything about how sign-in behaves that differs between tenants lives in the environment's
 settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/adr/0018-environment-settings.md)):
 app name and support address, password policy, enabled sign-in methods (`password`,
-`emailCode`, `emailLink`), whether a sign-up needs a password (`signUp.password`), allowed
-origins and redirect URLs, audit retention, which security notices are emailed
-(`notifications`), and whether two-step verification is `off`, `optional` or `required`
-(`mfa.policy`). **Read it through `~/modules/settings/service`**
-(`Settings.current(deps, tenant)`), never from `deps.config`: `PASSWORD_POLICY` and
-`CORS_ORIGINS` are only the defaults of an environment that has saved nothing.
+`emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether
+a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit
+retention, which security notices are emailed (`notifications`), and whether two-step
+verification is `off`, `optional` or `required` (`mfa.policy`). **Read it through
+`~/modules/settings/service`** (`Settings.current(deps, tenant)`), never from `deps.config`:
+`PASSWORD_POLICY` and `CORS_ORIGINS` are only the defaults of an environment that has saved
+nothing.
 
 - `GET` / `PUT /v1/admin/settings` reads and replaces the whole document. The `PUT` needs
   `If-Match: "<revision>"` (428 `precondition.required` without it, 412 `precondition.failed`
@@ -290,16 +312,23 @@ The API never tells a client which screen to draw; it returns the next **flow st
   step or event must be classified there.
 - **A sign-in method is registered in one place**: `FIRST_FACTORS` in
   `modules/factor/service.ts` maps the environment's settings to the strategies a sign-in
-  offers (`password`, `email_code`, `email_link`); a second factor registers a verifier in
-  `SECOND_FACTOR_VERIFIERS` (`totp`, `backup_code`) and is submitted through
-  `Flows.submitSecondFactor` (`…/:attemptId/second-factor`). Adding a method means adding an
-  entry and the route that proves it, not editing the transition function or any SDK.
+  offers (`password`, `email_code`, `email_link`, `passkey`, the OAuth providers); a second
+  factor registers a verifier in `SECOND_FACTOR_VERIFIERS` (`totp`, `backup_code`, `passkey`)
+  and is submitted through `Flows.submitSecondFactor` (`…/:attemptId/second-factor`). Adding a
+  method means adding an entry and the route that proves it, not editing the transition
+  function or any SDK.
 - **Second factors live in `modules/mfa`** ([ADR 0025](docs/adr/0025-mfa.md)): enrolment under
   `/v1/client/me/factors`, the verifiers, step-up and the admin reset. `Factors.requiredFor`
   asks it which factors a user has; where the environment's `mfa.policy` is `required` and the
   user has none, an attempt stops at `needs_factor_enrolment` and enrols inside the attempt
   (`…/:attemptId/factor-enrolment/totp`, `…/confirm`). An attempt's state records what it has
   proven (`amr`), which becomes the session's `authMethods`.
+- **Passkeys live in `modules/passkey`** ([ADR 0027](docs/adr/0027-passkeys.md)): the signed-in
+  user's routes under `/v1/client/me/passkeys`, and `Passkeys.assert`, the one place an
+  assertion is accepted. A sign-in by passkey is an attempt of its own with no identifier
+  (`sign-ins/passkey`, `sign-ins/:id/passkey`) and **never stops at a second factor**; after a
+  password the passkey is a second factor only where one is in force anyway (the user has an
+  authenticator app, or `mfa.policy` is `required`).
 - **Every flow step starts with the service's `load`**, which checks the attempt's secret and,
   for a browser attempt, the request's origin. Never read an attempt from the store directly
   in a step. The one exception is `Flows.verifyEmailLink` (`POST /v1/client/sign-ins/link`):
@@ -349,9 +378,10 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - **Rows that expire are deleted by the retention job** (`modules/retention`,
   [ADR 0017](docs/adr/0017-retention.md)): expired flow attempts, verification tokens an hour
   past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
-  cascade), authenticator enrolments that were never confirmed. A new table of short-lived
-  rows gets a batched purge method on its store, in both adapters and the shared suite, and a
-  line in that job. Audit entries and outbox events are never deleted by it.
+  cascade), authenticator enrolments that were never confirmed, expired WebAuthn challenges.
+  A new table of short-lived rows gets a batched purge method on its store, in both adapters
+  and the shared suite, and a line in that job. Audit entries and outbox events are never
+  deleted by it.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 
@@ -389,7 +419,33 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0023](docs/adr/0023-security-notices.md); signing in by email (codes, same-browser
   links, passwordless sign-up): [ADR 0024](docs/adr/0024-email-sign-in.md); two-step
   verification (TOTP, backup codes, step-up, the MFA policy): [ADR 0025](docs/adr/0025-mfa.md);
-  OAuth sign-in and account linking: [ADR 0026](docs/adr/0026-oauth.md).
+  OAuth sign-in and account linking: [ADR 0026](docs/adr/0026-oauth.md); passkeys:
+  [ADR 0027](docs/adr/0027-passkeys.md).
+- **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
+  takes the `Origin` header and accepts it only when the environment allows it **and** it
+  belongs to `passkeys.rpId`; nothing in a body chooses the origin or the relying party. Call
+  it on every passkey step, before anything is counted, spent or stored (it is also the
+  "passkeys still on" check). Responses are checked only through `~/lib/webauthn`
+  (user verification always required; every failure the same `null`) and assertions only
+  through `Passkeys.assert`, which enforces the owner, the user handle, the signature counter
+  (a counter that does not grow is refused and audited; zero both sides is fine) and records
+  the use with a compare-and-set.
+- **A WebAuthn challenge is 32 random bytes, used once, for five minutes, and is taken before
+  the response is judged.** A sign-in's lives on its attempt and is taken with a
+  compare-and-set on its value; a registration's and a step-up's live in `passkey_challenges`,
+  bound to the session that asked. Never accept a challenge from a client beyond matching it.
+  Everything that can refuse a request without looking at the response comes **before** the
+  challenge is taken and before a guess is counted: the relying party, then the environment's
+  ceiling. The unauthenticated start is counted under its own ceiling (`passkeyStart`), never
+  `verify`: every open sign-in page asks for one.
+- **A failed passkey sign-in is always `auth.invalid_credentials`,** whatever the reason, and
+  its options are the same for every caller (no `allowCredentials`). There is no lockout for it
+  (no identifier, nothing guessable): the per-IP and per-environment limits bound it.
+- **Removing the last way to sign in is refused in the store's transaction**
+  (`OAuth.canStillSignIn`, which counts a password, an emailed code, providers and passkeys):
+  for an identity and for a passkey alike. The admin factor reset is the one exception (it
+  removes every passkey, on purpose), and it reports the outcome by the same rule: the
+  `x-tula-can-still-sign-in` response header and `canStillSignIn` on the audit entry.
 - **TOTP secrets are sealed, backup codes are keyed hashes.** A TOTP secret is stored only
   sealed with `~/lib/secret-box` (purpose `totp-secrets`, bound to environment, user and factor
   id) and returned once, at enrolment. Backup codes are stored only as
@@ -510,9 +566,10 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   refused sign-in. A notice carries no code, token or link, and its subject never starts with
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
-- Treat every change under `modules/{flow,session,password,jwks,verification,mfa,factor,oauth}`,
-  `adapters/oauth/`,
-  `middleware/{cors,recent-auth}.ts`, `lib/crypto.ts` or `lib/totp.ts` as security-sensitive:
+- Treat every change under
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey}`, `adapters/oauth/`,
+  `middleware/{cors,recent-auth}.ts`, `lib/crypto.ts`, `lib/totp.ts` or `lib/webauthn.ts` as
+  security-sensitive:
   it needs tests for the failure paths, not just the happy path.
 
 ## Testing
@@ -609,7 +666,7 @@ apps/api/src/
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
 │                     # request-log
 └── modules/          # flow, password, session, jwks, verification, user, mfa (TOTP, backup
-                      # codes, step-up), audit, project, status,
+                      # codes, step-up), passkey (WebAuthn), audit, project, status,
                       # settings, factor (first-factor registry and second-factor hooks:
                       # service only), email (layout + copy: service only, no router),
                       # retention (a background job: service only, no router),

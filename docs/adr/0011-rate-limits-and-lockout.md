@@ -30,7 +30,9 @@ limited too.
 
 **2. Per environment**, across all callers, on steps that cost an argon2id hash or an email:
 sign-up and its resends 600, password-reset emails 600, password 3,000, verify code (including
-the code of a password reset) 3,000 per minute. This bounds what a
+the code of a password reset) 3,000 per minute. (Later additions: emailed sign-in 600, OAuth
+3,000, and passkey sign-in starts 6,000 under a key of their own, since every open sign-in
+page asks for one; ADR 0027.) This bounds what a
 distributed attack on one tenant can make the server do. The ceiling is counted **inside the
 flow service**, after the request is validated and its attempt found and just before the
 expensive work, so requests that cost nothing can't use it up: malformed requests, made-up

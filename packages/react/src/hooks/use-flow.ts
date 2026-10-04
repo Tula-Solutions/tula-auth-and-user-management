@@ -72,7 +72,8 @@ export interface FlowController<Flow extends CoreFlow> extends FlowState {
   watch(action: (flow: Flow) => Promise<FlowStep>): Promise<FlowStep | null>
   /**
    * Take over a flow that was started elsewhere (an OAuth round trip's, which the landing page
-   * receives already positioned on its step): the controller's actions continue it.
+   * receives already positioned on its step; a passkey sign-in's, which is an attempt of its
+   * own): the controller's actions continue it, and a flow it held before is discarded.
    */
   adopt(flow: Flow): void
 }
@@ -203,6 +204,12 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
   const clearError = useCallback(() => setError(null), [])
 
   const adopt = useCallback((created: Flow) => {
+    if (flow.current !== null && flow.current !== created) {
+      // Another attempt takes over (a passkey chosen in place of the method on screen): what
+      // the one being left has running stops, and a late answer of its own is dropped.
+      generation.current += 1
+      flow.current.discard?.()
+    }
     flow.current = created
     setStep(created.step)
     setError(null)

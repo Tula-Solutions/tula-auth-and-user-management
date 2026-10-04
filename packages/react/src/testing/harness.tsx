@@ -8,6 +8,7 @@ import type { ReactElement } from 'react'
 // with no cross-tab channel (Bun has a global BroadcastChannel, which would let one test's
 // sign-out reach another test's client).
 import { createClient } from '../../../core/src/client'
+import type { PasskeyGlobals } from '../../../core/src/passkey'
 import {
   type FakeApi,
   type FakeLinkStorage,
@@ -156,6 +157,10 @@ export interface WorldOptions {
   tabStorage?: FakeLinkStorage
   /** The OAuth providers the environment has enabled. */
   oauth?: string[]
+  /** The sign-in methods the environment has enabled. Left out: the password alone. */
+  methods?: string[]
+  /** The browser's WebAuthn globals; without them the browser cannot use passkeys. */
+  passkeys?: PasskeyGlobals
   /** The address the page was opened at, for the page an emailed link leads to. */
   page?: FakePage
   /** Timers the test fires by hand; real ones otherwise. */
@@ -175,7 +180,10 @@ export function world(options: WorldOptions = {}): World {
   api.on(ROUTE.config, () =>
     json(200, {
       app: { name: 'Northline', supportEmail: null },
-      signIn: { methods: ['password'], ...(options.oauth && { oauth: options.oauth }) },
+      signIn: {
+        methods: options.methods ?? ['password'],
+        ...(options.oauth && { oauth: options.oauth }),
+      },
       signUp: { password: options.signUpPassword ?? 'required' },
       password: options.policy ?? PASSWORD_POLICY_PRESETS.recommended,
       ...(options.mfaPolicy && { mfa: { policy: options.mfaPolicy } }),
@@ -189,6 +197,7 @@ export function world(options: WorldOptions = {}): World {
       tabStorage: options.tabStorage,
       page: options.page,
       timers: options.timers,
+      passkeys: options.passkeys,
     })
   )
   return {

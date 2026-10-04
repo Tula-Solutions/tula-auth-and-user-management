@@ -203,7 +203,7 @@ describe('<SignIn> first factors and steps it does not know', () => {
     w.mount(<SignIn />)
     await toPassword(w, {
       status: 'needs_first_factor',
-      strategies: ['hologram', 'passkey', 'password'],
+      strategies: ['hologram', 'retina', 'password'],
     })
     expect(await screen.findByLabelText('Password')).toBeTruthy()
   })
@@ -211,7 +211,7 @@ describe('<SignIn> first factors and steps it does not know', () => {
   test('needs_first_factor with nothing this version implements says so, and can start again', async () => {
     const w = world()
     w.mount(<SignIn />)
-    await toPassword(w, { status: 'needs_first_factor', strategies: ['passkey', 'constructor'] })
+    await toPassword(w, { status: 'needs_first_factor', strategies: ['retina', 'constructor'] })
     const title = await screen.findByRole('heading', { name: 'This step is not supported' })
     await expectFocus(title)
     expect(screen.getByText(/not supported by this version/)).toBeTruthy()
@@ -222,7 +222,7 @@ describe('<SignIn> first factors and steps it does not know', () => {
   test.each([
     [
       'a second factor this version cannot ask for',
-      { status: 'needs_second_factor', options: ['passkey'] },
+      { status: 'needs_second_factor', options: ['retina'] },
     ],
     ['a second-factor step with no options', { status: 'needs_second_factor' }],
     ['an enrolment of a method this version cannot enrol', { status: 'needs_factor_enrolment' }],
@@ -443,7 +443,7 @@ describe('<SignIn> forgotten password', () => {
     expect(await screen.findByText('A new code is on its way.')).toBeTruthy()
 
     w.api.on(ROUTE.resetSubmit, () =>
-      attempt('password_reset', { status: 'needs_second_factor', options: ['passkey'] })
+      attempt('password_reset', { status: 'needs_second_factor', options: ['sms_code'] })
     )
     await w.user.type(screen.getByLabelText('Verification code'), '123456')
     await w.user.type(screen.getByLabelText('New password'), PASSWORD)

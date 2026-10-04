@@ -184,7 +184,10 @@
         "auth": "secret"
       },
       "expect": {
-        "status": 204
+        "status": 204,
+        "headers": {
+          "x-tula-can-still-sign-in": "true"
+        }
       }
     },
     {
@@ -263,7 +266,9 @@
         },
         "claims": {
           "session.accessToken": {
-            "amr": { "$set": ["pwd"] },
+            "amr": {
+              "$set": ["pwd"]
+            },
             "auth_time": "$any"
           }
         }

@@ -22,10 +22,14 @@ describe('EN_MESSAGES', () => {
       'storage.failed',
       'flow.busy',
       'link.cross_origin',
+      'passkey.unsupported',
+      'passkey.cancelled',
+      'passkey.already_on_device',
+      'passkey.failed',
     ] as const) {
       expect(EN_MESSAGES[code].length).toBeGreaterThan(10)
     }
-    expect(Object.keys(EN_MESSAGES)).toHaveLength(ERROR_CODES.length + 6)
+    expect(Object.keys(EN_MESSAGES)).toHaveLength(ERROR_CODES.length + 10)
   })
 })
 
@@ -224,7 +228,8 @@ describe('auth.step_up_required', () => {
     // No method: the user has to sign in again.
     ['', []],
     // A method a newer server offers and this client does not know is left out.
-    ['totp,passkey', ['totp']],
+    ['totp,backup_code,passkey', ['totp', 'backup_code', 'passkey']],
+    ['totp,sms_code', ['totp']],
     ['constructor,__proto__', []],
   ])('stepUpMethods reads params.methods %p as %p', (methods, expected) => {
     expect<string[]>(stepUpMethods(stepUp({ methods }))).toEqual(expected)

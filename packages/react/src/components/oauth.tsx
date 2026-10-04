@@ -230,6 +230,9 @@ function CallbackScreens(props: OAuthCallbackProps) {
             isPending={signIn.isPending}
             error={signIn.error}
             submit={(proof) => signIn.submitSecondFactor(proof).then(finish)}
+            submitPasskey={(signal) =>
+              signIn.submitSecondFactorWithPasskey({ signal }).then(finish)
+            }
             onRestart={restart}
           />
         )

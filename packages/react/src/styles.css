@@ -368,6 +368,11 @@
   font-size: var(--_tula-font-size-small);
 }
 
+/* Said, but not a success: a request the user cancelled changed nothing. */
+:where(.tula-status.tula-is-neutral) {
+  color: var(--_tula-color-text-muted);
+}
+
 /* An empty status stays in the page as a live region but takes no room in the layout. */
 :where(.tula-status.tula-is-empty) {
   position: absolute;
@@ -379,7 +384,9 @@
 
 :where(.tula-actions) {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  gap: 0.25rem 1.25rem;
 }
 
 :where(.tula-field-action) {
@@ -469,6 +476,77 @@
   flex: 1;
   min-width: 0;
   font-weight: 600;
+}
+
+/* Passkeys: the button with its key, and the list in the profile. */
+:where(.tula-passkey) {
+  display: grid;
+  gap: 0.5rem;
+}
+
+:where(.tula-passkey) > :where(button) > :where(span:last-child) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+:where(.tula-passkey-icon) {
+  display: inline-flex;
+  flex: none;
+  font-size: 1.125rem;
+}
+
+:where(.tula-passkey-list) {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:where(.tula-passkey-item) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--_tula-color-border);
+  border-radius: var(--_tula-radius-small);
+}
+
+:where(.tula-passkey-text) {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+:where(.tula-passkey-text) > :where(p) {
+  margin: 0;
+}
+
+:where(.tula-passkey-name) {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+:where(.tula-passkey-meta) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.75rem;
+  color: var(--_tula-color-text-muted);
+  font-size: var(--_tula-font-size-small);
+}
+
+/* The rename form and the "remove?" question take the row's full width, under it. */
+:where(.tula-passkey-editor, .tula-confirmation) {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 0.625rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--_tula-color-border);
+}
+
+:where(.tula-confirmation) > :where(p) {
+  margin: 0;
 }
 
 :where(.tula-identity) {

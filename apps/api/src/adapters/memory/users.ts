@@ -28,6 +28,7 @@ export class MemoryUserRepository implements UserRepository {
   readonly #passwords: Map<string, string>
   readonly #identities: Map<string, IdentityRecord & { environmentId: string }>
   readonly #activityLog: MemoryActivityLog
+  #passkeyCount: (environmentId: string, userId: string) => number
 
   /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
@@ -37,6 +38,37 @@ export class MemoryUserRepository implements UserRepository {
     this.#passwords = new Map()
     this.#identities = new Map()
     this.#activityLog = activityLog
+    this.#passkeyCount = () => 0
+  }
+
+  /**
+   * Tell this repository where a user's passkeys are counted. In Postgres one transaction reads
+   * both tables; in memory the passkey store registers itself here.
+   *
+   * @param count - How many passkeys a user has.
+   */
+  countPasskeysWith(count: (environmentId: string, userId: string) => number): void {
+    this.#passkeyCount = count
+  }
+
+  /**
+   * What a user can sign in with, as the passkey store needs it for its own removal rule.
+   *
+   * @param environmentId - The environment.
+   * @param userId - The user.
+   * @returns The user's means, or `null` when there is no such user.
+   */
+  signInMeans(environmentId: string, userId: string): SignInMeans | null {
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return null
+    }
+    return {
+      hasPassword: this.#passwords.has(userId),
+      emailVerified: user.emailVerifiedAt !== null,
+      providers: this.#identitiesOf(environmentId, userId).map((identity) => identity.provider),
+      passkeys: this.#passkeyCount(environmentId, userId),
+    }
   }
 
   /** @inheritdoc */
@@ -158,6 +190,7 @@ export class MemoryUserRepository implements UserRepository {
       providers: identities
         .filter((identity) => identity.id !== identityId)
         .map((identity) => identity.provider),
+      passkeys: this.#passkeyCount(environmentId, userId),
     }
     if (!allowed(remaining)) {
       return 'last_method'

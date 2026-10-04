@@ -170,7 +170,7 @@ describe('<SignIn> at needs_second_factor', () => {
     const w = world()
     w.mount(<SignIn />)
     await passwordAnswers(w, () =>
-      attempt('sign_in', { status: 'needs_second_factor', options: ['totp', 'passkey'] })
+      attempt('sign_in', { status: 'needs_second_factor', options: ['totp', 'sms_code'] })
     )
     await screen.findByLabelText('Authentication code')
     expect(screen.queryByRole('button', { name: 'Use a backup code' })).toBeNull()

@@ -1,12 +1,14 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import {
+  addVirtualAuthenticator,
   advanceClock,
   authenticatorCode,
   consentAtProvider,
   EMAIL_METHODS,
   latestCode,
   latestLink,
+  PASSKEY_METHODS,
   PASSWORD,
   resetLimits,
   signOut,
@@ -333,4 +335,73 @@ test('OAuth: the provider buttons, the mock provider, a passwordless profile, th
   await consentAtProvider(page, { email })
   await expect(page.getByRole('heading', { name: 'Two-step verification' })).toBeVisible()
   await shot(page, 'oauth-second-factor')
+})
+
+test('passkeys: the profile, the step-up dialog, the sign-in button, a cancelled request and the second factor', async ({
+  page,
+  request,
+}) => {
+  // The device is a virtual authenticator attached through the DevTools protocol; the account
+  // and its passkey live in the fixture's memory and are gone when it stops.
+  await useSettings(request, PASSKEY_METHODS)
+  const authenticator = await addVirtualAuthenticator(page)
+  await page.setViewportSize({ width: 1000, height: 900 })
+  const email = uniqueEmail('maya.passkey')
+  await signUp(page, request, { email, firstName: 'Maya' })
+  await page.goto('/account')
+  const section = page
+    .locator('section', { has: page.getByRole('heading', { name: 'Passkeys' }) })
+    .last()
+  await section.getByRole('button', { name: 'Add a passkey' }).click()
+  await expect(section.getByText('Your passkey was added.')).toBeVisible()
+  await section.getByRole('button', { name: 'Rename Passkey' }).click()
+  await section.getByLabel('Passkey name').fill('MacBook Pro')
+  await section.getByRole('button', { name: 'Save' }).click()
+  await expect(section.getByText('The passkey was renamed.')).toBeVisible()
+  await section.scrollIntoViewIfNeeded()
+  await shot(page, 'passkey-profile')
+
+  await page.setViewportSize(PHONE)
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await section.scrollIntoViewIfNeeded()
+  await shot(page, 'passkey-mobile-profile-dark')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.setViewportSize({ width: 1000, height: 900 })
+
+  // An old sign-in: renaming the passkey asks to confirm it is still them, with the passkey.
+  await advanceClock(request, 11 * 60_000)
+  await page.reload()
+  await section.getByRole('button', { name: 'Rename MacBook Pro' }).click()
+  await section.getByLabel('Passkey name').fill('Work laptop')
+  await section.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('dialog', { name: 'Confirm it is you' })).toBeVisible()
+  await shot(page, 'passkey-step-up')
+  await page.keyboard.press('Escape')
+
+  // From here the authenticator waits to be chosen, so the sign-in screen stays on screen.
+  await authenticator.setAnswering(false)
+  await signOut(page)
+  await page.setViewportSize(DESKTOP)
+  const button = page.getByRole('button', { name: 'Sign in with a passkey' })
+  await expect(button).toBeVisible()
+  await shot(page, 'passkey-sign-in')
+
+  // The device refuses to verify the user: the request ends, and the page says so quietly.
+  await authenticator.setUserVerified(false)
+  await authenticator.setAnswering(true)
+  await button.click()
+  await expect(page.getByText(/The passkey request was cancelled or timed out/)).toBeVisible()
+  await shot(page, 'passkey-cancelled')
+
+  // Where the app requires two steps, the passkey is asked for after the password.
+  await authenticator.setAnswering(false)
+  await authenticator.setUserVerified(true)
+  await useSettings(request, { ...PASSKEY_METHODS, mfa: { policy: 'required' } })
+  await page.goto('/sign-in')
+  await page.getByLabel('Email address').fill(email)
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Use your passkey' })).toBeVisible()
+  await shot(page, 'passkey-second-factor')
 })

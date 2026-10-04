@@ -1,5 +1,5 @@
 import type { OAuthProvider } from '@tula/contract'
-import { credentials, type Database, identities, users, withTenant } from '@tula/db'
+import { credentials, type Database, identities, passkeys, users, withTenant } from '@tula/db'
 import {
   and,
   asc,
@@ -316,6 +316,10 @@ export class PostgresUserRepository implements UserRepository {
         providers: owned
           .filter((identity) => identity.id !== identityId)
           .map((identity) => identity.provider as OAuthProvider),
+        passkeys: await tx.$count(
+          passkeys,
+          and(eq(passkeys.environmentId, environmentId), eq(passkeys.userId, userId))
+        ),
       }
       if (!allowed(remaining)) {
         return 'last_method'

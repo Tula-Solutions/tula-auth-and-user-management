@@ -87,6 +87,8 @@ export const RequestSchema = z
  * `claims` checks what a JWT in the body says: each key is the dot path of a token
  * (`session.accessToken`), each value is matched, as `body` is, against the token's decoded
  * payload. The signature is not verified: a scenario states what a client reads from the token.
+ *
+ * `headers` checks response headers by name, each value matched as a `body` value is.
  */
 export const ExpectSchema = z
   .object({
@@ -100,6 +102,12 @@ export const ExpectSchema = z
      * `{ "$set": [...] }` matches an array with exactly those members in any order.
      */
     claims: z.record(z.string(), z.unknown()).optional(),
+    /**
+     * Response headers, by name (case does not matter), each matched like a `body` value
+     * against the header's text: `{ "x-tula-can-still-sign-in": "false" }`. A header the
+     * response does not have is absent (`"$absent"` matches it, anything else does not).
+     */
+    headers: z.record(z.string().regex(HEADER_NAME), z.unknown()).optional(),
   })
   .meta({ ref: 'ConformanceExpect' })
 
@@ -188,6 +196,59 @@ export const TotpStepSchema = z
   .meta({ ref: 'ConformanceTotpStep' })
 
 /**
+ * Play the user's authenticator in a WebAuthn ceremony (ADR 0027): take the options a server
+ * issued and produce what a browser would send back.
+ *
+ * A runner needs a **software authenticator** for this step: one that makes a P-256 (ES256)
+ * discoverable credential and answers
+ *
+ * - `create` with a `RegistrationResponseJSON`: client data of type `webauthn.create` for the
+ *   options' challenge and this step's `origin`; an attestation object of format `none` whose
+ *   authenticator data has the SHA-256 of the options' `rp.id`, the user-present flag, the
+ *   user-verified flag (unless `userVerified` is `false`), the attested credential data, and
+ *   the backup-eligible and backed-up flags when `synced` is set;
+ * - `get` with an `AuthenticationResponseJSON`: client data of type `webauthn.get`,
+ *   authenticator data with the SHA-256 of the options' `rpId`, the flags as above and the
+ *   signature counter `counter` (default 0), an ASN.1 DER ECDSA signature over the
+ *   authenticator data and the SHA-256 of the client data, and the user handle the credential
+ *   was created with.
+ *
+ * Authenticators are named and live for one scenario run: a credential made by `phone` in one
+ * step is the one `phone` signs with later. Exactly one of `create` and `get` is given: a
+ * variable holding the options as JSON text (stored by a request step's `captureJson`). The
+ * response is stored as JSON text in `capture`; send it with `{ "$json": "{{name}}" }`.
+ */
+export const PasskeyStepSchema = z
+  .object({
+    name: z.string().min(1),
+    passkey: z
+      .object({
+        /** Which authenticator acts. Created on first use. */
+        authenticator: z.string().min(1),
+        /** The creation options, as JSON text: `{{creationOptions}}`. */
+        create: z.string().optional(),
+        /** The request options, as JSON text: `{{requestOptions}}`. */
+        get: z.string().optional(),
+        /** The page's origin, written into the client data. */
+        origin: z.string(),
+        /** Variable to store the response's JSON text in. */
+        capture: z.string(),
+        /** `false`: the authenticator did not verify the user. */
+        userVerified: z.boolean().optional(),
+        /** The signature counter to report. Default 0 (an authenticator that keeps none). */
+        counter: z.number().int().min(0).optional(),
+        /** Report the credential as backup-eligible and backed up. */
+        synced: z.boolean().optional(),
+      })
+      .strict()
+      .refine((passkey) => (passkey.create === undefined) !== (passkey.get === undefined), {
+        message: 'a passkey step takes either `create` or `get`',
+      }),
+  })
+  .strict()
+  .meta({ ref: 'ConformancePasskeyStep' })
+
+/**
  * Play the user at the OAuth provider (ADR 0026): take the authorization URL a sign-in start
  * answered, "consent" at the provider, follow the provider back to the API's callback, and read
  * what the callback sends the app's page in its URL fragment.
@@ -255,6 +316,7 @@ export const StepSchema = z
     EmailLinkStepSchema,
     TotpStepSchema,
     OAuthStepSchema,
+    PasskeyStepSchema,
     WaitStepSchema,
   ])
   .meta({ ref: 'ConformanceStep' })

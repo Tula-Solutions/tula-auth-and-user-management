@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { formatResult, loadScenarios, runScenario, type Target } from '@tula/conformance'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
-import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '~/testing'
+import * as Settings from '~/modules/settings/service'
+import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const PUBLISHABLE_KEY = 'tula_pk_dev_conformance00000000000000000000'
 const SECRET_KEY = 'tula_sk_dev_conformance00000000000000000000'
@@ -16,7 +17,7 @@ const EMAIL_LINK = /https?:\/\/\S+#\S*tula_link=\S+/
  * and an outbox the email steps read. The requests are the same ones `bun run conformance`
  * sends to a live server.
  */
-async function inProcessTarget(): Promise<Target> {
+async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
   // The runner gives each scenario its own client address through X-Forwarded-For.
   // The OAuth scenarios need a provider that answers without a network: the mock provider, wired
   // as `container.ts` wires it for `OAUTH_MOCK_PROVIDER=true`.
@@ -77,6 +78,7 @@ async function inProcessTarget(): Promise<Target> {
     },
     // Authenticator codes are computed for the clock the server reads, not the wall clock.
     now: () => deps.clock.now().getTime(),
+    deps,
   }
 }
 
@@ -113,13 +115,24 @@ describe('conformance scenarios, in process', () => {
       'OAuth account linking',
       'OAuth with a second factor',
       'step-up by emailed code',
+      'passkey registration and sign-in',
+      'passkey assertion replay',
+      'passkey origin and relying party',
+      'passkey signature counter',
+      'a passkey satisfies two-step verification',
+      'step-up with a passkey',
+      'the last way to sign in cannot be removed',
+      'passkeys switched off mid-attempt',
+      'the admin reset removes passkeys and says whether the user can still sign in',
     ])
   })
 
   test.each(scenarios.map(({ file, scenario }) => [file, scenario] as const))(
     '%s',
     async (_file, scenario) => {
-      const result = await runScenario(scenario, await inProcessTarget())
+      const target = await inProcessTarget()
+      const before = await Settings.current(target.deps, TEST_TENANT)
+      const result = await runScenario(scenario, target)
       // On failure the message shows each step and what differed.
       expect(formatResult(result)).toBe(
         [
@@ -127,6 +140,9 @@ describe('conformance scenarios, in process', () => {
           ...[...scenario.steps, ...(scenario.cleanup ?? [])].map((step) => `  ok   ${step.name}`),
         ].join('\n')
       )
+      // A live environment is shared by every scenario that follows: whatever a scenario
+      // changed in the settings, its cleanup has put back.
+      expect(await Settings.current(target.deps, TEST_TENANT)).toEqual(before)
     }
   )
 

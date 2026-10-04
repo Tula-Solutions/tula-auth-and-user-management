@@ -141,7 +141,9 @@ describe('the request itself', () => {
     expect(res.status).toBe(200)
     expect(allowOrigin(res)).toBe(DEV_ORIGIN)
     expect(res.headers.get('access-control-allow-credentials')).toBe('true')
-    expect(res.headers.get('access-control-expose-headers')).toBe('Retry-After,X-Request-Id,ETag')
+    expect(res.headers.get('access-control-expose-headers')).toBe(
+      'Retry-After,X-Request-Id,ETag,x-tula-can-still-sign-in'
+    )
     expect(res.headers.get('vary')?.split(/,\s*/)).toEqual(
       expect.arrayContaining(['Origin', 'x-tula-publishable-key'])
     )

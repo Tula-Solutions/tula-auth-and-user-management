@@ -347,6 +347,7 @@ describe('the attempt secret stays inside the flow', () => {
         'step',
         'submitPassword',
         'submitSecondFactor',
+        'submitSecondFactorWithPasskey',
         'toJSON',
         'verifyEmail',
         'waitForEmailLink',

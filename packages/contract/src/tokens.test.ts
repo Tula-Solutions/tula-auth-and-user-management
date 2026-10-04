@@ -81,7 +81,16 @@ describe('access token claims about how the session was authenticated', () => {
   })
 
   test('the methods this version issues, and how long a proof counts as recent', () => {
-    expect(AUTHENTICATION_METHODS).toEqual(['pwd', 'email', 'otp', 'backup_code', 'mfa'])
+    expect(AUTHENTICATION_METHODS).toEqual([
+      'pwd',
+      'email',
+      'otp',
+      'backup_code',
+      'mfa',
+      'hwk',
+      'swk',
+      'user',
+    ])
     expect(new Set(AUTHENTICATION_METHODS).size).toBe(AUTHENTICATION_METHODS.length)
     expect(STEP_UP_MAX_AGE_SECONDS).toBe(600)
   })

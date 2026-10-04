@@ -14,6 +14,7 @@ import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryMailer } from '~/adapters/memory/mailer'
 import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
 import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
+import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
@@ -39,6 +40,7 @@ export interface TestDeps extends Deps {
   sessions: MemorySessionStore
   users: MemoryUserRepository
   factors: MemoryFactorStore
+  passkeys: MemoryPasskeyStore
   flowAttempts: MemoryFlowAttemptStore
   oauthProviders: MemoryOAuthProviderStore
   oauth: FakeOAuthProviders
@@ -81,6 +83,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   const clock = overrides.clock ?? new FixedClock()
   // One log shared by every store, as the Postgres stores share the two activity tables.
   const activityLog = overrides.activityLog ?? new MemoryActivityLog()
+  const users = new MemoryUserRepository(activityLog)
   return {
     config: TEST_CONFIG,
     ids: new SequentialIds(),
@@ -90,8 +93,9 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     signingKeys: new MemorySigningKeyStore(activityLog),
     verificationTokens: new MemoryVerificationTokenStore(),
     sessions: new MemorySessionStore(activityLog),
-    users: new MemoryUserRepository(activityLog),
+    users,
     factors: new MemoryFactorStore(activityLog),
+    passkeys: new MemoryPasskeyStore(activityLog, users),
     flowAttempts: new MemoryFlowAttemptStore(),
     oauthProviders: new MemoryOAuthProviderStore(activityLog),
     oauth: fakeOAuthProviders(),

@@ -406,10 +406,28 @@ export function FormError(props: { message: string | null; detail?: string | nul
   )
 }
 
-/** A quiet confirmation ("A new code is on its way."). Announced politely. */
-export function Status(props: { message: string | null }) {
+/**
+ * A quiet message, announced politely (an `<output>`, never an alert).
+ *
+ * @param props.message - What to say; `null` keeps the live region in the page, empty.
+ * @param props.tone - `success` (the default) for a confirmation of something done ("A new
+ *   code is on its way."), drawn in the success colour. `neutral` for something that is
+ *   neither done nor wrong (a passkey dialog the user dismissed), drawn in the muted text
+ *   colour: nothing succeeded, so it must not look as if something had.
+ */
+export function Status(props: { message: string | null; tone?: 'success' | 'neutral' }) {
   const { el } = useUi()
-  return <output {...el('status', !props.message && 'tula-is-empty')}>{props.message ?? ''}</output>
+  return (
+    <output
+      {...el(
+        'status',
+        !props.message && 'tula-is-empty',
+        props.tone === 'neutral' && 'tula-is-neutral'
+      )}
+    >
+      {props.message ?? ''}
+    </output>
+  )
 }
 
 /**
