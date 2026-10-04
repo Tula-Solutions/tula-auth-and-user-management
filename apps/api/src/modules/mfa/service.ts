@@ -601,6 +601,8 @@ export async function reset(
   }
   // Worked out before anything is removed, so that the audit entry written with the removal
   // can carry it: what is left is everything the user has now, less every passkey.
+  // It is the answer as of the start of the reset: a password or provider changed by someone
+  // else in the same moment is not reflected, which an admin resetting the account can live with.
   const withPassword = await deps.users.findByEmailWithPassword(
     scope.environmentId,
     user.emailNormalized

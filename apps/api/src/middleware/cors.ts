@@ -1,3 +1,4 @@
+import { CAN_STILL_SIGN_IN_HEADER } from '@tula/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Deps, Tenant, TenantVariables } from '~/dependencies'
@@ -20,8 +21,16 @@ export const CORS_REQUEST_HEADERS = [
   FLOW_ATTEMPT_HEADER,
 ] as const
 
-/** Response headers a browser's JavaScript may read. */
-export const CORS_EXPOSED_HEADERS = ['Retry-After', 'X-Request-Id', 'ETag'] as const
+/**
+ * Response headers a browser's JavaScript may read. The last one is how an admin reset says
+ * whether the user can still sign in: without it the dashboard, a browser caller, could not.
+ */
+export const CORS_EXPOSED_HEADERS = [
+  'Retry-After',
+  'X-Request-Id',
+  'ETag',
+  CAN_STILL_SIGN_IN_HEADER,
+] as const
 
 /** How long a browser may reuse a preflight answer, in seconds. */
 export const CORS_PREFLIGHT_MAX_AGE_SECONDS = 600
