@@ -128,6 +128,38 @@ export const PASSKEY_METHODS: TestSettings = {
   },
 }
 
+/** Where a page keeps the number of autofill (conditional) WebAuthn requests it has pending. */
+interface AutofillCount {
+  __autofillRequests?: number
+}
+
+/**
+ * Runs in the page before its own scripts: counts the conditional `navigator.credentials.get`
+ * requests that are pending. The request itself is passed to the browser untouched; this only
+ * lets a scenario see that one has been made (`VirtualAuthenticator.autofillWaiting`), which
+ * the DevTools protocol does not report.
+ */
+function countAutofillRequests(): void {
+  const container = navigator.credentials as CredentialsContainer | undefined
+  if (!container) {
+    return
+  }
+  const state = window as unknown as AutofillCount
+  const get = container.get.bind(container)
+  state.__autofillRequests = 0
+  container.get = (options) => {
+    const request = get(options)
+    if (options?.mediation === 'conditional') {
+      const settled = () => {
+        state.__autofillRequests = (state.__autofillRequests ?? 1) - 1
+      }
+      state.__autofillRequests = (state.__autofillRequests ?? 0) + 1
+      request.then(settled, settled)
+    }
+    return request
+  }
+}
+
 /** A software authenticator attached to a page through the DevTools protocol. */
 export interface VirtualAuthenticator {
   /** Whether it verifies the user when asked. Unverified, every passkey ceremony is refused. */
@@ -139,6 +171,14 @@ export interface VirtualAuthenticator {
    * not chosen yet.
    */
   setAnswering(answering: boolean): Promise<void>
+  /**
+   * Wait until the page's autofill request is with the browser. A request made while the
+   * authenticator answers by itself is answered at once, so a scenario that switches answering
+   * back on to press a button first waits here: otherwise, on a slow machine, the switch can
+   * land before the sign-in screen has asked, the autofill request then signs in by itself, and
+   * the button the scenario is about to press is gone.
+   */
+  autofillWaiting(): Promise<void>
   /** How many passkeys it holds. */
   credentialCount(): Promise<number>
   /** Take it away: the browser is left with no authenticator. */
@@ -155,6 +195,7 @@ export interface VirtualAuthenticator {
  * @returns A handle on it.
  */
 export async function addVirtualAuthenticator(page: Page): Promise<VirtualAuthenticator> {
+  await page.addInitScript(countAutofillRequests)
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('WebAuthn.enable')
   const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
@@ -176,6 +217,11 @@ export async function addVirtualAuthenticator(page: Page): Promise<VirtualAuthen
         authenticatorId,
         enabled: answering,
       })
+    },
+    async autofillWaiting() {
+      await page.waitForFunction(
+        () => ((window as unknown as AutofillCount).__autofillRequests ?? 0) > 0
+      )
     },
     async credentialCount() {
       const { credentials } = await cdp.send('WebAuthn.getCredentials', { authenticatorId })
