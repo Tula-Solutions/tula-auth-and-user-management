@@ -139,6 +139,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
       await expectAccessible(page, 'sign-in with the passkey button')
 
       // Usernameless: no address is typed. The button ends the autofill request and asks.
+      await authenticator.autofillWaiting()
       await authenticator.setAnswering(true)
       await button.click()
       await expect(page.getByRole('heading', { name: 'Hello, Maya' })).toBeVisible()
@@ -420,6 +421,9 @@ test('a browser without WebAuthn’s JSON helpers: the client’s own conversion
 
   await authenticator.setAnswering(false)
   await signOut(page)
+  // The autofill request is made while the authenticator still waits to be chosen: made after
+  // the switch below, it would sign in by itself and take the button away.
+  await authenticator.autofillWaiting()
   await authenticator.setAnswering(true)
   await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
   await expect(page.getByRole('heading', { name: 'Hello, Omar' })).toBeVisible()
