@@ -5,7 +5,13 @@ import {
   defaultMessage,
   TulaAdminError,
 } from './errors'
-import { OPERATIONS, type Operations } from './generated/api.gen'
+import {
+  INSTANCE_OPERATIONS,
+  type InstanceOperations,
+  OPERATIONS,
+  type OperationRoute,
+  type Operations,
+} from './generated/api.gen'
 
 /** How long one request may take before it fails with `network.timeout`, by default. */
 export const DEFAULT_TIMEOUT_MS = 30_000
@@ -84,6 +90,8 @@ export interface AdminResponse<Id extends AdminOperationId> {
   readonly status: number
   /** The `ETag` header, when the operation answers one (the settings' revision, quoted). */
   readonly etag: string | null
+  /** The response's `Date` header: the server's clock when it answered, or `null`. */
+  readonly date: string | null
 }
 
 /** The arguments after the operation id: optional when nothing in the input is required. */
@@ -308,58 +316,33 @@ function failureName(cause: unknown): string | undefined {
   return undefined
 }
 
-/**
- * Create a client for the admin API (`/v1/admin/*`).
- *
- * The secret key is kept in a closure: it is not a property of the client, and no error, log
- * line or `JSON.stringify` of anything this package returns contains it. It is sent only to
- * `baseUrl` (redirects are not followed). The client never retries: a `rate_limited` error
- * carries `retryAfterMs`, and what to do with it is the caller's decision.
- *
- * **Server-side only.** A secret key can do anything in its environment. The client refuses to
- * be created where `window` and `document` exist, and the package's `browser` export condition
- * resolves to a module that throws, so a web bundle fails instead of shipping the key.
- *
- * @param options - The API's address, the secret key and, optionally, `fetch`, a timeout and a
- *   user agent.
- * @returns The client.
- * @throws TulaAdminError `client.publishable_key` for a publishable key, `client.invalid_key`
- *   for anything else that is not a secret key, `client.invalid_url` for a bad `baseUrl`
- *   (not http(s), with credentials, or plain http to a host other than this machine without
- *   `allowInsecureHttp`), `client.browser` in a browser.
- *
- * @example
- * ```ts
- * import { createAdminClient, ifMatch } from '@tula/admin'
- *
- * const admin = createAdminClient({
- *   baseUrl: 'https://auth.example.com',
- *   secretKey: process.env.TULA_SECRET_KEY ?? '',
- * })
- * const { data } = await admin.call('getEnvironmentSettings')
- * await admin.call('replaceEnvironmentSettings', {
- *   headers: { 'If-Match': ifMatch(data.revision) },
- *   body: { ...data.settings, app: { name: 'Northline', supportEmail: null } },
- * })
- * ```
- */
-export function createAdminClient(options: AdminClientOptions): AdminClient {
+interface RawResponse {
+  data: unknown
+  status: number
+  etag: string | null
+  date: string | null
+}
+
+/** What both clients share: one request, one answer, the credential as a bearer token. */
+function createCaller(
+  routes: Readonly<Record<string, OperationRoute>>,
+  bearer: string,
+  options: Pick<
+    AdminClientOptions,
+    'baseUrl' | 'fetch' | 'timeoutMs' | 'userAgent' | 'allowInsecureHttp'
+  >
+): (id: string, input: unknown) => Promise<RawResponse> {
   const globals = globalThis as { window?: unknown; document?: unknown }
   if (globals.window !== undefined && globals.document !== undefined) {
     throw clientError('client.browser')
   }
-  checkSecretKey(options.secretKey)
   const baseUrl = normalizeBaseUrl(options.baseUrl, options.allowInsecureHttp === true)
-  const secretKey = options.secretKey
   const send: AdminFetch = options.fetch ?? ((url, init) => fetch(url, init))
   const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const userAgent = options.userAgent
 
-  async function call<Id extends AdminOperationId>(
-    id: Id,
-    ...rest: CallArguments<Id>
-  ): Promise<AdminResponse<Id>> {
-    const input = (rest[0] ?? {}) as {
+  return async function call(id: string, rest: unknown): Promise<RawResponse> {
+    const input = (rest ?? {}) as {
       params?: Record<string, string>
       query?: Record<string, unknown>
       headers?: Record<string, string | undefined>
@@ -367,7 +350,10 @@ export function createAdminClient(options: AdminClientOptions): AdminClient {
       signal?: AbortSignal
       timeoutMs?: number
     }
-    const route = OPERATIONS[id]
+    const route = Object.hasOwn(routes, id) ? routes[id] : undefined
+    if (!route) {
+      throw clientError('client.invalid_param', { operation: id, param: 'operation' })
+    }
     // Before anything is sent or timed: a refused parameter is the caller's mistake, not a
     // network failure.
     const url = buildUrl(id, baseUrl, route.path, input.params ?? {}, input.query ?? {})
@@ -384,7 +370,7 @@ export function createAdminClient(options: AdminClientOptions): AdminClient {
       headers.set('content-type', 'application/json')
     }
     // Last, so that nothing a caller passes as a header can stand in for the key.
-    headers.set('authorization', `Bearer ${secretKey}`)
+    headers.set('authorization', `Bearer ${bearer}`)
 
     const controller = new AbortController()
     let timedOut = false
@@ -432,13 +418,167 @@ export function createAdminClient(options: AdminClientOptions): AdminClient {
       throw clientError('response.invalid', { operation: id, status: response.status })
     }
     return {
-      data: payload as Operations[Id]['response'],
+      data: payload,
       status: response.status,
       etag: response.headers.get('etag'),
+      date: response.headers.get('date'),
     }
   }
+}
 
-  return { call }
+/**
+ * Create a client for the admin API (`/v1/admin/*`).
+ *
+ * The secret key is kept in a closure: it is not a property of the client, and no error, log
+ * line or `JSON.stringify` of anything this package returns contains it. It is sent only to
+ * `baseUrl` (redirects are not followed). The client never retries: a `rate_limited` error
+ * carries `retryAfterMs`, and what to do with it is the caller's decision.
+ *
+ * **Server-side only.** A secret key can do anything in its environment. The client refuses to
+ * be created where `window` and `document` exist, and the package's `browser` export condition
+ * resolves to a module that throws, so a web bundle fails instead of shipping the key.
+ *
+ * @param options - The API's address, the secret key and, optionally, `fetch`, a timeout and a
+ *   user agent.
+ * @returns The client.
+ * @throws TulaAdminError `client.publishable_key` for a publishable key, `client.invalid_key`
+ *   for anything else that is not a secret key, `client.invalid_url` for a bad `baseUrl`
+ *   (not http(s), with credentials, or plain http to a host other than this machine without
+ *   `allowInsecureHttp`), `client.browser` in a browser.
+ *
+ * @example
+ * ```ts
+ * import { createAdminClient, ifMatch } from '@tula/admin'
+ *
+ * const admin = createAdminClient({
+ *   baseUrl: 'https://auth.example.com',
+ *   secretKey: process.env.TULA_SECRET_KEY ?? '',
+ * })
+ * const { data } = await admin.call('getEnvironmentSettings')
+ * await admin.call('replaceEnvironmentSettings', {
+ *   headers: { 'If-Match': ifMatch(data.revision) },
+ *   body: { ...data.settings, app: { name: 'Northline', supportEmail: null } },
+ * })
+ * ```
+ */
+export function createAdminClient(options: AdminClientOptions): AdminClient {
+  const globals = globalThis as { window?: unknown; document?: unknown }
+  if (globals.window !== undefined && globals.document !== undefined) {
+    throw clientError('client.browser')
+  }
+  checkSecretKey(options.secretKey)
+  const send = createCaller(OPERATIONS, options.secretKey, options)
+  return {
+    call: <Id extends AdminOperationId>(id: Id, ...rest: CallArguments<Id>) =>
+      send(id, rest[0]) as Promise<AdminResponse<Id>>,
+  }
+}
+
+/** The id of an instance operation, e.g. `getInstanceDiagnostics`. */
+export type InstanceOperationId = keyof InstanceOperations
+
+/**
+ * The answer of an instance call.
+ *
+ * @example
+ * ```ts
+ * const { data, date } = await instance.call('getInstanceDiagnostics')
+ * ```
+ */
+export interface InstanceResponse<Id extends InstanceOperationId> {
+  /** The response body. */
+  readonly data: InstanceOperations[Id]['response']
+  /** The HTTP status. */
+  readonly status: number
+  /** The response's `Date` header: the server's clock when it answered, or `null`. */
+  readonly date: string | null
+}
+
+/**
+ * The instance client: the routes about a deployment as a whole (`/v1/instance/*`).
+ *
+ * @example
+ * ```ts
+ * const { data } = await instance.call('getInstanceDiagnostics')
+ * ```
+ */
+export interface InstanceClient {
+  /**
+   * Call an instance operation by its id.
+   *
+   * @param id - The operation id.
+   * @param input - A signal and a timeout, both optional.
+   * @returns The answer.
+   * @throws TulaAdminError for a refused or failed call.
+   */
+  call<Id extends InstanceOperationId>(
+    id: Id,
+    input?: { signal?: AbortSignal; timeoutMs?: number }
+  ): Promise<InstanceResponse<Id>>
+}
+
+/**
+ * What {@link createInstanceClient} takes.
+ *
+ * @example
+ * ```ts
+ * const options: InstanceClientOptions = { baseUrl: 'https://auth.example.com', adminToken }
+ * ```
+ */
+export interface InstanceClientOptions
+  extends Pick<
+    AdminClientOptions,
+    'baseUrl' | 'fetch' | 'timeoutMs' | 'userAgent' | 'allowInsecureHttp'
+  > {
+  /** The instance admin token: the server's `TULA_ADMIN_TOKEN`. */
+  adminToken: string
+}
+
+/** The server refuses a shorter `TULA_ADMIN_TOKEN` at boot, so a shorter one is a mistake. */
+const MIN_ADMIN_TOKEN_LENGTH = 32
+
+/**
+ * Create the instance client: the deployment's diagnostics, with the instance admin token
+ * (`TULA_ADMIN_TOKEN`). Like the admin client it is for servers and tools only, sends the
+ * token to `baseUrl` alone (no redirect is followed), refuses plain http to another machine,
+ * and never puts the token in an error.
+ *
+ * @param options - The API's URL and the admin token.
+ * @returns The client.
+ * @throws TulaAdminError `client.browser` in a browser, `client.invalid_url` for an unusable
+ *   URL, `client.invalid_token` for a value that cannot be an admin token (an API key, or
+ *   too short).
+ *
+ * @example
+ * ```ts
+ * const instance = createInstanceClient({ baseUrl: process.env.TULA_API_URL, adminToken })
+ * const { data } = await instance.call('getInstanceDiagnostics')
+ * ```
+ */
+export function createInstanceClient(options: InstanceClientOptions): InstanceClient {
+  // A browser is refused before the token is judged, as the admin client does.
+  const globals = globalThis as { window?: unknown; document?: unknown }
+  if (globals.window !== undefined && globals.document !== undefined) {
+    throw clientError('client.browser')
+  }
+  const token = options.adminToken
+  if (
+    typeof token !== 'string' ||
+    token.length < MIN_ADMIN_TOKEN_LENGTH ||
+    // Printable ASCII without spaces: anything else cannot be a header value either.
+    !/^[\x21-\x7e]+$/.test(token) ||
+    token.startsWith(SECRET_KEY_PREFIX) ||
+    token.startsWith(PUBLISHABLE_KEY_PREFIX)
+  ) {
+    throw clientError('client.invalid_token')
+  }
+  const send = createCaller(INSTANCE_OPERATIONS, token, options)
+  return {
+    call: <Id extends InstanceOperationId>(
+      id: Id,
+      input?: { signal?: AbortSignal; timeoutMs?: number }
+    ) => send(id, input) as Promise<InstanceResponse<Id>>,
+  }
 }
 
 /** The parsed text, or `null` when it is not JSON. */

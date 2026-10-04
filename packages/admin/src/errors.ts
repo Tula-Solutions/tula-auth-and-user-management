@@ -10,6 +10,8 @@ const CLIENT_MESSAGES = {
   'network.aborted': 'The request was cancelled.',
   'response.invalid': 'The server sent a response that is not the Tula API’s.',
   'client.invalid_key': 'The secret key is not a Tula secret key (tula_sk_…).',
+  'client.invalid_token':
+    'The admin token is not usable: it is the server’s TULA_ADMIN_TOKEN (at least 32 characters, no spaces), not an API key.',
   'client.publishable_key':
     'That is a publishable key (tula_pk_…). The admin API takes a secret key (tula_sk_…).',
   'client.invalid_url':

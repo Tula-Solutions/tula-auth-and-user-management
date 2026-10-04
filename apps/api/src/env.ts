@@ -29,6 +29,16 @@ const flag = z
   .optional()
   .transform((value) => /^(true|1|yes)$/i.test(value ?? ''))
 
+/** The shortest `TULA_ADMIN_TOKEN` accepted: 32 characters of hex are 128 bits. */
+export const MIN_ADMIN_TOKEN_LENGTH = 32
+
+/** Fewer distinct characters than this is not what a random generator produces. */
+const MIN_ADMIN_TOKEN_DISTINCT = 10
+
+/** Words of a value copied from an example instead of generated. */
+const PLACEHOLDER_TOKEN =
+  /change[-_ ]?me|example|placeholder|password|default|your[-_]|replace[-_]|x{8}|0123456789/i
+
 const fields = z.object({
   /** Log formatting and third-party packages only. Behaviour is gated on `ENVIRONMENT`. */
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -88,6 +98,30 @@ const fields = z.object({
    * tests, where nobody has real OAuth credentials. Refused outside `ENVIRONMENT=local`.
    */
   OAUTH_MOCK_PROVIDER: flag,
+  /**
+   * The instance admin token: the credential of `/v1/instance/*` (`tula doctor`, and the
+   * dashboard's sign-in). Optional: without it those routes do not exist (404). It is the most
+   * powerful credential of a deployment, so a short or placeholder value fails the boot
+   * instead of being accepted. Generate one with `openssl rand -hex 32`. See ADR 0031.
+   */
+  TULA_ADMIN_TOKEN: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z
+      .string()
+      .min(
+        MIN_ADMIN_TOKEN_LENGTH,
+        `must be at least ${MIN_ADMIN_TOKEN_LENGTH} characters, e.g. \`openssl rand -hex 32\``
+      )
+      .max(256, 'must be at most 256 characters')
+      .regex(/^[\x21-\x7e]+$/, 'must be printable ASCII without spaces')
+      .refine((value) => new Set(value).size >= MIN_ADMIN_TOKEN_DISTINCT, {
+        message: 'is too repetitive to be a random value; generate one with `openssl rand -hex 32`',
+      })
+      .refine((value) => !PLACEHOLDER_TOKEN.test(value), {
+        message: 'looks like a placeholder; generate one with `openssl rand -hex 32`',
+      })
+      .optional()
+  ),
   /**
    * Redis (or Valkey) for the state API instances must share: rate limits, the password lockout
    * and the list of revoked sessions. `rediss://` for TLS. Unset (or blank) in `local` and `dev`

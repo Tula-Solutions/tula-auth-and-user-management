@@ -495,6 +495,26 @@ the "managed by a config file" marker is server-side now (`x-tula-managed-by` +
 - The CLI talks to the API through the generated admin client; it touches the database only in
   `tula dev`'s bootstrap.
 
+**As built** ([ADR 0031](../adr/0031-instance-admin-and-cli.md), guides: [docs/cli.md](../cli.md),
+[docs/quickstart.md](../quickstart.md)). `tula doctor`'s checks run **inside the API**, behind
+`GET /v1/instance/diagnostics`, because the CLI must not reach the database: this step
+therefore introduces the instance admin token of decision 3 (`TULA_ADMIN_TOKEN`; without it
+the route is a 404), which 1.15 builds its dashboard sign-in on. `@tula/admin` gained
+`createInstanceClient` (generated like the admin client). Beyond the plan's list, `doctor`
+also checks Redis, the CLI's own clock and version against the server's, and a loopback
+`PUBLIC_URL` from the operator's machine (the server cannot reach it from a container); a
+provider's redirect URI is listed, not verified. `tula policy test` reads the password from a
+prompt without echo or from standard input; the plan's `"<password>"` argument is accepted
+with a warning. The password is evaluated locally and never sent, so the breach check is
+reported as not run. `tula dev` runs the migrations, the seed and the key minting with the
+commands the API image ships, writes the keys to a marked block of `.env.local` and mints
+nothing on a second run; `tula dev down [--volumes]` stops the stack. `create-tula` is its own
+package; with nothing published, its default image is the locally built `tula-api:local`
+(`--api-image`) and `--tula-packages` installs the SDKs from packed tarballs. Its app
+templates are synced copies of `examples/react-vite` and `examples/nextjs-app-router`.
+Migration `0014_diagnostics_read_migrations` adds a function through which the API's role
+learns which migrations are applied, without access to the `drizzle` schema.
+
 ### 1.15 Dashboard (`apps/dashboard`)
 
 - The payhub-portal stack: Vite, React 19, TanStack Router and Query, Tailwind v4, shadcn,

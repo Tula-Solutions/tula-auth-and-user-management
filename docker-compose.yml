@@ -24,6 +24,8 @@ x-api: &api
     DATABASE_URL: postgres://tula_api:tula_api@postgres:5432/tula
     # Required: 32 bytes as hex (`openssl rand -hex 32`). The API refuses to start without it.
     TULA_MASTER_KEY: ${TULA_MASTER_KEY:-}
+    # Optional: the instance admin token (`tula doctor`). Unset, the instance routes do not exist.
+    TULA_ADMIN_TOKEN: ${TULA_ADMIN_TOKEN:-}
     # Not `PUBLIC_URL` / `SMTP_URL`: Compose also reads the repository's `.env`, where a
     # developer's values describe `bun run dev` on the host (port 3003, mail at 127.0.0.1, which
     # inside this container is the container itself).

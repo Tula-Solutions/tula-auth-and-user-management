@@ -10,6 +10,8 @@ export interface SmtpTransport {
     text: string
     html: string
   }): Promise<unknown>
+  /** Connect, greet and authenticate without sending. Rejects when the relay is unusable. */
+  verify(): Promise<unknown>
   close(): void
 }
 
@@ -48,6 +50,16 @@ export class SmtpMailer implements Mailer {
   /** @inheritdoc */
   async send(message: MailMessage): Promise<void> {
     await this.#transport.sendMail({ from: this.#from, ...message })
+  }
+
+  /**
+   * Connect to the relay, greet it and authenticate, without sending a message: what the
+   * diagnostics call "SMTP reachable".
+   *
+   * @throws Error when the relay cannot be reached or refuses the connection or the credentials.
+   */
+  async verify(): Promise<void> {
+    await this.#transport.verify()
   }
 
   /** Close pooled connections (graceful shutdown). */

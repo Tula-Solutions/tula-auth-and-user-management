@@ -72,7 +72,7 @@ describe('nothing can be published yet', () => {
 })
 
 describe('publishable packages', () => {
-  test('are the contract, the SDKs, the admin client, the config package and the CLI, dependencies first', () => {
+  test('are the contract, the SDKs, the admin client, the config package, the CLI and create-tula, dependencies first', () => {
     expect([...PUBLISHABLE_PACKAGES]).toEqual([
       'packages/contract',
       'packages/core',
@@ -81,6 +81,7 @@ describe('publishable packages', () => {
       'packages/admin',
       'packages/config',
       'packages/cli',
+      'packages/create-tula',
     ])
   })
 

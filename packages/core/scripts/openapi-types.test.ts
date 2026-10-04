@@ -257,6 +257,49 @@ describe('renderAdminApi', () => {
     expect(source).not.toContain('session:')
   })
 
+  test('renders the instance operations beside the admin ones, with their own table', () => {
+    const base = adminDocument()
+    base.components.schemas.Health = { type: 'object', properties: { ok: { type: 'boolean' } } }
+    base.paths['/v1/instance/health'] = {
+      get: {
+        operationId: 'getHealth',
+        summary: 'Health',
+        security: [{ instanceAdminToken: [] }],
+        responses: {
+          200: {
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Health' } } },
+          },
+        },
+      },
+    }
+    const source = renderAdminApi(base)
+    expect(source).toContain('  Health: {')
+    expect(source).toContain(
+      '  getHealth: { params: Record<string, never>; query: Record<string, never>; ' +
+        "headers: Record<string, never>; body: undefined; response: Schemas['Health'] }"
+    )
+    expect(source).toContain("  getHealth: { method: 'GET', path: '/v1/instance/health' },")
+    // In the instance table and interface, not the admin ones.
+    const adminTable = source.slice(
+      source.indexOf('export const OPERATIONS'),
+      source.indexOf('export interface InstanceOperations')
+    )
+    expect(adminTable).not.toContain('getHealth')
+    expect(source.slice(source.indexOf('export const INSTANCE_OPERATIONS'))).toContain('getHealth')
+  })
+
+  test('an instance operation that does not take the admin token fails the generation', () => {
+    const base = adminDocument()
+    base.paths['/v1/instance/health'] = {
+      get: {
+        operationId: 'getHealth',
+        security: [{ secretKey: [] }],
+        responses: { 200: {} },
+      },
+    }
+    expect(() => renderAdminApi(base)).toThrow('getHealth: an instance operation must take')
+  })
+
   test('a parameter without a schema is a string', () => {
     const broken = adminDocument()
     const operation = broken.paths['/v1/admin/things/{thingId}']?.put

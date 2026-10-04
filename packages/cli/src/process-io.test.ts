@@ -145,3 +145,46 @@ test('the process’s own io reads a real file, relative to the working director
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+describe('asking for a secret', () => {
+  function terminal() {
+    const raw: boolean[] = []
+    const stdin = Object.assign(new PassThrough(), {
+      isTTY: true,
+      setRawMode: (value: boolean) => raw.push(value),
+    })
+    const made = parts({ stdin, ttys: [true, true, true] })
+    return { ...made, stdin, raw, io: createProcessIo(made.parts) }
+  }
+
+  test('is offered only on a terminal that can stop echoing', () => {
+    expect(createProcessIo(parts().parts).promptSecret).toBeUndefined()
+    expect(createProcessIo(parts({ ttys: [true, true, true] }).parts).promptSecret).toBeUndefined()
+    expect(terminal().io.promptSecret).toBeDefined()
+  })
+
+  test('reads to Enter in raw mode, honours Backspace, and never writes what was typed', async () => {
+    const { io, stdin, raw, stderr } = terminal()
+    const answer = io.promptSecret?.('Password: ')
+    stdin.write('hunterX')
+    stdin.write('\u007f')
+    stdin.write('2\u0001\r')
+    expect(await answer).toBe('hunter2')
+    expect(raw).toEqual([true, false])
+    expect(stderr()).toBe('Password: \n')
+  })
+
+  test('Ctrl-C cancels and restores the terminal', async () => {
+    const { io, stdin, raw } = terminal()
+    const answer = io.promptSecret?.('Password: ')
+    stdin.write('abc\u0003')
+    await expect(answer).rejects.toThrow('Cancelled')
+    expect(raw).toEqual([true, false])
+  })
+
+  test('the io has a clock and a host', () => {
+    const io = createProcessIo(parts().parts)
+    expect(Math.abs((io.now?.().getTime() ?? 0) - Date.now())).toBeLessThan(5_000)
+    expect(typeof io.host?.run).toBe('function')
+  })
+})

@@ -158,6 +158,18 @@
         "@tula/tsconfig": "workspace:*",
       },
     },
+    "packages/create-tula": {
+      "name": "create-tula",
+      "version": "0.0.0",
+      "bin": {
+        "create-tula": "./src/bin.ts",
+      },
+      "devDependencies": {
+        "@tula/example-nextjs": "workspace:*",
+        "@tula/example-react-vite": "workspace:*",
+        "@tula/tsconfig": "workspace:*",
+      },
+    },
     "packages/db": {
       "name": "@tula/db",
       "version": "0.0.0",
@@ -833,6 +845,8 @@
     "colorette": ["colorette@2.0.20", "", {}, "sha512-IfEDxwoWIjkeXL1eXcDiow4UbKjhLdq6/EuSVR9GMN7KVH3r9gQ83e73hsz1Nd1T3ijd5xv1wcWRYO+D6kCI2w=="],
 
     "commander": ["commander@10.0.1", "", {}, "sha512-y4Mg2tXshplEbSGzx7amzPwKKOCGuoSRP/CjEdwwk0FOGlUbq6lKuoyDZTNZkmxHdJtp54hdfY/JUrdL7Xfdug=="],
+
+    "create-tula": ["create-tula@workspace:packages/create-tula"],
 
     "csstype": ["csstype@3.2.3", "", {}, "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ=="],
 

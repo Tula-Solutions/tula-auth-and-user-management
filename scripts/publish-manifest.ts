@@ -7,6 +7,7 @@ export const PUBLISHABLE_PACKAGES = [
   'packages/admin',
   'packages/config',
   'packages/cli',
+  'packages/create-tula',
 ] as const
 
 /** The fields of a package.json this tooling reads. */

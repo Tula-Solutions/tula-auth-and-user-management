@@ -272,4 +272,36 @@ describe('loadEnv', () => {
       }
     }
   })
+
+  describe('TULA_ADMIN_TOKEN', () => {
+    const token = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
+
+    test('is optional: unset and blank both mean "no instance routes"', () => {
+      expect(parseEnv(base).TULA_ADMIN_TOKEN).toBeUndefined()
+      expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: '  ' }).TULA_ADMIN_TOKEN).toBeUndefined()
+    })
+
+    test('accepts a generated value', () => {
+      expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: token }).TULA_ADMIN_TOKEN).toBe(token)
+      const hex = 'f3a91c0b7d2e4856a1c9e0d37b5f2a6418c07e9d3b5a2f6c'
+      expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: hex }).TULA_ADMIN_TOKEN).toBe(hex)
+    })
+
+    test.each([
+      ['short', token.slice(0, 31)],
+      ['repetitive', 'a'.repeat(40)],
+      ['two characters', 'ab'.repeat(20)],
+      ['a placeholder', 'changeme-changeme-changeme-12345678'],
+      ['an example value', 'your-admin-token-goes-here-0123abcd'],
+      ['with a space', `${token.slice(0, 20)} ${token.slice(20)}zz`],
+      ['too long', 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'.repeat(9)],
+    ])('refuses a value that is %s, without echoing it', (_label, value) => {
+      expect(invalidVars({ ...base, TULA_ADMIN_TOKEN: value })).toEqual(['TULA_ADMIN_TOKEN'])
+      try {
+        parseEnv({ ...base, TULA_ADMIN_TOKEN: value })
+      } catch (error) {
+        expect(String((error as Error).message)).not.toContain(value)
+      }
+    })
+  })
 })

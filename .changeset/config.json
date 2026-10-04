@@ -10,14 +10,18 @@
       "@tula/nextjs",
       "@tula/admin",
       "@tula/config",
-      "@tula/cli"
+      "@tula/cli",
+      "create-tula"
     ]
   ],
   "linked": [],
   "access": "restricted",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "privatePackages": { "version": true, "tag": false },
+  "privatePackages": {
+    "version": true,
+    "tag": false
+  },
   "format": false,
   "ignore": ["@tula/api", "@tula/db", "@tula/conformance"]
 }

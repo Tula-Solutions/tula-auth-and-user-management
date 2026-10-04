@@ -1,9 +1,12 @@
 # @tula/cli
 
-The `tula` command line for [Tula Auth](../../README.md). Today: `tula diff` and `tula apply`,
-which keep an environment's settings and OAuth providers in step with a `tula.config.ts`. The
-full guide is [docs/config.md](../../docs/config.md); the decisions are in
-[ADR 0030](../../docs/adr/0030-config-and-apply.md).
+The `tula` command line for [Tula Auth](../../README.md): `tula dev` (the local stack),
+`tula doctor` (check a deployment), `tula policy test` (try a password against a policy), and
+`tula diff` / `tula apply`, which keep an environment's settings and OAuth providers in step
+with a `tula.config.ts`. Every command is in [docs/cli.md](../../docs/cli.md); settings as code
+in [docs/config.md](../../docs/config.md); the decisions in
+[ADR 0030](../../docs/adr/0030-config-and-apply.md) and
+[ADR 0031](../../docs/adr/0031-instance-admin-and-cli.md).
 
 > Not published yet. Inside this repository: `bun run tula -- <command>`.
 

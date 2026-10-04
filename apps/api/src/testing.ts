@@ -3,6 +3,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
+import { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
 import { MemoryEnvironmentLock } from '~/adapters/memory/environment-lock'
 import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-settings'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
@@ -65,6 +66,7 @@ export const TEST_CONFIG: AppConfig = {
   trustProxy: false,
   passwordPolicy: PASSWORD_POLICY_PRESETS.recommended,
   oauthMock: false,
+  instanceAdminTokenHash: null,
 }
 
 /**
@@ -109,6 +111,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     jobLock: new MemoryJobLock(),
     environmentLock: new MemoryEnvironmentLock(),
     probes: [],
+    diagnostics: new MemoryDiagnostics(clock),
     ...overrides,
     clock,
     activityLog,

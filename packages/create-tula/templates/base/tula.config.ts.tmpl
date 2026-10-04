@@ -1,0 +1,25 @@
+import { defineConfig } from '@tula/config'
+
+// This project's Tula settings as code. `tula diff` shows what differs from the server,
+// `tula apply` makes the server match. The URL and the secret key come from .env.local, which
+// `tula dev` writes; neither is ever in this file.
+export default defineConfig({
+  environments: {
+    dev: {
+      // `tula` refuses a production key for this entry.
+      kind: 'development',
+      settings: {
+        app: { name: '{{displayName}}' },
+        signIn: {
+          methods: {
+            password: { enabled: true },
+            emailCode: { enabled: true },
+            emailLink: { enabled: false },
+          },
+        },
+        // `password` and `urls.allowedOrigins` are left out: the deployment's own stay in force.
+        mfa: { policy: 'optional' },
+      },
+    },
+  },
+})

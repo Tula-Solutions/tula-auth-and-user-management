@@ -6,6 +6,7 @@ import type { ActivityLog } from '~/ports/activity-log'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { BreachChecker } from '~/ports/breach-checker'
 import type { Clock } from '~/ports/clock'
+import type { Diagnostics } from '~/ports/diagnostics'
 import type { EnvironmentLock } from '~/ports/environment-lock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
@@ -49,6 +50,11 @@ export interface AppConfig {
    * boot with it anywhere else. A development and test aid (ADR 0026).
    */
   oauthMock: boolean
+  /**
+   * SHA-256 (hex) of `TULA_ADMIN_TOKEN`, the instance admin token; `null` when the deployment
+   * sets none, and the instance routes then do not exist. The token itself is not kept.
+   */
+  instanceAdminTokenHash: string | null
 }
 
 /**
@@ -99,6 +105,8 @@ export interface Deps {
   environmentLock: EnvironmentLock
   /** Dependencies checked by `/v1/ready`. */
   probes: readonly HealthProbe[]
+  /** The probes behind `GET /v1/instance/diagnostics`. */
+  diagnostics: Diagnostics
 }
 
 /** The project and environment a request's API key resolved to. */

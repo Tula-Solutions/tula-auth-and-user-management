@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
+import { SHIPPED_MIGRATIONS } from './migrate'
 import * as schema from './schema'
 import { withTenant } from './tenant'
 import {
@@ -119,6 +120,18 @@ describe('tenant isolation (as the tula_app runtime role)', () => {
     await expect(
       (async () => await testDb.db.execute(sql`select * from drizzle.__drizzle_migrations`))()
     ).rejects.toThrow()
+  })
+
+  test('the runtime role learns only when each applied migration was generated', async () => {
+    const rows = await queryRows<Record<string, unknown>>(
+      testDb.db,
+      sql`select * from tula.applied_migrations()`
+    )
+    expect(rows.map((row) => Number(row.created_at))).toEqual(
+      SHIPPED_MIGRATIONS.map((migration) => migration.when)
+    )
+    // One column: no hash, nothing else of the history table.
+    expect(Object.keys(rows[0] ?? {})).toEqual(['created_at'])
   })
 })
 

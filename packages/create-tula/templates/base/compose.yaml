@@ -1,0 +1,79 @@
+# The local Tula stack. `tula dev` runs it: it starts these services, runs `migrate`, seeds the
+# default project and mints development keys. Values in ${…} come from .env beside this file.
+#
+# Postgres and Redis are not published on the host: only the API and Mailpit's inbox are.
+
+x-tula-image: &tula-image
+  # The Tula API image. Set TULA_API_IMAGE in .env (see the README: until an image is
+  # published, build it from the Tula repository and tag it).
+  image: ${TULA_API_IMAGE:?set TULA_API_IMAGE in .env to the Tula API image}
+
+services:
+  postgres:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    environment:
+      POSTGRES_USER: tula
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: tula
+      # Read by docker/postgres/init.sh, which creates the API's own non-owner role.
+      TULA_API_DB_PASSWORD: ${TULA_API_DB_PASSWORD:?set TULA_API_DB_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sh:/docker-entrypoint-initdb.d/01-roles.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tula -d tula']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Catches every email the API sends. Its inbox is the only place they go.
+  mailpit:
+    image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
+    ports: ['127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025']
+
+  # One-shot: applies the migrations as the schema owner, then exits.
+  migrate:
+    <<: *tula-image
+    command: ['bun', 'run', '../../packages/db/src/scripts/migrate.ts']
+    environment:
+      DATABASE_MIGRATION_URL: postgres://tula:${POSTGRES_PASSWORD}@postgres:5432/tula
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    <<: *tula-image
+    environment:
+      ENVIRONMENT: local
+      # The API connects as tula_api, never as the schema owner: owners bypass row-level security.
+      DATABASE_URL: postgres://tula_api:${TULA_API_DB_PASSWORD}@postgres:5432/tula
+      TULA_MASTER_KEY: ${TULA_MASTER_KEY:?set TULA_MASTER_KEY in .env}
+      TULA_ADMIN_TOKEN: ${TULA_ADMIN_TOKEN:-}
+      PUBLIC_URL: http://localhost:${API_PORT:-3003}
+      SMTP_URL: smtp://mailpit:1025
+      REDIS_URL: redis://redis:6379
+      MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports: ['127.0.0.1:${API_PORT:-3003}:3003']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

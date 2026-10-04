@@ -69,6 +69,11 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Secret key `tula_sk_<env>_…`. Server-side only."
+      },
+      "instanceAdminToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The instance admin token (`TULA_ADMIN_TOKEN`). The operator of the deployment only; the routes that take it answer 404 where none is configured."
       }
     },
     "schemas": {
@@ -3359,6 +3364,81 @@
         },
         "required": [
           "name"
+        ]
+      },
+      "DiagnosticStatus": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "warn",
+          "fail",
+          "skipped"
+        ]
+      },
+      "DiagnosticCheck": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DiagnosticStatus"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "summary"
+        ]
+      },
+      "InstanceDiagnostics": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string",
+            "enum": [
+              "local",
+              "dev",
+              "staging",
+              "prod"
+            ]
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "publicUrl": {
+            "type": "string"
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticCheck"
+            }
+          }
+        },
+        "required": [
+          "version",
+          "environment",
+          "time",
+          "publicUrl",
+          "checks"
         ]
       }
     }
@@ -13328,6 +13408,83 @@
             "required": true
           }
         ]
+      }
+    },
+    "/v1/instance/diagnostics": {
+      "get": {
+        "operationId": "getInstanceDiagnostics",
+        "tags": [
+          "Instance"
+        ],
+        "summary": "Diagnose the deployment",
+        "description": "Checks what actually goes wrong in a deployment, each with its fix: the database and its migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, and the redirect URI of each enabled OAuth provider. Nothing is changed and no email is sent. The text of a check is fixed: it never carries a connection string, a key or a driver’s message.\n\nTakes the instance admin token (`TULA_ADMIN_TOKEN`). A deployment without one answers 404.",
+        "security": [
+          {
+            "instanceAdminToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The checks. A failing check is a 200 with `status: \"fail\"`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceDiagnostics"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

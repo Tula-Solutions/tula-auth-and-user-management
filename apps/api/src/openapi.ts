@@ -46,12 +46,14 @@ export const responses = {
  * - `client`: publishable key (browsers and apps).
  * - `session`: publishable key plus a signed-in user's access token.
  * - `admin`: secret key (servers and the dashboard).
+ * - `instance`: the instance admin token (`TULA_ADMIN_TOKEN`), for `/v1/instance/*`.
  */
 export const security = {
   public: [],
   client: [{ publishableKey: [] }],
   session: [{ publishableKey: [], accessToken: [] }],
   admin: [{ secretKey: [] }],
+  instance: [{ instanceAdminToken: [] }],
 } satisfies Record<string, Record<string, string[]>[]>
 
 /** Top-level OpenAPI document settings. Deterministic, so the committed snapshot is stable. */
@@ -116,6 +118,12 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         type: 'http',
         scheme: 'bearer',
         description: 'Secret key `tula_sk_<env>_…`. Server-side only.',
+      },
+      instanceAdminToken: {
+        type: 'http',
+        scheme: 'bearer',
+        description:
+          'The instance admin token (`TULA_ADMIN_TOKEN`). The operator of the deployment only; the routes that take it answer 404 where none is configured.',
       },
     },
   },

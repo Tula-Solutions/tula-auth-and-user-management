@@ -251,11 +251,13 @@ describe('documentation routes', () => {
       '/v1/client/me/passkeys',
       '/v1/client/me/passkeys/options',
       '/v1/client/me/passkeys/{passkeyId}',
+      '/v1/instance/diagnostics',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',
       'accessToken',
       'secretKey',
+      'instanceAdminToken',
     ])
     expect(doc.components.schemas).toHaveProperty('ErrorEnvelope')
   })
