@@ -3,6 +3,8 @@ paths:
   - "apps/api/src/modules/flow/**"
   - "apps/api/src/modules/mfa/**"
   - "apps/api/src/modules/factor/**"
+  - "apps/api/src/modules/oauth/**"
+  - "apps/api/src/adapters/oauth/**"
   - "apps/api/src/lib/totp.ts"
   - "apps/api/src/modules/session/**"
   - "apps/api/src/modules/password/**"
@@ -88,8 +90,46 @@ Before finishing any change here, confirm each item holds and has a test:
     Test a stale `auth_time` (refused), a fresh one (accepted), a refreshed token (claims
     unchanged), and that a user with a second factor cannot step up with the password alone.
     `auth_time` and `amr` come from the session row, never from the request.
+    **Step-up by emailed code** (`email_code`): listed by `Mfa.stepUpMethods` only for a
+    verified address and no confirmed second factor. Test that a user with a second factor is
+    refused both the send and the code; that a code asked by one session, one user or for
+    another purpose (`email_verification`, `password_reset`, `sign_in`) steps up nothing, and
+    a `step_up` code is honoured nowhere else; expired, reused, replaced and out-of-guesses
+    codes; that the guess is counted (`step_up:<environment>:<user>`) before the check; the
+    send limits; and that neither the code nor the address reaches a log line, an audit entry
+    or a limiter key.
 23. **MFA secrets never leak:** no Base32 secret, `otpauth://` URI, backup code or TOTP code in
     a log line, audit entry, email or error body. Only the responses that return them (start,
     confirm, regenerate, in-flow confirm) carry them, with `Cache-Control: no-store`.
 24. **Recovery:** a password reset never removes or bypasses a second factor; only the owner
     (after a step-up) or an admin reset removes one, and the admin reset ends every session.
+25. **OAuth state and ticket (ADR 0026):** the callback finds its attempt by `state` alone
+    (hash compared in constant time) and consumes it **before** the code exchange, success or
+    not; a replay gets an error and no second exchange. It sets no cookie, creates no session,
+    returns no token and reflects nothing from the provider: a 303 to the attempt's
+    allow-listed URL with a ticket or a contract code in the **fragment**, or a constant page.
+    The ticket is single use, 60 seconds, stored hashed. Test a missing, unknown, tampered,
+    replayed, other-provider and other-environment state, and a replayed and expired ticket.
+26. **OAuth binding:** the exchange needs the ticket **and** the binding the starting browser
+    was given. Missing or wrong: `oauth.different_browser`, nothing completed, nothing used up
+    (login CSRF). The attempt's secret is rotated at the exchange. Test that an attacker's
+    ticket with a victim's (or no) binding creates no user, no session and no `Set-Cookie`.
+27. **OAuth account linking:** every row of the table in `OAuth.resolveAccount` has a test. A
+    known identity is its user whatever the provider's email says; a missing or unverified
+    provider address is refused **before** any lookup by address; an automatic link needs the
+    Tula address verified too, else `oauth.account_exists`. Unique violations (two callbacks
+    for one new identity, a link racing a deletion) end in a contract error or a sign-in, never
+    a 500. Removing the last way to sign in is refused inside the store's transaction.
+28. **OAuth first factor:** the exchange goes through `Factors.requiredFor` like every first
+    factor. Test that a user with a second factor gets `needs_second_factor` and no tokens.
+29. **Provider credentials and tokens:** client secrets and Apple keys are sealed
+    (`secret-box`, purpose `oauth-credentials`, bound to environment + provider; test a
+    ciphertext copied to another environment's or provider's row) and never returned, logged
+    or audited. **No provider access, refresh or ID token is stored or logged**; an adapter
+    returns a profile and nothing else. ID tokens: `RS256` only, issuer, audience, expiry and
+    the attempt's nonce (test each, and `alg: none`, a foreign key, a tampered payload).
+    Subjects are stable ids (`sub`, GitHub's numeric id), never a login or an address.
+30. **The mock provider** exists only with `ENVIRONMENT=local` and `OAUTH_MOCK_PROVIDER=true`:
+    `env.ts` refuses it elsewhere, and with a `PUBLIC_URL` that is not loopback; the container
+    logs a warning at boot while it is on; the routes are not mounted otherwise; and the consent
+    page redirects only to this API's callback. Keep all of them, each with its test.

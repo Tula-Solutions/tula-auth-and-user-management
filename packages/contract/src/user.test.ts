@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   ChangePasswordRequestSchema,
   CreateUserRequestSchema,
+  CurrentUserSchema,
   UserListSchema,
   UserSchema,
   UserSortSchema,
@@ -17,6 +18,24 @@ const user = {
   lastSignInAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
 }
+
+describe('CurrentUser', () => {
+  test('is a user plus whether they have a password, and never the credential', () => {
+    const parsed = CurrentUserSchema.parse({
+      ...user,
+      hasPassword: false,
+      passwordHash: '$argon2id$secret',
+    })
+    expect(parsed).toEqual({ ...user, hasPassword: false } as never)
+    expect(Object.keys(CurrentUserSchema.shape).sort()).toEqual(
+      [...Object.keys(UserSchema.shape), 'hasPassword'].sort()
+    )
+  })
+
+  test.each([undefined, 'yes', 1, null])('refuses hasPassword %p', (hasPassword) => {
+    expect(CurrentUserSchema.safeParse({ ...user, hasPassword }).success).toBe(false)
+  })
+})
 
 describe('User', () => {
   test('accepts a user and strips anything that is not part of the contract', () => {

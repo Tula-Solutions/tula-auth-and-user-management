@@ -71,6 +71,13 @@
       "when": 1791066549701,
       "tag": "0009_mfa",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791073668154,
+      "tag": "0010_oauth",
+      "breakpoints": true
     }
   ]
 }

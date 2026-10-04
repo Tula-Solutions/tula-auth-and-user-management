@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { formatResult, loadScenarios, runScenario, type Target } from '@tula/conformance'
+import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '~/testing'
 
@@ -17,7 +18,16 @@ const EMAIL_LINK = /https?:\/\/\S+#\S*tula_link=\S+/
  */
 async function inProcessTarget(): Promise<Target> {
   // The runner gives each scenario its own client address through X-Forwarded-For.
-  const deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true } })
+  // The OAuth scenarios need a provider that answers without a network: the mock provider, wired
+  // as `container.ts` wires it for `OAUTH_MOCK_PROVIDER=true`.
+  const deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true, oauthMock: true } })
+  Object.assign(deps, {
+    oauth: mockOAuthProviders({
+      secretBox: deps.secretBox,
+      clock: deps.clock,
+      publicUrl: deps.config.publicUrl,
+    }),
+  })
   deps.environments.add({
     id: TEST_TENANT.environmentId,
     projectId: TEST_TENANT.projectId,
@@ -99,6 +109,10 @@ describe('conformance scenarios, in process', () => {
       'step-up',
       'admin second factor reset',
       'required second factor',
+      'OAuth sign-up and sign-in',
+      'OAuth account linking',
+      'OAuth with a second factor',
+      'step-up by emailed code',
     ])
   })
 

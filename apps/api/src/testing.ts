@@ -3,6 +3,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
+import { MemoryEnvironmentLock } from '~/adapters/memory/environment-lock'
 import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-settings'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { MemoryFactorStore } from '~/adapters/memory/factors'
@@ -11,6 +12,8 @@ import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryJobLock } from '~/adapters/memory/job-lock'
 import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryMailer } from '~/adapters/memory/mailer'
+import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
+import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
@@ -37,6 +40,8 @@ export interface TestDeps extends Deps {
   users: MemoryUserRepository
   factors: MemoryFactorStore
   flowAttempts: MemoryFlowAttemptStore
+  oauthProviders: MemoryOAuthProviderStore
+  oauth: FakeOAuthProviders
   activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
   mailer: MemoryMailer
@@ -44,6 +49,7 @@ export interface TestDeps extends Deps {
   lockout: MemoryLockout
   breachChecker: MemoryBreachChecker
   jobLock: MemoryJobLock
+  environmentLock: MemoryEnvironmentLock
 }
 
 /** Master key for test secret boxes. Never use outside tests. */
@@ -56,6 +62,7 @@ export const TEST_CONFIG: AppConfig = {
   corsOrigins: [],
   trustProxy: false,
   passwordPolicy: PASSWORD_POLICY_PRESETS.recommended,
+  oauthMock: false,
 }
 
 /**
@@ -86,6 +93,8 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     users: new MemoryUserRepository(activityLog),
     factors: new MemoryFactorStore(activityLog),
     flowAttempts: new MemoryFlowAttemptStore(),
+    oauthProviders: new MemoryOAuthProviderStore(activityLog),
+    oauth: fakeOAuthProviders(),
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer: new MemoryMailer(),
     rateLimiter: new MemoryRateLimiter(clock),
@@ -94,6 +103,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     secretBox: createSecretBox(TEST_MASTER_KEY),
     keyedHash: createKeyedHash(TEST_MASTER_KEY),
     jobLock: new MemoryJobLock(),
+    environmentLock: new MemoryEnvironmentLock(),
     probes: [],
     ...overrides,
     clock,

@@ -6,6 +6,7 @@ import {
   type Factors,
   type SessionTokens,
   STEP_UP_MAX_AGE_SECONDS,
+  type StepUpEmailCode,
   type StepUpMethod,
   type StepUpRequest,
   type TotpEnrolment,
@@ -20,8 +21,10 @@ import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
+import * as Verification from '~/modules/verification/service'
 import { type FactorRecord, isConfirmed, type NewBackupCode } from '~/ports/factor-store'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
+import { isActive } from '~/ports/session-store'
 
 /** Secret-box purpose of sealed TOTP secrets: its own key, apart from signing keys. */
 export const TOTP_SECRET_PURPOSE = 'totp-secrets'
@@ -655,11 +658,31 @@ export async function verifyBackupCode(
 }
 
 /**
- * What a user can step up with: a second factor when they have one (their password alone is
- * then not enough), otherwise their password, otherwise nothing.
+ * Step-up codes one user may be emailed in an hour. Counted per user, apart from the
+ * per-address limits of the codes that can be asked for without signing in.
+ */
+export const STEP_UP_EMAILS_PER_HOUR = 5
+
+/**
+ * The lockout key of a step-up by a user who has no second factor: their password and their
+ * emailed code share it, so guessing one uses up the guesses at the other.
  *
- * A user with neither a second factor nor a password (they sign in by email) has no step-up
- * method: for them a "recent authentication" is a recent sign-in (ADR 0025).
+ * Kept apart from {@link secondFactorLockKey}: a second factor's budget must not be spent by
+ * someone guessing at a weaker method.
+ */
+function stepUpLockKey(environmentId: string, userId: string): string {
+  return `step_up:${environmentId}:${userId}`
+}
+
+/**
+ * What a user can step up with: a second factor when they have one (nothing weaker is then
+ * enough), otherwise their password when they have one and a code emailed to their verified
+ * address (`email_code`), otherwise nothing.
+ *
+ * `email_code` is never offered next to a second factor. For a user without one it adds no
+ * way in that their mailbox does not already give (a password reset, an emailed sign-in), and
+ * it is what lets someone who signed up through a provider or by email, and so has no
+ * password, change how their account is protected (ADR 0025).
  *
  * @param deps - Factor store and users.
  * @param scope - The environment.
@@ -676,10 +699,14 @@ export async function stepUpMethods(
     return second
   }
   const user = await deps.users.findById(scope.environmentId, userId)
-  const found = user
-    ? await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
-    : null
-  return found?.passwordHash ? ['password'] : []
+  if (!user) {
+    return []
+  }
+  const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+  return [
+    ...(found?.passwordHash ? (['password'] as const) : []),
+    ...(user.emailVerifiedAt ? (['email_code'] as const) : []),
+  ]
 }
 
 /** The error that asks a client to step up, with what the user can use. */
@@ -736,7 +763,79 @@ export async function requireRecentAuthentication(
 }
 
 type StepUpDeps = ChangeDeps &
-  Pick<Deps, 'keyedHash' | 'secretBox' | 'sessions' | 'signingKeys' | 'environments'>
+  Pick<
+    Deps,
+    'keyedHash' | 'secretBox' | 'sessions' | 'signingKeys' | 'environments' | 'verificationTokens'
+  >
+
+/**
+ * Email the signed-in user a 6-digit code to step up with (`email_code`).
+ *
+ * Only for a user with a verified address and no second factor ({@link stepUpMethods}); anyone
+ * else gets `auth.step_up_required` with what they can use, and nothing is sent. The code is
+ * a verification token of purpose `step_up` (never honoured for another purpose, nor another
+ * purpose's for this), stored as a keyed hash that also covers the asking session's id: a code
+ * asked for by one session steps up no other. It carries no link.
+ *
+ * Sends are limited per user and under keys no other email uses: one a minute
+ * (`step_up_email_cooldown:<environment>:<user>`) and {@link STEP_UP_EMAILS_PER_HOUR} an hour
+ * (`step_up_email:<environment>:<user>`). They are deliberately **not** the per-address limits
+ * of the sign-in, reset and verification codes: those can be asked for without signing in, so
+ * sharing them would let anyone who knows the address keep this user's step-up refused. Nor do
+ * step-up sends use up that address budget.
+ *
+ * @param deps - Factor store, users, verification tokens, mailer, rate limiter, ids and clock.
+ * @param scope - The project and environment.
+ * @param self - The signed-in user and their session, from the access token.
+ * @param _request - The method asked for; `email_code` is the only one that needs preparing.
+ * @returns The masked destination and when the code expires. Never the code.
+ * @throws AuthError `auth.step_up_required` when this user may not step up by email.
+ * @throws RateLimitError when a code was sent too recently or too often.
+ * @throws ServiceUnavailableError when the rate limiter cannot answer (nothing is sent).
+ * @throws InternalError when the email could not be sent (the earlier code keeps working).
+ */
+export async function prepareStepUp(
+  deps: Pick<
+    Deps,
+    | 'factors'
+    | 'users'
+    | 'clock'
+    | 'ids'
+    | 'keyedHash'
+    | 'verificationTokens'
+    | 'mailer'
+    | 'rateLimiter'
+    | 'environmentSettings'
+    | 'config'
+  >,
+  scope: Scope,
+  self: { userId: string; sessionId: string },
+  _request: { method: 'email_code' }
+): Promise<StepUpEmailCode> {
+  const allowed = await stepUpMethods(deps, scope, self.userId)
+  const user = await deps.users.findById(scope.environmentId, self.userId)
+  if (!allowed.includes('email_code') || !user) {
+    throw stepUpRequired(allowed)
+  }
+  const issued = await Verification.issue(deps, scope, {
+    purpose: 'step_up',
+    destination: user.email,
+    userId: user.id,
+    binding: self.sessionId,
+    // Its own limits, per user: the address's are shared with codes a stranger can ask for
+    // (sign-in, reset), who could otherwise keep this user's step-up refused.
+    sendLimits: {
+      name: 'step_up_email',
+      subject: `${scope.environmentId}:${user.id}`,
+      perHour: STEP_UP_EMAILS_PER_HOUR,
+    },
+  })
+  return {
+    method: 'email_code',
+    destination: issued.destination,
+    expiresAt: issued.expiresAt.toISOString(),
+  }
+}
 
 /**
  * Prove a factor again for the signed-in user's current session (a step-up), and return an
@@ -745,12 +844,16 @@ type StepUpDeps = ChangeDeps &
  * - A user **with** a second factor must use it (`totp` or `backup_code`). Their password alone
  *   answers `auth.step_up_required`: otherwise a stolen session plus a known password would be
  *   enough for everything the second factor protects.
- * - A user **without** one uses their `password`.
- * - A user with neither has no step-up: `auth.step_up_required` with no methods (they sign in
- *   again).
+ * - A user **without** one uses their `password`, or an `email_code` this session asked for
+ *   with {@link prepareStepUp} (recorded as `email` in `amr`, like the email first factor).
+ * - A user with neither a password nor a verified address has no step-up:
+ *   `auth.step_up_required` with no methods (they sign in again).
  *
- * Wrong proofs back off per user (`CREDENTIAL_LOCKOUT`): second-factor codes under the shared
- * {@link secondFactorLockKey}, passwords under a key of their own. A backup code is spent.
+ * Wrong proofs back off per user (`CREDENTIAL_LOCKOUT`), counted before the check:
+ * second-factor codes under the shared {@link secondFactorLockKey}; a password and an emailed
+ * code under one key of their own (`step_up:<environment>:<user>`), so the two cannot be
+ * guessed in turn. An emailed code also has its token's own five guesses. A backup code is
+ * spent.
  *
  * @param deps - Factor store, users, crypto, sessions, lockout, notices, ids and clock.
  * @param scope - The project and environment.
@@ -759,7 +862,9 @@ type StepUpDeps = ChangeDeps &
  * @param origin - Where the request came from, for the audit log.
  * @returns The session id and a fresh access token. The refresh token is untouched.
  * @throws AuthError `auth.step_up_required` (a method this user may not use),
- *   `auth.invalid_credentials` (wrong password), `mfa.invalid_code` or `session.revoked`.
+ *   `auth.invalid_credentials` (wrong password), `mfa.invalid_code`, `session.revoked`, or for
+ *   an emailed code `verification.invalid_code`, `verification.expired` and
+ *   `verification.too_many_attempts`.
  * @throws RateLimitError while the user is locked out after repeated wrong proofs.
  */
 export async function stepUp(
@@ -775,11 +880,31 @@ export async function stepUp(
   if (!allowed.includes(proof.method)) {
     throw stepUpRequired(allowed)
   }
-  if (proof.method === 'password') {
-    const lockKey = `step_up:${scope.environmentId}:${userId}`
+  if (proof.method === 'password' || proof.method === 'email_code') {
+    const lockKey = stepUpLockKey(scope.environmentId, userId)
     const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
     if (!lock.allowed) {
       throw new RateLimitError(lock.retryAfterMs)
+    }
+    if (proof.method === 'email_code') {
+      // A revoked or expired session must not spend the code: check it before the token.
+      const session = await deps.sessions.findById(scope.environmentId, self.sessionId)
+      if (!session || session.userId !== userId || !isActive(session, deps.clock.now())) {
+        throw new AuthError('session.revoked')
+      }
+      const token = await Verification.verifyCode(deps, scope, {
+        purpose: 'step_up',
+        subject: { userId },
+        code: proof.code,
+        binding: self.sessionId,
+      })
+      const user = await deps.users.findById(scope.environmentId, userId)
+      // The code proves the mailbox it went to: it must still be this account's address.
+      if (!user?.emailVerifiedAt || user.emailNormalized !== token.destination) {
+        throw new AuthError('verification.expired')
+      }
+      await deps.lockout.clear(lockKey)
+      return Sessions.recordAuthentication(deps, scope, self, ['email'], actor)
     }
     const user = await deps.users.findById(scope.environmentId, userId)
     const found = user

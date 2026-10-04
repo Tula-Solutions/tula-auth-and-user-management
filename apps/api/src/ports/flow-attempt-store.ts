@@ -35,6 +35,21 @@ export interface FlowAttemptChange {
   state?: Record<string, unknown>
   /** Set when the new status is `complete`. */
   completedAt?: Date
+  /**
+   * Replaces the hash of the attempt's secret: the old secret stops working. Used when the
+   * client that started an attempt lost its secret by design (an OAuth round trip, ADR 0026).
+   */
+  secretHash?: string
+}
+
+/**
+ * A second condition of a transition: a top-level string of the attempt's stored state must
+ * still hold this value. It makes a step that does not change `status` a real compare-and-set
+ * (an OAuth attempt stays on `needs_first_factor` from its start until the ticket is exchanged).
+ */
+export interface StateGuard {
+  key: string
+  value: string
 }
 
 /** Flow attempts, always read and written inside one environment. */
@@ -59,6 +74,8 @@ export interface FlowAttemptStore {
    * @param from - The step the caller believes the attempt is on.
    * @param change - The new step and fields.
    * @param at - Current time.
+   * @param guard - Also require this value in the stored state. Of two concurrent transitions
+   *   with the same guard exactly one succeeds, provided the change replaces the guarded value.
    * @returns `false` when the guard failed (nothing was written).
    */
   transition(
@@ -66,7 +83,8 @@ export interface FlowAttemptStore {
     id: string,
     from: FlowStatus,
     change: FlowAttemptChange,
-    at: Date
+    at: Date,
+    guard?: StateGuard
   ): Promise<boolean>
 
   /**

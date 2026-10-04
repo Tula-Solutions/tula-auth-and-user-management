@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { EnvError, loadEnv, parseEnv } from '~/env'
+import { EnvError, isLoopbackUrl, loadEnv, parseEnv } from '~/env'
 
 const MASTER_KEY = 'a'.repeat(64)
 const base = {
@@ -153,6 +153,88 @@ describe('parseEnv', () => {
 
   test('dev tier may use local services', () => {
     expect(parseEnv({ ...base, ENVIRONMENT: 'dev' }).BREACH_CHECK).toBe('offline')
+  })
+})
+
+describe('OAUTH_MOCK_PROVIDER', () => {
+  test('is off unless asked for, and allowed in the local tier', () => {
+    expect(parseEnv(base).OAUTH_MOCK_PROVIDER).toBe(false)
+    expect(parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'false' }).OAUTH_MOCK_PROVIDER).toBe(false)
+    expect(parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'true' }).OAUTH_MOCK_PROVIDER).toBe(true)
+  })
+
+  test.each(['dev', 'staging', 'prod'])('refuses to boot with it in %s', (tier) => {
+    const source = tier === 'dev' ? base : live
+    expect(() => parseEnv({ ...source, ENVIRONMENT: tier, OAUTH_MOCK_PROVIDER: 'true' })).toThrow(
+      /OAUTH_MOCK_PROVIDER: is only allowed with ENVIRONMENT=local/
+    )
+    // Without it the same environment boots.
+    expect(parseEnv({ ...source, ENVIRONMENT: tier }).OAUTH_MOCK_PROVIDER).toBe(false)
+  })
+
+  // Review finding F5: `local` is a label an operator sets. The mock signs anyone in as any
+  // address, so it must also be impossible on an API that other machines are told to reach.
+  test.each([
+    'http://localhost:3003',
+    'http://127.0.0.1:3003',
+    'http://[::1]:3003',
+    'http://auth.localhost:3003',
+    'http://LOCALHOST:3003/',
+  ])('boots with it when PUBLIC_URL is the loopback address %p', (url) => {
+    expect(
+      parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'true', PUBLIC_URL: url }).OAUTH_MOCK_PROVIDER
+    ).toBe(true)
+  })
+
+  test.each([
+    'http://192.168.1.20:3003',
+    'http://0.0.0.0:3003',
+    'https://auth.example.com',
+    'http://localhost.example.com:3003',
+    'http://notlocalhost:3003',
+    'http://127.0.0.1.example.com:3003',
+    'http://my-laptop.local:3003',
+  ])('refuses to boot with it when PUBLIC_URL is %p, even in the local tier', (url) => {
+    expect(() => parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'true', PUBLIC_URL: url })).toThrow(
+      /OAUTH_MOCK_PROVIDER: is only allowed when PUBLIC_URL is a loopback address/
+    )
+    // Without the mock the same PUBLIC_URL boots.
+    expect(parseEnv({ ...base, PUBLIC_URL: url }).OAUTH_MOCK_PROVIDER).toBe(false)
+  })
+
+  // Review finding F8: the loopback check parsed PUBLIC_URL itself and threw a raw TypeError
+  // for a value that is not a URL, instead of letting boot fail with a validation message.
+  test.each(['not a url', '', 'localhost:3003', '//localhost'])(
+    'a PUBLIC_URL that is not a URL (%p) is a validation error, not a crash',
+    (url) => {
+      expect(isLoopbackUrl(url)).toBe(false)
+      let thrown: unknown
+      try {
+        parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'true', PUBLIC_URL: url })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(Error)
+      expect(thrown).not.toBeInstanceOf(TypeError)
+      expect((thrown as Error).message).toMatch(/PUBLIC_URL/)
+    }
+  )
+})
+
+// Same finding (F8), the live tiers: their cross-field rules parsed SMTP_URL and PUBLIC_URL too.
+describe('a live tier with a URL that does not parse', () => {
+  test.each([
+    ['PUBLIC_URL', 'not a url'],
+    ['SMTP_URL', 'nope'],
+  ])('%s is a validation error, not a crash', (name, value) => {
+    let thrown: unknown
+    try {
+      parseEnv({ ...live, [name]: value })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(EnvError)
+    expect((thrown as Error).message).toMatch(new RegExp(name))
   })
 })
 

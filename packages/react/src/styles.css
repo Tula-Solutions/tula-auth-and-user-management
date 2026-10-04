@@ -412,6 +412,65 @@
   font-size: var(--_tula-font-size-small);
 }
 
+/* "Continue with …": the provider buttons, stacked, and the "or" between them and the form. */
+:where(.tula-oauth-buttons) {
+  display: grid;
+  gap: 0.5rem;
+}
+
+:where(.tula-oauth-buttons .tula-secondary-button > span:last-child) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+:where(.tula-oauth-icon) {
+  display: inline-flex;
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+:where(.tula-divider) {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  color: var(--_tula-color-text-muted);
+  font-size: var(--_tula-font-size-small);
+}
+
+:where(.tula-divider)::before,
+:where(.tula-divider)::after {
+  flex: 1;
+  height: 1px;
+  background: var(--_tula-color-border);
+  content: "";
+}
+
+:where(.tula-identity-list) {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:where(.tula-identity-item) {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--_tula-color-border);
+  border-radius: var(--_tula-radius-small);
+}
+
+:where(.tula-identity-name) {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
 :where(.tula-identity) {
   display: flex;
   align-items: center;
@@ -444,9 +503,15 @@
   border-radius: var(--_tula-radius);
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.12s ease;
 }
 
+/*
+ * No transition on a button's background, on purpose. A fade there also ran when the colour
+ * scheme changed under an open page: the label took its new colour at once while the
+ * background was still fading from the old scheme's, and for a few frames the label was
+ * unreadable (light on light, or dark on dark). Fading only into hover did not help a button
+ * the pointer was resting on.
+ */
 :where(.tula-primary-button) {
   background: var(--_tula-color-primary);
   color: var(--_tula-color-primary-text);

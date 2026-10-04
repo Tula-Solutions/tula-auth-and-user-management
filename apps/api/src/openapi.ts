@@ -87,6 +87,11 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         'user, and the admin reset.',
     },
     {
+      name: 'OAuth',
+      description:
+        'Sign-in with Google, GitHub and Apple: provider credentials (admin), the provider callback, and a user’s connected accounts.',
+    },
+    {
       name: 'Settings',
       description:
         'Per-environment settings (admin) and the public configuration clients draw from them.',

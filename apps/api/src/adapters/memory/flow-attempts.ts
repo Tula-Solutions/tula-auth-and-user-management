@@ -4,6 +4,7 @@ import type {
   FlowAttemptRecord,
   FlowAttemptStore,
   NewFlowAttempt,
+  StateGuard,
 } from '~/ports/flow-attempt-store'
 
 /** Flow attempts held in memory, for tests. */
@@ -33,11 +34,13 @@ export class MemoryFlowAttemptStore implements FlowAttemptStore {
     id: string,
     from: FlowStatus,
     change: FlowAttemptChange,
-    at: Date
+    at: Date,
+    guard?: StateGuard
   ): Promise<boolean> {
     const attempt = this.#attempts.get(id)
     if (
       !attempt ||
+      (guard && attempt.state[guard.key] !== guard.value) ||
       attempt.environmentId !== environmentId ||
       attempt.status !== from ||
       attempt.completedAt !== null ||
@@ -49,6 +52,7 @@ export class MemoryFlowAttemptStore implements FlowAttemptStore {
     attempt.userId = change.userId ?? attempt.userId
     attempt.state = change.state ? structuredClone(change.state) : attempt.state
     attempt.completedAt = change.completedAt ?? null
+    attempt.secretHash = change.secretHash ?? attempt.secretHash
     return true
   }
 

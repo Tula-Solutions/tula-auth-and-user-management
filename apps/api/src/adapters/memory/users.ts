@@ -1,8 +1,15 @@
+import type { OAuthProvider } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { Activity } from '~/ports/activity-log'
 import type {
+  IdentityRecord,
+  LinkGuard,
+  LinkOutcome,
+  NewIdentity,
   NewUser,
   PasswordOutcome,
+  SignInMeans,
+  UnlinkOutcome,
   UserListCriteria,
   UserRecord,
   UserRepository,
@@ -19,6 +26,7 @@ function withOutcome(activity: Activity, outcome: PasswordOutcome): Activity {
 export class MemoryUserRepository implements UserRepository {
   readonly #users: Map<string, UserRecord>
   readonly #passwords: Map<string, string>
+  readonly #identities: Map<string, IdentityRecord & { environmentId: string }>
   readonly #activityLog: MemoryActivityLog
 
   /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
@@ -27,6 +35,7 @@ export class MemoryUserRepository implements UserRepository {
     // initializers as an uncalled function.
     this.#users = new Map()
     this.#passwords = new Map()
+    this.#identities = new Map()
     this.#activityLog = activityLog
   }
 
@@ -55,11 +64,30 @@ export class MemoryUserRepository implements UserRepository {
   async create(user: NewUser, activity?: Activity): Promise<boolean> {
     // Checked and written without an `await` in between, so concurrent creations behave like
     // the database's unique constraint: exactly one wins.
-    if (this.#byEmail(user.environmentId, user.emailNormalized)) {
+    const { oauthIdentity } = user
+    if (
+      this.#byEmail(user.environmentId, user.emailNormalized) ||
+      (oauthIdentity &&
+        this.#identity(user.environmentId, oauthIdentity.provider, oauthIdentity.subject))
+    ) {
       return false
     }
-    const { identityId: _identityId, credentialId: _credentialId, passwordHash, ...record } = user
+    const {
+      identityId: _identityId,
+      credentialId: _credentialId,
+      oauthIdentity: _oauthIdentity,
+      passwordHash,
+      ...record
+    } = user
     this.#users.set(user.id, { ...record, bannedAt: null, lastSignInAt: null })
+    if (oauthIdentity) {
+      this.#identities.set(oauthIdentity.id, {
+        ...oauthIdentity,
+        userId: user.id,
+        environmentId: user.environmentId,
+        createdAt: user.createdAt,
+      })
+    }
     if (passwordHash !== null) {
       this.#passwords.set(user.id, passwordHash)
     }
@@ -68,6 +96,77 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIdentity(
+    environmentId: string,
+    provider: OAuthProvider,
+    subject: string
+  ): Promise<UserRecord | null> {
+    const identity = this.#identity(environmentId, provider, subject)
+    return identity ? this.findById(environmentId, identity.userId) : null
+  }
+
+  async listIdentities(environmentId: string, userId: string): Promise<IdentityRecord[]> {
+    return this.#identitiesOf(environmentId, userId).map(
+      ({ environmentId: _environmentId, ...identity }) => ({ ...identity })
+    )
+  }
+
+  async linkIdentity(
+    identity: NewIdentity,
+    activity?: Activity,
+    guard?: LinkGuard
+  ): Promise<LinkOutcome> {
+    // Checked and written without an `await` in between, like the database's unique keys.
+    const user = this.#user(identity.environmentId, identity.userId)
+    if (
+      !user ||
+      (guard && (user.emailNormalized !== guard.emailNormalized || user.emailVerifiedAt === null))
+    ) {
+      return 'user_changed'
+    }
+    if (this.#identity(identity.environmentId, identity.provider, identity.subject)) {
+      return 'identity_in_use'
+    }
+    if (
+      this.#identitiesOf(identity.environmentId, identity.userId).some(
+        (other) => other.provider === identity.provider
+      )
+    ) {
+      return 'provider_linked'
+    }
+    const { projectId: _projectId, ...record } = identity
+    this.#identities.set(identity.id, record)
+    this.#activityLog.record(activity ? [activity] : [])
+    return 'linked'
+  }
+
+  async unlinkIdentity(
+    environmentId: string,
+    userId: string,
+    identityId: string,
+    allowed: (remaining: SignInMeans) => boolean,
+    activity?: Activity
+  ): Promise<UnlinkOutcome> {
+    const user = this.#user(environmentId, userId)
+    const identities = this.#identitiesOf(environmentId, userId)
+    if (!user || !identities.some((identity) => identity.id === identityId)) {
+      return 'not_found'
+    }
+    const remaining: SignInMeans = {
+      hasPassword: this.#passwords.has(userId),
+      emailVerified: user.emailVerifiedAt !== null,
+      providers: identities
+        .filter((identity) => identity.id !== identityId)
+        .map((identity) => identity.provider),
+    }
+    if (!allowed(remaining)) {
+      return 'last_method'
+    }
+    this.#identities.delete(identityId)
+    this.#activityLog.record(activity ? [activity] : [])
+    return 'unlinked'
+  }
+
   async setPasswordHash(
     environmentId: string,
     userId: string,
@@ -185,6 +284,9 @@ export class MemoryUserRepository implements UserRepository {
       return false
     }
     this.#passwords.delete(userId)
+    for (const identity of this.#identitiesOf(environmentId, userId)) {
+      this.#identities.delete(identity.id)
+    }
     this.#users.delete(userId)
     this.#activityLog.record(activity ? [activity] : [])
     return true
@@ -197,6 +299,32 @@ export class MemoryUserRepository implements UserRepository {
       }
     }
     return undefined
+  }
+
+  #identity(
+    environmentId: string,
+    provider: OAuthProvider,
+    subject: string
+  ): (IdentityRecord & { environmentId: string }) | undefined {
+    for (const identity of this.#identities.values()) {
+      if (
+        identity.environmentId === environmentId &&
+        identity.provider === provider &&
+        identity.subject === subject
+      ) {
+        return identity
+      }
+    }
+    return undefined
+  }
+
+  #identitiesOf(
+    environmentId: string,
+    userId: string
+  ): (IdentityRecord & { environmentId: string })[] {
+    return [...this.#identities.values()]
+      .filter((identity) => identity.environmentId === environmentId && identity.userId === userId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
   }
 
   #user(environmentId: string, id: string): UserRecord | undefined {

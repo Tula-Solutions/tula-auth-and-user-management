@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  AT_LEAST_ONE_SIGN_IN_METHOD,
   ClientConfigSchema,
   DEFAULT_APP_NAME,
   DEFAULT_ENVIRONMENT_SETTINGS,
   EnvironmentSettingsInputSchema,
   EnvironmentSettingsSchema,
+  hasEnabledSignInMethod,
   MAX_ALLOWED_ORIGINS,
   MAX_ALLOWED_REDIRECT_URLS,
   MAX_APP_NAME_LENGTH,
@@ -41,7 +43,12 @@ describe('EnvironmentSettingsSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
-      notifications: { passwordChanged: true, newSignIn: true, mfaChanged: true },
+      notifications: {
+        passwordChanged: true,
+        newSignIn: true,
+        mfaChanged: true,
+        identityChanged: true,
+      },
       mfa: { policy: 'optional' },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
@@ -106,11 +113,15 @@ describe('EnvironmentSettingsSchema', () => {
     ).toContain('password.minLength')
   })
 
-  test('at least one sign-in method must stay enabled', () => {
-    expect(issuePaths({ signIn: { methods: { password: { enabled: false } } } })).toEqual([
-      'signIn.methods',
-    ])
-    expect(accepts({ signIn: { methods: { password: { enabled: true } } } })).toBe(true)
+  test('a document with every method off is valid here: the server counts OAuth providers too', () => {
+    // An environment whose only way in is an OAuth provider has every method below off. Whether
+    // a provider is enabled is not part of the document, so the rule lives in the settings
+    // service (`AT_LEAST_ONE_SIGN_IN_METHOD`), with `hasEnabledSignInMethod` as its test.
+    const allOff = { signIn: { methods: { password: { enabled: false } } } }
+    expect(issuePaths(allOff)).toEqual([])
+    expect(hasEnabledSignInMethod(EnvironmentSettingsSchema.parse(allOff))).toBe(false)
+    expect(hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS)).toBe(true)
+    expect(AT_LEAST_ONE_SIGN_IN_METHOD).toContain('at least one')
   })
 
   test('the lists are bounded and hold no duplicates', () => {
@@ -217,7 +228,7 @@ describe('parseStoredEnvironmentSettings', () => {
   test('still refuses a known field holding an invalid value', () => {
     expect(() => parseStoredEnvironmentSettings({ app: { name: '' } })).toThrow()
     expect(() =>
-      parseStoredEnvironmentSettings({ signIn: { methods: { password: { enabled: false } } } })
+      parseStoredEnvironmentSettings({ signIn: { methods: { password: { enabled: 'no' } } } })
     ).toThrow()
   })
 })
@@ -313,7 +324,12 @@ describe('EnvironmentSettingsInputSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
-      notifications: { passwordChanged: true, newSignIn: true, mfaChanged: true },
+      notifications: {
+        passwordChanged: true,
+        newSignIn: true,
+        mfaChanged: true,
+        identityChanged: true,
+      },
       mfa: { policy: 'optional' },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
@@ -337,8 +353,8 @@ describe('EnvironmentSettingsInputSchema', () => {
     expect(paths({ password: { ...PASSWORD_POLICY_PRESETS.recommended, minLength: 7 } })).toEqual([
       'password.minLength',
     ])
-    expect(paths({ signIn: { methods: { password: { enabled: false } } } })).toEqual([
-      'signIn.methods',
+    expect(paths({ signIn: { methods: { password: { enabled: 'no' } } } })).toEqual([
+      'signIn.methods.password.enabled',
     ])
   })
 
@@ -374,9 +390,9 @@ describe('email sign-in methods and the sign-up password', () => {
   })
 
   test.each([EnvironmentSettingsSchema, EnvironmentSettingsInputSchema])(
-    'at least one method must stay enabled, counting every method (schema %#)',
+    'every method may be off in the document: the server requires a provider then (schema %#)',
     (schema) => {
-      expect(paths(schema)(methods(false, false, false))).toEqual(['signIn.methods'])
+      expect(paths(schema)(methods(false, false, false))).toEqual([])
       // The email code alone is enough: the password may then be switched off.
       expect(paths(schema)(methods(false, true, false))).toEqual([])
       expect(paths(schema)(methods(false, true, true))).toEqual([])
@@ -470,6 +486,7 @@ describe('two-step verification: the policy and its notice', () => {
         passwordChanged: true,
         newSignIn: true,
         mfaChanged: false,
+        identityChanged: true,
       })
     }
   )
@@ -502,6 +519,7 @@ describe('two-step verification: the policy and its notice', () => {
       passwordChanged: false,
       newSignIn: true,
       mfaChanged: true,
+      identityChanged: true,
     })
     expect(EnvironmentSettingsSchema.parse(settings)).toEqual(settings)
   })

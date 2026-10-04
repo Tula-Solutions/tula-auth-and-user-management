@@ -185,7 +185,7 @@ describe('client: /v1/client/me', () => {
     const res = await client('GET', '/me', tokens.accessToken)
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
-    expect(await json<User>(res)).toEqual(user)
+    expect(await json<User>(res)).toEqual({ ...user, hasPassword: true } as never)
     expect(await code(await client('GET', '/me'))).toBe('auth.unauthenticated')
   })
 

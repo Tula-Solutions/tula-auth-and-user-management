@@ -3,6 +3,7 @@ import { expect, type Page, test } from '@playwright/test'
 import {
   advanceClock,
   authenticatorCode,
+  consentAtProvider,
   EMAIL_METHODS,
   latestCode,
   latestLink,
@@ -11,6 +12,7 @@ import {
   signOut,
   signUp,
   uniqueEmail,
+  useProviders,
   useSettings,
 } from './support'
 
@@ -37,6 +39,7 @@ test.beforeEach(async ({ request }) => {
 
 test.afterEach(async ({ request }) => {
   await useSettings(request)
+  await useProviders(request)
 })
 
 test('sign-up with the checklist, the emailed code, and the profile', async ({ page, request }) => {
@@ -225,4 +228,109 @@ test('two-step verification: enrolment, backup codes, the second factor and the 
   await page.emulateMedia({ colorScheme: 'dark' })
   await page.getByRole('button', { name: 'Use a backup code' }).click()
   await shot(page, 'mobile-second-factor-dark')
+})
+
+test('OAuth: the provider buttons, the mock provider, a passwordless profile, the emailed step-up, the second factor, and a callback that can be retried or was replayed', async ({
+  page,
+  request,
+  browser,
+}) => {
+  // Served by the API's mock provider: the accounts exist only in the fixture's memory.
+  await useProviders(request, ['google', 'github', 'apple'])
+  await page.setViewportSize(DESKTOP)
+  await page.goto('/sign-in')
+  await expect(page.getByRole('button', { name: 'Continue with Apple' })).toBeVisible()
+  await shot(page, 'oauth-sign-in')
+
+  const phone = await browser.newPage({ viewport: PHONE, colorScheme: 'dark' })
+  await phone.goto('/sign-in')
+  await expect(phone.getByRole('button', { name: 'Continue with Apple' })).toBeVisible()
+  await shot(phone, 'oauth-mobile-sign-in-dark')
+  await phone.close()
+
+  // Sign up with a provider. The first exchange is dropped, to show the retry.
+  const email = uniqueEmail('maya.oauth')
+  let callback = ''
+  let landing = ''
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname === '/v1/oauth/callback/google') {
+      callback = response.url()
+      landing = response.headers().location ?? ''
+    }
+  })
+  let dropped = false
+  await page.route('**/v1/client/sign-ins/oauth/exchange', async (route) => {
+    if (dropped) {
+      await route.continue()
+    } else {
+      dropped = true
+      await route.abort('connectionfailed')
+    }
+  })
+  await page.getByRole('button', { name: 'Continue with Google' }).click()
+  await expect(page.getByRole('heading', { name: 'Mock Google sign-in' })).toBeVisible()
+  await page.getByLabel('Email address the provider reports').fill(email)
+  await shot(page, 'oauth-mock-provider')
+  await consentAtProvider(page, { email })
+  await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible()
+  await shot(page, 'oauth-callback-try-again')
+  await page.getByRole('button', { name: 'Try again' }).click()
+  await expect(page.getByRole('heading', { name: /^Hello/ })).toBeVisible()
+
+  // The same callback and ticket replayed in another browser sign nobody in.
+  const replay = await (await browser.newContext({ viewport: DESKTOP })).newPage()
+  await replay.goto(callback)
+  await expect(
+    replay.getByRole('heading', { name: 'Sign-in could not be completed' })
+  ).toBeVisible()
+  await shot(replay, 'oauth-callback-replayed')
+  await replay.goto(landing)
+  await expect(replay.getByRole('heading', { name: 'Start again in this browser' })).toBeVisible()
+  await shot(replay, 'oauth-ticket-other-browser')
+  await replay.context().close()
+
+  // No password: the profile says how to add one, and lists the connected account.
+  await page.setViewportSize({ width: 1000, height: 1100 })
+  await page.goto('/account')
+  await expect(page.getByText('This account has no password')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible()
+  await shot(page, 'oauth-profile-passwordless')
+
+  // Eleven minutes on, a sensitive change asks for a code by email: this user has no password.
+  await page.setViewportSize(DESKTOP)
+  await advanceClock(request, 11 * 60_000)
+  const section = page.locator('section', {
+    has: page.getByRole('heading', { name: 'Two-step verification' }),
+  })
+  await section.last().getByRole('button', { name: 'Turn on' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Confirm it is you' })
+  await expect(dialog.getByLabel('Verification code')).toBeFocused()
+  await shot(page, 'oauth-step-up-email-code')
+  const phoneDark = { viewport: PHONE, colorScheme: 'dark' } as const
+  await page.setViewportSize(phoneDark.viewport)
+  await page.emulateMedia({ colorScheme: phoneDark.colorScheme })
+  await shot(page, 'oauth-mobile-step-up-email-code-dark')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.setViewportSize({ width: 1000, height: 900 })
+
+  // The code steps up, the authenticator is enrolled, and the next provider sign-in stops at
+  // the second factor.
+  await dialog.getByLabel('Verification code').fill(await latestCode(request, email))
+  await dialog.getByRole('button', { name: 'Continue' }).click()
+  const key = page.getByRole('group', { name: 'Setup key' })
+  await expect(key).toBeVisible()
+  const secret = (await key.locator('code').innerText()).replace(/\s/g, '')
+  await page.getByLabel('Authentication code').fill(await authenticatorCode(request, secret))
+  await section.last().getByRole('button', { name: 'Turn on' }).click()
+  await page.getByLabel('I have saved these codes').check()
+  await page.getByRole('button', { name: 'Done' }).click()
+  await expect(section.last().getByText(/^On since/)).toBeVisible()
+  await signOut(page)
+  await advanceClock(request, 31_000)
+  await page.setViewportSize(DESKTOP)
+  await page.goto('/sign-in')
+  await page.getByRole('button', { name: 'Continue with Google' }).click()
+  await consentAtProvider(page, { email })
+  await expect(page.getByRole('heading', { name: 'Two-step verification' })).toBeVisible()
+  await shot(page, 'oauth-second-factor')
 })

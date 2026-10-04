@@ -7,6 +7,7 @@ import {
 } from '@tula/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { ServiceException } from '~/exceptions'
+import * as Audit from '~/modules/audit/service'
 import * as Settings from '~/modules/settings/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -118,7 +119,23 @@ describe('replace', () => {
       get: store.get.bind(store),
       allowedOrigins: store.allowedOrigins.bind(store),
       replace: async (...args: Parameters<typeof store.replace>) => {
-        await replace(1, document({ app: { name: 'Winner', supportEmail: null } }))
+        // Written at the store, as a writer outside this environment's lock would: through
+        // `Settings.replace` it would wait for this very request (the lock is not reentrant).
+        await store.replace(
+          tenant.environmentId,
+          1,
+          Settings.withDeploymentDefaults(
+            deps.config,
+            document({ app: { name: 'Winner', supportEmail: null } })
+          ),
+          deps.clock.now(),
+          Audit.entry(deps, tenant, {
+            type: 'environment.settings_updated',
+            actor: TEST_ACTOR,
+            target: { type: 'environment', id: tenant.environmentId },
+            data: { revision: 2, changed: ['app.name'] },
+          })
+        )
         return store.replace(...args)
       },
     }
@@ -308,7 +325,7 @@ describe('clientConfig', () => {
     const config = Settings.clientConfig(settings)
     expect(config).toEqual({
       app: { name: 'Acme', supportEmail: 'help@acme.test' },
-      signIn: { methods: ['password'] },
+      signIn: { methods: ['password'], oauth: [] },
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
       mfa: { policy: 'optional' },
@@ -415,10 +432,20 @@ describe('weakened', () => {
     ['a notice that stays off', false, false, true, true],
   ])('%s', (_, passwordWas, passwordIs, signInWas, signInIs) => {
     const before = document({
-      notifications: { passwordChanged: passwordWas, newSignIn: signInWas, mfaChanged: true },
+      notifications: {
+        passwordChanged: passwordWas,
+        newSignIn: signInWas,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     const after = document({
-      notifications: { passwordChanged: passwordIs, newSignIn: signInIs, mfaChanged: true },
+      notifications: {
+        passwordChanged: passwordIs,
+        newSignIn: signInIs,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     expect(Settings.weakened(before, after)).toBe(
       (passwordWas && !passwordIs) || (signInWas && !signInIs)
@@ -432,7 +459,14 @@ describe('weakened', () => {
     [false, false, false],
   ])('the two-step verification notice from %p to %p → %p', (was, is, expected) => {
     const notifications = (mfaChanged: boolean) =>
-      document({ notifications: { passwordChanged: true, newSignIn: true, mfaChanged } })
+      document({
+        notifications: {
+          passwordChanged: true,
+          newSignIn: true,
+          mfaChanged,
+          identityChanged: true,
+        },
+      })
     expect(Settings.weakened(notifications(was), notifications(is))).toBe(expected)
   })
 
@@ -484,7 +518,9 @@ describe('weakened', () => {
     })
     await replace(
       2,
-      document({ notifications: { ...document().notifications, mfaChanged: false } })
+      document({
+        notifications: { ...document().notifications, mfaChanged: false, identityChanged: true },
+      })
     )
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 3,
@@ -495,7 +531,12 @@ describe('weakened', () => {
 
   test('switching a security notice off is flagged in the audit entry, switching it on is not', async () => {
     const off = document({
-      notifications: { passwordChanged: true, newSignIn: false, mfaChanged: true },
+      notifications: {
+        passwordChanged: true,
+        newSignIn: false,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     await replace(0, off)
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
@@ -505,7 +546,12 @@ describe('weakened', () => {
     })
     await replace(1, {
       ...off,
-      notifications: { passwordChanged: true, newSignIn: true, mfaChanged: true },
+      notifications: {
+        passwordChanged: true,
+        newSignIn: true,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 2,

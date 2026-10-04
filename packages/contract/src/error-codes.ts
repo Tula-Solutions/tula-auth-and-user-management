@@ -123,6 +123,64 @@ export const ERROR_DEFINITIONS = {
     message: 'This app requires two-step verification. It cannot be turned off.',
   },
 
+  // Signing in with an OAuth provider (ADR 0026). None of these says anything about an account
+  // except `oauth.account_exists`, which is only ever told to someone the provider vouches
+  // controls that verified address.
+  'oauth.access_denied': {
+    status: 403,
+    message: 'Sign-in was cancelled. Try again or choose another way to sign in.',
+  },
+  'oauth.provider_error': {
+    status: 502,
+    message: 'The sign-in provider could not complete the request. Try again.',
+  },
+  // The provider's answer could not be matched to a sign-in: an unknown, used or expired state.
+  'oauth.state_invalid': {
+    status: 400,
+    message: 'This sign-in could not be completed. Start again.',
+  },
+  // The ticket the app's page presented is unknown, used or older than a minute.
+  'oauth.ticket_invalid': {
+    status: 410,
+    message: 'This sign-in has expired. Start again.',
+  },
+  // The ticket was presented without the binding of the browser that started the sign-in.
+  // Nothing was completed and nothing was used up.
+  'oauth.different_browser': {
+    status: 409,
+    message: 'Finish signing in in the browser where you started, or start again here.',
+  },
+  'oauth.email_missing': {
+    status: 403,
+    message:
+      'This provider did not share an email address. Allow access to your email and try again.',
+  },
+  'oauth.email_unverified': {
+    status: 403,
+    message:
+      'Your email address is not verified with this provider. Verify it there and try again.',
+  },
+  // The provider's verified address belongs to an account that this provider account cannot
+  // be connected to automatically.
+  'oauth.account_exists': {
+    status: 409,
+    message:
+      'An account with this email already exists. Sign in the way you usually do, then connect this provider from your account.',
+  },
+  'oauth.identity_in_use': {
+    status: 409,
+    message: 'This provider account is already connected to another user.',
+  },
+  'oauth.already_linked': {
+    status: 409,
+    message: 'An account of this provider is already connected. Disconnect it first.',
+  },
+  // Disconnecting the provider account would leave the user with no way to sign in.
+  'identity.last_sign_in_method': {
+    status: 409,
+    message: 'This is your only way to sign in. Add a password or connect another account first.',
+  },
+
   'session.invalid_token': { status: 401, message: 'Your session is invalid. Sign in again.' },
   'session.expired': { status: 401, message: 'Your session has expired. Sign in again.' },
   'session.revoked': { status: 401, message: 'Your session was signed out. Sign in again.' },

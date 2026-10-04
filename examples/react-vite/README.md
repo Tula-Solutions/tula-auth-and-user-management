@@ -55,6 +55,23 @@ link where you started" and signs nobody in, which is the point
 ([ADR 0024](../../docs/adr/0024-email-sign-in.md)). The app's config is cached by the browser
 for a minute, so a settings change can take that long to show.
 
+## Signing in with a provider
+
+`/oauth/callback` renders `<OAuthCallback>`, and the provider is given
+`oauthCallbackUrl='/oauth/callback'`, so `<SignIn>` and `<SignUp>` show a "Continue with …"
+button for every provider the environment has enabled, and the account page shows "Connected
+accounts". Without real OAuth credentials, start the API with `OAUTH_MOCK_PROVIDER=true`
+(local tier only) and enable a provider with any client id and secret:
+
+```bash
+curl -X PUT http://localhost:3003/v1/admin/oauth-providers/google \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "local", "clientSecret": "local" }'
+```
+
+"Continue with Google" then leads to a consent page on the API where you type the address the
+"provider" reports. For real providers see [docs/providers](../../docs/providers).
+
 ## Two-step verification
 
 Open **Manage your account** and turn it on under "Two-step verification": scan the QR code
@@ -95,6 +112,11 @@ them.
 | ![Turning two-step verification on](docs/two-step-enrol.png) | ![Backup codes](docs/backup-codes.png) |
 | ![The second factor at sign-in](docs/second-factor.png) | ![The step-up dialog](docs/step-up.png) |
 | ![A backup code, on a phone, dark](docs/mobile-second-factor-dark.png) | |
+| ![Sign-in with the provider buttons](docs/oauth-sign-in.png) | ![The provider buttons on a phone, dark](docs/oauth-mobile-sign-in-dark.png) |
+| ![The mock provider's consent page](docs/oauth-mock-provider.png) | ![A callback that got no answer and can be retried](docs/oauth-callback-try-again.png) |
+| ![A replayed callback, refused by the API](docs/oauth-callback-replayed.png) | ![A ticket opened in another browser](docs/oauth-ticket-other-browser.png) |
+| ![The profile of a user with no password](docs/oauth-profile-passwordless.png) | ![Step-up by emailed code](docs/oauth-step-up-email-code.png) |
+| ![Step-up by emailed code, on a phone, dark](docs/oauth-mobile-step-up-email-code-dark.png) | ![A provider sign-in stopped at the second factor](docs/oauth-second-factor.png) |
 
 The setup key and backup codes in these pictures belonged to an account in the test fixture's
 memory, which is gone when the fixture stops. They never worked anywhere else.

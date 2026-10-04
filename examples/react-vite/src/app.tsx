@@ -1,5 +1,6 @@
 import {
   EmailLinkCallback,
+  OAuthCallback,
   SignedIn,
   SignedOut,
   SignIn,
@@ -20,6 +21,11 @@ import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useSta
  * environment's `urls.allowedRedirectUrls`; a local API allows any loopback URL.
  */
 const EMAIL_LINK_PATH = '/auth/link'
+/**
+ * The page an OAuth sign-in returns to. List its full URL in the environment's allowed redirect
+ * URLs (any loopback URL is allowed in the local tier).
+ */
+const OAUTH_CALLBACK_PATH = '/oauth/callback'
 
 const API_URL: string = import.meta.env.VITE_TULA_API_URL ?? 'http://localhost:3003'
 const PUBLISHABLE_KEY: string = import.meta.env.VITE_TULA_PUBLISHABLE_KEY ?? ''
@@ -158,6 +164,7 @@ export function App() {
       signUpUrl='/sign-up'
       afterSignInUrl='/'
       emailLinkUrl={EMAIL_LINK_PATH}
+      oauthCallbackUrl={OAUTH_CALLBACK_PATH}
       afterSignUpUrl='/'
       afterSignOutUrl='/sign-in'
     >
@@ -210,6 +217,10 @@ export function App() {
           // Whoever opens an emailed link lands here, signed in or not: the component says
           // what became of the link and sends a signed-in visitor on.
           <EmailLinkCallback />
+        ) : path === OAUTH_CALLBACK_PATH ? (
+          // Where "Continue with …" and "Connect …" come back to: signed in, asked for a
+          // second factor, told the account is connected, or told why not.
+          <OAuthCallback userProfileUrl='/account' />
         ) : path === '/account' ? (
           <>
             <SignedIn>

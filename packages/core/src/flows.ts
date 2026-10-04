@@ -353,12 +353,13 @@ function isUsableAttempt(value: unknown): value is FlowAttempt {
  * so it cannot end up in a log line, a serialised flow or an error.
  */
 function createAttempt(context: FlowContext, started: FlowAttempt) {
-  if (!isUsableAttempt(started) || !started.attemptSecret) {
+  if (!isUsableAttempt(started) || (!started.attemptSecret && started.step.status !== 'complete')) {
     // Without the secret no later call can succeed; fail here rather than with a puzzling
-    // `flow.not_found` on the next step.
+    // `flow.not_found` on the next step. (An attempt that arrives already complete, as an
+    // OAuth exchange's can, has no later call and carries no secret.)
     throw clientError('response.invalid', context.messages())
   }
-  let secret: string | null = started.attemptSecret
+  let secret: string | null = started.attemptSecret ?? null
   let busy = false
   // Only what the snapshot shows is kept: not the secret, and not a completed flow's tokens.
   let current: FlowSnapshot = {

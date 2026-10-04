@@ -39,6 +39,10 @@
       "description": "Two-step verification: an authenticator app (TOTP) and backup codes for the signed-in user, and the admin reset."
     },
     {
+      "name": "OAuth",
+      "description": "Sign-in with Google, GitHub and Apple: provider credentials (admin), the provider callback, and a user’s connected accounts."
+    },
+    {
       "name": "Settings",
       "description": "Per-environment settings (admin) and the public configuration clients draw from them."
     },
@@ -120,6 +124,17 @@
           "mfa.enrolment_expired",
           "mfa.not_available",
           "mfa.required_by_policy",
+          "oauth.access_denied",
+          "oauth.provider_error",
+          "oauth.state_invalid",
+          "oauth.ticket_invalid",
+          "oauth.different_browser",
+          "oauth.email_missing",
+          "oauth.email_unverified",
+          "oauth.account_exists",
+          "oauth.identity_in_use",
+          "oauth.already_linked",
+          "identity.last_sign_in_method",
           "session.invalid_token",
           "session.expired",
           "session.revoked",
@@ -847,7 +862,46 @@
               "method",
               "code"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "const": "email_code"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              }
+            },
+            "required": [
+              "method",
+              "code"
+            ]
           }
+        ]
+      },
+      "StepUpEmailCode": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "const": "email_code"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "method",
+          "destination",
+          "expiresAt"
         ]
       },
       "FlowKind": {
@@ -1239,6 +1293,73 @@
           "attemptId"
         ]
       },
+      "OAuthStart": {
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/FlowAttempt"
+          },
+          "authorizationUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "binding": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt",
+          "authorizationUrl",
+          "binding"
+        ]
+      },
+      "OAuthProvider": {
+        "type": "string",
+        "enum": [
+          "google",
+          "github",
+          "apple"
+        ]
+      },
+      "OAuthStartRequest": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/OAuthProvider"
+          },
+          "redirectUrl": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "provider",
+          "redirectUrl"
+        ]
+      },
+      "OAuthExchangeRequest": {
+        "type": "object",
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "attemptId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "binding": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "ticket",
+          "attemptId"
+        ]
+      },
       "VerifyEmailRequest": {
         "type": "object",
         "properties": {
@@ -1544,6 +1665,84 @@
           "password"
         ]
       },
+      "CurrentUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "emailVerifiedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "firstName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bannedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSignInAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "hasPassword": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "emailVerifiedAt",
+          "firstName",
+          "lastName",
+          "bannedAt",
+          "lastSignInAt",
+          "createdAt",
+          "hasPassword"
+        ]
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "properties": {
@@ -1737,6 +1936,8 @@
           "user.mfa_disabled",
           "user.backup_codes_regenerated",
           "user.backup_code_used",
+          "user.identity_linked",
+          "user.identity_unlinked",
           "session.created",
           "session.revoked",
           "session.reuse_detected",
@@ -1744,7 +1945,9 @@
           "api_key.created",
           "api_key.revoked",
           "signing_key.rotated",
-          "environment.settings_updated"
+          "environment.settings_updated",
+          "oauth_provider.updated",
+          "oauth_provider.deleted"
         ]
       },
       "AuditLogQuery": {
@@ -1952,6 +2155,10 @@
                   "mfaChanged": {
                     "default": true,
                     "type": "boolean"
+                  },
+                  "identityChanged": {
+                    "default": true,
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -2138,6 +2345,10 @@
               "mfaChanged": {
                 "default": true,
                 "type": "boolean"
+              },
+              "identityChanged": {
+                "default": true,
+                "type": "boolean"
               }
             },
             "additionalProperties": false
@@ -2184,6 +2395,12 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "oauth": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": [
@@ -2220,6 +2437,177 @@
           "app",
           "signIn",
           "password"
+        ]
+      },
+      "OAuthProviderSettings": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/OAuthProvider"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "clientId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "teamId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "keyId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "callbackUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "provider",
+          "configured",
+          "enabled",
+          "clientId",
+          "teamId",
+          "keyId",
+          "callbackUrl",
+          "updatedAt"
+        ]
+      },
+      "OAuthProviderSettingsList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OAuthProviderSettings"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "OAuthProviderUpdate": {
+        "type": "object",
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "clientSecret": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "teamId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "keyId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "privateKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clientId"
+        ],
+        "additionalProperties": false
+      },
+      "Identity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "createdAt"
+        ]
+      },
+      "IdentityList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Identity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "IdentityLinkStart": {
+        "type": "object",
+        "properties": {
+          "attemptId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "authorizationUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "binding": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "attemptId",
+          "expiresAt",
+          "authorizationUrl",
+          "binding"
         ]
       }
     }
@@ -3518,7 +3906,7 @@
           "Sessions"
         ],
         "summary": "Prove it is still me",
-        "description": "Proves a factor again for the current session and returns a fresh access token whose `auth_time` is now and whose `amr` includes the method. Sensitive routes that answer `auth.step_up_required` accept that token for ten minutes. A user with two-step verification must use `totp` or `backup_code` (their password alone answers `auth.step_up_required`); a user without it uses `password`. A wrong password is `auth.invalid_credentials`, a wrong code `mfa.invalid_code`; wrong proofs back off per user. The refresh token is not rotated.",
+        "description": "Proves a factor again for the current session and returns a fresh access token whose `auth_time` is now and whose `amr` includes the method. Sensitive routes that answer `auth.step_up_required` accept that token for ten minutes. A user with two-step verification must use `totp` or `backup_code` (their password alone answers `auth.step_up_required`); a user without it uses `password`, or an `email_code` asked for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, a wrong emailed code `verification.invalid_code` (`verification.expired` once it is used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong proofs back off per user. The refresh token is not rotated.",
         "security": [
           {
             "publishableKey": [],
@@ -3584,6 +3972,16 @@
               }
             }
           },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "413": {
             "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
@@ -3641,6 +4039,84 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/StepUpRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sessions/step-up/email-code": {
+      "post": {
+        "operationId": "sendStepUpEmailCode",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Email me a code to prove it is still me",
+        "description": "Emails the signed-in user a 6-digit code to step up with (`POST /v1/client/sessions/step-up`, method `email_code`). Only for a user with a verified email address and **no** second factor: anyone else gets `auth.step_up_required` (403) with `params.methods`, and nothing is sent. The code works for ten minutes, five guesses, once, and only for the session that asked; a new one replaces it. One code a minute and five an hour per user: sooner answers `rate_limited` (429) with `Retry-After`. The response never holds the code.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code was emailed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpEmailCode"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           }
@@ -4604,6 +5080,287 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/EmailLinkRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/oauth": {
+      "post": {
+        "operationId": "startOAuthSignIn",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Start signing in with an OAuth provider",
+        "description": "\"Continue with Google, GitHub or Apple\": a sign-in that creates the account when the provider’s verified address has none. The provider must be enabled for the environment (`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user comes back to, must be exactly one of `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the browser there) and `binding`, once: keep it for the tab and send it back with the ticket that page receives. The provider returns to this API, which redirects to `redirectUrl` with `#tula_ticket=…&tula_attempt=…` (or `#tula_error=<code>`). No token is ever put in a URL. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attempt, the provider’s URL and the binding.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthStart"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-tula-client",
+            "schema": {
+              "$ref": "#/components/schemas/SessionClient"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthStartRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sign-ins/oauth/exchange": {
+      "post": {
+        "operationId": "exchangeOAuthTicket",
+        "tags": [
+          "Flows"
+        ],
+        "summary": "Exchange an OAuth ticket for the next step",
+        "description": "Called by the app’s page after the provider returned, with the ticket and attempt id from the URL fragment and the `binding` this browser was given at the start. The ticket works once, for 60 seconds. Without the matching binding the answer is `oauth.different_browser` and nothing is completed or used up. Otherwise the sign-in continues as after any first factor: `complete`, or `needs_second_factor` / `needs_factor_enrolment` (no tokens), in which case the response carries a new `attemptSecret` for the steps that follow. `oauth.account_exists`: the address belongs to an account this provider cannot be connected to automatically. When the step is `complete`, `session` carries the tokens: browsers (`x-tula-client: web`, the default) receive the refresh token as an httpOnly cookie, other clients in the body.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The next step.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthExchangeRequest"
               }
             }
           }
@@ -8088,6 +8845,7 @@
           "Users"
         ],
         "summary": "Get the signed-in user",
+        "description": "The user the access token belongs to. `hasPassword` says whether the account has a password (someone who signed up through a provider or by email has none).",
         "security": [
           {
             "publishableKey": [],
@@ -8100,7 +8858,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/User"
+                  "$ref": "#/components/schemas/CurrentUser"
                 }
               }
             }
@@ -9276,7 +10034,7 @@
           "Settings"
         ],
         "summary": "Client configuration",
-        "description": "What a client needs to draw a sign-in screen for this environment: the app’s name and support address, the enabled sign-in methods and the password policy. Ignore methods you do not know. Nothing here is secret.",
+        "description": "What a client needs to draw a sign-in screen for this environment: the app’s name and support address, the enabled sign-in methods and OAuth providers and the password policy. Ignore methods you do not know. Nothing here is secret.",
         "security": [
           {
             "publishableKey": []
@@ -9324,6 +10082,885 @@
             }
           }
         }
+      }
+    },
+    "/v1/admin/oauth-providers": {
+      "get": {
+        "operationId": "listOAuthProviders",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "List OAuth providers",
+        "description": "Every provider (Google, GitHub, Apple), configured or not: whether credentials are stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to paste into the provider’s console exactly. Never a secret.",
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The providers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthProviderSettingsList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/oauth-providers/{provider}": {
+      "put": {
+        "operationId": "updateOAuthProvider",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Set an OAuth provider’s credentials",
+        "description": "Stores the environment’s own credentials for the provider and whether sign-in offers it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM). The secret is stored encrypted and never returned; leave it out to keep the stored one. Recorded in the audit log by key, never by value. `enabled: false` is refused (422) when it would leave the environment with no way to sign in.",
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OAuthProviderSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "schema": {
+              "$ref": "#/components/schemas/OAuthProvider"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthProviderUpdate"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteOAuthProvider",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Remove an OAuth provider’s credentials",
+        "description": "Removes the stored credentials; sign-in stops offering the provider. Users keep their connected accounts of it, so configuring it again lets them back in. Refused (422) when it would leave the environment with no way to sign in. It is not refused because some user has no other way in: such a user sets a password through a password reset.",
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "schema": {
+              "$ref": "#/components/schemas/OAuthProvider"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/oauth/callback/{provider}": {
+      "get": {
+        "operationId": "oauthCallback",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Provider callback (query)",
+        "description": "Where a provider sends the browser back (the redirect URI registered with it). Not called by apps. `state` is the only link to the sign-in and works once. The code is exchanged server-side, and the browser is redirected (303) to the page of the app the sign-in named, with a single-use, 60-second ticket in the URL fragment (`#tula_ticket=…&tula_attempt=…`) or an error code there (`#tula_error=…`). Sets no cookie and returns no token. A `state` that matches no sign-in gets a static page (400).",
+        "security": [],
+        "responses": {
+          "303": {
+            "description": "Back to the app’s page."
+          },
+          "400": {
+            "description": "The state matches no sign-in."
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "provider",
+            "required": true
+          }
+        ]
+      },
+      "post": {
+        "operationId": "oauthCallbackFormPost",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Provider callback (form post, Apple)",
+        "description": "Where a provider sends the browser back (the redirect URI registered with it). Not called by apps. `state` is the only link to the sign-in and works once. The code is exchanged server-side, and the browser is redirected (303) to the page of the app the sign-in named, with a single-use, 60-second ticket in the URL fragment (`#tula_ticket=…&tula_attempt=…`) or an error code there (`#tula_error=…`). Sets no cookie and returns no token. A `state` that matches no sign-in gets a static page (400).",
+        "security": [],
+        "responses": {
+          "303": {
+            "description": "Back to the app’s page."
+          },
+          "400": {
+            "description": "The state matches no sign-in."
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "provider",
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/client/me/identities": {
+      "get": {
+        "operationId": "listMyIdentities",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "List my connected accounts",
+        "description": "The provider accounts (Google, GitHub, Apple) connected to the signed-in user. Never the provider’s own id for an account.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connected accounts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/identities/oauth": {
+      "post": {
+        "operationId": "startIdentityLink",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Start connecting a provider account",
+        "description": "Starts an OAuth round trip that connects the provider account to the signed-in user, whatever email the provider reports. Answers like `sign-ins/oauth`: send the browser to `authorizationUrl`, keep `binding`, and post the ticket the page receives to `me/identities/oauth/exchange`. Needs a recent authentication: otherwise it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The provider’s URL and the binding.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityLinkStart"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthStartRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/identities/oauth/exchange": {
+      "post": {
+        "operationId": "exchangeIdentityLinkTicket",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Finish connecting a provider account",
+        "description": "Exchanges the ticket of a link started by the signed-in user, with the binding this browser was given. Connects the provider account to that user. `oauth.identity_in_use`: it belongs to another user. `oauth.already_linked`: the user already has an account of this provider. Creates no session.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connected account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Identity"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OAuthExchangeRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/identities/{identityId}": {
+      "delete": {
+        "operationId": "deleteMyIdentity",
+        "tags": [
+          "OAuth"
+        ],
+        "summary": "Disconnect a provider account",
+        "description": "Disconnects the provider account from the signed-in user. Refused with `identity.last_sign_in_method` (409) when nothing else would let them sign in: no password (where passwords are on), no verified email (where the email code is on) and no other connected account of an enabled provider. Needs a recent authentication: otherwise it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Disconnected."
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "identityId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
       }
     }
   }

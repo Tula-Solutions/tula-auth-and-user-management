@@ -189,6 +189,10 @@ a memory adapter used by unit tests via `createTestDeps()`. The rate limiter, lo
 revoked-session list also have Redis adapters (`adapters/redis/`), chosen when `REDIS_URL` is
 set so that several API instances share them; they are unit-tested on `FakeRedis` and proved
 against a real server by `redis.integration.ts` ([ADR 0016](docs/adr/0016-redis-and-multiple-instances.md)).
+`deps.environmentLock.runExclusive(environmentId, name, fn)` serializes a read-check-write on
+one environment across instances (a Postgres advisory lock): `Settings.replace` and
+`OAuth.update` take `sign_in_methods` so that neither switches off the last way to sign in on
+a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)).
 
 **Background jobs** are service functions `server.ts` runs on boot and on a timer, on every
 instance; `deps.jobLock.runExclusive(job, fn)` lets one instance through and the others skip
@@ -246,6 +250,33 @@ origins and redirect URLs, audit retention, which security notices are emailed
   `weakened: true` when `Settings.weakened` says the password policy got weaker.
 - CORS is decided per request in `~/middleware/cors`: a preflight passes when any environment
   allows the origin, the response is readable only when the key's environment does.
+
+### OAuth providers
+
+Sign-in with Google, GitHub and Apple ([ADR 0026](docs/adr/0026-oauth.md)) lives in
+`modules/oauth` (provider credentials, account resolution and linking, the callback and
+identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchangeOAuth`).
+
+- **Credentials are per environment and are not part of the settings document**: the table
+  `oauth_providers`, managed through `/v1/admin/oauth-providers`, the secret sealed with
+  `~/lib/secret-box` (purpose `oauth-credentials`, bound to environment and provider). Read
+  them only through `OAuth.credentials`, which also checks the provider is enabled; call it on
+  every step that uses a provider.
+- **Protocol goes through the `OAuthProvider` port** (`deps.oauth[provider]`); adapters are in
+  `adapters/oauth/` (`arctic` + `jose`). An adapter returns a profile and nothing else: no
+  provider token leaves it or is stored. Unit tests use `FakeOAuthProvider`
+  (`createTestDeps().oauth.google.profile = …`).
+- **The mock provider** (`OAUTH_MOCK_PROVIDER=true`) serves every provider from the API
+  itself, with a consent page at `/v1/dev/oauth/authorize`. It needs `ENVIRONMENT=local`
+  **and** a loopback `PUBLIC_URL` (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`): `env.ts`
+  refuses to boot otherwise, `container.ts` checks the tier again, and it warns on every boot,
+  because with it on anyone who can reach the API signs in as any address. The conformance
+  scenarios, SDK journeys and browser tests use it. Never loosen its guards.
+- **Which account a provider identity signs in to is decided in one place**,
+  `OAuth.resolveAccount`, and only at the exchange (after the binding is checked), never in
+  the callback. "Can still sign in" is `OAuth.canStillSignIn`.
+- "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider
+  routes enforce it, not the settings schema.
 
 ### Server-driven flows
 
@@ -357,7 +388,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0022](docs/adr/0022-react-sdk.md); security notice emails and what "a new device" means:
   [ADR 0023](docs/adr/0023-security-notices.md); signing in by email (codes, same-browser
   links, passwordless sign-up): [ADR 0024](docs/adr/0024-email-sign-in.md); two-step
-  verification (TOTP, backup codes, step-up, the MFA policy): [ADR 0025](docs/adr/0025-mfa.md).
+  verification (TOTP, backup codes, step-up, the MFA policy): [ADR 0025](docs/adr/0025-mfa.md);
+  OAuth sign-in and account linking: [ADR 0026](docs/adr/0026-oauth.md).
 - **TOTP secrets are sealed, backup codes are keyed hashes.** A TOTP secret is stored only
   sealed with `~/lib/secret-box` (purpose `totp-secrets`, bound to environment, user and factor
   id) and returned once, at enrolment. Backup codes are stored only as
@@ -375,6 +407,16 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   verified access token and answers `auth.step_up_required` with `params.methods`. A user with
   a second factor steps up with it, never with the password alone
   (`POST /v1/client/sessions/step-up`).
+- **A user without a second factor may step up with an emailed code; a user with one never.**
+  `Mfa.stepUpMethods` is the only place that decides what a user can step up with:
+  `email_code` is listed exactly for a verified address and no confirmed second factor (next
+  to `password` when there is one). The code (`POST /v1/client/sessions/step-up/email-code`,
+  `Mfa.prepareStepUp`) is a verification token of purpose `step_up`, stored as a keyed hash
+  that also covers the asking session's id, so it steps up no other session and is honoured
+  for no other purpose; it carries no link. Guesses count under the non-MFA step-up key
+  (`step_up:<environment>:<user>`, shared with the password) before the check, and success
+  records `email` in `amr`. Never offer it beside a second factor, and never let it satisfy
+  `mfa` (ADR 0025, "Step-up by emailed code").
 - **A session records how it was authenticated.** `Sessions.create` takes `authMethods`; the
   access token carries `auth_time` and `amr` from the session row (never "now": refresh must
   not make an old sign-in look recent). Only `Sessions.recordAuthentication` moves them.
@@ -411,6 +453,21 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - **No session before the second factor.** After a first factor, and after a password reset,
   the engine asks `Factors.requiredFor`; a non-empty answer means `needs_second_factor` and no
   tokens. Never call `Sessions.create` for a sign-in outside the flow service's `finish`.
+- **An OAuth callback proves nothing by itself.** `state` is single use and consumed before
+  the code exchange; the callback sets no cookie and returns no token, only a 60-second,
+  single-use ticket in the URL fragment of an allow-listed page. The ticket is honoured only
+  with the binding the starting browser was given (`oauth.different_browser` otherwise, with
+  nothing completed): that is what stops login CSRF. OAuth is a **first** factor: the exchange
+  goes through `Factors.requiredFor` like every other.
+- **A provider account is linked to an existing user automatically only when the provider
+  asserts the address verified and the Tula address is verified too.** Otherwise
+  `oauth.account_exists`, and never for an unverified provider address (refused before any
+  lookup). A known identity is its user whatever email the provider reports. Removing a user's
+  last way to sign in is refused. Never add a path that attaches an identity outside
+  `OAuth.resolveAccount` / `OAuth.link`.
+- **No provider token is stored or logged**, and provider credentials are sealed and never
+  returned. Identity changes are audited (`user.identity_linked`, `user.identity_unlinked`)
+  and announced to the owner (`notifications.identityChanged`).
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
@@ -453,7 +510,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   refused sign-in. A notice carries no code, token or link, and its subject never starts with
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
-- Treat every change under `modules/{flow,session,password,jwks,verification,mfa,factor}`,
+- Treat every change under `modules/{flow,session,password,jwks,verification,mfa,factor,oauth}`,
+  `adapters/oauth/`,
   `middleware/{cors,recent-auth}.ts`, `lib/crypto.ts` or `lib/totp.ts` as security-sensitive:
   it needs tests for the failure paths, not just the happy path.
 
@@ -499,6 +557,12 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - Component tests (`packages/react`) run in happy-dom through a preload
   (`src/testing/setup.ts`) with Testing Library, against `@tula/core`'s own fake API
   (`src/testing/harness.tsx`).
+- **In a component test, wait for focus with `await expectFocus(element)` and for a dialog to
+  close with `waitFor(() => expect(openDialogs()).toBe(0))`** (both in `harness.tsx`). Never
+  `expect(element)` inside `waitFor`, and never a synchronous
+  `expect(document.activeElement).toBe(element)`: focus moves in an effect, so the check races
+  it, and a matcher that fails on a happy-dom element formats its whole window (a message of
+  over 100 MB, which is what times CI out).
 - **Every bug fix and every addressed review finding gets a regression test that fails first.**
 
 ## Definition of done (the feedback loop)
@@ -541,7 +605,7 @@ apps/api/src/
 ├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor,
 │                     # device (the family a user agent belongs to), safe-error
 ├── ports/            # interfaces the domain depends on
-├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/
+├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/, oauth/
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
 │                     # request-log
 └── modules/          # flow, password, session, jwks, verification, user, mfa (TOTP, backup
@@ -549,7 +613,9 @@ apps/api/src/
                       # settings, factor (first-factor registry and second-factor hooks:
                       # service only), email (layout + copy: service only, no router),
                       # retention (a background job: service only, no router),
-                      # notice (security notice emails: service only, no router)
+                      # notice (security notice emails: service only, no router),
+                      # oauth (provider credentials, account linking, the provider callback,
+                      # the dev-only mock provider's consent page)
 ```
 
 ## Common commands
@@ -594,5 +660,6 @@ bun run api-key:create --environment <id> [--kind secret|publishable]
                             # mint a key (printed once); bootstraps the first secret key
 bun run test:integration    # Postgres and Redis tests against docker compose (needs .env)
 bun run conformance         # run conformance/ scenarios against a live server (see conformance/README.md)
+                            # the OAuth scenarios need the server started with OAUTH_MOCK_PROVIDER=true
                             # CONFORMANCE_SECOND_BASE_URL=http://localhost:3004 also checks a second instance
 ```

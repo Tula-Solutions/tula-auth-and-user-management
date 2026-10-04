@@ -256,6 +256,54 @@
                 "type": "string",
                 "minLength": 1
               },
+              "oauth": {
+                "type": "object",
+                "properties": {
+                  "authorizationUrl": {
+                    "type": "string"
+                  },
+                  "callback": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "deny": {
+                    "type": "boolean"
+                  },
+                  "captureTicket": {
+                    "type": "string"
+                  },
+                  "captureAttempt": {
+                    "type": "string"
+                  },
+                  "expectError": {
+                    "type": "string"
+                  },
+                  "captureCallback": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "oauth"],
+            "additionalProperties": false,
+            "ref": "ConformanceOAuthStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "wait": {
                 "type": "string",
                 "ref": "Duration"
@@ -476,6 +524,54 @@
             "required": ["name", "totp"],
             "additionalProperties": false,
             "ref": "ConformanceTotpStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "oauth": {
+                "type": "object",
+                "properties": {
+                  "authorizationUrl": {
+                    "type": "string"
+                  },
+                  "callback": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "deny": {
+                    "type": "boolean"
+                  },
+                  "captureTicket": {
+                    "type": "string"
+                  },
+                  "captureAttempt": {
+                    "type": "string"
+                  },
+                  "expectError": {
+                    "type": "string"
+                  },
+                  "captureCallback": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "oauth"],
+            "additionalProperties": false,
+            "ref": "ConformanceOAuthStep"
           },
           {
             "type": "object",

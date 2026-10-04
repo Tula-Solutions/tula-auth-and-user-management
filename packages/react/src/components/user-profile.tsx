@@ -20,6 +20,7 @@ import { go } from '../navigation'
 import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { BackupCodesPanel, EnrolmentConfirmForm } from './mfa'
+import { ConnectedAccountsSection } from './oauth'
 import {
   Button,
   Form,
@@ -44,6 +45,12 @@ import { deviceName, fullName, initials, relativeTime } from './user-display'
 export interface UserProfileProps {
   /** Where to go after "Sign out". Overrides the provider's `afterSignOutUrl`. */
   afterSignOutUrl?: string
+  /**
+   * The page an OAuth round trip returns to: the one that renders `<OAuthCallback>`. Overrides
+   * the provider's `oauthCallbackUrl`; without either, "Connected accounts" offers no provider
+   * to connect.
+   */
+  oauthCallbackUrl?: string
   /** Theme tokens, colour scheme and class names for this component. */
   appearance?: Appearance
   /** The level of the "Account" title; section titles are one below. Defaults to 1. */
@@ -74,6 +81,27 @@ function ProfileSection(props: { user: User }) {
           </p>
         </div>
       </div>
+    </section>
+  )
+}
+
+/**
+ * The password section of a user who has none (`hasPassword: false`): there is no current
+ * password to ask for, so it says how one is added (a password reset from the sign-in screen
+ * creates the first password) instead of drawing a form that could only fail. Only an explicit
+ * `false` gets this: an older server that does not say keeps the form.
+ */
+function NoPasswordSection() {
+  const { el, t } = useUi()
+  const titleId = useId()
+  return (
+    <section {...el('section')} aria-labelledby={titleId}>
+      <Heading offset={1} {...el('sectionTitle')} id={titleId}>
+        {t.userProfile.passwordTitle}
+      </Heading>
+      <p className='tula-text'>
+        {formatText(t.userProfile.passwordNotSet, { forgotPassword: t.signIn.forgotPassword })}
+      </p>
     </section>
   )
 }
@@ -469,7 +497,10 @@ function SessionsSection(props: { sessions: ReturnType<typeof useSession> }) {
 }
 
 /** The profile's sections, without a root: `<UserButton>` puts them in its dialog. */
-export function UserProfileSections(props: { afterSignOutUrl?: string }) {
+export function UserProfileSections(props: {
+  afterSignOutUrl?: string
+  oauthCallbackUrl?: string
+}) {
   const { el, t } = useUi()
   const { client, navigation } = useTulaContext()
   const state = useAuthState(client)
@@ -500,16 +531,24 @@ export function UserProfileSections(props: { afterSignOutUrl?: string }) {
           <ProfileSection user={user} />
           {/* Keyed by the session: half-typed passwords, a pending change and its messages
               belong to whoever was signed in when they began, and go with them. */}
-          <PasswordSection
-            key={state.sessionId}
-            user={user}
-            onChanged={() => void sessions.reload()}
-          />
+          {user.hasPassword === false ? (
+            <NoPasswordSection />
+          ) : (
+            <PasswordSection
+              key={state.sessionId}
+              user={user}
+              onChanged={() => void sessions.reload()}
+            />
+          )}
         </>
       ) : (
         <p className='tula-text'>{t.common.loading}</p>
       )}
       <TwoStepSection key={`mfa:${state.sessionId}`} onChanged={() => void sessions.reload()} />
+      <ConnectedAccountsSection
+        key={`identities:${state.sessionId}`}
+        callbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
+      />
       <SessionsSection key={state.sessionId} sessions={sessions} />
       <section {...el('section')} aria-labelledby={signOutTitleId}>
         <Heading offset={1} {...el('sectionTitle')} id={signOutTitleId}>
@@ -542,7 +581,10 @@ export function UserProfileSections(props: { afterSignOutUrl?: string }) {
 export function UserProfile(props: UserProfileProps) {
   return (
     <Root appearance={props.appearance} headingLevel={props.headingLevel}>
-      <UserProfileSections afterSignOutUrl={props.afterSignOutUrl} />
+      <UserProfileSections
+        afterSignOutUrl={props.afterSignOutUrl}
+        oauthCallbackUrl={props.oauthCallbackUrl}
+      />
     </Root>
   )
 }

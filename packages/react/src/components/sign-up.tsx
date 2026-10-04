@@ -15,6 +15,7 @@ import {
 } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { canEnrolTotp, FactorEnrolmentScreen } from './mfa'
+import { OAuthButtons } from './oauth'
 import { SwitchLink } from './sign-in'
 import {
   Button,
@@ -43,6 +44,12 @@ export interface SignUpProps {
   signInUrl?: string
   /** Called instead of following `signInUrl`, for an app that swaps the two in place. */
   onSwitchToSignIn?: () => void
+  /**
+   * The page an OAuth sign-in returns to: the one that renders `<OAuthCallback>`. Overrides
+   * the provider's `oauthCallbackUrl`; without either, no "Continue with …" button is drawn.
+   * Continuing with a provider creates the account when there is none.
+   */
+  oauthCallbackUrl?: string
   /** Where to go once signed up. Overrides the provider's `afterSignUpUrl`. */
   afterSignUpUrl?: string
   /** Called once signed up and signed in, instead of navigating to `afterSignUpUrl`. */
@@ -115,6 +122,7 @@ function AccountScreen(props: SignUpProps & { signUp: UseSignUpResult; focusTitl
         />
       }
     >
+      <OAuthButtons callbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl} />
       <Form
         onSubmit={submit}
         failure={local ?? signUp.error}

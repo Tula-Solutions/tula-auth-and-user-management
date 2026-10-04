@@ -83,6 +83,12 @@ const fields = z.object({
    */
   TRUST_PROXY: flag,
   /**
+   * `true` serves every OAuth provider from the built-in mock provider, whose consent page lets
+   * a developer type the address the "provider" asserts (ADR 0026). For local development and
+   * tests, where nobody has real OAuth credentials. Refused outside `ENVIRONMENT=local`.
+   */
+  OAUTH_MOCK_PROVIDER: flag,
+  /**
    * Redis (or Valkey) for the state API instances must share: rate limits, the password lockout
    * and the list of revoked sessions. `rediss://` for TLS. Unset (or blank) in `local` and `dev`
    * keeps that state in process memory, which is correct for one instance only; live tiers must
@@ -94,11 +100,59 @@ const fields = z.object({
   ),
 })
 
+/** Host names that only ever mean this machine. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/**
+ * Whether a URL's host is this machine: `localhost`, `127.0.0.1`, `[::1]` or a name under
+ * `.localhost` (RFC 6761). Compared on the parsed host, so `localhost.example.com` and
+ * `127.0.0.1.example.com` are not loopback. `0.0.0.0` and LAN addresses are not either.
+ *
+ * @param url - An absolute URL. Anything that does not parse as one is not loopback.
+ * @returns `true` when its host is loopback.
+ */
+export function isLoopbackUrl(url: string): boolean {
+  const host = parsedUrl(url)?.hostname.toLowerCase()
+  return host !== undefined && (LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost'))
+}
+
+/**
+ * Parse a variable for a cross-field rule. Those rules run even when the field's own rule has
+ * already refused the value, so a value that is not a URL must not throw here: the field's
+ * issue is what the operator should read.
+ */
+function parsedUrl(value: string): URL | null {
+  try {
+    return new URL(value)
+  } catch {
+    return null
+  }
+}
+
 const schema = fields.superRefine((env, ctx) => {
+  if (env.OAUTH_MOCK_PROVIDER && env.ENVIRONMENT !== 'local') {
+    // Not a "live tiers" rule: the mock provider signs anyone in as any address they type, so
+    // it must be impossible in every deployment other people can reach, `dev` included.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['OAUTH_MOCK_PROVIDER'],
+      message: `is only allowed with ENVIRONMENT=local, not ${env.ENVIRONMENT}: the mock provider signs in anyone as any address`,
+    })
+  }
+  if (env.OAUTH_MOCK_PROVIDER && !isLoopbackUrl(env.PUBLIC_URL)) {
+    // The tier is a label an operator types. An API that tells other machines where to reach it
+    // is not a developer's own machine, whatever the label says.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['OAUTH_MOCK_PROVIDER'],
+      message:
+        'is only allowed when PUBLIC_URL is a loopback address (localhost, 127.0.0.1, [::1] or a *.localhost name): the mock provider signs in anyone as any address',
+    })
+  }
   if (!LIVE_TIERS.has(env.ENVIRONMENT)) {
     return
   }
-  const smtpHost = new URL(env.SMTP_URL).hostname.toLowerCase()
+  const smtpHost = parsedUrl(env.SMTP_URL)?.hostname.toLowerCase()
   // `mailpit` is the catch-all inbox of the Compose stack: mail sent there reaches nobody.
   if (smtpHost === '127.0.0.1' || smtpHost === 'localhost' || smtpHost === 'mailpit') {
     ctx.addIssue({
@@ -131,7 +185,8 @@ const schema = fields.superRefine((env, ctx) => {
       message: `is required in ${env.ENVIRONMENT}: rate limits, lockout and revoked sessions must be shared between instances`,
     })
   }
-  if (new URL(env.PUBLIC_URL).protocol !== 'https:') {
+  const publicUrl = parsedUrl(env.PUBLIC_URL)
+  if (publicUrl && publicUrl.protocol !== 'https:') {
     // Session cookies are `Secure`; a plain-http issuer would also leak tokens in transit.
     ctx.addIssue({
       code: 'custom',

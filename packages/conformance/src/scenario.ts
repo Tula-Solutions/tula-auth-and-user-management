@@ -187,6 +187,60 @@ export const TotpStepSchema = z
   .strict()
   .meta({ ref: 'ConformanceTotpStep' })
 
+/**
+ * Play the user at the OAuth provider (ADR 0026): take the authorization URL a sign-in start
+ * answered, "consent" at the provider, follow the provider back to the API's callback, and read
+ * what the callback sends the app's page in its URL fragment.
+ *
+ * The provider is the server's **mock provider** (`OAUTH_MOCK_PROVIDER=true`, local tier only),
+ * whose consent endpoint is the authorization URL's own path. The runner posts the URL's query
+ * parameters and the consent fields below to it as a form, follows nothing automatically, and
+ * calls the callback the answer's `Location` names. Every request goes to the target's base
+ * URL: only the path and query of the URLs are used.
+ *
+ * With `callback` instead of `authorizationUrl`, the step replays a callback captured earlier
+ * (`captureCallback`) without visiting the provider again.
+ */
+export const OAuthStepSchema = z
+  .object({
+    name: z.string().min(1),
+    oauth: z
+      .object({
+        /** The `authorizationUrl` of a start, e.g. `{{authorizationUrl}}`. */
+        authorizationUrl: z.string().optional(),
+        /** A callback path and query captured by an earlier step, to replay. */
+        callback: z.string().optional(),
+        /** The address the provider reports. */
+        email: z.string().optional(),
+        /** The provider's id for the account. Derived from the address when left out. */
+        subject: z.string().optional(),
+        /** The provider reports the address as unverified. */
+        unverified: z.boolean().optional(),
+        /** The user cancels at the provider. */
+        deny: z.boolean().optional(),
+        /** Variable that receives the ticket. The step fails when the callback sent an error. */
+        captureTicket: z.string().optional(),
+        /** Variable that receives the attempt id. */
+        captureAttempt: z.string().optional(),
+        /**
+         * The contract error code the callback must send the app's page instead of a ticket,
+         * e.g. `oauth.state_invalid`. The step fails on a ticket or on another code.
+         */
+        expectError: z.string().optional(),
+        /** Variable that receives the callback's path and query, for a later replay. */
+        captureCallback: z.string().optional(),
+      })
+      .strict()
+      .refine(
+        (oauth) => (oauth.authorizationUrl === undefined) !== (oauth.callback === undefined),
+        {
+          message: 'an oauth step takes either `authorizationUrl` or `callback`',
+        }
+      ),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceOAuthStep' })
+
 /** Let time pass, e.g. past the refresh reuse grace period. */
 export const WaitStepSchema = z
   .object({ name: z.string().min(1), wait: DurationSchema })
@@ -200,6 +254,7 @@ export const StepSchema = z
     EmailCodeStepSchema,
     EmailLinkStepSchema,
     TotpStepSchema,
+    OAuthStepSchema,
     WaitStepSchema,
   ])
   .meta({ ref: 'ConformanceStep' })

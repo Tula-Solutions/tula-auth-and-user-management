@@ -22,6 +22,10 @@ export const ACTIVITY_TYPES = [
   'user.mfa_disabled',
   'user.backup_codes_regenerated',
   'user.backup_code_used',
+  // A provider account (Google, GitHub, Apple) connected to or disconnected from a user;
+  // `provider` says which, `method` how (`auto`, `profile`).
+  'user.identity_linked',
+  'user.identity_unlinked',
   'session.created',
   'session.revoked',
   'session.reuse_detected',
@@ -31,6 +35,9 @@ export const ACTIVITY_TYPES = [
   'api_key.revoked',
   'signing_key.rotated',
   'environment.settings_updated',
+  // An OAuth provider's credentials set, changed or removed. `changed` lists keys, never values.
+  'oauth_provider.updated',
+  'oauth_provider.deleted',
 ] as const
 
 /** One of {@link ACTIVITY_TYPES}. */

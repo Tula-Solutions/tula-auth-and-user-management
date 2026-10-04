@@ -363,6 +363,31 @@ The changes every new method needs, made once.
   mock in the Playwright job.
 - Native Google and Apple sign-in (ID-token exchange) is Phase 2; the port is shaped for it.
 
+  *As built ([ADR 0026](../adr/0026-oauth.md)):* `arctic` for the provider protocols and
+  `jose` for ID tokens, behind the `OAuthProvider` port (adapters for Google, GitHub, Apple;
+  a fake for unit tests). Credentials live in a new table, `oauth_providers` (migration
+  `0010_oauth`, which also makes `(user, provider)` unique on `identities`), sealed with the
+  secret box and managed through `GET` / `PUT` / `DELETE /v1/admin/oauth-providers`. The flow
+  is `POST /v1/client/sign-ins/oauth` → the provider → `GET|POST /v1/oauth/callback/:provider`
+  → the app's page with a ticket in the fragment → `POST /v1/client/sign-ins/oauth/exchange`.
+  **A deliberate change from the sketch above:** the ticket is exchanged with a *binding* the
+  starting browser kept (`sessionStorage`), not with the attempt's secret, which a full-page
+  navigation destroys; the exchange rotates the secret and returns the new one when a second
+  factor or an enrolment follows. One attempt kind (`sign_in`) covers sign-in and sign-up.
+  Linking follows the table in the ADR: automatic only when both sides have verified the
+  address, otherwise `oauth.account_exists`; from a profile under `/v1/client/me/identities`
+  (step-up), with the last way to sign in protected. "At least one sign-in method" now counts
+  enabled providers, so that rule moved from the settings schema to the server. Providers are
+  exercised through a **mock provider** built into the API (`OAUTH_MOCK_PROVIDER`, local tier
+  only, refused at boot elsewhere) instead of the local OIDC mock in the Playwright job the
+  sketch named: it needs no second process, and the conformance scenarios (25 to 27, with a
+  new `oauth` step), the SDK journeys and the browser tests all run the real callback, ticket,
+  exchange and linking code through it. Real Google, GitHub and Apple were **not** exercised
+  (no credentials); their adapters are tested with stubbed HTTP and locally generated keys.
+  `@tula/core` has `signIn.withOAuth`, `signIn.handleOAuthCallback` and `user.identities.*`;
+  `@tula/react` has the provider buttons, `<OAuthCallback>` / `useOAuthCallback()` and
+  "Connected accounts". Bundle budgets moved: core 12 → 13 kB, react 35 → 39 kB.
+
 ### 1.10 Passkeys
 
 - `@simplewebauthn/server` in the API, `@simplewebauthn/browser` inside `@tula/core`.

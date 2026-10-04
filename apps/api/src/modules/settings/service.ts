@@ -1,9 +1,12 @@
 import {
+  AT_LEAST_ONE_SIGN_IN_METHOD,
   type ClientConfig,
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
   EnvironmentSettingsSchema,
+  hasEnabledSignInMethod,
+  type OAuthProvider,
   type PasswordPolicy,
   type SignInMethod,
 } from '@tula/contract'
@@ -141,6 +144,7 @@ const NOTICES = [
   'passwordChanged',
   'newSignIn',
   'mfaChanged',
+  'identityChanged',
 ] as const satisfies readonly (keyof EnvironmentSettings['notifications'])[]
 
 /** How much each MFA policy asks of an account. Moving to a lower one is a weakening. */
@@ -155,7 +159,8 @@ const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> 
  * harder to notice: the definition behind the audit entry's `weakened` flag.
  *
  * True when a security notice that was on is switched off (`notifications.passwordChanged`,
- * `notifications.newSignIn`, `notifications.mfaChanged`: the owner would no longer be told),
+ * `notifications.newSignIn`, `notifications.mfaChanged`, `notifications.identityChanged`: the
+ * owner would no longer be told),
  * when the MFA policy moves towards `off` (`required` → `optional` → `off`), or when the new password
  * policy, compared with the old one:
  * - allows a shorter password (`minLength` is lower);
@@ -253,6 +258,39 @@ export function withDeploymentDefaults(
   })
 }
 
+/**
+ * Refuse settings that would leave an environment with no way to sign in.
+ *
+ * A document may switch every method of its own off when an OAuth provider is enabled
+ * (ADR 0026): providers are configured apart from the settings document, so the schema cannot
+ * make this check and it is made here, against the provider store. The converse (disabling or
+ * removing the last provider of an environment whose methods are all off) is refused by
+ * `~/modules/oauth/service`.
+ *
+ * @throws ValidationError (422) on `signIn.methods`.
+ */
+async function requireWayIn(
+  deps: Pick<Deps, 'oauthProviders'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  settings: EnvironmentSettings
+): Promise<void> {
+  if (hasEnabledSignInMethod(settings)) {
+    return
+  }
+  const providers = await deps.oauthProviders.list(tenant.environmentId)
+  if (!providers.some((provider) => provider.enabled)) {
+    throw new ValidationError({
+      errors: [
+        {
+          field: 'signIn.methods',
+          code: 'validation.failed',
+          message: AT_LEAST_ONE_SIGN_IN_METHOD,
+        },
+      ],
+    })
+  }
+}
+
 /** A replace of an environment's settings. */
 export interface ReplaceInput {
   /** The revision the caller read, from `If-Match`. */
@@ -279,12 +317,13 @@ export interface ReplaceInput {
  * @param actor - Who is changing the settings, for the audit log.
  * @returns The settings now in force and their revision.
  * @throws ValidationError (422) when a deployment default the request relied on cannot be
- *   stored (see {@link withDeploymentDefaults}).
+ *   stored (see {@link withDeploymentDefaults}), or when the document enables no sign-in method
+ *   and the environment has no OAuth provider enabled.
  * @throws ServiceException `precondition.failed` (412) when the settings are no longer at
  *   `expectedRevision`; `params.revision` is the current one.
  */
 export async function replace(
-  deps: ReadDeps & Pick<Deps, 'ids' | 'clock'>,
+  deps: ReadDeps & Pick<Deps, 'ids' | 'clock' | 'oauthProviders' | 'environmentLock'>,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   input: ReplaceInput,
   actor: Actor
@@ -292,38 +331,44 @@ export async function replace(
   // Before anything else, so a document that cannot be stored is refused whatever the revision
   // and even when it would change nothing.
   const settings = withDeploymentDefaults(deps.config, input.settings)
-  // Read past the cache: both the revision check and the list of changed keys must be made
-  // against what is really stored, not against what this instance last saw.
-  const before = await read(deps, tenant, true)
-  if (before.revision !== input.expectedRevision) {
-    throw new ServiceException('precondition.failed', { params: { revision: before.revision } })
-  }
-  const changed = changedKeys(before.settings, settings)
-  if (changed.length === 0) {
-    return before
-  }
-  const replaced = await deps.environmentSettings.replace(
-    tenant.environmentId,
-    input.expectedRevision,
-    settings,
-    deps.clock.now(),
-    Audit.entry(deps, tenant, {
-      type: 'environment.settings_updated',
-      actor,
-      target: { type: 'environment', id: tenant.environmentId },
-      data: {
-        revision: input.expectedRevision + 1,
-        changed,
-        // A flag, never the values: enough to find the change that loosened the policy.
-        ...(weakened(before.settings, settings) && { weakened: true }),
-      },
-    })
-  )
-  if (!replaced) {
-    // Another writer got in between the read and the write.
-    throw new ServiceException('precondition.failed')
-  }
-  return replaced
+  // "At least one sign-in method" is decided from this document and the provider rows, which
+  // another route writes. Both take the environment's lock and check inside it, so neither
+  // decides against a state the other is about to change.
+  return deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
+    await requireWayIn(deps, tenant, settings)
+    // Read past the cache: both the revision check and the list of changed keys must be made
+    // against what is really stored, not against what this instance last saw.
+    const before = await read(deps, tenant, true)
+    if (before.revision !== input.expectedRevision) {
+      throw new ServiceException('precondition.failed', { params: { revision: before.revision } })
+    }
+    const changed = changedKeys(before.settings, settings)
+    if (changed.length === 0) {
+      return before
+    }
+    const replaced = await deps.environmentSettings.replace(
+      tenant.environmentId,
+      input.expectedRevision,
+      settings,
+      deps.clock.now(),
+      Audit.entry(deps, tenant, {
+        type: 'environment.settings_updated',
+        actor,
+        target: { type: 'environment', id: tenant.environmentId },
+        data: {
+          revision: input.expectedRevision + 1,
+          changed,
+          // A flag, never the values: enough to find the change that loosened the policy.
+          ...(weakened(before.settings, settings) && { weakened: true }),
+        },
+      })
+    )
+    if (!replaced) {
+      // Another writer got in between the read and the write.
+      throw new ServiceException('precondition.failed')
+    }
+    return replaced
+  })
 }
 
 /**
@@ -362,16 +407,21 @@ export function etag(revision: number): string {
  * What a client may know about an environment: enough to draw a sign-in screen.
  *
  * @param settings - The environment's settings.
- * @returns App name and support address, enabled sign-in methods, whether a sign-up needs a
- *   password, and the password policy.
+ * @param oauth - The OAuth providers the environment has enabled.
+ * @returns App name and support address, enabled sign-in methods and providers, whether a
+ *   sign-up needs a password, and the password policy.
  */
-export function clientConfig(settings: EnvironmentSettings): ClientConfig {
+export function clientConfig(
+  settings: EnvironmentSettings,
+  oauth: readonly OAuthProvider[] = []
+): ClientConfig {
   return {
     app: { name: settings.app.name, supportEmail: settings.app.supportEmail },
     signIn: {
       methods: Object.entries(settings.signIn.methods)
         .filter(([, method]) => method.enabled)
         .map(([name]) => name),
+      oauth: [...oauth],
     },
     signUp: { password: settings.signUp.password },
     password: settings.password,

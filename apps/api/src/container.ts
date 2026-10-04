@@ -8,14 +8,20 @@ import { SmtpMailer } from '~/adapters/mail/smtp'
 import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
+import { createAppleProvider } from '~/adapters/oauth/apple'
+import { createGitHubProvider } from '~/adapters/oauth/github'
+import { createGoogleProvider } from '~/adapters/oauth/google'
+import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
+import { PostgresEnvironmentLock } from '~/adapters/postgres/environment-lock'
 import { PostgresEnvironmentSettingsStore } from '~/adapters/postgres/environment-settings'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
 import { databaseProbe } from '~/adapters/postgres/health'
 import { PostgresJobLock } from '~/adapters/postgres/job-lock'
+import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
@@ -31,6 +37,7 @@ import { uuidV7Ids } from '~/adapters/system/ids'
 import type { Deps } from '~/dependencies'
 import type { Env } from '~/env'
 import { createKeyedHash } from '~/lib/keyed-hash'
+import * as logger from '~/lib/logger'
 import { createSecretBox } from '~/lib/secret-box'
 
 /** How long verification keys are cached per instance. See the rotation invariant. */
@@ -82,6 +89,17 @@ export function createContainer(env: Env): Container {
   const redis = env.REDIS_URL ? connectRedis(env.REDIS_URL, clock) : null
   const signingKeys = new PostgresSigningKeyStore(database.db)
   const environmentSettings = new PostgresEnvironmentSettingsStore(database.db)
+  const secretBox = createSecretBox(env.TULA_MASTER_KEY)
+  // `env.ts` has already refused the mock outside the `local` tier; checked again here so the
+  // choice of adapter never rests on one line elsewhere.
+  const oauthMock = env.OAUTH_MOCK_PROVIDER && env.ENVIRONMENT === 'local'
+  if (oauthMock) {
+    // Loud on purpose, on every boot: with the mock on, anyone who can reach this API signs in
+    // as any address they type.
+    logger.warn(
+      'OAUTH_MOCK_PROVIDER is on: every OAuth provider is served by the built-in mock, which signs in anyone as any address. It must never be used outside local development.'
+    )
+  }
   const deps: Deps = {
     config: {
       tier: env.ENVIRONMENT,
@@ -89,6 +107,7 @@ export function createContainer(env: Env): Container {
       corsOrigins: env.CORS_ORIGINS,
       trustProxy: env.TRUST_PROXY,
       passwordPolicy: PASSWORD_POLICY_PRESETS[env.PASSWORD_POLICY],
+      oauthMock,
     },
     clock,
     ids: uuidV7Ids,
@@ -116,15 +135,24 @@ export function createContainer(env: Env): Container {
     users: new PostgresUserRepository(database.db),
     factors: new PostgresFactorStore(database.db),
     flowAttempts: new PostgresFlowAttemptStore(database.db),
+    oauthProviders: new PostgresOAuthProviderStore(database.db),
+    oauth: oauthMock
+      ? mockOAuthProviders({ secretBox, clock, publicUrl: env.PUBLIC_URL })
+      : {
+          google: createGoogleProvider(),
+          github: createGitHubProvider(),
+          apple: createAppleProvider(),
+        },
     activityLog: new PostgresActivityLog(database.db),
     revokedSessions: redis
       ? new RedisRevokedSessions(redis, clock)
       : new MemoryRevokedSessions(clock),
     mailer,
-    secretBox: createSecretBox(env.TULA_MASTER_KEY),
+    secretBox,
     keyedHash,
     // On Postgres even when Redis is configured: the jobs it guards are database work.
     jobLock: new PostgresJobLock(database.withAdvisoryLock),
+    environmentLock: new PostgresEnvironmentLock(database.withAdvisoryLock),
     probes: redis ? [databaseProbe(database.db), redisProbe(redis)] : [databaseProbe(database.db)],
   }
   return {

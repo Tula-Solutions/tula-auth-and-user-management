@@ -64,7 +64,13 @@ export interface UseResetPasswordResult extends FlowState, FactorEnrolmentHookAc
  */
 export function useResetPassword(): UseResetPasswordResult {
   const { client } = useTulaContext()
-  const { start: begin, act, watch: _watch, ...state } = useFlowController<PasswordResetFlow>()
+  const {
+    start: begin,
+    act,
+    watch: _watch,
+    adopt: _adopt,
+    ...state
+  } = useFlowController<PasswordResetFlow>()
   const start = useCallback(
     (input: { email: string }) => begin(() => client.resetPassword.start(input)),
     [begin, client]

@@ -65,3 +65,18 @@ export function isFactors(value: unknown): value is Schemas['Factors'] {
     typeof value.backupCodes.remaining === 'number'
   )
 }
+
+/**
+ * Whether a value is the receipt of an emailed step-up code.
+ *
+ * @param value - The parsed body.
+ * @returns `true` when it names the method, a destination and an expiry.
+ */
+export function isStepUpPrepared(value: unknown): value is Schemas['StepUpEmailCode'] {
+  return (
+    isRecord(value) &&
+    value.method === 'email_code' &&
+    typeof value.destination === 'string' &&
+    typeof value.expiresAt === 'string'
+  )
+}

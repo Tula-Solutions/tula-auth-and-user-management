@@ -1,0 +1,353 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "step-up by emailed code",
+  "description": "A user who signed up through a provider has no password and no second factor, so they step up with a 6-digit code emailed on request. The receipt never holds the code; asking again within a minute is rate limited; a wrong code and a method the user does not have are refused; the right code returns a fresh access token (no refresh token) whose amr gains email, and works once. Once the user has a second factor the emailed code is gone: asking for one and presenting one both answer auth.step_up_required naming the second factor. Uses the server's mock provider. The provider's credentials are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "newcomer": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment's own google credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "a new person signs up with Google",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "url": "authorizationUrl",
+        "binding": "binding"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{url}}",
+        "email": "{{newcomer}}",
+        "captureTicket": "ticket",
+        "captureAttempt": "attemptId",
+        "subject": "{{newcomer}}"
+      }
+    },
+    {
+      "name": "and is signed in, with no password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{ticket}}",
+          "attemptId": "{{attemptId}}",
+          "binding": "{{binding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "accessToken": "session.accessToken",
+        "userId": "step.userId"
+      }
+    },
+    {
+      "name": "their profile says there is no password",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{userId}}",
+          "hasPassword": false
+        }
+      }
+    },
+    {
+      "name": "a signed-out caller cannot ask for a code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up/email-code"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "the user asks for a step-up code: a receipt, never the code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up/email-code",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "method": "email_code",
+          "destination": {
+            "$matches": "^.\\*\\*\\*@"
+          },
+          "expiresAt": "$any",
+          "code": "$absent"
+        }
+      }
+    },
+    {
+      "name": "asking again within the minute is rate limited",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up/email-code",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "status": 429,
+          "code": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{newcomer}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "a wrong code does not step up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "email_code",
+          "code": "{{wrongCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "verification.invalid_code",
+          "params": {
+            "attemptsRemaining": 4
+          }
+        }
+      }
+    },
+    {
+      "name": "a password the user does not have is refused, naming the emailed code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "password",
+          "password": "anything at all 42"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "email_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "the emailed code steps up: a fresh access token, no refresh token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "email_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "$any",
+          "accessToken": "$any",
+          "accessTokenExpiresAt": "$any",
+          "refreshToken": "$absent"
+        },
+        "claims": {
+          "accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": { "$set": ["fed", "email"] }
+          }
+        }
+      },
+      "capture": {
+        "freshToken": "accessToken"
+      }
+    },
+    {
+      "name": "the code works once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "email_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "status": 410,
+          "code": "verification.expired"
+        }
+      }
+    },
+    {
+      "name": "the fresh token starts an authenticator enrolment",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{freshToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "secret": {
+            "$matches": "^[A-Z2-7]{32}$"
+          }
+        }
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "compute the code the authenticator shows",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "enrolCode"
+      }
+    },
+    {
+      "name": "confirm it: two-step verification is on",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{freshToken}}",
+        "body": {
+          "code": "{{enrolCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "codes": "$any"
+        }
+      }
+    },
+    {
+      "name": "with a second factor no step-up code is emailed any more",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up/email-code",
+        "accessToken": "{{freshToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "totp,backup_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "and an emailed code is not accepted either",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{freshToken}}",
+        "body": {
+          "method": "email_code",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "totp,backup_code"
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

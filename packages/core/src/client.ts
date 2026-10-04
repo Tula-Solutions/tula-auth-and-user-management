@@ -9,7 +9,18 @@ import {
   signInFlow,
   signUpFlow,
 } from './flows'
-import { isBackupCodes, isFactors, isTotpEnrolment } from './mfa'
+import { isBackupCodes, isFactors, isStepUpPrepared, isTotpEnrolment } from './mfa'
+import {
+  createOAuthStore,
+  createOAuthTicketHolder,
+  discardOAuthCallback,
+  handleOAuthCallback,
+  type Identity,
+  isIdentityList,
+  type OAuthCallbackOutcome,
+  type OAuthProvider,
+  startOAuth,
+} from './oauth'
 import {
   createSessionManager,
   LOCK_WAIT_MARGIN_MS,
@@ -26,6 +37,7 @@ import type {
   Factors,
   FetchLike,
   Session,
+  StepUpPrepared,
   StepUpProof,
   TotpEnrolment,
   User,
@@ -182,6 +194,84 @@ export interface TulaClient {
      * @throws TulaError when the API could not be reached or refused for another reason.
      */
     handleEmailLink(options?: { waitMs?: number }): Promise<EmailLinkOutcome>
+    /**
+     * Whether "continue with a provider" can be started here: the tab can keep the round
+     * trip's binding (`sessionStorage`). `false` on a server, in a native shell and in some
+     * sandboxed frames.
+     *
+     * @example
+     * ```ts
+     * if (tula.signIn.canUseOAuth()) showProviderButtons()
+     * ```
+     */
+    canUseOAuth(): boolean
+    /**
+     * "Continue with Google, GitHub or Apple": a sign-in that creates the account when the
+     * provider's verified address has none.
+     *
+     * Asks the API for the provider's URL, keeps the round trip's binding for this tab
+     * (`sessionStorage`; it is not a token), and **navigates the page there**. Pass
+     * `navigate: false` to get the URL and navigate yourself. The provider returns to the API,
+     * which redirects to `redirectUrl`; call `signIn.handleOAuthCallback()` on that page.
+     * `redirectUrl` must be one of the environment's allowed redirect URLs and on the same
+     * origin as this page.
+     *
+     * @throws TulaError `auth.method_disabled` (the provider is not enabled),
+     *   `request.redirect_not_allowed`, `link.cross_origin`, `storage.failed`.
+     *
+     * @example
+     * ```ts
+     * await tula.signIn.withOAuth({
+     *   provider: 'google',
+     *   redirectUrl: `${location.origin}/oauth/callback`,
+     * })
+     * ```
+     */
+    withOAuth(input: {
+      provider: OAuthProvider
+      redirectUrl: string
+      navigate?: boolean
+    }): Promise<{ url: string }>
+    /**
+     * Finish an OAuth round trip, on the page the API redirected to.
+     *
+     * Reads the ticket from the URL fragment, removes it from the address before anything is
+     * sent, and exchanges it together with the binding this tab kept. Serves sign-ins and
+     * links started from a profile alike. Safe to call on every load of the page, and twice in
+     * a row: without an OAuth answer in the address it answers `none`.
+     *
+     * When the exchange gets no answer (`network.failed`, `network.timeout`) or a `rate_limited`,
+     * the error is thrown and the round trip is kept for a minute: **call this again to retry**.
+     * The ticket is held in memory only, never in storage or the address. Any answer from the
+     * API, success or refusal, ends the round trip.
+     *
+     * @returns `complete` or `needs_step` with a flow positioned on the step (so
+     *   `flow.submitSecondFactor` works), `linked`, `different_browser`, `error` with a contract
+     *   code (`oauth.account_exists`, `oauth.access_denied`, …), or `none`.
+     *
+     * @example
+     * ```ts
+     * const outcome = await tula.signIn.handleOAuthCallback()
+     * if (outcome.status === 'complete') location.assign('/')
+     * ```
+     */
+    handleOAuthCallback(): Promise<OAuthCallbackOutcome>
+    /**
+     * Give up on an OAuth round trip whose exchange failed without an answer and has not been
+     * retried: forgets the ticket held in memory and the binding kept for it. Signing out and
+     * starting another round trip do the same. Does nothing when there is none.
+     *
+     * @example
+     * ```ts
+     * try {
+     *   await tula.signIn.handleOAuthCallback()
+     * } catch {
+     *   // Offer "try again" (call it again) or "start over":
+     *   tula.signIn.discardOAuthCallback()
+     * }
+     * ```
+     */
+    discardOAuthCallback(): void
   }
   /** Forgotten password. */
   readonly resetPassword: {
@@ -239,13 +329,16 @@ export interface TulaClient {
      * calls this by itself: ask the user, call it, then repeat the action.
      *
      * A user with two-step verification proves it with `totp` or `backup_code` (their password
-     * alone is refused); a user without it with `password`. The proof holds for ten minutes.
+     * alone is refused); a user without it with `password`, or with an `email_code` asked for
+     * with `prepareStepUp`. The proof holds for ten minutes.
      * Only the access token changes: the refresh token (or cookie) is untouched, and the
      * state does not change.
      *
      * @param proof - The method and its proof.
      * @throws TulaError `auth.invalid_credentials` (wrong password), `mfa.invalid_code` (wrong
-     *   or already used code), `auth.step_up_required` (a method this user may not use),
+     *   or already used code), `verification.invalid_code`, `verification.expired` or
+     *   `verification.too_many_attempts` (an emailed code that is wrong, used or too old, or
+     *   guessed at too often), `auth.step_up_required` (a method this user may not use),
      *   `rate_limited` after repeated wrong proofs, `auth.unauthenticated` when nobody is
      *   signed in or the session ended meanwhile.
      *
@@ -262,6 +355,37 @@ export interface TulaClient {
      * ```
      */
     stepUp(proof: StepUpProof): Promise<void>
+    /**
+     * Email the signed-in user a 6-digit code to step up with, when `stepUpMethods` lists
+     * `email_code`: a user with a verified address and no two-step verification (someone who
+     * signed up through a provider or by email has no password to prove). The code works for
+     * ten minutes, once, and only for this session; asking again replaces it. The client never
+     * calls this by itself: send the code when the user chooses to, then pass what they type
+     * to `stepUp`.
+     *
+     * @param request - The method to prepare; `email_code` is the only one that needs it.
+     * @returns Where the code went (masked) and when it expires. Never the code.
+     * @throws TulaError `rate_limited` with `retryAfterMs` when a code was sent less than a
+     *   minute ago (or too many this hour), `auth.step_up_required` when this user may not
+     *   step up by email (they have a second factor, or no verified address),
+     *   `response.invalid` for an answer that is not a receipt, `auth.unauthenticated` when
+     *   nobody is signed in.
+     *
+     * @example
+     * ```ts
+     * try {
+     *   await tula.oauth.unlink('google')
+     * } catch (error) {
+     *   if (stepUpMethods(error).includes('email_code')) {
+     *     const { destination } = await tula.session.prepareStepUp({ method: 'email_code' })
+     *     const code = await askForCode(`Enter the code we emailed to ${destination}`)
+     *     await tula.session.stepUp({ method: 'email_code', code })
+     *     await tula.oauth.unlink('google')
+     *   }
+     * }
+     * ```
+     */
+    prepareStepUp(request: { method: 'email_code' }): Promise<StepUpPrepared>
   }
   /** The signed-in user. */
   readonly user: {
@@ -282,6 +406,47 @@ export interface TulaClient {
      *   has not proven it recently, `auth.step_up_required` (see `session.stepUp`).
      */
     changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
+    /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
+    readonly identities: {
+      /**
+       * @returns The connected accounts, oldest first.
+       *
+       * @example
+       * ```ts
+       * const accounts = await tula.user.identities.list()
+       * ```
+       */
+      list(): Promise<Identity[]>
+      /**
+       * Start connecting a provider account to the signed-in user: like `signIn.withOAuth`, it
+       * keeps a binding and navigates to the provider. `signIn.handleOAuthCallback()` on the
+       * page it comes back to answers `linked`. Needs a recent authentication
+       * (`auth.step_up_required` otherwise).
+       *
+       * @example
+       * ```ts
+       * await tula.user.identities.link({
+       *   provider: 'github',
+       *   redirectUrl: `${location.origin}/oauth/callback`,
+       * })
+       * ```
+       */
+      link(input: {
+        provider: OAuthProvider
+        redirectUrl: string
+        navigate?: boolean
+      }): Promise<{ url: string }>
+      /**
+       * Disconnect a provider account. Refused with `identity.last_sign_in_method` when nothing
+       * else would let the user sign in. Needs a recent authentication.
+       *
+       * @example
+       * ```ts
+       * await tula.user.identities.unlink({ identityId })
+       * ```
+       */
+      unlink(input: { identityId: string }): Promise<void>
+    }
   }
   /**
    * Two-step verification of the signed-in user: an authenticator app (TOTP) and backup codes.
@@ -433,6 +598,11 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   }
   const links = createLinkStore(environment, scope)
   const flows = { transport, session, messages: currentMessages, environment, links, scope }
+  const oauth = {
+    ...flows,
+    oauth: createOAuthStore(environment, scope),
+    held: createOAuthTicketHolder(),
+  }
   let config: Promise<ClientConfig> | null = null
 
   /** A 200 that is not what the operation answers is not this API: nothing is built from it. */
@@ -443,6 +613,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     return answer
   }
   let handlingLink: Promise<EmailLinkOutcome> | null = null
+  let handlingOAuth: Promise<OAuthCallbackOutcome> | null = null
 
   return {
     get state() {
@@ -475,6 +646,22 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         }
         return handlingLink
       },
+      canUseOAuth: () => oauth.oauth.available(),
+      withOAuth: (input) => startOAuth(oauth, input, 'sign_in'),
+      handleOAuthCallback() {
+        // One exchange per answer: a UI calls this from an effect that may run twice, and the
+        // second call would find the address already cleaned and answer `none`.
+        if (!handlingOAuth) {
+          const pending = handleOAuthCallback(oauth).finally(() => {
+            if (handlingOAuth === pending) {
+              handlingOAuth = null
+            }
+          })
+          handlingOAuth = pending
+        }
+        return handlingOAuth
+      },
+      discardOAuthCallback: () => discardOAuthCallback(oauth),
     },
     resetPassword: {
       start: async (input) =>
@@ -483,7 +670,11 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     session: {
       getToken: () => session.getToken(),
       refresh: () => session.refresh(),
-      signOut: () => session.signOut(),
+      signOut() {
+        // A round trip waiting for a retry belongs to whoever was here: forget it.
+        discardOAuthCallback(oauth)
+        return session.signOut()
+      },
       list: async () => (await session.authorized('listSessions', {})).data,
       async revoke(sessionId) {
         await session.authorized('revokeSession', { params: { sessionId } })
@@ -491,6 +682,14 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       },
       revokeOthers: async () => (await session.authorized('revokeOtherSessions', {})).revoked,
       stepUp: (proof) => session.stepUp(proof),
+      async prepareStepUp() {
+        const { destination, expiresAt } = checked(
+          await session.authorized('sendStepUpEmailCode', {}),
+          isStepUpPrepared
+        )
+        // Only the receipt: whatever else an answer held does not travel further.
+        return { method: 'email_code', destination, expiresAt }
+      },
     },
     user: {
       async get() {
@@ -513,6 +712,14 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       },
       async changePassword(input) {
         await session.authorized('changeMyPassword', { body: input })
+      },
+      identities: {
+        list: async () =>
+          checked(await session.authorized('listMyIdentities', {}), isIdentityList).data,
+        link: (input) => startOAuth(oauth, input, 'link'),
+        async unlink({ identityId }) {
+          await session.authorized('deleteMyIdentity', { params: { identityId } })
+        },
       },
     },
     mfa: {

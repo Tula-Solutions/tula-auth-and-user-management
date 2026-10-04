@@ -38,6 +38,12 @@ export interface IssueInput {
   flowAttemptId?: string
   userId?: string
   /**
+   * Something only the asker has (a session id), mixed into the stored code hash: the code then
+   * checks out only when {@link VerifyCodeInput.binding} is the same. A value from the server's
+   * own records, never client input and never a secret that must not reach the keyed hash.
+   */
+  binding?: string
+  /**
    * Builds the magic-link URL from the link token. Omit to send a code only: the route that
    * accepts links belongs to the calling flow, so the flow decides the URL.
    */
@@ -49,11 +55,41 @@ export interface IssueInput {
    */
   deliver?: (delivery: Delivery) => Promise<void>
   /**
+   * Count this send under limits of the caller's own instead of the per-address ones.
+   *
+   * The per-address cooldown and hourly cap are shared by every code a stranger can ask for
+   * (sign-in, password reset, email verification). A code only a signed-in user can ask for
+   * must not share them: anyone who knows the address could keep it refused, and its sends
+   * would use up the sign-in codes'. With this set, the address's limits are neither checked
+   * nor counted.
+   */
+  sendLimits?: SendLimits
+  /**
    * Runs once the per-address send limits have allowed the email, and before anything is sent.
    * Throw to refuse. Lets a caller apply a wider limit (e.g. per environment) that a send
    * already refused by the address cooldown should not count against.
    */
   onAllowed?: () => Promise<void>
+}
+
+/**
+ * Send limits a caller brings in place of the per-address ones ({@link IssueInput.sendLimits}).
+ * The same cooldown ({@link RESEND_COOLDOWN}) applies, counted under the caller's key.
+ */
+export interface SendLimits {
+  /**
+   * Names the limiter keys, which no other purpose may use: `<name>_cooldown:<subject>` and
+   * `<name>:<subject>`.
+   */
+  name: string
+  /**
+   * What the sends are counted per, e.g. `<environment id>:<user id>`. It must name the
+   * environment and hold ids or keyed hashes only, never an address: limiter keys may live
+   * in Redis.
+   */
+  subject: string
+  /** Emails per hour for that subject. */
+  perHour: number
 }
 
 /** What a custom {@link IssueInput.deliver} receives. */
@@ -76,16 +112,23 @@ export interface IssuedVerification {
 async function enforceSendLimits(
   deps: Pick<Deps, 'rateLimiter'>,
   scope: Scope,
-  normalized: string
+  normalized: string,
+  own: SendLimits | undefined
 ): Promise<void> {
   // Hash the address so limiter keys (which may live in Redis) hold no email.
-  const key = `${scope.environmentId}:${sha256Hex(normalized)}`
-  const limits = [
-    ['verification_cooldown', 1, RESEND_COOLDOWN],
-    ['verification_hourly', SENDS_PER_HOUR, '1h'],
-  ] as const
-  for (const [name, limit, window] of limits) {
-    const decision = await deps.rateLimiter.hit(`${name}:${key}`, limit, durationToMs(window))
+  const address = `${scope.environmentId}:${sha256Hex(normalized)}`
+  const limits = own
+    ? ([
+        [`${own.name}_cooldown:${own.subject}`, 1, RESEND_COOLDOWN],
+        [`${own.name}:${own.subject}`, own.perHour, '1h'],
+      ] as const)
+    : ([
+        [`verification_cooldown:${address}`, 1, RESEND_COOLDOWN],
+        [`verification_hourly:${address}`, SENDS_PER_HOUR, '1h'],
+      ] as const)
+  // A limiter that cannot answer throws (ServiceUnavailableError): nothing is sent.
+  for (const [key, limit, window] of limits) {
+    const decision = await deps.rateLimiter.hit(key, limit, durationToMs(window))
     if (!decision.allowed) {
       throw new RateLimitError(decision.retryAfterMs)
     }
@@ -96,7 +139,8 @@ async function enforceSendLimits(
  * Email a fresh 6-digit code (and optionally a magic link), replacing any earlier one.
  *
  * Only hashes are stored: the code as `HMAC(key, "<token id>:<code>")`, because a plain hash of
- * 10^6 values is reversible, and the link token as SHA-256. Sends are limited per destination so
+ * 10^6 values is reversible, and the link token as SHA-256. Sends are limited per destination
+ * (or under the caller's own {@link IssueInput.sendLimits}) so
  * the endpoint can't be used to flood an inbox or to farm fresh codes to guess. A failed send
  * still counts against those limits (the relay needs the breathing room) but leaves the
  * previous code valid.
@@ -106,6 +150,7 @@ async function enforceSendLimits(
  * @param input - Purpose, destination, subject and optional link builder.
  * @returns The token id, masked destination and expiry.
  * @throws RateLimitError when the destination was emailed too recently or too often.
+ * @throws ServiceUnavailableError when the rate limiter cannot answer (nothing is sent).
  * @throws InternalError when the email could not be sent, or no subject was given.
  */
 export async function issue(
@@ -127,7 +172,7 @@ export async function issue(
     throw new InternalError({ internalMessage: 'verification needs a flow attempt or a user' })
   }
   const destination = normalizeEmail(input.destination)
-  await enforceSendLimits(deps, scope, destination)
+  await enforceSendLimits(deps, scope, destination, input.sendLimits)
   await input.onAllowed?.()
 
   const code = randomDigits(CODE_LENGTH)
@@ -164,7 +209,7 @@ export async function issue(
       flowAttemptId: input.flowAttemptId ?? null,
       purpose: input.purpose,
       destination,
-      codeHash: await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, `${id}:${code}`),
+      codeHash: await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, hashInput(id, code, input.binding)),
       linkTokenHash: linkToken ? sha256Hex(linkToken) : null,
       maxAttempts: MAX_ATTEMPTS,
       expiresAt,
@@ -175,11 +220,22 @@ export async function issue(
   return { id, destination: maskEmail(input.destination.trim()), expiresAt }
 }
 
+/**
+ * What a code's keyed hash is taken over: the token id, so equal codes hash differently, and
+ * the binding when the token was issued with one. A token with a binding never matches a
+ * check without it, or with another.
+ */
+function hashInput(tokenId: string, code: string, binding: string | undefined): string {
+  return binding === undefined ? `${tokenId}:${code}` : `${tokenId}:${binding}:${code}`
+}
+
 /** A code presented for a subject. */
 export interface VerifyCodeInput {
   purpose: VerificationPurpose
   subject: VerificationSubject
   code: string
+  /** The {@link IssueInput.binding} the code was issued with, when it had one. */
+  binding?: string
   /**
    * Pass `false` to leave a correct code unconsumed, when more must be checked before the code
    * is spent (a password reset checks the new password first). The caller then spends it with
@@ -222,7 +278,10 @@ export async function verifyCode(
     // Out of attempts, or a concurrent request consumed it. Either way: request a new code.
     throw new AuthError('verification.too_many_attempts')
   }
-  const presented = await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, `${token.id}:${input.code}`)
+  const presented = await deps.keyedHash.hmac(
+    KEYED_HASH_PURPOSE,
+    hashInput(token.id, input.code, input.binding)
+  )
   if (!timingSafeEqual(presented, counted.codeHash)) {
     throw new AuthError('verification.invalid_code', {
       attemptsRemaining: counted.maxAttempts - counted.attempts,

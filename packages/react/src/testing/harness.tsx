@@ -152,6 +152,10 @@ export interface WorldOptions {
   mfaPolicy?: 'off' | 'optional' | 'required'
   /** Storage shared by the browser's tabs; without it an emailed link cannot be used. */
   linkStorage?: FakeLinkStorage
+  /** The tab's `sessionStorage`: where an OAuth round trip's binding is kept. */
+  tabStorage?: FakeLinkStorage
+  /** The OAuth providers the environment has enabled. */
+  oauth?: string[]
   /** The address the page was opened at, for the page an emailed link leads to. */
   page?: FakePage
   /** Timers the test fires by hand; real ones otherwise. */
@@ -171,7 +175,7 @@ export function world(options: WorldOptions = {}): World {
   api.on(ROUTE.config, () =>
     json(200, {
       app: { name: 'Northline', supportEmail: null },
-      signIn: { methods: ['password'] },
+      signIn: { methods: ['password'], ...(options.oauth && { oauth: options.oauth }) },
       signUp: { password: options.signUpPassword ?? 'required' },
       password: options.policy ?? PASSWORD_POLICY_PRESETS.recommended,
       ...(options.mfaPolicy && { mfa: { policy: options.mfaPolicy } }),
@@ -182,6 +186,7 @@ export function world(options: WorldOptions = {}): World {
     { publishableKey: TEST_KEY, baseUrl: TEST_BASE_URL, client: 'web', fetch: api.fetch },
     fakeEnvironment(manualClock(), {
       linkStorage: options.linkStorage,
+      tabStorage: options.tabStorage,
       page: options.page,
       timers: options.timers,
     })

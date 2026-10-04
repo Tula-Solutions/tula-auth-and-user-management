@@ -10,7 +10,12 @@ import { createTestDatabase, createTestTenant, queryRows } from '@tula/db/testin
 import { sql } from 'drizzle-orm'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import type { Tenant } from '~/dependencies'
-import { NotFoundError, RateLimitError, ServiceException } from '~/exceptions'
+import {
+  NotFoundError,
+  RateLimitError,
+  ServiceException,
+  ServiceUnavailableError,
+} from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import { base32Decode, base32Encode, totp, totpStep } from '~/lib/totp'
@@ -21,6 +26,7 @@ import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
+import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import type { UserRecord } from '~/ports/user-repository'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
@@ -89,7 +95,7 @@ const actorOf = (userId: string): Actor => ({
 
 /** A verified user, with a password unless `password` is `null`. */
 async function seedUser(
-  options: { email?: string; password?: boolean; scope?: Tenant } = {}
+  options: { email?: string; password?: boolean; verified?: boolean; scope?: Tenant } = {}
 ): Promise<UserRecord> {
   const scope = options.scope ?? tenant
   const email = options.email ?? EMAIL
@@ -100,7 +106,7 @@ async function seedUser(
     environmentId: scope.environmentId,
     email,
     emailNormalized: email,
-    emailVerifiedAt: deps.clock.now(),
+    emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
     firstName: null,
     lastName: null,
     createdAt: deps.clock.now(),
@@ -199,7 +205,7 @@ describe('startTotp', () => {
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
     })
-    expect(await Mfa.stepUpMethods(deps, tenant, user.id)).toEqual(['password'])
+    expect(await Mfa.stepUpMethods(deps, tenant, user.id)).toEqual(['password', 'email_code'])
     // The right code of a factor that was never confirmed proves nothing.
     expect(await Mfa.verifyTotp(deps, tenant, user.id, codeFor(secret))).toBe(false)
     expect(used).not.toHaveBeenCalled()
@@ -1514,7 +1520,11 @@ describe('notices about two-step verification', () => {
 
   test('with notifications.mfaChanged off nothing is sent, and every change still happens', async () => {
     configure({
-      notifications: { ...DEFAULT_ENVIRONMENT_SETTINGS.notifications, mfaChanged: false },
+      notifications: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS.notifications,
+        mfaChanged: false,
+        identityChanged: true,
+      },
     })
     await everyChange()
     expect(deps.mailer.outbox).toEqual([])
@@ -1526,7 +1536,12 @@ describe('notices about two-step verification', () => {
 
   test('the other notices being off does not silence this one', async () => {
     configure({
-      notifications: { passwordChanged: false, newSignIn: false, mfaChanged: true },
+      notifications: {
+        passwordChanged: false,
+        newSignIn: false,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     const user = await seedUser()
     await enrol(user.id)
@@ -1547,10 +1562,17 @@ describe('notices about two-step verification', () => {
 })
 
 describe('stepUpMethods', () => {
-  test('a second factor when there is one, else the password, else nothing', async () => {
+  test('a second factor when there is one, else the password and an emailed code, else nothing', async () => {
     const withPassword = await seedUser()
-    const passwordless = await seedUser({ email: 'link@northline.app', password: false })
-    expect(await Mfa.stepUpMethods(deps, tenant, withPassword.id)).toEqual(['password'])
+    const passwordless = await seedUser({
+      email: 'link@northline.app',
+      password: false,
+      verified: false,
+    })
+    expect(await Mfa.stepUpMethods(deps, tenant, withPassword.id)).toEqual([
+      'password',
+      'email_code',
+    ])
     expect(await Mfa.stepUpMethods(deps, tenant, passwordless.id)).toEqual([])
     expect(await Mfa.stepUpMethods(deps, tenant, deps.ids.next())).toEqual([])
 
@@ -1594,7 +1616,7 @@ describe('requireRecentAuthentication', () => {
       status: 403,
       code: 'auth.step_up_required',
       detail: 'Confirm it is you to continue.',
-      params: { methods: 'password' },
+      params: { methods: 'password,email_code' },
     })
     expect((await rejection(check(claims(86_400)))).code).toBe('auth.step_up_required')
   })
@@ -1663,8 +1685,8 @@ describe('requireRecentAuthentication', () => {
     expect(err.toJSON()).toMatchObject({ params: { methods: 'totp' } })
   })
 
-  test('a user who signs in by email and has no second factor has nothing to step up with', async () => {
-    const user = await seedUser({ password: false })
+  test('a user with no password, no verified address and no second factor has nothing to step up with', async () => {
+    const user = await seedUser({ password: false, verified: false })
     await check({ sub: user.id, auth_time: nowSeconds(), amr: ['email'] })
     const err = await rejection(
       check({ sub: user.id, auth_time: nowSeconds() - 601, amr: ['email'] })
@@ -1827,13 +1849,13 @@ describe('stepUp', () => {
       const err = await rejection(stepUp(user.id, session.sessionId, proof))
       expect(err.toJSON()).toMatchObject({
         code: 'auth.step_up_required',
-        params: { methods: 'password' },
+        params: { methods: 'password,email_code' },
       })
     }
   })
 
-  test('a user with neither a password nor a second factor has no step-up', async () => {
-    const user = await seedUser({ password: false })
+  test('a user with no password, no verified address and no second factor has no step-up', async () => {
+    const user = await seedUser({ password: false, verified: false })
     const session = await newSession(user.id, ['email'])
     for (const proof of [
       { method: 'password', password: PASSWORD },
@@ -1987,5 +2009,466 @@ describe('stepUp', () => {
       ipAddress: null,
       userAgent: null,
     })
+  })
+})
+
+describe('step-up by emailed code', () => {
+  const self = (userId: string, sessionId: string) => ({ userId, sessionId })
+  const prepare = (userId: string, sessionId: string) =>
+    Mfa.prepareStepUp(deps, tenant, self(userId, sessionId), { method: 'email_code' })
+  /** The code in the newest email whose subject leads with one. */
+  function latestCode(): string {
+    const code = deps.mailer.outbox
+      .map((message) => /^(\d{6})\b/.exec(message.subject)?.[1])
+      .findLast((found) => found !== undefined)
+    if (!code) {
+      throw new Error('no email with a code was sent')
+    }
+    return code
+  }
+  const wrong = (code: string) => (code === '000000' ? '111111' : '000000')
+
+  test('is offered exactly to a user with a verified email and no second factor', async () => {
+    const withPassword = await seedUser()
+    const passwordless = await seedUser({ email: 'link@northline.app', password: false })
+    const unverified = await seedUser({ email: 'new@northline.app', verified: false })
+    const neither = await seedUser({
+      email: 'none@northline.app',
+      password: false,
+      verified: false,
+    })
+    expect(await Mfa.stepUpMethods(deps, tenant, withPassword.id)).toEqual([
+      'password',
+      'email_code',
+    ])
+    expect(await Mfa.stepUpMethods(deps, tenant, passwordless.id)).toEqual(['email_code'])
+    expect(await Mfa.stepUpMethods(deps, tenant, unverified.id)).toEqual(['password'])
+    expect(await Mfa.stepUpMethods(deps, tenant, neither.id)).toEqual([])
+
+    await enrol(passwordless.id)
+    expect(await Mfa.stepUpMethods(deps, tenant, passwordless.id)).toEqual(['totp', 'backup_code'])
+  })
+
+  test('a passwordless user asks for a code and steps up with it', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['fed'])
+    deps.clock.advance('1h')
+
+    const prepared = await prepare(user.id, session.sessionId)
+    expect(prepared).toEqual({
+      method: 'email_code',
+      destination: 'm***@northline.app',
+      expiresAt: new Date(deps.clock.now().getTime() + 600_000).toISOString(),
+    })
+    const mail = deps.mailer.last()
+    expect(mail.to).toBe(EMAIL)
+    expect(mail.subject).toMatch(/^\d{6} is your .+ confirmation code$/)
+    // A step-up email carries a code and never a link.
+    expect(mail.text).not.toMatch(/https?:\/\//)
+
+    const tokens = await stepUp(user.id, session.sessionId, {
+      method: 'email_code',
+      code: latestCode(),
+    })
+    const claims = await claimsOf(tokens.accessToken)
+    expect(claims.auth_time).toBe(Math.floor(deps.clock.now().getTime() / 1000))
+    expect(new Set(claims.amr)).toEqual(new Set(['fed', 'email']))
+    expect(deps.activityLog.ofType('session.stepped_up').at(-1)).toMatchObject({
+      actor: { type: 'user', id: user.id },
+      data: { userId: user.id, methods: ['email'] },
+    })
+    await Mfa.requireRecentAuthentication(deps, tenant, claims)
+  })
+
+  test('a code works once', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const code = latestCode()
+    await stepUp(user.id, session.sessionId, { method: 'email_code', code })
+    expect(
+      (await rejection(stepUp(user.id, session.sessionId, { method: 'email_code', code }))).code
+    ).toBe('verification.expired')
+  })
+
+  test('a user with a second factor can neither ask for a code nor use one', async () => {
+    const user = await seedUser()
+    const session = await newSession(user.id)
+    await prepare(user.id, session.sessionId)
+    const code = latestCode()
+    await enrol(user.id, session.sessionId)
+    const sentBefore = deps.mailer.outbox.length
+
+    const asked = await rejection(prepare(user.id, session.sessionId))
+    expect(asked.toJSON()).toMatchObject({
+      status: 403,
+      code: 'auth.step_up_required',
+      params: { methods: 'totp,backup_code' },
+    })
+    expect(deps.mailer.outbox).toHaveLength(sentBefore)
+    // Not even with a code that was emailed before the factor existed.
+    const used = await rejection(stepUp(user.id, session.sessionId, { method: 'email_code', code }))
+    expect(used.toJSON()).toMatchObject({
+      code: 'auth.step_up_required',
+      params: { methods: 'totp,backup_code' },
+    })
+  })
+
+  test('a user whose email is not verified cannot ask for a code', async () => {
+    const user = await seedUser({ verified: false })
+    const session = await newSession(user.id)
+    const err = await rejection(prepare(user.id, session.sessionId))
+    expect(err.toJSON()).toMatchObject({
+      code: 'auth.step_up_required',
+      params: { methods: 'password' },
+    })
+    expect(deps.mailer.outbox).toHaveLength(0)
+  })
+
+  test('a code asked by one session does not step up another', async () => {
+    const user = await seedUser({ password: false })
+    const asking = await newSession(user.id, ['email'])
+    const other = await newSession(user.id, ['email'])
+    await prepare(user.id, asking.sessionId)
+    const code = latestCode()
+    const err = await rejection(stepUp(user.id, other.sessionId, { method: 'email_code', code }))
+    expect(err.code).toBe('verification.invalid_code')
+    expect(deps.activityLog.ofType('session.stepped_up')).toHaveLength(0)
+    // The session that asked still can.
+    await stepUp(user.id, asking.sessionId, { method: 'email_code', code })
+  })
+
+  test('a code asked by one user does not step up another', async () => {
+    const user = await seedUser({ password: false })
+    const other = await seedUser({ email: 'noor@northline.app', password: false })
+    const session = await newSession(user.id, ['email'])
+    const otherSession = await newSession(other.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const err = await rejection(
+      stepUp(other.id, otherSession.sessionId, { method: 'email_code', code: latestCode() })
+    )
+    expect(err.code).toBe('verification.expired')
+  })
+
+  test('a step-up code is refused for every other purpose, and theirs for a step-up', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const stepUpCode = latestCode()
+    for (const purpose of ['email_verification', 'password_reset', 'sign_in'] as const) {
+      expect(
+        (
+          await rejection(
+            Verification.verifyCode(deps, tenant, {
+              purpose,
+              subject: { userId: user.id },
+              code: stepUpCode,
+            })
+          )
+        ).code
+      ).toBe('verification.expired')
+    }
+    await stepUp(user.id, session.sessionId, { method: 'email_code', code: stepUpCode })
+
+    for (const purpose of ['email_verification', 'password_reset', 'sign_in'] as const) {
+      deps.clock.advance('2h')
+      await Verification.issue(deps, tenant, { purpose, destination: EMAIL, userId: user.id })
+      const err = await rejection(
+        stepUp(user.id, session.sessionId, { method: 'email_code', code: latestCode() })
+      )
+      expect(err.code).toBe('verification.expired')
+    }
+  })
+
+  test('an expired code is refused', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const code = latestCode()
+    deps.clock.advance('10m')
+    expect(
+      (await rejection(stepUp(user.id, session.sessionId, { method: 'email_code', code }))).code
+    ).toBe('verification.expired')
+  })
+
+  test('a newer code replaces the older one', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const first = latestCode()
+    deps.clock.advance('61s')
+    await prepare(user.id, session.sessionId)
+    const second = latestCode()
+    if (first !== second) {
+      expect(
+        (await rejection(stepUp(user.id, session.sessionId, { method: 'email_code', code: first })))
+          .code
+      ).toBe('verification.invalid_code')
+    }
+    await stepUp(user.id, session.sessionId, { method: 'email_code', code: second })
+  })
+
+  test('asking again within the cooldown is rate limited and sends nothing', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const err = await rejection(prepare(user.id, session.sessionId))
+    expect(err).toBeInstanceOf(RateLimitError)
+    expect(deps.mailer.outbox).toHaveLength(1)
+  })
+
+  test('a user is sent at most five codes an hour, whatever the address limit says', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    const hits: string[] = []
+    const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
+    spies.push(
+      spyOn(deps.rateLimiter, 'hit').mockImplementation((key, limit, windowMs) => {
+        hits.push(`${key}|${limit}|${windowMs}`)
+        return hit(key, limit, windowMs)
+      })
+    )
+    await prepare(user.id, session.sessionId)
+    expect(hits).toEqual([
+      `step_up_email_cooldown:${tenant.environmentId}:${user.id}|1|60000`,
+      `step_up_email:${tenant.environmentId}:${user.id}|${Mfa.STEP_UP_EMAILS_PER_HOUR}|3600000`,
+    ])
+    expect(Mfa.STEP_UP_EMAILS_PER_HOUR).toBe(5)
+    // Limiter keys hold ids and hashes, never an address.
+    expect(hits.join('\n')).not.toContain('northline')
+  })
+
+  // Review finding F7: step-up sends shared the per-address cooldown and hourly cap with the
+  // sign-in, reset and verification codes, which anyone who knows the address can ask for
+  // without signing in. That let a stranger keep a user's step-up refused.
+  describe('send limits of its own', () => {
+    const signInCode = () =>
+      Verification.issue(deps, tenant, {
+        purpose: 'sign_in',
+        destination: EMAIL,
+        flowAttemptId: deps.ids.next(),
+      })
+
+    test('codes anyone can ask for at the address do not hold back a step-up code', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      for (let sent = 0; sent < Verification.SENDS_PER_HOUR; sent += 1) {
+        await signInCode()
+        deps.clock.advance('61s')
+      }
+      // The address is out of sends for the hour, and one more starts its cooldown again.
+      expect(await rejection(signInCode())).toBeInstanceOf(RateLimitError)
+      const before = deps.mailer.outbox.length
+
+      const prepared = await prepare(user.id, session.sessionId)
+      expect(prepared.method).toBe('email_code')
+      expect(deps.mailer.outbox).toHaveLength(before + 1)
+      await stepUp(user.id, session.sessionId, { method: 'email_code', code: latestCode() })
+    })
+
+    test('a sign-in code asked for a moment earlier does not hold back a step-up code', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      await signInCode()
+      // Within the address's one-minute cooldown.
+      expect(await rejection(signInCode())).toBeInstanceOf(RateLimitError)
+      await prepare(user.id, session.sessionId)
+      expect(deps.mailer.outbox).toHaveLength(2)
+    })
+
+    test('step-up codes do not use up the sends of a sign-in code', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      for (let sent = 0; sent < Mfa.STEP_UP_EMAILS_PER_HOUR; sent += 1) {
+        await prepare(user.id, session.sessionId)
+        deps.clock.advance('61s')
+      }
+      await prepare(user.id, session.sessionId).catch(() => undefined)
+      const before = deps.mailer.outbox.length
+      // Neither the address's hourly cap nor its cooldown was touched.
+      await signInCode()
+      expect(deps.mailer.outbox).toHaveLength(before + 1)
+    })
+
+    test('its own cooldown refuses a second code within a minute, with when to retry', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      await prepare(user.id, session.sessionId)
+      deps.clock.advance('20s')
+      const err = await rejection(prepare(user.id, session.sessionId))
+      expect(err).toBeInstanceOf(RateLimitError)
+      expect(err.toJSON()).toMatchObject({ code: 'rate_limited', params: { retryAfter: 40 } })
+      expect(deps.mailer.outbox).toHaveLength(1)
+      deps.clock.advance('41s')
+      await prepare(user.id, session.sessionId)
+      expect(deps.mailer.outbox).toHaveLength(2)
+    })
+
+    test('its own hourly cap refuses the sixth code, from any of the user’s sessions', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      const other = await newSession(user.id, ['email'])
+      for (let sent = 0; sent < Mfa.STEP_UP_EMAILS_PER_HOUR; sent += 1) {
+        await prepare(user.id, sent % 2 === 0 ? session.sessionId : other.sessionId)
+        deps.clock.advance('61s')
+      }
+      const err = await rejection(prepare(user.id, other.sessionId))
+      expect(err).toBeInstanceOf(RateLimitError)
+      expect((err as RateLimitError).retryAfter).toBeGreaterThan(60)
+      expect(deps.mailer.outbox).toHaveLength(Mfa.STEP_UP_EMAILS_PER_HOUR)
+    })
+
+    test('another user’s step-up codes are counted apart', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      const second = await seedUser({ email: 'second@northline.app', password: false })
+      const secondSession = await newSession(second.id, ['email'])
+      await prepare(user.id, session.sessionId)
+      await prepare(second.id, secondSession.sessionId)
+      expect(deps.mailer.outbox).toHaveLength(2)
+    })
+
+    test('a limiter that cannot answer sends nothing', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      spies.push(spyOn(deps.rateLimiter, 'hit').mockRejectedValue(new ServiceUnavailableError()))
+      const err = await rejection(prepare(user.id, session.sessionId))
+      expect(err.code).toBe('service.unavailable')
+      expect(deps.mailer.outbox).toHaveLength(0)
+    })
+  })
+
+  test('wrong codes are counted against the step-up lockout before the check', async () => {
+    const user = await seedUser()
+    const session = await newSession(user.id)
+    const lockKey = `step_up:${tenant.environmentId}:${user.id}`
+    const order: string[] = []
+    const attempt = deps.lockout.attempt.bind(deps.lockout)
+    spies.push(
+      spyOn(deps.lockout, 'attempt').mockImplementation((key, policy, now) => {
+        order.push(`lockout:${key}`)
+        return attempt(key, policy, now)
+      })
+    )
+    const record = deps.verificationTokens.recordAttempt.bind(deps.verificationTokens)
+    spies.push(
+      spyOn(deps.verificationTokens, 'recordAttempt').mockImplementation((env, id, now) => {
+        order.push('check')
+        return record(env, id, now)
+      })
+    )
+    await prepare(user.id, session.sessionId)
+    const code = latestCode()
+    const err = await rejection(
+      stepUp(user.id, session.sessionId, { method: 'email_code', code: wrong(code) })
+    )
+    expect(err.toJSON()).toMatchObject({
+      code: 'verification.invalid_code',
+      params: { attemptsRemaining: 4 },
+    })
+    expect(order).toEqual([`lockout:${lockKey}`, 'check'])
+
+    // The budget is the password step-up's: guessing one uses up the other.
+    let locked: ServiceException | undefined
+    for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts + 2 && !locked; i++) {
+      const next = await rejection(
+        stepUp(user.id, session.sessionId, { method: 'password', password: 'not the password' })
+      )
+      if (next instanceof RateLimitError) {
+        locked = next
+      }
+    }
+    expect(locked).toBeInstanceOf(RateLimitError)
+    // While locked out, the right code is not even looked at.
+    order.length = 0
+    expect(
+      await rejection(stepUp(user.id, session.sessionId, { method: 'email_code', code }))
+    ).toBeInstanceOf(RateLimitError)
+    expect(order).toEqual([`lockout:${lockKey}`])
+  })
+
+  test('a token takes five guesses and then no more, even the right one', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const code = latestCode()
+    spies.push(
+      spyOn(deps.lockout, 'attempt').mockResolvedValue({ allowed: true, retryAfterMs: 0 } as never)
+    )
+    for (let i = 0; i < 5; i++) {
+      expect(
+        (
+          await rejection(
+            stepUp(user.id, session.sessionId, { method: 'email_code', code: wrong(code) })
+          )
+        ).code
+      ).toBe('verification.invalid_code')
+    }
+    expect(
+      (await rejection(stepUp(user.id, session.sessionId, { method: 'email_code', code }))).code
+    ).toBe('verification.too_many_attempts')
+  })
+
+  test('success clears the lockout count', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const code = latestCode()
+    await rejection(stepUp(user.id, session.sessionId, { method: 'email_code', code: wrong(code) }))
+    const clear = spyOn(deps.lockout, 'clear')
+    spies.push(clear)
+    await stepUp(user.id, session.sessionId, { method: 'email_code', code })
+    expect(clear).toHaveBeenCalledWith(`step_up:${tenant.environmentId}:${user.id}`)
+  })
+
+  test('a revoked session cannot be stepped up, and the code is not spent on it', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    await prepare(user.id, session.sessionId)
+    const code = latestCode()
+    await Sessions.revoke(deps, tenant, {
+      userId: user.id,
+      sessionId: session.sessionId,
+      actor: actorOf(user.id),
+    })
+    expect(
+      (await rejection(stepUp(user.id, session.sessionId, { method: 'email_code', code }))).code
+    ).toBe('session.revoked')
+  })
+
+  test('when the email cannot be sent nothing is stored', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    deps.mailer.failing = true
+    expect((await rejection(prepare(user.id, session.sessionId))).status).toBe(500)
+    expect(
+      await deps.verificationTokens.findLatest(tenant.environmentId, 'step_up', { userId: user.id })
+    ).toBeNull()
+  })
+
+  test('neither the code nor the address reaches a log line or the audit log', async () => {
+    const user = await seedUser({ password: false })
+    const session = await newSession(user.id, ['email'])
+    const lines: string[] = []
+    for (const level of ['info', 'warn', 'error', 'debug'] as const) {
+      spies.push(
+        spyOn(logger, level).mockImplementation((...args: unknown[]) => {
+          lines.push(JSON.stringify(args))
+        })
+      )
+    }
+    await prepare(user.id, session.sessionId)
+    const code = latestCode()
+    await stepUp(user.id, session.sessionId, { method: 'email_code', code })
+    const audit = JSON.stringify(deps.activityLog.ofType('session.stepped_up'))
+    for (const text of [lines.join('\n'), audit]) {
+      expect(text).not.toContain(code)
+      expect(text).not.toContain(EMAIL)
+    }
+    const stored = await deps.verificationTokens.findLatest(tenant.environmentId, 'step_up', {
+      userId: user.id,
+    })
+    expect(stored?.codeHash).not.toContain(code)
+    expect(stored?.linkTokenHash).toBeNull()
   })
 })

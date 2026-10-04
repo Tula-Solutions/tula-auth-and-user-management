@@ -110,9 +110,14 @@ describe('what @tula/react costs a browser bundle', () => {
    * Minified and gzipped, with `@tula/core` and its part of the contract, without React.
    * The emailed code and link took it past the 26 kB it was first budgeted at; two-step
    * verification (the second-factor and enrolment screens, the profile section, the step-up
-   * and backup-code dialogs, and the client's part) took it to about 32.7 kB.
+   * and backup-code dialogs, and the client's part) took it to about 32.7 kB. OAuth (ADR 0026:
+   * the provider buttons with their three marks, the callback page, the connected-accounts
+   * section, their strings, and 1.5 kB in the client) took it to about 38 kB, and the budget
+   * from 35 kB to 39 kB. The step-up by emailed code (its form in the dialog, its strings and
+   * the client's call) and the passwordless profile's guidance took it to about 39.3 kB, and
+   * the budget to 40 kB.
    */
-  const GZIP_BUDGET_BYTES = 35_000
+  const GZIP_BUDGET_BYTES = 40_000
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

@@ -28,6 +28,13 @@ export interface NavigationOptions {
    * against the page first). Without it `<SignIn>` does not offer "Email me a link".
    */
   emailLinkUrl?: string
+  /**
+   * The page an OAuth sign-in returns to: the one that renders `<OAuthCallback>`. It must be
+   * one of the environment's allowed redirect URLs, exactly (a relative value is resolved
+   * against the page first), and on this origin. Without it no "Continue with …" button is
+   * drawn.
+   */
+  oauthCallbackUrl?: string
   /** Where to go once a sign-up completes. */
   afterSignUpUrl?: string
   /** Where to go after signing out from `<UserButton>` or `<UserProfile>`. */

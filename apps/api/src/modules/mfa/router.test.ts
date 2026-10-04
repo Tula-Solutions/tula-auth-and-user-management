@@ -173,6 +173,7 @@ describe('enrolling an authenticator over HTTP', () => {
       ['DELETE', '/me/factors/totp'],
       ['POST', '/me/factors/backup-codes'],
       ['POST', '/sessions/step-up'],
+      ['POST', '/sessions/step-up/email-code'],
     ] as const) {
       const res = await call(method, path, method === 'POST' ? { code: '123456' } : undefined)
       expect([path, res.status]).toEqual([path, 401])
@@ -293,7 +294,7 @@ describe('step-up over HTTP', () => {
       status: 403,
       code: 'auth.step_up_required',
       detail: 'Confirm it is you to continue.',
-      params: { methods: 'password' },
+      params: { methods: 'password,email_code' },
     } as never)
 
     const wrong = await post(
@@ -356,6 +357,115 @@ describe('step-up over HTTP', () => {
     expect(turnedOff.status).toBe(204)
     expect(deps.activityLog.ofType('user.mfa_disabled').at(-1)?.data).toEqual({ method: 'self' })
     expect((await signIn()).step.status).toBe('complete')
+  })
+})
+
+describe('step-up by emailed code over HTTP', () => {
+  /** A stale session of a signed-up user: its access token no longer counts as recent. */
+  async function stale() {
+    const session = (await signUp()).session as SessionTokens
+    deps.clock.advance('11m')
+    return json<SessionTokens>(
+      await post('/sessions/refresh', { refreshToken: session.refreshToken })
+    )
+  }
+  const codeInSubject = () => /^(\d{6}) /.exec(deps.mailer.last().subject)?.[1] ?? ''
+
+  test('asks for a code, steps up with it, and the fresh token is accepted', async () => {
+    const { accessToken } = await stale()
+    const asked = await post('/sessions/step-up/email-code', undefined, accessToken)
+    expect(asked.status).toBe(200)
+    expect(asked.headers.get('cache-control')).toBe('no-store')
+    const receipt = await json<Record<string, unknown>>(asked)
+    expect(receipt).toEqual({
+      method: 'email_code',
+      destination: 'm***@northline.app',
+      expiresAt: new Date(deps.clock.now().getTime() + 600_000).toISOString(),
+    })
+    const code = codeInSubject()
+    expect(code).toMatch(/^\d{6}$/)
+    expect(JSON.stringify(receipt)).not.toContain(code)
+
+    const wrong = await post(
+      '/sessions/step-up',
+      { method: 'email_code', code: code === '000000' ? '111111' : '000000' },
+      accessToken
+    )
+    expect(await errorOf(wrong)).toMatchObject({
+      status: 422,
+      code: 'verification.invalid_code',
+      params: { attemptsRemaining: 4 },
+    })
+
+    const stepped = await post('/sessions/step-up', { method: 'email_code', code }, accessToken)
+    expect(stepped.status).toBe(200)
+    expect(stepped.headers.get('cache-control')).toBe('no-store')
+    const tokens = await json<SessionTokens>(stepped)
+    expect(tokens).not.toHaveProperty('refreshToken')
+    expect(claimsOf(tokens.accessToken).auth_time).toBe(
+      Math.floor(deps.clock.now().getTime() / 1000)
+    )
+    expect(claimsOf(tokens.accessToken).amr).toContain('email')
+    expect((await post('/me/factors/totp', {}, tokens.accessToken)).status).toBe(200)
+  })
+
+  test('asking twice in a minute is rate limited with a retry time', async () => {
+    const { accessToken } = await stale()
+    expect((await post('/sessions/step-up/email-code', undefined, accessToken)).status).toBe(200)
+    const again = await post('/sessions/step-up/email-code', undefined, accessToken)
+    expect(again.status).toBe(429)
+    expect(Number(again.headers.get('retry-after'))).toBeGreaterThan(0)
+    expect(await errorOf(again)).toMatchObject({ code: 'rate_limited' })
+  })
+
+  test('a user with a second factor is refused a code and told what to use', async () => {
+    const { session } = await enrolled()
+    const sent = deps.mailer.outbox.length
+    const res = await post('/sessions/step-up/email-code', undefined, session.accessToken)
+    expect(await errorOf(res)).toMatchObject({
+      status: 403,
+      code: 'auth.step_up_required',
+      params: { methods: 'totp,backup_code' },
+    })
+    expect(deps.mailer.outbox).toHaveLength(sent)
+    expect(
+      await errorOf(
+        await post(
+          '/sessions/step-up',
+          { method: 'email_code', code: '123456' },
+          session.accessToken
+        )
+      )
+    ).toMatchObject({ status: 403, code: 'auth.step_up_required' })
+  })
+
+  test('a malformed code is a validation error and counts for nothing', async () => {
+    const { accessToken } = await stale()
+    await post('/sessions/step-up/email-code', undefined, accessToken)
+    for (const code of ['12345', '1234567', 'abcdef', '']) {
+      const res = await post('/sessions/step-up', { method: 'email_code', code }, accessToken)
+      expect([code, res.status]).toEqual([code, 422])
+    }
+    const stepped = await post(
+      '/sessions/step-up',
+      { method: 'email_code', code: codeInSubject() },
+      accessToken
+    )
+    expect(stepped.status).toBe(200)
+  })
+
+  test('the route is limited per IP', async () => {
+    const { accessToken } = await stale()
+    let last = 200
+    for (let i = 0; i < 12 && last !== 429; i++) {
+      deps.clock.advance('1s')
+      last = (await post('/sessions/step-up/email-code', undefined, accessToken)).status
+    }
+    expect(last).toBe(429)
+    // Only the first was sent: the others met the cooldown or the route's limit.
+    expect(
+      deps.mailer.outbox.filter((message) => message.subject.includes('confirmation code'))
+    ).toHaveLength(1)
   })
 })
 
@@ -890,7 +1000,7 @@ describe('the MFA routes: validation, caching and limits', () => {
           other.accessToken
         )
       )
-    ).toMatchObject({ code: 'auth.step_up_required', params: { methods: 'password' } })
+    ).toMatchObject({ code: 'auth.step_up_required', params: { methods: 'password,email_code' } })
     const { accessToken } = await json<SessionTokens>(
       await post('/sessions/refresh', { refreshToken: session.refreshToken })
     )

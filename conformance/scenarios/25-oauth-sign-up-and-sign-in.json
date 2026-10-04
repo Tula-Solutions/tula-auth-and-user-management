@@ -1,0 +1,568 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "OAuth sign-up and sign-in",
+  "description": "An environment signs users in with an OAuth provider using its own credentials, which are never returned. A sign-in starts with a redirect URL the environment allows and answers the provider's URL and a binding. The provider returns to the API's callback, whose state works once; the callback hands the app's page a single-use, 60-second ticket in the URL fragment and never a token. The ticket is exchanged only together with the binding of the browser that started: without it nothing completes. A verified provider address with no account creates one; the same provider account signs the same user in afterwards; an unverified address is refused. Uses the server's mock provider (OAUTH_MOCK_PROVIDER, local tier only). The provider's credentials are removed afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "unverified": {
+      "generate": "email"
+    },
+    "late": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment's own google credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-client",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "the provider is listed with the callback URL to register, and no secret",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/oauth-providers",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": "$any"
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "the client configuration offers it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": "$any",
+          "signIn": {
+            "methods": "$any",
+            "oauth": ["google"]
+          },
+          "signUp": "$any",
+          "password": "$any",
+          "mfa": "$any"
+        }
+      }
+    },
+    {
+      "name": "a redirect URL that is not allowed is refused before anything starts",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "https://not-allowed.conformance.example/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "a provider that is not configured is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "github",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.method_disabled",
+          "detail": "$any",
+          "params": {
+            "method": "oauth_github"
+          }
+        }
+      }
+    },
+    {
+      "name": "start continuing with Google",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding",
+        "aStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{email}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId",
+        "captureCallback": "aCallback"
+      }
+    },
+    {
+      "name": "the provider's answer works once: replaying the callback yields an error, not a ticket",
+      "oauth": {
+        "callback": "{{aCallback}}",
+        "expectError": "oauth.state_invalid"
+      }
+    },
+    {
+      "name": "a ticket without the starting browser's binding completes nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.different_browser",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "nor does one with a wrong binding",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "tula_ob_not-the-binding"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.different_browser",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "the starting browser exchanges the ticket: the account is created and signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "a ticket works once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "status": 410,
+          "code": "oauth.ticket_invalid",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the secret the attempt started with is of no use",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{aId}}/password",
+        "attempt": "{{aStartSecret}}",
+        "body": {
+          "password": "whatever-it-is-1A!"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the new account has its provider account connected",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "google",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "start again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding",
+        "bStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{bUrl}}",
+        "email": "{{email}}",
+        "captureTicket": "bTicket",
+        "captureAttempt": "bId"
+      }
+    },
+    {
+      "name": "the same provider account signs the same user in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{bTicket}}",
+          "attemptId": "{{bId}}",
+          "binding": "{{bBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": "$any"
+        }
+      }
+    },
+    {
+      "name": "a sign-in the user cancels at the provider",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "cUrl": "authorizationUrl",
+        "cBinding": "binding",
+        "cStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the app is told it was cancelled",
+      "oauth": {
+        "authorizationUrl": "{{cUrl}}",
+        "deny": true,
+        "expectError": "oauth.access_denied"
+      }
+    },
+    {
+      "name": "a provider account whose address is not verified",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "dUrl": "authorizationUrl",
+        "dBinding": "binding",
+        "dStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{dUrl}}",
+        "email": "{{unverified}}",
+        "captureTicket": "dTicket",
+        "captureAttempt": "dId",
+        "unverified": true
+      }
+    },
+    {
+      "name": "is refused, and no account is created",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{dTicket}}",
+          "attemptId": "{{dId}}",
+          "binding": "{{dBinding}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "oauth.email_unverified",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "a ticket that is not exchanged in time",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "eUrl": "authorizationUrl",
+        "eBinding": "binding",
+        "eStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{eUrl}}",
+        "email": "{{late}}",
+        "captureTicket": "eTicket",
+        "captureAttempt": "eId"
+      }
+    },
+    {
+      "name": "more than a minute passes",
+      "wait": "61s"
+    },
+    {
+      "name": "has expired",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{eTicket}}",
+          "attemptId": "{{eId}}",
+          "binding": "{{eBinding}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "status": 410,
+          "code": "oauth.ticket_invalid",
+          "detail": "$any"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

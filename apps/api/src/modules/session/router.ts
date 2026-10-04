@@ -18,6 +18,7 @@ import {
   SessionIdParamSchema,
   SessionListSchema,
   SessionTokensSchema,
+  StepUpEmailCodeSchema,
   StepUpRequestSchema,
 } from './schema'
 
@@ -251,15 +252,19 @@ router.post(
       '`auth_time` is now and whose `amr` includes the method. Sensitive routes that answer ' +
       '`auth.step_up_required` accept that token for ten minutes. A user with two-step ' +
       'verification must use `totp` or `backup_code` (their password alone answers ' +
-      '`auth.step_up_required`); a user without it uses `password`. A wrong password is ' +
-      '`auth.invalid_credentials`, a wrong code `mfa.invalid_code`; wrong proofs back off per ' +
-      'user. The refresh token is not rotated.',
+      '`auth.step_up_required`); a user without it uses `password`, or an `email_code` asked ' +
+      'for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong ' +
+      'password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, ' +
+      'a wrong emailed code `verification.invalid_code` (`verification.expired` once it is ' +
+      'used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong ' +
+      'proofs back off per user. The refresh token is not rotated.',
     security: openapi.security.session,
     responses: {
       413: openapi.responses[413],
       200: { description: 'A fresh access token.', content: json(SessionTokensSchema) },
       401: openapi.responses[401],
       403: openapi.responses[403],
+      410: openapi.responses[410],
       422: openapi.responses[422],
       429: openapi.responses[429],
       500: openapi.responses[500],
@@ -281,6 +286,49 @@ router.post(
           { userId: sub, sessionId: sid },
           c.req.valid('json'),
           requestOrigin(c)
+        )
+      )
+    )
+  }
+)
+
+router.post(
+  '/sessions/step-up/email-code',
+  describeRoute({
+    operationId: 'sendStepUpEmailCode',
+    tags: ['Sessions'],
+    summary: 'Email me a code to prove it is still me',
+    description:
+      'Emails the signed-in user a 6-digit code to step up with ' +
+      '(`POST /v1/client/sessions/step-up`, method `email_code`). Only for a user with a ' +
+      'verified email address and **no** second factor: anyone else gets ' +
+      '`auth.step_up_required` (403) with `params.methods`, and nothing is sent. The code ' +
+      'works for ten minutes, five guesses, once, and only for the session that asked; a new ' +
+      'one replaces it. One code a minute and five an hour per user: sooner answers ' +
+      '`rate_limited` (429) with `Retry-After`. The response never holds the code.',
+    security: openapi.security.session,
+    responses: {
+      200: { description: 'The code was emailed.', content: json(StepUpEmailCodeSchema) },
+      401: openapi.responses[401],
+      403: openapi.responses[403],
+      429: openapi.responses[429],
+      500: openapi.responses[500],
+      503: openapi.responses[503],
+    },
+  }),
+  rateLimit({ name: 'session_step_up_email', limit: STEP_UP_RATE_LIMIT, window: '1m', key: byIp }),
+  publishableKey(),
+  sessionAuth(),
+  async (c) => {
+    const { sub, sid } = c.get('session')
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      StepUpEmailCodeSchema.parse(
+        await Mfa.prepareStepUp(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: sub, sessionId: sid },
+          { method: 'email_code' }
         )
       )
     )

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, jest, mock, spyOn, test } from 'bun:test'
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { isStepUpRequired } from '@tula/core'
 import jsQR from 'jsqr'
 import { StrictMode, useState } from 'react'
+import { TulaProvider } from '../context'
 import { useStepUp } from '../hooks/use-step-up'
 import { useTula } from '../hooks/use-tula'
 import {
@@ -745,5 +746,222 @@ describe('useStepUp', () => {
     await waitFor(() => expect(openDialogs()).toBe(0))
     await waitFor(() => expect(onResult).toHaveBeenCalledTimes(2))
     expect(onResult).toHaveBeenLastCalledWith('declined')
+  })
+})
+
+describe('the step-up dialog: a code by email', () => {
+  const SEND = 'POST /v1/client/sessions/step-up/email-code'
+  const RECEIPT = {
+    method: 'email_code',
+    destination: 'm***@northline.app',
+    expiresAt: '2026-10-03T10:10:00.000Z',
+  }
+  const turnOn = async (w: World) => {
+    const mfa = await section()
+    await w.user.click(await within(mfa).findByRole('button', { name: 'Turn on' }))
+    return screen.findByRole('dialog', { name: 'Confirm it is you' })
+  }
+  /** A profile whose "Turn on" needs a step-up with `methods` until one is proven. */
+  function needsStepUp(methods: string) {
+    const { w } = profileWorld({ enabled: false })
+    const state = { stepped: false }
+    w.api.on(MFA.start, () =>
+      state.stepped ? json(200, { secret: SECRET, uri: URI }) : stepUpRequired(methods)
+    )
+    w.api.on(SEND, () => json(200, RECEIPT))
+    return { w, state }
+  }
+
+  test('the only method: the code is sent once when the dialog opens, even under StrictMode, and proves the step-up', async () => {
+    const { w, state } = needsStepUp('email_code')
+    render(
+      <StrictMode>
+        <TulaProvider client={w.client}>
+          <UserProfile />
+        </TulaProvider>
+      </StrictMode>
+    )
+    const dialog = await turnOn(w)
+    expect(
+      await within(dialog).findByText('Enter the 6-digit code we sent to m***@northline.app.')
+    ).toBeTruthy()
+    const code = within(dialog).getByLabelText(/Verification code/) as HTMLInputElement
+    await expectFocus(code)
+    expect(w.api.calls(SEND)).toHaveLength(1)
+    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+
+    // Incomplete: refused here, nothing sent.
+    await w.user.type(code, '123')
+    await w.user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    expect(within(dialog).getByRole('alert').textContent).toBe('Enter the 6-digit code.')
+    expect(w.api.calls(MFA.stepUp)).toHaveLength(0)
+
+    // Wrong: announced under the field with the guesses left, and retyped from scratch.
+    w.api.on(MFA.stepUp, () =>
+      failure(422, 'verification.invalid_code', { params: { attemptsRemaining: 4 } })
+    )
+    await w.user.clear(code)
+    await w.user.type(code, '000000')
+    await w.user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    await waitFor(() =>
+      expect(within(dialog).queryByRole('alert')?.textContent).toBe(
+        'That code is incorrect. 4 attempts left.'
+      )
+    )
+    expect(code.value).toBe('')
+    expect(code.getAttribute('aria-invalid')).toBe('true')
+    await expectFocus(code)
+
+    w.api.on(MFA.stepUp, () => {
+      state.stepped = true
+      return json(200, sessionTokens('stepped_up'))
+    })
+    await w.user.type(code, '654321')
+    await w.user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(w.api.calls(MFA.stepUp).at(-1)?.body).toEqual({ method: 'email_code', code: '654321' })
+    expect(w.api.calls(MFA.start)).toHaveLength(2)
+    expect(w.api.calls(SEND)).toHaveLength(1)
+    // The code is gone with the dialog.
+    expect(page()).not.toContain('654321')
+  })
+
+  test('next to a password nothing is emailed until the user asks, and they can go back', async () => {
+    const { w } = needsStepUp('password,email_code')
+    w.mount(<UserProfile />)
+    const dialog = await turnOn(w)
+    const password = within(dialog).getByLabelText('Password')
+    await expectFocus(password)
+    expect(w.api.calls(SEND)).toHaveLength(0)
+
+    await w.user.click(within(dialog).getByRole('button', { name: 'Email me a code instead' }))
+    const code = await within(dialog).findByLabelText(/Verification code/)
+    await expectFocus(code)
+    expect(w.api.calls(SEND)).toHaveLength(1)
+    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+
+    await w.user.click(within(dialog).getByRole('button', { name: 'Use your password instead' }))
+    await expectFocus(await within(dialog).findByLabelText('Password'))
+    // Going back and forth sends no second email: the code this dialog sent can still be typed.
+    await w.user.click(within(dialog).getByRole('button', { name: 'Email me a code instead' }))
+    await expectFocus(await within(dialog).findByLabelText(/Verification code/))
+    expect(
+      within(dialog).getByText('Enter the 6-digit code we sent to m***@northline.app.')
+    ).toBeTruthy()
+    expect(w.api.calls(SEND)).toHaveLength(1)
+    await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+  })
+
+  // Review finding F7: a first send refused as too soon was taken to mean "a code is already
+  // in your inbox". This dialog sent none, and the refusal can be caused by someone else.
+  test('a first send that is refused for now claims no code: the wait is counted down, then "Send code" sends', async () => {
+    const { w } = needsStepUp('email_code')
+    w.api.on(SEND, () =>
+      failure(429, 'rate_limited', { params: { retryAfter: 1 } }, { 'retry-after': '1' })
+    )
+    w.mount(<UserProfile />)
+    const dialog = await turnOn(w)
+    expect(await within(dialog).findByText(/Try again in \ds\./)).toBeTruthy()
+    expect(within(dialog).getByRole('alert').textContent).not.toBe('')
+    expect(dialog.textContent).not.toMatch(/we sent|we emailed|code is on its way/i)
+    expect(within(dialog).queryByLabelText(/Verification code/)).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /Resend code/ })).toBeNull()
+    const send = within(dialog).getByRole('button', { name: 'Send code' })
+    expect(send.getAttribute('aria-disabled')).toBe('true')
+    await w.user.click(send)
+    expect(w.api.calls(SEND)).toHaveLength(1)
+
+    // Once the server's wait is over the same button sends, and only then is a code asked for.
+    w.api.on(SEND, () => json(200, RECEIPT))
+    await waitFor(() => expect(send.getAttribute('aria-disabled')).not.toBe('true'), {
+      timeout: 3_000,
+    })
+    await w.user.click(within(dialog).getByRole('button', { name: 'Send code' }))
+    await expectFocus(await within(dialog).findByLabelText(/Verification code/))
+    expect(
+      within(dialog).getByText('Enter the 6-digit code we sent to m***@northline.app.')
+    ).toBeTruthy()
+    expect(w.api.calls(SEND)).toHaveLength(2)
+  })
+
+  test('resending: a new code is announced; sooner than the server allows, the button counts down', async () => {
+    const { w } = needsStepUp('email_code')
+    w.mount(<UserProfile />)
+    const dialog = await turnOn(w)
+    await within(dialog).findByLabelText(/Verification code/)
+    await w.user.click(within(dialog).getByRole('button', { name: 'Resend code' }))
+    await waitFor(() =>
+      expect(within(dialog).getByRole('status').textContent).toBe('A new code is on its way.')
+    )
+    expect(w.api.calls(SEND)).toHaveLength(2)
+
+    w.api.on(SEND, () => failure(429, 'rate_limited', {}, { 'retry-after': '42' }))
+    await w.user.click(within(dialog).getByRole('button', { name: 'Resend code' }))
+    const waiting = await within(dialog).findByRole('button', { name: /^Resend code in 4\ds$/ })
+    expect(waiting.getAttribute('aria-disabled')).toBe('true')
+    expect(within(dialog).getByRole('status').textContent).toBe('')
+    // The code can still be submitted while the resend waits.
+    expect(
+      within(dialog).getByRole('button', { name: 'Continue' }).getAttribute('aria-disabled')
+    ).not.toBe('true')
+    await w.user.click(waiting)
+    expect(w.api.calls(SEND)).toHaveLength(3)
+  })
+
+  test('a code that expired or ran out of guesses says so above the form, and a new one can be sent', async () => {
+    const { w } = needsStepUp('email_code')
+    w.mount(<UserProfile />)
+    const dialog = await turnOn(w)
+    const code = await within(dialog).findByLabelText(/Verification code/)
+    w.api.on(MFA.stepUp, () => failure(410, 'verification.expired'))
+    await w.user.type(code, '123456')
+    await w.user.click(within(dialog).getByRole('button', { name: 'Continue' }))
+    await waitFor(() =>
+      expect(within(dialog).queryByRole('alert')?.textContent).toContain(
+        'That code has expired. Request a new one.'
+      )
+    )
+    await w.user.click(within(dialog).getByRole('button', { name: 'Resend code' }))
+    await waitFor(() => expect(w.api.calls(SEND)).toHaveLength(2))
+    await waitFor(() => expect(within(dialog).queryByRole('alert')).toBeNull())
+  })
+
+  test('when the email cannot be sent the dialog says so and offers to try again', async () => {
+    const { w } = needsStepUp('email_code')
+    w.api.on(SEND, () => failure(500, 'internal'))
+    w.mount(<UserProfile />)
+    const dialog = await turnOn(w)
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert.textContent).not.toBe('')
+    expect(within(dialog).queryByLabelText(/Verification code/)).toBeNull()
+    w.api.on(SEND, () => json(200, RECEIPT))
+    await w.user.click(within(dialog).getByRole('button', { name: 'Send code' }))
+    await expectFocus(await within(dialog).findByLabelText(/Verification code/))
+    expect(w.api.calls(SEND)).toHaveLength(2)
+  })
+
+  test('a user with a second factor is never offered a code by email', async () => {
+    const { w } = profileWorld({ enabled: true })
+    w.api.on(MFA.disable, () => stepUpRequired('totp,backup_code,email_code'))
+    w.mount(<UserProfile />)
+    const mfa = await section()
+    await w.user.click(await within(mfa).findByRole('button', { name: 'Turn off' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
+    expect(within(dialog).queryByRole('button', { name: /Email me a code/ })).toBeNull()
+    expect(w.api.calls(SEND)).toHaveLength(0)
+  })
+
+  test('signing out underneath the dialog closes it and a late receipt changes nothing', async () => {
+    const { w } = needsStepUp('email_code')
+    let release: (response: Response) => void = () => undefined
+    w.api.on(SEND, () => new Promise<Response>((resolve) => (release = resolve)))
+    w.mount(<UserProfile />)
+    await turnOn(w)
+    await waitFor(() => expect(w.api.calls(SEND)).toHaveLength(1))
+    await act(() => w.client.session.signOut())
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await act(async () => release(json(200, RECEIPT)))
+    expect(page()).not.toContain('m***@northline.app')
   })
 })

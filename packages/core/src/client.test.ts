@@ -594,6 +594,67 @@ describe('two-step verification (client.mfa)', () => {
   })
 })
 
+describe('session.prepareStepUp: a step-up code by email', () => {
+  const SEND = 'POST /v1/client/sessions/step-up/email-code'
+  const STEP_UP = 'POST /v1/client/sessions/step-up'
+  const REFRESH = 'POST /v1/client/sessions/refresh'
+  const RECEIPT = {
+    method: 'email_code',
+    destination: 'm***@northline.app',
+    expiresAt: '2026-01-01T00:10:00.000Z',
+  } as const
+
+  test('asks the API to email the code and returns the receipt; stepUp then presents the code', async () => {
+    const { api, tula } = await signedIn()
+    api.on(SEND, () => json(200, RECEIPT))
+    api.on(STEP_UP, () => json(200, sessionTokens('proven')))
+    expect(await tula.session.prepareStepUp({ method: 'email_code' })).toEqual(RECEIPT)
+    const sent = api.calls(SEND)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.headers.get('authorization')).toMatch(/^Bearer /)
+    // Asking changes nothing about the session.
+    expect(api.calls(REFRESH)).toHaveLength(1)
+
+    await tula.session.stepUp({ method: 'email_code', code: '123456' })
+    expect(api.calls(STEP_UP)[0]?.body).toEqual({ method: 'email_code', code: '123456' })
+    expect(await tula.session.getToken()).toBe(sessionTokens('proven').accessToken)
+  })
+
+  test('a refusal is passed on as it is: the cooldown with its retry time, and a user who must use a second factor', async () => {
+    const { api, tula } = await signedIn()
+    api.on(SEND, () => failure(429, 'rate_limited', {}, { 'retry-after': '42' }))
+    const limited = await caught(tula.session.prepareStepUp({ method: 'email_code' }))
+    expect(limited).toMatchObject({ code: 'rate_limited', status: 429, retryAfterMs: 42_000 })
+    api.on(SEND, () =>
+      failure(403, 'auth.step_up_required', { params: { methods: 'totp,backup_code' } })
+    )
+    const refused = await caught(tula.session.prepareStepUp({ method: 'email_code' }))
+    expect(Core.stepUpMethods(refused)).toEqual(['totp', 'backup_code'])
+    expect(tula.state.status).toBe('signed-in')
+  })
+
+  test('an answer that is not a receipt is response.invalid, and one that holds more is trimmed to the receipt', async () => {
+    const { api, tula } = await signedIn()
+    for (const body of [{}, { method: 'email_code' }, { ...RECEIPT, destination: 7 }, 'ok', null]) {
+      api.on(SEND, () => json(200, body))
+      expect(await caught(tula.session.prepareStepUp({ method: 'email_code' }))).toMatchObject({
+        code: 'response.invalid',
+      })
+    }
+    api.on(SEND, () => json(200, { ...RECEIPT, code: '123456' }))
+    expect(await tula.session.prepareStepUp({ method: 'email_code' })).toEqual(RECEIPT)
+  })
+
+  test('signed out, nothing is sent', async () => {
+    const { api, tula } = setup()
+    api.on(REFRESH, () => failure(401, 'session.revoked'))
+    expect(await caught(tula.session.prepareStepUp({ method: 'email_code' }))).toMatchObject({
+      code: 'auth.unauthenticated',
+    })
+    expect(api.calls(SEND)).toHaveLength(0)
+  })
+})
+
 describe('config.mfa', () => {
   test('the policy is passed through; an API that does not say leaves it out', async () => {
     const { api, tula } = setup()
@@ -619,6 +680,7 @@ describe('the public surface', () => {
       'createTulaClient',
       'evaluatePassword',
       'formatMessage',
+      'isRetryableOAuthError',
       'isStepUpRequired',
       'isTulaError',
       'memoryStorage',

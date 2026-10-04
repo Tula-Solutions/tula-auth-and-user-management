@@ -104,6 +104,33 @@ export interface TulaLocalization {
     /** The link back to `<SignIn>`. */
     signIn: string
   }
+  /** Signing in with a provider (Google, GitHub, Apple), and the page it returns to. */
+  oauth: {
+    /** `{provider}` is the provider's name. */
+    continueWith: string
+    /** Between the provider buttons and the form. */
+    divider: string
+    loadingTitle: string
+    loadingMessage: string
+    differentBrowserTitle: string
+    differentBrowserMessage: string
+    accountExistsTitle: string
+    accountExistsMessage: string
+    cancelledTitle: string
+    refusedTitle: string
+    noneTitle: string
+    noneMessage: string
+    linkedTitle: string
+    /** `{provider}`. */
+    linkedMessage: string
+    errorTitle: string
+    /** The button that asks again after a request that got no answer. */
+    tryAgain: string
+    /** The link back to `<SignIn>`. */
+    signIn: string
+    /** The link back to the account page after connecting an account. */
+    backToAccount: string
+  }
   /** The emailed-code screen of every flow. */
   verification: {
     title: string
@@ -210,6 +237,16 @@ export interface TulaLocalization {
     passwordWrong: string
     totpSubtitle: string
     backupSubtitle: string
+    /** `{destination}` (masked). Above the code field once the email was sent. */
+    emailSubtitle: string
+    /** While the email is being sent. */
+    emailSending: string
+    /** The button that sends the email after a send that failed or was refused for now. */
+    emailSend: string
+    /** Offered next to the password: switch to a code by email. */
+    emailInstead: string
+    /** Offered next to the emailed code: switch back to the password. */
+    passwordInstead: string
     submit: string
     cancel: string
     /** Shown when the user has nothing to step up with: they must sign in again. */
@@ -237,6 +274,12 @@ export interface TulaLocalization {
     emailVerified: string
     emailUnverified: string
     passwordTitle: string
+    /**
+     * `{forgotPassword}` is the sign-in screen's "Forgot password?" label. Shown instead of the
+     * change-password form to a user who has no password (they signed up through a provider or
+     * by email).
+     */
+    passwordNotSet: string
     currentPasswordLabel: string
     currentPasswordWrong: string
     newPasswordLabel: string
@@ -260,6 +303,16 @@ export interface TulaLocalization {
     othersSignedOut: string
     signOutTitle: string
     signOut: string
+    connectedTitle: string
+    connectedLoading: string
+    connectedEmpty: string
+    /** `{provider}`. */
+    connect: string
+    disconnect: string
+    /** `{provider}`. The accessible name of a row's disconnect button. */
+    disconnectLabel: string
+    /** `{provider}`. */
+    disconnected: string
   }
   /**
    * Messages for error codes, replacing `@tula/core`'s English ones. Codes left out stay
@@ -364,6 +417,29 @@ export const EN_LOCALIZATION: TulaLocalization = {
     errorTitle: 'We could not check your link',
     signIn: 'Sign in',
   },
+  oauth: {
+    continueWith: 'Continue with {provider}',
+    divider: 'or',
+    loadingTitle: 'Signing you in…',
+    loadingMessage: 'Finishing sign-in.',
+    differentBrowserTitle: 'Start again in this browser',
+    differentBrowserMessage:
+      'This sign-in was started in another browser or tab, so it cannot be finished here. Nothing was changed. Start again on this device.',
+    accountExistsTitle: 'You already have an account',
+    accountExistsMessage:
+      'An account with this email address already exists. Sign in the way you usually do, then connect this provider under “Connected accounts” in your account.',
+    cancelledTitle: 'Sign-in was cancelled',
+    refusedTitle: 'We could not sign you in',
+    noneTitle: 'Nothing to finish here',
+    noneMessage:
+      'This page finishes a sign-in with Google, GitHub or Apple, and this address does not carry one.',
+    linkedTitle: 'Account connected',
+    linkedMessage: 'Your {provider} account is connected. You can now use it to sign in.',
+    errorTitle: 'We could not finish signing you in',
+    tryAgain: 'Try again',
+    signIn: 'Sign in',
+    backToAccount: 'Back to your account',
+  },
   verification: {
     title: 'Check your email',
     subtitle: 'Enter the 6-digit code we sent to {destination}.',
@@ -467,6 +543,11 @@ export const EN_LOCALIZATION: TulaLocalization = {
     passwordWrong: 'That password is incorrect.',
     totpSubtitle: 'Enter the 6-digit code from your authenticator app to continue.',
     backupSubtitle: 'Enter one of your backup codes to continue. Each code works once.',
+    emailSubtitle: 'Enter the 6-digit code we sent to {destination}.',
+    emailSending: 'Sending you a code…',
+    emailSend: 'Send code',
+    emailInstead: 'Email me a code instead',
+    passwordInstead: 'Use your password instead',
     submit: 'Continue',
     cancel: 'Cancel',
     noMethod: 'For your security, sign out and sign in again to continue.',
@@ -490,6 +571,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     emailVerified: 'Verified',
     emailUnverified: 'Not verified',
     passwordTitle: 'Password',
+    passwordNotSet:
+      'This account has no password: you sign in another way. To add one, sign out and choose “{forgotPassword}” on the sign-in screen. We will email you a code to set it.',
     currentPasswordLabel: 'Current password',
     currentPasswordWrong: 'That is not your current password.',
     newPasswordLabel: 'New password',
@@ -509,6 +592,13 @@ export const EN_LOCALIZATION: TulaLocalization = {
     othersSignedOut: 'Signed out of {count} other devices.',
     signOutTitle: 'Sign out',
     signOut: 'Sign out',
+    connectedTitle: 'Connected accounts',
+    connectedLoading: 'Loading your connected accounts…',
+    connectedEmpty: 'No accounts are connected.',
+    connect: 'Connect {provider}',
+    disconnect: 'Disconnect',
+    disconnectLabel: 'Disconnect {provider}',
+    disconnected: '{provider} was disconnected.',
   },
   errors: {},
 }

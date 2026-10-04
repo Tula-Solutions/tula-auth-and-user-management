@@ -34,7 +34,12 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/mfa/router')).default],
   ['/v1/admin/audit-logs', (await import('~/modules/audit/router')).default],
   ['/v1', (await import('~/modules/settings/router')).default],
+  ['/v1', (await import('~/modules/oauth/router')).default],
 ]
+
+// Mounted only where the deployment runs the mock OAuth provider (`ENVIRONMENT=local` with
+// `OAUTH_MOCK_PROVIDER=true`): in every other deployment the paths do not exist.
+const devOAuthRouter = (await import('~/modules/oauth/dev-router')).default
 
 /**
  * Build the Tula API app without listening.
@@ -79,6 +84,9 @@ export function createApp(deps: Deps): Hono<AppEnv> {
 
   for (const [path, router] of routes) {
     app.route(path, router)
+  }
+  if (deps.config.oauthMock && deps.config.tier === 'local') {
+    app.route('/v1/dev/oauth', devOAuthRouter)
   }
 
   app.get(

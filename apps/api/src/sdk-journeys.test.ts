@@ -15,6 +15,7 @@ import {
   type TulaError,
 } from '@tula/core'
 import { decodeJwt } from 'jose'
+import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
@@ -94,6 +95,8 @@ interface Server {
     body?: unknown,
     headers?: Record<string, string>
   ): Promise<Response>
+  /** A request no SDK makes: a browser navigating (to a provider's page, to the callback). */
+  navigate(path: string, init?: RequestInit): Promise<Response>
 }
 
 afterEach(() => {
@@ -101,8 +104,9 @@ afterEach(() => {
   setSystemTime()
 })
 
-async function server(): Promise<Server> {
+async function server(prepare?: (deps: TestDeps) => void): Promise<Server> {
   const deps = createTestDeps()
+  prepare?.(deps)
   deps.environments.add({
     id: TEST_TENANT.environmentId,
     projectId: TEST_TENANT.projectId,
@@ -193,6 +197,7 @@ async function server(): Promise<Server> {
       deps.clock.advance(ms)
       setSystemTime(new Date(Date.now() + ms))
     },
+    navigate: async (path, init) => app.request(path, init),
     async admin(method, path, body, headers = {}) {
       return app.request(path, {
         method,
@@ -1557,7 +1562,7 @@ describe('SDK journeys: two-step verification and step-up', () => {
       // A method the user does not have is refused, naming the one to use.
       const noFactor = await caught(tula.session.stepUp({ method: 'totp', code: '123456' }))
       expect(isStepUpRequired(noFactor)).toBe(true)
-      expect(stepUpMethods(noFactor)).toEqual(['password'])
+      expect(stepUpMethods(noFactor)).toEqual(['password', 'email_code'])
 
       const { secret } = await tula.mfa.startTotp()
       const { codes } = await tula.mfa.confirmTotp({ code: authenticator(s, secret) })
@@ -1717,6 +1722,368 @@ describe('SDK journeys: two-step verification and step-up', () => {
           code: result.backupCodes[0] ?? '',
         })
       ).toMatchObject({ step: { status: 'complete' }, backupCodesRemaining: 9 })
+    }
+  )
+})
+
+describe('SDK journeys: OAuth', () => {
+  const SIGN_IN_PAGE = `${APP_ORIGIN}/sign-in`
+  const CALLBACK_PAGE = `${APP_ORIGIN}/oauth/callback`
+
+  /** A server whose providers are the mock provider, with Google configured. */
+  async function oauthServer(): Promise<Server> {
+    const s = await server((deps) => {
+      deps.config = { ...deps.config, oauthMock: true }
+      Object.assign(deps, {
+        oauth: mockOAuthProviders({
+          secretBox: deps.secretBox,
+          clock: deps.clock,
+          publicUrl: deps.config.publicUrl,
+        }),
+      })
+    })
+    const saved = await s.admin('PUT', '/v1/admin/oauth-providers/google', {
+      clientId: 'journey-client',
+      clientSecret: 'journey-client-secret',
+    })
+    expect(saved.status).toBe(200)
+    return s
+  }
+
+  /** One browser tab: `sessionStorage` that survives its navigations, and its address. */
+  function tab() {
+    const entries = new Map<string, string>()
+    const storage = {
+      get length() {
+        return entries.size
+      },
+      key: (index: number) => [...entries.keys()][index] ?? null,
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => void entries.set(key, value),
+      removeItem: (key: string) => void entries.delete(key),
+    }
+    const visited: string[] = []
+    return {
+      entries,
+      visited,
+      /** Load a page at `url`: the next client created reads these globals. */
+      open(url: string) {
+        const location = {
+          href: url,
+          assign(next: string) {
+            visited.push(next)
+          },
+        }
+        const history = {
+          state: null,
+          replaceState(_state: unknown, _unused: string, next: string) {
+            location.href = next
+          },
+        }
+        Object.assign(globalThis, { sessionStorage: storage, location, history })
+        return location
+      },
+    }
+  }
+
+  afterEach(() => {
+    for (const name of ['sessionStorage', 'location', 'history']) {
+      Reflect.deleteProperty(globalThis, name)
+    }
+  })
+
+  const pathOf = (url: string) => url.slice(new URL(url).origin.length)
+
+  /** Play the user at the provider; returns the app URL the API's callback redirects to. */
+  async function atProvider(
+    s: Server,
+    authorizationUrl: string,
+    consent: Record<string, string>
+  ): Promise<string> {
+    const url = new URL(authorizationUrl)
+    expect(url.pathname).toBe('/v1/dev/oauth/authorize')
+    const consented = await s.navigate(url.pathname, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ...Object.fromEntries(url.searchParams), ...consent }),
+    })
+    expect(consented.status).toBe(302)
+    const callback = await s.navigate(pathOf(consented.headers.get('location') ?? ''))
+    expect(callback.status).toBe(303)
+    expect(callback.headers.get('set-cookie')).toBeNull()
+    return callback.headers.get('location') ?? ''
+  }
+
+  /** The whole round trip in one tab, up to the outcome on the landing page. */
+  async function continueWithGoogle(
+    s: Server,
+    consent: Record<string, string>,
+    options: { cookies?: Map<string, string>; browserTab?: ReturnType<typeof tab> } = {}
+  ) {
+    const browserTab = options.browserTab ?? tab()
+    browserTab.open(SIGN_IN_PAGE)
+    const first = s.client('web', { cookies: options.cookies })
+    const { url } = await first.tula.signIn.withOAuth({
+      provider: 'google',
+      redirectUrl: CALLBACK_PAGE,
+    })
+    expect(browserTab.visited.at(-1)).toBe(url)
+    const landingUrl = await atProvider(s, url, consent)
+    const location = browserTab.open(landingUrl)
+    const landing = s.client('web', { cookies: first.cookies })
+    const outcome = await landing.tula.signIn.handleOAuthCallback()
+    return { outcome, landing, location, browserTab, landingUrl }
+  }
+
+  journey(
+    'OAuth sign-up and sign-in',
+    'OAuth: continue with a provider, come back, and be signed in; nothing token-like is kept or left in the address',
+    async () => {
+      const s = await oauthServer()
+      const email = freshEmail()
+      const first = tab()
+      first.open(SIGN_IN_PAGE)
+      const start = s.client('web')
+      expect(start.tula.signIn.canUseOAuth()).toBe(true)
+      expect((await start.tula.config.get()).signIn.oauth).toEqual(['google'])
+      const { url } = await start.tula.signIn.withOAuth({
+        provider: 'google',
+        redirectUrl: CALLBACK_PAGE,
+      })
+      // The tab keeps the binding and nothing else: no attempt secret, no token.
+      expect(first.entries.size).toBe(1)
+      const kept = [...first.entries.values()].join()
+      expect(kept).toContain('tula_ob_')
+      expect(kept).not.toContain('tula_at_')
+      expect(start.tula.state.status).not.toBe('signed-in')
+
+      const landingUrl = await atProvider(s, url, { email })
+      expect(landingUrl).toStartWith(`${CALLBACK_PAGE}#tula_ticket=`)
+      const location = first.open(landingUrl)
+      const landing = s.client('web', { cookies: start.cookies })
+      const outcome = await landing.tula.signIn.handleOAuthCallback()
+      expect(outcome.status).toBe('complete')
+      expect(landing.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect(location.href).toBe(CALLBACK_PAGE)
+      expect(first.entries.size).toBe(0)
+      // The refresh token went to the cookie; no response body the SDK saw held one.
+      expect(landing.cookies.size).toBe(1)
+      const exchange = s.exchanges.find((sent) => sent.path.endsWith('/sign-ins/oauth/exchange'))
+      expect(exchange?.responseBody).not.toContain('refreshToken')
+      // No request the SDK made carries the ticket, the binding or a code in its URL.
+      for (const sent of s.exchanges) {
+        expect(sent.path).not.toMatch(/tula_ot_|tula_ob_|code=|state=/)
+      }
+
+      // Signing in again finds the same account.
+      const userId =
+        landing.tula.state.status === 'signed-in' ? (landing.tula.state.user?.id ?? '') : ''
+      await landing.tula.session.signOut()
+      const again = await continueWithGoogle(s, { email })
+      expect(again.outcome.status).toBe('complete')
+      expect(again.landing.tula.state).toMatchObject({ status: 'signed-in', user: { id: userId } })
+    }
+  )
+
+  journey(
+    'OAuth sign-up and sign-in',
+    'OAuth: a ticket opened in a browser that did not start the sign-in completes nothing; cancelling and an unverified address are outcomes',
+    async () => {
+      const s = await oauthServer()
+      // The attacker's own round trip, stopped before the app's page.
+      const attackerTab = tab()
+      attackerTab.open(SIGN_IN_PAGE)
+      const attacker = s.client('web')
+      const { url } = await attacker.tula.signIn.withOAuth({
+        provider: 'google',
+        redirectUrl: CALLBACK_PAGE,
+      })
+      const attackerLanding = await atProvider(s, url, { email: freshEmail() })
+      // The victim's browser is sent to that URL.
+      const victimTab = tab()
+      const location = victimTab.open(attackerLanding)
+      const victim = s.client('web')
+      expect(await victim.tula.signIn.handleOAuthCallback()).toEqual({
+        status: 'different_browser',
+      })
+      expect(victim.tula.state.status).not.toBe('signed-in')
+      expect(victim.cookies.size).toBe(0)
+      expect(location.href).toBe(CALLBACK_PAGE)
+
+      const cancelled = await continueWithGoogle(s, { action: 'deny' })
+      expect(cancelled.outcome).toMatchObject({ status: 'error', code: 'oauth.access_denied' })
+      expect(cancelled.browserTab.entries.size).toBe(0)
+
+      const unverified = await continueWithGoogle(s, { email: freshEmail(), unverified: '1' })
+      expect(unverified.outcome).toMatchObject({ status: 'error', code: 'oauth.email_unverified' })
+      expect(unverified.landing.tula.state.status).not.toBe('signed-in')
+
+      const elsewhere = await caught(
+        s.client('web').tula.signIn.withOAuth({
+          provider: 'google',
+          redirectUrl: 'https://not-allowed.example/oauth/callback',
+        })
+      )
+      expect(elsewhere.code).toBe('link.cross_origin')
+    }
+  )
+
+  journey(
+    'OAuth account linking',
+    'OAuth: automatic linking needs a verified address on both sides; a profile links and unlinks, but not the last way in',
+    async () => {
+      const s = await oauthServer()
+      const member = freshEmail()
+      const created = await s.admin('POST', '/v1/admin/users', {
+        email: member,
+        password: PASSWORD,
+        emailVerified: true,
+      })
+      const memberId = ((await created.json()) as { id: string }).id
+      const linked = await continueWithGoogle(s, { email: member })
+      expect(linked.outcome.status).toBe('complete')
+      expect(linked.landing.tula.state).toMatchObject({ user: { id: memberId } })
+      const { tula } = linked.landing
+      const [identity] = await tula.user.identities.list()
+      expect(identity).toMatchObject({ provider: 'google' })
+      // The member has a password, so the provider account can go.
+      await tula.user.identities.unlink({ identityId: identity?.id ?? '' })
+      expect(await tula.user.identities.list()).toEqual([])
+
+      const squatted = freshEmail()
+      await s.admin('POST', '/v1/admin/users', { email: squatted, password: PASSWORD })
+      const refused = await continueWithGoogle(s, { email: squatted })
+      expect(refused.outcome).toMatchObject({ status: 'error', code: 'oauth.account_exists' })
+      expect(refused.landing.tula.state.status).not.toBe('signed-in')
+
+      // The member connects an account with another address from their profile.
+      const profileTab = tab()
+      profileTab.open(`${APP_ORIGIN}/account`)
+      const profile = s.client('web', { cookies: linked.landing.cookies })
+      await profile.tula.load()
+      const { url } = await profile.tula.user.identities.link({
+        provider: 'google',
+        redirectUrl: CALLBACK_PAGE,
+      })
+      expect([...profileTab.entries.values()].join()).toContain('"k":"link"')
+      const back = await atProvider(s, url, { email: freshEmail(), subject: 'another-account' })
+      profileTab.open(back)
+      const landing = s.client('web', { cookies: profile.cookies })
+      await landing.tula.load()
+      const outcome = await landing.tula.signIn.handleOAuthCallback()
+      expect(outcome).toMatchObject({ status: 'linked', identity: { provider: 'google' } })
+      expect(await landing.tula.user.identities.list()).toHaveLength(1)
+      expect(profileTab.entries.size).toBe(0)
+
+      // Someone whose only way in is the provider account cannot remove it.
+      const only = await continueWithGoogle(s, { email: freshEmail() })
+      const [last] = await only.landing.tula.user.identities.list()
+      const error = await caught(
+        only.landing.tula.user.identities.unlink({ identityId: last?.id ?? '' })
+      )
+      expect(error.code).toBe('identity.last_sign_in_method')
+      expect(await only.landing.tula.user.identities.list()).toHaveLength(1)
+    }
+  )
+
+  journey(
+    'OAuth with a second factor',
+    'OAuth: a user with an authenticator comes back to a flow on the second factor, and is signed in only after it',
+    async () => {
+      const s = await oauthServer()
+      const email = freshEmail()
+      const first = await continueWithGoogle(s, { email })
+      expect(first.outcome.status).toBe('complete')
+      const { secret } = await first.landing.tula.mfa.startTotp()
+      const key = base32Decode(secret)
+      await first.landing.tula.mfa.confirmTotp({ code: totp(key, s.deps.clock.now()) })
+      s.advance(31_000)
+
+      const second = await continueWithGoogle(s, { email })
+      if (second.outcome.status !== 'needs_step') {
+        throw new Error(`expected a flow on the second factor, got ${second.outcome.status}`)
+      }
+      const { flow } = second.outcome
+      expect(flow.step).toEqual({ status: 'needs_second_factor', options: ['totp', 'backup_code'] })
+      expect(second.landing.tula.state.status).not.toBe('signed-in')
+      expect(second.landing.cookies.size).toBe(0)
+      const done = await flow.submitSecondFactor({
+        method: 'totp',
+        code: totp(key, s.deps.clock.now()),
+      })
+      expect(done.step.status).toBe('complete')
+      expect(second.landing.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      const token = await second.landing.tula.session.getToken()
+      expect(new Set(decodeJwt(token ?? '').amr as string[])).toEqual(
+        new Set(['fed', 'otp', 'mfa'])
+      )
+    }
+  )
+
+  journey(
+    'step-up by emailed code',
+    'step-up by email: a user with no password asks for a code, proves it and repeats the sensitive call; with a second factor the code is gone',
+    async () => {
+      const s = await oauthServer()
+      const email = freshEmail()
+      const { outcome, landing } = await continueWithGoogle(s, { email })
+      expect(outcome.status).toBe('complete')
+      const { tula, cookies } = landing
+      expect((await tula.user.get()).hasPassword).toBe(false)
+      const sessionId = tula.state.status === 'signed-in' ? tula.state.sessionId : ''
+      const amr = async () => new Set(decodeJwt((await tula.session.getToken()) ?? '').amr as [])
+      const sends = () =>
+        s.exchanges.filter((sent) => sent.path === '/v1/client/sessions/step-up/email-code')
+
+      // Eleven minutes on, a sensitive call says what this user can prove: only an emailed code.
+      s.advance(11 * 60_000)
+      const refused = await caught(tula.mfa.startTotp())
+      expect(isStepUpRequired(refused)).toBe(true)
+      expect(stepUpMethods(refused)).toEqual(['email_code'])
+      // The SDK sent no email by itself.
+      expect(sends()).toHaveLength(0)
+
+      const receipt = await tula.session.prepareStepUp({ method: 'email_code' })
+      expect(receipt).toEqual({
+        method: 'email_code',
+        destination: expect.stringMatching(/^.\*\*\*@/),
+        expiresAt: expect.any(String),
+      })
+      const code = s.code(email)
+      expect(sends().at(-1)?.responseBody).not.toContain(code)
+      expect(await caught(tula.session.prepareStepUp({ method: 'email_code' }))).toMatchObject({
+        code: 'rate_limited',
+        status: 429,
+        retryAfterMs: expect.any(Number),
+      })
+
+      expect(
+        await caught(
+          tula.session.stepUp({
+            method: 'email_code',
+            code: code === '000000' ? '111111' : '000000',
+          })
+        )
+      ).toMatchObject({ code: 'verification.invalid_code', status: 422 })
+      const jar = JSON.stringify([...cookies])
+      await tula.session.stepUp({ method: 'email_code', code })
+      // The same session, a token that says the mailbox was proven, and the cookie untouched.
+      expect(tula.state).toMatchObject({ status: 'signed-in', sessionId })
+      expect(await amr()).toEqual(new Set(['fed', 'email']) as never)
+      expect(JSON.stringify([...cookies])).toBe(jar)
+      expect(await caught(tula.session.stepUp({ method: 'email_code', code }))).toMatchObject({
+        code: 'verification.expired',
+        status: 410,
+      })
+
+      // The repeated call succeeds; once the factor is on, the emailed code is no longer a way.
+      const { secret } = await tula.mfa.startTotp()
+      await tula.mfa.confirmTotp({ code: totp(base32Decode(secret), s.deps.clock.now()) })
+      const gone = await caught(tula.session.prepareStepUp({ method: 'email_code' }))
+      expect(stepUpMethods(gone)).toEqual(['totp', 'backup_code'])
+      expect(
+        stepUpMethods(await caught(tula.session.stepUp({ method: 'email_code', code })))
+      ).toEqual(['totp', 'backup_code'])
     }
   )
 })

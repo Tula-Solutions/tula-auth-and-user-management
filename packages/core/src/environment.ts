@@ -56,6 +56,13 @@ export interface PageLike {
    * @param url - The new URL.
    */
   replaceUrl(url: string): void
+  /**
+   * Send the page somewhere else (`location.assign`). Absent where there is nothing to
+   * navigate: the caller is then handed the URL instead.
+   *
+   * @param url - Where to go.
+   */
+  assign?(url: string): void
 }
 
 /**
@@ -74,6 +81,12 @@ export interface Environment {
    * an emailed link's binding and nothing else: never a token, never an attempt's secret.
    */
   linkStorage: LinkStorageLike | undefined
+  /**
+   * Storage one tab keeps across a navigation and no other tab can read (`sessionStorage`).
+   * Holds the binding of an OAuth round trip while the tab is at the provider (ADR 0026): not a
+   * token, and not an attempt's secret.
+   */
+  tabStorage: LinkStorageLike | undefined
   /** The page's address, in a browser. */
   page: PageLike | undefined
   /**
@@ -88,7 +101,8 @@ interface RuntimeGlobals {
   navigator?: { locks?: LockManagerLike }
   BroadcastChannel?: new (name: string) => ChannelLike
   localStorage?: LinkStorageLike
-  location?: { href: string }
+  sessionStorage?: LinkStorageLike
+  location?: { href: string; assign?(url: string): void }
   history?: { state: unknown; replaceState(state: unknown, unused: string, url: string): void }
 }
 
@@ -96,6 +110,15 @@ interface RuntimeGlobals {
 function linkStorageOf(globals: RuntimeGlobals): LinkStorageLike | undefined {
   try {
     return globals.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+/** `sessionStorage`, when reading the property does not throw. */
+function tabStorageOf(globals: RuntimeGlobals): LinkStorageLike | undefined {
+  try {
+    return globals.sessionStorage
   } catch {
     return undefined
   }
@@ -122,11 +145,13 @@ export function runtimeEnvironment(
     locks: globals.navigator?.locks,
     createChannel: Channel ? (name) => new Channel(name) : undefined,
     linkStorage: linkStorageOf(globals),
+    tabStorage: tabStorageOf(globals),
     page:
       location && history
         ? {
             url: () => location.href,
             replaceUrl: (url) => history.replaceState(history.state, '', url),
+            assign: (url) => location.assign?.(url),
           }
         : undefined,
     setTimer(callback, ms) {

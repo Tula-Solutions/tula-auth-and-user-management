@@ -7,9 +7,15 @@ import { users } from './users'
 
 /**
  * What a verification token proves. The column is plain `text`, so a new purpose needs no
- * migration; `sign_in` is the emailed code or link that is a sign-in's first factor.
+ * migration; `sign_in` is the emailed code or link that is a sign-in's first factor, `step_up`
+ * the emailed code a signed-in user without a second factor steps up with.
  */
-export const VERIFICATION_PURPOSES = ['email_verification', 'password_reset', 'sign_in'] as const
+export const VERIFICATION_PURPOSES = [
+  'email_verification',
+  'password_reset',
+  'sign_in',
+  'step_up',
+] as const
 
 /**
  * Emailed codes and magic links, with an attempt counter so codes can't be brute-forced online.

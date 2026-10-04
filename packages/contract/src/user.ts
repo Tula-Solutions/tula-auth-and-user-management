@@ -36,6 +36,19 @@ export const UserSchema = z
   })
   .meta({ ref: 'User' })
 
+/**
+ * The signed-in user, as `GET /v1/client/me` returns them: a {@link UserSchema} and what a
+ * profile screen needs to know about how they sign in. Never a credential.
+ */
+export const CurrentUserSchema = UserSchema.extend({
+  /**
+   * Whether the account has a password. `false` for someone who signed up through a provider
+   * or by email: there is no current password to ask them for, so a profile shows how to add
+   * one instead of the change-password form.
+   */
+  hasPassword: z.boolean(),
+}).meta({ ref: 'CurrentUser' })
+
 /** One page of users. */
 export const UserListSchema = z
   .object({ meta: PaginationMetaSchema, data: z.array(UserSchema) })
@@ -80,6 +93,8 @@ export const ChangePasswordRequestSchema = z
 export type PaginationMeta = z.infer<typeof PaginationMetaSchema>
 /** A user. */
 export type User = z.infer<typeof UserSchema>
+/** The signed-in user. */
+export type CurrentUser = z.infer<typeof CurrentUserSchema>
 /** A page of users. */
 export type UserList = z.infer<typeof UserListSchema>
 /** User sort key. */

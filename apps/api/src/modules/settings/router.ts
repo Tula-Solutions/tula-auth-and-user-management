@@ -6,6 +6,7 @@ import { adminActor } from '~/lib/actor'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'
 import { adminRateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
+import * as OAuth from '~/modules/oauth/service'
 import * as Settings from '~/modules/settings/service'
 import * as openapi from '~/openapi'
 import {
@@ -144,7 +145,7 @@ router.get(
     summary: 'Client configuration',
     description:
       'What a client needs to draw a sign-in screen for this environment: the app’s name and ' +
-      'support address, the enabled sign-in methods and the password policy. Ignore methods ' +
+      'support address, the enabled sign-in methods and OAuth providers and the password policy. Ignore methods ' +
       'you do not know. Nothing here is secret.',
     security: openapi.security.client,
     responses: {
@@ -157,10 +158,11 @@ router.get(
   publishableKey(),
   async (c) => {
     const settings = await Settings.current(c.get('deps'), c.get('tenant'))
+    const providers = await OAuth.enabledProviders(c.get('deps'), c.get('tenant'))
     c.header('Cache-Control', `private, max-age=${CLIENT_CONFIG_MAX_AGE_SECONDS}`)
     // The response depends on which environment the key belongs to.
     c.header('Vary', PUBLISHABLE_KEY_HEADER, { append: true })
-    return c.json(ClientConfigSchema.parse(Settings.clientConfig(settings)))
+    return c.json(ClientConfigSchema.parse(Settings.clientConfig(settings, providers)))
   }
 )
 

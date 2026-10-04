@@ -1,6 +1,7 @@
 import {
   type ChangePasswordRequest,
   type CreateUserRequest,
+  type CurrentUser,
   DEFAULT_PAGE_SIZE,
   type User,
   type UserList,
@@ -107,15 +108,17 @@ export async function get(
  * @param deps - User repository.
  * @param scope - The environment.
  * @param userId - The access token's subject.
- * @returns The user.
+ * @returns The user, and whether they have a password (never the credential itself).
  * @throws NotFoundError when the account was deleted while its access token was still valid.
  */
 export async function me(
   deps: Pick<Deps, 'users'>,
   scope: Pick<Tenant, 'environmentId'>,
   userId: string
-): Promise<User> {
-  return get(deps, scope, userId)
+): Promise<CurrentUser> {
+  const user = await requireUser(deps, scope, userId)
+  const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+  return { ...toUser(user), hasPassword: Boolean(found?.passwordHash) }
 }
 
 /**

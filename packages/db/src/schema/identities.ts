@@ -4,7 +4,7 @@ import { tenantColumns, tenantConstraints, tenantForeignKey } from '../tenant-co
 import { tula } from './pg-schema'
 import { users } from './users'
 
-/** Identity providers. Phase 0 ships `email`; social providers arrive in Phase 1. */
+/** Identity providers: the email address itself, and the OAuth providers (ADR 0026). */
 export const IDENTITY_PROVIDERS = ['email', 'google', 'apple', 'github'] as const
 
 /** How a user proves who they are: one row per provider account (email address, Google sub…). */
@@ -25,6 +25,9 @@ export const identities = tula.table(
       t.provider,
       t.providerSubject
     ),
+    // A user has at most one account per provider. Decided by the database, so two concurrent
+    // links from one profile cannot both land.
+    unique('identities_user_provider_key').on(t.userId, t.provider),
     index('identities_user_id_idx').on(t.userId),
     tenantForeignKey('identities_user_fk', t, t.userId, users),
     ...tenantConstraints('identities', t),

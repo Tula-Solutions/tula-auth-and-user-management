@@ -38,6 +38,9 @@ x-api: &api
     PASSWORD_POLICY: ${PASSWORD_POLICY:-recommended}
     CORS_ORIGINS: ${CORS_ORIGINS:-}
     TRUST_PROXY: ${TRUST_PROXY:-false}
+    # Development and tests only: serves every OAuth provider from the built-in mock provider
+    # (ADR 0026). The API refuses to start with it unless ENVIRONMENT is `local`.
+    OAUTH_MOCK_PROVIDER: ${OAUTH_MOCK_PROVIDER:-false}
     LOG_LEVEL: ${LOG_LEVEL:-info}
   depends_on:
     postgres:
