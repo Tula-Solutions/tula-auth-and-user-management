@@ -72,12 +72,15 @@ describe('nothing can be published yet', () => {
 })
 
 describe('publishable packages', () => {
-  test('are the contract, the core client and the React and Next.js SDKs, dependencies first', () => {
+  test('are the contract, the SDKs, the admin client, the config package and the CLI, dependencies first', () => {
     expect([...PUBLISHABLE_PACKAGES]).toEqual([
       'packages/contract',
       'packages/core',
       'packages/react',
       'packages/nextjs',
+      'packages/admin',
+      'packages/config',
+      'packages/cli',
     ])
   })
 
@@ -98,10 +101,24 @@ describe('publishable packages', () => {
         expect(published).toHaveProperty([subpath])
         if (target.endsWith('.ts')) {
           const name = target.slice('./src/'.length, -'.ts'.length)
-          expect(published[subpath]).toEqual({
+          // The entry itself, and nothing else unless the package adds conditions of its own
+          // (`@tula/admin` sends a `browser` bundle to a module that refuses to load): each
+          // of those is an entry of the same shape, with the same types, inside dist.
+          const {
+            types,
+            default: main,
+            ...conditions
+          } = published[subpath] as Record<string, unknown>
+          expect({ types, default: main }).toEqual({
             types: `./dist/${name}.d.ts`,
             default: `./dist/${name}.js`,
           })
+          for (const condition of Object.values(conditions)) {
+            expect(condition).toEqual({
+              types: `./dist/${name}.d.ts`,
+              default: expect.stringMatching(/^\.\/dist\/[a-z-]+\.js$/),
+            })
+          }
           expect(existsSync(join(root, dir, target))).toBe(true)
         } else if (target.startsWith('./src/')) {
           // A file shipped as it is (a stylesheet): the build copies it into dist.

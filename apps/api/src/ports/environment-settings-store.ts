@@ -1,11 +1,31 @@
 import type { EnvironmentSettings } from '@tula/contract'
 import type { Activity } from '~/ports/activity-log'
 
+/**
+ * The tool that manages an environment's settings from a config file, as it is stored: who,
+ * which version of the file, when, and the revision that apply produced (ADR 0030).
+ */
+export interface StoredSettingsManager {
+  /** The tool's name, e.g. `tula-apply`. */
+  tool: string
+  /** The fingerprint of the config it applied. */
+  configHash: string
+  /** When it applied, as an ISO timestamp. */
+  at: string
+  /** The settings revision its apply produced. A later revision means the settings drifted. */
+  revision: number
+}
+
+/** The manager a replace names: its tool and the fingerprint of the config it applies. */
+export type SettingsManagerInput = Pick<StoredSettingsManager, 'tool' | 'configHash'>
+
 /** An environment's saved settings and how many times they have been replaced. */
 export interface StoredEnvironmentSettings {
   /** 1 after the first save, one more after each replace. */
   revision: number
   settings: EnvironmentSettings
+  /** The managing tool on record. Absent when the settings are not managed by one. */
+  managedBy?: StoredSettingsManager
 }
 
 /**
@@ -37,6 +57,9 @@ export interface EnvironmentSettingsStore {
    * @param at - When the change is made.
    * @param activity - Recorded in the same transaction, only if the replace happened. Its
    *   `projectId` is the environment's project.
+   * @param manager - The managing tool to record with this replace (stored with `at` and the
+   *   new revision), `null` to remove the one on record, or left out to keep it as it is: its
+   *   revision then stays behind, which is how a change made around the config file shows.
    * @returns The stored settings, or `null` when the revision no longer matched (nothing changed).
    */
   replace(
@@ -44,7 +67,8 @@ export interface EnvironmentSettingsStore {
     expectedRevision: number,
     settings: EnvironmentSettings,
     at: Date,
-    activity: Activity
+    activity: Activity,
+    manager?: SettingsManagerInput | null
   ): Promise<StoredEnvironmentSettings | null>
 
   /**

@@ -1,24 +1,29 @@
 import {
   AT_LEAST_ONE_SIGN_IN_METHOD,
   type ClientConfig,
+  CONFIG_HASH_HEADER,
+  CONFIG_HASH_PATTERN,
+  CONFIG_MANAGED_BY_HEADER,
+  CONFIG_TOOL_PATTERN,
+  CONFIG_UNMANAGED,
   DEFAULT_ENVIRONMENT_SETTINGS,
-  DEFAULT_STEP_UP_AFTER,
-  durationToMs,
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
   EnvironmentSettingsSchema,
   hasEnabledSignInMethod,
   type OAuthProvider,
-  type PasswordPolicy,
-  type SessionProfile,
-  type SessionSettings,
   type SignInMethod,
+  settingsWeakenings,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
 import { AuthError, ServiceException, ValidationError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Audit from '~/modules/audit/service'
 import type { EnvironmentSettingsState } from '~/modules/settings/schema'
+import type {
+  SettingsManagerInput,
+  StoredEnvironmentSettings,
+} from '~/ports/environment-settings-store'
 
 type ReadDeps = Pick<Deps, 'environmentSettings' | 'config'>
 
@@ -50,7 +55,22 @@ async function read(
   fresh: boolean
 ): Promise<EnvironmentSettingsState> {
   const stored = await deps.environmentSettings.get(tenant.environmentId, fresh)
-  return stored ?? { revision: 0, settings: defaults(deps.config) }
+  return stored
+    ? toState(stored)
+    : { revision: 0, settings: defaults(deps.config), managedBy: null }
+}
+
+/**
+ * Stored settings as the service answers them: with the managing tool on record, if any, and
+ * whether the settings were replaced since it last applied (its revision is behind).
+ */
+function toState(stored: StoredEnvironmentSettings): EnvironmentSettingsState {
+  const { managedBy } = stored
+  return {
+    revision: stored.revision,
+    settings: stored.settings,
+    managedBy: managedBy ? { ...managedBy, drifted: managedBy.revision !== stored.revision } : null,
+  }
 }
 
 /**
@@ -126,141 +146,21 @@ export function changedKeys(before: EnvironmentSettings, after: EnvironmentSetti
     .sort()
 }
 
-/** Password rules that are either on or off. Turning one off weakens the policy. */
-const SWITCHED_RULES = [
-  'requireLowercase',
-  'requireUppercase',
-  'requireNumber',
-  'requireSpecial',
-  'disallowUserInfo',
-  'disallowCommon',
-  'blockSequences',
-] as const satisfies readonly (keyof PasswordPolicy)[]
-
-const BREACH_CHECK_STRENGTH: Record<PasswordPolicy['breachCheck'], number> = {
-  off: 0,
-  warn: 1,
-  block: 2,
-}
-
-/** The security notices an environment can switch off. Switching one off is a weakening. */
-const NOTICES = [
-  'passwordChanged',
-  'newSignIn',
-  'mfaChanged',
-  'identityChanged',
-] as const satisfies readonly (keyof EnvironmentSettings['notifications'])[]
-
-/** How much each MFA policy asks of an account. Moving to a lower one is a weakening. */
-const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> = {
-  off: 0,
-  optional: 1,
-  required: 2,
-}
-
 /**
  * Whether replacing `before` with `after` makes an account easier to take over, or a takeover
  * harder to notice: the definition behind the audit entry's `weakened` flag.
  *
- * True when a security notice that was on is switched off (`notifications.passwordChanged`,
- * `notifications.newSignIn`, `notifications.mfaChanged`, `notifications.identityChanged`: the
- * owner would no longer be told),
- * when the MFA policy moves towards `off` (`required` → `optional` → `off`), when the session
- * settings let sessions live longer or be had more freely (see `sessionsWeakened`), or when the new password
- * policy, compared with the old one:
- * - allows a shorter password (`minLength` is lower);
- * - checks breached passwords less strictly (`block` → `warn` → `off`);
- * - turns off a rule that was on (a required character kind, `disallowUserInfo`,
- *   `disallowCommon`, `blockSequences`);
- * - asks for fewer character classes, allows longer runs of one character (a higher
- *   `maxRepeatedChars`, or none), or remembers fewer previous passwords (`history`).
- *
- * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
- * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
- * measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
- * weakening.
+ * The definition itself is the contract's `settingsWeakenings` (which lists what got weaker),
+ * so that `tula diff` warns about exactly what this records: a weaker password policy, a
+ * security notice switched off, an MFA policy moved towards `off`, or sessions that live
+ * longer or can be had more freely.
  *
  * @param before - The settings being replaced.
  * @param after - The new settings.
- * @returns `true` when the password policy got weaker in at least one respect, or a security
- *   notice was switched off.
+ * @returns `true` when at least one setting got weaker.
  */
 export function weakened(before: EnvironmentSettings, after: EnvironmentSettings): boolean {
-  const [was, is] = [before.password, after.password]
-  const repeats = (policy: PasswordPolicy) => policy.maxRepeatedChars ?? Number.POSITIVE_INFINITY
-  return (
-    is.minLength < was.minLength ||
-    BREACH_CHECK_STRENGTH[is.breachCheck] < BREACH_CHECK_STRENGTH[was.breachCheck] ||
-    SWITCHED_RULES.some((rule) => was[rule] && !is[rule]) ||
-    is.minCharacterClasses < was.minCharacterClasses ||
-    repeats(is) > repeats(was) ||
-    is.history < was.history ||
-    NOTICES.some((notice) => before.notifications[notice] && !after.notifications[notice]) ||
-    MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy] ||
-    sessionsWeakened(before.sessions, after.sessions)
-  )
-}
-
-/** A duration in milliseconds, with what "none" means for the field it came from. */
-function span(duration: string | null, none: number): number {
-  return duration === null ? none : durationToMs(duration)
-}
-
-/**
- * Whether `is` lets a session live longer than `than` does: a longer idle or absolute timeout,
- * access-token lifetime or refresh grace window, or a step-up asked for later (none of its own
- * is the default window).
- */
-function looser(is: SessionProfile, than: SessionProfile): boolean {
-  const never = Number.POSITIVE_INFINITY
-  const stepUp = durationToMs(DEFAULT_STEP_UP_AFTER)
-  return (
-    span(is.idleTimeout, never) > span(than.idleTimeout, never) ||
-    span(is.absoluteTimeout, never) > span(than.absoluteTimeout, never) ||
-    span(is.accessTokenTtl, never) > span(than.accessTokenTtl, never) ||
-    span(is.refresh.reuseGracePeriod, 0) > span(than.refresh.reuseGracePeriod, 0) ||
-    span(is.stepUpAfter, stepUp) > span(than.stepUpAfter, stepUp)
-  )
-}
-
-/**
- * Whether the `sessions` section got weaker:
- *
- * - the concurrent-session limit was raised or removed;
- * - a profile that existed now lets its sessions live longer (see `looser`) or became
- *   selectable by clients;
- * - a profile that was removed: it is compared with the built-in `web` profile its sessions
- *   fall back to;
- * - a **new** profile that clients may select and that is looser in any limit than the
- *   built-in `web` profile of the same document. A client that names it gets a session the
- *   built-in would not have given, which is exactly how sessions come to "be had more
- *   freely". One that is no looser than `web`, or that clients cannot select (nothing can
- *   get it), weakens nothing.
- *
- * Changing `onLimit` or a profile's `type` is not a weakening either way.
- */
-function sessionsWeakened(before: SessionSettings, after: SessionSettings): boolean {
-  if (
-    before.maxPerUser !== null &&
-    (after.maxPerUser === null || after.maxPerUser > before.maxPerUser)
-  ) {
-    return true
-  }
-  const existing = Object.entries(before.profiles).some(([name, was]) => {
-    const is = Object.hasOwn(after.profiles, name) ? (after.profiles[name] ?? was) : null
-    return is
-      ? looser(is, was) || (is.clientSelectable && !was.clientSelectable)
-      : looser(after.profiles.web, was)
-  })
-  return (
-    existing ||
-    Object.entries(after.profiles).some(
-      ([name, is]) =>
-        !Object.hasOwn(before.profiles, name) &&
-        is.clientSelectable &&
-        looser(is, after.profiles.web)
-    )
-  )
+  return settingsWeakenings(before, after).length > 0
 }
 
 /** What to tell an operator whose deployment default cannot be stored, by the field left out. */
@@ -369,6 +269,69 @@ export interface ReplaceInput {
    * deciding what they are.
    */
   settings: EnvironmentSettingsInput
+  /**
+   * The tool applying these settings from a config file (recorded with them), `null` to remove
+   * the record, or left out for a change made by hand: the record is then kept and shows as
+   * drifted. See {@link managerFromHeaders}.
+   */
+  manager?: SettingsManagerInput | null
+}
+
+/**
+ * Read the managing tool a replace names from its two headers (ADR 0030).
+ *
+ * @param tool - `x-tula-managed-by`: a tool's name, or `none`.
+ * @param configHash - `x-tula-config-hash`: the config's fingerprint.
+ * @returns The manager to record, `null` for `none`, `undefined` when neither header was sent.
+ * @throws ValidationError (422) naming the header: a tool without a hash or the reverse, a hash
+ *   sent with `none`, or a value that is not a tool name or a SHA-256 fingerprint.
+ */
+export function managerFromHeaders(
+  tool: string | undefined,
+  configHash: string | undefined
+): SettingsManagerInput | null | undefined {
+  const refuse = (field: string, message: string) =>
+    new ValidationError({ errors: [{ field, code: 'validation.failed', message }] })
+  if (tool === undefined) {
+    if (configHash !== undefined) {
+      throw refuse(CONFIG_MANAGED_BY_HEADER, `is required with ${CONFIG_HASH_HEADER}`)
+    }
+    return undefined
+  }
+  if (tool === CONFIG_UNMANAGED) {
+    if (configHash !== undefined) {
+      throw refuse(CONFIG_HASH_HEADER, `cannot be sent with ${CONFIG_UNMANAGED}`)
+    }
+    return null
+  }
+  if (!CONFIG_TOOL_PATTERN.test(tool)) {
+    throw refuse(CONFIG_MANAGED_BY_HEADER, 'must be a tool name such as tula-apply')
+  }
+  if (configHash === undefined || !CONFIG_HASH_PATTERN.test(configHash)) {
+    throw refuse(CONFIG_HASH_HEADER, 'must be sha256: followed by 64 hex characters')
+  }
+  return { tool, configHash }
+}
+
+/** Whether a replace would change which tool is on record as managing the settings. */
+function managerChanges(
+  before: EnvironmentSettingsState,
+  manager: SettingsManagerInput | null | undefined
+): boolean {
+  if (manager === undefined) {
+    return false
+  }
+  const current = before.managedBy
+  if (manager === null) {
+    return current !== null
+  }
+  return (
+    current === null ||
+    current.tool !== manager.tool ||
+    current.configHash !== manager.configHash ||
+    // The same file again after a change made around it: that apply is what ends the drift.
+    current.drifted
+  )
 }
 
 /**
@@ -377,7 +340,8 @@ export interface ReplaceInput {
  * The change is recorded as `environment.settings_updated` in the same transaction, with the
  * keys that changed and never their values, and `weakened: true` when it made the password
  * policy weaker or switched a security notice off (see {@link weakened}). A document identical to the current one changes
- * nothing: no new revision and no audit entry.
+ * nothing: no new revision and no audit entry, unless the replace also changes which tool is
+ * on record as managing the settings (`input.manager`), which is a write of its own.
  *
  * @param deps - Settings store, config, ids and clock.
  * @param tenant - The environment.
@@ -411,7 +375,9 @@ export async function replace(
       throw new ServiceException('precondition.failed', { params: { revision: before.revision } })
     }
     const changed = changedKeys(before.settings, settings)
-    if (changed.length === 0) {
+    const { manager } = input
+    const managed = managerChanges(before, manager)
+    if (changed.length === 0 && !managed) {
       return before
     }
     const replaced = await deps.environmentSettings.replace(
@@ -428,14 +394,20 @@ export async function replace(
           changed,
           // A flag, never the values: enough to find the change that loosened the policy.
           ...(weakened(before.settings, settings) && { weakened: true }),
+          // Which tool applied a config file, or that its record was removed (`null`).
+          ...(manager && { managedBy: manager.tool }),
+          ...(manager === null && { managedBy: null }),
+          // Settings a config file manages, changed around it: the next `tula diff` shows it.
+          ...(manager === undefined && before.managedBy !== null && { outsideConfig: true }),
         },
-      })
+      }),
+      manager
     )
     if (!replaced) {
       // Another writer got in between the read and the write.
       throw new ServiceException('precondition.failed')
     }
-    return replaced
+    return toState(replaced)
   })
 }
 

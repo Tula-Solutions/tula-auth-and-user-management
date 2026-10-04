@@ -22,6 +22,13 @@ export const environmentSettings = tula.table(
      * two of them cannot silently overwrite each other.
      */
     revision: integer('revision').notNull().default(1),
+    /**
+     * The tool that manages these settings from a config file, when one does (ADR 0030):
+     * `{ tool, configHash, at, revision }`, written by a replace that names it. Its `revision`
+     * is the one that apply produced, so a later `revision` on the row means the settings were
+     * changed around the file. `null`: nobody manages them.
+     */
+    managedBy: jsonb('managed_by').$type<Record<string, unknown>>(),
     ...timestamps(),
   },
   (t) => [

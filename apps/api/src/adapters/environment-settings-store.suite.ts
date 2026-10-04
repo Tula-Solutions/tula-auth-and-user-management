@@ -81,6 +81,72 @@ export function describeEnvironmentSettingsStore(
       return entries.map((entry) => entry.data)
     }
 
+    const HASH = `sha256:${'ab'.repeat(32)}`
+
+    test('a replace that names a manager stores it with the revision it wrote', async () => {
+      const saved = await ctx.store.replace(
+        a.environmentId,
+        0,
+        named('Managed'),
+        now,
+        activity(a, ['app.name']),
+        { tool: 'tula-apply', configHash: HASH }
+      )
+      const managedBy = { tool: 'tula-apply', configHash: HASH, at: now.toISOString(), revision: 1 }
+      expect(saved?.managedBy).toEqual(managedBy)
+      expect((await ctx.store.get(a.environmentId, true))?.managedBy).toEqual(managedBy)
+    })
+
+    test('a replace that names no manager keeps the one on record, at its old revision', async () => {
+      await ctx.store.replace(a.environmentId, 0, named('Managed'), now, activity(a, []), {
+        tool: 'tula-apply',
+        configHash: HASH,
+      })
+      const later = new Date(now.getTime() + 60_000)
+      const edited = await ctx.store.replace(
+        a.environmentId,
+        1,
+        named('Edited by hand'),
+        later,
+        activity(a, ['app.name'])
+      )
+      expect(edited?.revision).toBe(2)
+      expect(edited?.managedBy).toEqual({
+        tool: 'tula-apply',
+        configHash: HASH,
+        at: now.toISOString(),
+        revision: 1,
+      })
+    })
+
+    test('a replace that names `null` removes the manager', async () => {
+      await ctx.store.replace(a.environmentId, 0, named('Managed'), now, activity(a, []), {
+        tool: 'tula-apply',
+        configHash: HASH,
+      })
+      const detached = await ctx.store.replace(
+        a.environmentId,
+        1,
+        named('Managed'),
+        now,
+        activity(a, []),
+        null
+      )
+      expect(detached?.managedBy).toBeUndefined()
+      expect((await ctx.store.get(a.environmentId, true))?.managedBy).toBeUndefined()
+    })
+
+    test('a refused replace leaves the manager as it was', async () => {
+      await ctx.store.replace(a.environmentId, 0, named('Managed'), now, activity(a, []), {
+        tool: 'tula-apply',
+        configHash: HASH,
+      })
+      expect(
+        await ctx.store.replace(a.environmentId, 0, named('Stale'), now, activity(a, []), null)
+      ).toBeNull()
+      expect((await ctx.store.get(a.environmentId, true))?.managedBy?.revision).toBe(1)
+    })
+
     test('an environment that never saved settings has none', async () => {
       expect(await ctx.store.get(a.environmentId)).toBeNull()
     })

@@ -47,6 +47,7 @@ beforeEach(() => build())
 interface State {
   revision: number
   settings: EnvironmentSettings
+  managedBy: null
 }
 
 interface Failure {
@@ -85,6 +86,7 @@ describe('GET /v1/admin/settings', () => {
     expect((await res.json()) as State).toEqual({
       revision: 0,
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      managedBy: null,
     })
   })
 
@@ -135,6 +137,7 @@ describe('PUT /v1/admin/settings', () => {
         app: { name: 'Acme', supportEmail: 'help@acme.test' },
         password: strictPolicy,
       },
+      managedBy: null,
     })
     expect((await (await read()).json()) as State).toEqual(saved)
   })

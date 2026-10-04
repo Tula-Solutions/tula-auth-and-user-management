@@ -16,17 +16,41 @@ import * as logger from '~/lib/logger'
 import type { Activity } from '~/ports/activity-log'
 import type {
   EnvironmentSettingsStore,
+  SettingsManagerInput,
   StoredEnvironmentSettings,
+  StoredSettingsManager,
 } from '~/ports/environment-settings-store'
 
 const columns = {
   revision: environmentSettings.revision,
   settings: environmentSettings.settings,
+  managedBy: environmentSettings.managedBy,
+}
+
+/**
+ * The manager on a row, if it is one this version can read. Anything else (a shape another
+ * version wrote) counts as "not managed": the marker is advice for a dashboard, and settings
+ * are read on the request path, so it must never fail a read.
+ */
+function toManager(value: unknown): StoredSettingsManager | undefined {
+  const manager = value as Partial<StoredSettingsManager> | null
+  return manager &&
+    typeof manager.tool === 'string' &&
+    typeof manager.configHash === 'string' &&
+    typeof manager.at === 'string' &&
+    typeof manager.revision === 'number'
+    ? {
+        tool: manager.tool,
+        configHash: manager.configHash,
+        at: manager.at,
+        revision: manager.revision,
+      }
+    : undefined
 }
 
 function toStored(
   environmentId: string,
-  row: { revision: number; settings: unknown }
+  row: { revision: number; settings: unknown; managedBy: unknown }
 ): StoredEnvironmentSettings {
   // Parsed on the way out as well: the document may predate a field this version added, or
   // hold a list entry this version would not accept. Settings are read on the request path,
@@ -39,7 +63,8 @@ function toStored(
       { environmentId, dropped }
     )
   }
-  return { revision: row.revision, settings }
+  const managedBy = toManager(row.managedBy)
+  return { revision: row.revision, settings, ...(managedBy && { managedBy }) }
 }
 
 /** The usable origins of one stored document, whatever shape another version left it in. */
@@ -75,8 +100,17 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
     expectedRevision: number,
     settings: EnvironmentSettings,
     at: Date,
-    activity: Activity
+    activity: Activity,
+    manager?: SettingsManagerInput | null
   ): Promise<StoredEnvironmentSettings | null> {
+    // `undefined` leaves the column out of the update (the manager on record is kept), `null`
+    // clears it, and a named manager is stored with this write's time and revision.
+    const managedBy =
+      manager === undefined
+        ? undefined
+        : manager === null
+          ? null
+          : { ...manager, at: at.toISOString(), revision: expectedRevision + 1 }
     return withTenant(this.db, environmentId, async (tx) => {
       // Revision 0 means "no row yet": the unique key on environment_id decides which of two
       // first writers wins. Afterwards the guarded update does.
@@ -89,6 +123,7 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
                 environmentId,
                 settings,
                 revision: 1,
+                managedBy: managedBy ?? null,
                 createdAt: at,
                 updatedAt: at,
               })
@@ -96,7 +131,12 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
               .returning(columns)
           : await tx
               .update(environmentSettings)
-              .set({ settings, revision: expectedRevision + 1, updatedAt: at })
+              .set({
+                settings,
+                revision: expectedRevision + 1,
+                updatedAt: at,
+                ...(managedBy !== undefined && { managedBy }),
+              })
               .where(
                 and(
                   eq(environmentSettings.environmentId, environmentId),

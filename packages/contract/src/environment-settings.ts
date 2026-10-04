@@ -587,6 +587,39 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
   return readStoredEnvironmentSettings(stored).settings
 }
 
+/** A managing tool's name: short, lowercase, nothing a page or a log could misread. */
+export const CONFIG_TOOL_PATTERN = /^[a-z0-9][a-z0-9._-]{0,31}$/
+
+/** A config fingerprint: `sha256:` and 64 lowercase hex characters. */
+export const CONFIG_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
+
+/**
+ * Which tool manages an environment's settings from a config file, as the admin API returns it
+ * (ADR 0030).
+ *
+ * - `tool`: the tool that last applied a config (`tula-apply`).
+ * - `configHash`: the fingerprint of the config it applied.
+ * - `at`, `revision`: when it applied, and the settings revision that apply produced.
+ * - `drifted`: the settings have been replaced since **without** the marker (by hand, in the
+ *   dashboard), so they may no longer be what the file says. `tula diff` shows the difference;
+ *   `tula apply` ends it.
+ *
+ * Only the settings document is covered: OAuth providers are configured by their own routes
+ * and have no revision, so a provider changed by hand does not show here.
+ */
+export const SettingsManagedBySchema = z
+  .object({
+    tool: z.string().regex(CONFIG_TOOL_PATTERN),
+    configHash: z.string().regex(CONFIG_HASH_PATTERN),
+    at: z.iso.datetime(),
+    revision: z.number().int().min(1),
+    drifted: z.boolean(),
+  })
+  .meta({ ref: 'SettingsManagedBy' })
+
+/** Which tool manages an environment's settings, and whether they drifted from it. */
+export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
+
 /**
  * What `GET /v1/client/config` returns: everything a client needs to draw a sign-in screen, and
  * nothing an operator would not put on that screen.

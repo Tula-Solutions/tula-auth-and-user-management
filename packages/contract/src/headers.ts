@@ -96,6 +96,45 @@ export const FLOW_ATTEMPT_HEADER = 'x-tula-attempt'
 export const CAN_STILL_SIGN_IN_HEADER = 'x-tula-can-still-sign-in'
 
 /**
+ * Request header of `PUT /v1/admin/settings` naming the tool that manages the environment's
+ * settings from a config file (`tula-apply`), or `none` to hand them back.
+ *
+ * Sent together with {@link CONFIG_HASH_HEADER}. The API records both with the settings and
+ * returns them as `managedBy`, so a dashboard can say "these settings come from a config file"
+ * and warn when they were changed around it. A replace without the header keeps the record,
+ * which then shows as drifted. See ADR 0030.
+ *
+ * @example
+ * ```ts
+ * headers[CONFIG_MANAGED_BY_HEADER] = 'tula-apply'
+ * headers[CONFIG_HASH_HEADER] = await hashEnvironmentConfig(environment)
+ * ```
+ */
+export const CONFIG_MANAGED_BY_HEADER = 'x-tula-managed-by'
+
+/**
+ * Request header of `PUT /v1/admin/settings` carrying the fingerprint of the config file's
+ * content for the environment: `sha256:` and 64 hex characters. It identifies a version of the
+ * file; it is computed over secret **names**, never values.
+ *
+ * @example
+ * ```ts
+ * headers[CONFIG_HASH_HEADER] // 'sha256:9f2c…'
+ * ```
+ */
+export const CONFIG_HASH_HEADER = 'x-tula-config-hash'
+
+/**
+ * The value of {@link CONFIG_MANAGED_BY_HEADER} that removes the record of a managing tool.
+ *
+ * @example
+ * ```ts
+ * headers[CONFIG_MANAGED_BY_HEADER] = CONFIG_UNMANAGED
+ * ```
+ */
+export const CONFIG_UNMANAGED = 'none'
+
+/**
  * Name of the URL-fragment parameter carrying an emailed sign-in link's token.
  *
  * The link is the app's own URL followed by `#tula_link=<token>&tula_attempt=<attempt id>`. A

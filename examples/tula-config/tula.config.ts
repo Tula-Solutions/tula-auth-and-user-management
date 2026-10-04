@@ -1,0 +1,105 @@
+import { defineConfig, env } from '@tula/config'
+
+// An example config: one file, two environments. Try it against the local stack:
+//
+//   export TULA_API_URL=http://localhost:3003
+//   export TULA_SECRET_KEY=tula_sk_dev_…        # bun run api-key:create --environment <id>
+//   bun run tula -- diff --config examples/tula-config/tula.config.ts --env dev
+//
+// The full guide is docs/config.md.
+
+/** Settings both environments share. A config is code: share with a spread, not a copy. */
+const shared = {
+  app: { name: 'Northline', supportEmail: 'help@northline.app' },
+  signIn: {
+    methods: {
+      password: { enabled: true },
+      emailCode: { enabled: true },
+      emailLink: { enabled: true },
+    },
+  },
+  notifications: {
+    passwordChanged: true,
+    newSignIn: true,
+    mfaChanged: true,
+    identityChanged: true,
+  },
+} as const
+
+export default defineConfig({
+  environments: {
+    dev: {
+      // `tula` refuses a production key for this entry, and a development key for `prod`.
+      kind: 'development',
+      settings: {
+        ...shared,
+        app: { ...shared.app, name: 'Northline (dev)' },
+        // `password` is left out: the deployment's PASSWORD_POLICY stays in force.
+        urls: {
+          allowedOrigins: ['http://localhost:5173', 'http://localhost:3000'],
+          allowedRedirectUrls: ['http://localhost:5173/auth/callback'],
+        },
+        mfa: { policy: 'optional' },
+      },
+      providers: {
+        // The client id is not a secret. The secret is named, never written.
+        github: { clientId: 'Iv1.0123456789abcdef', clientSecret: env('GITHUB_CLIENT_SECRET_DEV') },
+      },
+    },
+
+    prod: {
+      kind: 'production',
+      settings: {
+        ...shared,
+        password: {
+          preset: 'custom',
+          minLength: 12,
+          maxLength: 128,
+          requireLowercase: false,
+          requireUppercase: false,
+          requireNumber: false,
+          requireSpecial: false,
+          minCharacterClasses: 0,
+          specialChars: '!@#$%^&*()-_=+[]{};:,.?/\\|\'"`~<>',
+          disallowUserInfo: true,
+          disallowCommon: true,
+          breachCheck: 'block',
+          maxRepeatedChars: null,
+          blockSequences: false,
+          history: 5,
+          expiryDays: null,
+        },
+        signUp: { password: 'required' },
+        urls: {
+          allowedOrigins: ['https://app.northline.app'],
+          allowedRedirectUrls: ['https://app.northline.app/auth/callback'],
+        },
+        audit: { retentionDays: 365 },
+        mfa: { policy: 'required' },
+        passkeys: { rpId: 'northline.app' },
+        sessions: {
+          maxPerUser: 10,
+          onLimit: 'end_oldest',
+          profiles: {
+            web: { idleTimeout: '7d', absoluteTimeout: '30d' },
+            mobile: { idleTimeout: '30d', absoluteTimeout: '90d' },
+          },
+        },
+      },
+      providers: {
+        google: {
+          clientId: '1234567890-abc.apps.googleusercontent.com',
+          clientSecret: env('GOOGLE_CLIENT_SECRET'),
+        },
+        github: { clientId: 'Iv1.fedcba9876543210', clientSecret: env('GITHUB_CLIENT_SECRET') },
+        apple: {
+          clientId: 'app.northline.web',
+          teamId: 'A1B2C3D4E5',
+          keyId: 'K1L2M3N4O5',
+          // The whole .p8 file's contents, in a variable.
+          privateKey: env('APPLE_PRIVATE_KEY'),
+        },
+      },
+    },
+  },
+})

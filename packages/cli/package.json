@@ -1,0 +1,48 @@
+{
+  "name": "@tula/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The tula command line: `tula diff` and `tula apply` keep an environment's settings and OAuth providers in step with tula.config.ts.",
+  "sideEffects": false,
+  "bin": {
+    "tula": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "bin": {
+      "tula": "./dist/bin.js"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {
+    "@tula/admin": "workspace:*",
+    "@tula/config": "workspace:*",
+    "@tula/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "@tula/api": "workspace:*",
+    "@tula/tsconfig": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

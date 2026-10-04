@@ -29,6 +29,7 @@ interface Parameter {
   in: string
   name: string
   required?: boolean
+  schema?: SchemaNode
 }
 
 interface Operation {
@@ -48,6 +49,12 @@ export interface OpenApiDocument {
 
 /** Path prefix of the operations a client SDK calls. Admin routes take a secret key. */
 export const CLIENT_PATH_PREFIX = '/v1/client/'
+
+/** Path prefix of the operations the admin client (`@tula/admin`) calls. */
+export const ADMIN_PATH_PREFIX = '/v1/admin/'
+
+/** Security scheme of an admin operation: the environment's secret key. */
+export const SECRET_KEY_SECURITY_SCHEME = 'secretKey'
 
 /** Security scheme that marks an operation as needing the signed-in user's access token. */
 export const SESSION_SECURITY_SCHEME = 'accessToken'
@@ -103,9 +110,11 @@ function renderObject(node: SchemaNode, indent: string): string {
     (typeof node.additionalProperties === 'object' &&
       Object.keys(node.additionalProperties).length === 0)
   if (node.additionalProperties && !open) {
-    lines.push(
-      `${inner}[key: string]: ${renderType(node.additionalProperties as SchemaNode, inner)}`
-    )
+    // TypeScript wants every named property to fit the index signature, and an optional one
+    // is `T | undefined`: the signature is widened by `undefined` exactly when there is one.
+    const optional = Object.keys(node.properties ?? {}).some((name) => !required.has(name))
+    const type = renderType(node.additionalProperties as SchemaNode, inner)
+    lines.push(`${inner}[key: string]: ${optional ? `${type} | undefined` : type}`)
   } else if (open) {
     lines.push(`${inner}[key: string]: unknown`)
   }
@@ -177,7 +186,11 @@ interface ClientOperation {
   path: string
   summary: string
   session: boolean
+  secretKey: boolean
   pathParams: string[]
+  /** Query and header parameters. The client half has none worth typing; the admin half does. */
+  query: Parameter[]
+  headers: Parameter[]
   body: SchemaNode | undefined
   response: SchemaNode | undefined
   /** Bodies of the non-2xx responses (the error envelope), so their schemas are generated too. */
@@ -190,10 +203,10 @@ function jsonSchema(
   return content?.['application/json']?.schema
 }
 
-function clientOperations(document: OpenApiDocument): ClientOperation[] {
+function operationsUnder(document: OpenApiDocument, prefix: string): ClientOperation[] {
   const operations: ClientOperation[] = []
   for (const [path, methods] of Object.entries(document.paths)) {
-    if (!path.startsWith(CLIENT_PATH_PREFIX)) {
+    if (!path.startsWith(prefix)) {
       continue
     }
     for (const [method, operation] of Object.entries(methods)) {
@@ -209,9 +222,12 @@ function clientOperations(document: OpenApiDocument): ClientOperation[] {
         path,
         summary: operation.summary ?? operation.operationId,
         session: (operation.security ?? []).some((entry) => SESSION_SECURITY_SCHEME in entry),
+        secretKey: (operation.security ?? []).some((entry) => SECRET_KEY_SECURITY_SCHEME in entry),
         pathParams: (operation.parameters ?? [])
           .filter((parameter) => parameter.in === 'path')
           .map((parameter) => parameter.name),
+        query: (operation.parameters ?? []).filter((parameter) => parameter.in === 'query'),
+        headers: (operation.parameters ?? []).filter((parameter) => parameter.in === 'header'),
         body: jsonSchema(operation.requestBody?.content),
         response: jsonSchema(success[0]?.[1].content),
         errors: Object.entries(operation.responses)
@@ -257,7 +273,7 @@ function reachableSchemas(document: OpenApiDocument, roots: unknown[]): string[]
  * ```
  */
 export function renderClientApi(document: OpenApiDocument): string {
-  const operations = clientOperations(document)
+  const operations = operationsUnder(document, CLIENT_PATH_PREFIX)
   const schemas = reachableSchemas(
     document,
     operations.flatMap((operation) => [operation.body, operation.response, ...operation.errors])
@@ -310,6 +326,106 @@ export interface OperationRoute {
 }
 
 /** Method, path and authentication of every client operation, by operation id. */
+export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } = {
+${tableLines.join('\n')}
+}
+`
+}
+
+function pathParamsType(names: string[]): string {
+  return names.length === 0
+    ? 'Record<string, never>'
+    : `{ ${names.map((name) => `${propertyKey(name)}: string`).join('; ')} }`
+}
+
+/** The type of an operation's query or header parameters: optional unless marked required. */
+function parametersType(parameters: Parameter[]): string {
+  if (parameters.length === 0) {
+    return 'Record<string, never>'
+  }
+  const fields = parameters.map((parameter) => {
+    const type = parameter.schema ? renderType(parameter.schema) : 'string'
+    return `${propertyKey(parameter.name)}${parameter.required ? '' : '?'}: ${type}`
+  })
+  return `{ ${fields.join('; ')} }`
+}
+
+/**
+ * Render the generated module for the admin API: what `@tula/admin` is typed from.
+ *
+ * Unlike the client half it types each operation's query and header parameters (the admin API
+ * pages its lists and replaces settings under `If-Match`), and it has no `session` column:
+ * every admin operation takes the environment's secret key, which the generation checks.
+ *
+ * @param document - The OpenAPI document (`packages/contract/openapi.json`).
+ * @returns The source text of `packages/admin/src/generated/api.gen.ts`.
+ * @throws Error when the document uses something this generator does not render, or an admin
+ *   operation does not take the secret key.
+ *
+ * @example
+ * ```ts
+ * await Bun.write('src/generated/api.gen.ts', renderAdminApi(await Bun.file(path).json()))
+ * ```
+ */
+export function renderAdminApi(document: OpenApiDocument): string {
+  const operations = operationsUnder(document, ADMIN_PATH_PREFIX)
+  for (const operation of operations) {
+    if (!operation.secretKey) {
+      throw new Error(`${operation.id}: an admin operation must take the secret key`)
+    }
+  }
+  const schemas = reachableSchemas(document, [
+    ...operations.flatMap((operation) => [operation.body, operation.response]),
+    ...operations.flatMap((operation) =>
+      [...operation.query, ...operation.headers].map((parameter) => parameter.schema)
+    ),
+    // The error envelope, so the transport's reading of it can be checked against its schema.
+    ...operations.flatMap((operation) => operation.errors),
+  ])
+
+  const schemaLines = schemas.map((name) => {
+    const schema = document.components.schemas[name] as SchemaNode
+    return `  ${name}: ${renderType(schema, '  ')}`
+  })
+
+  const operationLines = operations.map((operation) => {
+    const body = operation.body ? renderType(operation.body) : 'undefined'
+    const response = operation.response ? renderType(operation.response) : 'undefined'
+    return [
+      `  /** ${operation.summary} (\`${operation.method} ${operation.path}\`). */`,
+      `  ${operation.id}: { params: ${pathParamsType(operation.pathParams)}; ` +
+        `query: ${parametersType(operation.query)}; ` +
+        `headers: ${parametersType(operation.headers)}; body: ${body}; response: ${response} }`,
+    ].join('\n')
+  })
+
+  const tableLines = operations.map(
+    (operation) =>
+      `  ${operation.id}: { method: '${operation.method}', path: '${operation.path}' },`
+  )
+
+  return `// Generated by \`bun run --filter @tula/admin generate\` from packages/contract/openapi.json.
+// Do not edit: change the API, run \`bun run contract:generate\`, then regenerate this file.
+
+/** Schemas of the admin API (\`/v1/admin/*\`), by their name in the OpenAPI document. */
+export interface Schemas {
+${schemaLines.join('\n')}
+}
+
+/** Path, query and header parameters, JSON body and success response of every admin operation. */
+export interface Operations {
+${operationLines.join('\n')}
+}
+
+/** How one operation is called. */
+export interface OperationRoute {
+  /** HTTP method. */
+  readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  /** Path, with \`{name}\` placeholders for its path parameters. */
+  readonly path: string
+}
+
+/** Method and path of every admin operation, by operation id. */
 export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } = {
 ${tableLines.join('\n')}
 }

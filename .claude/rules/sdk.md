@@ -7,6 +7,10 @@ paths:
   - "packages/nextjs/**"
   - "examples/nextjs-app-router/**"
   - "packages/expo/**"
+  - "packages/admin/**"
+  - "packages/config/**"
+  - "packages/cli/**"
+  - "examples/tula-config/**"
 ---
 
 # SDK rules
@@ -200,3 +204,27 @@ paths:
   not call `router.refresh()` for a sign-out before then: the cookies are still there.
 - Browser tests: `e2e/tests/nextjs/` (project `nextjs`). A new page of the example gets an axe
   check in both colour schemes there.
+
+## Admin client, config and CLI (`packages/{admin,config,cli}`, ADR 0030)
+
+- `@tula/admin`: types come from `src/generated/api.gen.ts` (`bun run admin:generate` after
+  `contract:generate`); run-time imports from the contract use its Zod-free entry points only,
+  and `typecheck:portable` must pass. One function (`call`), one error (`TulaAdminError`), no
+  retries. The secret key stays in the closure of `createAdminClient`: never a property, an
+  error, a log line or a `toJSON`; it is set after caller-supplied headers; `redirect:
+  'manual'`. A failed request keeps the failure's name, never its message or the error itself.
+  Keep the three browser refusals (publishable key, run-time check, `browser` export
+  condition) and their tests.
+- `@tula/config` may use Zod (tooling only). The config's `settings` is the contract's
+  `EnvironmentSettingsInputSchema`; do not redeclare a setting here. A provider secret is a
+  `SecretRef` and nothing else: keep the `@ts-expect-error` test that a literal does not
+  compile and the run-time test that it is refused without being repeated. No error of this
+  package carries a value from the file or the environment.
+- `@tula/cli`: commands take a `CommandContext` and write through `output`; no `console`, no
+  `process.stdout` outside `process-io.ts`. No option takes a secret. Exit codes are `EXIT`
+  (`diff`: 0 / 2 / 1). The diff engine (`src/diff.ts`) is pure and table-tested; a change to
+  how a field is compared, to the write order, or to when a secret is sent needs a row there
+  and a line in `docs/config.md`. Behaviour against the real API is tested in
+  `src/real-api.test.ts` (the API in process, as `@tula/nextjs` does), and the output of every
+  run in that file is checked for secrets. A test that spawns the executable gives the spawn a
+  `timeout`.

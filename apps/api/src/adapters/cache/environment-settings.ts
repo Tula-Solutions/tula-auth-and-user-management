@@ -56,10 +56,17 @@ export function cacheEnvironmentSettings(
       }
       return documents.get(environmentId, () => store.get(environmentId))
     },
-    async replace(environmentId, expectedRevision, settings, at, activity) {
+    async replace(environmentId, expectedRevision, settings, at, activity, manager) {
       let replaced: StoredEnvironmentSettings | null = null
       try {
-        replaced = await store.replace(environmentId, expectedRevision, settings, at, activity)
+        replaced = await store.replace(
+          environmentId,
+          expectedRevision,
+          settings,
+          at,
+          activity,
+          manager
+        )
       } finally {
         // Also after a failure: the write may have been committed before the error surfaced.
         documents.drop(environmentId)

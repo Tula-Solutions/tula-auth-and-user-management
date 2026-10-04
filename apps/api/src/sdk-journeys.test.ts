@@ -47,6 +47,10 @@ const covered = new Map<string, string[]>()
  * cannot be reached through a client SDK at all.
  */
 const SERVER_ONLY: Record<string, string> = {
+  'settings managed by a config file':
+    'the marker is set and read on the admin API with a secret key, which a client SDK never ' +
+    'holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ ' +
+    '`real-api.test.ts`.',
   'two instances':
     'a property of the deployment (two API processes sharing Postgres and Redis). A client talks ' +
     'to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host ' +

@@ -1,0 +1,174 @@
+import { durationToMs } from './duration'
+import type { EnvironmentSettings } from './environment-settings'
+import type { PasswordPolicy } from './password-policy'
+import { DEFAULT_STEP_UP_AFTER, type SessionProfile, type SessionSettings } from './session-profile'
+
+/** Password rules that are either on or off. Turning one off weakens the policy. */
+const SWITCHED_RULES = [
+  'requireLowercase',
+  'requireUppercase',
+  'requireNumber',
+  'requireSpecial',
+  'disallowUserInfo',
+  'disallowCommon',
+  'blockSequences',
+] as const satisfies readonly (keyof PasswordPolicy)[]
+
+const BREACH_CHECK_STRENGTH: Record<PasswordPolicy['breachCheck'], number> = {
+  off: 0,
+  warn: 1,
+  block: 2,
+}
+
+/** The security notices an environment can switch off. Switching one off is a weakening. */
+const NOTICES = [
+  'passwordChanged',
+  'newSignIn',
+  'mfaChanged',
+  'identityChanged',
+] as const satisfies readonly (keyof EnvironmentSettings['notifications'])[]
+
+/** How much each MFA policy asks of an account. Moving to a lower one is a weakening. */
+const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> = {
+  off: 0,
+  optional: 1,
+  required: 2,
+}
+
+/** A duration in milliseconds, with what "none" means for the field it came from. */
+function span(duration: string | null, none: number): number {
+  return duration === null ? none : durationToMs(duration)
+}
+
+/**
+ * Whether `is` lets a session live longer than `than` does: a longer idle or absolute timeout,
+ * access-token lifetime or refresh grace window, or a step-up asked for later (none of its own
+ * is the default window).
+ */
+function looser(is: SessionProfile, than: SessionProfile): boolean {
+  const never = Number.POSITIVE_INFINITY
+  const stepUp = durationToMs(DEFAULT_STEP_UP_AFTER)
+  return (
+    span(is.idleTimeout, never) > span(than.idleTimeout, never) ||
+    span(is.absoluteTimeout, never) > span(than.absoluteTimeout, never) ||
+    span(is.accessTokenTtl, never) > span(than.accessTokenTtl, never) ||
+    span(is.refresh.reuseGracePeriod, 0) > span(than.refresh.reuseGracePeriod, 0) ||
+    span(is.stepUpAfter, stepUp) > span(than.stepUpAfter, stepUp)
+  )
+}
+
+function passwordWeakenings(was: PasswordPolicy, is: PasswordPolicy): string[] {
+  const repeats = (policy: PasswordPolicy) => policy.maxRepeatedChars ?? Number.POSITIVE_INFINITY
+  const fields: (keyof PasswordPolicy)[] = []
+  if (is.minLength < was.minLength) {
+    fields.push('minLength')
+  }
+  if (BREACH_CHECK_STRENGTH[is.breachCheck] < BREACH_CHECK_STRENGTH[was.breachCheck]) {
+    fields.push('breachCheck')
+  }
+  fields.push(...SWITCHED_RULES.filter((rule) => was[rule] && !is[rule]))
+  if (is.minCharacterClasses < was.minCharacterClasses) {
+    fields.push('minCharacterClasses')
+  }
+  if (repeats(is) > repeats(was)) {
+    fields.push('maxRepeatedChars')
+  }
+  if (is.history < was.history) {
+    fields.push('history')
+  }
+  return fields.map((field) => `password.${field}`)
+}
+
+/**
+ * Where the `sessions` section got weaker:
+ *
+ * - the concurrent-session limit was raised or removed;
+ * - a profile that existed now lets its sessions live longer (see `looser`) or became
+ *   selectable by clients;
+ * - a profile that was removed: it is compared with the built-in `web` profile its sessions
+ *   fall back to;
+ * - a **new** profile that clients may select and that is looser in any limit than the
+ *   built-in `web` profile of the same document. A client that names it gets a session the
+ *   built-in would not have given, which is exactly how sessions come to "be had more
+ *   freely". One that is no looser than `web`, or that clients cannot select (nothing can
+ *   get it), weakens nothing.
+ *
+ * Changing `onLimit` or a profile's `type` is not a weakening either way.
+ */
+function sessionWeakenings(before: SessionSettings, after: SessionSettings): string[] {
+  const paths: string[] = []
+  if (
+    before.maxPerUser !== null &&
+    (after.maxPerUser === null || after.maxPerUser > before.maxPerUser)
+  ) {
+    paths.push('sessions.maxPerUser')
+  }
+  for (const [name, was] of Object.entries(before.profiles)) {
+    const is = Object.hasOwn(after.profiles, name) ? (after.profiles[name] ?? was) : null
+    const weaker = is
+      ? looser(is, was) || (is.clientSelectable && !was.clientSelectable)
+      : looser(after.profiles.web, was)
+    if (weaker) {
+      paths.push(`sessions.profiles.${name}`)
+    }
+  }
+  for (const [name, is] of Object.entries(after.profiles)) {
+    if (
+      !Object.hasOwn(before.profiles, name) &&
+      is.clientSelectable &&
+      looser(is, after.profiles.web)
+    ) {
+      paths.push(`sessions.profiles.${name}`)
+    }
+  }
+  return paths
+}
+
+/**
+ * Where replacing `before` with `after` makes an account easier to take over, or a takeover
+ * harder to notice. It is the one definition of "weakened": the server's audit entry carries
+ * `weakened: true` exactly when this is not empty, and `tula diff` warns with these paths
+ * before anything is applied.
+ *
+ * A path is listed when:
+ * - `password.*`: the new policy allows a shorter password (`minLength`), checks breached
+ *   passwords less strictly (`breachCheck`: `block` → `warn` → `off`), turns off a rule that
+ *   was on (a required character kind, `disallowUserInfo`, `disallowCommon`,
+ *   `blockSequences`), asks for fewer character classes, allows longer runs of one character
+ *   (a higher `maxRepeatedChars`, or none), or remembers fewer previous passwords (`history`);
+ * - `notifications.*`: a security notice that was on is switched off (the owner would no
+ *   longer be told);
+ * - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
+ * - `sessions.maxPerUser`, `sessions.profiles.<name>`: sessions live longer or can be had
+ *   more freely (a raised or removed limit, a looser profile, one clients may now select).
+ *
+ * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
+ * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
+ * measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
+ * weakening.
+ *
+ * @param before - The settings being replaced.
+ * @param after - The new settings.
+ * @returns The paths that got weaker, in document order; empty when nothing did.
+ *
+ * @example
+ * ```ts
+ * settingsWeakenings(current, { ...current, mfa: { policy: 'off' } }) // ['mfa.policy']
+ * ```
+ */
+export function settingsWeakenings(
+  before: EnvironmentSettings,
+  after: EnvironmentSettings
+): string[] {
+  const paths = passwordWeakenings(before.password, after.password)
+  for (const notice of NOTICES) {
+    if (before.notifications[notice] && !after.notifications[notice]) {
+      paths.push(`notifications.${notice}`)
+    }
+  }
+  if (MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy]) {
+    paths.push('mfa.policy')
+  }
+  paths.push(...sessionWeakenings(before.sessions, after.sessions))
+  return paths
+}

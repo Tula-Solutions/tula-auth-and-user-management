@@ -1,0 +1,51 @@
+{
+  "name": "@tula/admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's typed admin API client for servers and tooling: every /v1/admin operation, generated from the OpenAPI contract. Takes a secret key; never for a browser.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "edge-light": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "workerd": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "browser": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/browser.js"
+        },
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p . && bun run typecheck:portable",
+    "typecheck:portable": "tsc --noEmit -p tsconfig.portable.json",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "generate": "bun run scripts/generate.ts",
+    "generate:check": "bun run scripts/generate.ts --check"
+  },
+  "dependencies": {
+    "@tula/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "@tula/api": "workspace:*",
+    "@tula/tsconfig": "workspace:*"
+  }
+}

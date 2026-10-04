@@ -1,0 +1,8 @@
+{
+  // What bunup builds declarations from: the shipped sources only. The generator script
+  // imports @tula/core's renderer by path, and the declaration build must not compile it.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "declaration": true },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts"]
+}

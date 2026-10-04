@@ -205,6 +205,7 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `40-concurrent-session-limit` | `sessions.maxPerUser`: `end_oldest` ends the oldest session at once; `refuse_newest` answers `session.limit_reached` until a place is free; an operator ends a user's sessions. |
 | `41-stateful-session` | A `stateful` profile: sign-in sets one httpOnly cookie and returns no token; the cookie authenticates `/v1/client/me`; `POST /v1/admin/sessions/verify` returns the claims; another origin, a cross-site request and an unsafe request with no `Origin` are refused; ending the session is seen by the very next request, on both instances. |
 | `42-step-up-window-per-profile` | A profile's `stepUpAfter` replaces the ten-minute window of routes that require recent authentication. Waits 61 seconds. |
+| `43-settings-managed-by-config` | A replace that names its tool and config fingerprint (`x-tula-managed-by`, `x-tula-config-hash`) is recorded as the settings' manager; a later replace without them keeps the record and shows as `drifted`; one header without the other is refused. Cleanup restores the settings and removes the record. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs

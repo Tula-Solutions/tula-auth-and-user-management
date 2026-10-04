@@ -3,6 +3,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { Activity } from '~/ports/activity-log'
 import type {
   EnvironmentSettingsStore,
+  SettingsManagerInput,
   StoredEnvironmentSettings,
 } from '~/ports/environment-settings-store'
 
@@ -40,13 +41,26 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
     environmentId: string,
     expectedRevision: number,
     settings: EnvironmentSettings,
-    _at: Date,
-    activity: Activity
+    at: Date,
+    activity: Activity,
+    manager?: SettingsManagerInput | null
   ): Promise<StoredEnvironmentSettings | null> {
-    if ((this.#documents.get(environmentId)?.revision ?? 0) !== expectedRevision) {
+    const current = this.#documents.get(environmentId)
+    if ((current?.revision ?? 0) !== expectedRevision) {
       return null
     }
-    const stored = { revision: expectedRevision + 1, settings: structuredClone(settings) }
+    const revision = expectedRevision + 1
+    const managedBy =
+      manager === undefined
+        ? current?.managedBy
+        : manager === null
+          ? undefined
+          : { ...manager, at: at.toISOString(), revision }
+    const stored: StoredEnvironmentSettings = {
+      revision,
+      settings: structuredClone(settings),
+      ...(managedBy && { managedBy: { ...managedBy } }),
+    }
     this.#documents.set(environmentId, stored)
     this.#activityLog.record([activity])
     return structuredClone(stored)
