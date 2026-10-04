@@ -14,6 +14,7 @@ import { createGoogleProvider } from '~/adapters/oauth/google'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
+import { PostgresControlPlane } from '~/adapters/postgres/control-plane'
 import { PostgresEnvironmentLock } from '~/adapters/postgres/environment-lock'
 import { PostgresEnvironmentSettingsStore } from '~/adapters/postgres/environment-settings'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
@@ -39,6 +40,7 @@ import { uuidV7Ids } from '~/adapters/system/ids'
 import type { Deps } from '~/dependencies'
 import type { Env } from '~/env'
 import { sha256Hex } from '~/lib/crypto'
+import { findDashboardDir } from '~/lib/dashboard-files'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import * as logger from '~/lib/logger'
 import { createSecretBox } from '~/lib/secret-box'
@@ -113,11 +115,14 @@ export function createContainer(env: Env): Container {
       oauthMock,
       // Only the digest is kept: the token is compared, never needed again.
       instanceAdminTokenHash: env.TULA_ADMIN_TOKEN ? sha256Hex(env.TULA_ADMIN_TOKEN) : null,
+      // Resolved once, here: a directory without an index.html is no dashboard.
+      dashboardDir: findDashboardDir(env.DASHBOARD_DIR),
     },
     clock,
     ids: uuidV7Ids,
     apiKeys: new PostgresApiKeyRepository(database.db),
     environments: new PostgresEnvironmentRepository(database.db),
+    controlPlane: new PostgresControlPlane(database.db),
     environmentSettings: redis
       ? cacheEnvironmentSettings(environmentSettings, clock, ENVIRONMENT_SETTINGS_CACHE_TTL_MS, {
           versions: new RedisVersions(redis, ENVIRONMENT_SETTINGS_VERSION_SEGMENT),

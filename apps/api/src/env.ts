@@ -150,6 +150,16 @@ const fields = z.object({
    */
   TRUST_PROXY: flag,
   /**
+   * Directory of the dashboard's build output, served as static files at `/dashboard`
+   * (ADR 0032). Optional: unset, `apps/dashboard/dist` next to the API is used. A directory
+   * that does not exist or holds no `index.html` means no dashboard: `/dashboard` is then an
+   * unknown path and the API works as before.
+   */
+  DASHBOARD_DIR: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().max(4096).optional()
+  ),
+  /**
    * `true` serves every OAuth provider from the built-in mock provider, whose consent page lets
    * a developer type the address the "provider" asserts (ADR 0026). For local development and
    * tests, where nobody has real OAuth credentials. Refused outside `ENVIRONMENT=local`.

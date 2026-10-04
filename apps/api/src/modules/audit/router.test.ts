@@ -194,6 +194,27 @@ describe('GET /v1/admin/audit-logs', () => {
     expect((await log('', PROD_SK)).meta.totalCount).toBe(0)
   })
 
+  test('filters by time and by the kind of actor', async () => {
+    const stamps: string[] = []
+    for (const email of ['a@northline.app', 'b@northline.app', 'c@northline.app']) {
+      deps.clock.advance(60_000)
+      stamps.push(deps.clock.now().toISOString())
+      await createUser(email)
+    }
+    const emails = async (query: string) => (await log(query)).data.length
+    const q = (value: string | undefined) => encodeURIComponent(value ?? '')
+    expect(await emails(`?from=${q(stamps[1])}`)).toBe(2)
+    expect(await emails(`?to=${q(stamps[1])}`)).toBe(1)
+    expect(await emails(`?from=${q(stamps[1])}&to=${q(stamps[2])}`)).toBe(1)
+    expect((await log(`?from=${q(stamps[1])}&size=1`)).meta.totalCount).toBe(2)
+    expect(await emails('?actorType=admin')).toBe(3)
+    expect(await emails('?actorType=user')).toBe(0)
+    expect(await emails('?actorType=instance_admin')).toBe(0)
+    for (const query of ['?from=yesterday', '?to=2026-01-01', '?actorType=root']) {
+      expect((await admin('GET', `/audit-logs${query}`)).status).toBe(422)
+    }
+  })
+
   test('pages through the log', async () => {
     for (const email of ['a@northline.app', 'b@northline.app', 'c@northline.app']) {
       deps.clock.advance(1_000)

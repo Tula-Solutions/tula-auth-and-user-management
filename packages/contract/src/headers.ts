@@ -135,6 +135,58 @@ export const CONFIG_HASH_HEADER = 'x-tula-config-hash'
 export const CONFIG_UNMANAGED = 'none'
 
 /**
+ * Request header every call the dashboard makes with its session cookie must carry, with the
+ * value {@link DASHBOARD_HEADER_VALUE} (ADR 0032).
+ *
+ * A browser attaches a cookie whoever wrote the page. This header is what a form cannot send
+ * and what a cross-origin `fetch` may send only after a preflight, which the API answers for
+ * the deployment's own origins alone. Without it the dashboard session cookie is ignored. With
+ * it, an `Authorization` header is refused: one request has one credential.
+ *
+ * @example
+ * ```ts
+ * await fetch('/v1/instance/session', { headers: { [DASHBOARD_HEADER]: DASHBOARD_HEADER_VALUE } })
+ * ```
+ */
+export const DASHBOARD_HEADER = 'x-tula-dashboard'
+
+/**
+ * The one value of {@link DASHBOARD_HEADER} the API accepts.
+ *
+ * @example
+ * ```ts
+ * headers[DASHBOARD_HEADER] = DASHBOARD_HEADER_VALUE
+ * ```
+ */
+export const DASHBOARD_HEADER_VALUE = '1'
+
+/**
+ * Request header naming the environment an `/v1/admin/*` call made with a dashboard session is
+ * for: the environment's id (a UUID). A secret key names its environment by itself and must not
+ * send it.
+ *
+ * @example
+ * ```ts
+ * await fetch('/v1/admin/users', {
+ *   headers: { [DASHBOARD_HEADER]: DASHBOARD_HEADER_VALUE, [ENVIRONMENT_HEADER]: environment.id },
+ * })
+ * ```
+ */
+export const ENVIRONMENT_HEADER = 'x-tula-environment'
+
+/**
+ * Name of the dashboard session cookie (`HttpOnly`, `SameSite=Strict`). Over https it carries
+ * the `__Secure-` prefix. A page never reads it; the name is published for operators and
+ * proxies.
+ *
+ * @example
+ * ```ts
+ * const name = `${secure ? '__Secure-' : ''}${DASHBOARD_SESSION_COOKIE}`
+ * ```
+ */
+export const DASHBOARD_SESSION_COOKIE = 'tula_dashboard'
+
+/**
  * Name of the URL-fragment parameter carrying an emailed sign-in link's token.
  *
  * The link is the app's own URL followed by `#tula_link=<token>&tula_attempt=<attempt id>`. A

@@ -413,7 +413,7 @@ tula doctor
 
 - Without `TULA_ADMIN_TOKEN` in the API's environment the route does not exist (404), and
   `tula doctor` runs only the checks it can make from your machine.
-- The token is the most powerful credential of the deployment (the dashboard will sign in
+- The token is the most powerful credential of the deployment (the dashboard signs in
   with it too): keep it in a secret manager, never in a file that is committed, and send it
   only over https. The API refuses to start with one shorter than 32 characters, that repeats
   a block, that counts up or down (`abcdefgh`), or that looks like a placeholder. That check
@@ -423,6 +423,39 @@ tula doctor
   check failed is in the API's log, next to `diagnostic check failed`.
 - The route is rate limited (30 requests a minute per IP) and refuses when the rate limiter's
   store is down; `tula doctor` then reports Redis as the problem.
+
+## The dashboard
+
+The API serves the dashboard at `/dashboard` when its build output is present: the directory
+named by `DASHBOARD_DIR`, or `apps/dashboard/dist` next to the API. Without one, `/dashboard`
+is an unknown path and everything else works as before.
+
+You sign in with the **instance admin token** (`TULA_ADMIN_TOKEN`, as for `tula doctor`); a
+deployment that sets none has no dashboard sign-in. The token is sent once and exchanged for a
+session cookie; the browser does not keep it.
+
+- The session lasts **8 hours** from sign-in and is not extended. It is signed, not stored, so
+  it works on every instance without Redis, and one session cannot be ended by itself:
+  signing out clears it in that browser only. **To end every session, rotate the token**
+  (change `TULA_ADMIN_TOKEN`, restart every instance). Changing `TULA_MASTER_KEY` ends them
+  too.
+- The cookie is `HttpOnly`, `SameSite=Strict` and, over https, `Secure`. It is sent to
+  `/v1/instance` and `/v1/admin` only.
+- Requests made with it are accepted from the API's own origin (`PUBLIC_URL`) and from
+  `CORS_ORIGINS`, never from an origin an environment allows in its settings. If the dashboard
+  answers `request.origin_not_allowed`, the address in your browser is not the `PUBLIC_URL`
+  the API was started with (a proxy in front of it must present the same origin).
+- Everything done in the dashboard is in the audit log with the actor `instance_admin` and
+  the id of the sign-in: inside an environment in that environment's log
+  (`GET /v1/admin/audit-logs?actorType=instance_admin`), and what has no environment
+  (sign-ins, failed sign-ins, new projects and environments) in the instance audit log
+  (`GET /v1/instance/audit-logs`).
+- Sign-in attempts are limited to 30 a minute per IP and refused while the rate limiter's
+  store is down.
+- The pages are served with a strict Content-Security-Policy (this origin only, no inline
+  script, not frameable). A proxy must not weaken or replace it.
+
+See [ADR 0032](adr/0032-dashboard.md).
 
 ## Running it for real
 

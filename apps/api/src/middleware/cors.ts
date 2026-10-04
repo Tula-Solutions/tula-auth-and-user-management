@@ -1,4 +1,4 @@
-import { CAN_STILL_SIGN_IN_HEADER } from '@tula/contract'
+import { CAN_STILL_SIGN_IN_HEADER, DASHBOARD_HEADER, ENVIRONMENT_HEADER } from '@tula/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Deps, Tenant, TenantVariables } from '~/dependencies'
@@ -20,6 +20,10 @@ export const CORS_REQUEST_HEADERS = [
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
   SESSION_PROFILE_HEADER,
+  // The dashboard's two headers (ADR 0032). Listing them lets a deployment origin send them
+  // after a preflight; for any other origin the preflight carries no allow headers at all.
+  DASHBOARD_HEADER,
+  ENVIRONMENT_HEADER,
 ] as const
 
 /**

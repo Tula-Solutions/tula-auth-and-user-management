@@ -300,6 +300,53 @@ describe('renderAdminApi', () => {
     expect(() => renderAdminApi(base)).toThrow('getHealth: an instance operation must take')
   })
 
+  test('an operation the dashboard may also call (a session beside the credential) renders as before', () => {
+    const base = adminDocument()
+    const operation = base.paths['/v1/admin/things/{thingId}']?.put
+    if (operation) {
+      operation.security = [{ secretKey: [] }, { dashboardSession: [] }]
+    }
+    base.paths['/v1/instance/health'] = {
+      get: {
+        operationId: 'getHealth',
+        security: [{ instanceAdminToken: [] }, { dashboardSession: [] }],
+        responses: { 200: {} },
+      },
+    }
+    const source = renderAdminApi(base)
+    expect(source).toContain("  getHealth: { method: 'GET', path: '/v1/instance/health' },")
+    expect(source).toContain('replaceThing')
+  })
+
+  test('the dashboard’s own session operations are a browser’s: left out, by name only', () => {
+    const base = adminDocument()
+    base.paths['/v1/instance/session'] = {
+      post: { operationId: 'createDashboardSession', security: [], responses: { 200: {} } },
+      get: {
+        operationId: 'getDashboardSession',
+        security: [{ dashboardSession: [] }],
+        responses: { 200: {} },
+      },
+      delete: {
+        operationId: 'deleteDashboardSession',
+        security: [{ dashboardSession: [] }],
+        responses: { 204: {} },
+      },
+    }
+    const source = renderAdminApi(base)
+    expect(source).not.toContain('DashboardSession')
+    // Any other instance operation without the token still fails: a new route cannot drop
+    // out of the client by forgetting its security.
+    base.paths['/v1/instance/other'] = {
+      get: {
+        operationId: 'getOther',
+        security: [{ dashboardSession: [] }],
+        responses: { 200: {} },
+      },
+    }
+    expect(() => renderAdminApi(base)).toThrow('getOther: an instance operation must take')
+  })
+
   test('a parameter without a schema is a string', () => {
     const broken = adminDocument()
     const operation = broken.paths['/v1/admin/things/{thingId}']?.put

@@ -1,5 +1,6 @@
 import {
   type ActivityType,
+  type AuditActorType,
   type AuditLog,
   type AuditLogList,
   type AuditTargetType,
@@ -73,6 +74,12 @@ export interface ListInput {
   action?: ActivityType
   actorId?: string
   targetId?: string
+  /** Only entries by this kind of actor. */
+  actorType?: AuditActorType
+  /** ISO 8601: entries at or after this instant. */
+  from?: string
+  /** ISO 8601: entries before this instant. */
+  to?: string
   page?: number
   size?: number
 }
@@ -96,6 +103,9 @@ export async function list(
     action: input.action,
     actorId: input.actorId,
     targetId: input.targetId,
+    actorType: input.actorType,
+    from: input.from ? new Date(input.from) : undefined,
+    to: input.to ? new Date(input.to) : undefined,
     page,
     size: perPage,
   })

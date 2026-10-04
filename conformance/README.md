@@ -243,6 +243,16 @@ keeps the callback's path so a later step can replay it (`callback`). The scenar
 against an environment whose Google credentials you want to keep. They add about 95 seconds
 (a 61-second wait for a ticket to expire and a 31-second one for the next authenticator code).
 
+### The dashboard's session is not a scenario
+
+Scenarios 44 and 45 cover what a secret key can observe of step 1.15: a user's session list,
+ending one session, the audit log's `actorType`, `from` and `to`, and the rules of a request
+that says it is the dashboard's but has no session. Signing in to the dashboard and the
+`/v1/instance/*` routes are **not** scenarios: they need the deployment's `TULA_ADMIN_TOKEN`
+and a cookie carried from one step to the next, and the format has neither (there is no
+`instance` credential). They are covered by the API's route tests
+(`modules/control-plane/*.test.ts`, `admin-via-dashboard.test.ts`).
+
 ## Adding a scenario
 
 1. Add `scenarios/NN-name.json` and list its name in `apps/api/src/conformance.test.ts`.

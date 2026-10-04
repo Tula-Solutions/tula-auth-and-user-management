@@ -527,6 +527,16 @@ learns which migrations are applied, without access to the `drizzle` schema.
 - An operator signs in with the instance admin token (see Decisions). The workspace- and
   project-level admin routes this needs do not exist yet and are part of this step.
 
+**As built, server side** ([ADR 0032](../adr/0032-dashboard.md)). The token is exchanged at
+`POST /v1/instance/session` for a stateless signed cookie (8 hours, ended for everyone by
+rotating the token or the master key). The dashboard calls the existing `/v1/admin/*` routes
+with that session and an `x-tula-environment` header instead of a secret key; the audit actor
+is `instance_admin`. Workspaces, projects, environments and an instance audit log are under
+`/v1/instance/*`. The admin API gained a user's session list, ending one session, and the
+audit log's `actorType`, `from` and `to`. The API serves a build directory at `/dashboard`
+under a strict Content-Security-Policy when one is present. Lists page by `page` and `size`
+like every other list (no cursor). Nothing deletes a workspace, project or environment yet.
+
 ### 1.16 MCP server (`packages/mcp`)
 
 - A local stdio server (`npx tula mcp`). Read tools: users, sessions, audit entries, settings,

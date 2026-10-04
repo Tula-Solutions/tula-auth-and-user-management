@@ -19,7 +19,9 @@ router.get(
     description:
       'What happened in the secret key’s environment, newest first: sign-ins, revoked ' +
       'sessions, password changes and every admin action, with who did it and from where. ' +
-      'Filter by `action`, `actorId` (a user or API key) or `targetId`.',
+      'Filter by `action`, `actorId` (a user, an API key or a dashboard session), ' +
+      '`actorType` (`instance_admin` is what was done through the dashboard), `targetId` ' +
+      'and time (`from` inclusive, `to` exclusive).',
     security: openapi.security.admin,
     responses: {
       200: {

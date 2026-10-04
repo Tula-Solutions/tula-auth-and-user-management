@@ -199,6 +199,7 @@ describe('documentation routes', () => {
       '/v1/client/sessions/step-up/passkey',
       '/v1/admin/sessions/verify',
       '/v1/admin/users/{userId}/sessions',
+      '/v1/admin/users/{userId}/sessions/{sessionId}',
       '/v1/client/sign-ups',
       '/v1/client/sign-ins',
       '/v1/client/sign-ins/{attemptId}/password',
@@ -252,12 +253,20 @@ describe('documentation routes', () => {
       '/v1/client/me/passkeys/options',
       '/v1/client/me/passkeys/{passkeyId}',
       '/v1/instance/diagnostics',
+      '/v1/instance/session',
+      '/v1/instance/workspaces',
+      '/v1/instance/projects',
+      '/v1/instance/projects/{projectId}',
+      '/v1/instance/environments',
+      '/v1/instance/projects/{projectId}/environments',
+      '/v1/instance/audit-logs',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',
       'accessToken',
       'secretKey',
       'instanceAdminToken',
+      'dashboardSession',
     ])
     expect(doc.components.schemas).toHaveProperty('ErrorEnvelope')
   })

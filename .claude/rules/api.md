@@ -15,6 +15,13 @@ paths:
   `c.json(Schema.parse(result), status)`.
 - `/v1/client/*` routes require `publishableKey`; `/v1/admin/*` require `secretKey`. Session-scoped
   client routes also use `sessionAuth`.
+- `secretKey()` is the only way in to an admin route: it takes a secret key **or** a dashboard
+  session with `x-tula-environment` (ADR 0032). `admin-via-dashboard.test.ts` enumerates the
+  app's admin routes and fails for one that is guarded any other way. Build the actor with
+  `adminActor(c)`, never by hand: it is what marks a dashboard change as `instance_admin`.
+- `/v1/instance/*` routes use `instanceAdmin()` (the admin token or a dashboard session),
+  `instanceActor(c)`, and record their writes through `deps.controlPlane` with an
+  `InstanceActivity` in the same transaction.
 - Return flow steps from `@tula/contract` for any sign-in/sign-up interaction. Never return UI
   hints like "show the password form".
 - Throw `AuthError(code, params)` or `ServiceException` subclasses. Add new error codes to

@@ -59,6 +59,18 @@ export const INSTANCE_PATH_PREFIX = '/v1/instance/'
 /** Security scheme of an instance operation: the deployment's admin token. */
 export const INSTANCE_TOKEN_SECURITY_SCHEME = 'instanceAdminToken'
 
+/**
+ * Instance operations that are a browser's alone: the dashboard's session (ADR 0032). They are
+ * authenticated by a cookie, not by the admin token, so the instance client does not render
+ * them. Listed by name, so that any other instance operation without the token still fails the
+ * generation.
+ */
+export const BROWSER_ONLY_INSTANCE_OPERATIONS: readonly string[] = [
+  'createDashboardSession',
+  'getDashboardSession',
+  'deleteDashboardSession',
+]
+
 /** Security scheme of an admin operation: the environment's secret key. */
 export const SECRET_KEY_SECURITY_SCHEME = 'secretKey'
 
@@ -384,7 +396,9 @@ export function renderAdminApi(document: OpenApiDocument): string {
       throw new Error(`${operation.id}: an admin operation must take the secret key`)
     }
   }
-  const instance = operationsUnder(document, INSTANCE_PATH_PREFIX)
+  const instance = operationsUnder(document, INSTANCE_PATH_PREFIX).filter(
+    (operation) => !BROWSER_ONLY_INSTANCE_OPERATIONS.includes(operation.id)
+  )
   for (const operation of instance) {
     if (!operation.instanceToken || operation.secretKey) {
       throw new Error(`${operation.id}: an instance operation must take the instance admin token`)

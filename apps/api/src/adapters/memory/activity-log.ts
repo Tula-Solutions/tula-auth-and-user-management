@@ -45,7 +45,10 @@ export class MemoryActivityLog implements ActivityLog {
           entry.environmentId === environmentId &&
           (!criteria.action || entry.type === criteria.action) &&
           (!criteria.actorId || entry.actor.id === criteria.actorId) &&
-          (!criteria.targetId || entry.target.id === criteria.targetId)
+          (!criteria.targetId || entry.target.id === criteria.targetId) &&
+          (!criteria.actorType || entry.actor.type === criteria.actorType) &&
+          (!criteria.from || entry.occurredAt.getTime() >= criteria.from.getTime()) &&
+          (!criteria.to || entry.occurredAt.getTime() < criteria.to.getTime())
       )
       .sort(
         (x, y) =>

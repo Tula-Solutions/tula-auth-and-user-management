@@ -1,4 +1,4 @@
-import { ErrorEnvelopeSchema } from '@tula/contract'
+import { DASHBOARD_SESSION_COOKIE, ErrorEnvelopeSchema } from '@tula/contract'
 import type { GenerateSpecOptions } from 'hono-openapi'
 import { resolver } from 'hono-openapi'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
@@ -45,16 +45,28 @@ export const responses = {
  * - `public`: no credentials.
  * - `client`: publishable key (browsers and apps).
  * - `session`: publishable key plus a signed-in user's access token.
- * - `admin`: secret key (servers and the dashboard).
- * - `instance`: the instance admin token (`TULA_ADMIN_TOKEN`), for `/v1/instance/*`.
+ * - `admin`: a secret key (servers), or a dashboard session together with the
+ *   `x-tula-environment` header (the dashboard).
+ * - `instance`: the instance admin token (`TULA_ADMIN_TOKEN`) or a dashboard session, for
+ *   `/v1/instance/*`.
+ * - `instanceToken`: the instance admin token only.
+ * - `dashboard`: a dashboard session only.
  */
-export const security = {
+/** One alternative of a route's security: the schemes that must all be presented. */
+type SecurityRequirement = Record<string, string[]>
+
+export const security: Record<
+  'public' | 'client' | 'session' | 'admin' | 'instance' | 'instanceToken' | 'dashboard',
+  SecurityRequirement[]
+> = {
   public: [],
   client: [{ publishableKey: [] }],
   session: [{ publishableKey: [], accessToken: [] }],
-  admin: [{ secretKey: [] }],
-  instance: [{ instanceAdminToken: [] }],
-} satisfies Record<string, Record<string, string[]>[]>
+  admin: [{ secretKey: [] }, { dashboardSession: [] }],
+  instance: [{ instanceAdminToken: [] }, { dashboardSession: [] }],
+  instanceToken: [{ instanceAdminToken: [] }],
+  dashboard: [{ dashboardSession: [] }],
+}
 
 /** Top-level OpenAPI document settings. Deterministic, so the committed snapshot is stable. */
 export const documentation: GenerateSpecOptions['documentation'] = {
@@ -124,6 +136,13 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         scheme: 'bearer',
         description:
           'The instance admin token (`TULA_ADMIN_TOKEN`). The operator of the deployment only; the routes that take it answer 404 where none is configured.',
+      },
+      dashboardSession: {
+        type: 'apiKey',
+        in: 'cookie',
+        name: DASHBOARD_SESSION_COOKIE,
+        description:
+          'The dashboard session cookie set by `POST /v1/instance/session` (`__Secure-tula_dashboard` over https). A browser credential: every request made with it carries `x-tula-dashboard: 1`, an `Origin` that is the API’s own or on `CORS_ORIGINS` (required on anything but a read), and no `Authorization` header. On `/v1/admin/*` it also names the environment in `x-tula-environment`.',
       },
     },
   },

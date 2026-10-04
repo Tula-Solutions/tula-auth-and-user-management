@@ -58,12 +58,22 @@ export interface Schemas {
     kind: Schemas['ApiKeyKind']
     name: string
   }
+  CreateEnvironmentRequest: {
+    kind: Schemas['EnvironmentKind']
+  }
+  CreateProjectRequest: {
+    workspaceId: string
+    name: string
+  }
   CreateUserRequest: {
     email: string
     password?: string
     firstName?: string
     lastName?: string
     emailVerified?: boolean
+  }
+  CreateWorkspaceRequest: {
+    name: string
   }
   CreatedApiKey: {
     id: string
@@ -76,6 +86,10 @@ export interface Schemas {
     revokedAt: string | null
     /** The full key. Store it now: it is shown only once. */
     key: string
+  }
+  CreatedProject: {
+    project: Schemas['Project']
+    environments: Schemas['Environment'][]
   }
   DiagnosticCheck: {
     id: string
@@ -211,12 +225,21 @@ export interface Schemas {
     message: string
     params?: Schemas['ErrorParams']
   }
+  InstanceActivityType: 'instance.signed_in' | 'instance.sign_in_failed' | 'instance.signed_out' | 'workspace.created' | 'project.created' | 'project.renamed' | 'environment.created'
+  InstanceAuditLogList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['AuditLog'][]
+  }
   InstanceDiagnostics: {
     version: string
     environment: 'local' | 'dev' | 'staging' | 'prod'
     time: string
     publicUrl: string
     checks: Schemas['DiagnosticCheck'][]
+  }
+  InstanceEnvironmentList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['Environment'][]
   }
   MfaPolicy: 'off' | 'optional' | 'required'
   OAuthProvider: 'google' | 'github' | 'apple'
@@ -265,11 +288,36 @@ export interface Schemas {
     history: number
     expiryDays: number | null
   }
+  Project: {
+    id: string
+    workspaceId: string
+    name: string
+    createdAt: string
+    updatedAt: string
+  }
+  ProjectList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['Project'][]
+  }
   RedirectUrl: string
   RevokedSessions: {
     revoked: number
   }
+  Session: {
+    id: string
+    client: Schemas['SessionClient']
+    userAgent: string | null
+    ipAddress: string | null
+    createdAt: string
+    lastActiveAt: string
+    expiresAt: string
+    current: boolean
+  }
+  SessionClient: 'web' | 'ios' | 'android' | 'server'
   SessionLimitAction: 'end_oldest' | 'refuse_newest'
+  SessionList: {
+    data: Schemas['Session'][]
+  }
   SessionProfile: {
     type?: Schemas['SessionType']
     accessTokenTtl?: Schemas['Duration']
@@ -313,6 +361,9 @@ export interface Schemas {
     data: Schemas['SigningKey'][]
   }
   SigningKeyStatus: 'next' | 'active' | 'retired'
+  UpdateProjectRequest: {
+    name: string
+  }
   User: {
     id: string
     email: string
@@ -332,6 +383,15 @@ export interface Schemas {
     token: string
   }
   WebOrigin: string
+  Workspace: {
+    id: string
+    name: string
+    createdAt: string
+  }
+  WorkspaceList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['Workspace'][]
+  }
 }
 
 /** Path, query and header parameters, JSON body and success response of every admin operation. */
@@ -353,7 +413,7 @@ export interface Operations {
   /** List API keys (`GET /v1/admin/api-keys`). */
   listApiKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ApiKeyList'] }
   /** List the audit log (`GET /v1/admin/audit-logs`). */
-  listAuditLogs: { params: Record<string, never>; query: { action?: Schemas['ActivityType']; actorId?: string; targetId?: string; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['AuditLogList'] }
+  listAuditLogs: { params: Record<string, never>; query: { action?: Schemas['ActivityType']; actorId?: string; targetId?: string; actorType?: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin'; from?: string; to?: string; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['AuditLogList'] }
   /** List environments (`GET /v1/admin/environments`). */
   listEnvironments: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['EnvironmentList'] }
   /** List OAuth providers (`GET /v1/admin/oauth-providers`). */
@@ -362,12 +422,16 @@ export interface Operations {
   listSigningKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SigningKeyList'] }
   /** List users (`GET /v1/admin/users`). */
   listUsers: { params: Record<string, never>; query: { q?: string; page?: number; size?: number; sort?: Schemas['UserSort'] }; headers: Record<string, never>; body: undefined; response: Schemas['UserList'] }
+  /** List a user’s sessions (`GET /v1/admin/users/{userId}/sessions`). */
+  listUserSessions: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
   /** Replace the environment’s settings (`PUT /v1/admin/settings`). */
   replaceEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: { 'If-Match': string; 'x-tula-managed-by'?: string; 'x-tula-config-hash'?: string }; body: Schemas['EnvironmentSettingsInput']; response: Schemas['EnvironmentSettingsState'] }
   /** Reset a user’s two-step verification (`DELETE /v1/admin/users/{userId}/factors`). */
   resetUserFactors: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Revoke an API key (`DELETE /v1/admin/api-keys/{id}`). */
   revokeApiKey: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ApiKey'] }
+  /** End one of a user’s sessions (`DELETE /v1/admin/users/{userId}/sessions/{sessionId}`). */
+  revokeUserSession: { params: { userId: string; sessionId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Sign a user out everywhere (`DELETE /v1/admin/users/{userId}/sessions`). */
   revokeUserSessions: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['RevokedSessions'] }
   /** Rotate signing keys (`POST /v1/admin/signing-keys/rotate`). */
@@ -405,9 +469,11 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listOAuthProviders: { method: 'GET', path: '/v1/admin/oauth-providers' },
   listSigningKeys: { method: 'GET', path: '/v1/admin/signing-keys' },
   listUsers: { method: 'GET', path: '/v1/admin/users' },
+  listUserSessions: { method: 'GET', path: '/v1/admin/users/{userId}/sessions' },
   replaceEnvironmentSettings: { method: 'PUT', path: '/v1/admin/settings' },
   resetUserFactors: { method: 'DELETE', path: '/v1/admin/users/{userId}/factors' },
   revokeApiKey: { method: 'DELETE', path: '/v1/admin/api-keys/{id}' },
+  revokeUserSession: { method: 'DELETE', path: '/v1/admin/users/{userId}/sessions/{sessionId}' },
   revokeUserSessions: { method: 'DELETE', path: '/v1/admin/users/{userId}/sessions' },
   rotateSigningKeys: { method: 'POST', path: '/v1/admin/signing-keys/rotate' },
   setUserPassword: { method: 'PUT', path: '/v1/admin/users/{userId}/password' },
@@ -421,11 +487,35 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
  * They take the instance admin token (`TULA_ADMIN_TOKEN`), never a secret key.
  */
 export interface InstanceOperations {
+  /** Add an environment to a project (`POST /v1/instance/projects/{projectId}/environments`). */
+  createEnvironment: { params: { projectId: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateEnvironmentRequest']; response: Schemas['Environment'] }
+  /** Create a project (`POST /v1/instance/projects`). */
+  createProject: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateProjectRequest']; response: Schemas['CreatedProject'] }
+  /** Create a workspace (`POST /v1/instance/workspaces`). */
+  createWorkspace: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateWorkspaceRequest']; response: Schemas['Workspace'] }
   /** Diagnose the deployment (`GET /v1/instance/diagnostics`). */
   getInstanceDiagnostics: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['InstanceDiagnostics'] }
+  /** List the instance audit log (`GET /v1/instance/audit-logs`). */
+  listInstanceAuditLogs: { params: Record<string, never>; query: { action?: Schemas['InstanceActivityType']; actorId?: string; targetId?: string; from?: string; to?: string; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['InstanceAuditLogList'] }
+  /** List environments (`GET /v1/instance/environments`). */
+  listInstanceEnvironments: { params: Record<string, never>; query: { projectId?: string; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['InstanceEnvironmentList'] }
+  /** List projects (`GET /v1/instance/projects`). */
+  listProjects: { params: Record<string, never>; query: { workspaceId?: string; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['ProjectList'] }
+  /** List workspaces (`GET /v1/instance/workspaces`). */
+  listWorkspaces: { params: Record<string, never>; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['WorkspaceList'] }
+  /** Rename a project (`PATCH /v1/instance/projects/{projectId}`). */
+  updateProject: { params: { projectId: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['UpdateProjectRequest']; response: Schemas['Project'] }
 }
 
 /** Method and path of every instance operation, by operation id. */
 export const INSTANCE_OPERATIONS: { readonly [Id in keyof InstanceOperations]: OperationRoute } = {
+  createEnvironment: { method: 'POST', path: '/v1/instance/projects/{projectId}/environments' },
+  createProject: { method: 'POST', path: '/v1/instance/projects' },
+  createWorkspace: { method: 'POST', path: '/v1/instance/workspaces' },
   getInstanceDiagnostics: { method: 'GET', path: '/v1/instance/diagnostics' },
+  listInstanceAuditLogs: { method: 'GET', path: '/v1/instance/audit-logs' },
+  listInstanceEnvironments: { method: 'GET', path: '/v1/instance/environments' },
+  listProjects: { method: 'GET', path: '/v1/instance/projects' },
+  listWorkspaces: { method: 'GET', path: '/v1/instance/workspaces' },
+  updateProject: { method: 'PATCH', path: '/v1/instance/projects/{projectId}' },
 }

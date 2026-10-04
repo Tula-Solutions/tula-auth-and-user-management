@@ -34,6 +34,11 @@ COPY packages/tsconfig packages/tsconfig
 COPY packages/contract packages/contract
 COPY packages/db packages/db
 COPY apps/api apps/api
+# The dashboard (ADR 0032). The API serves `apps/dashboard/dist` at /dashboard when it holds an
+# index.html, and answers 404 there when it does not, so this image works without the app.
+# Placeholder for the dashboard's build stage, which arrives with the app (step 1.15's UI):
+#   COPY --from=dashboard /usr/src/app/apps/dashboard/dist apps/dashboard/dist
+# It must build with `base: '/dashboard/'` and no inline script or style (the CSP forbids both).
 
 # Never run as root: the server needs no write access to its own files.
 USER bun

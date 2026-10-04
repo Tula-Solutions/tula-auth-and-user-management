@@ -7,6 +7,7 @@ import { openAPIRouteHandler } from 'hono-openapi'
 import type { AppEnv, Deps } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { notFound, onError } from '~/handlers'
+import { DASHBOARD_PATH, dashboardRouter, dashboardSecurityHeaders } from '~/lib/dashboard-files'
 import { cors } from '~/middleware/cors'
 import { clientRateLimit } from '~/middleware/rate-limit'
 import { requestLog } from '~/middleware/request-log'
@@ -38,6 +39,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/oauth/router')).default],
   ['/v1', (await import('~/modules/passkey/router')).default],
   ['/v1/instance', (await import('~/modules/instance/router')).default],
+  ['/v1/instance', (await import('~/modules/control-plane/router')).default],
 ]
 
 // Mounted only where the deployment runs the mock OAuth provider (`ENVIRONMENT=local` with
@@ -63,6 +65,12 @@ export function createApp(deps: Deps): Hono<AppEnv> {
 
   app.use(requestId())
   app.use(requestLog())
+  if (deps.config.dashboardDir !== null) {
+    // Before secureHeaders(), so that on the way out it runs after it and its stricter
+    // values (the Content-Security-Policy above all) are the ones sent.
+    app.use(DASHBOARD_PATH, dashboardSecurityHeaders())
+    app.use(`${DASHBOARD_PATH}/*`, dashboardSecurityHeaders())
+  }
   app.use(secureHeaders())
   app.use(cors(deps))
   // After cors() so a 413 still carries CORS headers and browsers can read the error code.
@@ -87,6 +95,11 @@ export function createApp(deps: Deps): Hono<AppEnv> {
 
   for (const [path, router] of routes) {
     app.route(path, router)
+  }
+  // The dashboard's files, only where a build of it is present (the self-host image). Without
+  // one the paths are not routed at all, so the API image without the app still works.
+  if (deps.config.dashboardDir !== null) {
+    app.route('/', dashboardRouter(deps.config.dashboardDir))
   }
   if (deps.config.oauthMock && deps.config.tier === 'local') {
     app.route('/v1/dev/oauth', devOAuthRouter)

@@ -329,15 +329,48 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
   Flow routes also read `x-tula-client` (how tokens are delivered; fixed when the attempt
   starts) and, on every call after the start, `x-tula-attempt` (the attempt's secret;
   `FLOW_ATTEMPT_HEADER` in `@tula/contract`).
-- `/v1/admin/*` — server-to-server and the dashboard with a **secret key**
-  (`Authorization: Bearer tula_sk_<env>_…`).
+- `/v1/admin/*` — server-to-server with a **secret key**
+  (`Authorization: Bearer tula_sk_<env>_…`), or the dashboard with its **session** plus
+  `x-tula-environment: <environment id>`. `secretKey()` accepts both; never add a second
+  way in to an admin route.
 - `/v1/instance/*` — about the deployment as a whole, with the **instance admin token**
-  (`Authorization: Bearer <TULA_ADMIN_TOKEN>`, `instanceAdmin()` in
+  (`Authorization: Bearer <TULA_ADMIN_TOKEN>`) or a dashboard session (`instanceAdmin()` in
   `~/middleware/instance-admin`; [ADR 0031](docs/adr/0031-instance-admin-and-cli.md)). Without
-  `TULA_ADMIN_TOKEN` the group does not exist (404). Today: `GET /v1/instance/diagnostics`.
+  `TULA_ADMIN_TOKEN` the group does not exist (404). Diagnostics, the dashboard's session,
+  workspaces, projects, environments and the instance audit log
+  ([ADR 0032](docs/adr/0032-dashboard.md)).
+- `/dashboard` — the dashboard's build output as static files, only where a build is present
+  (`DASHBOARD_DIR`, or `apps/dashboard/dist`).
 - `/v1/environments/:id/.well-known/jwks.json` (the token `iss` + `/.well-known/jwks.json`; see
   `environmentIssuer` in `@tula/contract`), `/v1/status`, `/v1/ready`, `/v1/openapi.json`,
   `/v1/docs` — public.
+
+### The dashboard's session and the control plane (see ADR 0032)
+
+- **The browser never keeps `TULA_ADMIN_TOKEN`.** `POST /v1/instance/session` exchanges it
+  once for a stateless signed cookie (`~/lib/dashboard-session`: HMAC over the payload and the
+  admin token's digest, key from `TULA_MASTER_KEY`; 8 hours, never extended). Rotating the
+  token or the master key ends every session; one session cannot be revoked alone.
+- **Cookies only through `~/middleware/dashboard-session`**: `HttpOnly`, `SameSite=Strict`,
+  `Secure` and `__Secure-` over https, set twice (`Path=/v1/instance` and `Path=/v1/admin`),
+  never `/` or `/v1`.
+- **A dashboard request is one that carries `x-tula-dashboard`.** It is authenticated by the
+  cookie or not at all, under the three CSRF rules (`requireDashboardOrigin` plus the header:
+  the API's own origin or `CORS_ORIGINS`, an `Origin` on anything but a read, not
+  `Sec-Fetch-Site: cross-site`), checked before the cookie is read. It never carries
+  `Authorization`: the two credentials are refused together. Without the header a cookie
+  means nothing.
+- **The actor is `instance_admin`** with the session's id (`adminActor(c)` on admin routes,
+  `instanceActor(c)` on instance routes; a `null` id for the bearer token itself).
+- **What has no environment is recorded in the instance audit log** (`deps.controlPlane`,
+  `tula.instance_audit_logs`): every control-plane write takes its `InstanceActivity`
+  (`ControlPlane.entry`) and stores both or neither. Never a name, a token or an email in one.
+- **A new instance operation takes the instance token** (`openapi.security.instance`); the
+  admin client's generator fails otherwise. Only the three session operations are a browser's
+  alone, by name (`BROWSER_ONLY_INSTANCE_OPERATIONS`).
+- **Static files**: every path is decided by `resolveDashboardFile` (resolve, prefix check,
+  real path, prefix check again). Never serve a file by any other route, and never loosen
+  `DASHBOARD_CSP` to allow inline script, `eval` or another origin.
 
 ### Per-environment settings
 
@@ -561,7 +594,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   header that carries a stateful session's claims): [ADR 0029](docs/adr/0029-nextjs-sdk.md);
   settings as code, the admin client and the "managed by" record:
   [ADR 0030](docs/adr/0030-config-and-apply.md); the instance admin token, diagnostics and the
-  CLI: [ADR 0031](docs/adr/0031-instance-admin-and-cli.md).
+  CLI: [ADR 0031](docs/adr/0031-instance-admin-and-cli.md); the dashboard's session, its CSRF
+  rules, the control plane and how the app is served: [ADR 0032](docs/adr/0032-dashboard.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
   takes the `Origin` header and accepts it only when the environment allows it **and** it
   belongs to `passkeys.rpId`; nothing in a body chooses the origin or the relying party. Call
@@ -727,8 +761,9 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance}`,
-  `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin}.ts`, `lib/crypto.ts`, `lib/totp.ts` or `lib/webauthn.ts` as
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane}`,
+  `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
+  `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
   it needs tests for the failure paths, not just the happy path.
 
@@ -832,7 +867,8 @@ apps/api/src/
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/, oauth/
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
-│                     # request-log, instance-admin (TULA_ADMIN_TOKEN, for /v1/instance/*)
+│                     # request-log, instance-admin (TULA_ADMIN_TOKEN, for /v1/instance/*),
+│                     # dashboard-session (the dashboard's cookie and its CSRF rules)
 └── modules/          # flow, password, session, jwks, verification, user, mfa (TOTP, backup
                       # codes, step-up), passkey (WebAuthn), audit, project, status,
                       # settings, factor (first-factor registry and second-factor hooks:
@@ -840,7 +876,9 @@ apps/api/src/
                       # retention (a background job: service only, no router),
                       # notice (security notice emails: service only, no router),
                       # oauth (provider credentials, account linking, the provider callback,
-                      # the dev-only mock provider's consent page)
+                      # the dev-only mock provider's consent page),
+                      # instance (diagnostics), control-plane (the dashboard's session,
+                      # workspaces, projects, environments, the instance audit log)
 ```
 
 ## Common commands
