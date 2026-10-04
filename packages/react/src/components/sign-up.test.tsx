@@ -5,6 +5,7 @@ import {
   attempt,
   CODE_STEP,
   completed,
+  expectFocus,
   failure,
   ROUTE,
   started,
@@ -98,7 +99,7 @@ describe('<SignUp>', () => {
     w.api.on(ROUTE.signUp, () => started('sign_up', CODE_STEP))
     await w.user.click(screen.getByRole('button', { name: 'Continue' }))
     const title = await screen.findByRole('heading', { name: 'Check your email' })
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     expect(w.api.calls(ROUTE.signUp)[0]?.body).toEqual({
       email: EMAIL,
       password: PASSWORD,
@@ -124,7 +125,7 @@ describe('<SignUp>', () => {
       'This field is required.',
       'This field is required.',
     ])
-    expect(document.activeElement).toBe(screen.getByLabelText('Email address'))
+    await expectFocus(screen.getByLabelText('Email address'))
     expect(w.api.calls(ROUTE.signUp)).toHaveLength(0)
   })
 
@@ -149,7 +150,7 @@ describe('<SignUp>', () => {
     ])
     const password = screen.getByLabelText('Password') as HTMLInputElement
     expect(password.getAttribute('aria-invalid')).toBe('true')
-    expect(document.activeElement).toBe(password)
+    await expectFocus(password)
     // What was typed is kept so it can be fixed.
     expect(password.value).toBe('password1')
     expect(screen.getByLabelText('Email address').getAttribute('aria-invalid')).toBeNull()
@@ -168,7 +169,7 @@ describe('<SignUp>', () => {
     )
     await w.user.click(screen.getByRole('button', { name: 'Continue' }))
     expect((await screen.findByRole('alert')).textContent).toBe('Enter a valid email address.')
-    expect(document.activeElement).toBe(screen.getByLabelText('Email address'))
+    await expectFocus(screen.getByLabelText('Email address'))
 
     w.api.on(ROUTE.signUp, () =>
       failure(422, 'validation.failed', {

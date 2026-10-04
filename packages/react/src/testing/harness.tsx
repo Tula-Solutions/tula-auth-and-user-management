@@ -1,4 +1,5 @@
-import { type RenderResult, render, screen } from '@testing-library/react'
+import { expect } from 'bun:test'
+import { type RenderResult, render, screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { PASSWORD_POLICY_PRESETS, type PasswordPolicy } from '@tula/contract'
 import type { FlowKind, FlowStep, TulaClient } from '@tula/core'
@@ -78,6 +79,20 @@ export const ROUTE = {
  */
 export function openDialogs(): number {
   return screen.queryAllByRole('dialog').length
+}
+
+/**
+ * Wait until focus is on an element: `await expectFocus(title)`.
+ *
+ * Focus is moved by an effect, a tick after the element is on the page, so a synchronous check
+ * right after `findByRole` races it on a slow machine. The comparison is made to a boolean for
+ * the reason given at {@link openDialogs}: a failed matcher must never format an element.
+ *
+ * @param element - The element that should hold focus.
+ * @returns When it does; rejects at `waitFor`'s timeout otherwise.
+ */
+export async function expectFocus(element: Element | null): Promise<void> {
+  await waitFor(() => expect(document.activeElement === element).toBe(true))
 }
 
 /** A step as any answer after the start carries it. */

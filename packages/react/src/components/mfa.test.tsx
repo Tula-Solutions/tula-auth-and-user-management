@@ -8,6 +8,7 @@ import { useTula } from '../hooks/use-tula'
 import {
   attempt,
   completed,
+  expectFocus,
   failure,
   json,
   NEW_PASSWORD_STEP,
@@ -84,7 +85,7 @@ describe('<SignIn> at needs_second_factor', () => {
     w.mount(<SignIn onComplete={onComplete} />)
     await passwordAnswers(w, () => attempt('sign_in', SECOND_FACTOR))
     const title = await screen.findByRole('heading', { name: 'Two-step verification' })
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     const field = screen.getByLabelText('Authentication code') as HTMLInputElement
     expect(field.autocomplete).toBe('one-time-code')
     expect(field.inputMode).toBe('numeric')
@@ -102,7 +103,7 @@ describe('<SignIn> at needs_second_factor', () => {
     await waitFor(() => expect(field.getAttribute('aria-invalid')).toBe('true'))
     // A wrong code is retyped from scratch, and the field takes the focus.
     expect(field.value).toBe('')
-    expect(document.activeElement).toBe(field)
+    await expectFocus(field)
     expect(w.api.calls(MFA.signInSecond)[0]?.body).toEqual({ method: 'totp', code: '111111' })
 
     w.api.on(MFA.signInSecond, () => completed('sign_in'))
@@ -121,7 +122,7 @@ describe('<SignIn> at needs_second_factor', () => {
     const field = screen.getByLabelText('Backup code') as HTMLInputElement
     expect(screen.queryByLabelText('Authentication code')).toBeNull()
     // The new field takes the focus: it is where the user types next.
-    expect(document.activeElement).toBe(field)
+    await expectFocus(field)
     await w.user.click(screen.getByRole('button', { name: 'Verify' }))
     expect((await screen.findByRole('alert')).textContent).toBe('Enter a backup code.')
 
@@ -299,7 +300,7 @@ describe('<SignIn> at needs_factor_enrolment', () => {
       'Confirm that you have saved the codes.'
     )
     const saved = within(dialog).getByLabelText('I have saved these codes')
-    expect(document.activeElement).toBe(saved)
+    await expectFocus(saved)
     expect(onComplete).not.toHaveBeenCalled()
     await w.user.click(saved)
     await w.user.click(within(dialog).getByRole('button', { name: 'Done' }))
@@ -559,7 +560,7 @@ describe('<UserProfile> two-step verification', () => {
     expect(within(dialog).queryByLabelText('Password')).toBeNull()
     const field = within(dialog).getByLabelText('Authentication code')
     // A modal dialog opens on the field it is for.
-    expect(document.activeElement).toBe(field)
+    await expectFocus(field)
 
     w.api.on(MFA.stepUp, () => failure(422, 'mfa.invalid_code'))
     await w.user.type(field, '000000')
