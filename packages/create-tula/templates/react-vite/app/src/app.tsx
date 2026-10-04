@@ -3,32 +3,24 @@ import {
   OAuthCallback,
   SignedIn,
   SignedOut,
-  SignIn,
   SignUp,
   TulaLoading,
-  TulaProvider,
   UserButton,
   UserProfile,
   useUser,
 } from '@tula/react'
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  AuthProvider,
+  EMAIL_LINK_PATH,
+  OAUTH_CALLBACK_PATH,
+  PUBLISHABLE_KEY,
+} from './auth-provider'
+import { Protected } from './protected'
+import { SignInPage } from './sign-in-page'
 
 // Everything about authentication on this page is a `@tula/react` component or hook. The app
 // itself only adds a header, its routes and a theme switch.
-
-/**
- * The page emailed sign-in links lead to. In a deployed app this exact URL is listed in the
- * environment's `urls.allowedRedirectUrls`; a local API allows any loopback URL.
- */
-const EMAIL_LINK_PATH = '/auth/link'
-/**
- * The page an OAuth sign-in returns to. List its full URL in the environment's allowed redirect
- * URLs (any loopback URL is allowed in the local tier).
- */
-const OAUTH_CALLBACK_PATH = '/oauth/callback'
-
-const API_URL: string = import.meta.env.VITE_TULA_API_URL ?? 'http://localhost:3003'
-const PUBLISHABLE_KEY: string = import.meta.env.VITE_TULA_PUBLISHABLE_KEY ?? ''
 
 type Scheme = 'system' | 'light' | 'dark'
 const SCHEMES: Scheme[] = ['system', 'light', 'dark']
@@ -156,18 +148,7 @@ export function App() {
 
   const auth = path === '/sign-in' || path === '/sign-up' || path === EMAIL_LINK_PATH
   return (
-    <TulaProvider
-      publishableKey={PUBLISHABLE_KEY}
-      baseUrl={API_URL}
-      navigate={navigate}
-      signInUrl='/sign-in'
-      signUpUrl='/sign-up'
-      afterSignInUrl='/'
-      emailLinkUrl={EMAIL_LINK_PATH}
-      oauthCallbackUrl={OAUTH_CALLBACK_PATH}
-      afterSignUpUrl='/'
-      afterSignOutUrl='/sign-in'
-    >
+    <AuthProvider navigate={navigate}>
       <header className='top'>
         <Link to='/' navigate={navigate} className='brand'>
           <span className='brand-mark' aria-hidden='true'>
@@ -205,14 +186,7 @@ export function App() {
             </SignedIn>
           </>
         ) : path === '/sign-in' ? (
-          <>
-            <SignedOut>
-              <SignIn />
-            </SignedOut>
-            <SignedIn>
-              <Redirect to='/' navigate={navigate} />
-            </SignedIn>
-          </>
+          <SignInPage whenSignedIn={<Redirect to='/' navigate={navigate} />} />
         ) : path === EMAIL_LINK_PATH ? (
           // Whoever opens an emailed link lands here, signed in or not: the component says
           // what became of the link and sends a signed-in visitor on.
@@ -222,14 +196,9 @@ export function App() {
           // second factor, told the account is connected, or told why not.
           <OAuthCallback userProfileUrl='/account' />
         ) : path === '/account' ? (
-          <>
-            <SignedIn>
-              <UserProfile />
-            </SignedIn>
-            <SignedOut>
-              <Redirect to='/sign-in' navigate={navigate} />
-            </SignedOut>
-          </>
+          <Protected fallback={<Redirect to='/sign-in' navigate={navigate} />}>
+            <UserProfile />
+          </Protected>
         ) : (
           <>
             <SignedIn>
@@ -247,6 +216,6 @@ export function App() {
           </aside>
         ) : null}
       </main>
-    </TulaProvider>
+    </AuthProvider>
   )
 }

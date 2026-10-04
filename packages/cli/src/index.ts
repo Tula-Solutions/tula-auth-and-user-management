@@ -2,6 +2,7 @@ import { applyCommand } from './commands/apply'
 import { devCommand } from './commands/dev'
 import { diffCommand } from './commands/diff'
 import { doctorCommand } from './commands/doctor'
+import { mcpCommand } from './commands/mcp'
 import { policyCommand } from './commands/policy'
 import { type CliIo, type Command, runCli } from './framework'
 import { processIo } from './process-io'
@@ -11,6 +12,7 @@ export { applyCommand } from './commands/apply'
 export { devCommand } from './commands/dev'
 export { diffCommand } from './commands/diff'
 export { doctorCommand } from './commands/doctor'
+export { buildMcpServer, mcpCommand } from './commands/mcp'
 export { policyCommand } from './commands/policy'
 export {
   DEV_ENV_FILE,
@@ -87,6 +89,7 @@ export const COMMANDS: readonly Command[] = [
   doctorCommand,
   policyCommand,
   devCommand,
+  mcpCommand,
 ]
 
 /**

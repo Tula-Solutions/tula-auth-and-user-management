@@ -24,8 +24,11 @@ export {
   type TulaAdminErrorCode,
   type TulaAdminErrorInit,
 } from './errors'
-export type {
-  InstanceOperations,
-  Operations as AdminOperations,
-  Schemas as AdminSchemas,
+export {
+  INSTANCE_OPERATIONS,
+  type InstanceOperations,
+  OPERATIONS,
+  type OperationRoute,
+  type Operations as AdminOperations,
+  type Schemas as AdminSchemas,
 } from './generated/api.gen'

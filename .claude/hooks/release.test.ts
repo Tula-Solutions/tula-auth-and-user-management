@@ -72,7 +72,7 @@ describe('nothing can be published yet', () => {
 })
 
 describe('publishable packages', () => {
-  test('are the contract, the SDKs, the admin client, the config package, the CLI and create-tula, dependencies first', () => {
+  test('are the contract, the SDKs, the admin client, the config package, the MCP server, the CLI and create-tula, dependencies first', () => {
     expect([...PUBLISHABLE_PACKAGES]).toEqual([
       'packages/contract',
       'packages/core',
@@ -80,6 +80,7 @@ describe('publishable packages', () => {
       'packages/nextjs',
       'packages/admin',
       'packages/config',
+      'packages/mcp',
       'packages/cli',
       'packages/create-tula',
     ])

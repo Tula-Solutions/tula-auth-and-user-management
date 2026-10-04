@@ -1,7 +1,8 @@
 # @tula/cli
 
 The `tula` command line for [Tula Auth](../../README.md): `tula dev` (the local stack),
-`tula doctor` (check a deployment), `tula policy test` (try a password against a policy), and
+`tula doctor` (check a deployment), `tula policy test` (try a password against a policy),
+`tula mcp` (the read-only MCP server, [docs/mcp.md](../../docs/mcp.md)), and
 `tula diff` / `tula apply`, which keep an environment's settings and OAuth providers in step
 with a `tula.config.ts`. Every command is in [docs/cli.md](../../docs/cli.md); settings as code
 in [docs/config.md](../../docs/config.md); the decisions in

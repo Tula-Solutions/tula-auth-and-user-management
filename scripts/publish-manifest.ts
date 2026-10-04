@@ -6,6 +6,7 @@ export const PUBLISHABLE_PACKAGES = [
   'packages/nextjs',
   'packages/admin',
   'packages/config',
+  'packages/mcp',
   'packages/cli',
   'packages/create-tula',
 ] as const

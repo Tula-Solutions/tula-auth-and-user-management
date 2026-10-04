@@ -107,7 +107,8 @@ function serverChecks(data: unknown): DoctorCheck[] {
 
 async function status(
   io: CliIo,
-  url: string
+  url: string,
+  signal: AbortSignal | undefined
 ): Promise<{ status: number; version?: string } | null> {
   const send = io.fetch ?? ((target, init) => fetch(target, init))
   try {
@@ -115,7 +116,9 @@ async function status(
       method: 'GET',
       headers: { accept: 'application/json', 'user-agent': `tula-cli/${VERSION}` },
       redirect: 'manual',
-      signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(STATUS_TIMEOUT_MS)])
+        : AbortSignal.timeout(STATUS_TIMEOUT_MS),
     })
     const body: unknown = await response.json().catch(() => null)
     const version = isRecord(body) && typeof body.version === 'string' ? body.version : undefined
@@ -207,7 +210,9 @@ function refusedCheck(error: unknown): DoctorCheck {
  *
  * It never throws for something a check can say: an unreachable API is a failing check.
  *
- * @param input - The API's URL, the instance client (`null` without an admin token) and the io.
+ * @param input - The API's URL, the instance client (`null` without an admin token), the io,
+ *   and optionally a signal: aborting it ends the request in flight, and the run answers with
+ *   the failing check an unreachable API gets (`tula mcp` abandons a run that takes too long).
  * @returns The report.
  *
  * @example
@@ -219,12 +224,13 @@ export async function examine(input: {
   apiUrl: string
   instance: InstanceClient | null
   io: CliIo
+  signal?: AbortSignal
 }): Promise<DoctorReport> {
-  const { apiUrl, instance, io } = input
+  const { apiUrl, instance, io, signal } = input
   const now = io.now ?? (() => new Date())
   const report: DoctorReport = { apiUrl, checks: [] }
 
-  const answer = await status(io, apiUrl)
+  const answer = await status(io, apiUrl, signal)
   if (answer?.status !== 200) {
     report.checks.push({
       id: 'api',
@@ -276,7 +282,7 @@ export async function examine(input: {
   const before = now().getTime()
   let data: unknown
   try {
-    data = (await instance.call('getInstanceDiagnostics')).data
+    data = (await instance.call('getInstanceDiagnostics', { signal })).data
   } catch (error) {
     report.checks.push(refusedCheck(error))
     return report
@@ -323,7 +329,9 @@ export async function examine(input: {
       named.password === ''
     ) {
       const reached =
-        apiUrl.replace(/\/+$/, '') === named.origin ? answer : await status(io, named.origin)
+        apiUrl.replace(/\/+$/, '') === named.origin
+          ? answer
+          : await status(io, named.origin, signal)
       Object.assign(
         skipped,
         reached?.status === 200

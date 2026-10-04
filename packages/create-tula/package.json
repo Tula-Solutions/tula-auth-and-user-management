@@ -35,7 +35,7 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
-    "templates:sync": "bun run scripts/sync-templates.ts",
+    "templates:sync": "bun run scripts/sync-templates.ts && bun run ../mcp/scripts/sync-scaffolds.ts",
     "generate:check": "bun run scripts/sync-templates.ts --check"
   },
   "devDependencies": {

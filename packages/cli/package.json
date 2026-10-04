@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The tula command line: `tula dev`, `tula doctor`, `tula policy test`, and `tula diff` / `tula apply`, which keep an environment's settings and OAuth providers in step with tula.config.ts.",
+  "description": "The tula command line: `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, and `tula diff` / `tula apply`, which keep an environment's settings and OAuth providers in step with tula.config.ts.",
   "sideEffects": false,
   "bin": {
     "tula": "./src/bin.ts"
@@ -38,9 +38,11 @@
   "dependencies": {
     "@tula/admin": "workspace:*",
     "@tula/config": "workspace:*",
-    "@tula/contract": "workspace:*"
+    "@tula/contract": "workspace:*",
+    "@tula/mcp": "workspace:*"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.2.0",
     "@tula/api": "workspace:*",
     "@tula/tsconfig": "workspace:*",
     "zod": "^4.6.5"

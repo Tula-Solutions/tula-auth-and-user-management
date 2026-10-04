@@ -1,0 +1,42 @@
+{
+  "name": "@tula/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's Model Context Protocol server (`tula mcp`): read-only tools over an environment's users, sessions, audit entries and settings, and scaffolds for the provider, a protected route and a sign-in page. It changes nothing and returns no secret.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "generate": "bun run scripts/sync-scaffolds.ts",
+    "generate:check": "bun run scripts/sync-scaffolds.ts --check"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.2.0",
+    "@tula/admin": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@tula/api": "workspace:*",
+    "@tula/tsconfig": "workspace:*",
+    "create-tula": "workspace:*"
+  }
+}
