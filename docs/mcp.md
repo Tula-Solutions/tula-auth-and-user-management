@@ -145,20 +145,27 @@ started in, and returns nothing of it but the framework and which Tula packages 
   Control characters and line separators become a space. Zero-width characters,
   bidirectional controls, the soft hyphen, the Unicode tag characters (which can spell a
   whole sentence invisibly), variation selectors, private-use and unassigned code points and
-  lone surrogates are dropped, and a pile of combining marks is cut at eight. Secret-shaped
-  values are looked for after that, so a key split by an invisible character is still
-  replaced.
+  lone surrogates are dropped, and so are a few characters that are drawn as nothing (the
+  Hangul fillers, the braille blank, two Khmer vowels); a pile of combining marks is cut at
+  eight. Secret-shaped values are looked for after that, so a key split by an invisible
+  character is still replaced, and so is one split by a newline or a control character: it
+  is replaced whole, never one half of it.
   - Names in any script come through unchanged, accents included. Emoji do too, with one
     visible difference: an emoji built from several joined ones (a family) is returned as
     its parts, and one that needed a variation selector is returned in its plain form. The
     dashboard and the API show the value as it is stored.
+- In `get_settings`, session profiles are keyed by name. A name is cleaned like any other
+  text and cut at 64 characters. If two names are the same after that, the first is returned;
+  an entry left out for its name (a duplicate, `truncated`, `__proto__`, `constructor`,
+  `prototype`) is marked by `truncated: true` on `profiles`.
 - Only the start of a very long value is looked at (four times the field's limit, at least
   4096 characters); the rest is dropped, and the value ends with `…`.
 
 ## Time and load
 
 - A request to the API has 15 seconds; `run_doctor` has 30 for all of its requests. When a
-  call runs out of time, or your client cancels it, the requests it made are aborted.
+  call runs out of time, or your client cancels it, the requests it made are aborted. A call
+  cancelled before its turn never runs and is answered `cancelled`.
 - Four read tools run at once and sixteen more wait their turn. A call beyond that is refused
   at once with `busy`: wait for some answers and call again. The scaffold tools are not
   counted.
@@ -179,4 +186,5 @@ or one of the server's own:
 | `package.invalid` | The `package.json` is not a readable JSON file. |
 | `output.too_large` | The result could not be cut to the size limit. |
 | `busy` | Four read calls are running and sixteen are waiting. Try again when some have answered. |
+| `cancelled` | The call was cancelled before its turn came; nothing was asked of the API. |
 | `internal` | Something unforeseen; its name is on standard error. |

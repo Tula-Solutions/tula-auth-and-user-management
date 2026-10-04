@@ -23,7 +23,11 @@ The MCP server (ADR 0033): `tula mcp`.
   combining marks is cut at eight. Names in any script are unchanged; a joined emoji is
   returned as its parts. Only the first 4096 characters of a value (or four times its limit)
   are looked at, and every pattern is linear. Each call's requests are aborted when it is
-  cancelled or out of time; four read tools run at once, sixteen wait, the next is `busy`.
+  cancelled or out of time; four read tools run at once, sixteen wait, the next is `busy`,
+  and a call already cancelled is answered `cancelled` without taking a turn. A secret split
+  by a control character or a newline is replaced whole. A record's key is cleaned before it
+  is compared: an entry whose key is a duplicate or a prototype name once cleaned is left
+  out and the record has `truncated: true`.
 - `@tula/cli`: `tula mcp` serves it on standard input and output. Credentials come from the
   environment or a file, as for every other command (`TULA_API_URL[_<NAME>]`,
   `TULA_SECRET_KEY[_<NAME>]` or `--secret-key-file`, `TULA_ADMIN_TOKEN` or

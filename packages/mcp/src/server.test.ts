@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { toolFailure } from './errors'
 import { READ_OPERATIONS } from './read-only'
 import { MAX_OUTPUT_CHARS, REDACTED } from './sanitize'
-import { MCP_VERSION, READ_TOOL_NAMES, SCAFFOLD_TOOL_NAMES, TOOL_NAMES } from './server'
+import { limiter, MCP_VERSION, READ_TOOL_NAMES, SCAFFOLD_TOOL_NAMES, TOOL_NAMES } from './server'
 import {
   type Answers,
   CANARY,
@@ -794,6 +795,93 @@ describe('a call does not outlive its time, and calls do not pile up', () => {
     await Promise.all(calls)
     await Bun.sleep(20)
     expect(requests).toHaveLength(4)
+  })
+})
+
+describe('the limiter and a call that is already cancelled', () => {
+  const live = new AbortController().signal
+  const outcome = (call: Promise<unknown>) =>
+    call.then(
+      (value) => `answered ${String(value)}`,
+      (error) => toolFailure(error).code
+    )
+  /** Work that waits until it is let go. */
+  function held() {
+    let open: () => void = () => {}
+    const wait = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    return { work: () => wait, open }
+  }
+
+  test('with every turn taken, an aborted call is refused at once and takes no place in line', async () => {
+    const limited = limiter(4, 2)
+    const hold = held()
+    const running = Array.from({ length: 4 }, () => limited(live, hold.work))
+    const ran: string[] = []
+    const refused = outcome(
+      limited(AbortSignal.abort(), async () => {
+        ran.push('aborted')
+      })
+    )
+    // At once: not when a turn comes free.
+    expect(await Promise.race([refused, Bun.sleep(20).then(() => 'still waiting')])).toBe(
+      'cancelled'
+    )
+    // The line is as long as it was: both of its places are free, and the third is refused.
+    const inLine = [limited(live, async () => 'a'), limited(live, async () => 'b')]
+    expect(await outcome(limited(live, async () => 'c'))).toBe('busy')
+    hold.open()
+    await Promise.all(running)
+    expect(await Promise.all(inLine)).toEqual(['a', 'b'])
+    expect(ran).toEqual([])
+  })
+
+  test('with a turn free, an aborted call does not start its work or keep the turn', async () => {
+    const limited = limiter(1, 0)
+    const ran: string[] = []
+    const refused = await outcome(
+      limited(AbortSignal.abort(), async () => {
+        ran.push('aborted')
+      })
+    )
+    expect(refused).toBe('cancelled')
+    expect(ran).toEqual([])
+    expect(await outcome(limited(live, async () => 'next'))).toBe('answered next')
+  })
+
+  test('a waiting call aborted just as its turn comes does not start, and passes the turn on', async () => {
+    const limited = limiter(1, 2)
+    const hold = held()
+    const first = limited(live, hold.work)
+    // The abort lands after the waiter was taken from the line (it no longer listens) and
+    // before it runs: the moment between a turn being handed over and being used.
+    const controller = new AbortController()
+    const signal = controller.signal
+    const stopListening = signal.removeEventListener.bind(signal)
+    signal.removeEventListener = (...args: Parameters<typeof stopListening>) => {
+      stopListening(...args)
+      controller.abort()
+    }
+    const ran: string[] = []
+    const second = outcome(
+      limited(signal, async () => {
+        ran.push('second')
+      })
+    )
+    const third = outcome(
+      limited(live, async () => {
+        ran.push('third')
+        return 'third'
+      })
+    )
+    hold.open()
+    await first
+    expect(await second).toBe('cancelled')
+    expect(await third).toBe('answered third')
+    expect(ran).toEqual(['third'])
+    // The turn was given back: the next call runs.
+    expect(await outcome(limited(live, async () => 'after'))).toBe('answered after')
   })
 })
 

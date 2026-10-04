@@ -135,15 +135,37 @@ const BUSY =
   'The server is already running and holding as many read calls as it takes. Wait for some ' +
   'to answer, then try again.'
 
+const CANCELLED = 'The call was cancelled before it ran.'
+
 /**
  * Let `running` pieces of work run at once and `waiting` more wait, first come first served.
  * One more than that is refused with the tool error `busy`. A waiting call whose signal aborts
  * gives up its place and never runs.
+ *
+ * A call whose signal is already aborted is refused with the tool error `cancelled` before it
+ * takes a turn or a place in line: an `abort` listener added to such a signal never fires, so
+ * the call would wait, run when a turn came free and hold it. The signal is looked at once
+ * more when a waiting call is given its turn, for an abort that arrived in between.
+ *
+ * Exported for its tests; it is not part of the package's entry point.
+ *
+ * @param running - How many pieces of work run at once.
+ * @param waiting - How many more may wait.
+ * @returns `limited(signal, work)`: runs `work` in its turn and answers what it answers.
+ *
+ * @example
+ * ```ts
+ * const limited = limiter(MAX_CONCURRENT_READS, MAX_WAITING_READS)
+ * const settings = await limited(signal, () => read('getAdminSettings'))
+ * ```
  */
-function limiter(running: number, waiting: number) {
+export function limiter(running: number, waiting: number) {
   let active = 0
   const queue: (() => void)[] = []
   return async function limited<T>(signal: AbortSignal, work: () => Promise<T>): Promise<T> {
+    if (signal.aborted) {
+      throw new ToolError('cancelled', CANCELLED)
+    }
     if (active < running) {
       active += 1
     } else if (queue.length >= waiting) {
@@ -156,13 +178,17 @@ function limiter(running: number, waiting: number) {
         }
         const leave = () => {
           queue.splice(queue.indexOf(start), 1)
-          reject(new ToolError('cancelled', 'The call was cancelled before it ran.'))
+          reject(new ToolError('cancelled', CANCELLED))
         }
         queue.push(start)
         signal.addEventListener('abort', leave, { once: true })
       })
     }
     try {
+      // Inside the `try`: this call holds a turn by now, and gives it up like any other.
+      if (signal.aborted) {
+        throw new ToolError('cancelled', CANCELLED)
+      }
       return await work()
     } finally {
       // The next in line takes this turn over; with nobody waiting the turn is given back.

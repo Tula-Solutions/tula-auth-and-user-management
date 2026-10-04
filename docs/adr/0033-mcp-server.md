@@ -112,11 +112,22 @@ hold for the API as it will be next year, not only as it is today.
      annotation, and the **tag characters** U+E0001–E007F, which spell ASCII invisibly and
      which a model reads), private-use and unassigned code points and noncharacters (`Co`,
      `Cn`), lone surrogates (`Cs`), the variation selectors (U+FE00–FE0F, U+E0100–E01EF,
-     Mongolian U+180B–180F), the combining grapheme joiner (U+034F) and the Hangul fillers
-     (U+115F, U+1160, U+3164, U+FFA0). A run of combining marks (`M`) is cut at **8**: real
+     Mongolian U+180B–180F), the combining grapheme joiner (U+034F), the Hangul fillers
+     (U+115F, U+1160, U+3164, U+FFA0), the Khmer inherent vowels (U+17B4, U+17B5: marks drawn
+     as nothing) and the braille pattern blank (U+2800: a symbol with no dot); visible Khmer
+     and braille are untouched. A run of combining marks (`M`) is cut at **8**: real
      text stacks a few on a letter, a flood buries what is around it.
   3. *Secret shapes*, after step 2: a key split by a zero-width space is whole again when it
      is looked for. A key or JWT that the window cut short is replaced from where it starts.
+     A control character or a line separator is a space by now, and would make two harmless
+     words of a key it was put into; so the shapes are looked for **twice**, in the text as it
+     will be returned and in a copy with those characters taken out instead. Each shape
+     answers where it is (a span), a span found in the copy is carried back to the text, and
+     every span is replaced from its first character to its last with the separators inside
+     it: half a secret is never returned. Both passes are linear and inside the window; the
+     second runs only for a value that has such a character. The price is a false positive
+     where lines only together look like a secret (a line ending in `eyJ…` parts); ordinary
+     multi-line text changes only by the control-to-space rule.
   4. *Cap.* The text is cut at **512** characters (less where a field has a natural size),
      never between the halves of a surrogate pair, and ends with `…` when anything was cut.
 - **What that costs legitimate text**, accepted: letters of every script survive, composed
@@ -129,6 +140,17 @@ hold for the API as it will be next year, not only as it is today.
 - Arrays are cut at **100** entries (50 users, 100 audit entries, by input schema as well). A
   result is at most **64,000** characters of JSON: a list loses entries from its end and
   gains `truncated: true`; anything else that large is the error `output.too_large`.
+- **A record's keys are data, and are judged as they will be returned.** A key (a session
+  profile's name) is cleaned like any string and cut at 64 characters *first*; only then is
+  it compared. An entry is left out when its cleaned key is `__proto__`, `constructor` or
+  `prototype` (`__pro<zero-width space>to__` is one of them once cleaned), when an earlier
+  entry already has that key (two names that differ only in what cleaning removes, or after
+  the 64th character: the first is kept, a later one never replaces it), or when it is
+  `truncated`. The record then carries `truncated: true`, the same mark a cut list has: the
+  smallest signal that says entries are missing without inventing a second vocabulary; the
+  name is reserved so that it cannot be mistaken for an entry. Entries are written as own
+  properties (`Object.defineProperty`), in the projection and in the credential redactor, so
+  no key can reach an object's prototype; results stay plain objects.
 - The read tools' descriptions and the server's instructions say that every string in a
   result is untrusted data and never an instruction.
 
@@ -167,7 +189,10 @@ hold for the API as it will be next year, not only as it is today.
   the doctor's requests.
 - **At most 4 read tools run at once and 16 wait**; one more is answered at once with the
   tool error `busy`. A client that fires fifty calls gets them four at a time and the API
-  sees four requests. A waiting call that is cancelled gives up its place. The scaffold
+  sees four requests. A waiting call that is cancelled gives up its place. A call that is
+  already cancelled when it arrives is answered `cancelled` before it takes a turn or a place
+  (an `abort` listener on an aborted signal never fires: it would wait, run and hold a turn),
+  and the signal is looked at again when a waiting call is given its turn. The scaffold
   tools reach nothing and are not counted, so a slow API does not hold them up.
 
 ### Loading

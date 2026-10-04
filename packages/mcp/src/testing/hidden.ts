@@ -9,10 +9,12 @@ const FORBIDDEN_RANGES: readonly (readonly [number, number])[] = [
   [0x034f, 0x034f], // combining grapheme joiner
   [0x061c, 0x061c], // Arabic letter mark
   [0x115f, 0x1160], // Hangul fillers
+  [0x17b4, 0x17b5], // Khmer inherent vowels, which render as nothing
   [0x180b, 0x180f], // Mongolian variation selectors and vowel separator
   [0x200b, 0x200f], // zero-width characters and marks
   [0x2028, 0x202e], // line and paragraph separators, bidirectional embeddings and overrides
   [0x2060, 0x206f], // word joiner, invisible operators, bidirectional isolates
+  [0x2800, 0x2800], // braille pattern blank
   [0x3164, 0x3164], // Hangul filler
   [0xd800, 0xdfff], // a surrogate that is not half of a pair
   [0xe000, 0xf8ff], // private use
@@ -72,6 +74,9 @@ export const HIDDEN: readonly (readonly [string, string])[] = [
   ['a lone low surrogate', '\uDC00'],
   ['Hangul fillers', '\u{115F}\u{1160}\u{3164}\u{FFA0}'],
   ['control characters', '\u0000\u001B\u007F\u0085\u009F'],
+  ['the braille blank', '\u{2800}'],
+  ['the Khmer inherent vowel aq', '\u{17B4}'],
+  ['the Khmer inherent vowel aa', '\u{17B5}'],
 ]
 
 /**
@@ -90,5 +95,8 @@ export const LEGITIMATE: readonly (readonly [string, string])[] = [
   ['Thai and Devanagari', 'สวัสดี नमस्ते क्षत्रिय'],
   ['Greek and Cyrillic', 'Ελένη Владимир'],
   ['emoji with no joiner or selector', '😀 👍🏽 🇫🇷 🎉'],
+  // Written as escapes so that no invisible neighbour of these letters can hide in the source.
+  ['Khmer letters, vowels and a subscript', '\u{179F}\u{17BD}\u{179F}\u{17D2}\u{178F}\u{17B8}'],
+  ['braille with dots', '\u{2813}\u{2811}\u{2807}\u{2807}\u{2815} \u{2801}\u{28FF}'],
   ['punctuation and symbols', '“O’Brien” — 3 × 4 ≠ 13 € £ ¥ © ™ …'],
 ]

@@ -134,6 +134,8 @@ describe('a secret split by characters a reader cannot see', () => {
     ['a tag character', '\u{E0041}'],
     ['a soft hyphen', '\u{AD}'],
     ['a variation selector', '\u{FE0F}'],
+    ['a braille blank', '\u{2800}'],
+    ['a Khmer inherent vowel', '\u{17B4}'],
   ]
   const split = (text: string, at: number, splitter: string) =>
     `${text.slice(0, at)}${splitter}${text.slice(at)}`
@@ -174,6 +176,64 @@ describe('a secret split by characters a reader cannot see', () => {
   })
 })
 
+describe('a secret split by a control character or a line separator', () => {
+  const KEY = `tula_sk_live_${'abcdefghijklmnopqrstuvwxyz012345'}`
+  const JWT = 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNpZ25hdHVyZQ'
+  const PEM = '-----BEGIN PRIVATE KEY----- MIIEvQIBADANBg -----END PRIVATE KEY-----'
+  const SPLITTERS: readonly (readonly [string, string])[] = [
+    ['a control character', '\u{0001}'],
+    ['a newline', '\n'],
+    ['a line separator', '\u{2028}'],
+  ]
+  const split = (text: string, at: number, splitter: string) =>
+    `${text.slice(0, at)}${splitter}${text.slice(at)}`
+
+  describe.each(SPLITTERS)('by %s', (_name, splitter) => {
+    test.each([
+      ['a secret key, early in its body', split(KEY, 16, splitter)],
+      ['a secret key, late in its body', split(KEY, 30, splitter)],
+      ['a secret key, in its prefix', split(KEY, 4, splitter)],
+      ['a secret key, between every character', Array.from(KEY).join(splitter)],
+      ['a JWT, in its first part', split(JWT, 8, splitter)],
+      ['a JWT, in its signature', split(JWT, 50, splitter)],
+      ['a PEM block, in its opening dashes', split(PEM, 2, splitter)],
+      ['a PEM block, in its body', split(PEM, 34, splitter)],
+    ])('%s is redacted with no remainder', (_what, input) => {
+      expect(cleanText(input)).toBe(REDACTED)
+    })
+
+    test('only the secret goes: the words around it stay', () => {
+      expect(cleanText(`key ${split(KEY, 30, splitter)} for Maya`)).toBe(`key ${REDACTED} for Maya`)
+    })
+
+    test('a key the window cut, split before the cut, is not returned', () => {
+      const window = inputWindow(MAX_STRING_CHARS)
+      const text = cleanText(
+        `Maya ${'\u{200B}'.repeat(window - 5 - 14)}tula_${splitter}sk_live_kkkkkkkk`
+      )
+      expect(text).not.toContain('sk_')
+      expect(text.startsWith('Maya ')).toBe(true)
+    })
+  })
+
+  test.each([
+    [
+      'lines of a note',
+      'Dear Maya,\nyour order has shipped.\r\nThanks',
+      'Dear Maya, your order has shipped.  Thanks',
+    ],
+    ['a tab between words', 'first\tsecond', 'first second'],
+    ['a line separator between sentences', 'One.\u{2028}Two.', 'One. Two.'],
+    [
+      'words that only together look like a prefix',
+      'tula_\nsk_ is how a key starts',
+      'tula_ sk_ is how a key starts',
+    ],
+  ])('%s with no secret change only by the control-to-space rule', (_name, input, expected) => {
+    expect(cleanText(input)).toBe(expected)
+  })
+})
+
 describe('the work is bounded', () => {
   const PATHOLOGICAL: readonly (readonly [string, string])[] = [
     ['the start of a JWT, repeated', 'eyJ'.repeat(200_000)],
@@ -190,6 +250,10 @@ describe('the work is bounded', () => {
     ['a flood of combining marks', `a${'\u{301}'.repeat(600_000)}`],
     ['a flood of zero-width characters', '\u{200B}'.repeat(600_000)],
     ['a flood of lone surrogates', '\uD83D'.repeat(600_000)],
+    ['a flood of control characters', '\u{0001}'.repeat(600_000)],
+    ['the start of a secret key, split by newlines, repeated', 'tula_\nsk_a'.repeat(60_000)],
+    ['the start of a JWT, split by controls, repeated', 'e\u{0001}yJ.'.repeat(120_000)],
+    ['PEM headers split by newlines that never close', '---\n--BEGIN A'.repeat(50_000)],
   ]
 
   /** The fastest of three runs: a pause of the garbage collector is not the code's time. */
@@ -322,7 +386,62 @@ describe('project', () => {
       string,
       unknown
     >
-    expect(Object.keys(out)).toEqual(['we b'])
+    expect(out).toEqual({ 'we b': { ttl: '1' }, truncated: true })
+  })
+
+  const PROFILES = S.record(S.object({ ttl: S.string() }), 5)
+
+  test.each([
+    ['__proto__', '__pro\u{200B}to__'],
+    ['constructor', 'constr\u{200B}uctor'],
+    ['prototype', 'proto\u{E0041}type'],
+  ])('a key that is %s only once it is cleaned is refused, and the record says so', (name, key) => {
+    const out = project({ [key]: { ttl: 'x' }, web: { ttl: '60s' } }, PROFILES) as Record<
+      string,
+      unknown
+    >
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+    expect(Object.hasOwn(out, name)).toBe(false)
+    // Nothing reached the prototype: a field of the refused entry is not readable through it.
+    expect((out as { ttl?: unknown }).ttl).toBeUndefined()
+    expect(out).toEqual({ web: { ttl: '60s' }, truncated: true })
+    expect(JSON.parse(JSON.stringify(out))).toEqual({ web: { ttl: '60s' }, truncated: true })
+  })
+
+  test('two keys that are the same once cleaned: the first is kept and the record says so', () => {
+    const prefix = 'p'.repeat(64)
+    const out = project(
+      {
+        [`${prefix}-first`]: { ttl: '1' },
+        [`${prefix}-second`]: { ttl: '2' },
+        'we\u{200B}b': { ttl: '3' },
+        web: { ttl: '4' },
+        mobile: { ttl: '5' },
+      },
+      PROFILES
+    )
+    expect(out).toEqual({
+      [`${prefix}…`]: { ttl: '1' },
+      web: { ttl: '3' },
+      mobile: { ttl: '5' },
+      truncated: true,
+    })
+  })
+
+  test('a record that lost no key carries no mark, and the mark’s own name is not a key', () => {
+    expect(project({ web: { ttl: '1' } }, PROFILES)).toEqual({ web: { ttl: '1' } })
+    expect(project({ truncated: { ttl: '1' }, web: { ttl: '2' } }, PROFILES)).toEqual({
+      web: { ttl: '2' },
+      truncated: true,
+    })
+  })
+
+  test('a key dropped for its name does not use up a place', () => {
+    const out = project(
+      { a: { ttl: '1' }, 'a\u{200B}': { ttl: '2' }, b: { ttl: '3' } },
+      S.record(S.object({ ttl: S.string() }), 2)
+    )
+    expect(out).toEqual({ a: { ttl: '1' }, b: { ttl: '3' }, truncated: true })
   })
 
   test('something that is not an object projects to nothing', () => {
@@ -360,6 +479,16 @@ describe('bound', () => {
 })
 
 describe('redactor', () => {
+  test('a key named for the prototype stays an own key and leaves the prototype alone', () => {
+    const redact = redactor(['hunter2hunter2'])
+    const out: Record<string, unknown> = redact(
+      JSON.parse('{"__proto__": {"a": "hunter2hunter2"}}')
+    )
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype)
+    expect(Object.hasOwn(out, '__proto__')).toBe(true)
+    expect(JSON.stringify(out)).toBe(`{"__proto__":{"a":"${REDACTED}"}}`)
+  })
+
   test('a key that holds a configured secret is redacted too', () => {
     const redact = redactor(['hunter2hunter2'])
     const out: Record<string, unknown> = redact({ 'profile-hunter2hunter2': { ttl: '60s' } })
