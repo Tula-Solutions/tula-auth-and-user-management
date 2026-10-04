@@ -1,19 +1,21 @@
 import { type AdminFetch, isTulaAdminError, type TulaAdminError } from '@tula/admin'
 import { isConfigError } from '@tula/config'
 import { type OptionSpec, type ParsedArgs, parseArgs, UsageError } from './args'
+import type { Host } from './host'
 import { createOutput, type Output, type Sink } from './output'
 import { VERSION } from './version'
 
 /**
  * A run's exit code: `0` success (and, for `tula diff`, "no changes"), `1` an error, `2` "there
- * are changes to apply" (`tula diff` only, so that CI can gate on it).
+ * are changes to apply" (`tula diff`, so that CI can gate on it) and "the password would be
+ * refused" (`tula policy test`): an answer, not a failure of the command.
  *
  * @example
  * ```ts
  * process.exit(plan.changes ? EXIT.changes : EXIT.ok)
  * ```
  */
-export const EXIT = { ok: 0, error: 1, changes: 2 } as const
+export const EXIT = { ok: 0, error: 1, changes: 2, refused: 2 } as const
 
 /**
  * Everything a run touches outside itself. `main` fills it from the process; a test passes its
@@ -52,6 +54,15 @@ export interface CliIo {
   readStdin?: () => Promise<string>
   /** Read a file as text (`--secret-key-file <path>`). */
   readFile?: (path: string) => Promise<string>
+  /**
+   * Ask for a secret on the terminal without showing what is typed (`tula policy test`).
+   * Present only where standard input is a terminal.
+   */
+  promptSecret?: (question: string) => Promise<string>
+  /** This machine's clock (`tula doctor` compares it with the server's). Defaults to the system's. */
+  now?: () => Date
+  /** How `tula dev` runs `docker compose` and touches the project's files. */
+  host?: Host
 }
 
 /**
@@ -99,6 +110,11 @@ export interface Command {
   usage: string
   /** More help: what the command does, its exit codes. */
   description?: string
+  /**
+   * How many arguments that are not options the command takes (default: none), e.g. the `test`
+   * of `tula policy test`. The command checks what they are.
+   */
+  maxPositionals?: number
   /** The options it takes, by name. `--help` is added to every command. */
   options: Record<string, OptionSpec>
   /** Run the command and answer its exit code. */
@@ -236,8 +252,14 @@ export async function runCli(
       }
       return EXIT.ok
     }
-    if (parsed.positionals.length > 0) {
-      throw new UsageError(`tula ${command.name} takes no arguments, only options.`)
+    const allowed = command.maxPositionals ?? 0
+    if (parsed.positionals.length > allowed) {
+      // Never repeated: an argument that should not be there may be a secret.
+      throw new UsageError(
+        allowed === 0
+          ? `tula ${command.name} takes no arguments, only options.`
+          : `tula ${command.name} takes at most ${allowed} argument${allowed === 1 ? '' : 's'}. Usage: ${command.usage}`
+      )
     }
     return await command.run({ ...parsed, io, output })
   } catch (error) {

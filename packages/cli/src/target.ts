@@ -1,4 +1,10 @@
-import { type AdminClient, createAdminClient, isTulaAdminError } from '@tula/admin'
+import {
+  type AdminClient,
+  createAdminClient,
+  createInstanceClient,
+  type InstanceClient,
+  isTulaAdminError,
+} from '@tula/admin'
 import { type EnvironmentConfig, secretKeyMatchesKind } from '@tula/config'
 import { UsageError } from './args'
 import type { CliIo } from './framework'
@@ -64,7 +70,8 @@ function own(env: CliIo['env'], name: string): string | undefined {
  */
 export async function resolveTarget(input: {
   name: string
-  environment: EnvironmentConfig
+  /** The config's entry; only its `kind` is read. A command without a config passes `{}`. */
+  environment: Pick<EnvironmentConfig, 'kind'>
   flags: Record<string, string | boolean | undefined>
   io: CliIo
   output: Output
@@ -147,4 +154,134 @@ export async function resolveTarget(input: {
     )
   }
   return { apiUrl: apiUrl.replace(/\/+$/, ''), admin }
+}
+
+const PLAIN_HTTP =
+  'The API URL is plain http and is not this machine: the credential would cross the network ' +
+  'in clear text (client.invalid_url). Use an https URL, or pass --insecure-http for a ' +
+  'private network you trust. Nothing was sent.'
+
+/**
+ * The API URL of a command that needs no config file: `--api-url`, else `TULA_API_URL`.
+ *
+ * @param flags - The command's flags.
+ * @param io - The run's surroundings.
+ * @returns The URL, without a trailing slash.
+ * @throws UsageError when there is none, or it is not an http(s) URL.
+ *
+ * @example
+ * ```ts
+ * const apiUrl = resolveApiUrl(flags, io)
+ * ```
+ */
+export function resolveApiUrl(
+  flags: Record<string, string | boolean | undefined>,
+  io: CliIo
+): string {
+  const apiUrl =
+    (typeof flags['api-url'] === 'string' ? flags['api-url'] : undefined) ??
+    own(io.env, 'TULA_API_URL')
+  if (!apiUrl) {
+    throw new UsageError('No API URL: set TULA_API_URL, or pass --api-url <url>.')
+  }
+  let url: URL
+  try {
+    url = new URL(apiUrl)
+  } catch {
+    throw new UsageError(
+      'The API URL is not a URL. Set TULA_API_URL to e.g. https://auth.example.com.'
+    )
+  }
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) {
+    throw new UsageError('The API URL must be an http(s) URL without credentials in it.')
+  }
+  return `${url.origin}${url.pathname.replace(/\/+$/, '')}`
+}
+
+/**
+ * Read a secret from a file or standard input: the two ways a credential reaches the CLI
+ * without being on the command line.
+ *
+ * @param path - The option's value: a path, or `-` for standard input.
+ * @param option - The option's name, for the messages.
+ * @param io - The run's surroundings.
+ * @returns The secret, trimmed.
+ * @throws UsageError when it cannot be read, or would be typed at a terminal.
+ *
+ * @example
+ * ```ts
+ * const token = await readSecretFile(String(flags['admin-token-file']), '--admin-token-file', io)
+ * ```
+ */
+export async function readSecretFile(path: string, option: string, io: CliIo): Promise<string> {
+  if (path === '-' && io.stdinIsTTY) {
+    throw new UsageError(
+      `${option} - reads from standard input, and standard input is a terminal: the value ` +
+        'would be shown as you type it. Pipe it in instead, or use a file.'
+    )
+  }
+  const read = path === '-' ? io.readStdin : io.readFile
+  if (!read) {
+    throw new UsageError(`${option} cannot be read here.`)
+  }
+  const text = await read(path).catch(() => {
+    throw new UsageError(
+      path === '-'
+        ? `Could not read ${option} from standard input.`
+        : `Could not read the file given as ${option}.`
+    )
+  })
+  return text.trim()
+}
+
+/**
+ * The instance client of a run: the deployment's admin token (`--admin-token-file`, else
+ * `TULA_ADMIN_TOKEN`) for the API at `apiUrl`. There is deliberately no option that takes the
+ * token itself. The token is registered with the output's redaction before anything can print.
+ *
+ * @param input - The API URL, the command's flags and the run's io and output.
+ * @returns The client, or `null` when no token is configured here.
+ * @throws UsageError when the token cannot be read, is not usable, or the URL is plain http
+ *   for another machine.
+ *
+ * @example
+ * ```ts
+ * const instance = await resolveInstance({ apiUrl, flags, io, output })
+ * ```
+ */
+export async function resolveInstance(input: {
+  apiUrl: string
+  flags: Record<string, string | boolean | undefined>
+  io: CliIo
+  output: Output
+}): Promise<InstanceClient | null> {
+  const { apiUrl, flags, io, output } = input
+  const file = typeof flags['admin-token-file'] === 'string' ? flags['admin-token-file'] : undefined
+  const token =
+    file !== undefined
+      ? await readSecretFile(file, '--admin-token-file', io)
+      : own(io.env, 'TULA_ADMIN_TOKEN')
+  if (!token) {
+    return null
+  }
+  output.redact(token)
+  try {
+    return createInstanceClient({
+      baseUrl: apiUrl,
+      adminToken: token,
+      fetch: io.fetch,
+      userAgent: `tula-cli/${VERSION}`,
+      allowInsecureHttp: flags['insecure-http'] === true,
+    })
+  } catch (error) {
+    if (isTulaAdminError(error) && error.code === 'client.invalid_url') {
+      throw new UsageError(PLAIN_HTTP)
+    }
+    if (isTulaAdminError(error) && error.code === 'client.invalid_token') {
+      throw new UsageError(
+        'The admin token is not usable: it is the server’s TULA_ADMIN_TOKEN (at least 32 characters), not an API key.'
+      )
+    }
+    throw error
+  }
 }

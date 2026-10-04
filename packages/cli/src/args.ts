@@ -50,9 +50,23 @@ export interface ParsedArgs {
   positionals: string[]
 }
 
-// A flag that looks like the obvious way to pass the key, and must not exist: a command line
-// ends up in the shell's history, in `ps` output and in CI logs.
-const SECRET_FLAGS = new Set(['secret-key', 'key', 'secret', 'token'])
+// Flags that look like the obvious way to pass a secret, and must not exist: a command line
+// ends up in the shell's history, in `ps` output and in CI logs. Each says what to do instead.
+const KEY_ADVICE = 'Set TULA_SECRET_KEY, or pass --secret-key-file <path> (- for standard input).'
+const SECRET_FLAGS: ReadonlyMap<string, string> = new Map([
+  ['secret-key', KEY_ADVICE],
+  ['key', KEY_ADVICE],
+  ['secret', KEY_ADVICE],
+  ['token', KEY_ADVICE],
+  [
+    'admin-token',
+    'Set TULA_ADMIN_TOKEN, or pass --admin-token-file <path> (- for standard input).',
+  ],
+  [
+    'password',
+    'Run `tula policy test` and type it at the prompt, or pipe it in: `printf %s "$PW" | tula policy test`.',
+  ],
+])
 
 /**
  * Parse a command's arguments: `--name`, `--name value`, `--name=value`, `-y`, and `--` to end
@@ -98,10 +112,11 @@ export function parseArgs(
     const name = long ? given : byShort.get(given)
     const spec = name !== undefined && Object.hasOwn(options, name) ? options[name] : undefined
     if (name === undefined || !spec) {
-      if (SECRET_FLAGS.has(given)) {
+      const advice = SECRET_FLAGS.get(given)
+      if (advice !== undefined) {
         throw new UsageError(
-          `There is no --${given} option: a key on the command line ends up in shell history ` +
-            'and process lists. Set TULA_SECRET_KEY, or pass --secret-key-file <path> (- for standard input).'
+          `There is no --${given} option: a secret on the command line ends up in shell history ` +
+            `and process lists. ${advice}`
         )
       }
       // The name only, cut at a sensible length: never what came after an `=`.

@@ -99,6 +99,13 @@
       "when": 1791104887514,
       "tag": "0013_settings_managed_by",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791109176496,
+      "tag": "0014_diagnostics_read_migrations",
+      "breakpoints": true
     }
   ]
 }

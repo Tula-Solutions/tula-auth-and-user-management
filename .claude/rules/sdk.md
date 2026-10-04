@@ -10,6 +10,7 @@ paths:
   - "packages/admin/**"
   - "packages/config/**"
   - "packages/cli/**"
+  - "packages/create-tula/**"
   - "examples/tula-config/**"
 ---
 
@@ -235,3 +236,23 @@ paths:
   `src/real-api.test.ts` (the API in process, as `@tula/nextjs` does), and the output of every
   run in that file is checked for secrets. A test that spawns the executable gives the spawn a
   `timeout`.
+- `@tula/cli`, the 1.14 commands (ADR 0031). `tula dev` spawns only through `io.host`
+  (`Host`: an argument vector, a timeout on every spawn, never a shell line) and touches the
+  database only by running what the API image ships; a new step gets a fake-host test and an
+  idempotence test (a second run changes nothing). It writes only inside its marked block of
+  `.env.local` (found by `findBlock`: whole-line markers, the end after the start), closes the
+  file's mode on every run (`host.restrictFile`) and prints the secret key only with
+  `--show-keys`. `tula doctor` talks to the
+  API through `createInstanceClient` and never to a dependency; whatever the server sends is
+  passed through `printable()` before it is printed, and an answer the CLI cannot read is a
+  failing check, never a crash. A URL in the server's answer is never requested unless its
+  origin is the API URL's own and it carries no credentials, and then only `<origin>/v1/status`. `tula policy test` never sends the password: it reaches only
+  `evaluatePassword`, and is redacted on the error stream (`output.redact(value, 'errors')`);
+  its tests assert it is absent from all output and from every request.
+- `create-tula`: no dependency at run time; secrets only from `crypto.getRandomValues`, never
+  a default; `.env` and `.env.local` are never replaced; the name is validated before any
+  write. `.gitignore` is written first and `.env` last, an existing `.gitignore` is merged
+  (`withIgnoreLines`), and `refuseSymlinks` runs before the first write. `templates/<framework>/app` and `templates/<framework>/package.json` are generated
+  (`bun run --filter create-tula templates:sync`): edit the example in `examples/`, not the
+  copy. The templates are found from the running module's directory (`findTemplates`), which
+  differs between `src/` and the built `dist/`: keep its test.

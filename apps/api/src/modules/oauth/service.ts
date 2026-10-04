@@ -79,6 +79,24 @@ async function open(
 }
 
 /**
+ * Whether the deployment's master key opens a provider's stored secret. The secret is opened
+ * and dropped: this is the diagnostics' "does `TULA_MASTER_KEY` match the stored data".
+ *
+ * @param deps - The secret box.
+ * @param record - The stored provider.
+ * @returns `true` when the secret opens.
+ */
+export async function secretOpens(
+  deps: Pick<Deps, 'secretBox'>,
+  record: OAuthProviderRecord
+): Promise<boolean> {
+  return open(deps, record).then(
+    () => true,
+    () => false
+  )
+}
+
+/**
  * The OAuth providers an environment offers at sign-in: configured **and** enabled.
  *
  * Depends on the environment alone, never on an identifier or an account, like every other

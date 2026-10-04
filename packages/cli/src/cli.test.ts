@@ -114,9 +114,25 @@ describe('parseArgs', () => {
   })
 
   test('an unknown option’s value is never repeated', () => {
-    expect(() => parseArgs([`--password=${SECRET_KEY}`], options)).toThrow(
-      'Unknown option --password.'
+    expect(() => parseArgs([`--passphrase=${SECRET_KEY}`], options)).toThrow(
+      'Unknown option --passphrase.'
     )
+  })
+
+  test.each([
+    ['--password', 'tula policy test'],
+    ['--admin-token', 'TULA_ADMIN_TOKEN'],
+    ['--secret-key', 'TULA_SECRET_KEY'],
+  ])('%s does not exist, and the refusal says what to do instead', (flag, advice) => {
+    let message = ''
+    try {
+      parseArgs([`${flag}=${SECRET_KEY}`], options)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message).toContain(`There is no ${flag} option`)
+    expect(message).toContain(advice)
+    expect(message).not.toContain(SECRET_KEY)
   })
 })
 

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import type { AppConfig } from '~/dependencies'
 import { createApp } from '~/index'
+import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
 import { anyEnvironmentAllowsOrigin, environmentAllowsOrigin } from '~/middleware/cors'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
@@ -121,6 +122,21 @@ describe('preflight', () => {
     expect(allowOrigin(await preflight('/v1/admin/users', PROD_ORIGIN))).toBeNull()
   })
 
+  // The instance token is the deployment's, not an environment's: a tenant adding an origin to
+  // its own settings must not make that origin able to call the instance routes from a browser.
+  test('instance routes follow the deployment’s list only', async () => {
+    const path = '/v1/instance/diagnostics'
+    const allowed = await preflight(path, DEPLOYMENT_ORIGIN, 'GET')
+    expect(allowOrigin(allowed)).toBe(DEPLOYMENT_ORIGIN)
+    for (const origin of [DEV_ORIGIN, PROD_ORIGIN, EVIL]) {
+      const res = await preflight(path, origin, 'GET')
+      expect(res.status).toBe(204)
+      expect(allowOrigin(res)).toBeNull()
+      expect(res.headers.get('access-control-allow-credentials')).toBeNull()
+      expect(res.headers.get('access-control-allow-headers')).toBeNull()
+    }
+  })
+
   test('an origin stops being allowed when its environment removes it', async () => {
     expect(allowOrigin(await preflight('/v1/client/sign-ins', DEV_ORIGIN))).toBe(DEV_ORIGIN)
     allow(dev.environmentId, [])
@@ -222,6 +238,24 @@ describe('the request itself', () => {
       app.request('/v1/admin/settings', { headers: { authorization: `Bearer ${SK}`, origin } })
     expect(allowOrigin(await admin(DEPLOYMENT_ORIGIN))).toBe(DEPLOYMENT_ORIGIN)
     expect(allowOrigin(await admin(DEV_ORIGIN))).toBeNull()
+  })
+
+  test('instance responses follow the deployment’s list, whatever an environment allows', async () => {
+    const token = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
+    await build({ ...PROD_CONFIG, instanceAdminTokenHash: sha256Hex(token) })
+    const get = (origin: string, authorization = `Bearer ${token}`) =>
+      app.request('/v1/instance/diagnostics', { headers: { authorization, origin } })
+    const allowed = await get(DEPLOYMENT_ORIGIN)
+    expect(allowed.status).toBe(200)
+    expect(allowOrigin(allowed)).toBe(DEPLOYMENT_ORIGIN)
+    for (const origin of [DEV_ORIGIN, PROD_ORIGIN]) {
+      const res = await get(origin)
+      expect(res.status).toBe(200)
+      expect(allowOrigin(res)).toBeNull()
+      expect(res.headers.get('access-control-allow-credentials')).toBeNull()
+      // The 401 of a wrong token is not readable from there either.
+      expect(allowOrigin(await get(origin, 'Bearer wrong'))).toBeNull()
+    }
   })
 
   test('when the allow-list cannot be read the response is still sent, without CORS headers', async () => {

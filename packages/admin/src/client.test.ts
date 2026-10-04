@@ -3,6 +3,7 @@ import { PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
 import {
   type AdminFetch,
   createAdminClient,
+  createInstanceClient,
   etagRevision,
   ifMatch,
   isTulaAdminError,
@@ -526,5 +527,101 @@ describe('defaults', () => {
     expect(entry.browser).toEqual({ types: './dist/index.d.ts', default: './dist/browser.js' })
     expect(entry['edge-light']).toEqual({ types: './dist/index.d.ts', default: './dist/index.js' })
     expect(entry.default).toBe('./dist/index.js')
+  })
+})
+
+describe('createInstanceClient', () => {
+  const TOKEN = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
+  const diagnostics = {
+    version: '0.0.0',
+    environment: 'local' as const,
+    time: '2026-01-01T00:00:00.000Z',
+    publicUrl: 'http://localhost:3003',
+    checks: [],
+  }
+
+  test('calls the instance route with the admin token as the bearer, and answers the date', async () => {
+    const { fetch, seen } = fakeFetch(() =>
+      json(diagnostics, { headers: { date: 'Thu, 01 Jan 2026 00:00:00 GMT' } })
+    )
+    const instance = createInstanceClient({
+      baseUrl: 'https://auth.example.com/',
+      adminToken: TOKEN,
+      fetch,
+      userAgent: 'tula-cli/test',
+    })
+    const answer = await instance.call('getInstanceDiagnostics')
+    expect(answer.data).toEqual(diagnostics)
+    expect(answer.status).toBe(200)
+    expect(answer.date).toBe('Thu, 01 Jan 2026 00:00:00 GMT')
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.url).toBe('https://auth.example.com/v1/instance/diagnostics')
+    expect(seen[0]?.method).toBe('GET')
+    expect(seen[0]?.headers.get('authorization')).toBe(`Bearer ${TOKEN}`)
+    expect(seen[0]?.headers.get('user-agent')).toBe('tula-cli/test')
+  })
+
+  test.each([
+    ['a secret key', 'tula_sk_dev_abcdefghijklmnopqrstuvwxyz012345'],
+    ['a publishable key', 'tula_pk_dev_abcdefghijklmnopqrstuvwxyz012345'],
+    ['a short value', TOKEN.slice(0, 31)],
+    ['a value with a line break', `${TOKEN}\r\nx-evil: 1`],
+    ['nothing', ''],
+  ])('refuses %s without echoing it or sending anything', (_name, token) => {
+    const { fetch, seen } = fakeFetch(() => json(diagnostics))
+    const error = refusal(() =>
+      createInstanceClient({ baseUrl: 'https://auth.example.com', adminToken: token, fetch })
+    )
+    expect(error.code).toBe('client.invalid_token')
+    if (token !== '') {
+      expect(JSON.stringify(error)).not.toContain(token)
+      expect(error.message).not.toContain(token)
+    }
+    expect(seen).toHaveLength(0)
+  })
+
+  test('refuses plain http to another machine: the token would cross the network', () => {
+    expect(
+      refusal(() => createInstanceClient({ baseUrl: 'http://auth.example.com', adminToken: TOKEN }))
+        .code
+    ).toBe('client.invalid_url')
+    expect(() =>
+      createInstanceClient({ baseUrl: 'http://localhost:3003', adminToken: TOKEN })
+    ).not.toThrow()
+  })
+
+  test('a refusal is a TulaAdminError with the server’s code, and never holds the token', async () => {
+    const { fetch } = fakeFetch(() =>
+      json({ status: 401, code: 'auth.invalid_key', detail: 'refused' }, { status: 401 })
+    )
+    const instance = createInstanceClient({
+      baseUrl: 'https://auth.example.com',
+      adminToken: TOKEN,
+      fetch,
+    })
+    const error = await instance.call('getInstanceDiagnostics').then(
+      () => undefined,
+      (thrown: unknown) => thrown
+    )
+    expect(isTulaAdminError(error)).toBe(true)
+    expect((error as TulaAdminError).code).toBe('auth.invalid_key')
+    expect((error as TulaAdminError).status).toBe(401)
+    expect(JSON.stringify(error)).not.toContain(TOKEN)
+  })
+
+  test('is refused in a browser', () => {
+    const globals = globalThis as { window?: unknown; document?: unknown }
+    globals.window = {}
+    globals.document = {}
+    try {
+      expect(
+        refusal(() =>
+          createInstanceClient({ baseUrl: 'https://auth.example.com', adminToken: TOKEN })
+        ).code
+      ).toBe('client.browser')
+    } finally {
+      delete globals.window
+      delete globals.document
+    }
   })
 })

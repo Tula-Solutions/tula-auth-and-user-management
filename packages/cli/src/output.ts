@@ -58,8 +58,13 @@ export interface Output {
    * Name a value that must never be printed (the secret key, a provider's secret). Every line
    * written afterwards has it replaced by `[redacted]`. No code path prints one on purpose;
    * this is the net under them (an error message that quotes a request, a future mistake).
+   *
+   * With `'errors'` the value is removed from standard error only. That is for a value that
+   * may be an ordinary word (the password `tula policy test` is given): results on standard
+   * output are fixed text that never includes it, and replacing the word there would garble
+   * them (`password.too_short` for the password `password`).
    */
-  redact(value: string): void
+  redact(value: string, scope?: 'all' | 'errors'): void
 }
 
 /**
@@ -117,24 +122,33 @@ export function createOutput(
   env: Readonly<Record<string, string | undefined>>
 ): Output {
   const secrets = new Set<string>()
-  const clean = (text: string) => {
+  const errorSecrets = new Set<string>()
+  const clean = (text: string, sets: readonly Set<string>[]) => {
     let cleaned = text
-    for (const secret of secrets) {
-      cleaned = cleaned.split(secret).join('[redacted]')
+    for (const set of sets) {
+      for (const secret of set) {
+        cleaned = cleaned.split(secret).join('[redacted]')
+      }
     }
     return cleaned
   }
   return {
     line: (text = '') => {
-      stdout.write(`${clean(text)}\n`)
+      stdout.write(`${clean(text, [secrets])}\n`)
     },
     error: (text) => {
-      stderr.write(`${clean(text)}\n`)
+      stderr.write(`${clean(text, [secrets, errorSecrets])}\n`)
     },
     style: styles(shouldUseColor(stdout, env)),
     errorStyle: styles(shouldUseColor(stderr, env)),
-    redact: (value) => {
+    redact: (value, scope = 'all') => {
       const trimmed = value.trim()
+      if (scope === 'errors') {
+        if (trimmed.length >= MIN_REDACTED_LENGTH) {
+          errorSecrets.add(trimmed)
+        }
+        return
+      }
       if (trimmed.length >= MIN_REDACTED_LENGTH) {
         secrets.add(trimmed)
         // A multi-line secret (a PEM key) could surface one line at a time.

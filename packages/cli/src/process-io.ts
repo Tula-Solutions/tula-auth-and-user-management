@@ -1,7 +1,9 @@
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
+import { UsageError } from './args'
 import type { CliIo } from './framework'
+import { createProcessHost } from './process-host'
 
 /**
  * What {@link createProcessIo} builds a run's surroundings from: the process's streams,
@@ -15,7 +17,11 @@ import type { CliIo } from './framework'
  */
 export interface ProcessParts {
   /** Standard input. */
-  stdin: NodeJS.ReadableStream & { isTTY?: boolean }
+  stdin: NodeJS.ReadableStream & {
+    isTTY?: boolean
+    /** Present on a terminal: turns the terminal's own echo and line editing off. */
+    setRawMode?: (raw: boolean) => unknown
+  }
   /** Standard output. */
   stdout: NodeJS.WritableStream & { isTTY?: boolean }
   /** Standard error. */
@@ -30,6 +36,46 @@ export interface ProcessParts {
   readFile: (path: string) => Promise<string>
   /** A file's mode bits. */
   stat: (path: string) => Promise<{ mode: number }>
+}
+
+/**
+ * Ask a question on standard error and read the answer from the terminal without showing it:
+ * the terminal is put in raw mode, so nothing typed is echoed, and restored whatever happens.
+ * Enter (or Ctrl-D) ends the answer, Backspace removes a character, Ctrl-C cancels.
+ */
+function readHidden(parts: ProcessParts, question: string): Promise<string> {
+  const { stdin, stderr } = parts
+  return new Promise((resolve, reject) => {
+    let value = ''
+    const finish = (settle: () => void) => {
+      stdin.off('data', onData)
+      stdin.setRawMode?.(false)
+      stdin.pause()
+      stderr.write('\n')
+      settle()
+    }
+    function onData(chunk: unknown) {
+      for (const character of String(chunk)) {
+        if (character === '\r' || character === '\n' || character === '\u0004') {
+          finish(() => resolve(value))
+          return
+        }
+        if (character === '\u0003') {
+          finish(() => reject(new UsageError('Cancelled.')))
+          return
+        }
+        if (character === '\u007f' || character === '\b') {
+          value = [...value].slice(0, -1).join('')
+        } else if (character >= ' ') {
+          value += character
+        }
+      }
+    }
+    stderr.write(question)
+    stdin.setRawMode?.(true)
+    stdin.resume()
+    stdin.on('data', onData)
+  })
 }
 
 /**
@@ -84,6 +130,12 @@ export function createProcessIo(parts: ProcessParts): CliIo {
         reader.close()
       }
     },
+    now: () => new Date(),
+    host: createProcessHost(parts.env),
+    // Only on a terminal that can stop echoing: anywhere else the secret is read from a pipe.
+    ...(parts.stdin.isTTY === true && typeof parts.stdin.setRawMode === 'function'
+      ? { promptSecret: (question: string) => readHidden(parts, question) }
+      : {}),
     readStdin: async () => {
       let text = ''
       for await (const chunk of parts.stdin) {

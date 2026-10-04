@@ -21,7 +21,8 @@ beforeAll(async () => {
   if (build.exitCode !== 0) {
     throw new Error(`bunup failed: ${build.stderr.toString()}`)
   }
-})
+  // `bunx` and then a build: more than the default five seconds of a hook on a slow runner.
+}, 90_000)
 
 afterAll(async () => {
   await rm(out, { recursive: true, force: true })

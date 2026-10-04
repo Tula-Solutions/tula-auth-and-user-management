@@ -393,6 +393,37 @@ switches them on, and switching them on takes three settings in the same documen
 Switching the method off again keeps the passkeys: users can still list and remove them through
 the API, and they work again when it is switched back on with the same `rpId`.
 
+## Checking a deployment: `tula doctor`
+
+`tula doctor` checks what actually goes wrong, each with its fix: the database and its
+migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks,
+`PUBLIC_URL`, and the redirect URI each enabled OAuth provider needs
+([cli.md](cli.md#tula-doctor)). The checks run inside the API, behind
+`GET /v1/instance/diagnostics`, and that route takes the **instance admin token**:
+
+```sh
+TULA_ADMIN_TOKEN=$(openssl rand -hex 32)     # in the API's environment, on every instance
+```
+
+```sh
+export TULA_API_URL=https://auth.example.com
+export TULA_ADMIN_TOKEN=…                     # the same value, where you run tula
+tula doctor
+```
+
+- Without `TULA_ADMIN_TOKEN` in the API's environment the route does not exist (404), and
+  `tula doctor` runs only the checks it can make from your machine.
+- The token is the most powerful credential of the deployment (the dashboard will sign in
+  with it too): keep it in a secret manager, never in a file that is committed, and send it
+  only over https. The API refuses to start with one shorter than 32 characters, that repeats
+  a block, that counts up or down (`abcdefgh`), or that looks like a placeholder. That check
+  is a floor against accidents, not a measure of randomness: a value that passes it is not
+  thereby strong. Generate the token (`openssl rand -hex 32`, or the one `create-tula` writes). To rotate it, change the variable and restart every instance.
+- A check never returns a connection string, a key or a driver's error message: the reason a
+  check failed is in the API's log, next to `diagnostic check failed`.
+- The route is rate limited (30 requests a minute per IP) and refuses when the rate limiter's
+  store is down; `tula doctor` then reports Redis as the problem.
+
 ## Running it for real
 
 **The master key.** `TULA_MASTER_KEY` cannot be recovered or changed afterwards. Without it the

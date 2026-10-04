@@ -38,6 +38,7 @@ describe('createContainer', () => {
       trustProxy: true,
       passwordPolicy: PASSWORD_POLICY_PRESETS.strict,
       oauthMock: false,
+      instanceAdminTokenHash: null,
     })
     expect(deps.breachChecker).toBeInstanceOf(HibpBreachChecker)
     expect(deps.mailer).toBeInstanceOf(SmtpMailer)
@@ -97,5 +98,20 @@ describe('the mock OAuth provider', () => {
     } finally {
       warn.mockRestore()
     }
+  })
+})
+
+describe('the instance admin token', () => {
+  test('is kept as its SHA-256 only, and the diagnostics probes are wired', async () => {
+    const token = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
+    const { deps, close } = createContainer(parseEnv({ ...base, TULA_ADMIN_TOKEN: token }))
+    expect(deps.config.instanceAdminTokenHash).toBe(
+      new Bun.CryptoHasher('sha256').update(token).digest('hex')
+    )
+    expect(JSON.stringify(deps.config)).not.toContain(token)
+    // No Redis in this environment: nothing to ping.
+    expect(deps.diagnostics.redis).toBeNull()
+    expect(deps.diagnostics.shippedMigrations.length).toBeGreaterThan(10)
+    await close()
   })
 })

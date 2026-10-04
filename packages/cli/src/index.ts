@@ -1,11 +1,26 @@
 import { applyCommand } from './commands/apply'
+import { devCommand } from './commands/dev'
 import { diffCommand } from './commands/diff'
+import { doctorCommand } from './commands/doctor'
+import { policyCommand } from './commands/policy'
 import { type CliIo, type Command, runCli } from './framework'
 import { processIo } from './process-io'
 
 export { type OptionSpec, type ParsedArgs, parseArgs, UsageError } from './args'
 export { applyCommand } from './commands/apply'
+export { devCommand } from './commands/dev'
 export { diffCommand } from './commands/diff'
+export { doctorCommand } from './commands/doctor'
+export { policyCommand } from './commands/policy'
+export {
+  DEV_ENV_FILE,
+  type DevOptions,
+  parseDevBlock,
+  startDev,
+  stopDev,
+  withDevBlock,
+  withoutDevBlock,
+} from './dev'
 export {
   buildPlan,
   type Change,
@@ -23,6 +38,16 @@ export {
   SET_PATHS,
 } from './diff'
 export {
+  type CheckStatus,
+  type DoctorCheck,
+  type DoctorReport,
+  examine,
+  exitCode,
+  printable,
+  renderReport,
+  reportToJson,
+} from './doctor'
+export {
   type CliIo,
   type Command,
   type CommandContext,
@@ -30,6 +55,7 @@ export {
   reportError,
   runCli,
 } from './framework'
+export type { Host, RunOptions, RunResult } from './host'
 export { createOutput, type Output, type Sink, type Styles, shouldUseColor } from './output'
 export {
   applyRequirements,
@@ -38,7 +64,13 @@ export {
   planWarnings,
   renderPlan,
 } from './render'
-export { resolveTarget, type Target } from './target'
+export {
+  readSecretFile,
+  resolveApiUrl,
+  resolveInstance,
+  resolveTarget,
+  type Target,
+} from './target'
 export { VERSION } from './version'
 
 /**
@@ -49,7 +81,13 @@ export { VERSION } from './version'
  * await runCli(['diff'], io, COMMANDS)
  * ```
  */
-export const COMMANDS: readonly Command[] = [diffCommand, applyCommand]
+export const COMMANDS: readonly Command[] = [
+  diffCommand,
+  applyCommand,
+  doctorCommand,
+  policyCommand,
+  devCommand,
+]
 
 /**
  * Run `tula` with the process's own surroundings: its streams, environment and directory.

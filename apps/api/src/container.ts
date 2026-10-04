@@ -34,9 +34,11 @@ import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
 import { RedisVersions } from '~/adapters/redis/versions'
 import { systemClock } from '~/adapters/system/clock'
+import { createDiagnostics } from '~/adapters/system/diagnostics'
 import { uuidV7Ids } from '~/adapters/system/ids'
 import type { Deps } from '~/dependencies'
 import type { Env } from '~/env'
+import { sha256Hex } from '~/lib/crypto'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import * as logger from '~/lib/logger'
 import { createSecretBox } from '~/lib/secret-box'
@@ -109,6 +111,8 @@ export function createContainer(env: Env): Container {
       trustProxy: env.TRUST_PROXY,
       passwordPolicy: PASSWORD_POLICY_PRESETS[env.PASSWORD_POLICY],
       oauthMock,
+      // Only the digest is kept: the token is compared, never needed again.
+      instanceAdminTokenHash: env.TULA_ADMIN_TOKEN ? sha256Hex(env.TULA_ADMIN_TOKEN) : null,
     },
     clock,
     ids: uuidV7Ids,
@@ -156,6 +160,11 @@ export function createContainer(env: Env): Container {
     jobLock: new PostgresJobLock(database.withAdvisoryLock),
     environmentLock: new PostgresEnvironmentLock(database.withAdvisoryLock),
     probes: redis ? [databaseProbe(database.db), redisProbe(redis)] : [databaseProbe(database.db)],
+    diagnostics: createDiagnostics({
+      db: database.db,
+      mailer,
+      redis: redis ? redisProbe(redis) : null,
+    }),
   }
   return {
     deps,

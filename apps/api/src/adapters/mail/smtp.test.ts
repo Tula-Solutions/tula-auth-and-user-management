@@ -16,6 +16,7 @@ describe('SmtpMailer', () => {
       sendMail: async (mail) => {
         sent.push(mail)
       },
+      verify: async () => true,
       close: () => {},
     }
     const mailer = new SmtpMailer({
@@ -35,6 +36,7 @@ describe('SmtpMailer', () => {
       sendMail: async (mail) => {
         built = String((await json.sendMail(mail)).message)
       },
+      verify: async () => true,
       close: () => json.close(),
     }
     await new SmtpMailer({ url: 'smtp://unused', from: 'no-reply@auth.test', transport }).send(
@@ -61,10 +63,37 @@ describe('SmtpMailer', () => {
       sendMail: async () => {
         throw new Error('connect ECONNREFUSED')
       },
+      verify: async () => true,
       close: () => {},
     }
     const mailer = new SmtpMailer({ url: 'smtp://unused', from: 'a@b.test', transport })
     await expect(mailer.send(message)).rejects.toThrow('ECONNREFUSED')
+  })
+
+  test('verify greets the relay without sending, and propagates its refusal', async () => {
+    let sent = 0
+    let verified = 0
+    const transport: SmtpTransport = {
+      sendMail: async () => {
+        sent += 1
+      },
+      verify: async () => {
+        verified += 1
+        return true
+      },
+      close: () => {},
+    }
+    await new SmtpMailer({ url: 'smtp://unused', from: 'a@b.test', transport }).verify()
+    expect([verified, sent]).toEqual([1, 0])
+
+    const refusing: SmtpTransport = {
+      ...transport,
+      verify: async () => {
+        throw new Error('connect ECONNREFUSED')
+      },
+    }
+    const mailer = new SmtpMailer({ url: 'smtp://unused', from: 'a@b.test', transport: refusing })
+    await expect(mailer.verify()).rejects.toThrow('ECONNREFUSED')
   })
 
   test('builds a lazy pooled transport from the URL and closes it', () => {

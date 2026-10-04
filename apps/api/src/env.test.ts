@@ -272,4 +272,67 @@ describe('loadEnv', () => {
       }
     }
   })
+
+  describe('TULA_ADMIN_TOKEN', () => {
+    const token = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
+
+    test('is optional: unset and blank both mean "no instance routes"', () => {
+      expect(parseEnv(base).TULA_ADMIN_TOKEN).toBeUndefined()
+      expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: '  ' }).TULA_ADMIN_TOKEN).toBeUndefined()
+    })
+
+    test('accepts a generated value', () => {
+      expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: token }).TULA_ADMIN_TOKEN).toBe(token)
+      const hex = 'f3a91c0b7d2e4856a1c9e0d37b5f2a6418c07e9d3b5a2f6c'
+      expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: hex }).TULA_ADMIN_TOKEN).toBe(hex)
+    })
+
+    // What the check is: a floor against a value typed or copied by accident. It does not
+    // measure randomness (nothing can, from one value). These rows are the documentation.
+    test.each([
+      [
+        'hex from `openssl rand -hex 32`',
+        '9b1f0c6e2a7d4853e0f1a2b3c4d5e6f79a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d',
+      ],
+      ['base64url of 32 bytes', 'Zq3vX0n8Kp2Tf6YbLw9Rj4Hs1DcGm7Ae5UoIxNyPzQk'],
+      ['a short run inside a random value', 'c4e1abcdef77b2d09a4f5e6d8c1b3a70'],
+      ['a block that appears twice, apart', 'k3Zr8vQ1-7fT2mY9c-k3Zr8vQ1-Xw4Lp0Sd'],
+    ])('accepts %s', (_label, value) => {
+      expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: value }).TULA_ADMIN_TOKEN).toBe(value)
+    })
+
+    test.each([
+      ['a block repeated', 'a1b2c3d4e5f6'.repeat(3)],
+      ['a random-looking block typed twice', 'k3Zr8vQ1nP5xW7bT'.repeat(2)],
+      ['a repeated block with a ragged end', `${'k3Zr8vQ1nP5xW7bT'.repeat(2)}k3Z`],
+      ['the alphabet', 'abcdefghijklmnopqrstuvwxyzabcdefgh'],
+      ['a run counting down', 'zyxwvutsrqponmlk-Zq3vX0n8Kp2Tf6Yb'],
+      ['a run of digits', 'Zq3vX0n8Kp2Tf6Yb-12345678-Lw9Rj4Hs'],
+      ['a keyboard row', 'qwertyuiopasdfghjklzxcvbnm135790'],
+    ])('refuses %s, without echoing it', (_label, value) => {
+      expect(invalidVars({ ...base, TULA_ADMIN_TOKEN: value })).toEqual(['TULA_ADMIN_TOKEN'])
+      try {
+        parseEnv({ ...base, TULA_ADMIN_TOKEN: value })
+      } catch (error) {
+        expect(String((error as Error).message)).not.toContain(value)
+      }
+    })
+
+    test.each([
+      ['short', token.slice(0, 31)],
+      ['repetitive', 'a'.repeat(40)],
+      ['two characters', 'ab'.repeat(20)],
+      ['a placeholder', 'changeme-changeme-changeme-12345678'],
+      ['an example value', 'your-admin-token-goes-here-0123abcd'],
+      ['with a space', `${token.slice(0, 20)} ${token.slice(20)}zz`],
+      ['too long', 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'.repeat(9)],
+    ])('refuses a value that is %s, without echoing it', (_label, value) => {
+      expect(invalidVars({ ...base, TULA_ADMIN_TOKEN: value })).toEqual(['TULA_ADMIN_TOKEN'])
+      try {
+        parseEnv({ ...base, TULA_ADMIN_TOKEN: value })
+      } catch (error) {
+        expect(String((error as Error).message)).not.toContain(value)
+      }
+    })
+  })
 })

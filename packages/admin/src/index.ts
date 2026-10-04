@@ -6,8 +6,13 @@ export {
   type AdminOperationId,
   type AdminResponse,
   createAdminClient,
+  createInstanceClient,
   DEFAULT_TIMEOUT_MS,
   etagRevision,
+  type InstanceClient,
+  type InstanceClientOptions,
+  type InstanceOperationId,
+  type InstanceResponse,
   ifMatch,
 } from './client'
 export {
@@ -20,6 +25,7 @@ export {
   type TulaAdminErrorInit,
 } from './errors'
 export type {
+  InstanceOperations,
   Operations as AdminOperations,
   Schemas as AdminSchemas,
 } from './generated/api.gen'
