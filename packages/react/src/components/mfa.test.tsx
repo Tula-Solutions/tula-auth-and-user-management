@@ -80,10 +80,11 @@ async function passwordAnswers(w: World, answer: () => Response) {
 }
 
 describe('<SignIn> at needs_second_factor', () => {
-  test('asks for the authenticator code, refuses a wrong one in the field, and completes with the right one', async () => {
+  // Three tests, not one: each types a code a key at a time, and on a slow runner the three
+  // together came within a second of the runner's limit.
+  test('asks for the authenticator code, and refuses one that is too short without sending it', async () => {
     const w = world()
-    const onComplete = mock()
-    w.mount(<SignIn onComplete={onComplete} />)
+    w.mount(<SignIn />)
     await passwordAnswers(w, () => attempt('sign_in', SECOND_FACTOR))
     const title = await screen.findByRole('heading', { name: 'Two-step verification' })
     await expectFocus(title)
@@ -91,14 +92,20 @@ describe('<SignIn> at needs_second_factor', () => {
     expect(field.autocomplete).toBe('one-time-code')
     expect(field.inputMode).toBe('numeric')
 
-    // Too short: refused locally, nothing is sent.
     await w.user.type(field, '123')
     await w.user.click(screen.getByRole('button', { name: 'Verify' }))
     expect((await screen.findByRole('alert')).textContent).toBe('Enter the 6-digit code.')
     expect(w.api.calls(MFA.signInSecond)).toHaveLength(0)
+  })
+
+  test('a wrong authenticator code is refused in the field, which is emptied and takes the focus', async () => {
+    const w = world()
+    w.mount(<SignIn />)
+    await passwordAnswers(w, () => attempt('sign_in', SECOND_FACTOR))
+    await screen.findByRole('heading', { name: 'Two-step verification' })
+    const field = screen.getByLabelText('Authentication code') as HTMLInputElement
 
     w.api.on(MFA.signInSecond, () => failure(422, 'mfa.invalid_code'))
-    await w.user.clear(field)
     await w.user.type(field, '111 111')
     await w.user.click(screen.getByRole('button', { name: 'Verify' }))
     await waitFor(() => expect(field.getAttribute('aria-invalid')).toBe('true'))
@@ -106,6 +113,15 @@ describe('<SignIn> at needs_second_factor', () => {
     expect(field.value).toBe('')
     await expectFocus(field)
     expect(w.api.calls(MFA.signInSecond)[0]?.body).toEqual({ method: 'totp', code: '111111' })
+  })
+
+  test('the right authenticator code completes the sign-in', async () => {
+    const w = world()
+    const onComplete = mock()
+    w.mount(<SignIn onComplete={onComplete} />)
+    await passwordAnswers(w, () => attempt('sign_in', SECOND_FACTOR))
+    await screen.findByRole('heading', { name: 'Two-step verification' })
+    const field = screen.getByLabelText('Authentication code') as HTMLInputElement
 
     w.api.on(MFA.signInSecond, () => completed('sign_in'))
     await w.user.type(field, '222222')
