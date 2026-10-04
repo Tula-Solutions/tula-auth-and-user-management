@@ -172,7 +172,10 @@ export interface SessionManager {
   getToken(): Promise<string | null>
   /** @returns A new access token, or `null` when nobody is signed in. */
   refresh(): Promise<string | null>
-  /** Ends the session here, in other tabs and on the server. */
+  /**
+   * Ends the session here, in other tabs and on the server. When the server could not be told
+   * it throws, the client is signed out all the same, and calling it again tells the server.
+   */
   signOut(): Promise<void>
   /** @param issued - Tokens a completed flow returned. */
   adopt(issued: SessionTokens): Promise<void>
@@ -372,6 +375,18 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   let backoff: { until: number; error: TulaError } | null = null
   /** A refresh token issued to a refresh that lost to a sign-out, kept so sign-out can revoke it. */
   let orphan: string | null = null
+  /**
+   * Non-`web` kinds only: the refresh token of a sign-out the server was never told of (the
+   * request got no answer, or one that was not about the session). The client is signed out
+   * and stays so; this is kept only so that the next `signOut()` can send it, since otherwise
+   * a retry would find nothing, ask nothing and report a session ended that the server still
+   * holds. Memory only: never storage, a cross-tab message, an error, a log line or a
+   * `toJSON`, and nothing but `signOut()` reads it (no refresh presents it). Forgotten once
+   * delivered, when the API answers that the session is over, and when a new session is
+   * adopted. It has no timer: the token is exactly as live on the server whether this client
+   * remembers it or not, and forgetting it would only take away the one way to revoke it.
+   */
+  let undelivered: string | null = null
   let channel: ChannelLike | undefined
   let channelOpened = false
   /**
@@ -762,6 +777,8 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       throw clientError('response.invalid', options.messages())
     }
     openChannel()
+    // A new session: an earlier one's sign-out is no longer this client's to retry.
+    undelivered = null
     const installed = commit(issued)
     const failure = await persist(issued)
     await settle(installed)
@@ -806,17 +823,25 @@ export function createSessionManager(options: SessionOptions): SessionManager {
         failure = clientError('storage.failed', options.messages(), cause)
       }
     }
-    const newest = orphan ?? presented
+    const newest = orphan ?? presented ?? undelivered
     orphan = null
     if (web || newest) {
       try {
         await withLock(() =>
           transport.call('signOut', { body: newest ? { refreshToken: newest } : {} })
         )
+        undelivered = null
       } catch (error) {
         // The server may still hold the session (and a browser its cookie): the caller must
         // know, even though this client is signed out.
         failure = error
+        // A browser's retry sends its cookie again. Any other client has just dropped the
+        // token, so it is held for the retry, unless the API said the session is over or a
+        // sign-in finished meanwhile (whose own token the next sign-out presents).
+        if (!web && generation === mine) {
+          const over = isTulaError(error) && error.code.startsWith('session.')
+          undelivered = over ? null : newest
+        }
       }
     }
     if (failure) {

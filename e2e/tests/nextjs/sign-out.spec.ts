@@ -105,12 +105,17 @@ for (const [name, fail] of FAILURES) {
     await expect(dialog(page)).toBeHidden()
 
     // Once more; this time the dialog is closed. The control that asked is gone, so the focus
-    // is on the document, not on an element that left the page.
+    // goes to the page's first control, and one Tab moves on to the next one (the header now
+    // shows its signed-out side).
     await pressSignOut(page)
     await expect(dialog(page)).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(dialog(page)).toBeHidden()
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true)
+    await expect(page.getByRole('link', { name: 'Northline' })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(
+      page.getByRole('navigation', { name: 'Account' }).getByRole('link', { name: 'Sign in' })
+    ).toBeFocused()
     await expect(page).toHaveURL(`${NEXT_URL}/dashboard`)
     expect(await tulaCookieNames(context)).toEqual(['tula_at', 'tula_rt'])
 

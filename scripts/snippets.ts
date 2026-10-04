@@ -20,6 +20,11 @@ export function dedent(text: string): string {
 const SNIPPET = /^<!-- snippet: (\S+?)(?:#([\w-]+))? -->$/
 const SNIPPET_END = '<!-- /snippet -->'
 
+/**
+ * The kinds of file a snippet may be taken from, by extension, and the language each code
+ * block is labelled with. This is an allow-list: a file of any other kind is refused
+ * ({@link isShowable}), so adding a line here is a decision that such files are safe to show.
+ */
 const LANGUAGES: Record<string, string> = {
   ts: 'ts',
   tsx: 'tsx',
@@ -40,8 +45,9 @@ function isInside(directory: string, file: string): boolean {
 /**
  * Whether a path inside the repository names something a snippet must never copy: a local
  * secrets file (`.env`, `.env.local`, …; only `.env.example` is committed), a dependency's
- * tree or git's own files. Names are compared without case: `.ENV` opens `.env` on the file
- * systems of macOS and Windows.
+ * tree, git's own files, or a machine's own file (`*.local`, `*.local.*`: git ignores those,
+ * `.claude/settings.local.json` for one). Names are compared without case: `.ENV` opens
+ * `.env` on the file systems of macOS and Windows.
  */
 function isOffLimits(pathInRepository: string): boolean {
   return pathInRepository.split(sep).some((segment) => {
@@ -49,9 +55,27 @@ function isOffLimits(pathInRepository: string): boolean {
     return (
       name === 'node_modules' ||
       name === '.git' ||
-      (name.startsWith('.env') && name !== '.env.example')
+      (name.startsWith('.env') && name !== '.env.example') ||
+      /\.local(\.|$)/.test(name)
     )
   })
+}
+
+/**
+ * Whether a file is of a kind a snippet may show: one with an extension in {@link LANGUAGES},
+ * or `.env.example`. The refusals of {@link isOffLimits} name what is known to be secret;
+ * this is the other half, so that a kind nobody thought of (`.npmrc`, a `.pem`, a `.key`) is
+ * refused for not being listed rather than copied for not being forbidden.
+ */
+function isShowable(pathInRepository: string): boolean {
+  const name = (pathInRepository.split(sep).at(-1) ?? '').toLowerCase()
+  const dot = name.lastIndexOf('.')
+  return name === '.env.example' || (dot > 0 && Object.hasOwn(LANGUAGES, name.slice(dot + 1)))
+}
+
+/** Whether a path inside the repository may be a snippet's source. */
+function isAllowed(pathInRepository: string): boolean {
+  return isShowable(pathInRepository) && !isOffLimits(pathInRepository)
 }
 
 /**
@@ -67,15 +91,16 @@ function isOffLimits(pathInRepository: string): boolean {
  * @param from - The markdown file holding the marker, for the message.
  * @returns The real path of the file to read.
  * @throws Error when the path is absolute, leaves the repository (by `..` or by a symbolic
- *   link), names a `.env*` file other than `.env.example`, lies under `node_modules` or
- *   `.git`, or does not exist.
+ *   link), names a `.env*` file other than `.env.example` or a `*.local` file, lies under
+ *   `node_modules` or `.git`, is not of a kind in `LANGUAGES` (as written, or where a link
+ *   leads), or does not exist.
  */
 export function snippetSource(root: string, path: string, from: string): string {
   const refused = new Error(
-    `docs: ${from} takes a snippet from ${path}, which is not allowed: a snippet is a file of the repository, by a relative path, and never a .env file, node_modules or .git`
+    `docs: ${from} takes a snippet from ${path}, which is not allowed: a snippet is a file of the repository, by a relative path, of a kind the generator knows (${Object.keys(LANGUAGES).join(', ')}), and never a .env file, a *.local file, node_modules or .git`
   )
   const lexical = resolve(root, path)
-  if (isAbsolute(path) || !isInside(root, lexical) || isOffLimits(relative(root, lexical))) {
+  if (isAbsolute(path) || !isInside(root, lexical) || !isAllowed(relative(root, lexical))) {
     throw refused
   }
   let realRoot: string
@@ -86,7 +111,7 @@ export function snippetSource(root: string, path: string, from: string): string 
   } catch {
     throw new Error(`docs: ${from} takes a snippet from ${path}, which does not exist`)
   }
-  if (!isInside(realRoot, real) || isOffLimits(relative(realRoot, real))) {
+  if (!isInside(realRoot, real) || !isAllowed(relative(realRoot, real))) {
     throw refused
   }
   return real

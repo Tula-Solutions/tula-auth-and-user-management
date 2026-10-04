@@ -540,6 +540,134 @@ describe('sign-out', () => {
   })
 })
 
+describe('a sign-out the server never heard of can be sent again (review E1)', () => {
+  /** A `server` session manager on its own, so a test can adopt a new session directly. */
+  function manager(w: World, storage: TokenStorage) {
+    return createSessionManager({
+      client: 'server',
+      transport: createTransport({
+        baseUrl: TEST_BASE_URL,
+        publishableKey: TEST_KEY,
+        client: 'server',
+        fetch: w.api.fetch,
+        timeoutMs: 1_000,
+        messages: () => ({}),
+      }),
+      storage,
+      environment: fakeEnvironment(w.clock),
+      lockWaitMs: 1_000,
+      refreshTimeoutMs: 1_000,
+      scope: `${TEST_BASE_URL}|${TEST_KEY}`,
+      messages: () => ({}),
+    })
+  }
+
+  test('a second signOut() presents the token the first could not deliver', async () => {
+    const w = world()
+    const { tula, states, storage } = await signedIn(w)
+    w.api.on(SIGN_OUT, () => Promise.reject(new TypeError('offline')))
+    expect(await caught(tula.session.signOut())).toMatchObject({ code: 'network.failed' })
+    // The network is back.
+    w.api.on(SIGN_OUT, () => new Response(null, { status: 204 }))
+    await tula.session.signOut()
+    expect(w.api.calls(SIGN_OUT).map((request) => request.body)).toEqual([
+      { refreshToken: 'rt_1' },
+      { refreshToken: 'rt_1' },
+    ])
+    // Signed out throughout: one notification, and nothing asked for a token in between.
+    expect(states.slice(1)).toEqual([{ status: 'signed-out' }])
+    expect(await tula.session.getToken()).toBeNull()
+    expect(w.refreshes()).toBe(1)
+    expect(await storage.get(STORAGE_KEY)).toBeNull()
+    // Delivered: a third call has nothing left to send.
+    await tula.session.signOut()
+    expect(w.api.calls(SIGN_OUT)).toHaveLength(2)
+  })
+
+  test('the held token is in no store, error or serialization, and cannot refresh', async () => {
+    const w = world()
+    const storage = memoryStorage()
+    const set = spyOn(storage, 'set')
+    const { tula } = await signedIn(w, { storage })
+    w.api.on(SIGN_OUT, () => Promise.reject(new TypeError('offline')))
+    const error = await caught(tula.session.signOut())
+    expect(await storage.get(STORAGE_KEY)).toBeNull()
+    // The only write the store ever saw is the refresh that signed the client in.
+    expect(set.mock.calls.filter(([, value]) => value === 'rt_1')).toHaveLength(1)
+    expect(set.mock.calls).toHaveLength(2)
+    set.mockRestore()
+    expect(JSON.stringify(error)).not.toContain('rt_1')
+    expect(String(error.message)).not.toContain('rt_1')
+    expect(JSON.stringify(tula)).not.toContain('rt_1')
+    expect(JSON.stringify(tula.session)).not.toContain('rt_1')
+    // It ends a session and does nothing else: no refresh presents it.
+    expect(await tula.session.refresh()).toBeNull()
+    expect(await tula.session.getToken()).toBeNull()
+    expect((await tula.load()).status).toBe('signed-out')
+    expect(w.refreshes()).toBe(1)
+  })
+
+  test('a sign-out the API answers with a failure that is not about the session is kept too', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(SIGN_OUT, () => failure(503, 'service.unavailable'))
+    expect(await caught(tula.session.signOut())).toMatchObject({ code: 'service.unavailable' })
+    w.api.on(SIGN_OUT, () => new Response(null, { status: 204 }))
+    await tula.session.signOut()
+    expect(w.api.calls(SIGN_OUT)[1]?.body).toEqual({ refreshToken: 'rt_1' })
+  })
+
+  test('an answer that the session is over forgets the token: nothing is sent again', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(SIGN_OUT, () => failure(401, 'session.revoked'))
+    expect(await caught(tula.session.signOut())).toMatchObject({ code: 'session.revoked' })
+    await tula.session.signOut()
+    expect(w.api.calls(SIGN_OUT)).toHaveLength(1)
+  })
+
+  test('a new sign-in forgets it: the next sign-out ends the new session only', async () => {
+    const w = world()
+    const storage = memoryStorage()
+    await storage.set(STORAGE_KEY, 'rt_0')
+    const session = manager(w, storage)
+    await session.load()
+    w.api.on(SIGN_OUT, () => Promise.reject(new TypeError('offline')))
+    await caught(session.signOut())
+    w.api.on(SIGN_OUT, () => new Response(null, { status: 204 }))
+    await session.adopt(sessionTokens('new', { sessionId: 'session_2', refreshToken: 'rt_new' }))
+    await session.signOut()
+    await session.signOut()
+    expect(w.api.calls(SIGN_OUT).map((request) => request.body)).toEqual([
+      { refreshToken: 'rt_1' },
+      { refreshToken: 'rt_new' },
+    ])
+  })
+
+  test('a sign-in that finishes while the sign-out is failing is not undone by the retry', async () => {
+    const w = world()
+    const storage = memoryStorage()
+    await storage.set(STORAGE_KEY, 'rt_0')
+    const session = manager(w, storage)
+    await session.load()
+    const held = deferred<Response>()
+    w.api.on(SIGN_OUT, () => held.promise)
+    const signingOut = session.signOut()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await session.adopt(sessionTokens('new', { sessionId: 'session_2', refreshToken: 'rt_new' }))
+    held.reject(new TypeError('offline'))
+    await caught(signingOut)
+    expect(session.state()).toMatchObject({ status: 'signed-in', sessionId: 'session_2' })
+    w.api.on(SIGN_OUT, () => new Response(null, { status: 204 }))
+    await session.signOut()
+    // The old session's token was forgotten with the sign-in; only the new one is presented.
+    expect(w.api.calls(SIGN_OUT).map((request) => request.body)).toEqual([
+      { refreshToken: 'rt_1' },
+      { refreshToken: 'rt_new' },
+    ])
+  })
+})
+
 describe('a call the API refuses with 401', () => {
   test('triggers one refresh and one retry with the new token', async () => {
     const w = world()

@@ -9,6 +9,7 @@ import type { ReactElement } from 'react'
 // sign-out reach another test's client).
 import { createClient } from '../../../core/src/client'
 import type { PasskeyGlobals } from '../../../core/src/passkey'
+import { memoryStorage } from '../../../core/src/storage'
 import {
   type FakeApi,
   type FakeLinkStorage,
@@ -145,6 +146,11 @@ export interface World {
 export interface WorldOptions {
   /** Whether the browser has a session to restore. */
   signedIn?: boolean
+  /**
+   * The client kind. Anything but `web` (the default) holds its own refresh token: the world
+   * then gives it a token store, with a token in it when `signedIn`.
+   */
+  kind?: 'web' | 'server'
   /** The environment's password policy. */
   policy?: PasswordPolicy
   /** Whether a sign-up may leave the password out. */
@@ -173,8 +179,15 @@ export interface WorldOptions {
  */
 export function world(options: WorldOptions = {}): World {
   const api = fakeApi()
+  const web = options.kind !== 'server'
+  const storage = memoryStorage()
+  if (!web && options.signedIn) {
+    void storage.set(`tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`, 'rt_0')
+  }
   api.on(ROUTE.refresh, () =>
-    options.signedIn ? json(200, sessionTokens('access_1')) : failure(401, 'auth.unauthenticated')
+    options.signedIn
+      ? json(200, sessionTokens('access_1', web ? {} : { refreshToken: 'rt_1' }))
+      : failure(401, 'auth.unauthenticated')
   )
   api.on(ROUTE.me, () => json(200, TEST_USER))
   api.on(ROUTE.config, () =>
@@ -191,7 +204,12 @@ export function world(options: WorldOptions = {}): World {
   )
   api.on(ROUTE.signOut, () => new Response(null, { status: 204 }))
   const client = createClient(
-    { publishableKey: TEST_KEY, baseUrl: TEST_BASE_URL, client: 'web', fetch: api.fetch },
+    {
+      publishableKey: TEST_KEY,
+      baseUrl: TEST_BASE_URL,
+      fetch: api.fetch,
+      ...(web ? { client: 'web' as const } : { client: 'server' as const, storage }),
+    },
     fakeEnvironment(manualClock(), {
       linkStorage: options.linkStorage,
       tabStorage: options.tabStorage,

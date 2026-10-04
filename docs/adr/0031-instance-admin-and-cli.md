@@ -140,7 +140,10 @@ them.
   read and the scaffold's `.gitignore` covers. The mode is enforced on every run, also one
   that changes nothing (with a warning when it was wider). The file is written through a
   temporary file created exclusively under a random name, and a symbolic link at `.env.local`
-  is refused: nothing is written or re-moded through one. The block's end marker is looked
+  is refused: nothing is written or re-moded through one. So is anything else there that is
+  not a regular file (a named pipe, a directory, a device): opening a pipe to change its mode
+  would wait for a writer for ever, so the kind is asked with `lstat` before anything is
+  opened. The block's end marker is looked
   for after its start marker, and a marker is a whole line: a line of the user's that
   mentions one never hides the block. Lines outside the block are never changed; a
   `TULA_SECRET_KEY` of the user's own is used as it is. A second run verifies the stored

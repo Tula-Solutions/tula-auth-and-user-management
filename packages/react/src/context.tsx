@@ -263,9 +263,11 @@ export function TulaProvider(props: TulaProviderProps) {
 
   // A sign-out the server was not told about, and where it was going. Shown until a retry
   // gets through, the user closes it, or someone signs in.
-  const [failedSignOut, setFailedSignOut] = useState<{ redirectUrl: string | undefined } | null>(
-    null
-  )
+  const [failedSignOut, setFailedSignOut] = useState<{
+    redirectUrl: string | undefined
+    /** Whose sign-out it was: the dialog's retry must never reach another client. */
+    client: TulaClient
+  } | null>(null)
   const signOut = useCallback(
     async (redirectUrl?: string) => {
       try {
@@ -273,7 +275,7 @@ export function TulaProvider(props: TulaProviderProps) {
       } catch {
         // The client is signed out, but the server may still hold the session and the browser
         // its cookie. Going on to "you are signed out" would be a claim nobody checked.
-        setFailedSignOut({ redirectUrl })
+        setFailedSignOut({ redirectUrl, client })
         return false
       }
       setFailedSignOut(null)
@@ -325,7 +327,7 @@ export function TulaProvider(props: TulaProviderProps) {
     <TulaContext.Provider value={value}>
       {children}
       <PromptHost prompt={prompt} onClose={closePrompt} />
-      {failedSignOut && prompt === null ? (
+      {failedSignOut?.client === client && prompt === null ? (
         <Root appearance={undefined}>
           <SignOutFailedDialog
             retry={() => signOut(failedSignOut.redirectUrl)}

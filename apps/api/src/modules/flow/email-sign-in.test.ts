@@ -452,6 +452,38 @@ describe('signing in with an emailed code', () => {
       expect(notice?.subject).not.toMatch(/^\d/)
     })
 
+    test('with `notifications.passwordChanged` off the removal is in the audit log only: no notice', async () => {
+      // Documented behaviour (ADR 0024, docs/methods): the removal notice follows the
+      // environment's password-notice switch like every other password notice.
+      revision += 1
+      deps.environmentSettings.seed(tenant.environmentId, {
+        revision,
+        settings: {
+          ...settings(),
+          notifications: {
+            ...DEFAULT_ENVIRONMENT_SETTINGS.notifications,
+            passwordChanged: false,
+          },
+        },
+      })
+      const { id: userId } = await seedUnproven()
+      const attempt = await start()
+      await prepare(attempt)
+      const result = await submitCode(attempt, sentCode())
+      expect(result.attempt.step).toMatchObject({ status: 'complete', userId })
+
+      expect(
+        (await deps.users.findByEmailWithPassword(tenant.environmentId, NORMALIZED))?.passwordHash
+      ).toBeNull()
+      const [entry] = deps.activityLog.ofType('user.password_changed')
+      expect(entry).toMatchObject({
+        target: { type: 'user', id: userId },
+        data: { method: 'email_verification', removed: true },
+      })
+      await Notices.settled()
+      expect(deps.mailer.outbox.some((mail) => /password/i.test(mail.subject))).toBe(false)
+    })
+
     test('the owner signing in by emailed link removes it too', async () => {
       await seedUnproven()
       const { attempt, binding } = await askForLink()

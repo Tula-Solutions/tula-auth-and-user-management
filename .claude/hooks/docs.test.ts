@@ -302,20 +302,33 @@ describe('snippet sources', () => {
   beforeAll(() => {
     base = mkdtempSync(join(tmpdir(), 'tula-docs-'))
     repository = join(base, 'repository')
-    for (const directory of ['examples', 'node_modules/pkg', '.git', 'apps/api']) {
+    for (const directory of ['examples', 'node_modules/pkg', '.git', 'apps/api', '.claude']) {
       mkdirSync(join(repository, directory), { recursive: true })
     }
-    writeFileSync(join(base, 'outside.txt'), `${CANARY}\n`)
+    writeFileSync(join(base, 'outside.ts'), `${CANARY}\n`)
     writeFileSync(join(repository, 'examples/sample.ts'), 'export const sample = 1\n')
     writeFileSync(join(repository, '.env.example'), 'PORT=3003\n')
-    for (const secret of ['.env', '.env.local', 'apps/api/.env.production']) {
+    for (const secret of [
+      '.env',
+      '.env.local',
+      'apps/api/.env.production',
+      // Not `.env` files, and not anything the generator has a language for either.
+      '.npmrc',
+      'a.pem',
+      'key.key',
+      'examples/notes.txt',
+      'examples/Makefile',
+      // A known extension, but a machine's own settings, which git ignores.
+      '.claude/settings.local.json',
+    ]) {
       writeFileSync(join(repository, secret), `SECRET=${CANARY}\n`)
     }
     writeFileSync(join(repository, 'node_modules/pkg/index.ts'), `// ${CANARY}\n`)
     writeFileSync(join(repository, '.git/config'), `# ${CANARY}\n`)
-    symlinkSync(join(base, 'outside.txt'), join(repository, 'examples/link-out.txt'))
+    symlinkSync(join(base, 'outside.ts'), join(repository, 'examples/link-out.ts'))
     symlinkSync(base, join(repository, 'examples/directory-out'))
-    symlinkSync(join(repository, '.env'), join(repository, 'examples/link-to-env.txt'))
+    symlinkSync(join(repository, '.env'), join(repository, 'examples/link-to-env.ts'))
+    symlinkSync(join(repository, 'key.key'), join(repository, 'examples/link-to-key.ts'))
   })
 
   afterAll(() => {
@@ -332,18 +345,25 @@ describe('snippet sources', () => {
   })
 
   test.each([
-    ['a path that climbs out of the repository', '../outside.txt'],
-    ['a path that climbs out and back in', '../repository/../outside.txt'],
+    ['a path that climbs out of the repository', '../outside.ts'],
+    ['a path that climbs out and back in', '../repository/../outside.ts'],
     ['an absolute path', '/etc/hosts'],
-    ['a symbolic link to a file outside the repository', 'examples/link-out.txt'],
-    ['a path through a symbolic link to a directory outside', 'examples/directory-out/outside.txt'],
-    ['a symbolic link to a secrets file', 'examples/link-to-env.txt'],
+    ['a symbolic link to a file outside the repository', 'examples/link-out.ts'],
+    ['a path through a symbolic link to a directory outside', 'examples/directory-out/outside.ts'],
+    ['a symbolic link to a secrets file', 'examples/link-to-env.ts'],
     ['.env', '.env'],
     ['.env.local', '.env.local'],
     ['a nested .env file', 'apps/api/.env.production'],
     ['a secrets file under another spelling', '.ENV'],
     ['a file under node_modules', 'node_modules/pkg/index.ts'],
     ['a file under .git', '.git/config'],
+    ['.npmrc (no extension the generator knows)', '.npmrc'],
+    ['a certificate or key in PEM', 'a.pem'],
+    ['a .key file', 'key.key'],
+    ['a plain text file', 'examples/notes.txt'],
+    ['a file with no extension', 'examples/Makefile'],
+    ['a machine-local settings file', '.claude/settings.local.json'],
+    ['a link with a known extension to a file without one', 'examples/link-to-key.ts'],
   ])('%s is refused, and the message holds nothing of the file', (_name, path) => {
     let message = ''
     try {
@@ -359,6 +379,6 @@ describe('snippet sources', () => {
   })
 
   test('an absolute path to a file outside is refused too', () => {
-    expect(() => fill(join(base, 'outside.txt'))).toThrow(/not allowed/)
+    expect(() => fill(join(base, 'outside.ts'))).toThrow(/not allowed/)
   })
 })

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { screen, waitFor } from '@testing-library/react'
+import { TulaProvider, useTulaContext } from '../context'
 import {
   expectFocus,
   failure,
@@ -164,6 +165,121 @@ describe('<UserButton>', () => {
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(navigate).not.toHaveBeenCalled()
     expect(w.api.calls(ROUTE.signOut)).toHaveLength(1)
+  })
+
+  test('a client that holds its own refresh token: "Try again" reaches the server with it (review E1)', async () => {
+    const w = world({ signedIn: true, kind: 'server' })
+    w.api.on(ROUTE.sessions, () => json(200, { data: [] }))
+    let failing = true
+    w.api.on(ROUTE.signOut, () =>
+      failing ? Promise.reject(new TypeError('offline')) : new Response(null, { status: 204 })
+    )
+    const navigate = mock()
+    w.mount(<UserButton />, { afterSignOutUrl: '/', navigate })
+    await w.user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await w.user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+    await screen.findByRole('alert')
+    expect(w.api.calls(ROUTE.signOut).map((request) => request.body)).toEqual([
+      { refreshToken: 'rt_1' },
+    ])
+
+    failing = false
+    await w.user.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    // The retry is a request, with the token the first one could not deliver.
+    expect(w.api.calls(ROUTE.signOut).map((request) => request.body)).toEqual([
+      { refreshToken: 'rt_1' },
+      { refreshToken: 'rt_1' },
+    ])
+    expect(w.client.state.status).toBe('signed-out')
+  })
+
+  test('closing the failed-sign-out dialog, its opener gone, puts focus on the first control that can take it (review E2)', async () => {
+    const w = signedIn()
+    w.api.on(ROUTE.signOut, () => failure(503, 'service.unavailable'))
+    w.mount(
+      <>
+        <button type='button' disabled>
+          disabled
+        </button>
+        <button type='button' tabIndex={-1}>
+          skipped
+        </button>
+        <div hidden>
+          <button type='button'>hidden</button>
+        </div>
+        <input type='hidden' />
+        <UserButton />
+        <a href='/first'>first</a>
+        <button type='button'>second</button>
+      </>
+    )
+    await w.user.click(await screen.findByRole('button', { name: TRIGGER }))
+    // The item that asked is unmounted with the menu: the client is signed out at once.
+    await w.user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+    await screen.findByRole('alert')
+    await w.user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await expectFocus(screen.getByRole('link', { name: 'first' }))
+  })
+
+  test('with nothing on the page that can take focus, closing the dialog leaves it alone', async () => {
+    const w = signedIn()
+    w.api.on(ROUTE.signOut, () => failure(503, 'service.unavailable'))
+    w.mount(<UserButton />)
+    await w.user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await w.user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+    await screen.findByRole('alert')
+    await w.user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await expectFocus(document.body)
+  })
+
+  test('closing the failed-sign-out dialog returns focus to its opener when that is still there', async () => {
+    const w = signedIn()
+    w.api.on(ROUTE.signOut, () => failure(503, 'service.unavailable'))
+    function Leave() {
+      const { signOut } = useTulaContext()
+      return (
+        <button type='button' onClick={() => void signOut()}>
+          Leave
+        </button>
+      )
+    }
+    w.mount(
+      <>
+        <a href='/first'>first</a>
+        <Leave />
+      </>
+    )
+    await waitFor(() => expect(w.client.state.status).toBe('signed-in'))
+    const opener = screen.getByRole('button', { name: 'Leave' })
+    await w.user.click(opener)
+    await screen.findByRole('alert')
+    await w.user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await expectFocus(opener)
+  })
+
+  test('the failed-sign-out dialog closes when the provider is given another client (review E3)', async () => {
+    const w = signedIn()
+    const other = world()
+    w.api.on(ROUTE.signOut, () => failure(503, 'service.unavailable'))
+    const view = w.mount(<UserButton />)
+    await w.user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await w.user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+    await screen.findByRole('alert')
+    expect(openDialogs()).toBe(1)
+    view.rerender(
+      <TulaProvider client={other.client}>
+        <UserButton />
+      </TulaProvider>
+    )
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    // Nothing of the first client's sign-out was sent again, to either API.
+    expect(w.api.calls(ROUTE.signOut)).toHaveLength(1)
+    expect(other.api.calls(ROUTE.signOut)).toHaveLength(0)
   })
 
   test('manage account: the profile opens in a dialog and closing it returns focus', async () => {

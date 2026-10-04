@@ -105,14 +105,15 @@ for (const [name, fail] of FAILURES) {
     await expect(page).toHaveURL(`${APP_URL}/`)
 
     // Escape closes it. The control that asked went with the signed-in header, so there is
-    // nothing to hand the focus back to: it is on the document (not on an element that left
-    // the page), and the page behind is no longer inert.
+    // nothing to hand the focus back to: it goes to the page's first control (left on the
+    // document, Chromium's next Tab would not reach it), and the page behind is no longer
+    // inert: one Tab moves on to the next control.
     await page.keyboard.press('Escape')
     await expect(dialog(page)).toBeHidden()
     await expect(page).toHaveURL(`${APP_URL}/`)
-    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true)
-    await page.getByRole('link', { name: 'Sign in' }).focus()
-    await expect(page.getByRole('link', { name: 'Sign in' })).toBeFocused()
+    await expect(page.getByRole('link', { name: 'Northline' })).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('combobox', { name: 'Theme' })).toBeFocused()
 
     // The claim the dialog made is true: the server still holds the session and the browser
     // its cookie, so a reload is signed in again.
@@ -153,6 +154,10 @@ test('a failed sign-out from the account page: the dialog, and "Close" leaves th
   await dialog(page).getByRole('button', { name: 'Close' }).click()
   await expect(dialog(page)).toBeHidden()
   expect(await refreshCookies(context)).toHaveLength(1)
+  // Here the dialog had an opener that is still on the page: the app sent the signed-out
+  // visitor to its sign-in page and put the focus on the new content before the request
+  // failed. "Close" gives the focus back to it, as a dialog does.
+  await expect(page.getByRole('main')).toBeFocused()
 
   // Still signed in as far as the server goes: a reload of the account page shows it again.
   await page.unroute(SIGN_OUT)

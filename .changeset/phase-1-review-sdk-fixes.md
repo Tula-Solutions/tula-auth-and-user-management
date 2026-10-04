@@ -36,6 +36,17 @@ Fixes from the whole-phase review of the client SDKs and the CLI.
   through an attempt the user left. **Changed:** a `SignInFlow` could be waited on again
   after `discard()`; it now refuses with `flow.invalid_step`. To stop waiting and go on with
   the same attempt, abort the wait's `signal` instead.
+- `@tula/core`: on a client that holds its own refresh token (every kind but `web`), a
+  `signOut()` that could not reach the server can be repeated. The token had already been
+  dropped, so a second call sent nothing and resolved while the session lived on. It is now
+  kept in memory only (never storage) until a sign-out is delivered, the API says the session
+  is over, or a new session is adopted. The client is signed out throughout.
+- `@tula/react`: when a provider dialog closes and the control that opened it is gone (the
+  "Sign out" item after a failed sign-out, a sign-in form after an enrolment), focus moves to
+  the page's first focusable control instead of being left on the document. The
+  failed-sign-out dialog also closes when the provider is given another `client`.
+- `@tula/cli`: `tula dev` refuses anything at `.env.local` that is not a regular file (a
+  named pipe there made it wait for ever).
 - `@tula/cli`: `tula dev` writes `.env.local` through a temporary file created exclusively
   under a random name (it was the guessable `.env.local.<pid>.tmp`, written through a
   symbolic link if one was planted there), and refuses a symbolic link at `.env.local`

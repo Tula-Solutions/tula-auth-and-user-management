@@ -700,6 +700,53 @@ describe('a first factor switched off while the attempt waits on a later step', 
     expect(refused.code).toBe('auth.method_disabled')
     expect(await liveSessions(userId)).toEqual([])
   })
+
+  test('an attempt started before `firstFactor` was recorded is held to the password switch', async () => {
+    // A characterisation of the upgrade: an attempt in flight from the version before has no
+    // `firstFactor` in its state, whatever it proved. For its remaining minutes it is
+    // checked against the password method, the only first factor that version could park.
+    configure({ emailCode: true })
+    const userId = await seedUser()
+    const { secret } = await enrol(userId)
+    const attempt = await startSignIn()
+    await Flows.prepareFirstFactor(deps, tenant, ref(attempt), { strategy: 'email_code' }, web)
+    const parked = await Flows.attemptFirstFactor(
+      deps,
+      tenant,
+      ref(attempt),
+      { strategy: 'email_code', code: sentCode() },
+      web
+    )
+    expect(parked.attempt.step.status).toBe('needs_second_factor')
+    const { firstFactor, ...legacy } = ((await stored(attempt))?.state ?? {}) as Record<
+      string,
+      unknown
+    >
+    expect(firstFactor).toBe('email_code')
+    await deps.flowAttempts.transition(
+      tenant.environmentId,
+      attempt.id,
+      'needs_second_factor',
+      { status: 'needs_second_factor', state: legacy },
+      deps.clock.now()
+    )
+    expect((await stored(attempt))?.state).not.toHaveProperty('firstFactor')
+
+    // The emailed code it really proved is still on; the password is not.
+    configure({ password: false, emailCode: true })
+    const code = codeFor(secret)
+    const refused = await rejection(second(attempt, 'totp', code))
+    expect(refused.toJSON()).toMatchObject({
+      status: 403,
+      code: 'auth.method_disabled',
+      params: { method: 'password' },
+    })
+    expect(await liveSessions(userId)).toEqual([])
+
+    // With passwords on it goes through, as it did before the upgrade.
+    configure({ emailCode: true })
+    expect((await second(attempt, 'totp', code)).attempt.step.status).toBe('complete')
+  })
 })
 
 describe('what an issued token says was proven (amr)', () => {

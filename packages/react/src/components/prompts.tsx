@@ -30,6 +30,31 @@ export type Prompt =
     }
 
 /**
+ * The first element of the page the Tab key would stop at, for a dialog that closes with
+ * nothing to give the focus back to. Left on `<body>`, Chromium's next Tab does not reach the
+ * page's first control.
+ *
+ * @returns The element, or `undefined` when the page has none.
+ */
+function firstTabbable(): HTMLElement | undefined {
+  const candidates = document.querySelectorAll<HTMLElement>(
+    'a[href],button,input:not([type=hidden]),select,textarea,[tabindex]'
+  )
+  for (const candidate of candidates) {
+    if (
+      !(Number(candidate.getAttribute('tabindex')) < 0) &&
+      !candidate.matches(':disabled') &&
+      !candidate.closest('[hidden],[inert]') &&
+      // Not rendered (`display: none`, a closed dialog), where the browser can say.
+      candidate.checkVisibility?.() !== false
+    ) {
+      return candidate
+    }
+  }
+  return undefined
+}
+
+/**
  * A modal dialog (`<dialog>` opened with `showModal`, so focus is trapped, the page behind is
  * inert and Escape is announced by the browser). Its title labels it.
  */
@@ -54,9 +79,11 @@ function Modal(props: { title: string; onCancel?(): void; children: ReactNode })
       if (element?.open) {
         element.close()
       }
-      if (opener instanceof HTMLElement && opener.isConnected) {
-        opener.focus()
-      }
+      // The opener is often gone: the "Sign out" item once the client is signed out, the
+      // sign-in form once an enrolment completed (focus is then already on `<body>`).
+      const gone =
+        !(opener instanceof HTMLElement && opener.isConnected) || opener === document.body
+      ;(gone ? firstTabbable() : opener)?.focus()
     }
   }, [])
   const { onCancel } = props

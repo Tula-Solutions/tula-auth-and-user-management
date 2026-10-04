@@ -1337,7 +1337,9 @@ export interface TulaClient {
      * then ends it on the server.
      *
      * @throws TulaError when the server could not be told (the client is signed out all the
-     *   same, but the session may live on until it is revoked or expires).
+     *   same, but the session may live on until it is revoked or expires). Calling `signOut()`
+     *   again then tells the server: a browser sends its cookie again, and any other client
+     *   the refresh token it kept in memory for exactly this.
      */
     signOut(): Promise<void>
     /** @returns The user's active sessions, most recently active first. */

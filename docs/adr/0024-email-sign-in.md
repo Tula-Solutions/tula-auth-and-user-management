@@ -106,7 +106,9 @@ password**, in the same store transaction as the verification
 the old password still in place. It is recorded as `user.password_changed` with
 `{ method: 'email_verification', removed: true }` (no secret and no address in it), and the
 owner is sent a password notice (`by: 'verification'`, ADR 0023) after the commit, in the
-background. They choose their own password through a password reset.
+background. The notice follows the environment's `notifications.passwordChanged` like every
+other password notice: with it off, the removal is recorded in the audit log only. They
+choose their own password through a password reset.
 
 It does **not** happen:
 
@@ -118,6 +120,14 @@ It does **not** happen:
 The same rule covers the one other verifier who has not proven the password: a **passkey**
 sign-in that stops at `needs_email_verification` (ADR 0027). If the write fails, nothing was
 changed: the address stays unverified and a password sign-in still needs the emailed code.
+
+Accepted, a narrow race: a password reset stores its new password and then, in a second
+write, marks the still-unverified address verified. An emailed-code or link sign-in on the
+same account that completes between those two writes (or after the second one failed, which
+is logged and leaves the address unverified) still finds the address unverified and removes
+the password the reset just stored. Both flows need a code from the owner's inbox, so only
+the owner can cause it, to themselves; nobody gains access, the removal is recorded and
+announced as above, and another reset sets the password again.
 
 ### An unknown address
 

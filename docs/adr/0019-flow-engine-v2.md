@@ -93,7 +93,11 @@ one place for every present and future flow route instead of in each handler.
   `needs_second_factor`, `needs_factor_enrolment`): the attempt records the first factor it
   proved (`firstFactor` in its state) and `requireProvenMethod` re-checks that method (a
   settings switch, the passkey relying party, or the provider's credentials) after `load` and
-  before a guess is counted, a ceiling charged or anything spent.
+  before a guess is counted, a ceiling charged or anything spent. An attempt already in
+  flight when a deployment is upgraded to the version that records `firstFactor` has none in
+  its state: for its remaining minutes (an attempt lives ten) it is checked against the
+  password method, whatever it proved, and is refused with `auth.method_disabled` where
+  passwords are off.
 - One registry maps settings to strategies: `FIRST_FACTORS` in `modules/factor/service.ts`.
   Steps 1.7 to 1.10 add a strategy by adding an entry there and the route that proves it.
   Only `password` can be enabled today, so `needs_first_factor` is reachable only in tests.

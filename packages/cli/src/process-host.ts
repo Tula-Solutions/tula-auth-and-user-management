@@ -11,18 +11,31 @@ function linkRefusal(path: string): UsageError {
   )
 }
 
+/** What is said when the path holds a named pipe, a directory, a device or a socket. */
+function kindRefusal(path: string): UsageError {
+  return new UsageError(
+    `${basename(path)} is not a regular file. \`tula\` keeps its keys in a regular file only: move it away and run the command again.`
+  )
+}
+
 /**
- * Refuse a symbolic link at `path`: writing or changing a mode through one would act on a file
- * somebody else chose.
+ * Refuse anything at `path` that is not a regular file. Writing or changing a mode through a
+ * symbolic link would act on a file somebody else chose, and opening a named pipe for reading
+ * waits for a writer that never comes. Asked with `lstat`, before anything is opened.
  *
  * @param path - The file about to be written or re-moded.
  * @returns Whether anything is at `path`.
- * @throws UsageError when `path` is a symbolic link, dangling or not.
+ * @throws UsageError when `path` is a symbolic link (dangling or not) or any other kind of
+ *   thing that is not a regular file.
  */
-async function refuseLink(path: string): Promise<boolean> {
+async function refuseIrregular(path: string): Promise<boolean> {
   try {
-    if ((await lstat(path)).isSymbolicLink()) {
+    const found = await lstat(path)
+    if (found.isSymbolicLink()) {
       throw linkRefusal(path)
+    }
+    if (!found.isFile()) {
+      throw kindRefusal(path)
     }
     return true
   } catch (error) {
@@ -102,7 +115,7 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
       }
     },
     async writeSecretFile(path, text) {
-      await refuseLink(path)
+      await refuseIrregular(path)
       // Written beside the file and renamed over it: a reader never sees half a file, and the
       // file is never, even for a moment, readable by anyone but its owner. The temporary
       // file is created exclusively (`wx` fails on any existing name, and never follows a
@@ -127,14 +140,19 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
       }
     },
     async restrictFile(path) {
-      if (!(await refuseLink(path))) {
+      if (!(await refuseIrregular(path))) {
         return false
       }
       // Opened without following a link and changed through the handle, so that what was
       // checked is what is changed even if the name is swapped in between.
       let file: Awaited<ReturnType<typeof open>>
       try {
-        file = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+        // `O_NONBLOCK`: should a named pipe be swapped in after the check above, the open
+        // returns at once instead of waiting, and the check below refuses it.
+        file = await open(
+          path,
+          constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+        )
       } catch (error) {
         const code = (error as { code?: unknown }).code
         if (code === 'ENOENT') {
@@ -146,7 +164,11 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
         throw error
       }
       try {
-        if (((await file.stat()).mode & 0o077) === 0) {
+        const opened = await file.stat()
+        if (!opened.isFile()) {
+          throw kindRefusal(path)
+        }
+        if ((opened.mode & 0o077) === 0) {
           return false
         }
         await file.chmod(0o600)

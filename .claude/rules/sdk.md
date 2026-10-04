@@ -83,7 +83,16 @@ paths:
   actions throw `flow.invalid_step` without a request) and an answer still in flight is
   dropped in `accept` before anything is taken from it, so a late `complete` never reaches
   `session.adopt`. A change to `createAttempt` keeps the test that holds a response, discards
-  and resolves it with `complete`.
+  and resolves it with `complete`. Accepted residual (ADR 0021): on `web` the browser has
+  already stored that answer's refresh cookie, so a reload would find the session unless a
+  later sign-in replaced the cookie.
+- **A sign-out the server was not told of can be sent again.** A non-`web` client has dropped
+  its refresh token by the time a failed `signOut()` rejects, so it keeps that token **in
+  memory only** (`undelivered`, a closure of the session manager; never storage, a cross-tab
+  message, an error, a log line or `toJSON`) and the next `signOut()` presents it. Nothing
+  else reads it: no refresh may present it, and the client stays signed out throughout. It is
+  forgotten when delivered, on a `session.*` answer to the sign-out and when a new session is
+  adopted; there is no timer (ADR 0021 says why). Keep the tests of all three.
 - One error class: every failed call throws `TulaError` with a contract code or one of the
   client's own (`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`,
   `flow.busy`, `link.cross_origin`, `passkey.unsupported`, `passkey.cancelled`,
@@ -129,6 +138,12 @@ paths:
 - Sign-out from a component goes through `useTulaContext().signOut`: no navigation unless the
   server was told; otherwise the provider's `SignOutFailedDialog` says the session may still
   be active and offers a retry. Never `client.session.signOut().catch(() => undefined)`.
+  The dialog belongs to the client whose sign-out failed: it is not drawn for another
+  `client` the provider is given later, so its retry never reaches a different client.
+- A provider dialog (`Modal` in `components/prompts.tsx`) gives the focus back to what had it
+  when it opened; when that is gone or was the document (the "Sign out" item after the client
+  signed out, a sign-in form after an enrolment) it goes to the first tabbable element of the
+  page (`firstTabbable`), and stays put only when the page has none.
 - Theme values reach the page only through `themeToCssVariables`, which validates them
   (`isValidThemeValue`). They are untrusted: never interpolate one into CSS or a style
   attribute yourself.
@@ -260,7 +275,9 @@ paths:
   file's mode on every run (`host.restrictFile`) and prints the secret key only with
   `--show-keys`. The real host writes through a temporary file opened `wx` under a random
   name and refuses a symbolic link at the file (`lstat`, then `O_NOFOLLOW`) instead of
-  writing or changing a mode through it. `tula doctor` talks to the
+  writing or changing a mode through it, and anything else that is not a regular file (a
+  named pipe would make the open wait for ever: refused from the `lstat`, before any open,
+  and the open is `O_NONBLOCK` with the kind checked again on the handle). `tula doctor` talks to the
   API through `createInstanceClient` and never to a dependency; whatever the server sends is
   passed through `printable()` (controls to a space; `Cf`, `Co`, `Cn` and lone surrogates
   removed, by class with the `u` flag, written as `\u{…}` escapes) before it is printed, and an answer the CLI cannot read is a
