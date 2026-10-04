@@ -124,6 +124,8 @@ export interface TulaLocalization {
     /** `{provider}`. */
     linkedMessage: string
     errorTitle: string
+    /** The button that asks again after a request that got no answer. */
+    tryAgain: string
     /** The link back to `<SignIn>`. */
     signIn: string
     /** The link back to the account page after connecting an account. */
@@ -418,6 +420,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     linkedTitle: 'Account connected',
     linkedMessage: 'Your {provider} account is connected. You can now use it to sign in.',
     errorTitle: 'We could not finish signing you in',
+    tryAgain: 'Try again',
     signIn: 'Sign in',
     backToAccount: 'Back to your account',
   },

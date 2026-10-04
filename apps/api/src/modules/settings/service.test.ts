@@ -7,6 +7,7 @@ import {
 } from '@tula/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { ServiceException } from '~/exceptions'
+import * as Audit from '~/modules/audit/service'
 import * as Settings from '~/modules/settings/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -118,7 +119,23 @@ describe('replace', () => {
       get: store.get.bind(store),
       allowedOrigins: store.allowedOrigins.bind(store),
       replace: async (...args: Parameters<typeof store.replace>) => {
-        await replace(1, document({ app: { name: 'Winner', supportEmail: null } }))
+        // Written at the store, as a writer outside this environment's lock would: through
+        // `Settings.replace` it would wait for this very request (the lock is not reentrant).
+        await store.replace(
+          tenant.environmentId,
+          1,
+          Settings.withDeploymentDefaults(
+            deps.config,
+            document({ app: { name: 'Winner', supportEmail: null } })
+          ),
+          deps.clock.now(),
+          Audit.entry(deps, tenant, {
+            type: 'environment.settings_updated',
+            actor: TEST_ACTOR,
+            target: { type: 'environment', id: tenant.environmentId },
+            data: { revision: 2, changed: ['app.name'] },
+          })
+        )
         return store.replace(...args)
       },
     }

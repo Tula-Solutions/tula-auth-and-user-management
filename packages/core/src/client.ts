@@ -12,6 +12,8 @@ import {
 import { isBackupCodes, isFactors, isTotpEnrolment } from './mfa'
 import {
   createOAuthStore,
+  createOAuthTicketHolder,
+  discardOAuthCallback,
   handleOAuthCallback,
   type Identity,
   isIdentityList,
@@ -237,6 +239,11 @@ export interface TulaClient {
      * links started from a profile alike. Safe to call on every load of the page, and twice in
      * a row: without an OAuth answer in the address it answers `none`.
      *
+     * When the exchange gets no answer (`network.failed`, `network.timeout`) or a `rate_limited`,
+     * the error is thrown and the round trip is kept for a minute: **call this again to retry**.
+     * The ticket is held in memory only, never in storage or the address. Any answer from the
+     * API, success or refusal, ends the round trip.
+     *
      * @returns `complete` or `needs_step` with a flow positioned on the step (so
      *   `flow.submitSecondFactor` works), `linked`, `different_browser`, `error` with a contract
      *   code (`oauth.account_exists`, `oauth.access_denied`, …), or `none`.
@@ -248,6 +255,22 @@ export interface TulaClient {
      * ```
      */
     handleOAuthCallback(): Promise<OAuthCallbackOutcome>
+    /**
+     * Give up on an OAuth round trip whose exchange failed without an answer and has not been
+     * retried: forgets the ticket held in memory and the binding kept for it. Signing out and
+     * starting another round trip do the same. Does nothing when there is none.
+     *
+     * @example
+     * ```ts
+     * try {
+     *   await tula.signIn.handleOAuthCallback()
+     * } catch {
+     *   // Offer "try again" (call it again) or "start over":
+     *   tula.signIn.discardOAuthCallback()
+     * }
+     * ```
+     */
+    discardOAuthCallback(): void
   }
   /** Forgotten password. */
   readonly resetPassword: {
@@ -540,7 +563,11 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   }
   const links = createLinkStore(environment, scope)
   const flows = { transport, session, messages: currentMessages, environment, links, scope }
-  const oauth = { ...flows, oauth: createOAuthStore(environment, scope) }
+  const oauth = {
+    ...flows,
+    oauth: createOAuthStore(environment, scope),
+    held: createOAuthTicketHolder(),
+  }
   let config: Promise<ClientConfig> | null = null
 
   /** A 200 that is not what the operation answers is not this API: nothing is built from it. */
@@ -599,6 +626,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         }
         return handlingOAuth
       },
+      discardOAuthCallback: () => discardOAuthCallback(oauth),
     },
     resetPassword: {
       start: async (input) =>
@@ -607,7 +635,11 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     session: {
       getToken: () => session.getToken(),
       refresh: () => session.refresh(),
-      signOut: () => session.signOut(),
+      signOut() {
+        // A round trip waiting for a retry belongs to whoever was here: forget it.
+        discardOAuthCallback(oauth)
+        return session.signOut()
+      },
       list: async () => (await session.authorized('listSessions', {})).data,
       async revoke(sessionId) {
         await session.authorized('revokeSession', { params: { sessionId } })

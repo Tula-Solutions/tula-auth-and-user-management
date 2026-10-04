@@ -148,6 +148,28 @@ describe('resolveAccount: the linking table', () => {
     expect(deps.mailer.outbox).toEqual([])
   })
 
+  // Review finding F1: U+212A (KELVIN SIGN) lowercases to an ASCII "k". A provider address
+  // spelled with it must never be treated as the ASCII mailbox it looks like.
+  test('a look-alike address (Kelvin sign) neither links to nor collides with the ASCII account', async () => {
+    const owner = newUser({
+      email: 'kelvin@northline.app',
+      emailNormalized: 'kelvin@northline.app',
+    })
+    await deps.users.create(owner)
+    const lookAlike = { subject: 'attacker', email: 'Kelvin@northline.app', emailVerified: true }
+    expect(await codeOf(resolve(lookAlike))).toBe('oauth.email_missing')
+    expect(await deps.users.listIdentities(tenant.environmentId, owner.id)).toEqual([])
+    expect(await deps.users.findByIdentity(tenant.environmentId, 'google', 'attacker')).toBeNull()
+    expect(types()).toEqual([])
+    await Notices.settled()
+    expect(deps.mailer.outbox).toEqual([])
+    // With no such account either, nothing is created under the folded address.
+    expect(await codeOf(resolve({ ...lookAlike, email: 'Kai@northline.app' }))).toBe(
+      'oauth.email_missing'
+    )
+    expect(await deps.users.findByEmail(tenant.environmentId, 'kai@northline.app')).toBeNull()
+  })
+
   test('a banned account is connected to nothing', async () => {
     const owner = newUser()
     await deps.users.create(owner)

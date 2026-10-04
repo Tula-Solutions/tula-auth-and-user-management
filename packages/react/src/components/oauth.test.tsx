@@ -287,15 +287,72 @@ describe('<OAuthCallback>', () => {
     expect(w.client.state.status).not.toBe('signed-in')
   })
 
-  test('a request that got no answer is reported as such', async () => {
+  // Review finding F4: a request that got no answer used to end the round trip. Now the
+  // ticket is held (in memory) and the screen offers to try again.
+  test.each([
+    [
+      'a request that got no answer',
+      () => {
+        throw new TypeError('fetch failed')
+      },
+    ],
+    ['a rate limit', () => failure(429, 'rate_limited')],
+  ] as const)(
+    '%s is reported with “Try again”, which finishes the sign-in',
+    async (_name, answer) => {
+      const { w, page, tabStorage } = landing({ binding: false })
+      await bind(w, tabStorage)
+      w.api.on(EXCHANGE, answer)
+      const went: string[] = []
+      w.mount(
+        <StrictMode>
+          <OAuthCallback afterSignInUrl='/app' />
+        </StrictMode>,
+        { navigate: (url: string) => went.push(url) }
+      )
+      await screen.findByRole('heading', { name: 'We could not finish signing you in' })
+      expect(screen.getByRole('alert').textContent).not.toBe('')
+      expect(w.api.calls(EXCHANGE)).toHaveLength(1)
+      // The ticket is nowhere a script or a person could read it.
+      expect(page.current).toBe(CALLBACK)
+      expect(document.body.innerHTML).not.toContain('tula_ot_t')
+      expect(JSON.stringify([...tabStorage.entries])).not.toContain('tula_ot_t')
+
+      w.api.on(EXCHANGE, complete)
+      await w.user.click(screen.getByRole('button', { name: 'Try again' }))
+      await waitFor(() => expect(went).toEqual(['/app']))
+      expect(w.api.calls(EXCHANGE)).toHaveLength(2)
+      expect(w.api.calls(EXCHANGE)[1]?.body).toEqual({
+        ticket: 'tula_ot_t',
+        attemptId: 'attempt_1',
+        binding: 'tula_ob_binding',
+      })
+      expect(w.client.state.status).toBe('signed-in')
+      expect(tabStorage.entries.size).toBe(0)
+    }
+  )
+
+  test('“Try again” that fails again stays on the error, still retryable', async () => {
     const { w, tabStorage } = landing({ binding: false })
     await bind(w, tabStorage)
     w.api.on(EXCHANGE, () => {
       throw new TypeError('fetch failed')
     })
     w.mount(<OAuthCallback />)
-    await screen.findByRole('heading', { name: 'We could not finish signing you in' })
+    await w.user.click(await screen.findByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(w.api.calls(EXCHANGE)).toHaveLength(2))
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeDefined()
     expect(screen.getByRole('alert').textContent).not.toBe('')
+  })
+
+  test('a failure that cannot be retried offers no “Try again”', async () => {
+    const { w, tabStorage } = landing({ binding: false })
+    await bind(w, tabStorage)
+    w.api.on(EXCHANGE, () => json(200, { nothing: 'useful' }))
+    w.mount(<OAuthCallback />)
+    await screen.findByRole('heading', { name: 'We could not finish signing you in' })
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(tabStorage.entries.size).toBe(0)
   })
 
   test('a step this version cannot draw is not guessed at', async () => {

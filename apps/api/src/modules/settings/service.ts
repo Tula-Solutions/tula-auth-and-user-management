@@ -323,7 +323,7 @@ export interface ReplaceInput {
  *   `expectedRevision`; `params.revision` is the current one.
  */
 export async function replace(
-  deps: ReadDeps & Pick<Deps, 'ids' | 'clock' | 'oauthProviders'>,
+  deps: ReadDeps & Pick<Deps, 'ids' | 'clock' | 'oauthProviders' | 'environmentLock'>,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   input: ReplaceInput,
   actor: Actor
@@ -331,39 +331,44 @@ export async function replace(
   // Before anything else, so a document that cannot be stored is refused whatever the revision
   // and even when it would change nothing.
   const settings = withDeploymentDefaults(deps.config, input.settings)
-  await requireWayIn(deps, tenant, settings)
-  // Read past the cache: both the revision check and the list of changed keys must be made
-  // against what is really stored, not against what this instance last saw.
-  const before = await read(deps, tenant, true)
-  if (before.revision !== input.expectedRevision) {
-    throw new ServiceException('precondition.failed', { params: { revision: before.revision } })
-  }
-  const changed = changedKeys(before.settings, settings)
-  if (changed.length === 0) {
-    return before
-  }
-  const replaced = await deps.environmentSettings.replace(
-    tenant.environmentId,
-    input.expectedRevision,
-    settings,
-    deps.clock.now(),
-    Audit.entry(deps, tenant, {
-      type: 'environment.settings_updated',
-      actor,
-      target: { type: 'environment', id: tenant.environmentId },
-      data: {
-        revision: input.expectedRevision + 1,
-        changed,
-        // A flag, never the values: enough to find the change that loosened the policy.
-        ...(weakened(before.settings, settings) && { weakened: true }),
-      },
-    })
-  )
-  if (!replaced) {
-    // Another writer got in between the read and the write.
-    throw new ServiceException('precondition.failed')
-  }
-  return replaced
+  // "At least one sign-in method" is decided from this document and the provider rows, which
+  // another route writes. Both take the environment's lock and check inside it, so neither
+  // decides against a state the other is about to change.
+  return deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
+    await requireWayIn(deps, tenant, settings)
+    // Read past the cache: both the revision check and the list of changed keys must be made
+    // against what is really stored, not against what this instance last saw.
+    const before = await read(deps, tenant, true)
+    if (before.revision !== input.expectedRevision) {
+      throw new ServiceException('precondition.failed', { params: { revision: before.revision } })
+    }
+    const changed = changedKeys(before.settings, settings)
+    if (changed.length === 0) {
+      return before
+    }
+    const replaced = await deps.environmentSettings.replace(
+      tenant.environmentId,
+      input.expectedRevision,
+      settings,
+      deps.clock.now(),
+      Audit.entry(deps, tenant, {
+        type: 'environment.settings_updated',
+        actor,
+        target: { type: 'environment', id: tenant.environmentId },
+        data: {
+          revision: input.expectedRevision + 1,
+          changed,
+          // A flag, never the values: enough to find the change that loosened the policy.
+          ...(weakened(before.settings, settings) && { weakened: true }),
+        },
+      })
+    )
+    if (!replaced) {
+      // Another writer got in between the read and the write.
+      throw new ServiceException('precondition.failed')
+    }
+    return replaced
+  })
 }
 
 /**

@@ -122,5 +122,6 @@ Before finishing any change here, confirm each item holds and has a test:
     the attempt's nonce (test each, and `alg: none`, a foreign key, a tampered payload).
     Subjects are stable ids (`sub`, GitHub's numeric id), never a login or an address.
 30. **The mock provider** exists only with `ENVIRONMENT=local` and `OAUTH_MOCK_PROVIDER=true`:
-    `env.ts` refuses it elsewhere, the routes are not mounted otherwise, and the consent page
-    redirects only to this API's callback. Keep all three, each with its test.
+    `env.ts` refuses it elsewhere, and with a `PUBLIC_URL` that is not loopback; the container
+    logs a warning at boot while it is on; the routes are not mounted otherwise; and the consent
+    page redirects only to this API's callback. Keep all of them, each with its test.

@@ -193,6 +193,10 @@ const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId'] as c
  * Refuse a change that would leave an environment with no way to sign in: its settings enable
  * no method of their own, and this change takes its last enabled provider away. (The other
  * half of the rule is in `Settings.replace`.)
+ *
+ * Call it inside the environment's `sign_in_methods` lock, which `Settings.replace` takes too:
+ * it reads the settings past the cache and the provider rows from the store, and what it reads
+ * must still be true when the caller writes.
  */
 async function requireWayIn(
   deps: Pick<Deps, 'oauthProviders' | 'environmentSettings' | 'config'>,
@@ -220,7 +224,7 @@ async function requireWayIn(
  * Recorded as `oauth_provider.updated` in the same transaction, with the provider and the
  * **names** of what changed (`secret` among them), never a value.
  *
- * @param deps - Provider store, secret box, settings, ids and clock.
+ * @param deps - Provider store, secret box, settings, the environment lock, ids and clock.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @param input - Client id, secret material and whether it is enabled.
@@ -232,7 +236,13 @@ async function requireWayIn(
 export async function update(
   deps: Pick<
     Deps,
-    'oauthProviders' | 'secretBox' | 'environmentSettings' | 'config' | 'ids' | 'clock'
+    | 'oauthProviders'
+    | 'secretBox'
+    | 'environmentSettings'
+    | 'environmentLock'
+    | 'config'
+    | 'ids'
+    | 'clock'
   >,
   tenant: Scope,
   provider: OAuthProvider,
@@ -251,55 +261,59 @@ export async function update(
       throw fieldError(field, `${field} is required for this provider`)
     }
   }
-  const existing = await deps.oauthProviders.find(tenant.environmentId, provider)
-  const secret = input[fields.secret]
-  if (secret === undefined && !existing) {
-    throw fieldError(fields.secret, `${fields.secret} is required`)
-  }
-  if (provider === 'apple' && secret !== undefined && !(await isEcP256PrivateKey(secret))) {
-    throw fieldError('privateKey', 'privateKey must be the PKCS#8 PEM of a P-256 private key')
-  }
-  if (existing?.enabled && !input.enabled) {
-    await requireWayIn(deps, tenant, provider)
-  }
+  // The read, the "at least one sign-in method" check and the write happen under the
+  // environment's lock, shared with `Settings.replace`: neither decides on a snapshot.
+  return deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
+    const existing = await deps.oauthProviders.find(tenant.environmentId, provider)
+    const secret = input[fields.secret]
+    if (secret === undefined && !existing) {
+      throw fieldError(fields.secret, `${fields.secret} is required`)
+    }
+    if (provider === 'apple' && secret !== undefined && !(await isEcP256PrivateKey(secret))) {
+      throw fieldError('privateKey', 'privateKey must be the PKCS#8 PEM of a P-256 private key')
+    }
+    if (existing?.enabled && !input.enabled) {
+      await requireWayIn(deps, tenant, provider)
+    }
 
-  const now = deps.clock.now()
-  const config = { teamId: input.teamId, keyId: input.keyId }
-  const changed = [
-    ...(existing?.clientId !== input.clientId ? ['clientId'] : []),
-    ...(secret !== undefined ? ['secret'] : []),
-    ...fields.config.filter((field) => existing?.config[field] !== config[field]),
-    ...(existing?.enabled !== input.enabled ? ['enabled'] : []),
-  ]
-  const record: OAuthProviderRecord = {
-    id: existing?.id ?? deps.ids.next(),
-    projectId: tenant.projectId,
-    environmentId: tenant.environmentId,
-    provider,
-    clientId: input.clientId,
-    secret:
-      secret === undefined
-        ? (existing as OAuthProviderRecord).secret
-        : await deps.secretBox.seal(
-            OAUTH_SECRET_PURPOSE,
-            new TextEncoder().encode(JSON.stringify({ [fields.secret]: secret })),
-            aad(tenant.environmentId, provider)
-          ),
-    config: Object.fromEntries(fields.config.map((field) => [field, config[field]])),
-    enabled: input.enabled,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  }
-  const stored = await deps.oauthProviders.upsert(
-    record,
-    Audit.entry(deps, tenant, {
-      type: 'oauth_provider.updated',
-      actor,
-      target: { type: 'environment', id: tenant.environmentId },
-      data: { provider, changed, ...(!existing && { created: true }) },
-    })
-  )
-  return toSettings(deps.config, provider, stored)
+    const now = deps.clock.now()
+    const config = { teamId: input.teamId, keyId: input.keyId }
+    const changed = [
+      ...(existing?.clientId !== input.clientId ? ['clientId'] : []),
+      ...(secret !== undefined ? ['secret'] : []),
+      ...fields.config.filter((field) => existing?.config[field] !== config[field]),
+      ...(existing?.enabled !== input.enabled ? ['enabled'] : []),
+    ]
+    const record: OAuthProviderRecord = {
+      id: existing?.id ?? deps.ids.next(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      provider,
+      clientId: input.clientId,
+      secret:
+        secret === undefined
+          ? (existing as OAuthProviderRecord).secret
+          : await deps.secretBox.seal(
+              OAUTH_SECRET_PURPOSE,
+              new TextEncoder().encode(JSON.stringify({ [fields.secret]: secret })),
+              aad(tenant.environmentId, provider)
+            ),
+      config: Object.fromEntries(fields.config.map((field) => [field, config[field]])),
+      enabled: input.enabled,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    }
+    const stored = await deps.oauthProviders.upsert(
+      record,
+      Audit.entry(deps, tenant, {
+        type: 'oauth_provider.updated',
+        actor,
+        target: { type: 'environment', id: tenant.environmentId },
+        data: { provider, changed, ...(!existing && { created: true }) },
+      })
+    )
+    return toSettings(deps.config, provider, stored)
+  })
 }
 
 /**
@@ -311,7 +325,7 @@ export async function update(
  * first password; an administrator can set one). It **is** refused when it would leave the
  * whole environment with no sign-in method.
  *
- * @param deps - Provider store, settings, ids and clock.
+ * @param deps - Provider store, settings, the environment lock, ids and clock.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @param actor - Who is removing it, for the audit log.
@@ -319,31 +333,36 @@ export async function update(
  * @throws ValidationError (422) when no way to sign in would remain.
  */
 export async function remove(
-  deps: Pick<Deps, 'oauthProviders' | 'environmentSettings' | 'config' | 'ids' | 'clock'>,
+  deps: Pick<
+    Deps,
+    'oauthProviders' | 'environmentSettings' | 'environmentLock' | 'config' | 'ids' | 'clock'
+  >,
   tenant: Scope,
   provider: OAuthProvider,
   actor: Actor
 ): Promise<void> {
-  const existing = await deps.oauthProviders.find(tenant.environmentId, provider)
-  if (!existing) {
-    throw new NotFoundError()
-  }
-  if (existing.enabled) {
-    await requireWayIn(deps, tenant, provider)
-  }
-  const deleted = await deps.oauthProviders.delete(
-    tenant.environmentId,
-    provider,
-    Audit.entry(deps, tenant, {
-      type: 'oauth_provider.deleted',
-      actor,
-      target: { type: 'environment', id: tenant.environmentId },
-      data: { provider },
-    })
-  )
-  if (!deleted) {
-    throw new NotFoundError()
-  }
+  await deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
+    const existing = await deps.oauthProviders.find(tenant.environmentId, provider)
+    if (!existing) {
+      throw new NotFoundError()
+    }
+    if (existing.enabled) {
+      await requireWayIn(deps, tenant, provider)
+    }
+    const deleted = await deps.oauthProviders.delete(
+      tenant.environmentId,
+      provider,
+      Audit.entry(deps, tenant, {
+        type: 'oauth_provider.deleted',
+        actor,
+        target: { type: 'environment', id: tenant.environmentId },
+        data: { provider },
+      })
+    )
+    if (!deleted) {
+      throw new NotFoundError()
+    }
+  })
 }
 
 /** The account a proven provider identity belongs to, and how it came to. */

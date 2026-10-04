@@ -619,6 +619,7 @@ describe('the public surface', () => {
       'createTulaClient',
       'evaluatePassword',
       'formatMessage',
+      'isRetryableOAuthError',
       'isStepUpRequired',
       'isTulaError',
       'memoryStorage',

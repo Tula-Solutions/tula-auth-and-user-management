@@ -5,7 +5,7 @@ import {
   UnexpectedErrorResponseBodyError,
   UnexpectedResponseError,
 } from 'arctic'
-import { createRemoteJWKSet, customFetch, type JWTPayload, jwtVerify } from 'jose'
+import { createRemoteJWKSet, customFetch, errors, type JWTPayload, jwtVerify } from 'jose'
 import { timingSafeEqual } from '~/lib/crypto'
 import { OAuthProviderError } from '~/ports/oauth-provider'
 
@@ -13,6 +13,40 @@ import { OAuthProviderError } from '~/ports/oauth-provider'
 const MAX_NAME_LENGTH = 100
 /** Seconds of clock difference with a provider that an ID token's times may be off by. */
 const CLOCK_TOLERANCE_SECONDS = 30
+
+/**
+ * How long any one call to a provider may take: the code exchange, a key-set fetch, a profile
+ * read. A provider that accepts the connection and then says nothing must not hold a callback
+ * (and the user's browser) open; ten seconds is far beyond a healthy provider's answer.
+ */
+export const PROVIDER_TIMEOUT_MS = 10_000
+
+/** Options of a provider adapter. */
+export interface ProviderOptions {
+  /** The longest one outbound call may take, in milliseconds ({@link PROVIDER_TIMEOUT_MS}). */
+  timeoutMs?: number
+}
+
+/**
+ * Give a call to a provider a deadline.
+ *
+ * `arctic` takes neither a `fetch` nor an `AbortSignal`, so its code exchange cannot be
+ * cancelled, only abandoned: the caller stops waiting and whatever arrives later is dropped
+ * with the promise. Nothing of a late answer is read, logged or kept.
+ *
+ * @param work - The call.
+ * @param timeoutMs - How long to wait for it.
+ * @returns What `work` resolves to.
+ * @throws OAuthProviderError `unavailable` when the deadline passes first; otherwise whatever
+ *   `work` rejects with.
+ */
+export function withDeadline<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new OAuthProviderError('unavailable')), timeoutMs)
+  })
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer))
+}
 
 /** How one OIDC provider's ID tokens are verified. */
 export interface IdTokenRules {
@@ -41,26 +75,46 @@ export type IdTokenVerifier = (
  * The key set is fetched through the global `fetch` looked up at call time, so tests can stub
  * it and stay offline.
  *
+ * A key set that does not arrive within the timeout is `unavailable`, not `invalid_token`.
+ *
  * @param rules - The provider's issuer and key location.
+ * @param options - The timeout of the key-set fetch.
  * @returns The verifier.
  */
-export function createIdTokenVerifier(rules: IdTokenRules): IdTokenVerifier {
+export function createIdTokenVerifier(
+  rules: IdTokenRules,
+  options: ProviderOptions = {}
+): IdTokenVerifier {
+  const timeoutMs = options.timeoutMs ?? PROVIDER_TIMEOUT_MS
   const keys = createRemoteJWKSet(new URL(rules.jwksUrl), {
+    // `jose` aborts the key-set request with this (it hands the signal to the fetch below).
+    timeoutDuration: timeoutMs,
     [customFetch]: (url, init) => globalThis.fetch(url, init),
   })
   return async (idToken, expected) => {
     let payload: JWTPayload
     try {
-      const verified = await jwtVerify(idToken, keys, {
-        issuer: rules.issuers,
-        audience: expected.audience,
-        algorithms: ['RS256'],
-        clockTolerance: CLOCK_TOLERANCE_SECONDS,
-        requiredClaims: ['sub', 'exp', 'iat'],
-      })
+      // The only network call in here is the key-set fetch. The deadline is a second guard
+      // around it, for a `fetch` that does not honour the abort signal.
+      const verified = await withDeadline(
+        jwtVerify(idToken, keys, {
+          issuer: rules.issuers,
+          audience: expected.audience,
+          algorithms: ['RS256'],
+          clockTolerance: CLOCK_TOLERANCE_SECONDS,
+          requiredClaims: ['sub', 'exp', 'iat'],
+        }),
+        timeoutMs
+      )
       payload = verified.payload
-    } catch {
-      throw new OAuthProviderError('invalid_token')
+    } catch (error) {
+      if (error instanceof OAuthProviderError) {
+        throw error
+      }
+      // A key set that did not arrive in time says nothing about the token.
+      throw new OAuthProviderError(
+        error instanceof errors.JWKSTimeout ? 'unavailable' : 'invalid_token'
+      )
     }
     if (typeof payload.nonce !== 'string' || !timingSafeEqual(payload.nonce, expected.nonce)) {
       throw new OAuthProviderError('invalid_token')

@@ -7,7 +7,13 @@ import {
   type OAuthProvider,
   OAuthProviderError,
 } from '~/ports/oauth-provider'
-import { displayName, exchangeFailure } from './id-token'
+import {
+  displayName,
+  exchangeFailure,
+  PROVIDER_TIMEOUT_MS,
+  type ProviderOptions,
+  withDeadline,
+} from './id-token'
 
 /** What is asked of GitHub: the profile, and the email addresses (the public one may be empty). */
 export const GITHUB_SCOPES = ['read:user', 'user:email']
@@ -18,10 +24,19 @@ function client(credentials: OAuthCredentials, redirectUri: string): GitHub {
   return new GitHub(credentials.clientId, credentials.clientSecret ?? '', redirectUri)
 }
 
-async function api(path: string, accessToken: string): Promise<unknown> {
+/**
+ * Read one resource of GitHub's API. The request is aborted at the timeout (the signal also
+ * ends a body that stops arriving); {@link withDeadline} guards a `fetch` that ignores it.
+ */
+function api(path: string, accessToken: string, timeoutMs: number): Promise<unknown> {
+  return withDeadline(read(path, accessToken, AbortSignal.timeout(timeoutMs)), timeoutMs)
+}
+
+async function read(path: string, accessToken: string, signal: AbortSignal): Promise<unknown> {
   let response: Response
   try {
     response = await globalThis.fetch(`${GITHUB_API}${path}`, {
+      signal,
       headers: {
         authorization: `Bearer ${accessToken}`,
         accept: 'application/vnd.github+json',
@@ -39,7 +54,8 @@ async function api(path: string, accessToken: string): Promise<unknown> {
   try {
     return await response.json()
   } catch {
-    throw new OAuthProviderError('invalid_profile')
+    // A body cut off by the timeout is the provider not answering, not a bad profile.
+    throw new OAuthProviderError(signal.aborted ? 'unavailable' : 'invalid_profile')
   }
 }
 
@@ -74,9 +90,14 @@ function primaryEmail(emails: unknown): Pick<OAuthProfile, 'email' | 'emailVerif
  * GitHub has no nonce and `arctic`'s client sends no PKCE challenge for it; the code is bound to
  * the attempt by the single-use `state` alone, and to this app by the client secret.
  *
+ * Every outbound call has a deadline (`options.timeoutMs`, ten seconds by default); a provider
+ * that does not answer in time is `unavailable`.
+ *
+ * @param options - The timeout of one outbound call.
  * @returns The adapter.
  */
-export function createGitHubProvider(): OAuthProvider {
+export function createGitHubProvider(options: ProviderOptions = {}): OAuthProvider {
+  const timeoutMs = options.timeoutMs ?? PROVIDER_TIMEOUT_MS
   return {
     authorizationUrl(credentials: OAuthCredentials, request: OAuthAuthorizationRequest): string {
       return client(credentials, request.redirectUri)
@@ -90,16 +111,17 @@ export function createGitHubProvider(): OAuthProvider {
     ): Promise<OAuthProfile> {
       let accessToken: string
       try {
-        const tokens = await client(credentials, exchange.redirectUri).validateAuthorizationCode(
-          exchange.code
+        const tokens = await withDeadline(
+          client(credentials, exchange.redirectUri).validateAuthorizationCode(exchange.code),
+          timeoutMs
         )
         accessToken = tokens.accessToken()
       } catch (error) {
         throw exchangeFailure(error)
       }
       const [user, emails] = await Promise.all([
-        api('/user', accessToken),
-        api('/user/emails', accessToken),
+        api('/user', accessToken, timeoutMs),
+        api('/user/emails', accessToken, timeoutMs),
       ])
       const { id, name } = (user ?? {}) as { id?: unknown; name?: unknown }
       if (typeof id !== 'number' || !Number.isSafeInteger(id)) {

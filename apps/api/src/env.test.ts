@@ -171,6 +171,36 @@ describe('OAUTH_MOCK_PROVIDER', () => {
     // Without it the same environment boots.
     expect(parseEnv({ ...source, ENVIRONMENT: tier }).OAUTH_MOCK_PROVIDER).toBe(false)
   })
+
+  // Review finding F5: `local` is a label an operator sets. The mock signs anyone in as any
+  // address, so it must also be impossible on an API that other machines are told to reach.
+  test.each([
+    'http://localhost:3003',
+    'http://127.0.0.1:3003',
+    'http://[::1]:3003',
+    'http://auth.localhost:3003',
+    'http://LOCALHOST:3003/',
+  ])('boots with it when PUBLIC_URL is the loopback address %p', (url) => {
+    expect(
+      parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'true', PUBLIC_URL: url }).OAUTH_MOCK_PROVIDER
+    ).toBe(true)
+  })
+
+  test.each([
+    'http://192.168.1.20:3003',
+    'http://0.0.0.0:3003',
+    'https://auth.example.com',
+    'http://localhost.example.com:3003',
+    'http://notlocalhost:3003',
+    'http://127.0.0.1.example.com:3003',
+    'http://my-laptop.local:3003',
+  ])('refuses to boot with it when PUBLIC_URL is %p, even in the local tier', (url) => {
+    expect(() => parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'true', PUBLIC_URL: url })).toThrow(
+      /OAUTH_MOCK_PROVIDER: is only allowed when PUBLIC_URL is a loopback address/
+    )
+    // Without the mock the same PUBLIC_URL boots.
+    expect(parseEnv({ ...base, PUBLIC_URL: url }).OAUTH_MOCK_PROVIDER).toBe(false)
+  })
 })
 
 describe('loadEnv', () => {

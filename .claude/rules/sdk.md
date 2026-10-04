@@ -41,9 +41,14 @@ paths:
   by the provider's and loaded afresh, so memory does not survive, and only the same tab may
   read it back. Like the link binding it is not a token and not the attempt's secret (which is
   deliberately lost with the navigation; the exchange returns a new one). It is removed on
-  **every** outcome of `handleOAuthCallback()`, including errors, and expires on the device's
-  clock. An OAuth ticket is read from the URL fragment and removed from the address before any
-  request; a code from the fragment is passed on only if the contract defines it.
+  every **definitive** outcome of `handleOAuthCallback()` (success, and any refusal by the
+  API), and expires on the device's clock. The one case it is kept: the exchange got no answer
+  (`network.failed`, `network.timeout`) or a `rate_limited`. Then the error is thrown, the
+  binding stays, and the ticket is held **in memory only** (a closure of the client, for 60
+  seconds; never storage, the address, an error, a log line or `toJSON`) so that a second
+  `handleOAuthCallback()` retries; sign-out, `signIn.discardOAuthCallback()` and a new round
+  trip forget it. An OAuth ticket is read from the URL fragment and removed from the address
+  before any request; a code from the fragment is passed on only if the contract defines it.
   `redirectUrl` must be on the page's origin (`link.cross_origin`).
 - An emailed link leads to a page on the **same origin** as the page that asked (the binding is
   in that origin's storage); `prepareFirstFactor` refuses another origin with

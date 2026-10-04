@@ -49,6 +49,9 @@ else. Adapters are stateless; credentials are passed per call.
 - **Native sign-in** (Phase 2: Google and Apple hand an app an ID token) is a second port
   method, `verifyIdToken`, over the verifier the OIDC adapters already share
   (`adapters/oauth/id-token.ts`). It is not declared yet.
+- **Every outbound call has a deadline** of ten seconds (`PROVIDER_TIMEOUT_MS`): the code
+  exchange, the key-set fetch and GitHub's two profile reads. A provider that does not answer
+  in time is `unavailable`, like one that cannot be reached. See "Review decisions" (F6).
 - **No provider token is stored.** Access and ID tokens are used inside one adapter call and
   dropped. There is no column for one. Tula signs users in with a provider; it does not call
   provider APIs for them.
@@ -76,9 +79,11 @@ logged or audited.
   `GET /v1/client/config` lists the providers in `signIn.oauth`. **"At least one sign-in method"
   now counts providers.** The settings document no longer refuses "every method off" in its
   schema (providers are not part of the document); `Settings.replace` refuses it unless a
-  provider is enabled, and the provider routes refuse disabling or removing the last one. The
-  two checks are not one transaction; a concurrent pair could leave an environment with no
-  method, which locks nobody out for good (an administrator re-enables one).
+  provider is enabled, and the provider routes refuse disabling or removing the last one.
+  The rule spans two stores written by different routes, so **both writes take one
+  per-environment lock** (`deps.environmentLock`, scope `sign_in_methods`) and make their check
+  inside it, reading the settings past the cache and the provider rows from the store: neither
+  decides on a snapshot the other is about to change. See "Review decisions" (F3).
 
 ### The flow
 
@@ -131,6 +136,12 @@ POST /v1/client/sign-ins/oauth/exchange { ticket, attemptId, binding } → the n
 | A user has the address, verified on their Tula account | The identity is connected to them (`user.identity_linked`, `method: auto`, the owner is emailed) and they sign in. A second factor still applies. |
 | A user has the address, **unverified** on their Tula account | `oauth.account_exists`. Nothing is connected. |
 
+**An address is compared as it was written.** `parseEmail` validates a provider's address
+before any case folding and accepts printable ASCII only (an IDN domain in its punycode form):
+a look-alike such as U+212A KELVIN SIGN, which lowercases to `k`, is `oauth.email_missing` and
+is never looked up, linked or created under the ASCII address it resembles. See "Review
+decisions" (F1).
+
 An unverified Tula account may have been created by someone who does not own the address,
 precisely to be linked into later; that is why both sides must have verified it.
 `oauth.account_exists` tells the caller an account exists. **That is acceptable here and
@@ -167,8 +178,11 @@ client id and redirect URI, expiring in a minute, and exchanged only with the ma
 verifier and nonce. The real callback, ticket, exchange and linking code run behind it in the
 browser tests, the conformance scenarios and local development.
 
-Guards: `env.ts` refuses to boot with the variable in any tier but `local` (including `dev`);
-the container checks the tier again; the routes are mounted only then, and each handler checks
+Guards: `env.ts` refuses to boot with the variable in any tier but `local` (including `dev`),
+**and with a `PUBLIC_URL` whose host is not loopback** (`localhost`, `127.0.0.1`, `[::1]`, a
+`*.localhost` name): the tier is a label an operator types, and an API that tells other machines
+where to reach it is not a developer's own machine. The container checks the tier again and
+**logs a warning at every boot** while the mock is on; the routes are mounted only then, and each handler checks
 once more; the consent page redirects only to this API's own callback; it is not in the
 OpenAPI document. A standalone mock OIDC server pointed at through an issuer override was
 considered: it would exercise the Google adapter's verifier too, but needs a second process
@@ -183,11 +197,18 @@ production code. The adapters' verifiers are covered by unit tests with local ke
   `different_browser`, `error` (a contract code) or `none`; `user.identities.{list,link,unlink}`.
   **The binding is kept in `sessionStorage`** (`tula.oauth.<attempt id>`): the page is replaced
   by the provider's, so memory does not survive, and the same tab must read it back. It is not
-  a token and not the attempt's secret. It is removed on every outcome and expires on the
-  device's clock. `redirectUrl` must be on the page's origin (`link.cross_origin`).
+  a token and not the attempt's secret. It is removed when the exchange has a **definitive
+  answer** (success, or any refusal by the API) and expires on the device's clock. When the
+  exchange gets no answer (`network.failed`, `network.timeout`) or a `rate_limited`, the error
+  is thrown and the round trip is kept: the binding stays, the ticket is held **in memory only**
+  (a closure of the client; never storage, the address, an error or `toJSON`) for 60 seconds,
+  and calling `handleOAuthCallback()` again retries. `signIn.discardOAuthCallback()`, a
+  sign-out and a new round trip forget it. `isRetryableOAuthError` tells the two kinds of
+  failure apart. `redirectUrl` must be on the page's origin (`link.cross_origin`).
 - `@tula/react`: "Continue with …" buttons on `<SignIn>` and `<SignUp>` for the providers
   `/v1/client/config` lists (neutral buttons with inline marks, no icon dependency),
-  `<OAuthCallback>` / `useOAuthCallback()`, and "Connected accounts" in `<UserProfile>`.
+  `<OAuthCallback>` / `useOAuthCallback()` (with "Try again" / `retry()` after a request that
+  got no answer), and "Connected accounts" in `<UserProfile>`.
 
 ## Consequences
 
@@ -205,6 +226,20 @@ production code. The adapters' verifiers are covered by unit tests with local ke
 - As with an emailed link (ADR 0024), the browser keeps the landing page's first URL, ticket
   included, in its Navigation Timing entry (observed in Chromium) although the address bar and
   history are cleaned. That copy is of a ticket already spent, useless without the binding.
+- **Migration `0010_oauth` adds a unique key on `identities (user_id, provider)`** and fails
+  on a database that already holds two identities of one provider for one user. No released
+  version could create such rows (before this step the only provider was `email`, one per
+  user), but an operator who wrote to the table by hand checks first, as the owner:
+  `select user_id, provider, count(*) from tula.identities group by 1, 2 having count(*) > 1;`
+  and removes the extra rows before migrating (`docs/self-host.md`).
+- **Switching a method or provider off is not instant everywhere.** Settings are cached per
+  instance (5 seconds with Redis, 30 without; ADR 0018), so another instance may go on
+  offering a sign-in method for that long, and `Settings.requireMethod` checks every step
+  against the same cache. Provider rows are read without a cache at every start and callback,
+  but a round trip already at the provider's consent page ends at the callback's check. The
+  "at least one sign-in method" rule does not depend on the cache (it reads past it, under the
+  lock). Accepted: nothing whose safety depends on taking effect everywhere at once may be put
+  behind either switch.
 - Not here: native ID-token exchange (Phase 2), more providers, a generic OIDC provider,
   provider API access on a user's behalf, a "sign-ups allowed" switch, and unlinking by an
   administrator.
@@ -212,3 +247,39 @@ production code. The adapters' verifiers are covered by unit tests with local ke
   from 32.7 kB to 38 kB (budget 35 → 39 kB).
 - The conformance format gained an `oauth` step; three scenarios (25 to 27) and their SDK
   journeys were added. A live run is about 95 seconds longer (a 61-second and a 31-second wait).
+
+## Review decisions
+
+Findings of the review of this step, and what was decided.
+
+- **F1, look-alike addresses.** `parseEmail` validated the lowercased address, and
+  `toLowerCase()` maps U+212A (KELVIN SIGN) to `k`: a provider address spelled with it equalled
+  an ASCII mailbox and could be linked to its owner's account. Now the address is validated as
+  written, before folding, and must be printable ASCII in both parts (punycode for an IDN
+  domain); `normalizeEmail` folds `A` to `Z` only. Internationalised local parts were never
+  accepted and still are not; this is stated instead of implied. Every caller (sign-up, reset,
+  admin user creation, the mock consent page, `OAuth.resolveAccount`) refuses such an address;
+  a sign-in identifier containing one simply matches no account.
+- **F3, the last sign-in method under concurrent writes.** A new port, `EnvironmentLock`
+  (`runExclusive(environmentId, scope, fn)`), with a memory adapter and a Postgres one on a
+  session-level advisory lock, and one behaviour suite run by both and against two real
+  sessions. Unlike `JobLock` it **waits**: the second administrator request must be decided
+  against what the first wrote. It waits by retrying `pg_try_advisory_lock` (25 ms apart, up to
+  5 s, then `service.unavailable` with nothing written) rather than blocking in
+  `pg_advisory_lock`, because blocked waiters would each sit on a pool connection and could
+  leave the holder without one for its own write. The key is Tula's namespace and a hash of
+  scope and environment, kept above the fixed job ids; two environments sharing a key only take
+  turns. `Settings.replace` and `OAuth.update` / `OAuth.remove` do their read, check and write
+  inside it. The store's own revision check stays as the second line. The lock is not
+  reentrant.
+- **F4, a sign-in lost to a dropped request.** See SDKs above. A retry after a request that did
+  reach the API finds the ticket spent (`oauth.ticket_invalid`), which is a definitive answer:
+  the user starts again. The ticket is held no longer than the API honours it.
+- **F5, the mock provider.** Loud (a warning at every boot) and loopback-only (`PUBLIC_URL`),
+  on top of the tier check.
+- **F6, provider timeouts.** `AbortSignal.timeout` on GitHub's REST reads; `timeoutDuration` on
+  `jose`'s key-set fetch; and a timer raced against every call, which is the only way to bound
+  `arctic`'s code exchange (it takes neither a `fetch` nor a signal: the request is abandoned,
+  not cancelled, and nothing of a late answer is read). A timeout is `unavailable`, logged by
+  kind only. The callback consumes `state` before the exchange, so a timed-out attempt is left
+  exactly as after any failed exchange: spent, with no ticket, no account and no session.

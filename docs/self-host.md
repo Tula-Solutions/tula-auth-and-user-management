@@ -108,7 +108,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. The **default** password policy: it applies to an environment until that environment saves its own settings (below). |
 | `CORS_ORIGINS` | | none | Comma-separated browser origins. Allowed for `/v1/admin/*`, and the **default** allowed origins of an environment until it saves its own settings (below). |
 | `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. |
-| `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local`. |
+| `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
 | `REDIS_URL` | in `staging` and `prod` | none | Redis (or Valkey) shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
 
@@ -262,7 +262,13 @@ rest of it: a `PUT` replaces the whole document):
 - An address with no account that asks to sign in by email is sent a short notice instead of a
   code, so the screens look the same for every address.
 
-**Upgrading.** Signing in by email needs no migration. Migration `0008` adds the attempt secret. Sign-ups, sign-ins and resets that are
+**Upgrading.** Migration `0010` (OAuth) adds a unique key on `identities (user_id, provider)` and stops with an
+error if a user already has two identities of one provider. Tula itself never created such
+rows; if the table was ever written by hand, check first as the owner and remove the extras:
+`select user_id, provider, count(*) from tula.identities group by 1, 2 having count(*) > 1;`
+(no rows means the migration will apply). Switching a sign-in method or an OAuth provider off
+takes up to 5 seconds to reach every instance with Redis and up to 30 without: settings are
+cached per instance. Signing in by email needs no migration. Migration `0008` adds the attempt secret. Sign-ups, sign-ins and resets that are
 in flight while you upgrade (they live ten minutes) cannot be continued afterwards; the user
 starts again.
 

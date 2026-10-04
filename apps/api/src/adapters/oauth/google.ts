@@ -12,6 +12,9 @@ import {
   emailClaims,
   exchangeFailure,
   idTokenOf,
+  PROVIDER_TIMEOUT_MS,
+  type ProviderOptions,
+  withDeadline,
 } from './id-token'
 
 /** What is asked of Google: who the user is and their email address. Nothing else. */
@@ -35,10 +38,15 @@ function client(credentials: OAuthCredentials, redirectUri: string): Google {
  * the token's `sub`, the email its `email`, and `emailVerified` its `email_verified`. Google's
  * access token is dropped as soon as the exchange returns.
  *
+ * Every outbound call has a deadline (`options.timeoutMs`, ten seconds by default); a provider
+ * that does not answer in time is `unavailable`.
+ *
+ * @param options - The timeout of one outbound call.
  * @returns The adapter.
  */
-export function createGoogleProvider(): OAuthProvider {
-  const verify = createIdTokenVerifier(GOOGLE_ID_TOKENS)
+export function createGoogleProvider(options: ProviderOptions = {}): OAuthProvider {
+  const timeoutMs = options.timeoutMs ?? PROVIDER_TIMEOUT_MS
+  const verify = createIdTokenVerifier(GOOGLE_ID_TOKENS, { timeoutMs })
   return {
     authorizationUrl(credentials: OAuthCredentials, request: OAuthAuthorizationRequest): string {
       const url = client(credentials, request.redirectUri).createAuthorizationURL(
@@ -57,9 +65,12 @@ export function createGoogleProvider(): OAuthProvider {
       let idToken: string
       try {
         idToken = idTokenOf(
-          await client(credentials, exchange.redirectUri).validateAuthorizationCode(
-            exchange.code,
-            exchange.codeVerifier
+          await withDeadline(
+            client(credentials, exchange.redirectUri).validateAuthorizationCode(
+              exchange.code,
+              exchange.codeVerifier
+            ),
+            timeoutMs
           )
         )
       } catch (error) {

@@ -100,6 +100,22 @@ const fields = z.object({
   ),
 })
 
+/** Host names that only ever mean this machine. */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+/**
+ * Whether a URL's host is this machine: `localhost`, `127.0.0.1`, `[::1]` or a name under
+ * `.localhost` (RFC 6761). Compared on the parsed host, so `localhost.example.com` and
+ * `127.0.0.1.example.com` are not loopback. `0.0.0.0` and LAN addresses are not either.
+ *
+ * @param url - An absolute URL.
+ * @returns `true` when its host is loopback.
+ */
+export function isLoopbackUrl(url: string): boolean {
+  const host = new URL(url).hostname.toLowerCase()
+  return LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost')
+}
+
 const schema = fields.superRefine((env, ctx) => {
   if (env.OAUTH_MOCK_PROVIDER && env.ENVIRONMENT !== 'local') {
     // Not a "live tiers" rule: the mock provider signs anyone in as any address they type, so
@@ -108,6 +124,16 @@ const schema = fields.superRefine((env, ctx) => {
       code: 'custom',
       path: ['OAUTH_MOCK_PROVIDER'],
       message: `is only allowed with ENVIRONMENT=local, not ${env.ENVIRONMENT}: the mock provider signs in anyone as any address`,
+    })
+  }
+  if (env.OAUTH_MOCK_PROVIDER && !isLoopbackUrl(env.PUBLIC_URL)) {
+    // The tier is a label an operator types. An API that tells other machines where to reach it
+    // is not a developer's own machine, whatever the label says.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['OAUTH_MOCK_PROVIDER'],
+      message:
+        'is only allowed when PUBLIC_URL is a loopback address (localhost, 127.0.0.1, [::1] or a *.localhost name): the mock provider signs in anyone as any address',
     })
   }
   if (!LIVE_TIERS.has(env.ENVIRONMENT)) {

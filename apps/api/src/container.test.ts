@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import { HibpBreachChecker } from '~/adapters/breach/hibp'
 import { offlineBreachChecker } from '~/adapters/breach/offline'
@@ -12,6 +12,7 @@ import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
 import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { createContainer } from '~/container'
 import { parseEnv } from '~/env'
+import * as logger from '~/lib/logger'
 
 const base = {
   ENVIRONMENT: 'dev',
@@ -72,5 +73,29 @@ describe('createContainer', () => {
     expect(deps.revokedSessions).toBeInstanceOf(RedisRevokedSessions)
     expect(deps.probes.map((probe) => probe.name)).toEqual(['database', 'redis'])
     await close()
+  })
+})
+
+describe('the mock OAuth provider', () => {
+  // Review finding F5: nobody should be able to run with the mock on and not know.
+  test('says loudly at boot that it is on, and says nothing when it is off', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    try {
+      const local = { ...base, ENVIRONMENT: 'local' }
+      const off = createContainer(parseEnv(local))
+      expect(off.deps.config.oauthMock).toBe(false)
+      expect(warn).not.toHaveBeenCalled()
+      await off.close()
+
+      const on = createContainer(parseEnv({ ...local, OAUTH_MOCK_PROVIDER: 'true' }))
+      expect(on.deps.config.oauthMock).toBe(true)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(
+        /OAUTH_MOCK_PROVIDER is on.*never.*outside local development/i
+      )
+      await on.close()
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

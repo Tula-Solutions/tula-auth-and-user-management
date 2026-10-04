@@ -14,6 +14,9 @@ import {
   emailClaims,
   exchangeFailure,
   idTokenOf,
+  PROVIDER_TIMEOUT_MS,
+  type ProviderOptions,
+  withDeadline,
 } from './id-token'
 
 /** What is asked of Apple. Asking for either makes Apple answer with a form post. */
@@ -72,10 +75,15 @@ function postedName(user: string | undefined): Pick<OAuthProfile, 'givenName' | 
  * A private relay address (`…@privaterelay.appleid.com`) is a real, deliverable address and is
  * treated like any other. `email_verified` may be the string `"true"`.
  *
+ * Every outbound call has a deadline (`options.timeoutMs`, ten seconds by default); a provider
+ * that does not answer in time is `unavailable`.
+ *
+ * @param options - The timeout of one outbound call.
  * @returns The adapter.
  */
-export function createAppleProvider(): OAuthProvider {
-  const verify = createIdTokenVerifier(APPLE_ID_TOKENS)
+export function createAppleProvider(options: ProviderOptions = {}): OAuthProvider {
+  const timeoutMs = options.timeoutMs ?? PROVIDER_TIMEOUT_MS
+  const verify = createIdTokenVerifier(APPLE_ID_TOKENS, { timeoutMs })
   return {
     authorizationUrl(credentials: OAuthCredentials, request: OAuthAuthorizationRequest): string {
       const url = client(credentials, request.redirectUri).createAuthorizationURL(
@@ -94,7 +102,10 @@ export function createAppleProvider(): OAuthProvider {
       let idToken: string
       try {
         idToken = idTokenOf(
-          await client(credentials, exchange.redirectUri).validateAuthorizationCode(exchange.code)
+          await withDeadline(
+            client(credentials, exchange.redirectUri).validateAuthorizationCode(exchange.code),
+            timeoutMs
+          )
         )
       } catch (error) {
         throw exchangeFailure(error)

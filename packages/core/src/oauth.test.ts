@@ -5,6 +5,7 @@ import {
   createOAuthStore,
   OAUTH_BINDING_TTL_MS,
   OAUTH_STORAGE_PREFIX,
+  OAUTH_TICKET_HOLD_MS,
   readOAuthFragment,
 } from './oauth'
 import {
@@ -482,20 +483,140 @@ describe('signIn.handleOAuthCallback', () => {
     }
   )
 
-  test('a request that got no answer, or a rate limit, is thrown; the binding is gone with the ticket', async () => {
+  // Review finding F4: the binding used to be removed before the exchange, so a request that
+  // got no answer (or a 429) left the user with a spent round trip and no way to retry.
+  const signedIn = (shared: Browser) =>
+    json(
+      200,
+      attempt(
+        shared,
+        { status: 'complete', userId: TEST_USER.id, sessionId: 'session_1' },
+        { session: sessionTokens('one') }
+      )
+    )
+  const dropped = () => {
+    throw new TypeError('fetch failed')
+  }
+
+  test.each([
+    ['a request that got no answer', dropped, 'network.failed'],
+    ['a rate limit', () => failure(429, 'rate_limited'), 'rate_limited'],
+  ] as const)(
+    '%s is thrown and can be retried: the next call exchanges the held ticket',
+    async (_name, answer, code) => {
+      const shared = browser()
+      const { landing } = await roundTrip(shared)
+      shared.api.on(EXCHANGE, answer)
+      const error = await caught(landing.tula.signIn.handleOAuthCallback())
+      expect(error.code).toBe(code)
+      // The address was cleaned before the request, and stays clean.
+      expect(landing.page.current).toBe(APP)
+      // The binding is still there for the retry; the ticket is in memory only.
+      expect(shared.storage.entries.has(KEY)).toBe(true)
+      expect(JSON.stringify([...shared.storage.entries])).not.toContain(TICKET)
+      expect(JSON.stringify(error)).not.toContain(TICKET)
+      expect(`${error.message} ${error.stack}`).not.toContain(TICKET)
+      expect(JSON.stringify(landing.tula)).not.toContain(TICKET)
+      expect(Bun.inspect(landing.tula, { depth: 8 })).not.toContain(TICKET)
+
+      shared.api.on(EXCHANGE, () => signedIn(shared))
+      const outcome = await landing.tula.signIn.handleOAuthCallback()
+      expect(outcome.status).toBe('complete')
+      expect(landing.tula.state.status).toBe('signed-in')
+      const sent = shared.api.calls(EXCHANGE)
+      expect(sent).toHaveLength(2)
+      expect(sent[1]?.body).toEqual({ ticket: TICKET, attemptId: ATTEMPT, binding: BINDING })
+      expect(shared.api.requests.every((request) => !request.path.includes(TICKET))).toBe(true)
+      // Success removes both: nothing in storage, and a third call has nothing to send.
+      expect(shared.storage.entries.size).toBe(0)
+      expect(await landing.tula.signIn.handleOAuthCallback()).toEqual({ status: 'none' })
+      expect(shared.api.calls(EXCHANGE)).toHaveLength(2)
+    }
+  )
+
+  test('a definitive refusal on the retry clears the binding and the held ticket', async () => {
     const shared = browser()
     const { landing } = await roundTrip(shared)
-    shared.api.on(EXCHANGE, () => {
-      throw new TypeError('fetch failed')
+    shared.api.on(EXCHANGE, dropped)
+    await caught(landing.tula.signIn.handleOAuthCallback())
+    // The first request did reach the server: the ticket is spent.
+    shared.api.on(EXCHANGE, () => failure(410, 'oauth.ticket_invalid'))
+    expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
+      status: 'error',
+      code: 'oauth.ticket_invalid',
     })
-    expect((await caught(landing.tula.signIn.handleOAuthCallback())).code).toBe('network.failed')
     expect(shared.storage.entries.size).toBe(0)
+    expect(await landing.tula.signIn.handleOAuthCallback()).toEqual({ status: 'none' })
+    expect(shared.api.calls(EXCHANGE)).toHaveLength(2)
+  })
 
-    const again = await roundTrip(shared)
-    shared.api.on(EXCHANGE, () => failure(429, 'rate_limited'))
-    expect((await caught(again.landing.tula.signIn.handleOAuthCallback())).code).toBe(
-      'rate_limited'
-    )
+  test('an unusable 200 is definitive too: nothing is kept for a retry', async () => {
+    const shared = browser()
+    const { landing } = await roundTrip(shared)
+    shared.api.on(EXCHANGE, () => json(200, { nothing: 'useful' }))
+    expect((await caught(landing.tula.signIn.handleOAuthCallback())).code).toBe('response.invalid')
+    expect(shared.storage.entries.size).toBe(0)
+    expect(await landing.tula.signIn.handleOAuthCallback()).toEqual({ status: 'none' })
+  })
+
+  test('signing out, discarding, or starting another round trip forgets the held ticket', async () => {
+    for (const forget of ['signOut', 'discard', 'restart'] as const) {
+      const shared = browser()
+      shared.api.on('POST /v1/client/sessions/sign-out', () => json(204, null))
+      const { landing } = await roundTrip(shared)
+      shared.api.on(EXCHANGE, dropped)
+      await caught(landing.tula.signIn.handleOAuthCallback())
+      expect(shared.storage.entries.has(KEY)).toBe(true)
+
+      if (forget === 'signOut') {
+        await landing.tula.session.signOut()
+      } else if (forget === 'discard') {
+        landing.tula.signIn.discardOAuthCallback()
+      } else {
+        await landing.tula.signIn.withOAuth({
+          provider: 'google',
+          redirectUrl: APP,
+          navigate: false,
+        })
+      }
+      shared.api.on(EXCHANGE, () => signedIn(shared))
+      expect(await landing.tula.signIn.handleOAuthCallback()).toEqual({ status: 'none' })
+      expect(shared.api.calls(EXCHANGE)).toHaveLength(1)
+      if (forget !== 'restart') {
+        expect(shared.storage.entries.size).toBe(0)
+      }
+    }
+  })
+
+  test('a held ticket is not retried once it must have expired', async () => {
+    const shared = browser()
+    const { landing } = await roundTrip(shared)
+    shared.api.on(EXCHANGE, dropped)
+    await caught(landing.tula.signIn.handleOAuthCallback())
+    shared.clock.advance(OAUTH_TICKET_HOLD_MS + 1)
+    shared.api.on(EXCHANGE, () => signedIn(shared))
+    expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
+      status: 'error',
+      code: 'oauth.ticket_invalid',
+    })
+    expect(shared.api.calls(EXCHANGE)).toHaveLength(1)
+    expect(shared.storage.entries.size).toBe(0)
+    expect(await landing.tula.signIn.handleOAuthCallback()).toEqual({ status: 'none' })
+  })
+
+  test('a new answer in the address replaces a held ticket', async () => {
+    const shared = browser()
+    const { landing } = await roundTrip(shared)
+    shared.api.on(EXCHANGE, dropped)
+    await caught(landing.tula.signIn.handleOAuthCallback())
+    landing.page.current = `${APP}#tula_error=oauth.access_denied&tula_attempt=${ATTEMPT}`
+    expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
+      status: 'error',
+      code: 'oauth.access_denied',
+    })
+    expect(shared.storage.entries.size).toBe(0)
+    expect(await landing.tula.signIn.handleOAuthCallback()).toEqual({ status: 'none' })
+    expect(shared.api.calls(EXCHANGE)).toHaveLength(1)
   })
 
   test('an answer that is not an attempt signs nobody in', async () => {

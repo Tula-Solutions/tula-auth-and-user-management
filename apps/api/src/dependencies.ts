@@ -6,6 +6,7 @@ import type { ActivityLog } from '~/ports/activity-log'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { BreachChecker } from '~/ports/breach-checker'
 import type { Clock } from '~/ports/clock'
+import type { EnvironmentLock } from '~/ports/environment-lock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 import type { FactorStore } from '~/ports/factor-store'
@@ -88,6 +89,11 @@ export interface Deps {
   keyedHash: KeyedHash
   /** Lets one API instance at a time run a background job (retention). */
   jobLock: JobLock
+  /**
+   * Makes writes that share an invariant across stores take turns, per environment (the
+   * settings document and the OAuth providers: "at least one sign-in method").
+   */
+  environmentLock: EnvironmentLock
   /** Dependencies checked by `/v1/ready`. */
   probes: readonly HealthProbe[]
 }

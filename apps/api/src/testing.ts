@@ -3,6 +3,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
+import { MemoryEnvironmentLock } from '~/adapters/memory/environment-lock'
 import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-settings'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { MemoryFactorStore } from '~/adapters/memory/factors'
@@ -48,6 +49,7 @@ export interface TestDeps extends Deps {
   lockout: MemoryLockout
   breachChecker: MemoryBreachChecker
   jobLock: MemoryJobLock
+  environmentLock: MemoryEnvironmentLock
 }
 
 /** Master key for test secret boxes. Never use outside tests. */
@@ -101,6 +103,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     secretBox: createSecretBox(TEST_MASTER_KEY),
     keyedHash: createKeyedHash(TEST_MASTER_KEY),
     jobLock: new MemoryJobLock(),
+    environmentLock: new MemoryEnvironmentLock(),
     probes: [],
     ...overrides,
     clock,

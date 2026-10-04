@@ -4,7 +4,13 @@ import { FixedClock } from '~/adapters/memory/clock'
 import { createAppleProvider } from '~/adapters/oauth/apple'
 import { createGitHubProvider } from '~/adapters/oauth/github'
 import { createGoogleProvider } from '~/adapters/oauth/google'
-import { displayName, emailClaims, exchangeFailure } from '~/adapters/oauth/id-token'
+import {
+  displayName,
+  emailClaims,
+  exchangeFailure,
+  PROVIDER_TIMEOUT_MS,
+  withDeadline,
+} from '~/adapters/oauth/id-token'
 import { createMockProvider, issueMockCode, type MockGrant, s256 } from '~/adapters/oauth/mock'
 import { createSecretBox } from '~/lib/secret-box'
 import { type OAuthFailure, OAuthProviderError } from '~/ports/oauth-provider'
@@ -622,6 +628,152 @@ describe('the mock provider', () => {
     expect(await failureOf(mock.exchange(credentials, { ...exchangeInput, code }))).toBe(
       'invalid_grant'
     )
+  })
+})
+
+// Review finding F6: no outbound provider call had a timeout, so a provider that accepted the
+// connection and never answered held the callback (and the user's browser) open for good.
+describe('a provider that never answers', () => {
+  /** A request that stays open: it settles only if the caller aborts it. */
+  const hang = () => () => new Promise<Response>(() => undefined)
+  const TIMEOUT = { timeoutMs: 40 }
+  const started = () => performance.now()
+  const within = (since: number) => expect(performance.now() - since).toBeLessThan(2000)
+
+  test('the default is ten seconds', () => {
+    expect(PROVIDER_TIMEOUT_MS).toBe(10_000)
+  })
+
+  test('Google: a token endpoint that hangs is unavailable after the timeout', async () => {
+    stubFetch({ 'https://oauth2.googleapis.com/token': hang() })
+    const since = started()
+    const adapter = createGoogleProvider(TIMEOUT)
+    expect(
+      await failureOf(
+        adapter.exchange({ clientId: CLIENT_ID, clientSecret: 'google-secret' }, exchangeInput)
+      )
+    ).toBe('unavailable')
+    within(since)
+  })
+
+  test('Google: a key set that hangs is unavailable, not an invalid token', async () => {
+    stubFetch({
+      'https://oauth2.googleapis.com/token': async () =>
+        jsonResponse({
+          access_token: 'ya29.access',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          id_token: await idToken(),
+        }),
+      'https://www.googleapis.com/oauth2/v3/certs': hang(),
+    })
+    const since = started()
+    expect(
+      await failureOf(
+        createGoogleProvider(TIMEOUT).exchange(
+          { clientId: CLIENT_ID, clientSecret: 'google-secret' },
+          exchangeInput
+        )
+      )
+    ).toBe('unavailable')
+    within(since)
+  })
+
+  test('Apple: a token endpoint that hangs is unavailable after the timeout', async () => {
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+      'sign',
+      'verify',
+    ])
+    const der = Buffer.from(await crypto.subtle.exportKey('pkcs8', pair.privateKey)).toString(
+      'base64'
+    )
+    stubFetch({ 'https://appleid.apple.com/auth/token': hang() })
+    const since = started()
+    expect(
+      await failureOf(
+        createAppleProvider(TIMEOUT).exchange(
+          {
+            clientId: CLIENT_ID,
+            teamId: 'TEAM123456',
+            keyId: 'KEY1234567',
+            privateKey: `-----BEGIN PRIVATE KEY-----\n${der}\n-----END PRIVATE KEY-----`,
+          },
+          exchangeInput
+        )
+      )
+    ).toBe('unavailable')
+    within(since)
+  })
+
+  test('GitHub: a token endpoint that hangs is unavailable after the timeout', async () => {
+    stubFetch({ 'https://github.com/login/oauth/access_token': hang() })
+    const since = started()
+    expect(
+      await failureOf(
+        createGitHubProvider(TIMEOUT).exchange(
+          { clientId: 'Iv1.github', clientSecret: 'github-secret' },
+          exchangeInput
+        )
+      )
+    ).toBe('unavailable')
+    within(since)
+  })
+
+  test.each(['https://api.github.com/user/emails', 'https://api.github.com/user'])(
+    'GitHub: %s hanging is unavailable, and the request is given an abort signal',
+    async (hanging) => {
+      const calls = stubFetch({
+        'https://github.com/login/oauth/access_token': () =>
+          jsonResponse({ access_token: 'gho_access', token_type: 'bearer', scope: 'read:user' }),
+        'https://api.github.com/user/emails': () =>
+          jsonResponse([{ email: 'maya@northline.app', primary: true, verified: true }]),
+        'https://api.github.com/user': () => jsonResponse({ id: 583231, name: 'Maya' }),
+        [hanging]: hang(),
+      })
+      const since = started()
+      expect(
+        await failureOf(
+          createGitHubProvider(TIMEOUT).exchange(
+            { clientId: 'Iv1.github', clientSecret: 'github-secret' },
+            exchangeInput
+          )
+        )
+      ).toBe('unavailable')
+      within(since)
+      const api = calls.filter((call) => call.url.startsWith('https://api.github.com/'))
+      expect(api).toHaveLength(2)
+      for (const call of api) {
+        expect(call.init?.signal).toBeInstanceOf(AbortSignal)
+      }
+    }
+  )
+
+  test('a body that never finishes is unavailable too', async () => {
+    stubFetch({
+      'https://github.com/login/oauth/access_token': () =>
+        jsonResponse({ access_token: 'gho_access', token_type: 'bearer', scope: 'read:user' }),
+      'https://api.github.com/user/emails': () =>
+        jsonResponse([{ email: 'maya@northline.app', primary: true, verified: true }]),
+      // Headers arrive, the body never does.
+      'https://api.github.com/user': () =>
+        new Response(new ReadableStream({ start: () => undefined }), { status: 200 }),
+    })
+    const since = started()
+    expect(
+      await failureOf(
+        createGitHubProvider(TIMEOUT).exchange(
+          { clientId: 'Iv1.github', clientSecret: 'github-secret' },
+          exchangeInput
+        )
+      )
+    ).toBe('unavailable')
+    within(since)
+  })
+
+  test('withDeadline passes a result and a failure through, and leaves no timer behind', async () => {
+    expect(await withDeadline(Promise.resolve('ok'), 1000)).toBe('ok')
+    await expect(withDeadline(Promise.reject(new Error('boom')), 1000)).rejects.toThrow('boom')
+    expect(await failureOf(withDeadline(new Promise(() => undefined), 5))).toBe('unavailable')
   })
 })
 

@@ -488,6 +488,28 @@ describe('the provider callback', () => {
     }
   )
 
+  // Review finding F6: a provider call that times out surfaces as `unavailable`. The attempt
+  // must be left exactly as after any failed exchange: state spent, no ticket, no account.
+  test('a provider that timed out leaves the attempt spent and nothing half-done', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    const started = await start()
+    deps.oauth.google.failure = new OAuthProviderError('unavailable')
+    const timedOut = fragment(await callback('google', { state: started.state, code: 'c' }))
+    expect(timedOut).toMatchObject({ ticket: null, error: 'oauth.provider_error' })
+    expect(JSON.stringify(warn.mock.calls)).toContain('unavailable')
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(started.state)
+    // The provider recovers; the same state is not given a second exchange.
+    deps.oauth.google.failure = null
+    const replay = fragment(await callback('google', { state: started.state, code: 'c' }))
+    expect(replay).toMatchObject({ ticket: null, error: 'oauth.state_invalid' })
+    expect(deps.oauth.google.exchanges).toHaveLength(1)
+    expect(await deps.users.findByEmail(TEST_TENANT.environmentId, EMAIL)).toBeNull()
+    expect(actions()).not.toContain('session.created')
+    warn.mockRestore()
+    // A fresh attempt works.
+    expect((await exchange(await roundTrip())).status).toBe(200)
+  })
+
   test('a callback without a code is a provider error', async () => {
     const started = await start()
     expect(fragment(await callback('google', { state: started.state })).error).toBe(
@@ -1213,6 +1235,129 @@ describe('admin: provider credentials', () => {
         { field: 'signIn.methods', message: 'at least one sign-in method must stay enabled' },
       ],
     })
+  })
+})
+
+// Review finding F3: each side checked "at least one sign-in method" against a snapshot, so a
+// settings write and a provider write made at the same moment could both pass and leave the
+// environment with no way in. Both now take the environment's lock and check inside it.
+describe('admin: the last sign-in method under concurrent writes', () => {
+  const ALL_OFF = {
+    signIn: { methods: { password: { enabled: false } } },
+    urls: { allowedRedirectUrls: [REDIRECT] },
+  }
+
+  /** Hold a store write until `open` is called, so the other request runs in between. */
+  function gated<T extends object, K extends keyof T>(store: T, method: K) {
+    let open: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      open = resolve
+    })
+    let reached: () => void = () => undefined
+    const waiting = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const original = (store[method] as (...args: unknown[]) => Promise<unknown>).bind(store)
+    const spy = spyOn(store as Record<K, (...args: unknown[]) => Promise<unknown>>, method)
+    spy.mockImplementationOnce(async (...args: unknown[]) => {
+      reached()
+      await gate
+      return original(...args)
+    })
+    return { open, waiting, restore: () => spy.mockRestore() }
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 30))
+
+  async function wayIn() {
+    const { settings } = await deps.environmentSettings
+      .get(TEST_TENANT.environmentId)
+      .then((stored) => stored ?? { settings: null })
+    const methods = settings?.signIn.methods
+    const ownMethod =
+      settings === null || Object.values(methods ?? {}).some((method) => method.enabled)
+    const providers = await deps.oauthProviders.list(TEST_TENANT.environmentId)
+    return ownMethod || providers.some((provider) => provider.enabled)
+  }
+
+  test('settings switching every method off, racing the last provider being disabled: one is refused', async () => {
+    const etag = (await admin('GET', '/settings')).headers.get('etag') ?? '"0"'
+    const write = gated(deps.environmentSettings, 'replace')
+    const settings = admin('PUT', '/settings', ALL_OFF, { 'if-match': etag })
+    await write.waiting
+    // The settings request has passed its check (Google is enabled) and not yet written.
+    const disable = configure('google', { enabled: false })
+    await settle()
+    write.open()
+    const [first, second] = await Promise.all([settings, disable])
+    write.restore()
+
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(422)
+    expect(await json(second)).toMatchObject({ errors: [{ field: 'enabled' }] })
+    expect(await wayIn()).toBe(true)
+    expect((await deps.oauthProviders.find(TEST_TENANT.environmentId, 'google'))?.enabled).toBe(
+      true
+    )
+  })
+
+  test('the last provider being removed, racing settings that switch every method off: one is refused', async () => {
+    const etag = (await admin('GET', '/settings')).headers.get('etag') ?? '"0"'
+    const write = gated(deps.oauthProviders, 'delete')
+    const removal = admin('DELETE', '/oauth-providers/google')
+    await write.waiting
+    // The removal has passed its check (the password is on) and not yet written.
+    const settings = admin('PUT', '/settings', ALL_OFF, { 'if-match': etag })
+    await settle()
+    write.open()
+    const [first, second] = await Promise.all([removal, settings])
+    write.restore()
+
+    expect(first.status).toBe(204)
+    expect(second.status).toBe(422)
+    expect(await json(second)).toMatchObject({ errors: [{ field: 'signIn.methods' }] })
+    expect(await wayIn()).toBe(true)
+  })
+
+  test('the last provider being disabled, racing settings that switch every method off: one is refused', async () => {
+    const etag = (await admin('GET', '/settings')).headers.get('etag') ?? '"0"'
+    const write = gated(deps.oauthProviders, 'upsert')
+    const disable = configure('google', { enabled: false })
+    await write.waiting
+    const settings = admin('PUT', '/settings', ALL_OFF, { 'if-match': etag })
+    await settle()
+    write.open()
+    const [first, second] = await Promise.all([disable, settings])
+    write.restore()
+
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(422)
+    expect(await wayIn()).toBe(true)
+  })
+
+  test('two providers disabled at once where the settings have no method: one stays', async () => {
+    await configure('github')
+    await saveSettings(ALL_OFF)
+    const write = gated(deps.oauthProviders, 'upsert')
+    const google = configure('google', { enabled: false })
+    await write.waiting
+    const github = configure('github', { enabled: false })
+    await settle()
+    write.open()
+    const [first, second] = await Promise.all([google, github])
+    write.restore()
+
+    expect([first.status, second.status]).toEqual([200, 422])
+    expect(await wayIn()).toBe(true)
+  })
+
+  test('a write that fails releases the lock: the next one is decided normally', async () => {
+    const spy = spyOn(deps.oauthProviders, 'upsert').mockRejectedValueOnce(new Error('db down'))
+    const silenced = spyOn(logger, 'error').mockImplementation(() => {})
+    expect((await configure('google', { enabled: false })).status).toBe(500)
+    spy.mockRestore()
+    silenced.mockRestore()
+    expect((await configure('google', { enabled: false })).status).toBe(200)
   })
 })
 

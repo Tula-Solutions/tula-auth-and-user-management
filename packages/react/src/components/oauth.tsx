@@ -304,6 +304,10 @@ function CallbackScreens(props: OAuthCallbackProps) {
             : null
         }
       />
+      {result.canRetry ? (
+        // The request got no answer: the round trip is still open, so asking again can work.
+        <Button onClick={result.retry}>{t.oauth.tryAgain}</Button>
+      ) : null}
     </Card>
   )
 }

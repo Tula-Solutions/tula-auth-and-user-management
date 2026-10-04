@@ -20,6 +20,44 @@ export type Identity = Schemas['Identity']
  */
 export const OAUTH_BINDING_TTL_MS = 15 * 60_000
 
+/**
+ * How long a ticket whose exchange got no answer is held for another try, on the device's
+ * clock: as long as the API honours a ticket (60 seconds). After that a retry could only be
+ * refused, so the ticket is dropped instead.
+ */
+export const OAUTH_TICKET_HOLD_MS = 60_000
+
+/**
+ * The failures of an exchange that say nothing about the ticket: the request got no answer, or
+ * was turned away before the API looked at it. Everything else is the API's answer.
+ */
+const RETRYABLE: ReadonlySet<string> = new Set([
+  'network.failed',
+  'network.timeout',
+  'rate_limited',
+])
+
+/**
+ * Whether a failure thrown by `signIn.handleOAuthCallback()` left the round trip in place, so
+ * that calling it again retries the exchange: the request got no answer (`network.failed`,
+ * `network.timeout`) or was rate limited.
+ *
+ * @param error - What `handleOAuthCallback()` threw.
+ * @returns `true` when calling it again can still succeed.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await tula.signIn.handleOAuthCallback()
+ * } catch (error) {
+ *   if (isRetryableOAuthError(error)) showTryAgain()
+ * }
+ * ```
+ */
+export function isRetryableOAuthError(error: unknown): boolean {
+  return isTulaError(error) && RETRYABLE.has(error.code)
+}
+
 /** Prefix of the `sessionStorage` key an OAuth binding is kept under, followed by the attempt id. */
 export const OAUTH_STORAGE_PREFIX = 'tula.oauth.'
 
@@ -70,7 +108,8 @@ type Intent = 'sign_in' | 'link'
  * it only lets *this* browser exchange it. An attacker who learned it could do nothing without
  * the ticket, which lasts a minute and is delivered to this tab only.
  *
- * It is removed on every outcome of the round trip and expires on the device's own clock.
+ * It is removed when the round trip gets a definitive answer (success or a refusal), kept while
+ * an exchange that got no answer can still be retried, and expires on the device's own clock.
  */
 export interface OAuthStore {
   /** Whether a binding can be kept here at all. */
@@ -227,9 +266,60 @@ export function readOAuthFragment(url: string): OAuthFragment | null {
   }
 }
 
+/** A ticket whose exchange has not had a definitive answer yet. */
+export interface HeldOAuthTicket {
+  attemptId: string
+  ticket: string
+  /** When it stops being worth a retry, on the device's clock. */
+  until: number
+}
+
+/**
+ * Where a client keeps the ticket of an exchange that may be retried: **in memory only**, in a
+ * closure. Never in storage, a URL, an error or anything `JSON.stringify` or an inspector can
+ * reach from the client object.
+ */
+export interface OAuthTicketHolder {
+  /** The held ticket, or `null`. */
+  get(): HeldOAuthTicket | null
+  /** Hold a ticket, or forget it with `null`. */
+  set(held: HeldOAuthTicket | null): void
+}
+
+/**
+ * Build a ticket holder for one client.
+ *
+ * @returns The holder, empty.
+ */
+export function createOAuthTicketHolder(): OAuthTicketHolder {
+  let held: HeldOAuthTicket | null = null
+  return {
+    get: () => held,
+    set(next) {
+      held = next
+    },
+  }
+}
+
 /** What the OAuth calls are built from. */
 export interface OAuthContext extends FlowContext {
   oauth: OAuthStore
+  /** The ticket of an exchange that got no answer, for a retry. */
+  held: OAuthTicketHolder
+}
+
+/**
+ * Forget a round trip that is waiting for a retry: the held ticket and the binding kept for it.
+ * Called on sign-out, when another round trip starts, and when an app gives up on the callback.
+ *
+ * @param context - Storage and the ticket holder.
+ */
+export function discardOAuthCallback(context: Pick<OAuthContext, 'oauth' | 'held'>): void {
+  const held = context.held.get()
+  if (held) {
+    context.held.set(null)
+    context.oauth.remove(held.attemptId)
+  }
 }
 
 function isLinkStart(value: unknown): value is Schemas['IdentityLinkStart'] {
@@ -279,6 +369,8 @@ export async function startOAuth(
   intent: Intent
 ): Promise<{ url: string }> {
   const { environment, oauth, transport, session } = context
+  // A new round trip replaces one that was waiting for a retry.
+  discardOAuthCallback(context)
   if (!oauth.available()) {
     throw clientError('storage.failed', context.messages())
   }
@@ -348,52 +440,99 @@ function failed(code: string, messages: Messages): OAuthCallbackOutcome {
  *
  * Reads the ticket (or the error) from the URL fragment and **removes it from the address
  * before anything is sent**, so it is neither left in history nor visible to later scripts.
- * The ticket is posted, in a JSON body, with the binding this tab kept. What it kept is removed
- * whatever the outcome.
+ * The ticket is posted, in a JSON body, with the binding this tab kept.
  *
- * @param context - Transport, session, storage and the page.
+ * **What was kept is removed once the exchange has a definitive answer**: success, or any
+ * refusal by the API. When the request got no answer (`network.failed`, `network.timeout`) or
+ * was rate limited, the error is thrown and both the binding (in `sessionStorage`) and the
+ * ticket (in memory only, for {@link OAUTH_TICKET_HOLD_MS}) are kept: calling this again on the
+ * same client retries the exchange, although the address no longer holds the ticket.
+ *
+ * @param context - Transport, session, storage, the ticket holder and the page.
  * @returns What became of the round trip.
  * @throws TulaError when the API could not be reached (`network.failed`, `network.timeout`) or
- *   answered something unusable (`response.invalid`), or `rate_limited`.
+ *   answered `rate_limited` (call again to retry), or answered something unusable
+ *   (`response.invalid`, not retryable).
  */
 export async function handleOAuthCallback(context: OAuthContext): Promise<OAuthCallbackOutcome> {
-  const { environment, oauth, transport, session } = context
+  const { environment, oauth, held, transport, session } = context
   const page = environment.page
-  const answer = page ? readOAuthFragment(page.url()) : null
-  if (!page || !answer) {
+  if (!page) {
     return { status: 'none' }
   }
-  try {
-    page.replaceUrl(answer.cleanUrl)
-  } catch {
-    // The address cannot be rewritten here (a sandboxed frame). The ticket is single use and
-    // about to be spent, so go on.
+  const arrived = readOAuthFragment(page.url())
+  let answer: HeldOAuthTicket
+  if (arrived) {
+    try {
+      page.replaceUrl(arrived.cleanUrl)
+    } catch {
+      // The address cannot be rewritten here (a sandboxed frame). The ticket is single use and
+      // about to be spent, so go on.
+    }
+    // What the address says now replaces a round trip that was waiting for a retry.
+    discardOAuthCallback(context)
+    if (arrived.error !== null || arrived.ticket === null) {
+      oauth.remove(arrived.attemptId)
+      return arrived.error !== null
+        ? failed(arrived.error, context.messages())
+        : { status: 'different_browser' }
+    }
+    answer = {
+      attemptId: arrived.attemptId,
+      ticket: arrived.ticket,
+      until: environment.now() + OAUTH_TICKET_HOLD_MS,
+    }
+  } else {
+    const waiting = held.get()
+    if (!waiting) {
+      return { status: 'none' }
+    }
+    if (waiting.until <= environment.now()) {
+      // The API no longer honours it: say so without asking.
+      discardOAuthCallback(context)
+      return failed('oauth.ticket_invalid', context.messages())
+    }
+    answer = waiting
   }
   const kept = oauth.read(answer.attemptId)
-  oauth.remove(answer.attemptId)
-  if (answer.error !== null) {
-    return failed(answer.error, context.messages())
+  /** The exchange has its answer: nothing is kept for another try. */
+  const settle = () => {
+    held.set(null)
+    oauth.remove(answer.attemptId)
   }
-  if (!kept || answer.ticket === null) {
+  if (!kept) {
     // Without the binding the exchange can only be refused: this browser did not start it.
+    settle()
     return { status: 'different_browser' }
   }
+  held.set(answer)
   const body = { ticket: answer.ticket, attemptId: answer.attemptId, binding: kept.binding }
   try {
+    let outcome: OAuthCallbackOutcome
     if (kept.intent === 'link') {
       const identity: unknown = await session.authorized('exchangeIdentityLinkTicket', { body })
       if (!isIdentity(identity)) {
         throw clientError('response.invalid', context.messages())
       }
-      return { status: 'linked', identity }
+      outcome = { status: 'linked', identity }
+    } else {
+      const attempt = await transport.call('exchangeOAuthTicket', { body })
+      const complete =
+        isRecord(attempt) && isRecord(attempt.step) && attempt.step.status === 'complete'
+      outcome = {
+        status: complete ? 'complete' : 'needs_step',
+        flow: await signInFlow(context, attempt),
+      }
     }
-    const attempt = await transport.call('exchangeOAuthTicket', { body })
-    if (isRecord(attempt) && isRecord(attempt.step) && attempt.step.status === 'complete') {
-      return { status: 'complete', flow: await signInFlow(context, attempt) }
-    }
-    return { status: 'needs_step', flow: await signInFlow(context, attempt) }
+    settle()
+    return outcome
   } catch (error) {
-    if (!isTulaError(error) || error.status === 0 || error.code === 'rate_limited') {
+    if (isRetryableOAuthError(error)) {
+      // No answer about the ticket: keep it and the binding, so the caller can try again.
+      throw error
+    }
+    settle()
+    if (!isTulaError(error) || error.status === 0) {
       throw error
     }
     if (error.code === 'oauth.different_browser') {
