@@ -427,7 +427,8 @@ describe('settings', () => {
     expect(dialog().textContent).toContain('managed by a config file')
     await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
     await screen.findByText('Settings saved')
-    expect(screen.getByRole('note').textContent).toContain('Drift:')
+    // The confirmation and the banner are drawn from different stores: wait for the banner.
+    await waitFor(() => expect(screen.getByRole('note').textContent).toContain('Drift:'))
   })
 
   test('general settings: a list entry is checked with the contract before it joins the list', async () => {

@@ -60,25 +60,41 @@ function goOffline(): () => void {
  * Hold back the answers to some requests (they are still received and recorded by the fake).
  *
  * @param slow - Which calls to hold.
- * @returns `release`: let the held answers through.
+ * @returns `held`: how many answers are being held. `release`: let them through; it resolves
+ *   once each has been handed to the code that asked and that code has had its turn, so what
+ *   a test checks next is checked after the answer, not after a pause.
  */
 function holdAnswers(slow: (path: string, headers: Headers, method: string) => boolean) {
   const answer = globalThis.fetch
-  let release: () => void = () => undefined
-  const held = new Promise<void>((resolve) => {
-    release = resolve
+  let open: () => void = () => undefined
+  const gate = new Promise<void>((resolve) => {
+    open = resolve
   })
+  const handedBack: Promise<void>[] = []
   globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const response = await answer(input, init)
     const path = new URL(String(input), 'http://localhost:3003').pathname
     // The request's `signal` is deliberately not honoured: the worst case is an answer that
     // arrives although nobody is waiting for it any more.
     if (slow(path, new Headers(init.headers), (init.method ?? 'GET').toUpperCase())) {
-      await held
+      const handed = Promise.withResolvers<void>()
+      handedBack.push(handed.promise)
+      await gate
+      queueMicrotask(handed.resolve)
     }
     return response
   }) as typeof fetch
-  return { release }
+  return {
+    held: () => handedBack.length,
+    async release() {
+      open()
+      await Promise.all(handedBack)
+      // The caller reads the answer and the query client tells its observers on a zero
+      // timer. Two turns of the timer queue come after both, however slow the machine.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    },
+  }
 }
 
 /** Put TanStack's default back for mutations: one started offline waits for the network. */
@@ -302,7 +318,7 @@ describe('an answer that arrives after the switch', () => {
           : { ...seeded, email: 'only-in-development@example.com' },
       ],
     }))
-    const { release } = holdAnswers(
+    const { release, held } = holdAnswers(
       (path, headers) => path === '/v1/admin/users' && headers.get(ENVIRONMENT) === IDS.development
     )
     const current = start(`${DEV_PATH}/users`, { api })
@@ -312,11 +328,9 @@ describe('an answer that arrives after the switch', () => {
     await screen.findByText('only-in-production@example.com')
 
     // Development's answer arrives now.
-    await act(async () => {
-      release()
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    })
-    expect(screen.queryByText('only-in-development@example.com')).toBeNull()
+    expect(held()).toBe(1)
+    await act(release)
+    expect(screen.queryAllByText('only-in-development@example.com').length).toBe(0)
     expect(screen.getAllByText('only-in-production@example.com').length).toBeGreaterThan(0)
     const asked = api.callsTo('GET', '/v1/admin/users').map((call) => call.headers.get(ENVIRONMENT))
     expect(asked).toEqual([IDS.development, IDS.production])
@@ -338,24 +352,26 @@ describe('an answer that arrives after the switch', () => {
 
     await switchToProduction(current, '/password-policy')
     await waitFor(() => expect(minimumLength()).toBe('14'))
-    await act(async () => {
-      release()
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    })
+    // The save is under way until its answer is let through, and over once it was acted on.
+    expect(current.queryClient.isMutating()).toBe(1)
+    await act(release)
+    await waitFor(() => expect(current.queryClient.isMutating()).toBe(0))
 
     // The save was development's and stays development's; production shows its own document.
     expect(puts.map((put) => put.environment)).toEqual([IDS.development])
     expect(minimumLength()).toBe('14')
     await screen.findByText('No unsaved changes.')
-    expect(screen.queryByText('Settings saved')).toBeNull()
+    expect(screen.queryAllByText('Settings saved').length).toBe(0)
     expect(documents[IDS.production]?.revision).toBe(3)
-    // Nothing of development's answer is in the cache production reads from.
+    // Nothing of development's answer is in the cache production's screen reads from (no key
+    // in it names an environment: the whole cache is looked at).
     const cached = JSON.stringify(
       current.queryClient
         .getQueryCache()
-        .findAll({ predicate: (query) => query.queryKey.includes(IDS.production) })
+        .getAll()
         .map((query) => query.state.data)
     )
+    expect(cached.includes('"minLength":14')).toBe(true)
     expect(cached.includes('"minLength":16')).toBe(false)
   })
 })

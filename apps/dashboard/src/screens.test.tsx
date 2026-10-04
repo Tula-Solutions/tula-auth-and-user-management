@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, jest, test } from 'bun:test'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { ApiError } from '~/api/errors'
-import { notify, Toaster } from '~/components/toaster'
+import { clearToasts, notify, TOAST_MS, Toaster } from '~/components/toaster'
 import { useEnvironment } from '~/features/shell/environment-context'
 import { RouteError } from '~/routes/__root'
 import { failure, IDS, installFakeApi } from '~/testing/fake-api'
@@ -139,7 +139,14 @@ describe('the shell', () => {
     await user.clear(within(dialog()).getByLabelText('Name'))
     await user.type(within(dialog()).getByLabelText('Name'), 'Mobile app')
     await user.click(within(dialog()).getByRole('button', { name: 'Create project' }))
-    expect((await within(dialog()).findByRole('alert')).textContent).toBe('That name is taken.')
+    // Waited for as text: the server's message, not whichever alert is on screen first.
+    await waitFor(() =>
+      expect(
+        within(dialog())
+          .queryAllByRole('alert')
+          .map((alert) => alert.textContent)
+      ).toEqual(['That name is taken.'])
+    )
   })
 
   test('a route that threw shows the error with a retry; a screen outside an environment is a bug', () => {
@@ -162,12 +169,44 @@ describe('the shell', () => {
     expect(() => render(<Lost />)).toThrow('useEnvironment must be used under an environment route')
   })
 
-  test('a confirmation goes away by itself', async () => {
-    render(<Toaster />)
-    act(() => notify('Done'))
-    expect(screen.getByText('Done')).toBeDefined()
-    await waitFor(() => expect(screen.queryByText('Done')).toBeNull(), { timeout: 7000 })
-  }, 10_000)
+  test('a confirmation goes away by itself', () => {
+    // The clock is the test's: waiting the five seconds out in real time is slow, and on a
+    // loaded machine it is not five seconds.
+    clearToasts()
+    jest.useFakeTimers()
+    try {
+      const shown = () => screen.queryAllByText('Done').length
+      render(<Toaster />)
+      act(() => notify('Done'))
+      expect(shown()).toBe(1)
+      act(() => {
+        jest.advanceTimersByTime(TOAST_MS - 1)
+      })
+      expect(shown()).toBe(1)
+      act(() => {
+        jest.advanceTimersByTime(1)
+      })
+      expect(shown()).toBe(0)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  test('a confirmation taken off the screen leaves no timer behind', () => {
+    // Confirmations outlive the screen that drew them (the store is the app's): start clean.
+    clearToasts()
+    jest.useFakeTimers()
+    try {
+      const view = render(<Toaster />)
+      act(() => notify('Done'))
+      expect(jest.getTimerCount()).toBe(1)
+      view.unmount()
+      expect(jest.getTimerCount()).toBe(0)
+    } finally {
+      jest.useRealTimers()
+      clearToasts()
+    }
+  })
 })
 
 describe('settings controls', () => {
