@@ -41,7 +41,7 @@ jobs:
       REDIS_TEST_URL: redis://localhost:6379
       TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || 'HEAD~1' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
@@ -92,7 +92,7 @@ jobs:
       # the stack in the `local` tier, the only one the API accepts this in.
       OAUTH_MOCK_PROVIDER: 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
