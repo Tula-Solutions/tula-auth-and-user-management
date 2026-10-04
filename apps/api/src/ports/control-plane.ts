@@ -156,4 +156,15 @@ export interface ControlPlane {
    * @returns Instance audit entries, newest first.
    */
   listAudit(criteria: InstanceAuditCriteria): Promise<Paged<InstanceAuditEntry>>
+
+  /**
+   * Delete instance audit entries that are past the deployment's retention period, one batch
+   * at a time, oldest first (the retention job, ADR 0017). The only way an entry is ever
+   * removed.
+   *
+   * @param before - Entries that occurred before this instant are deleted.
+   * @param limit - The most entries one call deletes.
+   * @returns How many were deleted.
+   */
+  deleteAuditBefore(before: Date, limit: number): Promise<number>
 }

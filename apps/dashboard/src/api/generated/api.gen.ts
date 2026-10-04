@@ -4138,7 +4138,7 @@ export const getCreateDashboardSessionUrl = () => {
 /**
  * Exchanges the instance admin token (`TULA_ADMIN_TOKEN`), sent once in the body, for a dashboard session: an `HttpOnly`, `SameSite=Strict` cookie (`tula_dashboard`; `__Secure-tula_dashboard` and `Secure` over https) set for `/v1/instance` and `/v1/admin`. The session lasts 8 hours from sign-in and is not extended. It is stateless and signed: it ends for everyone when the admin token or `TULA_MASTER_KEY` changes.
  *
- * The request must carry `x-tula-dashboard: 1` and an `Origin` that is the API’s own or on `CORS_ORIGINS`. A wrong, missing or malformed token gets the same `auth.invalid_key`; every attempt is counted (30 a minute per IP) and recorded in the instance audit log. A deployment without an admin token answers 404.
+ * The request must carry `x-tula-dashboard: 1` and an `Origin` that is the API’s own or on `CORS_ORIGINS`. A wrong, missing or malformed token gets the same `auth.invalid_key`; every attempt is counted (10 a minute per IP, in a bucket of its own); failures are recorded in the instance audit log, at most one entry a minute per IP. A deployment without an admin token answers 404.
  * @summary Sign in to the dashboard
  */
 export const createDashboardSession = async (dashboardSignInRequest: DashboardSignInRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<DashboardSession> => {

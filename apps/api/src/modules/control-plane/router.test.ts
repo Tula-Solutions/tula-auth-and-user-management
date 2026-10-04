@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { createApp } from '~/index'
+import * as logger from '~/lib/logger'
 import {
   createInstanceTestDeps,
   createTestDeps,
@@ -282,6 +283,73 @@ describe('projects', () => {
     expect((await call('PATCH', '/projects/not-a-uuid', { name: 'x' })).status).toBe(422)
     expect((await call('PATCH', `/projects/${MISSING}`, {})).status).toBe(422)
     expect((await call('GET', '/projects?workspaceId=nope')).status).toBe(422)
+  })
+})
+
+describe('when the signing-key store fails right after a commit', () => {
+  // The project (or environment) is stored by then. Answering 500 would make the caller try
+  // again and create a second one; the keys are made on first use and at the next boot.
+  async function failingKeys() {
+    const world = await setup()
+    const space = await workspace(world.call)
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    world.deps.signingKeys.insert = async () => {
+      throw new Error('connection to db.internal:5432 refused')
+    }
+    world.deps.signingKeys.list = async () => {
+      throw new Error('connection to db.internal:5432 refused')
+    }
+    return { ...world, space, warn }
+  }
+
+  test('a new project is still answered 201, exists once, and the failure is logged', async () => {
+    const { call, space, warn } = await failingKeys()
+    try {
+      const res = await call('POST', '/projects', { workspaceId: space.id, name: 'Web app' })
+      expect(res.status).toBe(201)
+      const created = (await res.json()) as { project: Project; environments: Environment[] }
+      expect(created.environments.map((entry) => entry.kind)).toEqual(['development', 'production'])
+      const listed = (await (
+        await call('GET', `/projects?workspaceId=${space.id}`)
+      ).json()) as Page<Project>
+      expect(listed.data.map((entry) => entry.id)).toEqual([created.project.id])
+      expect(warn).toHaveBeenCalledTimes(2)
+      // Nothing of the failure reaches the answer.
+      expect(JSON.stringify(created)).not.toContain('db.internal')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test('a new environment is still answered 201', async () => {
+    const world = await setup()
+    const space = await workspace(world.call)
+    // A project with no environment yet (one from before projects got two).
+    const now = world.deps.clock.now()
+    const made = { id: '00000000-0000-7000-8000-00000000aaab' }
+    world.deps.controlPlane.projects.push({
+      id: made.id,
+      workspaceId: space.id,
+      name: 'Legacy',
+      createdAt: now,
+      updatedAt: now,
+    })
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    world.deps.signingKeys.insert = async () => {
+      throw new Error('connection refused')
+    }
+    world.deps.signingKeys.list = async () => {
+      throw new Error('connection refused')
+    }
+    try {
+      const res = await world.call('POST', `/projects/${made.id}/environments`, {
+        kind: 'production',
+      })
+      expect(res.status).toBe(201)
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

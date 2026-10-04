@@ -16,6 +16,7 @@ import { Section } from '~/components/page'
 import { QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
 import { Textarea } from '~/components/ui/textarea'
+import { useEnvironment } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
 
 const PROVIDER_NAME: Record<OAuthProviderSettings['provider'], string> = {
@@ -234,6 +235,7 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
  * @returns The section.
  */
 export function OAuthProviders() {
+  const environment = useEnvironment()
   const providers = useListOAuthProviders()
   return (
     <Section
@@ -245,7 +247,9 @@ export function OAuthProviders() {
           <ul className='grid gap-4 xl:grid-cols-2'>
             {list.data.map((provider) => (
               <ProviderCard
-                key={`${provider.provider}:${provider.updatedAt ?? ''}`}
+                // The environment is part of the key: a card holds a typed secret, and
+                // two environments' unconfigured providers are otherwise the same key.
+                key={`${environment.id}:${provider.provider}:${provider.updatedAt ?? ''}`}
                 provider={provider}
               />
             ))}

@@ -1,6 +1,5 @@
-import type { Hook } from '@hono/standard-validator'
 import { DASHBOARD_HEADER, DASHBOARD_HEADER_VALUE } from '@tula/contract'
-import { Hono } from 'hono'
+import { type Context, Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { AuthError } from '~/exceptions'
@@ -15,9 +14,9 @@ import {
   startDashboardSession,
 } from '~/middleware/dashboard-session'
 import {
+  dashboardSignInRateLimit,
   instanceAdmin,
   instanceRoutesExist,
-  instanceTokenRateLimit,
   isInstanceAdminToken,
 } from '~/middleware/instance-admin'
 import { adminRateLimit } from '~/middleware/rate-limit'
@@ -48,14 +47,26 @@ import {
 const router = new Hono<AppEnv>()
 
 /**
- * Not a 422: a body without a usable token is a failed sign-in like any other, with the same
- * answer and the same audit entry.
+ * The token of a sign-in request, read in the handler and not by a validator: a body that is
+ * empty, not JSON or not the expected shape is a failed sign-in like any other (the same 401
+ * and the same audit entry), never a 400 or a 422 that says which it was.
+ *
+ * @param c - The request.
+ * @returns The token, or `undefined` when the body holds no usable one.
  */
-const refuseUnusableToken: Hook<unknown, AppEnv, string> = async (result, c) => {
-  if (!result.success) {
-    await ControlPlane.recordSession(c.get('deps'), 'instance.sign_in_failed', instanceActor(c))
-    throw new AuthError('auth.invalid_key')
+async function presentedToken(c: Context<AppEnv>): Promise<string | undefined> {
+  // Only JSON is read as JSON, as the validator did: a body a form could post is no token.
+  if (!/^application\/json(;|$)/i.test(c.req.header('content-type')?.trim() ?? '')) {
+    return undefined
   }
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return undefined
+  }
+  const parsed = DashboardSignInRequestSchema.safeParse(body)
+  return parsed.success ? parsed.data.token : undefined
 }
 
 const json = (schema: Parameters<typeof resolver>[0]) => ({
@@ -69,8 +80,9 @@ router.post(
     tags: ['Instance'],
     summary: 'Sign in to the dashboard',
     description:
-      'Exchanges the instance admin token (`TULA_ADMIN_TOKEN`), sent once in the body, for a dashboard session: an `HttpOnly`, `SameSite=Strict` cookie (`tula_dashboard`; `__Secure-tula_dashboard` and `Secure` over https) set for `/v1/instance` and `/v1/admin`. The session lasts 8 hours from sign-in and is not extended. It is stateless and signed: it ends for everyone when the admin token or `TULA_MASTER_KEY` changes.\n\nThe request must carry `x-tula-dashboard: 1` and an `Origin` that is the API’s own or on `CORS_ORIGINS`. A wrong, missing or malformed token gets the same `auth.invalid_key`; every attempt is counted (30 a minute per IP) and recorded in the instance audit log. A deployment without an admin token answers 404.',
+      'Exchanges the instance admin token (`TULA_ADMIN_TOKEN`), sent once in the body, for a dashboard session: an `HttpOnly`, `SameSite=Strict` cookie (`tula_dashboard`; `__Secure-tula_dashboard` and `Secure` over https) set for `/v1/instance` and `/v1/admin`. The session lasts 8 hours from sign-in and is not extended. It is stateless and signed: it ends for everyone when the admin token or `TULA_MASTER_KEY` changes.\n\nThe request must carry `x-tula-dashboard: 1` and an `Origin` that is the API’s own or on `CORS_ORIGINS`. A wrong, missing or malformed token gets the same `auth.invalid_key`; every attempt is counted (10 a minute per IP, in a bucket of its own); failures are recorded in the instance audit log, at most one entry a minute per IP. A deployment without an admin token answers 404.',
     security: openapi.security.public,
+    requestBody: { required: true, content: json(DashboardSignInRequestSchema) },
     responses: {
       200: {
         description: 'Signed in. The cookies are set.',
@@ -88,7 +100,7 @@ router.post(
   }),
   instanceRoutesExist(),
   // Counted before anything else is looked at, so that every guess counts.
-  instanceTokenRateLimit(),
+  dashboardSignInRateLimit(),
   async (c, next) => {
     // The same rules as a request made with the cookie, before the token is looked at: a page
     // on another site must not be able to make this browser the operator of its choosing.
@@ -99,14 +111,13 @@ router.post(
     requireDashboardOrigin(c)
     await next()
   },
-  validator('json', DashboardSignInRequestSchema, refuseUnusableToken),
   async (c) => {
     const deps = c.get('deps')
     c.header('cache-control', 'no-store')
     // `instanceRoutesExist()` has answered 404 where there is none.
     const expected = deps.config.instanceAdminTokenHash ?? ''
-    if (!isInstanceAdminToken(expected, c.req.valid('json').token)) {
-      await ControlPlane.recordSession(deps, 'instance.sign_in_failed', instanceActor(c))
+    if (!isInstanceAdminToken(expected, await presentedToken(c))) {
+      await ControlPlane.recordFailedSignIn(deps, instanceActor(c))
       throw new AuthError('auth.invalid_key')
     }
     const id = deps.ids.next()

@@ -17,6 +17,14 @@ const MAX_TOKEN_LENGTH = 256
 export const INSTANCE_RATE_LIMIT = 30
 
 /**
+ * Dashboard sign-ins per minute one IP may attempt. Its own bucket, so that a CLI working
+ * through the instance routes cannot lock the operator out of the dashboard, and guesses at
+ * the sign-in form cannot stop `tula doctor`. An operator signs in once; ten leaves room for
+ * mistyping and is a third of what a guesser had before.
+ */
+export const DASHBOARD_SIGN_IN_RATE_LIMIT = 10
+
+/**
  * The per-IP limit of every request that presents the instance admin token, counted before
  * the token is looked at. It refuses when the limiter cannot count (`service.unavailable`): an
  * uncounted guess at the most powerful credential of a deployment is exactly what must not
@@ -28,6 +36,23 @@ export function instanceTokenRateLimit() {
   return rateLimit({
     name: 'instance',
     limit: INSTANCE_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+    whenUnavailable: 'refuse',
+  })
+}
+
+/**
+ * The per-IP limit of the dashboard's sign-in (`POST /v1/instance/session`), counted before
+ * the token is looked at and refused when the limiter cannot count, like
+ * {@link instanceTokenRateLimit}, but in a bucket of its own.
+ *
+ * @returns The middleware (one `instance_session` bucket per IP).
+ */
+export function dashboardSignInRateLimit() {
+  return rateLimit({
+    name: 'instance_session',
+    limit: DASHBOARD_SIGN_IN_RATE_LIMIT,
     window: '1m',
     key: byIp,
     whenUnavailable: 'refuse',

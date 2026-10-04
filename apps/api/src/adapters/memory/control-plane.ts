@@ -33,7 +33,7 @@ export class MemoryControlPlane implements ControlPlane {
   readonly workspaces: WorkspaceRecord[]
   readonly projects: ProjectRecord[]
   /** Everything recorded, oldest first. Tests read it. */
-  readonly entries: InstanceActivity[]
+  entries: InstanceActivity[]
   readonly #environments: MemoryEnvironmentRepository
 
   /** @param environments - The environment repository of the same deps. */
@@ -155,6 +155,19 @@ export class MemoryControlPlane implements ControlPlane {
   /** @inheritdoc */
   async record(activity: InstanceActivity): Promise<void> {
     this.entries.push(structuredClone(activity))
+  }
+
+  /** @inheritdoc */
+  async deleteAuditBefore(before: Date, limit: number): Promise<number> {
+    const doomed = new Set(
+      this.entries
+        .filter((entry) => entry.occurredAt.getTime() < before.getTime())
+        .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id))
+        .slice(0, limit)
+        .map((entry) => entry.id)
+    )
+    this.entries = this.entries.filter((entry) => !doomed.has(entry.id))
+    return doomed.size
   }
 
   /** @inheritdoc */

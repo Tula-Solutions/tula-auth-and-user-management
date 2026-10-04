@@ -11,7 +11,10 @@ function UserRoute() {
   const { userId, ...scope } = Route.useParams()
   const navigate = Route.useNavigate()
   return (
+    // Keyed: the router keeps the component when only `$userId` changes, and a password
+    // typed for one user, or a confirmation opened for them, must not act on the next.
     <UserDetailScreen
+      key={userId}
       scope={scope}
       userId={userId}
       onGone={() =>

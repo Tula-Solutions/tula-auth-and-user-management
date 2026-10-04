@@ -108,7 +108,9 @@ The API reads its settings from the environment and refuses to start if one is i
 | `BREACH_CHECK` | | `offline` | `hibp` checks new passwords against Have I Been Pwned (only a 5-character hash prefix leaves the server). |
 | `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. The **default** password policy: it applies to an environment until that environment saves its own settings (below). |
 | `CORS_ORIGINS` | | none | Comma-separated browser origins. Allowed for `/v1/admin/*`, and the **default** allowed origins of an environment until it saves its own settings (below). |
-| `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. |
+| `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. **Behind a proxy it must be set**: without it every client has the proxy's address, so they all share one rate-limit bucket (one visitor's guesses lock everyone out, the dashboard's sign-in included) and one audit sample. Without a proxy it must stay `false`, or a client picks its own bucket with a header. |
+| `API_DOCS` | | `on` in `local` and `dev`, `off` in `staging` and `prod` | `on` or `off`: whether the API reference page is served at `/v1/docs`. The page is on the same origin as the dashboard; it loads no script from another host (the reference's bundle is served by the API from its own installed package) and has its own Content-Security-Policy, and a deployment that does not need it should leave it off. `/v1/openapi.json` is served either way. |
+| `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log is never deleted. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
 | `REDIS_URL` | in `staging` and `prod` | none | Redis (or Valkey) shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
@@ -445,7 +447,8 @@ session cookie; the browser does not keep it.
 - The cookie is `HttpOnly`, `SameSite=Strict` and, over https, `Secure`. It is sent to
   `/v1/instance` and `/v1/admin` only.
 - Requests made with it are accepted from the API's own origin (`PUBLIC_URL`) and from
-  `CORS_ORIGINS`, never from an origin an environment allows in its settings. If the dashboard
+  `CORS_ORIGINS`, never from an origin an environment allows in its settings, and, unlike
+  the rest of the API in the `local` tier, never from "any localhost port". If the dashboard
   answers `request.origin_not_allowed`, the address in your browser is not the `PUBLIC_URL`
   the API was started with (a proxy in front of it must present the same origin).
 - Everything done in the dashboard is in the audit log with the actor `instance_admin` and
@@ -453,8 +456,17 @@ session cookie; the browser does not keep it.
   (`GET /v1/admin/audit-logs?actorType=instance_admin`), and what has no environment
   (sign-ins, failed sign-ins, new projects and environments) in the instance audit log
   (`GET /v1/instance/audit-logs`).
-- Sign-in attempts are limited to 30 a minute per IP and refused while the rate limiter's
-  store is down.
+- Sign-in attempts are limited to 10 a minute per IP (their own allowance, apart from the
+  CLI's instance calls) and refused while the rate limiter's store is down. "Per IP" needs
+  `TRUST_PROXY=true` behind a proxy: without it every operator and every guesser share the
+  proxy's address and one allowance.
+- Failed sign-ins are recorded at most once a minute per address, with the number of
+  failures in the minute before that were not recorded one by one
+  (`suppressedInPreviousMinute`). The instance audit log is kept for
+  `INSTANCE_AUDIT_RETENTION_DAYS` (default 365).
+- The API reference at `/v1/docs` shares the dashboard's origin. It is off by default in
+  `staging` and `prod` (`API_DOCS=on` serves it), loads nothing from another host and has
+  its own Content-Security-Policy.
 - The pages are served with a strict Content-Security-Policy (this origin only, no inline
   script, not frameable). A proxy must not weaken or replace it.
 

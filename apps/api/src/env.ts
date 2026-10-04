@@ -166,6 +166,26 @@ const fields = z.object({
    */
   OAUTH_MOCK_PROVIDER: flag,
   /**
+   * Days an instance audit entry (dashboard sign-ins, workspaces, projects) is kept before the
+   * retention job deletes it. At least 30: the log is what an operator reads after an
+   * incident. Environments' audit logs are not affected: they are never deleted (ADR 0017).
+   */
+  INSTANCE_AUDIT_RETENTION_DAYS: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.coerce.number().int().min(30).max(36_500).default(365)
+  ),
+  /**
+   * `on` or `off`: whether the API reference page is served at `/v1/docs`. Unset (or blank),
+   * it is on in the `local` and `dev` tiers and off in `staging` and `prod`
+   * ({@link apiDocsDefault}). The page is HTML on the origin the dashboard's session lives
+   * on; a deployment that does not need it should not serve it (ADR 0032). The OpenAPI
+   * document at `/v1/openapi.json` is served either way.
+   */
+  API_DOCS: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.enum(['on', 'off']).optional()
+  ),
+  /**
    * The instance admin token: the credential of `/v1/instance/*` (`tula doctor`, and the
    * dashboard's sign-in). Optional: without it those routes do not exist (404). It is the most
    * powerful credential of a deployment, so a short, repeated, sequential or placeholder
@@ -312,8 +332,19 @@ const schema = fields.superRefine((env, ctx) => {
   }
 })
 
-/** Validated, typed environment configuration. */
-export type Env = z.infer<typeof schema>
+/**
+ * Whether the API reference page is served when `API_DOCS` is not set: on where a developer
+ * runs the API (`local`, `dev`), off where it serves real users.
+ *
+ * @param tier - The deployment's tier.
+ * @returns `true` in `local` and `dev`.
+ */
+export function apiDocsDefault(tier: Tier): boolean {
+  return !LIVE_TIERS.has(tier)
+}
+
+/** Validated, typed environment configuration. `API_DOCS` is resolved to its tier's default. */
+export type Env = Omit<z.infer<typeof schema>, 'API_DOCS'> & { API_DOCS: boolean }
 
 /** Thrown by {@link parseEnv} with every invalid variable listed, one per line. */
 export class EnvError extends Error {
@@ -343,7 +374,11 @@ export function parseEnv(source: Record<string, string | undefined>): Env {
       parsed.error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
     )
   }
-  return parsed.data
+  const { API_DOCS, ...rest } = parsed.data
+  return {
+    ...rest,
+    API_DOCS: API_DOCS === undefined ? apiDocsDefault(rest.ENVIRONMENT) : API_DOCS === 'on',
+  }
 }
 
 /**

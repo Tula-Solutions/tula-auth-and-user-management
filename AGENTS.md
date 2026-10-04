@@ -244,6 +244,16 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   parameters); the Zustand scope store mirrors it through `syncScope` in each route's
   `beforeLoad`, which also drops cached admin answers when the environment changes (admin
   queries are keyed by path, the environment travels in a header).
+- **A switch remounts.** The router keeps a route's component when only a path parameter
+  changes, so everything under the environment route is keyed by the environment id
+  (`EnvironmentGate`), the workspace screen by the workspace id, the user screen by the user
+  id, and a list item that holds form state includes the environment id in its key
+  (`ProviderCard`). The settings editor's document and draft belong to the environment they
+  were loaded for and a save is refused for any other. The shell is never remounted: a dialog
+  it owns is bound to the workspace or project it was opened in. A new screen with a draft,
+  a typed secret or a confirmation dialog gets a test in `src/environment-switch.test.tsx`.
+- **A failed sign-out is not a sign-out.** The app leaves for the sign-in page only once the
+  API has cleared the cookie; otherwise it stays and says the session is still active.
 - **It runs under the API's strict Content-Security-Policy, and the browser tests fail on any
   violation.** No inline script or style, no `eval`, no library that injects a `<style>`:
   dialogs are the platform's `<dialog>` (`components/modal.tsx`; Radix's dialog and select
@@ -379,8 +389,9 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 - `/dashboard` — the dashboard's build output as static files, only where a build is present
   (`DASHBOARD_DIR`, or `apps/dashboard/dist`).
 - `/v1/environments/:id/.well-known/jwks.json` (the token `iss` + `/.well-known/jwks.json`; see
-  `environmentIssuer` in `@tula/contract`), `/v1/status`, `/v1/ready`, `/v1/openapi.json`,
-  `/v1/docs` — public.
+  `environmentIssuer` in `@tula/contract`), `/v1/status`, `/v1/ready`, `/v1/openapi.json` —
+  public. `/v1/docs` (the API reference) too, where `API_DOCS` is on: by default the `local`
+  and `dev` tiers only.
 
 ### The dashboard's session and the control plane (see ADR 0032)
 
@@ -396,7 +407,10 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
   the API's own origin or `CORS_ORIGINS`, an `Origin` on anything but a read, not
   `Sec-Fetch-Site: cross-site`), checked before the cookie is read. It never carries
   `Authorization`: the two credentials are refused together. Without the header a cookie
-  means nothing.
+  means nothing. The origin rule is exact in **every** tier: never apply the `local` tier's
+  "any loopback origin" rule (`allowedOrigin`) to a cookie-authenticated request, because
+  cookies are not scoped by port. `vite dev` works through its proxy
+  (`apps/dashboard/src/lib/dev-proxy.ts`).
 - **The actor is `instance_admin`** with the session's id (`adminActor(c)` on admin routes,
   `instanceActor(c)` on instance routes; a `null` id for the bearer token itself).
 - **What has no environment is recorded in the instance audit log** (`deps.controlPlane`,
@@ -405,6 +419,26 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 - **A new instance operation takes the instance token** (`openapi.security.instance`); the
   admin client's generator fails otherwise. Only the three session operations are a browser's
   alone, by name (`BROWSER_ONLY_INSTANCE_OPERATIONS`).
+- **The sign-in answers one way and is counted by itself.** `POST /v1/instance/session` reads
+  its body in the handler: wrong, missing, malformed and unreadable are the same 401
+  `auth.invalid_key`. It has its own per-IP bucket (`dashboardSignInRateLimit`), apart from the
+  bearer token's. Failed sign-ins are recorded through `ControlPlane.recordFailedSignIn`: one
+  entry a minute per address with a count, tallied in the rate limiter under a keyed hash of
+  the address. Never write one entry per failure to an append-only table from a route anyone
+  can call.
+- **The instance audit log has a retention period** (`INSTANCE_AUDIT_RETENTION_DAYS`, default
+  365; `ControlPlane.deleteAuditBefore` from the retention job). An environment's audit log
+  is never deleted.
+- **Every HTML response has a Content-Security-Policy that allows no script from another
+  origin, and `nosniff`.** The API reference (`/v1/docs`, `~/lib/api-docs`) is served only
+  where `API_DOCS` is on (default: `local` and `dev`), from the installed, exactly pinned
+  `@scalar/api-reference` package, under `API_DOCS_CSP`: never a CDN, an inline script or
+  `unsafe-eval`. `lib/api-docs.test.ts` walks the route table and fails for an HTML response
+  without such a policy; a new page must pass it.
+- **Work after a commit must not fail the answer.** `Jwks.ensureKeys` for a new environment
+  runs after the transaction: a failure is logged and the creation is still answered 201
+  (the keys are made on first use and at boot). A 500 there makes the caller create a second
+  project.
 - **Static files**: every path is decided by `resolveDashboardFile` (resolve, prefix check,
   real path, prefix check again). Never serve a file by any other route, and never loosen
   `DASHBOARD_CSP` to allow inline script, `eval` or another origin.

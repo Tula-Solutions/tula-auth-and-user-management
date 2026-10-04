@@ -39,6 +39,9 @@ export const responses = {
   ),
 } as const
 
+/** One alternative of a route's security: the schemes that must all be presented. */
+type SecurityRequirement = Record<string, string[]>
+
 /**
  * Security requirements per route group, for `describeRoute({ security })`.
  *
@@ -52,9 +55,6 @@ export const responses = {
  * - `instanceToken`: the instance admin token only.
  * - `dashboard`: a dashboard session only.
  */
-/** One alternative of a route's security: the schemes that must all be presented. */
-type SecurityRequirement = Record<string, string[]>
-
 export const security: Record<
   'public' | 'client' | 'session' | 'admin' | 'instance' | 'instanceToken' | 'dashboard',
   SecurityRequirement[]

@@ -105,25 +105,31 @@ export async function expectScreenAccessible(page: Page, state: string): Promise
 }
 
 /**
- * Nothing a secret could be left in holds anything: both web storages are empty and the
- * address carries no query or fragment beyond what the test allows.
+ * Nothing a secret could be left in holds anything: both web storages are empty, the page
+ * has no IndexedDB database, and neither the address, the document nor `history.state`
+ * carries one of the values.
  *
  * @param secrets - Values that must not appear in storage, the address or the document.
  */
 export async function expectNoSecretKept(page: Page, secrets: string[]): Promise<void> {
-  const kept = await page.evaluate(() => ({
+  const kept = await page.evaluate(async () => ({
     local: JSON.stringify(Object.entries(localStorage)),
     session: JSON.stringify(Object.entries(sessionStorage)),
     cookie: document.cookie,
     text: document.documentElement.outerHTML,
     href: location.href,
+    // What the router keeps for this entry of the session history: it survives a reload.
+    history: JSON.stringify(history.state ?? null),
+    databases: (await indexedDB.databases()).map((database) => database.name ?? ''),
   }))
   expect(kept.local, 'localStorage').toBe('[]')
   expect(kept.session, 'sessionStorage').toBe('[]')
   expect(kept.cookie, 'cookies readable by the page').toBe('')
+  expect(kept.databases, 'IndexedDB databases').toEqual([])
   for (const secret of secrets) {
     expect(kept.text.includes(secret), 'secret left in the document').toBe(false)
     expect(kept.href.includes(secret), 'secret in the address').toBe(false)
+    expect(kept.history.includes(secret), 'secret in history.state').toBe(false)
   }
 }
 

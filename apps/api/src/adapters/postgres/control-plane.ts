@@ -6,7 +6,7 @@ import {
   type Transaction,
   workspaces,
 } from '@tula/db'
-import { and, asc, count, desc, eq, gte, lt } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, lt } from 'drizzle-orm'
 import type {
   ControlPlane,
   InstanceActivity,
@@ -210,6 +210,23 @@ export class PostgresControlPlane implements ControlPlane {
   /** @inheritdoc */
   async record(activity: InstanceActivity): Promise<void> {
     await insertActivities(this.db, [activity])
+  }
+
+  /** @inheritdoc */
+  async deleteAuditBefore(before: Date, limit: number): Promise<number> {
+    // The ids of one batch are chosen first (oldest first, on the `occurred_at` index), so a
+    // large backlog never becomes one long delete.
+    const batch = this.db
+      .select({ id: instanceAuditLogs.id })
+      .from(instanceAuditLogs)
+      .where(lt(instanceAuditLogs.occurredAt, before))
+      .orderBy(asc(instanceAuditLogs.occurredAt), asc(instanceAuditLogs.id))
+      .limit(limit)
+    const deleted = await this.db
+      .delete(instanceAuditLogs)
+      .where(inArray(instanceAuditLogs.id, batch))
+      .returning({ id: instanceAuditLogs.id })
+    return deleted.length
   }
 
   /** @inheritdoc */

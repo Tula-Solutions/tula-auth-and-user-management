@@ -1,4 +1,3 @@
-import { Scalar } from '@scalar/hono-api-reference'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { requestId } from 'hono/request-id'
@@ -7,6 +6,7 @@ import { openAPIRouteHandler } from 'hono-openapi'
 import type { AppEnv, Deps } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { notFound, onError } from '~/handlers'
+import { API_DOCS_PATH, apiDocsRouter, findApiDocsBundle } from '~/lib/api-docs'
 import { DASHBOARD_PATH, dashboardRouter, dashboardSecurityHeaders } from '~/lib/dashboard-files'
 import { cors } from '~/middleware/cors'
 import { clientRateLimit } from '~/middleware/rate-limit'
@@ -45,6 +45,9 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
 // Mounted only where the deployment runs the mock OAuth provider (`ENVIRONMENT=local` with
 // `OAUTH_MOCK_PROVIDER=true`): in every other deployment the paths do not exist.
 const devOAuthRouter = (await import('~/modules/oauth/dev-router')).default
+
+// Looked up once: where the reference's bundle is in the installed package, if it is.
+const docsBundle = findApiDocsBundle()
 
 /**
  * Build the Tula API app without listening.
@@ -107,9 +110,16 @@ export function createApp(deps: Deps): Hono<AppEnv> {
 
   app.get(
     OPENAPI_PATH,
-    openAPIRouteHandler(app, { documentation, exclude: [OPENAPI_PATH, '/v1/docs'] })
+    openAPIRouteHandler(app, {
+      documentation,
+      exclude: [OPENAPI_PATH, new RegExp(`^${API_DOCS_PATH}(/|$)`)],
+    })
   )
-  app.get('/v1/docs', Scalar({ url: OPENAPI_PATH, pageTitle: 'Tula API' }))
+  // The API reference: only where `API_DOCS` is on (by default, the `local` and `dev` tiers),
+  // and only from the installed package. Nothing of it is loaded from another host (ADR 0032).
+  if (deps.config.apiDocs && docsBundle !== null) {
+    app.route('/', apiDocsRouter({ openApiPath: OPENAPI_PATH, bundle: docsBundle }))
+  }
 
   return app
 }

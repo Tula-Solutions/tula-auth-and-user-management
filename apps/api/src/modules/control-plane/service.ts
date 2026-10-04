@@ -5,8 +5,10 @@ import type {
   PaginationMeta,
 } from '@tula/contract'
 import type { Deps } from '~/dependencies'
-import { ConflictError, NotFoundError } from '~/exceptions'
+import { ConflictError, NotFoundError, ServiceUnavailableError } from '~/exceptions'
 import { type Actor, cleanOrigin } from '~/lib/actor'
+import * as logger from '~/lib/logger'
+import { errorReason } from '~/lib/safe-error'
 import type {
   EnvironmentListQuery,
   InstanceAuditLogQuery,
@@ -58,21 +60,114 @@ export function entry(
 }
 
 /**
- * Record a dashboard sign-in, a failed one or a sign-out. The entry carries who and from
- * where, and nothing of what was presented.
+ * Record a dashboard sign-in or a sign-out. The entry carries who and from where, and
+ * nothing of what was presented. A failed sign-in goes through {@link recordFailedSignIn}.
  *
  * Awaited by its callers: a session is not handed out when its sign-in cannot be recorded.
  *
  * @param deps - Control plane, ids and clock.
- * @param type - Which of the three.
+ * @param type - Which of the two.
  * @param actor - The request's actor; its id is the session's, or `null` for a failure.
  */
 export async function recordSession(
   deps: Pick<Deps, 'controlPlane' | 'ids' | 'clock'>,
-  type: 'instance.signed_in' | 'instance.sign_in_failed' | 'instance.signed_out',
+  type: 'instance.signed_in' | 'instance.signed_out',
   actor: Actor
 ): Promise<void> {
   await deps.controlPlane.record(entry(deps, { type, actor }))
+}
+
+/**
+ * Give a new environment its first signing keys, without letting a failure undo the answer.
+ *
+ * This runs after the environment is committed. If it threw, the caller would get a 500 for
+ * something that exists, and a retry would create a second project. The keys are not needed
+ * yet: every path that uses them calls `Jwks.ensureKeys` first (the JWKS route, signing,
+ * rotation), and `Jwks.ensureAllEnvironments` runs at every boot. So a failure is logged and
+ * the creation stands.
+ *
+ * @param deps - What `Jwks.ensureKeys` needs.
+ * @param environmentId - The new environment.
+ */
+async function firstSigningKeys(
+  deps: Parameters<typeof Jwks.ensureKeys>[0],
+  environmentId: string
+): Promise<void> {
+  try {
+    await Jwks.ensureKeys(deps, environmentId)
+  } catch (error) {
+    logger.warn(
+      'could not create a new environment’s first signing keys; they are made on first use',
+      {
+        environmentId,
+        err: errorReason(error),
+      }
+    )
+  }
+}
+
+/**
+ * How often one address's failed dashboard sign-ins are written to the instance audit log:
+ * the first of each minute. The log is append-only and a guesser is allowed several tries a
+ * minute, so one entry per try would let anyone who can reach the API grow the table.
+ */
+export const FAILED_SIGN_IN_RECORD_WINDOW_MS = 60_000
+
+/** Far above anything the sign-in's own limit lets through: the limiter is used to count. */
+const TALLY_CEILING = 1_000_000
+
+/** Count one more in an address's tally of a minute, and answer the count. */
+async function tally(
+  deps: Pick<Deps, 'rateLimiter'>,
+  address: string,
+  minute: number
+): Promise<number> {
+  // Kept for two windows, so that the next minute's first failure can still read it.
+  const decision = await deps.rateLimiter.hit(
+    `instance_sign_in_failed:${address}:${minute}`,
+    TALLY_CEILING,
+    2 * FAILED_SIGN_IN_RECORD_WINDOW_MS
+  )
+  return TALLY_CEILING - decision.remaining
+}
+
+/**
+ * Record a failed dashboard sign-in, at most once a minute per address.
+ *
+ * The first failure of a minute is written, with `data.suppressedInPreviousMinute`: how many
+ * failures from that address in the minute before were not written one by one. The count
+ * lives in the rate limiter, so several instances share it, under a keyed hash of the
+ * address (never the address). A limiter that cannot count means the entry is written: a
+ * failure is recorded once too often rather than not at all.
+ *
+ * @param deps - Control plane, limiter, keyed hash, ids and clock.
+ * @param actor - The request's actor (no id: nobody signed in).
+ */
+export async function recordFailedSignIn(
+  deps: Pick<Deps, 'controlPlane' | 'rateLimiter' | 'keyedHash' | 'ids' | 'clock'>,
+  actor: Actor
+): Promise<void> {
+  let suppressedInPreviousMinute = 0
+  try {
+    const address = await deps.keyedHash.hmac(
+      'instance-sign-in-failures',
+      actor.ipAddress ?? 'unknown'
+    )
+    const minute = Math.floor(deps.clock.now().getTime() / FAILED_SIGN_IN_RECORD_WINDOW_MS)
+    if ((await tally(deps, address, minute)) > 1) {
+      return
+    }
+    // The limiter has no read: counting once more in the minute that is over answers its
+    // total plus one. One of that minute's failures was written, hence the two.
+    suppressedInPreviousMinute = Math.max(0, (await tally(deps, address, minute - 1)) - 2)
+  } catch (error) {
+    if (!(error instanceof ServiceUnavailableError)) {
+      throw error
+    }
+  }
+  await deps.controlPlane.record(
+    entry(deps, { type: 'instance.sign_in_failed', actor, data: { suppressedInPreviousMinute } })
+  )
 }
 
 function meta(totalCount: number, query: PageQuery): PaginationMeta {
@@ -219,7 +314,7 @@ export async function createProject(
     ...environments.map((environment) => environmentEntry(deps, environment, actor)),
   ])
   for (const environment of environments) {
-    await Jwks.ensureKeys(deps, environment.id)
+    await firstSigningKeys(deps, environment.id)
   }
   return { project: toProject(project), environments }
 }
@@ -309,7 +404,7 @@ export async function createEnvironment(
       params: { kind: input.kind },
     })
   }
-  await Jwks.ensureKeys(deps, environment.id)
+  await firstSigningKeys(deps, environment.id)
   return environment
 }
 

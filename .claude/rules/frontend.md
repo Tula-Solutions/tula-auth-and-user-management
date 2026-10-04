@@ -25,6 +25,14 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
 - The address holds the selection and every filter; route files read parameters and pass
   them to a screen as props. Call `syncScope` in the `beforeLoad` of a route that has scope
   parameters.
+- Local state must not survive a switch. The router keeps a component when only a path
+  parameter changes: screens under the environment route are remounted by `EnvironmentGate`
+  (keyed by the environment id), the workspace and user screens by their id; include the
+  environment id in the key of a list item that holds form state; bind a dialog the shell
+  owns to the scope it was opened in. A screen with a draft, a typed secret or a
+  confirmation gets a test in `src/environment-switch.test.tsx`.
+- Leave for the sign-in page only after `DELETE /v1/instance/session` succeeded; a failed
+  sign-out stays put and says the session is still active.
 - A token, key, password or provider secret is component state only while its form or dialog
   is open. Give a mutation that carries one `gcTime: 0` and `reset()` it when the form lets
   go. Nothing goes to web storage, the address or a log.

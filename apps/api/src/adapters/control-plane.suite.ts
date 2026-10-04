@@ -271,5 +271,33 @@ export function describeControlPlane(name: string, setup: () => Promise<ControlP
         userAgent: null,
       })
     })
+
+    test('audit entries older than a cutoff are deleted a batch at a time, oldest first; newer ones stay', async () => {
+      // Far older than any other test's rows: the delete is not scoped to an actor.
+      const old = (day: number) => new Date(Date.UTC(2000, 0, day))
+      const ids = [3, 1, 2].map((day) => {
+        const id = Bun.randomUUIDv7()
+        return {
+          id,
+          day,
+          entry: activity('instance.signed_in', null, { id, occurredAt: old(day) }),
+        }
+      })
+      for (const { entry } of ids) {
+        await plane.record(entry)
+      }
+      const kept = activity('instance.signed_out', null, { occurredAt: at(1) })
+      await plane.record(kept)
+      const cutoff = new Date(Date.UTC(2001, 0, 1))
+      const left = async () =>
+        (await plane.listAudit({ actorId, page: 1, size: 10 })).items.map((entry) => entry.id)
+
+      expect(await plane.deleteAuditBefore(cutoff, 2)).toBe(2)
+      // The two oldest went; the newest of the old ones is still there.
+      expect(await left()).toEqual([kept.id, ids[0]?.id as string])
+      expect(await plane.deleteAuditBefore(cutoff, 2)).toBe(1)
+      expect(await plane.deleteAuditBefore(cutoff, 2)).toBe(0)
+      expect(await left()).toEqual([kept.id])
+    })
   })
 }

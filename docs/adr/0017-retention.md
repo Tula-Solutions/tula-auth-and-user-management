@@ -37,7 +37,8 @@ presenting a purged token is answered like any unknown token. Refresh tokens are
 one by one: their rows reference each other, so a chain only goes with its session, by the
 foreign-key cascade.
 
-**Audit entries are never deleted by this job.** Their retention is a per-environment setting
+**An environment's audit entries are never deleted by this job** (the instance audit log is
+another matter: see below). Their retention is a per-environment setting
 since step 1.2 (`audit.retentionDays`, default: keep; [ADR 0018](0018-environment-settings.md)),
 which is stored and validated but not acted on yet: this job still deletes no audit entry.
 
@@ -86,6 +87,20 @@ after it from being purged; that environment is retried on the next run. A run l
 with counts only (environments visited and failed, rows deleted per table): `info` when
 something was deleted, `warn` when an environment failed, `debug` otherwise so an idle server's
 log stays quiet.
+
+### The instance audit log (added with ADR 0032)
+
+The control plane's own log (`tula.instance_audit_logs`: dashboard sign-ins, workspaces,
+projects) is the one audit log with an end. Anyone who can reach the API can add a failed
+sign-in to it (sampled to one entry a minute per address, ADR 0032), so it is kept for a
+period the deployment sets, `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30), and
+older entries are deleted by this job through `ControlPlane.deleteAuditBefore(cutoff, limit)`
+in batches, oldest first. It runs once per pass, outside the per-environment loop; a failure
+is logged, counted in `failed`, and does not stop the environments' purge. The runtime role
+gained `DELETE` on that table for it (migration `0016`), and still has no `UPDATE`.
+
+An environment's audit log (`audit_logs`) is unchanged: never deleted by this job, and the
+runtime role cannot delete from it.
 
 ## Consequences
 

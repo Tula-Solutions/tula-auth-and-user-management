@@ -61,6 +61,17 @@ export interface AppConfig {
    * served at `/dashboard`; `null` when there is none, and `/dashboard` is then an unknown path.
    */
   dashboardDir: string | null
+  /**
+   * Whether the API reference page is served at `/v1/docs` (`API_DOCS`: on by default in the
+   * `local` and `dev` tiers only). Off, the page and its scripts are unknown paths.
+   */
+  apiDocs: boolean
+  /**
+   * Days an instance audit entry is kept before the retention job deletes it
+   * (`INSTANCE_AUDIT_RETENTION_DAYS`, default 365). Environments' audit logs have no such
+   * period: they are never deleted (ADR 0017).
+   */
+  instanceAuditRetentionDays: number
 }
 
 /**

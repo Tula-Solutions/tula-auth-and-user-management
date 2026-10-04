@@ -26,6 +26,28 @@ const EMAIL = 'ada@northline.example'
 
 type Scheme = 'light' | 'dark'
 
+/**
+ * Wait until the page is drawn at this size and in this scheme: the media queries answer
+ * for them, the fonts are loaded, nothing is still animating, and two frames have been
+ * painted since. A condition, not a pause: a slow machine waits longer, a fast one does not.
+ */
+async function settled(page: Page, scheme: Scheme, width: number): Promise<void> {
+  await page.waitForFunction(
+    ([wanted, expectedWidth]) =>
+      window.innerWidth === expectedWidth &&
+      matchMedia(`(prefers-color-scheme: ${wanted})`).matches &&
+      document.fonts.status === 'loaded' &&
+      document.getAnimations().every((animation) => animation.playState !== 'running'),
+    [scheme, width] as const
+  )
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(null)))
+      )
+  )
+}
+
 async function shot(
   page: Page,
   name: string,
@@ -34,7 +56,7 @@ async function shot(
 ): Promise<void> {
   await page.setViewportSize(size)
   await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
-  await page.waitForTimeout(200)
+  await settled(page, scheme, size.width)
   await page.screenshot({ path: join(docs, `${name}.png`), animations: 'disabled' })
 }
 

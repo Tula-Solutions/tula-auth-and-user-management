@@ -22,8 +22,11 @@ export interface ModalProps {
 /**
  * A modal dialog on the platform's own `<dialog>`.
  *
- * `showModal()` gives what a dialog needs without any library: the rest of the page is inert,
- * focus stays inside, Escape closes it and focus returns to the control that opened it. No
+ * `showModal()` gives what a dialog needs without any library: the rest of the page is inert
+ * (nothing behind the dialog can be focused or clicked), focus stays inside, Escape closes it
+ * and focus returns to the control that opened it. It does not lock scrolling: the page
+ * behind can still be scrolled, which the libraries that prevent it do by injecting a style
+ * element. No
  * script-injected stylesheet is involved, which the dashboard's Content-Security-Policy would
  * refuse. The body is rendered only while open, so whatever it showed (a new API key) is gone
  * from the document once it closes.

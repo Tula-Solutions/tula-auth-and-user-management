@@ -14,6 +14,8 @@ import { ConfirmDialog } from '~/components/confirm-dialog'
 import { PageHeader } from '~/components/page'
 import { QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
+import { useEnvironment } from '~/features/shell/environment-context'
+import { useScope } from '~/state/scope'
 import {
   classifyFailure,
   describeWeakening,
@@ -33,6 +35,13 @@ export interface SettingsEditor {
   errors: Record<string, string>
 }
 
+/** A settings document, its draft, and the environment both were loaded for. */
+interface LoadedSettings {
+  environmentId: string
+  base: EnvironmentSettingsState
+  draft: SettingsDocument
+}
+
 /**
  * The one save model of every settings screen.
  *
@@ -41,42 +50,64 @@ export interface SettingsEditor {
  * reload, never retried over the other writer's change. A save that weakens security, or
  * that changes settings a config file manages, asks first.
  *
+ * The document and its draft belong to the environment they were loaded for: shown for
+ * another one they are dropped and loaded again, and a save is refused when the selection
+ * (where the request would go) is no longer that environment.
+ *
  * @returns The state and the actions the frame draws.
  */
 export function useSettingsEditor() {
   const queryClient = useQueryClient()
-  const query = useGetEnvironmentSettings()
-  const [base, setBase] = useState<EnvironmentSettingsState | null>(null)
-  const [draft, setDraft] = useState<SettingsDocument | null>(null)
+  const environment = useEnvironment()
+  // Keyed by the environment as well as the path: an answer in the cache is then known to
+  // be this environment's, whatever was on the screen before.
+  const queryKey = [...getGetEnvironmentSettingsQueryKey(), environment.id] as const
+  const query = useGetEnvironmentSettings({ query: { queryKey } })
+  const [loaded, setLoaded] = useState<LoadedSettings | null>(null)
   const [conflict, setConflict] = useState(false)
   const [confirming, setConfirming] = useState<SavePlan | null>(null)
+  // A document loaded for another environment is not this one's: it is neither drawn nor
+  // sent. The screens are remounted on a switch (`EnvironmentGate`); this holds without it.
+  const current = loaded !== null && loaded.environmentId === environment.id ? loaded : null
+  const base = current?.base ?? null
+  const draft = current?.draft ?? null
   const replace = useReplaceEnvironmentSettings({
     request: { headers: { 'If-Match': etag(base?.revision ?? 0) } },
   })
 
+  function adopt(state: EnvironmentSettingsState) {
+    setLoaded({ environmentId: environment.id, base: state, draft: state.settings })
+  }
+
   // The first answer becomes the base. A later one (a refetch) is adopted only through
   // `reload`, so a background refresh never throws away what the operator is typing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `adopt` only closes over the environment id, which is listed.
   useEffect(() => {
-    if (query.data && base === null) {
-      setBase(query.data)
-      setDraft(query.data.settings)
+    if (query.data && current === null) {
+      adopt(query.data)
     }
-  }, [query.data, base])
+  }, [query.data, current, environment.id])
+
+  /** Whether a request made now would go to the environment the document was loaded for. */
+  function stillHere(): boolean {
+    return current !== null && useScope.getState().environmentId === current.environmentId
+  }
 
   const plan = base && draft ? planSave(base.settings, draft, base.managedBy) : null
 
   function send() {
-    if (draft === null) {
+    setConfirming(null)
+    // The environment header is read from the selection when the request is made. If the
+    // selection has moved on, this document would be written to another environment.
+    if (draft === null || !stillHere()) {
       return
     }
-    setConfirming(null)
     replace.mutate(
       { data: draft as EnvironmentSettingsInput },
       {
         onSuccess: (state) => {
-          queryClient.setQueryData(getGetEnvironmentSettingsQueryKey(), state)
-          setBase(state)
-          setDraft(state.settings)
+          queryClient.setQueryData(queryKey, state)
+          adopt(state)
           setConflict(false)
           notify('Settings saved')
         },
@@ -95,9 +126,13 @@ export function useSettingsEditor() {
     saving: replace.isPending,
     error: conflict ? null : replace.error,
     update: (change: (current: SettingsDocument) => SettingsDocument) =>
-      setDraft((current) => (current === null ? current : change(current))),
+      setLoaded((held) =>
+        held === null || held.environmentId !== environment.id
+          ? held
+          : { ...held, draft: change(held.draft) }
+      ),
     save: () => {
-      if (plan === null || !plan.dirty || replace.isPending) {
+      if (plan === null || !plan.dirty || replace.isPending || !stillHere()) {
         return
       }
       if (plan.needsConfirmation) {
@@ -110,14 +145,13 @@ export function useSettingsEditor() {
     cancelConfirmation: () => setConfirming(null),
     discard: () => {
       replace.reset()
-      setDraft(base?.settings ?? null)
+      setLoaded((held) => (held === null ? held : { ...held, draft: held.base.settings }))
     },
     reload: async () => {
       replace.reset()
       const fresh = await query.refetch()
       if (fresh.data) {
-        setBase(fresh.data)
-        setDraft(fresh.data.settings)
+        adopt(fresh.data)
         setConflict(false)
       }
     },

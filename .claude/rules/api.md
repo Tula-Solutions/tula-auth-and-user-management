@@ -22,6 +22,13 @@ paths:
 - `/v1/instance/*` routes use `instanceAdmin()` (the admin token or a dashboard session),
   `instanceActor(c)`, and record their writes through `deps.controlPlane` with an
   `InstanceActivity` in the same transaction.
+- A route that returns HTML sets a Content-Security-Policy that allows no script from another
+  origin (`lib/api-docs.test.ts` walks the route table). Never load a page's script from a
+  CDN: serve it from an installed, exactly pinned package.
+- A cookie-authenticated request is checked against exact origins (`requireDashboardOrigin`),
+  never `allowedOrigin`'s loopback rule.
+- Whatever runs after a transaction has committed (first signing keys) logs its failure and
+  lets the answer stand.
 - Return flow steps from `@tula/contract` for any sign-in/sign-up interaction. Never return UI
   hints like "show the password form".
 - Throw `AuthError(code, params)` or `ServiceException` subclasses. Add new error codes to

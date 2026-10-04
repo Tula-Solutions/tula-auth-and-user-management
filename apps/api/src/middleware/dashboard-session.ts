@@ -3,7 +3,6 @@ import type { Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import type { AppConfig, AppEnv, DashboardSession } from '~/dependencies'
 import { AuthError, BadRequestError, UnauthorizedError } from '~/exceptions'
-import { allowedOrigin } from '~/lib/cors'
 import {
   DASHBOARD_SESSION_TTL_MS,
   mintDashboardSession,
@@ -94,7 +93,10 @@ export function requireDashboardOrigin<E extends AppEnv>(c: Context<E>): void {
     }
     return
   }
-  if (origin !== new URL(config.publicUrl).origin && allowedOrigin(origin, config) === null) {
+  // Exact origins only, in every tier. The `local` tier's "any loopback origin" rule is not
+  // applied here: cookies are not scoped by port, so any other web app on this machine would
+  // otherwise be able to use a signed-in dashboard session.
+  if (origin !== new URL(config.publicUrl).origin && !config.corsOrigins.includes(origin)) {
     throw new AuthError('request.origin_not_allowed')
   }
 }

@@ -117,6 +117,8 @@ export function createContainer(env: Env): Container {
       instanceAdminTokenHash: env.TULA_ADMIN_TOKEN ? sha256Hex(env.TULA_ADMIN_TOKEN) : null,
       // Resolved once, here: a directory without an index.html is no dashboard.
       dashboardDir: findDashboardDir(env.DASHBOARD_DIR),
+      apiDocs: env.API_DOCS,
+      instanceAuditRetentionDays: env.INSTANCE_AUDIT_RETENTION_DAYS,
     },
     clock,
     ids: uuidV7Ids,

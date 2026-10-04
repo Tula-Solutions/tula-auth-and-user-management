@@ -95,6 +95,20 @@ Everything the dashboard changes in an environment is recorded in that environme
 log with the actor type `instance_admin` and the id of the dashboard session that did it.
 Filter the audit log by "Actor type: instance_admin" to see what was done from the dashboard.
 
+Failed sign-ins to the dashboard are in the instance audit log, at most one entry a minute
+per address; each says how many failures from that address in the minute before were not
+recorded one by one. The instance audit log is kept for `INSTANCE_AUDIT_RETENTION_DAYS`
+(a year by default); an environment's audit log is kept for good.
+
+## Switching and signing out
+
+- Switching environment, project, workspace or user discards what was typed and not saved on
+  the screen you leave: a settings draft, a half-typed provider secret, an open confirmation.
+  Nothing typed for one environment can be saved to another.
+- If signing out fails (the API did not answer), the dashboard stays where it is and says
+  that you are still signed in. Choose "Sign out" again; until it succeeds the session in
+  this browser is active.
+
 ## Security notes for operators
 
 - The dashboard is as powerful as `TULA_ADMIN_TOKEN`: whoever signs in can manage every
@@ -102,6 +116,10 @@ Filter the audit log by "Actor type: instance_admin" to see what was done from t
   password.
 - It is served under a strict Content-Security-Policy (no inline script or style, no other
   origin) and cannot be framed.
+- The API reference at `/v1/docs` is on the same origin. It is off by default in `staging`
+  and `prod` (`API_DOCS`), loads no script from another host and has its own
+  Content-Security-Policy. Behind a proxy, set `TRUST_PROXY=true`, or every client shares
+  one sign-in allowance.
 - A session cannot be revoked alone; signing out clears the cookie in that browser, and
   rotating the token ends them all.
 - To run the API without the dashboard, leave `TULA_ADMIN_TOKEN` unset (no sign-in is

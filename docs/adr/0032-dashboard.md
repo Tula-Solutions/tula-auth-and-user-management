@@ -47,15 +47,28 @@ storage or a URL.
   with the same name and value: `Path=/v1/instance` and `Path=/v1/admin`. The browser sends it
   to those two route groups and to nothing else, not even to the dashboard's own files.
 - **Sign-in is guarded like the token.** The route does not exist without `TULA_ADMIN_TOKEN`
-  (404 before anything is counted); every request is counted in the instance bucket (30 a
-  minute per IP, refused when the limiter cannot count) before the token is looked at; the
-  comparison is of SHA-256 digests in constant time; a wrong token, a missing one and a body
-  that is not the expected shape all get the same `auth.invalid_key` (never a 422). The token
-  is not accepted from the `Authorization` header or the query on this route.
+  (404 before anything is counted); every request is counted before the token is looked at,
+  in a bucket of its own (`instance_session`: 10 a minute per IP, refused when the limiter
+  cannot count), so that guesses at the form cannot stop the CLI's instance calls and a busy
+  CLI cannot lock the operator out; the comparison is of SHA-256 digests in constant time; a
+  wrong token, a missing one, a body that is not the expected shape and a body that cannot
+  be read at all (empty, not JSON, not sent as JSON) get the same `auth.invalid_key`, never
+  a 400 or a 422: the body is read in the handler, not by a validator. The token is not
+  accepted from the `Authorization` header or the query on this route.
+- **`TRUST_PROXY` decides what "per IP" means.** Behind a proxy without it, every client is
+  the proxy's address and shares one bucket (and one audit sample, below).
 - **Audited.** `instance.signed_in` (actor id = the new session's id), `instance.sign_in_failed`
   (no actor id) and `instance.signed_out` go to the instance audit log (below), with the IP and
   user agent and nothing of what was presented. The sign-in is recorded **before** the cookie
   is set: no session without its entry.
+- **Failed sign-ins are sampled.** The log is append-only and anyone who can reach the API can
+  fail a sign-in, so one entry per failure would let them grow the table. The first failure
+  of a minute from an address is written, with `data.suppressedInPreviousMinute`: how many
+  failures from that address in the minute before were not written one by one (a count that
+  reaches back one minute, no further). The tally lives in the rate limiter, so instances
+  share it, under a keyed hash of the address (`~/lib/keyed-hash`), never the address. A
+  limiter that cannot count means the entry is written. Successful sign-ins and sign-outs
+  are always recorded.
 - `GET /v1/instance/session` answers `{ expiresAt }` or `auth.unauthenticated` (the app's
   start). `DELETE` clears both cookies; it is idempotent and needs no valid session.
 
@@ -71,8 +84,12 @@ is read (`~/middleware/dashboard-session`):
    request is simply not signed in. This is required on reads too, which is stricter than the
    plan asked and costs the app nothing.
 2. **`Origin`**, when present, is the API's own (`PUBLIC_URL`: the dashboard is served by the
-   API) or on the deployment's `CORS_ORIGINS` (the app under `vite dev`); in the `local` tier
-   any loopback origin, as everywhere else. A request that changes state **must have** an
+   API) or on the deployment's `CORS_ORIGINS`, **in every tier**. The `local` tier's "any
+   loopback origin" rule, which the rest of the API applies, is not applied here: cookies are
+   not scoped by port, so any other web app on the developer's machine could otherwise use a
+   signed-in session. `bun run dashboard:dev` still works out of the box: Vite's dev proxy
+   presents the API's origin for calls from the dev page's own origin and passes any other
+   origin on untouched (`apps/dashboard/src/lib/dev-proxy.ts`). A request that changes state **must have** an
    `Origin`: browsers send one on every such request, so one without it is not a page's fetch.
 3. **`Sec-Fetch-Site` is not `cross-site`.**
 
@@ -141,7 +158,9 @@ Postgres adapters, one behaviour suite):
 - **A new project gets a development and a production environment** in the same transaction,
   as the seed does, and each environment its first signing keys right after it
   (`Jwks.ensureKeys`; they are the one unrecorded write of ADR 0012, and an environment without
-  them gets them on first use or at the next boot, so a failure there breaks nothing). A
+  them gets them on first use or at the next boot). That step runs after the commit, so a
+  failure in it is logged and the answer is still 201: a 500 for a project that exists would
+  make the caller create a second one. A
   project holds one environment of each kind (a unique constraint), so
   `POST …/environments` only ever adds the kind a project lacks, and a second one is
   `resource.conflict`. No API key is minted: the dashboard creates one with
@@ -151,8 +170,11 @@ Postgres adapters, one behaviour suite):
 - **The instance audit log** (`tula.instance_audit_logs`, migration `0015`) records what has no
   environment: the session events above, `workspace.created`, `project.created`,
   `project.renamed` (the key that changed, never the name), `environment.created`. Control
-  plane: no tenant columns and no RLS, like `workspaces`; the runtime role may only `SELECT`
-  and `INSERT`. Each entry is written in the same transaction as its change. Names are free
+  plane: no tenant columns and no RLS, like `workspaces`; the runtime role may `SELECT`,
+  `INSERT` and, for the retention job only, `DELETE` (migration `0016`), never `UPDATE`.
+  Entries are kept for `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30) and then
+  deleted in batches by the retention job (ADR 0017). An environment's audit log has no such
+  period and is never deleted. Each entry is written in the same transaction as its change. Names are free
   text an operator typed and never go into an entry.
 - **Left out:** deleting or archiving a workspace, project or environment; renaming a
   workspace; moving a project. Deletion cascades through every tenant table and needs its own
@@ -203,6 +225,55 @@ other path. An admin never sees a password.
 
 The app must therefore be built with `base: '/dashboard/'`, no inline scripts or `<style>`
 tags, and call the API on its own origin.
+
+### The API reference page
+
+`/v1/docs` is HTML on the same origin as the dashboard, and the session cookie's path
+(`/v1/admin`, `/v1/instance`) does not stop a script running in that page from calling those
+routes. So the page is held to the dashboard's standard:
+
+- **No third-party script.** The reference (Scalar) is no longer loaded from a CDN. Its
+  single-file browser bundle is served by the API from the installed, lockfile-pinned npm
+  package (`@scalar/api-reference`, an exact version in `apps/api/package.json`) at
+  `/v1/docs/assets/api-reference-<version>.js`, cacheable for good because the path names the
+  version. The page's two small scripts (settings before the bundle, the call that starts it)
+  are files too.
+- **A policy.** `default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'
+  data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action
+  'none'; frame-ancestors 'none'`, with `nosniff`. Inline *style* is allowed because the
+  bundle injects its stylesheet at run time; script never is. Scalar runs under it: the
+  browser test loads the page with a dashboard session in the same browser and fails on one
+  violation, one console error or one request to another host. Two things made that true:
+  the hosted fonts, proxy, telemetry, assistant and developer toolbar are switched off, and
+  `jitless` is set on Zod's global settings before the bundle loads (its own copy of Zod
+  otherwise probes `new Function`).
+- **A switch.** `API_DOCS` (`on` | `off`) defaults to on in the `local` and `dev` tiers and
+  off in `staging` and `prod`. Off, the page and its scripts are unknown paths (404);
+  `/v1/openapi.json` is served either way.
+- **Every HTML answer of the API has a policy.** The pages are the dashboard, this one, the
+  mock provider's consent page and the "sign-in could not be completed" page of an OAuth
+  callback. A test walks the route table with everything mounted and fails for an HTML
+  response without a Content-Security-Policy, with one that allows script from another
+  origin, or without `nosniff`.
+
+### What the app remounts
+
+TanStack Router keeps a route's component when only a path parameter changes. Local state
+would then survive a switch: a settings draft made in development saved to production (with
+development's `If-Match`, which passes when the revisions happen to match), a provider secret
+typed for one environment written to another, a confirmation opened for one user acting on
+the next.
+
+- Everything under the environment route is keyed by the environment id
+  (`EnvironmentGate`), the workspace screen by the workspace id and the user screen by the
+  user id. A project switch is always an environment switch.
+- Keys of items that hold form state include the environment id (`ProviderCard`).
+- The settings editor's document and draft carry the environment they were loaded for; the
+  query is keyed by it; shown for another environment they are dropped, and a save is refused
+  when the selection (where the request would go) is not that environment. This holds without
+  the remount.
+- The shell is never remounted, so its dialogs ("create project", "add environment") are
+  bound to the workspace or project they were opened in and close when it changes.
 
 ## Consequences
 

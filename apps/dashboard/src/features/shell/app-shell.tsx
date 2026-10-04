@@ -32,11 +32,29 @@ const navHeading =
  * The navigation: the workspace, its projects, the selected environment's screens and the
  * instance's own. Drawn in the sidebar, and in a dialog on a narrow screen.
  */
-function Navigation({ onSignOut, signingOut }: { onSignOut: () => void; signingOut: boolean }) {
+function Navigation({
+  onSignOut,
+  signingOut,
+  signOutFailed,
+}: {
+  onSignOut: () => void
+  signingOut: boolean
+  signOutFailed: boolean
+}) {
   const { workspaceId, projectId, environmentId } = useScope()
   const navigate = useNavigate()
   const switcherId = useId()
-  const [dialog, setDialog] = useState<'workspace' | 'project' | null>(null)
+  // A dialog belongs to the workspace it was opened in: the navigation is never remounted,
+  // so one left open across a switch (the browser's back button) would otherwise create its
+  // project in the workspace that came next.
+  const [opened, setOpened] = useState<{
+    kind: 'workspace' | 'project'
+    workspaceId: string | null
+  } | null>(null)
+  const dialog = opened !== null && opened.workspaceId === workspaceId ? opened.kind : null
+  function setDialog(kind: 'workspace' | 'project' | null) {
+    setOpened(kind === null ? null : { kind, workspaceId })
+  }
   const workspaces = useListWorkspaces(SWITCHER_PAGE)
   const projects = useListProjects(
     { workspaceId: workspaceId ?? '', ...SWITCHER_PAGE },
@@ -137,7 +155,17 @@ function Navigation({ onSignOut, signingOut }: { onSignOut: () => void; signingO
         </Link>
       </nav>
 
-      <div className='mt-auto pt-4'>
+      <div className='mt-auto flex flex-col gap-2 pt-4'>
+        {signOutFailed ? (
+          <p
+            role='alert'
+            className='rounded-md border border-sidebar-border bg-sidebar-accent p-2 text-sm'
+          >
+            <span className='font-semibold'>You are still signed in.</span> The sign-out did not
+            reach the API, so this browser’s session is still active. Choose “Sign out” to try
+            again.
+          </p>
+        ) : null}
         <button
           type='button'
           className={cn(navLink, 'w-full')}
@@ -180,7 +208,15 @@ function Navigation({ onSignOut, signingOut }: { onSignOut: () => void; signingO
 function ScopeBar({ pathname }: { pathname: string }) {
   const { workspaceId, projectId, environmentId } = useScope()
   const navigate = useNavigate()
-  const [adding, setAdding] = useState<EnvironmentKind | null>(null)
+  // Bound to the project it was opened for, for the reason given at the navigation's dialogs.
+  const [addingFor, setAddingFor] = useState<{
+    kind: EnvironmentKind
+    projectId: string | null
+  } | null>(null)
+  const adding = addingFor !== null && addingFor.projectId === projectId ? addingFor.kind : null
+  function setAdding(kind: EnvironmentKind | null) {
+    setAddingFor(kind === null ? null : { kind, projectId })
+  }
   const workspaces = useListWorkspaces(SWITCHER_PAGE)
   const projects = useListProjects(
     { workspaceId: workspaceId ?? '', ...SWITCHER_PAGE },
@@ -342,13 +378,27 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [resolvedPath])
 
   function handleSignOut() {
-    leaving.current = true
-    // Signed out here whatever the API answers: a failed request must not leave the
-    // operator looking signed in.
-    signOut.mutate(undefined, { onSettled: () => signedOut() })
+    if (signOut.isPending) {
+      return
+    }
+    // Signed out only once the API has cleared the cookie. After a failed request the
+    // cookie is still there: going to sign-in would find it and come straight back, which
+    // looks like a sign-out that worked. The operator stays, is told, and can try again.
+    signOut.mutate(undefined, {
+      onSuccess: () => {
+        leaving.current = true
+        signedOut()
+      },
+    })
   }
 
-  const navigation = <Navigation onSignOut={handleSignOut} signingOut={signOut.isPending} />
+  const navigation = (
+    <Navigation
+      onSignOut={handleSignOut}
+      signingOut={signOut.isPending}
+      signOutFailed={signOut.isError}
+    />
+  )
   return (
     <div className='flex min-h-dvh flex-col md:flex-row'>
       <a

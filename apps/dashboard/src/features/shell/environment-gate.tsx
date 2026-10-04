@@ -10,6 +10,10 @@ import { EnvironmentProvider } from './environment-context'
  * The ids come from the address, which anyone can type: an environment that is not the
  * project's is "not found" here, before any admin call is made for it.
  *
+ * The screens are keyed by the environment: the router does not remount a route whose only
+ * change is `$environmentId`, and a draft, a half-typed secret or an open confirmation of one
+ * environment must never be shown, or sent, under another (ADR 0032).
+ *
  * @param props - `projectId` and `environmentId` from the route, and the screens.
  * @returns The screens under an {@link EnvironmentProvider}, or a state.
  */
@@ -38,7 +42,10 @@ export function EnvironmentGate({
           )
         }
         return (
-          <EnvironmentProvider environment={{ id: environment.id, kind: environment.kind }}>
+          <EnvironmentProvider
+            key={environment.id}
+            environment={{ id: environment.id, kind: environment.kind }}
+          >
             {children}
           </EnvironmentProvider>
         )

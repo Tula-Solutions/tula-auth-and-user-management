@@ -42,6 +42,8 @@ describe('createContainer', () => {
       oauthMock: false,
       instanceAdminTokenHash: null,
       dashboardDir: null,
+      apiDocs: true,
+      instanceAuditRetentionDays: 365,
     })
     expect(deps.breachChecker).toBeInstanceOf(HibpBreachChecker)
     expect(deps.mailer).toBeInstanceOf(SmtpMailer)

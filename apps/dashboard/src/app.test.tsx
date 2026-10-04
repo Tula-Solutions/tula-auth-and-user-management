@@ -133,6 +133,34 @@ describe('session', () => {
   })
 })
 
+describe('a sign-out that fails', () => {
+  test('the operator stays where they are, is told the session is still active, and can retry', async () => {
+    const api = installFakeApi()
+    api.override('DELETE', /^\/v1\/instance\/session$/, () =>
+      failure(503, 'service.unavailable', 'Try again.')
+    )
+    const { user, location } = start(`${DEV_PATH}/users`, { api })
+    await heading('Users')
+    await user.click(screen.getByRole('button', { name: 'Sign out' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('You are still signed in')
+    expect(location()).toBe(`${DEV_PATH}/users`)
+    expect(useSession.getState().status).toBe('signed_in')
+    expect(screen.queryByLabelText('Admin token')).toBeNull()
+    // Nothing fetched under the session was thrown away either.
+    expect(screen.getByRole('link', { name: 'ada@example.com' })).toBeDefined()
+
+    api.override('DELETE', /^\/v1\/instance\/session$/, () => {
+      api.state.signedIn = false
+      return new Response(null, { status: 204 })
+    })
+    await user.click(screen.getByRole('button', { name: 'Sign out' }))
+    await screen.findByLabelText('Admin token')
+    expect(location()).toBe('/sign-in')
+    expect(api.callsTo('DELETE', '/v1/instance/session')).toHaveLength(2)
+  })
+})
+
 describe('the switcher and the address', () => {
   test('the address decides the selection; the store mirrors it; admin calls name the environment', async () => {
     const { api } = start(`${DEV_PATH}/users`)

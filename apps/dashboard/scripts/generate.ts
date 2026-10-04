@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { DEFAULT_THEME } from '@tula/contract/theme'
+import { checkGenerated } from './check-generated'
 
 // Regenerates everything in this package that a generator owns:
 //   1. src/api/generated/api.gen.ts  Orval's hooks and types, from the contract's openapi.json
@@ -58,11 +59,6 @@ async function run(command: string[]): Promise<void> {
   }
 }
 
-async function read(path: string): Promise<string | null> {
-  const file = Bun.file(join(root, path))
-  return (await file.exists()) ? file.text() : null
-}
-
 async function generate(): Promise<void> {
   await run(['bunx', '--bun', 'orval', '--config', 'orval.config.ts'])
   await run(['bunx', '--bun', 'tsr', 'generate'])
@@ -70,19 +66,8 @@ async function generate(): Promise<void> {
 }
 
 if (process.argv.includes('--check')) {
-  const before = await Promise.all(GENERATED.map(read))
-  await generate()
-  const after = await Promise.all(GENERATED.map(read))
-  const stale = GENERATED.filter((_, index) => before[index] !== after[index])
-  // Put back what was committed: a check must not leave the tree changed.
-  await Promise.all(
-    GENERATED.map((path, index) => {
-      const content = before[index]
-      return content === null || content === undefined
-        ? Promise.resolve(0)
-        : Bun.write(join(root, path), content)
-    })
-  )
+  // Restores the committed files whatever happens: a check must not leave the tree changed.
+  const stale = await checkGenerated(root, GENERATED, generate)
   if (stale.length > 0) {
     console.error(`Out of date: ${stale.join(', ')}. Run \`bun run dashboard:generate\`.`)
     process.exit(1)

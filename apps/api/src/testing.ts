@@ -70,6 +70,8 @@ export const TEST_CONFIG: AppConfig = {
   oauthMock: false,
   instanceAdminTokenHash: null,
   dashboardDir: null,
+  apiDocs: true,
+  instanceAuditRetentionDays: 365,
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   open,
   signIn,
   test,
+  WORKSPACE_ID,
 } from './support'
 
 // The settings screens share one save model: load with the revision, replace with If-Match,
@@ -266,4 +267,59 @@ test('session profiles: add a custom profile, set a limit, and a bad duration is
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('These settings were not saved.')).toBeVisible()
   await expectScreenAccessible(page, 'session profiles, refused')
+})
+
+test('a draft made in one environment does not follow the operator to another', async ({
+  page,
+}) => {
+  // A project of its own: a development and a production environment with the same
+  // (default) settings and the same revision, which is when a stale If-Match would pass.
+  const headers = { 'x-tula-dashboard': '1', origin: API_URL }
+  const created = await page.request.post(`${API_URL}/v1/instance/projects`, {
+    headers,
+    data: { workspaceId: WORKSPACE_ID, name: `Switch ${Date.now()}` },
+  })
+  expect(created.status()).toBe(201)
+  const { project, environments } = (await created.json()) as {
+    project: { id: string }
+    environments: { id: string; kind: string }[]
+  }
+  const development = environments.find((entry) => entry.kind === 'development')?.id ?? ''
+  const production = environments.find((entry) => entry.kind === 'production')?.id ?? ''
+  const minimumOf = async (environmentId: string) => {
+    const response = await page.request.get(`${API_URL}/v1/admin/settings`, {
+      headers: { ...headers, 'x-tula-environment': environmentId },
+    })
+    return ((await response.json()) as { settings: { password: { minLength: number } } }).settings
+      .password.minLength
+  }
+  const initial = await minimumOf(production)
+
+  await open(
+    page,
+    `w/${WORKSPACE_ID}/p/${project.id}/e/${development}/password-policy`,
+    'Password policy'
+  )
+  await page.getByLabel('Minimum length').fill('8')
+  await expect(
+    page.getByRole('status').filter({ hasText: 'You have unsaved changes.' })
+  ).toBeVisible()
+
+  await page
+    .getByRole('group', { name: 'Switch environment' })
+    .getByRole('link', { name: 'Production' })
+    .click()
+  await expect(page).toHaveURL(new RegExp(`/e/${production}/password-policy$`))
+
+  // Production's own values, nothing to save, and no confirmation waiting.
+  await expect(page.getByLabel('Minimum length')).toHaveValue(String(initial))
+  await expect(page.getByRole('status').filter({ hasText: 'No unsaved changes.' })).toBeVisible()
+  await expectScreenAccessible(page, 'password policy after an environment switch')
+
+  // A save made here is production's document, changed here, and development is untouched.
+  await page.getByLabel('Minimum length').fill(String(initial + 6))
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Settings saved')).toBeVisible()
+  expect(await minimumOf(production)).toBe(initial + 6)
+  expect(await minimumOf(development)).toBe(initial)
 })

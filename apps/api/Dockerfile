@@ -54,6 +54,9 @@ COPY apps/api apps/api
 # or of React is in this image, only `dist`. The API serves it at /dashboard under a strict
 # Content-Security-Policy, and answers 404 there when the directory is absent.
 COPY --from=dashboard /usr/src/app/apps/dashboard/dist apps/dashboard/dist
+# The API reference (/v1/docs) is served from the installed package, never a CDN (ADR 0032).
+# Fail the build, not the page, if the bundle is not in the image.
+RUN bun -e "const {findApiDocsBundle}=await import('./apps/api/src/lib/api-docs.ts');const b=findApiDocsBundle('/usr/src/app/apps/api/src');if(!b){console.error('the API reference bundle is missing');process.exit(1)}console.log('API reference bundle',b.version)"
 
 # Never run as root: the server needs no write access to its own files.
 USER bun

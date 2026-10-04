@@ -3,7 +3,7 @@ import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
 import { sha256Hex } from '~/lib/crypto'
 import { createKeyedHash } from '~/lib/keyed-hash'
-import { INSTANCE_RATE_LIMIT } from '~/middleware/instance-admin'
+import { DASHBOARD_SIGN_IN_RATE_LIMIT, INSTANCE_RATE_LIMIT } from '~/middleware/instance-admin'
 import {
   createInstanceTestDeps,
   createTestDeps,
@@ -116,9 +116,10 @@ describe('POST /v1/instance/session', () => {
       answers.push(JSON.stringify({ ...answer, requestId: undefined }))
     }
     expect(new Set(answers).size).toBe(1)
-    // Each failure is recorded, with nothing of what was presented.
+    // The failures are recorded (one entry a minute per address, see below), with nothing of
+    // what was presented.
     const failures = deps.controlPlane.ofType('instance.sign_in_failed')
-    expect(failures).toHaveLength(9)
+    expect(failures).toHaveLength(1)
     expect(JSON.stringify(failures)).not.toContain('wrong-token')
     expect(JSON.stringify(failures)).not.toContain(TEST_ADMIN_TOKEN.slice(0, 8))
     expect(failures[0]).toMatchObject({ actor: { type: 'instance_admin', id: null }, target: null })
@@ -141,9 +142,124 @@ describe('POST /v1/instance/session', () => {
     expect(viaQuery.status).toBe(401)
   })
 
+  test('a body that cannot be read is a failed sign-in like any other: the same 401, recorded', async () => {
+    const wrong = await signIn(createApp(createInstanceTestDeps()), { token: 'wrong-token-wrong' })
+    const expected = { ...((await wrong.json()) as object), requestId: undefined }
+    for (const raw of ['', '{', 'not json', '[]', 'null', '"a string"', '{"token":']) {
+      const deps = createInstanceTestDeps()
+      const res = await createApp(deps).request(PATH, {
+        method: 'POST',
+        headers: dashboardHeaders(),
+        body: raw,
+      })
+      expect(res.status, JSON.stringify(raw)).toBe(401)
+      expect(res.headers.getSetCookie()).toEqual([])
+      expect({ ...((await res.json()) as object), requestId: undefined }).toEqual(expected)
+      expect(deps.controlPlane.ofType('instance.sign_in_failed')).toHaveLength(1)
+    }
+  })
+
+  test('a body sent as something other than JSON is the same failed sign-in', async () => {
+    const deps = createInstanceTestDeps()
+    const res = await createApp(deps).request(PATH, {
+      method: 'POST',
+      headers: { ...dashboardHeaders(), 'content-type': 'text/plain' },
+      body: JSON.stringify({ token: TEST_ADMIN_TOKEN }),
+    })
+    expect(res.status).toBe(401)
+    expect(await code(res)).toBe('auth.invalid_key')
+    expect(deps.controlPlane.ofType('instance.sign_in_failed')).toHaveLength(1)
+  })
+
+  test('failed sign-ins are recorded once a minute per address, with how many were not', async () => {
+    const deps = createInstanceTestDeps({ config: { ...TEST_CONFIG, trustProxy: true } })
+    const app = createApp(deps)
+    const keys: string[] = []
+    const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
+    deps.rateLimiter.hit = (key, limit, windowMs) => {
+      keys.push(key)
+      return hit(key, limit, windowMs)
+    }
+    const from = (ip: string) =>
+      signIn(
+        app,
+        { token: 'wrong-token-wrong-token' },
+        { ...dashboardHeaders(), 'x-forwarded-for': ip }
+      )
+    const failures = () => deps.controlPlane.ofType('instance.sign_in_failed')
+
+    for (let i = 0; i < 5; i += 1) {
+      expect((await from('203.0.113.7')).status).toBe(401)
+    }
+    expect(failures()).toHaveLength(1)
+    expect(failures()[0]?.data).toEqual({ suppressedInPreviousMinute: 0 })
+    expect(failures()[0]?.ipAddress).toBe('203.0.113.7')
+
+    // Another address has its own entry.
+    await from('198.51.100.9')
+    expect(failures()).toHaveLength(2)
+
+    // The next minute's first failure says how many of the last minute's were not recorded.
+    deps.clock.advance('1m')
+    await from('203.0.113.7')
+    await from('203.0.113.7')
+    expect(failures()).toHaveLength(3)
+    expect(failures()[2]?.data).toEqual({ suppressedInPreviousMinute: 4 })
+
+    // After a quiet stretch the count starts again: it is of the minute before, no further.
+    deps.clock.advance('3m')
+    await from('203.0.113.7')
+    expect(failures()[3]?.data).toEqual({ suppressedInPreviousMinute: 0 })
+
+    // What is counted is keyed by a keyed hash of the address, never the address.
+    const tally = keys.filter((key) => key.startsWith('instance_sign_in_failed:'))
+    expect(tally.length).toBeGreaterThan(0)
+    expect(tally.some((key) => key.includes('203.0.113.7') || key.includes('198.51.100.9'))).toBe(
+      false
+    )
+  })
+
+  test('when the tally cannot be counted, the failure is recorded rather than lost', async () => {
+    const deps = createInstanceTestDeps()
+    const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
+    deps.rateLimiter.hit = async (key, limit, windowMs) => {
+      if (key.startsWith('instance_sign_in_failed:')) {
+        throw new ServiceUnavailableError()
+      }
+      return hit(key, limit, windowMs)
+    }
+    const app = createApp(deps)
+    for (let i = 0; i < 2; i += 1) {
+      expect((await signIn(app, { token: 'wrong-token-wrong-token' })).status).toBe(401)
+    }
+    expect(deps.controlPlane.ofType('instance.sign_in_failed')).toHaveLength(2)
+  })
+
+  test('the dashboard sign-in has its own allowance: bearer calls do not use it up, nor it theirs', async () => {
+    const app = createApp(createInstanceTestDeps())
+    const bearer = () =>
+      app.request('/v1/instance/workspaces', { headers: { authorization: 'Bearer wrong-token' } })
+    for (let i = 0; i < INSTANCE_RATE_LIMIT; i += 1) {
+      expect((await bearer()).status).toBe(401)
+    }
+    expect((await bearer()).status).toBe(429)
+    // The CLI's bucket is full; the dashboard's sign-in still works.
+    expect((await signIn(app, { token: TEST_ADMIN_TOKEN })).status).toBe(200)
+
+    const other = createApp(createInstanceTestDeps())
+    for (let i = 0; i < DASHBOARD_SIGN_IN_RATE_LIMIT; i += 1) {
+      await signIn(other, { token: 'wrong-token-wrong-token' })
+    }
+    expect((await signIn(other, { token: TEST_ADMIN_TOKEN })).status).toBe(429)
+    const cli = await other.request('/v1/instance/workspaces', {
+      headers: { authorization: `Bearer ${TEST_ADMIN_TOKEN}` },
+    })
+    expect(cli.status).toBe(200)
+  })
+
   test('guesses are counted: past the limit the right token is refused too', async () => {
     const app = createApp(createInstanceTestDeps())
-    for (let i = 0; i < INSTANCE_RATE_LIMIT; i += 1) {
+    for (let i = 0; i < DASHBOARD_SIGN_IN_RATE_LIMIT; i += 1) {
       expect((await signIn(app, { token: 'wrong-token-wrong-token-wrong-token' })).status).toBe(401)
     }
     const res = await signIn(app, { token: TEST_ADMIN_TOKEN })
@@ -411,6 +527,32 @@ describe('cross-site request forgery', () => {
       expect(res.headers.getSetCookie()).toEqual([])
     }
     expect(deps.controlPlane.entries).toEqual([])
+  })
+
+  test('in the local tier another loopback origin is not the dashboard: cookies are not scoped by port', async () => {
+    const deps = createInstanceTestDeps()
+    expect(deps.config.tier).toBe('local')
+    const app = createApp(deps)
+    const cookie = await dashboardSignIn(app)
+    for (const origin of ['http://localhost:5199', 'http://127.0.0.1:3003', 'http://[::1]:8080']) {
+      const read = await app.request(PATH, { headers: { ...dashboardHeaders(cookie), origin } })
+      expect(read.status, origin).toBe(403)
+      expect(await code(read)).toBe('request.origin_not_allowed')
+      const write = await app.request('/v1/instance/workspaces', {
+        method: 'POST',
+        headers: { ...dashboardHeaders(cookie), origin },
+        body: JSON.stringify({ name: 'From another local app' }),
+      })
+      expect(write.status, origin).toBe(403)
+      const signedIn = await signIn(
+        app,
+        { token: TEST_ADMIN_TOKEN },
+        { ...dashboardHeaders(), origin }
+      )
+      expect(signedIn.status, origin).toBe(403)
+      expect(signedIn.headers.getSetCookie()).toEqual([])
+    }
+    expect(deps.controlPlane.ofType('workspace.created')).toEqual([])
   })
 
   test('an origin on the deployment’s CORS_ORIGINS list is allowed (vite dev), a tenant’s is not', async () => {
