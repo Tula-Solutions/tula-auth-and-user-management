@@ -1,3 +1,4 @@
+import { CAN_STILL_SIGN_IN_HEADER } from '@tula/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
@@ -229,10 +230,26 @@ router.delete(
       'user. The recovery path for someone who lost both their authenticator and their backup ' +
       'codes; there is no emailed bypass. Under `mfa.policy: required` the user enrols again ' +
       'at their next sign-in. Succeeds, and still ends the sessions, for a user with nothing ' +
-      'enrolled.',
+      'enrolled.\n\n' +
+      '**The user’s passkeys are removed too, even one that was their only way to sign in.** ' +
+      'The `x-tula-can-still-sign-in` response header says what that left: `true` when a ' +
+      'method the environment accepts remains (a password, a verified address where the ' +
+      'emailed code is on, an enabled provider), `false` when nothing does. An account left ' +
+      'with `false` cannot sign in until you give it a way in: for example the user’s own ' +
+      '“Forgot password” where the password method is on, or switching on a method they can ' +
+      'use. The same boolean is recorded on the `user.passkey_removed` audit entry.',
     security: openapi.security.admin,
     responses: {
-      204: { description: 'Two-step verification was reset.' },
+      204: {
+        description: 'Two-step verification was reset.',
+        headers: {
+          [CAN_STILL_SIGN_IN_HEADER]: {
+            description:
+              'Whether the user can still sign in with what they have left (`true` or `false`).',
+            schema: { type: 'string' as const, enum: ['true', 'false'] },
+          },
+        },
+      },
       404: openapi.responses[404],
       422: openapi.responses[422],
       ...errors,
@@ -242,7 +259,15 @@ router.delete(
   secretKey(),
   validator('param', UserIdParamSchema, validationHook),
   async (c) => {
-    await Mfa.reset(c.get('deps'), c.get('tenant'), c.req.valid('param').userId, adminActor(c))
+    const { canStillSignIn } = await Mfa.reset(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('param').userId,
+      adminActor(c)
+    )
+    // A header, because the route has always answered 204 with no body and clients check for
+    // exactly that: the outcome is added without changing what they already rely on.
+    c.header(CAN_STILL_SIGN_IN_HEADER, String(canStillSignIn))
     return c.body(null, 204)
   }
 )

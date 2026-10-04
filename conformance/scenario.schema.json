@@ -122,6 +122,14 @@
                       "type": "string"
                     },
                     "additionalProperties": {}
+                  },
+                  "headers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                    },
+                    "additionalProperties": {}
                   }
                 },
                 "required": ["status"],
@@ -442,6 +450,14 @@
                     "type": "object",
                     "propertyNames": {
                       "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "headers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
                     },
                     "additionalProperties": {}
                   }

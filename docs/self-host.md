@@ -198,9 +198,15 @@ that would turn two factors back into one. Reset them with the secret key, which
 them out everywhere and emails them:
 
 ```bash
-curl -X DELETE "$TULA_URL/v1/admin/users/$USER_ID/factors" \
+curl -i -X DELETE "$TULA_URL/v1/admin/users/$USER_ID/factors" \
   -H "Authorization: Bearer $TULA_SECRET_KEY"
 ```
+
+The reset removes the user's passkeys too, even one that was their only way to sign in. The
+answer is `204` with the header `x-tula-can-still-sign-in`: on `false` nothing the environment
+accepts is left on the account, and you have to give it a way in (the user's own "Forgot
+password" where the password method is on, or a method you switch on). The same boolean is on
+the `user.passkey_removed` audit entry.
 
 The authenticator secrets are encrypted with `TULA_MASTER_KEY` and the backup codes are hashed
 with a key derived from it: **changing the master key makes every user's second factor stop
@@ -324,7 +330,9 @@ switches them on, and switching them on takes three settings in the same documen
   have an authenticator app, or `mfa.policy` is `required`).
 - A user who has lost every passkey and has no other way in is helped with the factor reset
   (`DELETE /v1/admin/users/<id>/factors`), which removes their passkeys as well; they then sign
-  in another way or reset their password. Removing a user's last way to sign in is refused
+  in another way or reset their password. The reset's `x-tula-can-still-sign-in` header is
+  `false` when that left the account with no way in at all: nothing signs it in until you give
+  it one. A user removing their own last way to sign in is refused
   (`passkey.last_sign_in_method`), and a user may hold at most ten passkeys.
 - Native apps cannot use passkeys yet (they have no `Origin`); that arrives with the native
   SDKs.

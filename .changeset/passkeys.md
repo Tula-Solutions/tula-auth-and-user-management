@@ -12,6 +12,10 @@ Passkeys (WebAuthn): registration, usernameless sign-in, second factor and step-
   step-up method, the `amr` values `hwk`, `swk` and `user`, the audit actions
   `user.passkey_*`, and the error codes `passkey.registration_failed`,
   `passkey.already_registered`, `passkey.limit_reached` and `passkey.last_sign_in_method`.
+  `CAN_STILL_SIGN_IN_HEADER` (`x-tula-can-still-sign-in`, in `@tula/contract/headers`): the
+  response header of the admin factor reset, which removes passkeys too and says with it
+  whether the user can still sign in (the route keeps answering `204`). Passkey sign-in
+  starts have a per-environment ceiling of their own.
 - `@tula/core`: `signIn.canUsePasskey()`, `signIn.canAutofillPasskey()` and
   `signIn.withPasskey({ signal, autofill })`; `flow.submitSecondFactorWithPasskey()` on the
   sign-in and password-reset flows; `session.stepUpWithPasskey()`;

@@ -163,16 +163,19 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   waits: its own signal per run, aborted in the cleanup, and **aborted before any other
   ceremony starts** (`components/passkey.tsx` is the one place that starts one). It never sets
   a pending state: the form it sits behind must stay usable.
-- **A dismissed passkey dialog is not an error.** `passkey.cancelled` is said through the quiet
-  `Status`, never `role="alert"`, the button works again and takes the focus back; every
+- **A dismissed passkey dialog is not an error, and not a success.** `passkey.cancelled` is
+  said through the quiet `Status` in its neutral tone (`tone='neutral'`: the muted text
+  colour, not the success one), never `role="alert"`, the button works again and takes the
+  focus back, and the autofill request is started again after any try that did not sign in; every
   other failure is the message its code has. Nothing of a ceremony (options, the credential,
   the browser's own error text) is kept in state, rendered or logged.
 - **A passkey sign-in is an attempt of its own.** Its flow reaches the screens through
   `adopt()`, which discards the attempt it replaces, and its completion is delivered even if
   the screen has gone meanwhile (the client is signed in before the flow comes back, and an
-  app takes `<SignIn>` away at that moment). `useCompletion` waits one turn before it treats
-  a signed-in client as "was already signed in", so that this completion and the app's
-  `onComplete` win.
+  app takes `<SignIn>` away at that moment). Because the flow hook is not pending meanwhile,
+  the component takes `useCompletion`'s `hold` before its first await and releases it after
+  its flow went through `finish`: while a hold is out, a signed-in client is never treated as
+  "was already signed in". Never order these with a timer.
 - **Accessibility is part of done**: labelled fields, errors associated and announced, focus
   moved on a step change and on failure, state as text and not only colour, keyboard operation
   of everything. axe runs on every screen in the browser tests with no rule disabled.
@@ -431,12 +434,18 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   the response is judged.** A sign-in's lives on its attempt and is taken with a
   compare-and-set on its value; a registration's and a step-up's live in `passkey_challenges`,
   bound to the session that asked. Never accept a challenge from a client beyond matching it.
+  Everything that can refuse a request without looking at the response comes **before** the
+  challenge is taken and before a guess is counted: the relying party, then the environment's
+  ceiling. The unauthenticated start is counted under its own ceiling (`passkeyStart`), never
+  `verify`: every open sign-in page asks for one.
 - **A failed passkey sign-in is always `auth.invalid_credentials`,** whatever the reason, and
   its options are the same for every caller (no `allowCredentials`). There is no lockout for it
   (no identifier, nothing guessable): the per-IP and per-environment limits bound it.
 - **Removing the last way to sign in is refused in the store's transaction**
   (`OAuth.canStillSignIn`, which counts a password, an emailed code, providers and passkeys):
-  for an identity and for a passkey alike.
+  for an identity and for a passkey alike. The admin factor reset is the one exception (it
+  removes every passkey, on purpose), and it reports the outcome by the same rule: the
+  `x-tula-can-still-sign-in` response header and `canStillSignIn` on the audit entry.
 - **TOTP secrets are sealed, backup codes are keyed hashes.** A TOTP secret is stored only
   sealed with `~/lib/secret-box` (purpose `totp-secrets`, bound to environment, user and factor
   id) and returned once, at enrolment. Backup codes are stored only as

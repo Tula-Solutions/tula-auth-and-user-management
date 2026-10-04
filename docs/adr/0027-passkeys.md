@@ -70,7 +70,10 @@ on the server:
   binds it to the attempt's secret and, for a browser, the origin rule of `load`. It is taken
   with a compare-and-set on its own value (`StateGuard`) **before** the response is looked at:
   the first response presented uses it up, right or wrong, and of two concurrent requests one
-  gets it.
+  gets it. What is checked before the response is looked at comes before the challenge is
+  taken too: the relying party, then the environment's ceiling. A request refused by either
+  (`auth.method_disabled`, `request.origin_not_allowed`, `rate_limited`, `service.unavailable`)
+  leaves the challenge to be used by the next one.
 - **Registration and step-up:** a row in `passkey_challenges`, one per session and purpose
   (asking again replaces it), taken by `DELETE … RETURNING`. A challenge issued to one session,
   user or purpose is nothing to another.
@@ -88,7 +91,14 @@ environment : user)`: the same for every passkey of a user, saying nothing about
 the user id without the key. Derived rather than drawn at random and stored ahead of time, so
 that nothing has to be kept between the options and the finish; each row records the handle it
 was registered with, and an assertion's `userHandle` must equal it. (This departs from "a
-stored random handle": the properties asked for hold, with one table fewer to keep consistent.)
+stored random handle": the properties asked for hold, with one table fewer to keep consistent.
+It is **not** random, and nothing in the code or the contract should say so.)
+
+After a change of `TULA_MASTER_KEY` the derived handle changes, so a user's new registrations
+get a different handle than their existing rows. That is harmless: every row carries its own
+handle and an assertion is checked against its own row's. The one visible effect is that an
+authenticator that still holds an old passkey of the account keeps it beside the new one
+instead of replacing it.
 
 **Signature counter.** `0` both sides means an authenticator that keeps none (every synced
 passkey): fine. Otherwise the counter must grow; one that does not means a copied credential,
@@ -109,7 +119,12 @@ A passkey sign-in is an attempt of its own, like OAuth, because it has no identi
   stale or used challenge, a counter that went backwards.
 - **No lockout.** There is no identifier to lock, and nothing to guess: a credential id is not
   a secret and a signature cannot be brute-forced. Tries are bounded per IP by the route (30 a
-  minute) and per environment by the `verify` ceiling. A lookup miss returns without a
+  minute) and per environment by the `verify` ceiling. **Starts have a ceiling of their own**
+  (`passkeyStart`, 6,000 a minute per environment): every open sign-in page asks for one when
+  it loads and again every four minutes for its autofill request, signed in to nothing, and
+  under `verify` those would use up what real users' code and second-factor steps need. 6,000
+  is 100 page loads a second or 24,000 idle pages; a start costs one attempt row, no hash and
+  no email. A lookup miss returns without a
   signature check; the timing difference reveals only whether a credential id exists, which
   its holder already knows.
 
@@ -142,7 +157,9 @@ sign-in completes as before.
 
 `passkey` is a step-up method for every user who has one (`POST
 /v1/client/sessions/step-up/passkey` for the options, then `POST /v1/client/sessions/step-up`),
-including users with TOTP, and is recorded with `mfa`. A user with no second factor in force
+including users with TOTP, and is recorded with `mfa`. The step-up resolves the relying party
+before it counts a guess: passkeys switched off, or a missing or foreign `Origin`, is refused
+with nothing taken from the second-factor budget the user's authenticator codes share. A user with no second factor in force
 may still step up with their password or an emailed code, as before. Registering, renaming and
 removing a passkey need a recent authentication (`requireRecentAuth()`).
 
@@ -162,6 +179,24 @@ store's transaction with the user row locked.
 **The admin factor reset removes passkeys** (`DELETE /v1/admin/users/:userId/factors`): it is
 the "this account's authenticators are gone" tool. Sessions are ended as before. Deleting a
 user removes them by cascade.
+
+Unlike the owner's own removal, the reset is **never refused for being the last way in**: a
+lost or stolen device is exactly when the only passkey has to go. So it can leave an account
+that cannot sign in, and it says so instead of hiding it:
+
+- the response carries `x-tula-can-still-sign-in: true|false` (`CAN_STILL_SIGN_IN_HEADER`),
+  worked out with the same `OAuth.canStillSignIn` rule from what the user has left;
+- the `user.passkey_removed` entry records the same boolean (`canStillSignIn`) and nothing
+  else about what is left.
+
+An account answered with `false` needs the operator to give it a way in: the user's own
+"Forgot password" where the password method is on (a reset sets a first password), or
+switching on a method the user can use (the emailed code for a verified address).
+
+The route keeps answering `204` with no body. A `200` with a body was the other option and was
+not taken: existing clients and conformance scenario 23 check for exactly `204`, so a changed
+status is not additive, while a new response header is. (The conformance format gained
+`expect.headers` for it.)
 
 Adding and removing a passkey are audited in the same transaction (`user.passkey_added`,
 `user.passkey_removed`, with the passkey's row id; never the credential id or the key) and
@@ -189,6 +224,8 @@ so the new-device notice applies.
   `synced` is the authenticator's own claim.
 - A user under `mfa.policy: required` whose only factor is a passkey, and who loses it, needs
   an admin reset: there are no backup codes for a passkey. (The same as TOTP without codes.)
+- An admin reset can leave an account with no way to sign in; the response header and the
+  audit entry say when, and the operator has to act on it.
 - The session-challenge table is one more short-lived table for the retention job.
 
 ## Not done here

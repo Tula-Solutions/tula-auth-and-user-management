@@ -10718,7 +10718,7 @@
           "MFA"
         ],
         "summary": "Reset a user’s two-step verification",
-        "description": "Removes the user’s authenticator and backup codes and ends **every** session of the user. The recovery path for someone who lost both their authenticator and their backup codes; there is no emailed bypass. Under `mfa.policy: required` the user enrols again at their next sign-in. Succeeds, and still ends the sessions, for a user with nothing enrolled.",
+        "description": "Removes the user’s authenticator and backup codes and ends **every** session of the user. The recovery path for someone who lost both their authenticator and their backup codes; there is no emailed bypass. Under `mfa.policy: required` the user enrols again at their next sign-in. Succeeds, and still ends the sessions, for a user with nothing enrolled.\n\n**The user’s passkeys are removed too, even one that was their only way to sign in.** The `x-tula-can-still-sign-in` response header says what that left: `true` when a method the environment accepts remains (a password, a verified address where the emailed code is on, an enabled provider), `false` when nothing does. An account left with `false` cannot sign in until you give it a way in: for example the user’s own “Forgot password” where the password method is on, or switching on a method they can use. The same boolean is recorded on the `user.passkey_removed` audit entry.",
         "security": [
           {
             "secretKey": []
@@ -10726,7 +10726,19 @@
         ],
         "responses": {
           "204": {
-            "description": "Two-step verification was reset."
+            "description": "Two-step verification was reset.",
+            "headers": {
+              "x-tula-can-still-sign-in": {
+                "description": "Whether the user can still sign in with what they have left (`true` or `false`).",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation Error",

@@ -158,6 +158,11 @@ export interface TulaLocalization {
     added: string
     /** In place of "Add a passkey" in a browser without WebAuthn. */
     addUnsupported: string
+    /**
+     * In place of "Add a passkey" where the environment has passkeys switched off and the user
+     * still has some: they can be renamed and removed, not added.
+     */
+    addUnavailable: string
     /** A passkey its authenticator keeps on more than one device. */
     synced: string
     /** A passkey that lives on one device or security key. */
@@ -512,6 +517,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     added: 'Your passkey was added.',
     addUnsupported:
       'This browser cannot create passkeys. You can still rename or remove the ones you have.',
+    addUnavailable:
+      'New passkeys cannot be added right now. You can still rename or remove the ones you have.',
     synced: 'Synced across your devices',
     deviceBound: 'On this device only',
     created: 'Added {date}',

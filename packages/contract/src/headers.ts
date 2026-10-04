@@ -1,6 +1,7 @@
 /**
- * Names of the request headers the client API reads, and of the two parameters an emailed
- * sign-in link carries in its URL fragment.
+ * Names of the request headers the client API reads, of the response header the admin factor
+ * reset answers with, and of the parameters an emailed sign-in link and an OAuth sign-in carry
+ * in a URL fragment.
  *
  * This module has no dependencies (no Zod), so an SDK can import it from
  * `@tula/contract/headers` without adding anything to an application's bundle.
@@ -50,6 +51,28 @@ export const CLIENT_HEADER = 'x-tula-client'
  * ```
  */
 export const FLOW_ATTEMPT_HEADER = 'x-tula-attempt'
+
+/**
+ * Response header of the admin factor reset (`DELETE /v1/admin/users/:userId/factors`):
+ * `true` or `false`, whether the user can still sign in with what they have left.
+ *
+ * The reset removes the user's passkeys together with their authenticator and backup codes.
+ * `false` means nothing remains that the environment's settings would let them in with (no
+ * password where passwords are on, no verified address where the emailed code is on, no
+ * connected provider that is enabled): the operator has to give the account a way in, for
+ * example the user's own "Forgot password" where the password method is on. The route still
+ * answers `204` with no body; the header is how the outcome is told without changing that.
+ *
+ * @example
+ * ```ts
+ * const res = await fetch(`${api}/v1/admin/users/${userId}/factors`, {
+ *   method: 'DELETE',
+ *   headers: { authorization: `Bearer ${secretKey}` },
+ * })
+ * const lockedOut = res.headers.get(CAN_STILL_SIGN_IN_HEADER) === 'false'
+ * ```
+ */
+export const CAN_STILL_SIGN_IN_HEADER = 'x-tula-can-still-sign-in'
 
 /**
  * Name of the URL-fragment parameter carrying an emailed sign-in link's token.

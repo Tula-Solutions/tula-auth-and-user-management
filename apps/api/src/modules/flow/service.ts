@@ -85,6 +85,13 @@ const NO_SECRET_HASH = 'x'.repeat(64)
  * argon2id hash or an email. Generous for real traffic (ten sign-ups a second), tight enough
  * that a botnet aimed at one tenant can't monopolise the server. Refresh has no ceiling: every
  * active user refreshes about once a minute, so one would throttle a large app in normal use.
+ *
+ * `passkeyStart` is apart from `verify` on purpose. A passkey start is asked for by every open
+ * sign-in page, signed in to nothing: once when the page loads (the autofill request) and again
+ * every four minutes while it sits idle. Counted under `verify`, idle pages (or anyone
+ * requesting starts) would use up the ceiling that real users' code and second-factor steps
+ * need. 6,000 a minute is 100 sign-in page loads a second, or 24,000 pages left open; a start
+ * costs one attempt row and no hash or email, so it can be twice as generous as `verify`.
  */
 export const ENVIRONMENT_RATE_LIMITS = {
   signUp: 600,
@@ -93,6 +100,7 @@ export const ENVIRONMENT_RATE_LIMITS = {
   password: 3_000,
   verify: 3_000,
   oauth: 3_000,
+  passkeyStart: 6_000,
 } as const
 
 type CeilingStep = keyof typeof ENVIRONMENT_RATE_LIMITS
@@ -2205,7 +2213,8 @@ async function takePasskeyChallenge(
  * @throws AuthError `auth.method_disabled` when passkeys are off, or
  *   `request.origin_not_allowed` for an origin the environment does not allow or that does not
  *   belong to its relying-party id.
- * @throws RateLimitError when the environment's ceiling is reached.
+ * @throws RateLimitError when the environment's ceiling for starts (`passkeyStart`, its own:
+ *   never the one code steps are counted under) is reached.
  */
 export async function startPasskeySignIn(
   deps: Pick<
@@ -2217,7 +2226,8 @@ export async function startPasskeySignIn(
 ): Promise<{ attempt: FlowAttempt; options: PasskeyRequestOptions; client: SessionClient }> {
   requireAllowedOrigin(context.client, context)
   const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
-  await chargeEnvironment(deps, tenant, 'verify')
+  // Its own ceiling: every idle sign-in page asks for a start (see ENVIRONMENT_RATE_LIMITS).
+  await chargeEnvironment(deps, tenant, 'passkeyStart')
   const challenge = WebAuthn.newChallenge()
   const state: State = {
     client: context.client,
@@ -2245,7 +2255,9 @@ export async function startPasskeySignIn(
  * **Every failure is the same `auth.invalid_credentials`**: an unknown credential, another
  * environment's, a wrong signature, a response made for another origin, relying party or
  * challenge, one without user verification, a used or expired challenge, a counter that went
- * backwards. The challenge is used up by the first response presented for it.
+ * backwards. The challenge is used up by the first response presented for it; a request that
+ * is refused before that (passkeys off, the origin, the environment's ceiling or a limiter that
+ * cannot answer) uses nothing up.
  *
  * **A passkey satisfies two-step verification on its own** (ADR 0027): it is something the
  * user has, unlocked by something they are or know, and it cannot be phished. So this step
@@ -2278,9 +2290,11 @@ export async function submitPasskey(
   const strategies = state.strategies ?? []
   const event = { type: 'first_factor_verified', strategy: 'passkey' } as const
   assertAccepts(attempt.kind, attempt.status, event, strategies)
-  // Resolves the relying party (so: passkeys still on, origin allowed) before anything is used.
-  const taken = await takePasskeyChallenge(deps, tenant, attempt, state, context)
+  // The relying party first (passkeys still on, origin allowed), then the ceiling, and only
+  // then the challenge: a request refused by either leaves the challenge to be used.
+  await Passkeys.relyingParty(deps, tenant, context.origin)
   await chargeEnvironment(deps, tenant, 'verify')
+  const taken = await takePasskeyChallenge(deps, tenant, attempt, state, context)
   const { challenge, ...rp } = taken.expected ?? { challenge: null, rpId: '', origin: '' }
   const asserted =
     challenge === null

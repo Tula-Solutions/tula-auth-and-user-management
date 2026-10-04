@@ -87,6 +87,8 @@ export const RequestSchema = z
  * `claims` checks what a JWT in the body says: each key is the dot path of a token
  * (`session.accessToken`), each value is matched, as `body` is, against the token's decoded
  * payload. The signature is not verified: a scenario states what a client reads from the token.
+ *
+ * `headers` checks response headers by name, each value matched as a `body` value is.
  */
 export const ExpectSchema = z
   .object({
@@ -100,6 +102,12 @@ export const ExpectSchema = z
      * `{ "$set": [...] }` matches an array with exactly those members in any order.
      */
     claims: z.record(z.string(), z.unknown()).optional(),
+    /**
+     * Response headers, by name (case does not matter), each matched like a `body` value
+     * against the header's text: `{ "x-tula-can-still-sign-in": "false" }`. A header the
+     * response does not have is absent (`"$absent"` matches it, anything else does not).
+     */
+    headers: z.record(z.string().regex(HEADER_NAME), z.unknown()).optional(),
   })
   .meta({ ref: 'ConformanceExpect' })
 

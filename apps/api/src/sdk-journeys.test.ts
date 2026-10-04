@@ -61,6 +61,10 @@ const SERVER_ONLY: Record<string, string> = {
   'passkeys switched off mid-attempt':
     '`signIn.withPasskey()` starts and submits in one call, so no settings change can be placed ' +
     'between the two through the SDK; the journey below covers the method being off at the start.',
+  'the admin reset removes passkeys and says whether the user can still sign in':
+    'the outcome is a response header of an admin route, read with the secret key by a server or ' +
+    'the dashboard; a client SDK never calls it. What a client sees of a reset (the session ' +
+    'ending at once) is the "admin second factor reset" journey below.',
 }
 
 /** Register a test as the SDK's coverage of one or more conformance scenarios. */

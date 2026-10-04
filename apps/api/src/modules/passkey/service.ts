@@ -132,7 +132,11 @@ function toPasskey(record: PasskeyRecord): Passkey {
  * stored ahead of time: it is the same for every passkey of one user (so an authenticator
  * replaces rather than piles up credentials), it says nothing about the email or the user id
  * to anyone without the key, and nothing has to be kept between asking for options and
- * finishing. Each passkey row stores the handle it was registered with.
+ * finishing. Each passkey row stores the handle it was registered with, and an assertion is
+ * checked against its own row's: after a change of the master key new registrations get a
+ * different handle than a user's existing rows, and both keep working (the only effect is
+ * that an authenticator holding an old passkey adds the new one beside it instead of
+ * replacing it).
  */
 async function userHandle(
   deps: Pick<Deps, 'keyedHash'>,

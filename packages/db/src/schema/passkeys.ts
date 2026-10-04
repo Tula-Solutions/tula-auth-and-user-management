@@ -29,8 +29,12 @@ const bytes = customType<{ data: Uint8Array; driverData: Uint8Array }>({
  * user has many and a sign-in looks one up by `credential_id` alone.
  *
  * - `credential_id` is unique per environment (base64url, as the browser sends it).
- * - `user_handle` is the opaque random id given to the authenticator as `user.id`: the same for
- *   every passkey of one user, and never derived from the email or the user id.
+ * - `user_handle` is the opaque id given to the authenticator as `user.id`: 32 bytes,
+ *   `HMAC-SHA256(key from TULA_MASTER_KEY, environment : user)`. It is derived, not random: the
+ *   same for every passkey of one user, and it says nothing about the email or the user id to
+ *   anyone without the key. Each row stores the handle it was registered with, and an
+ *   assertion is checked against its own row's. So after a change of the master key a user's
+ *   new passkeys carry a different handle than their existing rows; both keep working.
  * - `sign_count` is the authenticator's signature counter. `0` for one that keeps none (synced
  *   passkeys); otherwise it must grow with every use, and one that does not is refused.
  * - `backup_eligible` / `backed_up` are the BE and BS flags of the last authenticator data.

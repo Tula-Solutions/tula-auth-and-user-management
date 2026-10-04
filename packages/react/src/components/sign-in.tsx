@@ -185,6 +185,8 @@ function IdentifierScreen(props: {
   focusTitle: boolean
   footer: ReactNode
   oauthCallbackUrl: string | undefined
+  /** From `useCompletion`: taken by a passkey sign-in for as long as it is in flight. */
+  holdCompletion(): () => void
 }) {
   const { t } = useUi()
   const { signIn, email } = props
@@ -238,7 +240,12 @@ function IdentifierScreen(props: {
         </Button>
       </Form>
       {/* After the form in the document: Tab goes from the address to "Continue" first. */}
-      <PasskeySignIn autofill onFlow={signIn.adopt} disabled={signIn.isPending} />
+      <PasskeySignIn
+        autofill
+        onFlow={signIn.adopt}
+        hold={props.holdCompletion}
+        disabled={signIn.isPending}
+      />
     </Card>
   )
 }
@@ -793,7 +800,7 @@ function SignInScreens(props: SignInProps) {
   const step: FlowStep | null = active.step
   const screen = `${view}:${step?.status ?? 'start'}`
   const focusTitle = useScreenChanged(screen)
-  const { signedIn, finish } = useCompletion(active, {
+  const { signedIn, finish, hold } = useCompletion(active, {
     onComplete: props.onComplete,
     url: props.afterSignInUrl ?? navigation.afterSignInUrl,
   })
@@ -932,6 +939,7 @@ function SignInScreens(props: SignInProps) {
           signIn={signIn}
           focusTitle={focusTitle}
           oauthCallbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
+          holdCompletion={hold}
           footer={
             <SwitchLink
               prompt={t.signIn.noAccount}

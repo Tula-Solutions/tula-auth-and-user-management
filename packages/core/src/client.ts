@@ -484,7 +484,6 @@ export interface TulaClient {
      *   has not proven it recently, `auth.step_up_required` (see `session.stepUp`).
      */
     changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
-    /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
     /**
      * The signed-in user's passkeys (ADR 0027). Adding, renaming and removing one may answer
      * `auth.step_up_required`; see `session.stepUp`.
@@ -538,6 +537,7 @@ export interface TulaClient {
        */
       remove(input: { passkeyId: string }): Promise<void>
     }
+    /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
     readonly identities: {
       /**
        * @returns The connected accounts, oldest first.

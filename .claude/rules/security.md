@@ -149,6 +149,11 @@ Before finishing any change here, confirm each item holds and has a test:
     counted or used: no `Origin`, a disallowed one, an allowed one outside `passkeys.rpId` and
     a look-alike host are `request.origin_not_allowed`; passkeys switched off mid-attempt is
     `auth.method_disabled` and uses nothing up (the same response completes once it is back on).
+    "Nothing" includes the second-factor guess budget (sign-in second factor **and** step-up:
+    assert `deps.lockout.attempt` was not called with `Mfa.secondFactorLockKey`) and the
+    challenge: the environment's ceiling is charged after the relying party and **before** the
+    challenge is taken, so a `rate_limited` or `service.unavailable` leaves it usable. The
+    unauthenticated start has its own ceiling (`passkeyStart`), never `verify`.
 34. **Signature counter:** growing is accepted, equal or lower is refused and recorded
     (`user.passkey_counter_regressed`, never the credential id), zero both sides is fine, and
     the stored counter does not move on a refusal.
@@ -159,5 +164,8 @@ Before finishing any change here, confirm each item holds and has a test:
 36. **Passkey management:** register, rename and remove need `requireRecentAuth()`; the limit
     is enforced in the insert's transaction; the last way to sign in cannot be removed (test
     with every other method off, and that a remaining one allows it); the admin reset removes
-    them and ends every session; no response, audit entry, email or log line holds a public
+    them (it is never refused as "the last way in") and ends every session, and says what that
+    left: `x-tula-can-still-sign-in` on its 204 and `canStillSignIn` on the
+    `user.passkey_removed` entry, by `OAuth.canStillSignIn` (test a passkey-only user: `false`);
+    no response, audit entry, email or log line holds a public
     key or a credential id.

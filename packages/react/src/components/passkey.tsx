@@ -38,7 +38,8 @@ export function usePasskeyOffered(): boolean {
 
 /**
  * What a passkey ceremony last ended with. A dialog the user dismissed is not a failure to
- * announce as one: it is said quietly, and everything else is the error it is.
+ * announce as one, and not a success to draw as one: it is said quietly, in the neutral tone,
+ * and everything else is the error it is.
  */
 function PasskeyNotice(props: { error: TulaError | null }) {
   const { t } = useUi()
@@ -47,7 +48,7 @@ function PasskeyNotice(props: { error: TulaError | null }) {
   return (
     <>
       <FormError message={error && !cancelled ? error.message : null} />
-      <Status message={cancelled ? t.passkey.cancelled : null} />
+      <Status message={cancelled ? t.passkey.cancelled : null} tone='neutral' />
     </>
   )
 }
@@ -85,9 +86,14 @@ function useRefocus(failure: unknown) {
  *
  * A passkey sign-in is an attempt of its own, so its result is a flow handed to `onFlow`. Only
  * one WebAuthn request may be pending in a page: the autofill request is ended before the
- * button starts its ceremony, and started again if that ceremony is dismissed. The autofill
- * request has a signal of its own per run of its effect, so a second run (StrictMode, Fast
- * Refresh, `<Activity>`) does not end with the first one's.
+ * button starts its ceremony, and started again when that ceremony ends without a sign-in
+ * (dismissed, refused by the API, failed), so the address field keeps offering passkeys. The
+ * autofill request has a signal of its own per run of its effect, so a second run (StrictMode,
+ * Fast Refresh, `<Activity>`) does not end with the first one's.
+ *
+ * Both requests sign the client in before their flow comes back. On a screen with no step yet
+ * that is indistinguishable from "was already signed in", so each takes `hold` for as long as
+ * it is in flight (see `useCompletion`): the app's `onComplete` cannot lose to a redirect.
  *
  * Draws nothing where the environment has passkeys off or the browser has no WebAuthn.
  *
@@ -95,6 +101,7 @@ function useRefocus(failure: unknown) {
  * @param props.offered - Set where the server itself offered the `passkey` strategy; otherwise
  *   the environment's public configuration decides.
  * @param props.onFlow - Receives the sign-in, past its first factor.
+ * @param props.hold - `useCompletion`'s hold, where the screen can be shown with no step.
  * @param props.disabled - Another action of the screen is pending.
  * @returns The button with its messages, or nothing.
  */
@@ -102,6 +109,7 @@ export function PasskeySignIn(props: {
   autofill?: boolean
   offered?: boolean
   onFlow(flow: SignInFlow): void
+  hold?(): () => void
   disabled?: boolean
 }) {
   const { t } = useUi()
@@ -112,12 +120,14 @@ export function PasskeySignIn(props: {
   const { autofill = false } = props
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<TulaError | null>(null)
-  // Bumped when a dismissed dialog should be followed by a new autofill request.
+  // Bumped when the button's ceremony ends without a sign-in: a new autofill request follows.
   const [round, setRound] = useState(0)
   const background = useRef<AbortController | null>(null)
   const explicit = useRef<AbortController | null>(null)
   const onFlow = useRef(props.onFlow)
   onFlow.current = props.onFlow
+  const hold = useRef(props.hold)
+  hold.current = props.hold
   const holder = useRefocus(error)
 
   useEffect(() => {
@@ -129,6 +139,9 @@ export function PasskeySignIn(props: {
     const leaving = new AbortController()
     background.current = leaving
     const wait = async () => {
+      // Before the first await: from here on, the client being signed in may be this request's
+      // doing, and its completion is handed on below before the hold is released.
+      const release = hold.current?.()
       try {
         if (!(await client.signIn.canAutofillPasskey()) || leaving.signal.aborted) {
           return
@@ -143,6 +156,8 @@ export function PasskeySignIn(props: {
         if (!leaving.signal.aborted && failure.code !== 'passkey.cancelled') {
           setError(failure)
         }
+      } finally {
+        release?.()
       }
     }
     void wait()
@@ -170,19 +185,20 @@ export function PasskeySignIn(props: {
     explicit.current = mine
     setPending(true)
     setError(null)
+    const release = hold.current?.()
     try {
       const flow = await client.signIn.withPasskey({ signal: mine.signal })
       // As above: a sign-in that happened is completed, whatever became of this screen.
       onFlow.current(flow)
     } catch (caught) {
       if (!mine.signal.aborted) {
-        const failure = toTulaError(caught)
-        setError(failure)
-        if (failure.code === 'passkey.cancelled') {
-          setRound((value) => value + 1)
-        }
+        setError(toTulaError(caught))
+        // Whatever it failed with (dismissed, refused, the network): the request waiting in
+        // autofill made way for this one, and the address field should offer passkeys again.
+        setRound((value) => value + 1)
       }
     } finally {
+      release?.()
       explicit.current = null
       if (!mine.signal.aborted) {
         setPending(false)
@@ -387,9 +403,16 @@ function PasskeyRow(props: {
  * device already has one) are shown as messages; a dismissed dialog is said quietly. In a
  * browser without WebAuthn the section says so and still lists, renames and removes.
  *
+ * **The list is always loaded**, whether or not the environment has passkeys on: the API lets
+ * a user list, rename and remove their passkeys with the method switched off, and a passkey
+ * nobody can see is one nobody can remove. With the method off, a user who has passkeys gets
+ * the section without "Add a passkey" and with one line saying new ones cannot be added; a
+ * user who has none gets no section at all.
+ *
  * Every result is checked against the session it was asked under before it is shown.
  *
- * @returns The section, or nothing where the environment has passkeys switched off.
+ * @returns The section; nothing where the environment has passkeys switched off and the user
+ *   has none (or the list is not known).
  */
 export function PasskeysSection() {
   const { el, t } = useUi()
@@ -403,6 +426,8 @@ export function PasskeysSection() {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<TulaError | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  // A dismissed dialog is said in the neutral tone: nothing was done, so it is no success.
+  const [cancelled, setCancelled] = useState(false)
   const [editing, setEditing] = useState<{ id: string; mode: 'rename' | 'remove' } | null>(null)
   const mounted = useRef(true)
   const ceremony = useRef<AbortController | null>(null)
@@ -432,15 +457,14 @@ export function PasskeysSection() {
   }, [client, guard])
   useEffect(() => {
     mounted.current = true
-    if (offered) {
-      void load()
-    }
+    // Whatever the environment offers: what the user has can still be seen and removed.
+    void load()
     return () => {
       mounted.current = false
       // A dialog still open belongs to the session that opened it.
       ceremony.current?.abort()
     }
-  }, [load, offered])
+  }, [load])
 
   /** Run one action; a step-up the user declined is their choice, not an error to show. */
   const run = async (name: string, work: (current: () => boolean) => Promise<void>) => {
@@ -448,6 +472,7 @@ export function PasskeysSection() {
     setBusy(name)
     setError(null)
     setMessage(null)
+    setCancelled(false)
     try {
       await work(current)
     } catch (caught) {
@@ -455,6 +480,7 @@ export function PasskeysSection() {
         const failure = toTulaError(caught)
         if (failure.code === 'passkey.cancelled') {
           setMessage(t.passkey.cancelled)
+          setCancelled(true)
         } else {
           setError(failure)
         }
@@ -508,7 +534,10 @@ export function PasskeysSection() {
       }
     })
 
-  if (!offered) {
+  // With passkeys off the section is for what the user still has. It also stays for as long
+  // as it has something to say about a change just made (the last one was removed), so that
+  // the confirmation and the focus do not vanish with the row.
+  if (!offered && (passkeys ?? []).length === 0 && message === null) {
     return null
   }
   return (
@@ -543,7 +572,9 @@ export function PasskeysSection() {
           ))}
         </ul>
       )}
-      {supported === false ? (
+      {!offered ? (
+        <p {...el('hint')}>{t.passkey.addUnavailable}</p>
+      ) : supported === false ? (
         <p {...el('hint')}>{t.passkey.addUnsupported}</p>
       ) : (
         <div className='tula-passkey' ref={adder}>
@@ -557,7 +588,7 @@ export function PasskeysSection() {
           </Button>
         </div>
       )}
-      <Status message={message} />
+      <Status message={message} tone={cancelled ? 'neutral' : 'success'} />
     </section>
   )
 }

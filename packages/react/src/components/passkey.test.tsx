@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { act, renderHook, screen, waitFor, within } from '@testing-library/react'
 import { isStepUpRequired, type Passkey } from '@tula/core'
 import { type ReactNode, StrictMode, useState } from 'react'
@@ -217,6 +217,61 @@ describe('<SignIn> with a passkey', () => {
     expect(w.api.calls(ROUTE.signIn)).toHaveLength(0)
   })
 
+  test.each([
+    ['the button', false],
+    ['the autofill request', true],
+  ])(
+    'a sign-in by %s that signs the client in a while before its flow is handed back still completes once, with no early navigation',
+    async (_, conditional) => {
+      const browser = authenticator({ conditional })
+      const w = passkeyWorld(browser)
+      // The client is signed in (tokens installed) and then other work gets a turn before the
+      // flow reaches the component: the "was already signed in" path must not take that turn.
+      const real = w.client.signIn.withPasskey.bind(w.client.signIn)
+      spyOn(w.client.signIn, 'withPasskey').mockImplementation(async (request) => {
+        const flow = await real(request)
+        expect(w.client.state.status).toBe('signed-in')
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        return flow
+      })
+      const onComplete = mock()
+      const navigate = mock()
+      w.mount(<SignIn onComplete={onComplete} afterSignInUrl='/app' />, { navigate })
+      if (conditional) {
+        await waitFor(() => expect(browser.gets.filter((get) => get.conditional)).toHaveLength(1))
+        browser.gets[0]?.pick()
+      } else {
+        await w.user.click(await passkeyButton())
+      }
+      await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      })
+      expect(onComplete).toHaveBeenCalledTimes(1)
+      expect(onComplete.mock.calls[0]?.[0]).toEqual({ userId: 'user_1', sessionId: 'session_1' })
+      expect(navigate).not.toHaveBeenCalled()
+    }
+  )
+
+  test('a user who signs in elsewhere while a passkey request waits is still sent on, once the request has ended', async () => {
+    const browser = authenticator({ conditional: true })
+    const w = passkeyWorld(browser)
+    const navigate = mock()
+    w.mount(<SignIn afterSignInUrl='/app' />, { navigate })
+    await waitFor(() => expect(browser.gets.filter((get) => get.conditional)).toHaveLength(1))
+    // Another way in, not through this component: as another tab's sign-in arrives.
+    w.api.on(ROUTE.signIn, () => started('sign_in', { status: 'needs_password' }))
+    w.api.on(ROUTE.signInPassword, () => completed('sign_in'))
+    await act(async () => {
+      const elsewhere = await w.client.signIn.start({ identifier: EMAIL })
+      await elsewhere.submitPassword({ password: PASSWORD })
+    })
+    await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1))
+    expect(navigate.mock.calls[0]?.[0]).toBe('/app')
+    // The waiting request went with the form.
+    expect(browser.gets.every((get) => get.signal?.aborted === true)).toBe(true)
+  })
+
   test('a dismissed dialog is said quietly, the button takes the focus back and works again', async () => {
     const browser = authenticator()
     browser.answers.get = async () => {
@@ -228,8 +283,10 @@ describe('<SignIn> with a passkey', () => {
     const button = await passkeyButton()
     await w.user.click(button)
     const quiet = await screen.findByText(/passkey request was cancelled or timed out/)
-    // A status, announced politely: not an alert, and not the browser's own words.
+    // A status, announced politely: not an alert, and not the browser's own words. And not a
+    // success either: nothing was done, so it is drawn in the neutral tone, not the green one.
     expect(quiet.tagName).toBe('OUTPUT')
+    expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
     expect(screen.queryByRole('alert')).toBeNull()
     expect(document.body.textContent).not.toContain('the browser said something')
     await expectFocus(button)
@@ -392,6 +449,23 @@ describe('<SignIn> passkeys in the address field’s autofill', () => {
     expect(await screen.findByText(/passkey request was cancelled or timed out/)).toBeTruthy()
     await waitFor(() => expect(live(browser)).toHaveLength(1))
     expect(live(browser)[0]).not.toBe(waiting)
+  })
+
+  test('after a sign-in with the button that the API refuses, a request waits in autofill again', async () => {
+    const browser = authenticator({ conditional: true })
+    const w = passkeyWorld(browser)
+    w.api.on(PK.submit, () => failure(401, 'auth.invalid_credentials'))
+    w.mount(<SignIn />)
+    await waitFor(() => expect(live(browser)).toHaveLength(1))
+    const waiting = live(browser)[0]
+    await w.user.click(await passkeyButton())
+    expect((await screen.findByRole('alert')).textContent).toContain('incorrect')
+    expect(waiting?.signal?.aborted).toBe(true)
+    // The address field offers passkeys again: one new conditional request, and only one.
+    await waitFor(() => expect(live(browser)).toHaveLength(1))
+    expect(live(browser)[0]).not.toBe(waiting)
+    // The message of the refused try stays while the new request waits.
+    expect(screen.getByRole('alert').textContent).toContain('incorrect')
   })
 
   test('leaving the screen ends the waiting request and the open dialog', async () => {
@@ -594,7 +668,8 @@ describe('the step-up dialog with a passkey', () => {
     const dialog = await open(w)
     const use = await within(dialog).findByRole('button', { name: 'Use your passkey' })
     await w.user.click(use)
-    expect(await within(dialog).findByText(/passkey request was cancelled/)).toBeTruthy()
+    const quiet = await within(dialog).findByText(/passkey request was cancelled/)
+    expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
     expect(within(dialog).queryByRole('alert')).toBeNull()
     await expectFocus(use)
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
@@ -666,14 +741,49 @@ describe('<UserProfile> passkeys', () => {
   const section = async () =>
     (await screen.findByRole('heading', { name: 'Passkeys' })).closest('section') as HTMLElement
 
-  test('left out, with no request, where the environment has passkeys off', async () => {
-    const w = world({ signedIn: true, passkeys: authenticator().globals })
-    w.api.on(ROUTE.sessions, () => json(200, { data: [] }))
+  test('passkeys off and the user has none: the list is asked for, and the section stays away', async () => {
+    const w = profileWorld([], authenticator(), { methods: ['password'] })
     w.mount(<UserProfile />)
     await screen.findByRole('heading', { name: 'Where you’re signed in' })
     await waitFor(() => expect(w.api.calls(ROUTE.config)).toHaveLength(1))
+    // Asked even with the method off: the API lets a user list and remove what they have.
+    await waitFor(() => expect(w.api.calls(PK.list)).toHaveLength(1))
+    await act(async () => {
+      await Promise.resolve()
+    })
     expect(screen.queryByRole('heading', { name: 'Passkeys' })).toBeNull()
-    expect(w.api.calls(PK.list)).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+  })
+
+  test('passkeys off and the user has one: listed, renamed and removed as ever, with no "Add" and a line saying so', async () => {
+    const w = profileWorld([MACBOOK], authenticator(), { methods: ['password'] })
+    w.mount(<UserProfile />)
+    const area = await section()
+    expect(await within(area).findByText('MacBook')).toBeTruthy()
+    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expect(within(area).getByText(/New passkeys cannot be added right now/)).toBeTruthy()
+    expect(within(area).getByRole('button', { name: 'Rename MacBook' })).toBeTruthy()
+
+    await w.user.click(within(area).getByRole('button', { name: 'Remove MacBook' }))
+    await w.user.click(await within(area).findByRole('button', { name: 'Remove passkey' }))
+    // The removal is confirmed where it happened, with the focus on the section's title.
+    expect(await within(area).findByText('The passkey was removed.')).toBeTruthy()
+    expect(w.api.calls(PK.remove)).toHaveLength(1)
+    expect(within(area).queryByText('MacBook')).toBeNull()
+    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    await expectFocus(within(area).getByRole('heading', { name: 'Passkeys' }))
+  })
+
+  test('passkeys off and two passkeys: removing one keeps the section, says so and moves the focus to its title', async () => {
+    const w = profileWorld([MACBOOK, YUBIKEY], authenticator(), { methods: ['password'] })
+    w.mount(<UserProfile />)
+    const area = await section()
+    await w.user.click(await within(area).findByRole('button', { name: 'Remove MacBook' }))
+    await w.user.click(await within(area).findByRole('button', { name: 'Remove passkey' }))
+    expect(await within(area).findByText('The passkey was removed.')).toBeTruthy()
+    expect(within(area).getByText('YubiKey')).toBeTruthy()
+    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    await expectFocus(within(area).getByRole('heading', { name: 'Passkeys' }))
   })
 
   test('lists each passkey with its name, kind and dates as text', async () => {
@@ -700,7 +810,9 @@ describe('<UserProfile> passkeys', () => {
     const area = await section()
     expect(await within(area).findByText('You have no passkeys yet.')).toBeTruthy()
     await w.user.click(within(area).getByRole('button', { name: 'Add a passkey' }))
-    expect(await within(area).findByText('Your passkey was added.')).toBeTruthy()
+    const added = await within(area).findByText('Your passkey was added.')
+    // A confirmation of something done keeps the success tone.
+    expect(added.classList.contains('tula-is-neutral')).toBe(false)
     expect(browser.creates).toHaveLength(1)
     expect(w.api.calls(PK.create)[0]?.body).toEqual({ credential: REGISTRATION })
     expect(within(area).getByText('Passkey')).toBeTruthy()
@@ -749,7 +861,9 @@ describe('<UserProfile> passkeys', () => {
       throw named('NotAllowedError')
     }
     await w.user.click(add)
-    expect(await within(area).findByText(/passkey request was cancelled/)).toBeTruthy()
+    const quiet = await within(area).findByText(/passkey request was cancelled/)
+    expect(quiet.tagName).toBe('OUTPUT')
+    expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
     expect(within(area).queryByRole('alert')).toBeNull()
     await expectFocus(add)
     expect(add.getAttribute('aria-disabled')).toBeNull()

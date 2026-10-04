@@ -60,7 +60,9 @@ export const PasskeyListSchema = z
  * `PublicKeyCredential.parseCreationOptionsFromJSON`. Binary values are unpadded base64url.
  *
  * The challenge is 32 random bytes, works once and for five minutes, and is bound to the
- * session that asked. `user.id` is an opaque random handle, never the email or the user id.
+ * session that asked. `user.id` is an opaque 32-byte handle: a keyed hash (HMAC) of the
+ * environment and the user, the same for every passkey of one user, which reveals neither the
+ * email nor the user id without the server's key.
  */
 export const PasskeyCreationOptionsSchema = z
   .object({

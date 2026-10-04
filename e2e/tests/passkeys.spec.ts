@@ -319,7 +319,7 @@ test('a browser with no authenticator: the request ends, the page says so and re
   await expect(page.getByRole('heading', { name: 'Hello, Lena' })).toBeVisible()
 })
 
-test('passkeys switched off: no button, no autofill token, no section', async ({
+test('passkeys switched off: no button, no autofill token, and no section for a user with none', async ({
   page,
   request,
 }) => {
@@ -334,6 +334,48 @@ test('passkeys switched off: no button, no autofill token, no section', async ({
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sign in with a passkey' })).toHaveCount(0)
   await expect(page.getByLabel('Email address')).toHaveAttribute('autocomplete', 'username')
+})
+
+test('passkeys switched off for a user who has one: it is still listed and can be removed, but none can be added', async ({
+  page,
+  request,
+}) => {
+  await useSettings(request, PASSKEY_METHODS)
+  const authenticator = await addVirtualAuthenticator(page)
+  const email = uniqueEmail('passkey.off.owner')
+  await signUp(page, request, { email, firstName: 'Mira' })
+  await addPasskey(page)
+  expect(await authenticator.credentialCount()).toBe(1)
+
+  // The operator switches passkeys off. The API still lists and removes what a user has.
+  await useSettings(request)
+  // The public configuration is cacheable for a few minutes; this browser must not answer the
+  // next load from its HTTP cache with the configuration from before the switch.
+  const devtools = await page.context().newCDPSession(page)
+  await devtools.send('Network.clearBrowserCache')
+  await devtools.detach()
+  await page.goto('/account')
+  await expect(passkeys(page).getByRole('listitem')).toHaveCount(1)
+  await expect(passkeys(page).getByRole('button', { name: 'Add a passkey' })).toHaveCount(0)
+  await expect(passkeys(page).getByText(/New passkeys cannot be added right now/)).toBeVisible()
+  await expect(
+    passkeys(page).getByRole('button', { name: 'Rename Passkey', exact: true })
+  ).toBeVisible()
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expectAccessible(page, `profile, passkeys off with one passkey (${colorScheme})`)
+  }
+
+  await removePasskey(page, 'Passkey')
+  await expect(passkeys(page).getByText('The passkey was removed.')).toBeVisible()
+  await expect(passkeys(page).getByRole('listitem')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Passkeys' })).toBeFocused()
+  await expectAccessible(page, 'profile, passkeys off, the last passkey removed')
+
+  // With nothing left to show, the section is gone the next time the profile is opened.
+  await page.goto('/account')
+  await expect(page.getByRole('heading', { name: 'Where you’re signed in' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Passkeys' })).toHaveCount(0)
 })
 
 /** Which of WebAuthn's JSON helpers the page's browser has. */

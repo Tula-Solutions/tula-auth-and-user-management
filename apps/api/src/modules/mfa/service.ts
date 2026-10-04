@@ -20,6 +20,7 @@ import * as logger from '~/lib/logger'
 import { base32Encode, generateSecret, matchStep, otpauthUri } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
+import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
@@ -573,22 +574,49 @@ export async function regenerateBackupCodes(
  * emailed. A user with nothing enrolled still has their sessions ended; nothing else is
  * recorded or sent, since nothing else changed.
  *
- * @param deps - Factor store, users, sessions, denylist, lockout, notices, ids and clock.
+ * **Passkeys go too, even one that was the account's only way in** (ADR 0027): this is the
+ * "this account's authenticators are gone" tool, so unlike the owner's own removal it is never
+ * refused. What it does instead is say so: the answer is whether the user can still sign in
+ * with what is left, by the one rule the owner's removal uses (`OAuth.canStillSignIn`), and the
+ * `user.passkey_removed` entry records the same boolean. `false` means the admin has to give
+ * the account a way in (the user's "Forgot password" where the password method is on).
+ *
+ * @param deps - Factor store, passkeys, users, provider store, sessions, denylist, lockout,
+ *   notices, ids and clock.
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param actor - The admin, for the audit log.
+ * @returns Whether the user can still sign in with what they have left.
  * @throws NotFoundError when the user does not exist in this environment.
  */
 export async function reset(
-  deps: ChangeDeps & Pick<Deps, 'sessions' | 'revokedSessions' | 'passkeys'>,
+  deps: ChangeDeps & Pick<Deps, 'sessions' | 'revokedSessions' | 'passkeys' | 'oauthProviders'>,
   scope: Scope,
   userId: string,
   actor: Actor
-): Promise<void> {
+): Promise<{ canStillSignIn: boolean }> {
   const user = await deps.users.findById(scope.environmentId, userId)
   if (!user) {
     throw new NotFoundError()
   }
+  // Worked out before anything is removed, so that the audit entry written with the removal
+  // can carry it: what is left is everything the user has now, less every passkey.
+  const withPassword = await deps.users.findByEmailWithPassword(
+    scope.environmentId,
+    user.emailNormalized
+  )
+  const canStillSignIn = OAuth.canStillSignIn(
+    await Settings.current(deps, scope),
+    await OAuth.enabledProviders(deps, scope),
+    {
+      hasPassword: Boolean(withPassword?.passwordHash),
+      emailVerified: user.emailVerifiedAt !== null,
+      providers: (await deps.users.listIdentities(scope.environmentId, userId)).map(
+        (identity) => identity.provider
+      ),
+      passkeys: 0,
+    }
+  )
   // Sessions first, then the factor. If ending the sessions fails, the factor still guards
   // the account and the reset can simply be repeated; the other order could leave the factor
   // gone while a possibly stolen session lives on. Both steps are idempotent.
@@ -612,7 +640,8 @@ export async function reset(
       type: 'user.passkey_removed',
       actor,
       target: { type: 'user', id: userId },
-      data: { method: 'admin_reset' },
+      // A boolean and nothing else: never which methods remain, nor an address.
+      data: { method: 'admin_reset', canStillSignIn },
     })
   )
   // Once more: a sign-in that completed with the factor between the two steps is ended too.
@@ -621,6 +650,7 @@ export async function reset(
   if (removed || passkeys > 0) {
     Notices.mfaChanged(deps, scope, user, { change: 'admin_reset', at: deps.clock.now() })
   }
+  return { canStillSignIn }
 }
 
 /**
@@ -963,7 +993,8 @@ export async function prepareStepUpPasskey(
  *   request's `Origin` header, which the assertion is verified against.
  * @returns The session id and a fresh access token. The refresh token is untouched.
  * @throws AuthError `auth.step_up_required` (a method this user may not use),
- *   `auth.invalid_credentials` (wrong password), `mfa.invalid_code`, `session.revoked`, or for
+ *   `auth.invalid_credentials` (wrong password), `mfa.invalid_code`, `session.revoked`, for a
+ *   passkey `auth.method_disabled` and `request.origin_not_allowed` (nothing counted), or for
  *   an emailed code `verification.invalid_code`, `verification.expired` and
  *   `verification.too_many_attempts`.
  * @throws RateLimitError while the user is locked out after repeated wrong proofs.
@@ -977,6 +1008,11 @@ export async function stepUp(
 ): Promise<SessionTokens> {
   const { userId } = self
   const actor: Actor = { type: 'user', id: userId, ...cleanOrigin(origin) }
+  // The relying party before anything else, as the options route does: passkeys switched off,
+  // or a missing or foreign origin, must not use up a guess of the budget this user's
+  // authenticator codes share (nor the challenge).
+  const rp =
+    proof.method === 'passkey' ? await Passkeys.relyingParty(deps, scope, origin.origin) : null
   const allowed = await stepUpMethods(deps, scope, userId)
   if (!allowed.includes(proof.method)) {
     throw stepUpRequired(allowed)
@@ -1019,18 +1055,17 @@ export async function stepUp(
   }
   const lockKey = await countGuess(deps, scope, userId)
   if (proof.method === 'passkey') {
-    // The relying party first: passkeys switched off, or a foreign origin, uses up nothing.
-    const rp = await Passkeys.relyingParty(deps, scope, origin.origin)
     const challenge = await Passkeys.takeChallenge(deps, scope, self, 'step_up')
-    const asserted = challenge
-      ? await Passkeys.assert(deps, scope, {
-          credential: proof.credential,
-          challenge,
-          rp,
-          userId,
-          actor,
-        })
-      : null
+    const asserted =
+      challenge && rp
+        ? await Passkeys.assert(deps, scope, {
+            credential: proof.credential,
+            challenge,
+            rp,
+            userId,
+            actor,
+          })
+        : null
     if (!asserted) {
       throw new AuthError('auth.invalid_credentials')
     }

@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { type CeremonyInput, VirtualAuthenticator } from '@tula/conformance'
 import {
   type AccessTokenClaims,
+  CAN_STILL_SIGN_IN_HEADER,
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   FLOW_ATTEMPT_HEADER,
@@ -15,8 +16,11 @@ import {
   type TotpEnrolment,
 } from '@tula/contract'
 import { decodeJwt } from 'jose'
+import { RateLimitError, ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
+import * as Flows from '~/modules/flow/service'
+import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -1003,6 +1007,92 @@ describe('signing in with a passkey', () => {
   })
 })
 
+describe('the environment’s ceilings and a passkey sign-in', () => {
+  const tenant = {
+    projectId: TEST_TENANT.projectId,
+    environmentId: TEST_TENANT.environmentId,
+    apiKeyId: '00000000-0000-7000-8000-0000000000aa',
+  }
+  const context = {
+    client: 'ios',
+    userAgent: null,
+    ipAddress: null,
+    originAllowed: true,
+    origin: ORIGIN,
+  } as const
+
+  test('starts have a ceiling of their own: idle sign-in pages cannot use up the one code steps need', async () => {
+    const { session, authenticator } = await withPasskey()
+    await enrolTotp(session.accessToken)
+    const attempt = await passwordSignIn()
+    expect(attempt.step.status).toBe('needs_second_factor')
+    // Every open sign-in page asks for a start, signed in to nothing. Ask until refused.
+    let starts = 0
+    const limit = Math.max(...Object.values(Flows.ENVIRONMENT_RATE_LIMITS)) + 1
+    try {
+      for (; starts <= limit; starts++) {
+        await Flows.startPasskeySignIn(deps, tenant, context)
+      }
+    } catch (error) {
+      expect(error).toBeInstanceOf(RateLimitError)
+    }
+    expect(await errorOf(await post('/sign-ins/passkey'))).toMatchObject({
+      status: 429,
+      code: 'rate_limited',
+    })
+    // A user in the middle of signing in is not affected.
+    const options = await post(`/sign-ins/${attempt.id}/second-factor/passkey/options`)
+    expect(options.status).toBe(200)
+    const done = await post(`/sign-ins/${attempt.id}/second-factor`, {
+      method: 'passkey',
+      credential: await authenticator.get(await json<PasskeyRequestOptions>(options), {
+        origin: ORIGIN,
+      }),
+    })
+    expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
+    expect(starts).toBe(Flows.ENVIRONMENT_RATE_LIMITS.passkeyStart)
+  })
+
+  test.each<[string, () => unknown, number, string]>([
+    [
+      'at its ceiling',
+      () => ({ allowed: false, remaining: 0, retryAfterMs: 1000 }),
+      429,
+      'rate_limited',
+    ],
+    [
+      'unable to answer',
+      () => {
+        throw new ServiceUnavailableError()
+      },
+      503,
+      'service.unavailable',
+    ],
+  ])(
+    'a limiter %s does not use up the challenge: the same assertion signs in next time',
+    async (_, refuse, status, code) => {
+      const { authenticator, userId } = await withPasskey()
+      const started = await startPasskey()
+      const credential = await authenticator.get(started.options, { origin: ORIGIN })
+      const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
+      let refusals = 1
+      const limiter = spyOn(deps.rateLimiter, 'hit').mockImplementation(async (key, ...rest) => {
+        if (key === Flows.environmentKey('verify', tenant) && refusals-- > 0) {
+          return refuse() as Awaited<ReturnType<typeof hit>>
+        }
+        return hit(key, ...rest)
+      })
+      const refused = await post(`/sign-ins/${started.attempt.id}/passkey`, { credential })
+      expect(await errorOf(refused)).toMatchObject({ status, code })
+      expect(await sessionCount(userId)).toBe(1)
+      const done = await post(`/sign-ins/${started.attempt.id}/passkey`, { credential })
+      limiter.mockRestore()
+      expect(done.status).toBe(200)
+      expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
+    }
+  )
+})
+
 describe('a passkey as the second factor', () => {
   /** A user with a password, an authenticator app and a passkey, waiting on the second factor. */
   async function waiting() {
@@ -1306,6 +1396,52 @@ describe('stepping up with a passkey', () => {
     ).toBe('auth.invalid_credentials')
   })
 
+  test.each<[string, () => CallOptions, string]>([
+    [
+      'passkeys switched off',
+      () => {
+        configure({ passkey: false })
+        return {}
+      },
+      'auth.method_disabled',
+    ],
+    ['no Origin', () => ({ origin: null }), 'request.origin_not_allowed'],
+    ['a foreign Origin', () => ({ origin: 'https://evil.test' }), 'request.origin_not_allowed'],
+    [
+      'an allowed Origin outside the relying party',
+      () => ({ origin: OTHER_ALLOWED }),
+      'request.origin_not_allowed',
+    ],
+  ])(
+    'a step-up with %s is refused before a second-factor guess is counted',
+    async (_, arrange, code) => {
+      const { session, authenticator, userId } = await withPasskey()
+      await enrolTotp(session.accessToken)
+      const options = await json<PasskeyRequestOptions>(await stepUpOptions(session.accessToken))
+      const credential = await authenticator.get(options, { origin: ORIGIN })
+      const counted = spyOn(deps.lockout, 'attempt')
+      const refused = await post(
+        '/sessions/step-up',
+        { method: 'passkey', credential },
+        { token: session.accessToken, ...arrange() }
+      )
+      expect(await codeOf(refused)).toBe(code)
+      // The budget is shared with the authenticator code of a sign-in: nothing of it is used.
+      expect(counted.mock.calls.map(([key]) => key)).not.toContain(
+        Mfa.secondFactorLockKey(TEST_TENANT.environmentId, userId)
+      )
+      counted.mockRestore()
+      // Nothing was used up either: the same response steps up once the request is in order.
+      configure()
+      const stepped = await post(
+        '/sessions/step-up',
+        { method: 'passkey', credential },
+        { token: session.accessToken }
+      )
+      expect(stepped.status).toBe(200)
+    }
+  )
+
   test('a user with no passkey, passkeys switched off, or a foreign origin gets no options', async () => {
     const session = await signUp()
     const none = await stepUpOptions(session.accessToken)
@@ -1362,9 +1498,49 @@ describe('the admin reset', () => {
       page: 1,
       size: 10,
     })
-    expect(entries.map((entry) => entry.data)).toEqual([{ method: 'admin_reset' }])
+    expect(entries.map((entry) => entry.data)).toEqual([
+      { method: 'admin_reset', canStillSignIn: true },
+    ])
     expect(entries[0]?.actor).toMatchObject({ type: 'admin' })
   })
+
+  test.each<[string, Switches, string]>([
+    [
+      'whose passkey was the only way in (password and emailed code off)',
+      { password: false },
+      'false',
+    ],
+    ['who has a password the environment accepts', {}, 'true'],
+    [
+      'with a verified address where the emailed code is on',
+      { password: false, emailCode: true },
+      'true',
+    ],
+  ])(
+    'a reset of a user %s says whether they can still sign in: %o → %s',
+    async (_, switches, canStillSignIn) => {
+      const { userId } = await withPasskey()
+      configure(switches)
+      const res = await app.request(`/v1/admin/users/${userId}/factors`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${SK}` },
+      })
+      // Still 204 and no body, as before: the outcome is a header.
+      expect(res.status).toBe(204)
+      expect(await res.text()).toBe('')
+      expect(res.headers.get(CAN_STILL_SIGN_IN_HEADER)).toBe(canStillSignIn)
+      expect(await deps.passkeys.listForUser(TEST_TENANT.environmentId, userId)).toEqual([])
+      const { entries } = await deps.activityLog.listAudit(TEST_TENANT.environmentId, {
+        action: 'user.passkey_removed',
+        page: 1,
+        size: 10,
+      })
+      // A boolean and nothing else: no method names, no address.
+      expect(entries.map((entry) => entry.data)).toEqual([
+        { method: 'admin_reset', canStillSignIn: canStillSignIn === 'true' },
+      ])
+    }
+  )
 
   test('a reset of a user with nothing removes nothing and sends nothing', async () => {
     const session = await signUp()
@@ -1375,6 +1551,7 @@ describe('the admin reset', () => {
       headers: { authorization: `Bearer ${SK}` },
     })
     expect(res.status).toBe(204)
+    expect(res.headers.get(CAN_STILL_SIGN_IN_HEADER)).toBe('true')
     await Notices.settled()
     expect(subjects()).toEqual([])
     expect(await auditTypes()).not.toContain('user.passkey_removed')

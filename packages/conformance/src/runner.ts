@@ -260,6 +260,14 @@ async function runStep(
           : match(claims, payload, `claims(${path})`).map((mismatch) => mismatch.message))
       )
     }
+    for (const [name, value] of Object.entries(expected.headers ?? {})) {
+      const header = name.toLowerCase()
+      problems.push(
+        ...match(value, response.headers.get(header) ?? undefined, `header(${header})`).map(
+          (mismatch) => mismatch.message
+        )
+      )
+    }
     if (response.status !== expected.status) {
       // The error code says far more than the status alone; never print the whole body, which
       // can hold tokens.

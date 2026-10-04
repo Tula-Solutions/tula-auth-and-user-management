@@ -368,6 +368,11 @@
   font-size: var(--_tula-font-size-small);
 }
 
+/* Said, but not a success: a request the user cancelled changed nothing. */
+:where(.tula-status.tula-is-neutral) {
+  color: var(--_tula-color-text-muted);
+}
+
 /* An empty status stays in the page as a live region but takes no room in the layout. */
 :where(.tula-status.tula-is-empty) {
   position: absolute;

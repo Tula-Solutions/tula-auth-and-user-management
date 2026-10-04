@@ -123,6 +123,7 @@ describe('conformance scenarios, in process', () => {
       'step-up with a passkey',
       'the last way to sign in cannot be removed',
       'passkeys switched off mid-attempt',
+      'the admin reset removes passkeys and says whether the user can still sign in',
     ])
   })
 

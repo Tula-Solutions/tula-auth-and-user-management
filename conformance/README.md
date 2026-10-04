@@ -116,6 +116,8 @@ included: use `attempt`).
   `{ "$set": [...] }` matches an array with exactly those members **in any order**: `amr` is a
   set, and its order is not part of the contract.
   The signature is not verified; an array, as everywhere, must match item by item.
+  `headers` checks response headers by name (case does not matter), each matched like a `body`
+  value against the header's text: `"headers": { "x-tula-can-still-sign-in": "false" }`.
 - **Capture.** `capture: { "variable": "dot.path" }` stores a string from the response body;
   a path can index an array (`codes[0]`).
   `captureHeaders: { "variable": "ETag" }` stores a response header. `captureJson:

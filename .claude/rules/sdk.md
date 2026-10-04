@@ -130,8 +130,13 @@ paths:
   and the profile's "Add a passkey" are left out where the browser has no WebAuthn, and a
   second factor or step-up that is only a passkey says so. The autofill request is started
   from an effect with a signal per run, never marks the form pending, and is aborted before
-  the button's own ceremony (one WebAuthn request per page). `passkey.cancelled` goes to
-  `Status`, not to an alert, and focus returns to the button. Component tests fake
+  the button's own ceremony (one WebAuthn request per page) and started again after every
+  ceremony of the button that did not sign in. A sign-in the component runs outside the flow
+  hook (`client.signIn.withPasskey`) takes `useCompletion`'s `hold` before its first await and
+  releases it after handing its flow on: never a timer. `passkey.cancelled` goes to
+  `Status` with `tone='neutral'` (not the success colour, not an alert), and focus returns to
+  the button. The profile's section always loads the list: with the method off it shows what
+  the user has (rename, remove) without "Add". Component tests fake
   `navigator.credentials` through the world's `passkeys` option; browser tests use a DevTools
   virtual authenticator (`addVirtualAuthenticator` in `e2e/tests/support.ts`), which answers a
   conditional request by itself unless told to wait (`setAnswering(false)`).
