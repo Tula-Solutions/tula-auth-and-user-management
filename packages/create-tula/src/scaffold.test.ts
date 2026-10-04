@@ -1,11 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { templateDrift } from '../scripts/sync-templates'
 import { FRAMEWORKS, main, processIo, scaffold, VERSION, validateProjectName } from './index'
-import { findTemplates } from './scaffold'
+import { findTemplates, ScaffoldError } from './scaffold'
 
 let dir: string
 
@@ -271,6 +281,82 @@ describe('scaffold', () => {
     expect(await readFile(join(root, '.env.local'), 'utf8')).toBe('TULA_SECRET_KEY=mine\n')
     expect(await readFile(join(root, 'README.md'), 'utf8')).toContain('bunx tula dev')
     expect(result.keptEnv).toBe(true)
+  })
+
+  // A crash or Ctrl-C between two writes must never leave the secrets on disk without the
+  // file that keeps them out of git.
+  test('.gitignore is written first and .env last', async () => {
+    const { files } = await scaffold({ cwd: dir, name: 'shop', framework: 'react-vite' })
+    expect(files[0]).toBe('.gitignore')
+    expect(files.at(-1)).toBe('.env')
+    expect(files).toContain('compose.yaml')
+  })
+
+  test('--force keeps an existing .gitignore and adds the lines it lacks, once', async () => {
+    const root = join(dir, 'shop')
+    await mkdir(root)
+    const mine = '# mine\ncoverage/\n.env\n/private-notes'
+    await writeFile(join(root, '.gitignore'), mine)
+    const options = { cwd: dir, name: 'shop', framework: 'react-vite', force: true } as const
+    const first = await scaffold(options)
+    expect(first.files).toContain('.gitignore')
+    const text = await readFile(join(root, '.gitignore'), 'utf8')
+    expect(text.startsWith(`${mine}\n`)).toBe(true)
+    const lines = text.split('\n')
+    for (const line of ['.env', '.env.*', '!.env.example', 'node_modules/', 'coverage/']) {
+      expect(lines.filter((candidate) => candidate === line)).toHaveLength(1)
+    }
+    // The exception has to come after the pattern it is an exception to.
+    expect(lines.indexOf('!.env.example')).toBeGreaterThan(lines.indexOf('.env.*'))
+
+    const second = await scaffold(options)
+    expect(await readFile(join(root, '.gitignore'), 'utf8')).toBe(text)
+    expect(second.files).not.toContain('.gitignore')
+  })
+
+  test('an exception the user wrote above is repeated after the pattern that would undo it', async () => {
+    const root = join(dir, 'shop')
+    await mkdir(root)
+    await writeFile(join(root, '.gitignore'), '!.env.example\n')
+    await scaffold({ cwd: dir, name: 'shop', framework: 'react-vite', force: true })
+    const lines = (await readFile(join(root, '.gitignore'), 'utf8')).split('\n')
+    expect(lines.lastIndexOf('!.env.example')).toBeGreaterThan(lines.indexOf('.env.*'))
+  })
+
+  test.each([
+    ['.env', '.env'],
+    ['.gitignore', '.gitignore'],
+    ['a file of the app', 'package.json'],
+  ])('a dangling symlink at %s is refused and nothing is written through it', async (_, path) => {
+    const root = join(dir, 'shop')
+    const outside = join(dir, 'outside')
+    await mkdir(root)
+    await symlink(outside, join(root, path))
+    const attempt = scaffold({ cwd: dir, name: 'shop', framework: 'react-vite', force: true })
+    await expect(attempt).rejects.toThrow(ScaffoldError)
+    await expect(attempt).rejects.toThrow('symbolic link')
+    expect(await tree(dir)).toEqual([join('shop', path)])
+    expect((await lstat(join(root, path))).isSymbolicLink()).toBe(true)
+  })
+
+  test('a symlinked directory inside the project, or the project itself, is refused', async () => {
+    const outside = join(dir, 'outside')
+    await mkdir(outside)
+    const root = join(dir, 'shop')
+    await mkdir(root)
+    await symlink(outside, join(root, 'src'))
+    await expect(
+      scaffold({ cwd: dir, name: 'shop', framework: 'react-vite', force: true })
+    ).rejects.toThrow(ScaffoldError)
+    expect(await readdir(outside)).toEqual([])
+    expect(await readdir(root)).toEqual(['src'])
+
+    // An empty directory elsewhere, reached through a link named like the project.
+    await symlink(outside, join(dir, 'linked'))
+    await expect(scaffold({ cwd: dir, name: 'linked', framework: 'react-vite' })).rejects.toThrow(
+      ScaffoldError
+    )
+    expect(await readdir(outside)).toEqual([])
   })
 
   test('a name that is not safe is refused before anything is written', async () => {

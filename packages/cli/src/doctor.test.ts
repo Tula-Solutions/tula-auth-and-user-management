@@ -238,25 +238,56 @@ describe('tula doctor against an API that misbehaves', () => {
     expect(run.code).toBe(1)
   })
 
-  test('a loopback PUBLIC_URL the server skipped is checked from this machine', async () => {
-    const seen: string[] = []
-    const run = await tula(['doctor'], async (url) => {
+  /** A server that answers the status and names `publicUrl` as its (skipped) PUBLIC_URL. */
+  const naming = (publicUrl: unknown, seen: string[]): AdminFetch => {
+    return async (url) => {
       seen.push(url)
-      const { pathname, origin } = new URL(url)
-      if (pathname === '/v1/status') {
-        return origin === 'http://localhost:9999' ? new Response('nope', { status: 502 }) : status()
-      }
-      return Response.json({
-        version: VERSION,
-        environment: 'local',
-        time: new Date().toISOString(),
-        publicUrl: 'http://localhost:9999',
-        checks: [{ id: 'public_url', status: 'skipped', summary: 'loopback' }],
-      })
-    })
-    expect(seen).toContain('http://localhost:9999/v1/status')
-    expect(run.stdout).toMatch(/warn\s+public_url/)
-    expect(run.stdout).toContain('PUBLIC_URL')
+      return new URL(url).pathname === '/v1/status'
+        ? status()
+        : Response.json({
+            version: VERSION,
+            environment: 'local',
+            time: new Date().toISOString(),
+            publicUrl,
+            checks: [{ id: 'public_url', status: 'skipped', summary: 'loopback' }],
+          })
+    }
+  }
+
+  test('a loopback PUBLIC_URL that is the API URL given here counts as checked', async () => {
+    const seen: string[] = []
+    const run = await tula(['doctor'], naming(`${BASE_URL}/`, seen))
+    expect(run.stdout).toMatch(/ok\s+public_url/)
+    expect(new Set(seen.filter((url) => url.endsWith('/v1/status')))).toEqual(
+      new Set([`${BASE_URL}/v1/status`])
+    )
+  })
+
+  // The address comes from the server's answer: a hostile or mistaken server must not be able
+  // to make this machine request a port and path of its choosing.
+  test.each([
+    ['another port, a path and a query', 'http://localhost:9/x?y'],
+    ['another loopback port', 'http://localhost:9999'],
+    ['another loopback host', 'http://127.0.0.1:3003'],
+    ['credentials in front of the API URL', 'http://user:pw@localhost:3003'],
+    ['a path under the API URL’s origin', 'http://localhost:3003/internal/admin?drop=1'],
+  ])('a PUBLIC_URL the server names is never requested: %s', async (_, publicUrl) => {
+    const seen: string[] = []
+    const run = await tula(['doctor'], naming(publicUrl, seen))
+    for (const url of seen) {
+      expect(new URL(url).origin).toBe(BASE_URL)
+      expect(['/v1/status', '/v1/instance/diagnostics']).toContain(new URL(url).pathname)
+      expect(new URL(url).search).toBe('')
+    }
+    expect(run.stdout).not.toContain('pw@')
+    if (publicUrl.startsWith(`${BASE_URL}/`)) {
+      // The same origin: what was asked is `<origin>/v1/status`, never the path it named.
+      expect(run.stdout).toMatch(/ok\s+public_url/)
+    } else {
+      expect(run.stdout).toMatch(/skipped\s+public_url/)
+      expect(run.stdout).toContain('--api-url')
+      expect(run.code).toBe(0)
+    }
   })
 
   test.each([

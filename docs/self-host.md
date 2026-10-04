@@ -415,8 +415,10 @@ tula doctor
   `tula doctor` runs only the checks it can make from your machine.
 - The token is the most powerful credential of the deployment (the dashboard will sign in
   with it too): keep it in a secret manager, never in a file that is committed, and send it
-  only over https. The API refuses to start with one shorter than 32 characters or that looks
-  like a placeholder. To rotate it, change the variable and restart every instance.
+  only over https. The API refuses to start with one shorter than 32 characters, that repeats
+  a block, that counts up or down (`abcdefgh`), or that looks like a placeholder. That check
+  is a floor against accidents, not a measure of randomness: a value that passes it is not
+  thereby strong. Generate the token (`openssl rand -hex 32`, or the one `create-tula` writes). To rotate it, change the variable and restart every instance.
 - A check never returns a connection string, a key or a driver's error message: the reason a
   check failed is in the API's log, next to `diagnostic check failed`.
 - The route is rate limited (30 requests a minute per IP) and refuses when the rate limiter's

@@ -157,6 +157,128 @@ describe('Instance.diagnostics', () => {
     expectNoCanary(broken)
   })
 
+  test('more environments than one run opens: a warning that says how many were checked', async () => {
+    const { deps } = await setup()
+    const base = deps.clock.now().getTime()
+    const add = (index: number) => {
+      const id = `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`
+      deps.environments.add({
+        id,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(base + index),
+      })
+      return id
+    }
+    for (let index = 1; index < Instance.MAX_ENVIRONMENTS_CHECKED; index += 1) {
+      add(index)
+    }
+    // The newest, one past the bound: its signing keys are sealed under another master key.
+    const beyond = add(Instance.MAX_ENVIRONMENTS_CHECKED)
+    await Jwks.ensureKeys({ ...deps, secretBox: createSecretBox('cd'.repeat(32)) }, beyond)
+
+    const check = byId((await Instance.diagnostics(deps)).checks, 'master_key')
+    expect(check.status).toBe('warn')
+    expect(check.summary).toContain('the first 200 of 201 environments')
+    expect(check.fix).toBeDefined()
+
+    // The order is the environments' age, whatever order the store answers in.
+    const all = await deps.environments.listAll()
+    const reversed = { ...deps.environments, listAll: async () => [...all].reverse() }
+    const again = await Instance.diagnostics({
+      ...deps,
+      environments: reversed as unknown as TestDeps['environments'],
+    })
+    expect(byId(again.checks, 'master_key')).toEqual(check)
+  })
+
+  test('a secret that does not open among the first environments still fails when truncated', async () => {
+    const { deps } = await setup()
+    for (let index = 1; index <= Instance.MAX_ENVIRONMENTS_CHECKED; index += 1) {
+      deps.environments.add({
+        id: `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(deps.clock.now().getTime() + index),
+      })
+    }
+    const result = await Instance.diagnostics({
+      ...deps,
+      secretBox: createSecretBox('cd'.repeat(32)),
+    })
+    const check = byId(result.checks, 'master_key')
+    expect(check.status).toBe('fail')
+    expect(check.summary).toContain('the first 200 of 201 environments')
+  })
+
+  test('a scan cut off by the timeout makes no further store calls', async () => {
+    const { deps } = await setup()
+    for (let index = 1; index <= 5; index += 1) {
+      deps.environments.add({
+        id: `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(deps.clock.now().getTime() + index),
+      })
+    }
+    let calls = 0
+    const slow = {
+      list: async () => {
+        calls += 1
+        await new Promise((resolve) => setTimeout(resolve, 80))
+        return []
+      },
+    }
+    const slowDeps = { ...deps, signingKeys: slow as unknown as TestDeps['signingKeys'] }
+    const result = await Instance.diagnostics(slowDeps, 50)
+    expect(byId(result.checks, 'master_key').status).toBe('skipped')
+    expect(calls).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(calls).toBe(1)
+  })
+
+  test('a store that never answers: later runs do not start another scan on top of it', async () => {
+    const { deps } = await setup()
+    let calls = 0
+    const stuck = {
+      list: () => {
+        calls += 1
+        return new Promise<never>(() => {})
+      },
+    }
+    const stuckDeps = { ...deps, signingKeys: stuck as unknown as TestDeps['signingKeys'] }
+    const first = await Instance.diagnostics(stuckDeps, 50)
+    expect(byId(first.checks, 'master_key').status).toBe('skipped')
+    expect(calls).toBe(1)
+    const second = await Instance.diagnostics(stuckDeps, 50)
+    expect(byId(second.checks, 'master_key').status).toBe('skipped')
+    expect(calls).toBe(1)
+    // The other checks are unaffected.
+    expect(byId(second.checks, 'database').status).toBe('ok')
+  })
+
+  test('concurrent callers share one run; the next caller gets a new one', async () => {
+    const { deps, diagnostics } = await setup()
+    let scans = 0
+    let probes = 0
+    const listAll = deps.environments.listAll.bind(deps.environments)
+    deps.environments.listAll = async () => {
+      scans += 1
+      return listAll()
+    }
+    diagnostics.smtp = async () => {
+      probes += 1
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    const [one, two] = await Promise.all([Instance.diagnostics(deps), Instance.diagnostics(deps)])
+    expect(scans).toBe(1)
+    expect(probes).toBe(1)
+    expect(two).toEqual(one)
+    await Instance.diagnostics(deps)
+    expect(scans).toBe(2)
+    expect(probes).toBe(2)
+  })
+
   test('nothing sealed yet: the master key check is skipped', async () => {
     const deps = createTestDeps()
     const check = byId((await Instance.diagnostics(deps)).checks, 'master_key')

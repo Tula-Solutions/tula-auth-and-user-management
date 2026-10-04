@@ -1,4 +1,4 @@
-import { chmod, readFile, rename, writeFile } from 'node:fs/promises'
+import { chmod, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import type { Host, RunResult } from './host'
 
 /**
@@ -70,6 +70,21 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
       await writeFile(temporary, text, { mode: 0o600 })
       await chmod(temporary, 0o600)
       await rename(temporary, path)
+    },
+    async restrictFile(path) {
+      try {
+        if (((await stat(path)).mode & 0o077) === 0) {
+          return false
+        }
+        await chmod(path, 0o600)
+        // Where modes do not exist (Windows) the bits never change: nothing was closed.
+        return ((await stat(path)).mode & 0o077) === 0
+      } catch (error) {
+        if ((error as { code?: unknown }).code === 'ENOENT') {
+          return false
+        }
+        throw error
+      }
     },
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   }

@@ -42,7 +42,7 @@ bunx create-tula my-app --framework nextjs     # no questions
 | `--api-image <ref>` | The Tula API image (`TULA_API_IMAGE` in `.env`). Default `tula-api:local`. |
 | `--api-port <port>`, `--mailpit-port <port>` | Host ports of the API (3003) and Mailpit's inbox (8025). |
 | `--tula-packages <dir>` | Install the `@tula/*` packages from tarballs in this directory. |
-| `--force` | Write into a directory that is not empty. `.env` and `.env.local` are never replaced. |
+| `--force` | Write into a directory that is not empty. `.env` and `.env.local` are never replaced; an existing `.gitignore` keeps its lines and gains the ones it lacks. |
 
 The name is the directory, the package name and the Compose project name: lowercase letters,
 digits, dashes and underscores. Exit codes: 0 created, 1 an error (nothing is written).
@@ -50,7 +50,9 @@ digits, dashes and underscores. Exit codes: 0 created, 1 an error (nothing is wr
 It writes `compose.yaml`, `.env` (mode 0600; a generated `TULA_MASTER_KEY`,
 `TULA_ADMIN_TOKEN` and two database passwords, never a default), `.gitignore`, `.env.example`,
 `tula.config.ts`, `README.md`, `docker/postgres/init.sh` and the app. **Back up
-`TULA_MASTER_KEY`.**
+`TULA_MASTER_KEY`.** `.gitignore` is written first and `.env` last, so the secrets are never on
+disk without the file that keeps them out of git. A symbolic link where a file or directory
+would be written (or as the project directory) is refused before anything is written.
 
 ## `tula dev`
 
@@ -76,7 +78,10 @@ Runs in a project made by `create-tula`: a directory whose Compose file has `api
 5. prints the URLs of the API, its reference and Mailpit.
 
 Lines of `.env.local` outside the block are never changed, and a `TULA_SECRET_KEY` of your
-own is used as it is. If the stack no longer accepts the keys in the block (its database was
+own is used as it is. The block is the lines from `# tula:dev:start` to the first
+`# tula:dev:end` after it (each a whole line). The file's mode is checked on every run, not
+only when its contents change: one that other users could read is set back to 0600, with a
+warning. If the stack no longer accepts the keys in the block (its database was
 wiped by hand), `tula dev` says so and changes nothing: `--rotate-keys` mints new ones.
 
 | Option | What |
@@ -111,11 +116,11 @@ tula doctor --json             # for a pipeline
 | `local_clock` | here | This machine's clock against the API's (5 s warns, 30 s fails). |
 | `database` | server | The API reaches Postgres. |
 | `migrations` | server | The database is migrated to what the running version ships. |
-| `master_key` | server | `TULA_MASTER_KEY` opens the stored signing keys and provider credentials. |
+| `master_key` | server | `TULA_MASTER_KEY` opens the stored signing keys and provider credentials of the 200 oldest environments. With more, it is a warning that says how many were checked. |
 | `smtp` | server | The mail relay accepts a connection and the credentials. Nothing is sent. |
 | `redis` | server | Redis answers (`skipped` without `REDIS_URL`). |
 | `clock` | server | The API's clock against the database's. |
-| `public_url` | server, or here | `PUBLIC_URL` reaches the API. A loopback one is checked from this machine. |
+| `public_url` | server, or here | `PUBLIC_URL` reaches the API. A loopback one is checked from this machine, and only when it is the API URL you gave: an address the server names is never requested otherwise (`skipped`; run `tula doctor --api-url <PUBLIC_URL>`). |
 | `oauth_redirect_uris` | server | The redirect URI to register with each enabled provider (listed, not verified). |
 | `server_checks` | here | Appears when the server's checks could not run, with why. |
 

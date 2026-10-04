@@ -125,6 +125,14 @@ async function status(
   }
 }
 
+function parseUrl(text: string): URL | null {
+  try {
+    return new URL(text)
+  } catch {
+    return null
+  }
+}
+
 function isLoopback(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase()
@@ -300,28 +308,46 @@ export async function examine(input: {
     )
   }
 
-  // A loopback PUBLIC_URL is one the server cannot check from inside a container; this machine can.
-  const publicUrl = typeof body.publicUrl === 'string' ? body.publicUrl.replace(/\/+$/, '') : ''
+  // A loopback PUBLIC_URL is one the server cannot check from inside a container; this machine
+  // can. But the address is the server's word: it is requested only when it is the origin the
+  // operator pointed this command at, and then only as `<origin>/v1/status`. Anything else (a
+  // port, a path or a query of the server's choosing, credentials) is never requested.
   const skipped = server.find((check) => check.id === 'public_url' && check.status === 'skipped')
-  if (skipped && publicUrl !== '' && isLoopback(publicUrl)) {
-    const same = publicUrl === apiUrl
-    const reached = same ? answer : await status(io, publicUrl)
-    Object.assign(
-      skipped,
-      reached?.status === 200
-        ? {
-            source: 'cli',
-            status: 'ok',
-            summary: 'PUBLIC_URL is a loopback address and reaches the API from this machine.',
-          }
-        : {
-            source: 'cli',
-            status: 'warn',
-            summary:
-              'PUBLIC_URL is a loopback address that does not reach the API from this machine.',
-            fix: 'Set PUBLIC_URL in the API’s environment to the address clients use to reach it (for local development, the port the API is published on), and restart it.',
-          }
-    )
+  const named = typeof body.publicUrl === 'string' ? parseUrl(body.publicUrl) : null
+  if (skipped && named && isLoopback(named.href)) {
+    const configured = parseUrl(apiUrl)
+    if (
+      configured &&
+      named.origin === configured.origin &&
+      named.username === '' &&
+      named.password === ''
+    ) {
+      const reached =
+        apiUrl.replace(/\/+$/, '') === named.origin ? answer : await status(io, named.origin)
+      Object.assign(
+        skipped,
+        reached?.status === 200
+          ? {
+              source: 'cli',
+              status: 'ok',
+              summary: 'PUBLIC_URL is a loopback address and reaches the API from this machine.',
+            }
+          : {
+              source: 'cli',
+              status: 'warn',
+              summary:
+                'PUBLIC_URL is a loopback address that does not reach the API from this machine.',
+              fix: 'Set PUBLIC_URL in the API’s environment to the address clients use to reach it (for local development, the port the API is published on), and restart it.',
+            }
+      )
+    } else {
+      Object.assign(skipped, {
+        source: 'cli',
+        status: 'skipped',
+        summary:
+          'PUBLIC_URL is a loopback address other than the API URL given here, so it was not requested: `tula doctor` asks only the address you give it. If clients reach the API there, run `tula doctor --api-url <PUBLIC_URL>`; if not, set PUBLIC_URL to the address they use.',
+      })
+    }
   }
   report.checks.push(...server)
   return report

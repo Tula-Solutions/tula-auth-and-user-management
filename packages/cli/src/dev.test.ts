@@ -61,6 +61,13 @@ function fakeHost(options: FakeHostOptions = {}) {
       files.set(path, text)
       modes.set(path, '0600')
     },
+    restrictFile: async (path) => {
+      const wider = files.has(path) && modes.get(path) !== '0600'
+      if (files.has(path)) {
+        modes.set(path, '0600')
+      }
+      return wider
+    },
     sleep: async () => {},
   }
   return {
@@ -126,6 +133,28 @@ describe('the block tula dev manages in .env.local', () => {
     expect(second).toContain('B=2\n')
     expect(parseDevBlock(second)).toEqual({ TULA_API_URL: 'http://localhost:9' })
     expect(second.match(/tula:dev:start/g)).toHaveLength(1)
+  })
+
+  // A line of the user's own that quotes the end marker, above the block: the block must
+  // still be found, or every run adds another one.
+  test('a line that mentions the end marker before the block does not hide the block', () => {
+    const mine = '# my note: the block ends at # tula:dev:end\n# tula:dev:end\nA=1\n'
+    const first = withDevBlock(mine, vars)
+    expect(parseDevBlock(first)).toEqual(vars)
+    const second = withDevBlock(first, { TULA_API_URL: 'http://localhost:9' })
+    expect(second.match(/^# tula:dev:start$/gm)).toHaveLength(1)
+    expect(second.startsWith(mine)).toBe(true)
+    expect(parseDevBlock(second)).toEqual({ TULA_API_URL: 'http://localhost:9' })
+    expect(withoutDevBlock(second)).toBe(mine)
+  })
+
+  test('a marker inside a line of the user’s is not a marker', () => {
+    const mine = 'NOTE="see # tula:dev:start"\nA=1\n'
+    expect(parseDevBlock(mine)).toBeNull()
+    const text = withDevBlock(mine, vars)
+    expect(text.startsWith(mine)).toBe(true)
+    expect(parseDevBlock(text)).toEqual(vars)
+    expect(withoutDevBlock(text)).toBe(mine)
   })
 
   test('is removed without touching the rest', () => {
@@ -197,6 +226,46 @@ describe('tula dev', () => {
     expect(fake.minted()).toBe(2)
     expect(fake.files.get(`${CWD}/.env.local`)).toBe(before)
     expect(again.stdout).toContain('reused')
+  })
+
+  test('two runs leave one block when a line of the user’s mentions the end marker', async () => {
+    const mine = '# tula:dev:end is where the block stops\nFOO=bar\n'
+    const fake = fakeHost({ files: { [`${CWD}/.env.local`]: mine } })
+    await tula(['dev'], { host: fake.host })
+    const again = await tula(['dev'], { host: fake.host })
+    expect(again.code).toBe(0)
+    const text = fake.files.get(`${CWD}/.env.local`) ?? ''
+    expect(text.match(/^# tula:dev:start$/gm)).toHaveLength(1)
+    expect(text.startsWith(mine)).toBe(true)
+    expect(fake.minted()).toBe(2)
+    expect(again.stdout).toContain('reused')
+  })
+
+  test('a file left readable by others is closed even when nothing in it changes', async () => {
+    const path = `${CWD}/.env.local`
+    const fake = fakeHost()
+    const first = await tula(['dev'], { host: fake.host })
+    expect(first.stderr).not.toContain('readable by other')
+    const before = fake.files.get(path)
+    fake.modes.set(path, '0644')
+
+    const again = await tula(['dev'], { host: fake.host })
+    expect(again.code).toBe(0)
+    expect(fake.files.get(path)).toBe(before)
+    expect(fake.modes.get(path)).toBe('0600')
+    expect(again.stderr.match(/readable by other/g)).toHaveLength(1)
+
+    const third = await tula(['dev'], { host: fake.host })
+    expect(third.stderr).not.toContain('readable by other')
+  })
+
+  test('a file of the user’s own with a wider mode is closed when the keys are added', async () => {
+    const path = `${CWD}/.env.local`
+    const fake = fakeHost({ files: { [path]: 'FOO=bar\n' } })
+    fake.modes.set(path, '0644')
+    const run = await tula(['dev'], { host: fake.host })
+    expect(fake.modes.get(path)).toBe('0600')
+    expect(run.stderr).not.toContain('readable by other')
   })
 
   test('lines the user wrote are never touched, and a key of their own is respected', async () => {

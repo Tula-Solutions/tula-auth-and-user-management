@@ -75,6 +75,15 @@ export interface Host {
    */
   writeSecretFile(path: string, text: string): Promise<void>
   /**
+   * Make an existing file readable and writable by its owner only (mode 0600), leaving its
+   * contents alone.
+   *
+   * @param path - Absolute path.
+   * @returns Whether the file was open to anyone else and has been closed. `false` when it
+   *   already was owner-only, does not exist, or the platform has no such modes.
+   */
+  restrictFile(path: string): Promise<boolean>
+  /**
    * Wait.
    *
    * @param ms - How long.

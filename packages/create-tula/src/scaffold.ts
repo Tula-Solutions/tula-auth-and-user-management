@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { chmod, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -188,11 +188,66 @@ async function filesUnder(root: string): Promise<string[]> {
   return found.sort()
 }
 
+/** Whether anything is at `path`: a file, a directory or a link, dangling or not. */
 async function exists(path: string): Promise<boolean> {
-  return stat(path).then(
+  return lstat(path).then(
     () => true,
     () => false
   )
+}
+
+async function isSymlink(path: string): Promise<boolean> {
+  return lstat(path).then(
+    (found) => found.isSymbolicLink(),
+    () => false
+  )
+}
+
+/**
+ * Refuse to write when the project's directory, a file to be written or a directory above one
+ * is a symbolic link: a write follows a link, so it would land outside the project (a dangling
+ * `.env` link would have the new secrets written wherever it points).
+ */
+async function refuseSymlinks(directory: string, paths: Iterable<string>): Promise<void> {
+  const checked = new Set<string>()
+  const check = async (relativePath: string) => {
+    if (checked.has(relativePath)) {
+      return
+    }
+    checked.add(relativePath)
+    if (await isSymlink(join(directory, relativePath))) {
+      throw new ScaffoldError(
+        `"${relativePath === '' ? '.' : relativePath}" in the project directory is a symbolic link. create-tula writes only inside the project: replace the link with a real file or directory, or remove it. Nothing was written.`
+      )
+    }
+  }
+  await check('')
+  for (const path of paths) {
+    const parts = path.split('/')
+    for (let depth = 1; depth <= parts.length; depth += 1) {
+      await check(parts.slice(0, depth).join('/'))
+    }
+  }
+}
+
+/**
+ * An existing `.gitignore` with the template's patterns it lacks added at the end, or `null`
+ * when it lacks none. The file's own lines are kept as they are. An exception (`!…`) is
+ * repeated whenever a pattern is added: it only works after the pattern it is an exception to.
+ */
+function withIgnoreLines(existing: string, template: string): string | null {
+  const present = new Set(existing.split('\n').map((line) => line.trim()))
+  const patterns = template
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'))
+  const missing = patterns.filter((line) => !line.startsWith('!') && !present.has(line))
+  if (missing.length === 0) {
+    return null
+  }
+  const added = patterns.filter((line) => line.startsWith('!') || missing.includes(line))
+  const separator = existing === '' || existing.endsWith('\n') ? '' : '\n'
+  return `${existing}${separator}\n# Added by create-tula: build output, and the files that hold secrets (.env, .env.local).\n${added.join('\n')}\n`
 }
 
 function hex(random: (bytes: number) => Uint8Array, bytes: number): string {
@@ -254,12 +309,16 @@ async function tulaSpecs(tulaPackages: string | undefined, cwd: string) {
  * Nothing is written unless everything can be: the name, the options and the tarballs are
  * checked first. A directory that has files is refused unless `force` is set, and even then
  * an existing `.env` or `.env.local` is kept: replacing a master key would orphan the data
- * sealed with it.
+ * sealed with it. An existing `.gitignore` keeps its lines and gains the ones it lacks.
+ *
+ * `.gitignore` is written first and `.env` last, so the secrets are never on disk without the
+ * file that keeps them out of git. A symbolic link where a file or directory would be written
+ * (or as the project directory itself) is refused before anything is written.
  *
  * @param options - What to scaffold and where.
  * @returns The directory and the files written.
- * @throws ScaffoldError for an unusable name or option, a directory that is not empty, or a
- *   missing tarball.
+ * @throws ScaffoldError for an unusable name or option, a directory that is not empty, a
+ *   missing tarball, or a symbolic link in the way.
  *
  * @example
  * ```ts
@@ -287,6 +346,11 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
   // The name was validated, so this cannot be anywhere but directly inside `cwd`.
   if (relative(options.cwd, directory) !== options.name) {
     throw new ScaffoldError('The project directory must be directly inside the current one.')
+  }
+  if (await isSymlink(directory)) {
+    throw new ScaffoldError(
+      `"${options.name}" is a symbolic link. create-tula writes only into a real directory inside the current one. Nothing was written.`
+    )
   }
   const present = await readdir(directory).catch(() => [] as string[])
   if (present.length > 0 && options.force !== true) {
@@ -377,8 +441,27 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
     })
   }
 
+  await refuseSymlinks(directory, [...output.keys(), ...NEVER_REPLACED])
+
+  const ignore = output.get('.gitignore')
+  const ignored = await readFile(join(directory, '.gitignore'), 'utf8').catch(() => null)
+  if (ignore && ignored !== null) {
+    // The user's own (`force` only): never replaced. It gains the lines it lacks, or is left.
+    const merged = withIgnoreLines(ignored, String(ignore.contents))
+    if (merged === null) {
+      output.delete('.gitignore')
+    } else {
+      output.set('.gitignore', { contents: merged, mode: ignore.mode })
+    }
+  }
+
+  // `.gitignore` first and the secrets last: an interrupted run never leaves `.env` on disk
+  // without the file that keeps it out of git.
+  const rank = (path: string) => (path === '.gitignore' ? 0 : path === '.env' ? 2 : 1)
   const written: string[] = []
-  for (const [path, file] of [...output].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [path, file] of [...output].sort(
+    ([a], [b]) => rank(a) - rank(b) || a.localeCompare(b)
+  )) {
     const target = join(directory, path)
     if (NEVER_REPLACED.has(path) && (await exists(target))) {
       continue

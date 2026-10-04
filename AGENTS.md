@@ -147,15 +147,20 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   migrate`, the seed and `create-api-key.ts`. Everything it spawns goes through the injectable
   `Host` (`packages/cli/src/host.ts`): an argument vector, never a shell line, always with a
   timeout, so unit tests need no Docker. `tula dev` writes keys only inside its marked block
-  of `.env.local` (mode 0600), never changes a line outside it, mints nothing when the block's
+  of `.env.local` (mode 0600, enforced on every run through `Host.restrictFile`, not only when
+  the contents change), never changes a line outside it, mints nothing when the block's
   keys still work, and prints the secret key only with `--show-keys`. `tula doctor` renders
   the server's diagnostics and never connects to a dependency itself; text from the server is
-  stripped of control characters before it is printed. `tula policy test` evaluates the
+  stripped of control characters before it is printed, and **an address from the server's
+  answer is never requested** unless it is the origin the operator gave, and then only as
+  `<origin>/v1/status`. `tula policy test` evaluates the
   password on the operator's machine: it is never sent, printed or logged.
 - **`create-tula` never ships a default secret and never invents a registry.** Every secret
   in the scaffolded `.env` (mode 0600, covered by the scaffold's `.gitignore`) comes from
   `crypto.getRandomValues`; an existing `.env` or `.env.local` is never replaced, even with
-  `--force`; the project name is validated before anything is written. The app templates are
+  `--force`; the project name is validated before anything is written. `.gitignore` is
+  written first and `.env` last; an existing `.gitignore` is merged, never replaced; and a
+  symbolic link at any path it would write (asked with `lstat`) is refused before any write. The app templates are
   owned by `scripts/sync-templates.ts` (`generate:check` and a test fail on drift): change the
   example in `examples/`, then run `bun run --filter create-tula templates:sync`. Only files
   ending in `.tmpl` have `{{name}}` placeholders. The pinned service images in the template's
@@ -377,6 +382,7 @@ nothing.
   definition of "weakened" is the contract's `settingsWeakenings`, shared with `tula diff`.
 - CORS is decided per request in `~/middleware/cors`: a preflight passes when any environment
   allows the origin, the response is readable only when the key's environment does.
+  `/v1/admin/*` and `/v1/instance/*` follow the deployment's `CORS_ORIGINS` only.
 
 ### OAuth providers
 
@@ -664,13 +670,20 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   answers 404 when none is configured (before anything is counted), counts every request per
   IP and refuses when the limiter cannot count, then compares digests in constant time and
   answers the same `auth.invalid_key` for missing and wrong. A new instance route goes behind
-  it and nothing else. `env.ts` refuses a short, repetitive or placeholder value at boot.
+  it and nothing else. `env.ts` refuses a short, repeated, sequential or placeholder value at
+  boot (`looksTyped`): a floor against accidents, not a measure of randomness, so the token
+  is always generated (`openssl rand -hex 32`). CORS treats `/v1/instance/*` like
+  `/v1/admin/*`: the deployment's `CORS_ORIGINS` only, never an environment's origins.
 - **A diagnostic check answers with fixed text.** `modules/instance` logs a probe's failure
   reason (`errorReason`) and returns only `ok`/`warn`/`fail`/`skipped`, a fixed summary and a
   fixed fix: never a connection string, a host with credentials, key material or a driver's
   message. A new check gets a canary test (a failing probe whose error carries a recognisable
   string that must not reach the response) and a row in ADR 0031's table. The only URL the
-  server fetches is its own `PUBLIC_URL`, never one from a request.
+  server fetches is its own `PUBLIC_URL`, never one from a request. A check never claims more
+  than it looked at (the `master_key` check warns past `MAX_ENVIRONMENTS_CHECKED`). A check
+  that makes many store calls takes the deadline's `AbortSignal` and looks at it between
+  them, the scan is never started on top of one still running, and concurrent callers share
+  one run (`Instance.diagnostics`): keep all three.
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
@@ -729,7 +742,10 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   every adapter runs.
 - **A test that spawns a process gives the spawn a `timeout`.** `Bun.spawnSync` blocks the
   thread the test runner's own timeout runs on, so a child that never exits hangs the whole run
-  instead of failing one test (`.claude/hooks/*.test.ts` show the pattern).
+  instead of failing one test (`.claude/hooks/*.test.ts` show the pattern). A single test (or
+  hook) that starts more than two processes also gets an explicit per-test timeout sized to
+  them, with a comment: each `bun` start can take a second on a slow runner, and Bun's default
+  is five. Never raise the timeout of a test that spawns nothing.
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
 - Route tests call `createApp(createTestDeps()).request(...)`.

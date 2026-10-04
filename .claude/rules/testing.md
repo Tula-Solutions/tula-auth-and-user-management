@@ -13,6 +13,9 @@ paths:
 - No network, no Docker, no real SMTP in unit tests. Postgres-backed tests are
   `*.integration.ts`.
 - Prefer `spyOn(obj, 'fn')` + `mockRestore()` over `mock.module` (process-global in Bun).
+- A spawn in a test has its own `timeout`; a test or hook that starts more than two processes
+  also has an explicit per-test timeout with a one-line comment. Tests that spawn nothing keep
+  the default.
 - Test behaviour through the public function or HTTP route (`app.request`), not private helpers.
 - Security-sensitive modules test the **failure paths**: expired, reused, wrong environment,
   wrong key, too many attempts, malformed input.

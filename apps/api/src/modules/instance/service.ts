@@ -21,7 +21,10 @@ export const CLOCK_SKEW_WARN_MS = 5_000
  */
 export const CLOCK_SKEW_FAIL_MS = 30_000
 
-/** Environments looked at by the checks that read stored data: a bound on the route's cost. */
+/**
+ * Environments looked at by the checks that read stored data: a bound on the route's cost.
+ * A deployment with more is told so (`warn`): the check never claims more than it opened.
+ */
 export const MAX_ENVIRONMENTS_CHECKED = 200
 
 type DiagnosticsDeps = Pick<
@@ -42,6 +45,10 @@ interface TimedDiagnosis extends DatabaseDiagnosis {
 
 /** What the checks that read stored data share: read once. */
 interface Stored {
+  /** Environments the deployment has. */
+  environments: number
+  /** Environments whose secrets were opened: the oldest, at most {@link MAX_ENVIRONMENTS_CHECKED}. */
+  checked: number
   sealed: number
   unopened: number
   signingKeys: number
@@ -49,18 +56,31 @@ interface Stored {
   enabledProviders: OAuthProvider[]
 }
 
-function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+/**
+ * Wait for `work` at most `ms`. The signal it is given is aborted at the deadline: giving up
+ * on the answer does not stop the work, so work that makes many calls must look at it.
+ */
+function withTimeout<T>(work: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
+  const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms)
+    timer = setTimeout(() => {
+      const error = new Error(`timed out after ${ms}ms`)
+      controller.abort(error)
+      reject(error)
+    }, ms)
   })
-  return Promise.race([work, timeout]).finally(() => clearTimeout(timer))
+  return Promise.race([work(controller.signal), timeout]).finally(() => clearTimeout(timer))
 }
 
 /** Run a probe; its failure goes to the log and comes back as `null`, never as text. */
-async function attempt<T>(id: string, work: () => Promise<T>, timeoutMs: number) {
+async function attempt<T>(
+  id: string,
+  work: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number
+) {
   try {
-    return { value: await withTimeout(work(), timeoutMs) }
+    return { value: await withTimeout(work, timeoutMs) }
   } catch (error) {
     logger.warn('diagnostic check failed', { check: id, reason: errorReason(error) })
     return null
@@ -146,17 +166,29 @@ function clockCheck(database: { value: TimedDiagnosis } | null): DiagnosticCheck
   }
 }
 
-/** Open one sealed value per kind and environment, and note which providers are enabled. */
-async function readStored(deps: DiagnosticsDeps): Promise<Stored> {
+/**
+ * Open one sealed value per kind and environment, and note which providers are enabled.
+ *
+ * The oldest environments first, so that two runs look at the same ones. `signal` is the
+ * check's deadline: it is looked at before every environment, because the caller stopped
+ * waiting then and every further query would be work nobody reads.
+ */
+async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<Stored> {
+  const all = (await deps.environments.listAll()).sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
+  )
+  const environments = all.slice(0, MAX_ENVIRONMENTS_CHECKED)
   const stored: Stored = {
+    environments: all.length,
+    checked: environments.length,
     sealed: 0,
     unopened: 0,
     signingKeys: 0,
     providerCredentials: 0,
     enabledProviders: [],
   }
-  const environments = (await deps.environments.listAll()).slice(0, MAX_ENVIRONMENTS_CHECKED)
   for (const environment of environments) {
+    signal.throwIfAborted()
     const keys = await deps.signingKeys.list(environment.id)
     // The key that signs: the one whose loss stops sign-in.
     const key = keys.find((candidate) => candidate.status === 'active') ?? keys[0]
@@ -187,6 +219,27 @@ async function readStored(deps: DiagnosticsDeps): Promise<Stored> {
   return stored
 }
 
+/** The scan of stored secrets still running for a deployment, keyed by its diagnostics port. */
+const scans = new WeakMap<object, Promise<unknown>>()
+
+/**
+ * {@link readStored}, at most one at a time per deployment.
+ *
+ * A scan whose query never answers outlives its deadline (a deadline cannot cancel a query
+ * that is already with the database). Starting another on top of it, on every request, is how
+ * a slow database loses its last connections: until the earlier one settles, this refuses.
+ */
+function scanStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<Stored> {
+  const key = deps.diagnostics
+  if (scans.has(key)) {
+    return Promise.reject(new Error('an earlier scan of the stored secrets is still running'))
+  }
+  const scan = readStored(deps, signal)
+  const done = () => scans.delete(key)
+  scans.set(key, scan.then(done, done))
+  return scan
+}
+
 function masterKeyCheck(stored: { value: Stored } | null): DiagnosticCheck {
   const id = 'master_key'
   if (!stored) {
@@ -196,17 +249,29 @@ function masterKeyCheck(stored: { value: Stored } | null): DiagnosticCheck {
       summary: 'Not checked: the stored keys could not be read from the database.',
     }
   }
-  const { sealed, unopened, signingKeys, providerCredentials } = stored.value
-  if (sealed === 0) {
-    return { id, status: 'skipped', summary: 'Nothing is sealed with the master key yet.' }
-  }
+  const { environments, checked, sealed, unopened, signingKeys, providerCredentials } = stored.value
+  const scope = `the first ${checked} of ${environments} environments`
+  const truncated = checked < environments
   if (unopened > 0) {
     return {
       id,
       status: 'fail',
-      summary: `TULA_MASTER_KEY does not open ${unopened} of the ${plural(sealed, 'stored secret')} checked.`,
+      summary: truncated
+        ? `TULA_MASTER_KEY does not open ${unopened} of the ${plural(sealed, 'stored secret')} checked in ${scope}.`
+        : `TULA_MASTER_KEY does not open ${unopened} of the ${plural(sealed, 'stored secret')} checked.`,
       fix: 'Set TULA_MASTER_KEY to the key this database’s data was sealed with, on every instance, and restart. If that key is lost, signing keys must be rotated and provider credentials entered again.',
     }
+  }
+  if (truncated) {
+    return {
+      id,
+      status: 'warn',
+      summary: `Only ${scope} were checked: TULA_MASTER_KEY opens their stored secrets (${plural(signingKeys, 'signing key')}, ${plural(providerCredentials, 'provider credential')}). The other ${environments - checked} were not opened.`,
+      fix: `One run opens the secrets of the ${MAX_ENVIRONMENTS_CHECKED} oldest environments only. If sign-in fails in a newer environment with a signing-key error in the API’s log, its data was sealed with another TULA_MASTER_KEY.`,
+    }
+  }
+  if (sealed === 0) {
+    return { id, status: 'skipped', summary: 'Nothing is sealed with the master key yet.' }
   }
   return {
     id,
@@ -318,19 +383,37 @@ function redirectUriCheck(
  * key against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, and the
  * redirect URI each enabled OAuth provider must have registered.
  *
- * Every check runs at once and is cut off after `timeoutMs`. Nothing is changed and no email
- * is sent. A check's text is fixed: the reason a probe failed goes to the log only, because a
+ * Every check runs at once and is cut off after `timeoutMs`; the scan of stored secrets stops
+ * at its deadline and is never started while an earlier one is still running. Callers that
+ * arrive while a run is in flight share it (one run per deployment at a time: the route is
+ * cheap to ask and not cheap to answer); nothing is kept once it has answered. Nothing is
+ * changed and no email is sent. A check's text is fixed: the reason a probe failed goes to the log only, because a
  * driver's message can name hosts, users and credentials.
  *
  * @param deps - The diagnostics probes, the stores the stored secrets are read from, the secret
  *   box, the configuration and the clock.
- * @param timeoutMs - Per-check timeout (default {@link CHECK_TIMEOUT_MS}).
+ * @param timeoutMs - Per-check timeout (default {@link CHECK_TIMEOUT_MS}). A caller that joins
+ *   a run in flight gets that run, with the timeout it was started with.
  * @returns The checks, in a stable order, with the API's version, tier, clock and `PUBLIC_URL`.
  */
-export async function diagnostics(
+export function diagnostics(
   deps: DiagnosticsDeps,
   timeoutMs: number = CHECK_TIMEOUT_MS
 ): Promise<InstanceDiagnostics> {
+  const key = deps.diagnostics
+  const running = flights.get(key)
+  if (running) {
+    return running
+  }
+  const flight = run(deps, timeoutMs).finally(() => flights.delete(key))
+  flights.set(key, flight)
+  return flight
+}
+
+/** The run in flight for a deployment, keyed by its diagnostics port. */
+const flights = new WeakMap<object, Promise<InstanceDiagnostics>>()
+
+async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDiagnostics> {
   const { config } = deps
   const probes = deps.diagnostics
   const loopback = isLoopbackUrl(config.publicUrl)
@@ -348,7 +431,7 @@ export async function diagnostics(
       },
       timeoutMs
     ),
-    attempt('stored_secrets', () => readStored(deps), timeoutMs),
+    attempt('stored_secrets', (signal) => scanStored(deps, signal), timeoutMs),
     attempt('smtp', () => probes.smtp(), timeoutMs),
     redisProbe ? attempt('redis', () => redisProbe(), timeoutMs) : null,
     // Only ever the deployment's own PUBLIC_URL: never a URL from the request.

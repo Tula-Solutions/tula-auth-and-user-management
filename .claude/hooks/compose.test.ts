@@ -119,7 +119,9 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
       resolved({ PUBLIC_URL: 'http://localhost:3003', API_PORT: '3010' }).api?.environment
         ?.PUBLIC_URL
     ).toBe('http://localhost:3010')
-  })
+    // Four `docker compose config` runs in a row: more than the default five seconds of a
+    // test on a slow runner. Each spawn still has its own limit.
+  }, 60_000)
 
   test('nothing listens beyond this machine, and the API runs as the non-owner role', () => {
     const services = resolved({})

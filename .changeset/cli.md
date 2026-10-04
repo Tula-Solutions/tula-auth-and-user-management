@@ -23,6 +23,12 @@ The CLI (ADR 0031): `create-tula`, `tula dev`, `tula doctor` and `tula policy te
   an environment's password policy a password passes: the password is asked for without echo
   or read from standard input, evaluated on this machine and never sent or printed (exit 2
   when it would be refused).
+- Hardening after review: `tula dev` closes `.env.local` to mode 0600 on every run (the
+  `Host` interface gains `restrictFile`) and finds its block even when a line of yours
+  mentions the end marker; `tula doctor` never requests an address the server names unless
+  it is the API URL's own origin; `create-tula` writes `.gitignore` first and `.env` last,
+  merges into an existing `.gitignore` under `--force`, and refuses a symbolic link at any
+  path it would write.
 - `@tula/admin`: `createInstanceClient({ baseUrl, adminToken })` for the instance routes
   (`/v1/instance/*`), generated from the contract like the admin client; a response now
   carries the server's `Date` header.

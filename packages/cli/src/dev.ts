@@ -27,6 +27,25 @@ const KEY = {
 }
 
 /**
+ * Where the managed block is: from its start marker to the end of the first end marker
+ * **after** it. A marker is a whole line. The end is looked for after the start, never from
+ * the top of the file: a line of the user's own that mentions the end marker above the block
+ * would otherwise hide it, and every run would add another block.
+ */
+function findBlock(text: string): { start: number; end: number } | null {
+  const start = /^# tula:dev:start[ \t\r]*$/m.exec(text)
+  if (!start) {
+    return null
+  }
+  const from = start.index + BLOCK_START.length
+  const end = /^# tula:dev:end[ \t]*$/m.exec(text.slice(from))
+  if (!end) {
+    return null
+  }
+  return { start: start.index, end: from + end.index + BLOCK_END.length }
+}
+
+/**
  * The variables in the block `tula dev` manages, or `null` when the file has no block.
  *
  * @param text - The file's contents.
@@ -38,13 +57,12 @@ const KEY = {
  * ```
  */
 export function parseDevBlock(text: string): Record<string, string> | null {
-  const start = text.indexOf(BLOCK_START)
-  const end = text.indexOf(BLOCK_END)
-  if (start === -1 || end < start) {
+  const block = findBlock(text)
+  if (!block) {
     return null
   }
   const vars: Record<string, string> = {}
-  for (const line of text.slice(start, end).split('\n')) {
+  for (const line of text.slice(block.start, block.end).split('\n')) {
     const match = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line.trim())
     if (match) {
       vars[match[1] as string] = match[2] as string
@@ -65,13 +83,12 @@ export function parseDevBlock(text: string): Record<string, string> | null {
  * ```
  */
 export function withoutDevBlock(text: string): string {
-  const start = text.indexOf(BLOCK_START)
-  const end = text.indexOf(BLOCK_END)
-  if (start === -1 || end < start) {
+  const found = findBlock(text)
+  if (!found) {
     return text
   }
-  const after = text.slice(end + BLOCK_END.length).replace(/^\n/, '')
-  return `${text.slice(0, start)}${after}`
+  const after = text.slice(found.end).replace(/^\r?\n/, '')
+  return `${text.slice(0, found.start)}${after}`
 }
 
 /**
@@ -94,10 +111,9 @@ export function withDevBlock(text: string, vars: Readonly<Record<string, string>
     ...Object.entries(vars).map(([name, value]) => `${name}=${value}`),
     BLOCK_END,
   ].join('\n')
-  const start = text.indexOf(BLOCK_START)
-  const end = text.indexOf(BLOCK_END)
-  if (start !== -1 && end > start) {
-    return `${text.slice(0, start)}${block}${text.slice(end + BLOCK_END.length)}`
+  const found = findBlock(text)
+  if (found) {
+    return `${text.slice(0, found.start)}${block}${text.slice(found.end)}`
   }
   const separator = text === '' || text.endsWith('\n') ? '' : '\n'
   return `${text}${separator}${block}\n`
@@ -441,6 +457,12 @@ export async function startDev(options: DevOptions): Promise<void> {
   const next = withDevBlock(existing, vars)
   if (next !== existing) {
     await host.writeSecretFile(path, next)
+  } else if (await host.restrictFile(path)) {
+    // Nothing to write, but the file holds a secret key: its mode is checked on every run,
+    // not only on the runs that change it (a copy, an editor or a restore can widen it).
+    output.error(
+      `${output.errorStyle.yellow('warning:')} ${DEV_ENV_FILE} holds a secret key and was readable by other users of this machine. It is now readable by you only (mode 0600).`
+    )
   }
 
   const ignored = await host

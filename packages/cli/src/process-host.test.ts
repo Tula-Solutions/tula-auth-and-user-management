@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createProcessHost } from './process-host'
@@ -91,6 +91,18 @@ describe('createProcessHost', () => {
     if (process.platform !== 'win32') {
       expect((await stat(path)).mode & 0o777).toBe(0o600)
     }
+  })
+
+  test('restrictFile closes a file others can read, and says whether it had to', async () => {
+    const host = createProcessHost({})
+    const path = join(dir, '.env.local')
+    await writeFile(path, 'A=1', { mode: 0o644 })
+    await chmod(path, 0o644)
+    expect(await host.restrictFile(path)).toBe(true)
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    expect(await host.restrictFile(path)).toBe(false)
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    expect(await host.restrictFile(join(dir, 'missing'))).toBe(false)
   })
 
   test('sleep waits', async () => {

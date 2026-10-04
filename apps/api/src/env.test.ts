@@ -287,6 +287,37 @@ describe('loadEnv', () => {
       expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: hex }).TULA_ADMIN_TOKEN).toBe(hex)
     })
 
+    // What the check is: a floor against a value typed or copied by accident. It does not
+    // measure randomness (nothing can, from one value). These rows are the documentation.
+    test.each([
+      [
+        'hex from `openssl rand -hex 32`',
+        '9b1f0c6e2a7d4853e0f1a2b3c4d5e6f79a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d',
+      ],
+      ['base64url of 32 bytes', 'Zq3vX0n8Kp2Tf6YbLw9Rj4Hs1DcGm7Ae5UoIxNyPzQk'],
+      ['a short run inside a random value', 'c4e1abcdef77b2d09a4f5e6d8c1b3a70'],
+      ['a block that appears twice, apart', 'k3Zr8vQ1-7fT2mY9c-k3Zr8vQ1-Xw4Lp0Sd'],
+    ])('accepts %s', (_label, value) => {
+      expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: value }).TULA_ADMIN_TOKEN).toBe(value)
+    })
+
+    test.each([
+      ['a block repeated', 'a1b2c3d4e5f6'.repeat(3)],
+      ['a random-looking block typed twice', 'k3Zr8vQ1nP5xW7bT'.repeat(2)],
+      ['a repeated block with a ragged end', `${'k3Zr8vQ1nP5xW7bT'.repeat(2)}k3Z`],
+      ['the alphabet', 'abcdefghijklmnopqrstuvwxyzabcdefgh'],
+      ['a run counting down', 'zyxwvutsrqponmlk-Zq3vX0n8Kp2Tf6Yb'],
+      ['a run of digits', 'Zq3vX0n8Kp2Tf6Yb-12345678-Lw9Rj4Hs'],
+      ['a keyboard row', 'qwertyuiopasdfghjklzxcvbnm135790'],
+    ])('refuses %s, without echoing it', (_label, value) => {
+      expect(invalidVars({ ...base, TULA_ADMIN_TOKEN: value })).toEqual(['TULA_ADMIN_TOKEN'])
+      try {
+        parseEnv({ ...base, TULA_ADMIN_TOKEN: value })
+      } catch (error) {
+        expect(String((error as Error).message)).not.toContain(value)
+      }
+    })
+
     test.each([
       ['short', token.slice(0, 31)],
       ['repetitive', 'a'.repeat(40)],

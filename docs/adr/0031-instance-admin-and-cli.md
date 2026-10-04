@@ -25,9 +25,14 @@ the dashboard (step 1.15) will also sign in with.
   instance routes do not exist**: `/v1/instance/*` answers the same `resource.not_found` as a
   path that was never routed, before anything is counted, so a deployment that has not opted
   in does not advertise the route.
-- At boot a value shorter than 32 characters, with fewer than 10 distinct characters, with a
-  space, or that looks like a placeholder (`changeme`, `example`, `your-…`) fails the start.
-  The message never repeats the value.
+- At boot a value shorter than 32 characters, with fewer than 10 distinct characters, that is
+  a block written out twice or more, that has a run of eight characters counting up or down,
+  with a space, or that looks like a placeholder (`changeme`, `example`, `your-…`, a keyboard
+  row) fails the start. The message never repeats the value. **This is a floor against
+  accidents, not a measure of randomness**: no check of one value can tell a random token
+  from a chosen one, and a value that passes may still be guessable. What the deployment
+  relies on is how the token is made: `openssl rand -hex 32`, or the one `create-tula`
+  generates. A generated value fails the check with a probability below one in a million.
 - The configuration keeps only the token's SHA-256. `instanceAdmin()`
   (`~/middleware/instance-admin`) hashes what was presented and compares the two digests in
   constant time. A missing, malformed and wrong token get the **same** `auth.invalid_key`
@@ -39,6 +44,10 @@ the dashboard (step 1.15) will also sign in with.
   "the store behind the rate limits does not answer".
 - The token is never logged, never in an error and never in the OpenAPI document's examples.
   Rotation is: change the variable, restart every instance.
+- **CORS treats `/v1/instance/*` exactly like `/v1/admin/*`**: only the deployment's own
+  `CORS_ORIGINS` gets a preflight or a readable response, never an origin an environment put
+  in its settings. The dashboard (1.15) is a browser app served from a deployment origin; a
+  tenant must not be able to make its own origin one that can call the instance routes.
 
 **Threat model.** It is the most powerful credential of a deployment. In this step it
 authorizes one thing, `GET /v1/instance/diagnostics`, which changes nothing and whose text is
@@ -60,11 +69,18 @@ because a driver's message can name hosts, users and credentials. Tests seed fai
 with canary strings and assert none reaches the response. All checks run concurrently, each
 cut off after five seconds.
 
+A deadline stops the wait, not the work, and the route may be asked 30 times a minute. So:
+the scan of stored secrets is given the deadline as an `AbortSignal` and looks at it before
+every environment; it is never started while an earlier scan is still running (a query that
+never answers holds one connection, not one per request: the check is then `skipped`); and
+callers that arrive while a run is in flight share that run (single flight per process).
+Nothing is kept once a run has answered.
+
 | Check | What it can tell | What it cannot |
 | --- | --- | --- |
 | `database` | The API's role reaches Postgres. | Why not (the reason is in the log). |
 | `migrations` | Applied migrations against the ones this build ships: behind (`fail`), ahead (`warn`). | Whether a migration was edited after it was applied. |
-| `master_key` | `TULA_MASTER_KEY` opens the active signing key and every provider credential of up to 200 environments. | Anything about values it does not open: only a count. |
+| `master_key` | `TULA_MASTER_KEY` opens the active signing key and every provider credential of the 200 oldest environments. With more than 200 it is `warn` and says "the first 200 of N environments": it never reports ok for what it did not open. | Anything about values it does not open: only a count. The environments past the 200th. |
 | `smtp` | The relay accepts a connection, a greeting and the credentials. No message is sent. | Deliverability (SPF, DKIM, the relay accepting the sender). |
 | `redis` | Redis answers a ping; `skipped` when the deployment runs without it. | |
 | `clock` | The API's clock against the database's, measured when the database answers: 5 s warns, 30 s fails. | Skew between API instances (each reports its own). |
@@ -87,7 +103,11 @@ machine, the token last among the headers and never in an error.
 ### `tula doctor`
 
 The CLI checks what it can see (the API answers, the versions match, this machine's clock
-against the server's, a loopback `PUBLIC_URL`), then asks the API for the rest. It never
+against the server's, a loopback `PUBLIC_URL`), then asks the API for the rest. The
+`PUBLIC_URL` it checks is the server's word, so it is requested only when it has no
+credentials and its origin is the origin of the API URL the operator gave, and then only as
+`<origin>/v1/status`; anything else is reported `skipped` with a fixed explanation. A server
+cannot make the operator's machine request a port or a path of its choosing. It never
 connects to the database. Exit code 1 when a check fails, or warns under `--strict`. Text
 from the server is stripped of control characters before it reaches the terminal. The token
 comes from `TULA_ADMIN_TOKEN` or `--admin-token-file`, never from the command line.
@@ -115,7 +135,10 @@ image already ships. That is the one place the CLI reaches the database, and onl
 them.
 
 - Keys go to a marked block of `.env.local` (mode 0600), which Bun, Vite and Next.js all
-  read and the scaffold's `.gitignore` covers. Lines outside the block are never changed; a
+  read and the scaffold's `.gitignore` covers. The mode is enforced on every run, also one
+  that changes nothing (with a warning when it was wider). The block's end marker is looked
+  for after its start marker, and a marker is a whole line: a line of the user's that
+  mentions one never hides the block. Lines outside the block are never changed; a
   `TULA_SECRET_KEY` of the user's own is used as it is. A second run verifies the stored
   secret key against the stack and mints nothing. Keys the stack refuses are reported with
   the fix (`--rotate-keys`), not replaced. The secret key is printed only with `--show-keys`.
@@ -144,6 +167,12 @@ with a master key, an admin token and two database passwords from `crypto.getRan
 - It refuses a directory that is not empty (`--force`), validates the name (it is a
   directory, a package name and a Compose project name, so no path can be smuggled in), and
   never replaces an existing `.env` or `.env.local`.
+- `.gitignore` is written first and `.env` last. With `--force` an existing `.gitignore` is
+  kept and gains the patterns it lacks (once; an exception such as `!.env.example` is
+  repeated after a pattern that would undo it).
+- Existence is asked with `lstat`, and a symbolic link at the project directory, at a file to
+  be written or at a directory above one is refused before anything is written: a write
+  follows a link, so a dangling `.env` link would put the new secrets wherever it points.
 
 ## Consequences
 

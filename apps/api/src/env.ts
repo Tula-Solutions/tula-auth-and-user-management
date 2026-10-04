@@ -35,9 +35,66 @@ export const MIN_ADMIN_TOKEN_LENGTH = 32
 /** Fewer distinct characters than this is not what a random generator produces. */
 const MIN_ADMIN_TOKEN_DISTINCT = 10
 
-/** Words of a value copied from an example instead of generated. */
+/** Characters in a row each one above (or each one below) the last: `abcdefgh`, `87654321`. */
+const MAX_ADMIN_TOKEN_RUN = 7
+
+/** Words of a value copied from an example or typed along a keyboard instead of generated. */
 const PLACEHOLDER_TOKEN =
-  /change[-_ ]?me|example|placeholder|password|default|your[-_]|replace[-_]|x{8}|0123456789/i
+  /change[-_ ]?me|example|placeholder|password|default|your[-_]|replace[-_]|x{8}|0123456789|qwerty|asdfgh/i
+
+/** Whether a value is a shorter block written out at least twice (`abc123abc123ab`). */
+function repeatsABlock(value: string): boolean {
+  for (let period = 1; period <= value.length / 2; period += 1) {
+    let periodic = true
+    for (let index = period; index < value.length && periodic; index += 1) {
+      periodic = value[index] === value[index - period]
+    }
+    if (periodic) {
+      return true
+    }
+  }
+  return false
+}
+
+/** The longest stretch of characters that count up, or count down, one at a time. */
+function longestRun(value: string): number {
+  let longest = 1
+  let length = 1
+  let direction = 0
+  for (let index = 1; index < value.length; index += 1) {
+    const step = value.charCodeAt(index) - value.charCodeAt(index - 1)
+    length = Math.abs(step) === 1 && step === direction ? length + 1 : Math.abs(step) === 1 ? 2 : 1
+    direction = Math.abs(step) === 1 ? step : 0
+    longest = Math.max(longest, length)
+  }
+  return longest
+}
+
+/**
+ * Whether a `TULA_ADMIN_TOKEN` is plainly not a generated value: too few distinct characters,
+ * a block written out twice, or a long run such as `abcdefgh`.
+ *
+ * **A floor against accidents, not a measure of randomness.** No check of one value can tell
+ * a random token from a chosen one: this refuses what a person types to get past a length
+ * check, and a value that passes may still be guessable. The guarantee the deployment relies
+ * on is how the token is made: `openssl rand -hex 32`, or the one `create-tula` generates.
+ * A generated value of the minimum length fails it with a probability below one in a million.
+ *
+ * @param value - The token.
+ * @returns Whether it is refused.
+ *
+ * @example
+ * ```ts
+ * looksTyped('abcabcabcabcabcabcabcabcabcabcabcabc') // true
+ * ```
+ */
+export function looksTyped(value: string): boolean {
+  return (
+    new Set(value).size < MIN_ADMIN_TOKEN_DISTINCT ||
+    repeatsABlock(value) ||
+    longestRun(value) > MAX_ADMIN_TOKEN_RUN
+  )
+}
 
 const fields = z.object({
   /** Log formatting and third-party packages only. Behaviour is gated on `ENVIRONMENT`. */
@@ -101,8 +158,10 @@ const fields = z.object({
   /**
    * The instance admin token: the credential of `/v1/instance/*` (`tula doctor`, and the
    * dashboard's sign-in). Optional: without it those routes do not exist (404). It is the most
-   * powerful credential of a deployment, so a short or placeholder value fails the boot
-   * instead of being accepted. Generate one with `openssl rand -hex 32`. See ADR 0031.
+   * powerful credential of a deployment, so a short, repeated, sequential or placeholder
+   * value fails the boot instead of being accepted. That check is a floor against accidents,
+   * not a measure of randomness ({@link looksTyped}): generate the token with
+   * `openssl rand -hex 32`. See ADR 0031.
    */
   TULA_ADMIN_TOKEN: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -114,11 +173,24 @@ const fields = z.object({
       )
       .max(256, 'must be at most 256 characters')
       .regex(/^[\x21-\x7e]+$/, 'must be printable ASCII without spaces')
-      .refine((value) => new Set(value).size >= MIN_ADMIN_TOKEN_DISTINCT, {
-        message: 'is too repetitive to be a random value; generate one with `openssl rand -hex 32`',
-      })
-      .refine((value) => !PLACEHOLDER_TOKEN.test(value), {
-        message: 'looks like a placeholder; generate one with `openssl rand -hex 32`',
+      .superRefine((value, context) => {
+        // One problem per value: the first that applies. (A value over the length limit is
+        // not looked at further.)
+        if (value.length > 256) {
+          return
+        }
+        if (PLACEHOLDER_TOKEN.test(value)) {
+          context.addIssue({
+            code: 'custom',
+            message: 'looks like a placeholder; generate one with `openssl rand -hex 32`',
+          })
+        } else if (looksTyped(value)) {
+          context.addIssue({
+            code: 'custom',
+            message:
+              'is too repetitive or sequential to be a random value; generate one with `openssl rand -hex 32`',
+          })
+        }
       })
       .optional()
   ),

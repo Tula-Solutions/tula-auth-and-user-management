@@ -146,22 +146,28 @@ export async function requestMayUseSessionCookie<E extends AppEnv & { Variables:
   return environmentAllowsOrigin(c.get('deps'), c.get('tenant'), origin)
 }
 
+/**
+ * Routes whose credential is an operator's (a secret key, the instance admin token): only the
+ * deployment's own `CORS_ORIGINS` may call them from a browser, never an origin a tenant put
+ * in its environment's settings.
+ */
 function isAdminPath(path: string): boolean {
-  return path.startsWith('/v1/admin/')
+  return path.startsWith('/v1/admin/') || path.startsWith('/v1/instance/')
 }
 
 /**
  * CORS, decided per request (ADR 0018).
  *
  * - **Preflight** (`OPTIONS`): allowed when the origin is on the deployment's list
- *   (`CORS_ORIGINS`) or allowed by any environment; for `/v1/admin/*`, by the deployment's list
- *   only. Always answered here with 204.
+ *   (`CORS_ORIGINS`) or allowed by any environment; for `/v1/admin/*` and `/v1/instance/*`, by the
+ *   deployment's list only. Always answered here with 204.
  * - **Any other request** runs first. Its response then gets `Access-Control-Allow-Origin`
  *   (with credentials) only when the origin is allowed for the environment its publishable key
  *   resolved to. A response made before a key was resolved (an invalid key, the per-IP limit,
  *   an unknown path, the public routes) holds nothing of any tenant and is readable by an origin
- *   any environment allows, so a browser can show the error code. Admin responses follow the
- *   deployment's list: secret keys do not belong in browsers.
+ *   any environment allows, so a browser can show the error code. Admin and instance responses
+ *   follow the deployment's list: secret keys do not belong in browsers, and the instance token
+ *   is the operator's (the dashboard is served from a deployment origin).
  * - Origins are echoed on an exact match and never as `*`; `Vary: Origin` is always set, so a
  *   cache cannot serve one origin's answer to another.
  *
