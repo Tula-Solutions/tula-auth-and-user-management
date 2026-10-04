@@ -65,7 +65,12 @@ storage or a URL.
   fail a sign-in, so one entry per failure would let them grow the table. The first failure
   of a minute from an address is written, with `data.suppressedInPreviousMinute`: how many
   failures from that address in the minute before were not written one by one (a count that
-  reaches back one minute, no further). The tally lives in the rate limiter, so instances
+  reaches back one minute, no further). The count is **best-effort**: a burst that is
+  followed by a quiet minute never has its unwritten failures reported, because only a later
+  failure carries them and nothing else writes on the address's behalf. The burst's first
+  entry is always there, so that it happened, when and from where is not lost; an exact
+  total would need a timer or a flush job for a number the sign-in rate limit already caps.
+  Read it as "at least this many more". The tally lives in the rate limiter, so instances
   share it, under a keyed hash of the address (`~/lib/keyed-hash`), never the address. A
   limiter that cannot count means the entry is written. Successful sign-ins and sign-outs
   are always recorded.
@@ -79,8 +84,10 @@ is read (`~/middleware/dashboard-session`):
 
 1. **The custom header `x-tula-dashboard: 1`.** A form cannot send it, and a cross-origin
    `fetch` may send it only after a preflight, which the API answers for the deployment's own
-   origins alone (`/v1/admin/*` and `/v1/instance/*` follow `CORS_ORIGINS`, never an origin a
-   tenant put in its settings; ADR 0031). Without the header the cookie is **ignored**: the
+   origins alone (`/v1/admin/*` and `/v1/instance/*` follow `PUBLIC_URL` and `CORS_ORIGINS`,
+   matched exactly in every tier by the same `isDeploymentOrigin` leg 2 uses; never an origin
+   a tenant put in its settings, ADR 0031, and never the `local` tier's loopback rule, so a
+   page on another local port is refused at the preflight and not only at the request). Without the header the cookie is **ignored**: the
    request is simply not signed in. This is required on reads too, which is stricter than the
    plan asked and costs the app nothing.
 2. **`Origin`**, when present, is the API's own (`PUBLIC_URL`: the dashboard is served by the
@@ -280,6 +287,38 @@ the next.
   the remount.
 - The shell is never remounted, so its dialogs ("create project", "add environment") are
   bound to the workspace or project they were opened in and close when it changes.
+
+### A request belongs to the environment of the screen that made it
+
+Remounting clears what a screen *holds*. It does not stop work a screen already *started*
+from running later, and the environment header used to be read from the selection at the
+moment a request was built. TanStack Query holds a mutation started while the browser is
+offline (`networkMode: 'online'`, its default) and sends it when the network returns: a Save
+clicked in development, then a switch, would have been sent with production's
+`x-tula-environment` and development's `If-Match`. Two rules, each sufficient for that case:
+
+- **No write waits for the network.** Mutations run with `networkMode: 'always'`
+  (`createQueryClient`): offline, the request is attempted, fails (`network.failed`) and the
+  screen says so with the draft still in place. Nothing is sent later on the operator's
+  behalf. Queries keep the default: a read that waits changes nothing.
+- **The environment is the caller's, fixed when it rendered.** Every generated admin hook is
+  given `request: useEnvironmentRequest()`, which names the environment of the
+  `EnvironmentProvider` the screen is under. `dashboardFetch` never takes the environment from
+  the selection: an admin call that names none is refused (`client.no_environment`), and one
+  whose environment is no longer the selected one is refused too
+  (`client.environment_changed`), both before any request. So a late call (a retry, a
+  mutation that did wait) can neither be redirected to the new environment nor be carried
+  out for the old one behind the operator's back.
+
+Considered instead: an `AbortController` per environment subtree that aborts on unmount. It
+only helps requests that already carry its signal; a mutation that has not called `fetch` yet
+has nothing to abort, and the generated mutation functions take no signal. Passing the
+environment explicitly costs one option per call site and is enforced by the mutator itself:
+a call site that forgets it cannot make a request at all, which every screen test notices.
+
+An answer that arrives late is harmless for a different reason: `syncScope` drops every cached
+admin answer when the environment changes, so a slow response lands in a query nobody reads,
+and callbacks passed to `mutate` do not run once their screen is gone.
 
 ## Consequences
 

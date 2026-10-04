@@ -36,15 +36,21 @@ async function readJson(response: Response): Promise<unknown> {
  * The one way the dashboard calls the API (Orval's mutator: every generated hook uses it).
  *
  * Each request carries `x-tula-dashboard: 1` and the session cookie, never `Authorization`
- * (the API refuses the two together); admin calls also name the selected environment. A
- * failure is always an {@link ApiError}; `auth.unauthenticated` also ends the session, which
- * sends the operator back to sign-in.
+ * (the API refuses the two together). A failure is always an {@link ApiError};
+ * `auth.unauthenticated` also ends the session, which sends the operator back to sign-in.
+ *
+ * An admin call acts on one environment, and says which itself: the `x-tula-environment`
+ * header in `options`, put there by `useEnvironmentRequest` when the calling screen rendered.
+ * This function never fills it in from the current selection, and it sends nothing when the
+ * two differ, so no admin request can leave for an environment other than the one its
+ * caller was drawn for (ADR 0032).
  *
  * @param url - A path on this origin (`/v1/...`).
  * @param options - `fetch` options from the generated function, plus `onResponse`.
  * @returns The parsed body, or `undefined` for an answer without one.
- * @throws ApiError for a refusal, an unreadable answer, no answer, or an admin call made
- *   with no environment selected (`client.no_environment`, before any request).
+ * @throws ApiError for a refusal, an unreadable answer or no answer; and, before any request,
+ *   for an admin call that names no environment (`client.no_environment`) or one that is no
+ *   longer the selected environment (`client.environment_changed`).
  */
 export async function dashboardFetch<T>(
   url: string,
@@ -55,15 +61,29 @@ export async function dashboardFetch<T>(
   headers.delete('authorization')
   headers.set(DASHBOARD_HEADER, DASHBOARD_HEADER_VALUE)
   if (url.startsWith(ADMIN_PREFIX)) {
-    const { environmentId } = useScope.getState()
-    if (environmentId === null) {
+    // The environment is the caller's (`useEnvironmentRequest`: fixed when its screen
+    // rendered), never the selection at the time the request leaves: a call that runs late
+    // (a retry, a mutation that waited) would otherwise be made under whatever the operator
+    // switched to meanwhile.
+    const named = headers.get(ENVIRONMENT_HEADER)
+    if (named === null || named === '') {
       throw new ApiError({
         status: 0,
         code: 'client.no_environment',
         detail: 'Choose an environment first.',
       })
     }
-    headers.set(ENVIRONMENT_HEADER, environmentId)
+    // And a screen whose environment is no longer the selected one is on its way out: what
+    // it still asks for is not sent at all, rather than done behind the operator's back.
+    if (named !== useScope.getState().environmentId) {
+      throw new ApiError({
+        status: 0,
+        code: 'client.environment_changed',
+        detail: 'The environment was switched before this was sent. Nothing was changed.',
+      })
+    }
+  } else {
+    headers.delete(ENVIRONMENT_HEADER)
   }
 
   let response: Response

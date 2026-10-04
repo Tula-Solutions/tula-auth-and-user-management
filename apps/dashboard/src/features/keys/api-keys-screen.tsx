@@ -19,7 +19,7 @@ import { PageHeader } from '~/components/page'
 import { EmptyState, QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
 import { NativeSelectOption } from '~/components/ui/native-select'
-import { useEnvironment } from '~/features/shell/environment-context'
+import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
 
 /**
@@ -42,7 +42,7 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
   const queryClient = useQueryClient()
   // `gcTime: 0`: the mutation's result (which holds the key) is not kept by the query client
   // after this component lets go of it.
-  const create = useCreateApiKey({ mutation: { gcTime: 0 } })
+  const create = useCreateApiKey({ mutation: { gcTime: 0 }, request: useEnvironmentRequest() })
   const [name, setName] = useState('')
   const [kind, setKind] = useState<ApiKeyKind>('publishable')
   const [problem, setProblem] = useState<string>()
@@ -160,8 +160,9 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
 export function ApiKeysScreen() {
   const queryClient = useQueryClient()
   const environment = useEnvironment()
-  const keys = useListApiKeys()
-  const revoke = useRevokeApiKey()
+  const request = useEnvironmentRequest()
+  const keys = useListApiKeys({ request })
+  const revoke = useRevokeApiKey({ request })
   const [creating, setCreating] = useState(false)
   const [revoking, setRevoking] = useState<ApiKey | null>(null)
 

@@ -219,6 +219,28 @@ describe('POST /v1/instance/session', () => {
     )
   })
 
+  test('the suppressed count of a burst that simply stops is never reported (best-effort)', async () => {
+    // Documented in `recordFailedSignIn` and ADR 0032: the count is carried only by a failure
+    // in the minute right after. This pins that behaviour, so a change to it is deliberate.
+    const deps = createInstanceTestDeps()
+    const app = createApp(deps)
+    const failures = () => deps.controlPlane.ofType('instance.sign_in_failed')
+    for (let i = 0; i < 4; i += 1) {
+      await signIn(app, { token: 'wrong-token-wrong-token' })
+    }
+    // The burst itself is on record: one entry, written by its first failure.
+    expect(failures().map((entry) => entry.data)).toEqual([{ suppressedInPreviousMinute: 0 }])
+
+    // The guesser stops. Nothing writes the three that were not recorded, however long passes.
+    deps.clock.advance('2m')
+    expect(failures()).toHaveLength(1)
+    await signIn(app, { token: 'wrong-token-wrong-token' })
+    expect(failures().map((entry) => entry.data)).toEqual([
+      { suppressedInPreviousMinute: 0 },
+      { suppressedInPreviousMinute: 0 },
+    ])
+  })
+
   test('when the tally cannot be counted, the failure is recorded rather than lost', async () => {
     const deps = createInstanceTestDeps()
     const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
@@ -594,5 +616,41 @@ describe('cross-site request forgery', () => {
     expect(headers).toContain('x-tula-environment')
     expect(allowed.headers.get('access-control-allow-credentials')).toBe('true')
     expect((await preflight(FOREIGN)).headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  test('in the local tier another loopback port passes neither the preflight nor the request', async () => {
+    // TEST_CONFIG is the `local` tier, where the client API allows any loopback origin. The
+    // operator routes do not: the cookie is not scoped by port.
+    const app = createApp(createInstanceTestDeps())
+    const other = 'http://localhost:5999'
+    const own = new URL(TEST_CONFIG.publicUrl).origin
+    const preflight = (path: string, origin: string) =>
+      app.request(path, {
+        method: 'OPTIONS',
+        headers: {
+          origin,
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'content-type,x-tula-dashboard',
+        },
+      })
+    for (const path of [PATH, '/v1/admin/users']) {
+      const refused = await preflight(path, other)
+      expect(refused.status).toBe(204)
+      expect(refused.headers.get('access-control-allow-origin')).toBeNull()
+      expect(refused.headers.get('access-control-allow-headers')).toBeNull()
+      expect(refused.headers.get('access-control-allow-credentials')).toBeNull()
+    }
+    expect((await preflight(PATH, own)).headers.get('access-control-allow-origin')).toBe(own)
+
+    const res = await signIn(
+      app,
+      { token: TEST_ADMIN_TOKEN },
+      { ...dashboardHeaders(), origin: other }
+    )
+    expect(res.status).toBe(403)
+    expect(res.headers.getSetCookie()).toHaveLength(0)
+    // The refusal is not readable by that origin either.
+    expect(res.headers.get('access-control-allow-origin')).toBeNull()
+    expect(await code(res)).toBe('request.origin_not_allowed')
   })
 })

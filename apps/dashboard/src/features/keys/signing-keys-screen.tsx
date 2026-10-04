@@ -12,6 +12,7 @@ import { DataTable } from '~/components/data-table'
 import { PageHeader, Section } from '~/components/page'
 import { QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
+import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
 
 const STATUS: Record<SigningKeyStatus, { label: string; meaning: string }> = {
@@ -29,8 +30,9 @@ const STATUS: Record<SigningKeyStatus, { label: string; meaning: string }> = {
  */
 export function SigningKeysScreen() {
   const queryClient = useQueryClient()
-  const keys = useListSigningKeys()
-  const rotate = useRotateSigningKeys()
+  const request = useEnvironmentRequest()
+  const keys = useListSigningKeys({ request })
+  const rotate = useRotateSigningKeys({ request })
   const [confirming, setConfirming] = useState(false)
 
   return (

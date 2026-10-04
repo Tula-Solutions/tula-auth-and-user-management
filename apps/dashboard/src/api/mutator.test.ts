@@ -5,6 +5,8 @@ import { useScope } from '~/state/scope'
 import { useSession } from '~/state/session'
 
 const ENVIRONMENT = '00000000-0000-7000-8000-00000000e001'
+const OTHER = '00000000-0000-7000-8000-00000000e002'
+const FOR_ENVIRONMENT = { 'x-tula-environment': ENVIRONMENT }
 const realFetch = globalThis.fetch
 let calls: { url: string; init: RequestInit }[] = []
 
@@ -53,18 +55,45 @@ describe('dashboardFetch', () => {
     expect(headers.has('x-tula-environment')).toBe(false)
   })
 
-  test('names the selected environment on admin calls only', async () => {
+  test('an admin call is sent for the environment its caller named', async () => {
     answer(json(200, { data: [] }))
-    await dashboardFetch('/v1/admin/users?page=1', { method: 'GET' })
+    await dashboardFetch('/v1/admin/users?page=1', { method: 'GET', headers: FOR_ENVIRONMENT })
     expect(new Headers(calls[0]?.init.headers).get('x-tula-environment')).toBe(ENVIRONMENT)
   })
 
-  test('refuses an admin call with no environment selected, before any request', async () => {
-    useScope.getState().set({ workspaceId: null, projectId: null, environmentId: null })
+  test('an admin call that names no environment is refused: the selection is never used instead', async () => {
+    // An environment is selected; the call still has to say which one it was made for.
     answer(json(200, {}))
     const error = await failure(() => dashboardFetch('/v1/admin/users', { method: 'GET' }))
     expect(error.code).toBe('client.no_environment')
     expect(calls).toHaveLength(0)
+  })
+
+  test.each([
+    ['another environment is selected now', OTHER],
+    ['no environment is selected now', null],
+  ])(
+    'an admin call made for an environment is refused when %s, before any request',
+    async (_name, selected) => {
+      useScope.getState().set({ workspaceId: 'w', projectId: 'p', environmentId: selected })
+      answer(json(200, {}))
+      const error = await failure(() =>
+        dashboardFetch('/v1/admin/settings', {
+          method: 'PUT',
+          headers: { ...FOR_ENVIRONMENT, 'If-Match': '"3"' },
+          body: '{}',
+        })
+      )
+      expect(error.code).toBe('client.environment_changed')
+      expect(error.status).toBe(0)
+      expect(calls).toHaveLength(0)
+    }
+  )
+
+  test('an instance call never carries an environment', async () => {
+    answer(json(200, { data: [] }))
+    await dashboardFetch('/v1/instance/workspaces', { method: 'GET', headers: FOR_ENVIRONMENT })
+    expect(new Headers(calls[0]?.init.headers).has('x-tula-environment')).toBe(false)
   })
 
   test('never sends an Authorization header, even when a caller passes one', async () => {
@@ -82,6 +111,7 @@ describe('dashboardFetch', () => {
     answer(new Response(null, { status: 204, headers: { 'x-tula-can-still-sign-in': 'false' } }))
     let seen: string | null = null
     const result = await dashboardFetch<void>('/v1/admin/users/u/factors', {
+      headers: FOR_ENVIRONMENT,
       method: 'DELETE',
       onResponse: (response) => {
         seen = response.headers.get('x-tula-can-still-sign-in')
@@ -101,7 +131,9 @@ describe('dashboardFetch', () => {
         errors: [{ field: 'password.minLength', code: 'validation.failed', message: 'Too small' }],
       })
     )
-    const error = await failure(() => dashboardFetch('/v1/admin/settings', { method: 'PUT' }))
+    const error = await failure(() =>
+      dashboardFetch('/v1/admin/settings', { method: 'PUT', headers: FOR_ENVIRONMENT })
+    )
     expect(error.status).toBe(422)
     expect(error.code).toBe('validation.failed')
     expect(error.detail).toBe('Invalid.')
@@ -156,7 +188,9 @@ describe('dashboardFetch', () => {
 
   test('auth.unauthenticated ends the session', async () => {
     answer(json(401, { status: 401, code: 'auth.unauthenticated', detail: 'Sign in.' }))
-    await failure(() => dashboardFetch('/v1/admin/users', { method: 'GET' }))
+    await failure(() =>
+      dashboardFetch('/v1/admin/users', { method: 'GET', headers: FOR_ENVIRONMENT })
+    )
     expect(useSession.getState().status).toBe('signed_out')
   })
 

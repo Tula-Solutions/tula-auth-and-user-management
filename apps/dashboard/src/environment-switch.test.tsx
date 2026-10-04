@@ -22,11 +22,72 @@ function start(path: string, options: Parameters<typeof renderApp>[1] = {}): Wor
 }
 
 afterEach(() => {
+  // Nothing a failed test left waiting may run against the next one (or the real network).
+  world?.queryClient.clear()
+  setOnline(true)
   world?.api.restore()
   world = undefined
   lone?.restore()
   lone = undefined
 })
+
+/** What a browser does when the network goes or comes back: the flag, then the event. */
+function setOnline(online: boolean) {
+  Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online })
+  act(() => {
+    window.dispatchEvent(new Event(online ? 'online' : 'offline'))
+  })
+}
+
+/**
+ * Take the network away: `navigator.onLine` is false and a request that is made anyway gets
+ * no answer.
+ *
+ * @returns A function that brings it back.
+ */
+function goOffline(): () => void {
+  const reachable = globalThis.fetch
+  globalThis.fetch = (() =>
+    Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof fetch
+  setOnline(false)
+  return () => {
+    globalThis.fetch = reachable
+    setOnline(true)
+  }
+}
+
+/**
+ * Hold back the answers to some requests (they are still received and recorded by the fake).
+ *
+ * @param slow - Which calls to hold.
+ * @returns `release`: let the held answers through.
+ */
+function holdAnswers(slow: (path: string, headers: Headers, method: string) => boolean) {
+  const answer = globalThis.fetch
+  let release: () => void = () => undefined
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
+    const response = await answer(input, init)
+    const path = new URL(String(input), 'http://localhost:3003').pathname
+    // The request's `signal` is deliberately not honoured: the worst case is an answer that
+    // arrives although nobody is waiting for it any more.
+    if (slow(path, new Headers(init.headers), (init.method ?? 'GET').toUpperCase())) {
+      await held
+    }
+    return response
+  }) as typeof fetch
+  return { release }
+}
+
+/** Put TanStack's default back for mutations: one started offline waits for the network. */
+function queueMutationsWhileOffline(current: World) {
+  current.queryClient.setDefaultOptions({
+    ...current.queryClient.getDefaultOptions(),
+    mutations: { retry: false, networkMode: 'online' },
+  })
+}
 
 const ENVIRONMENT = 'x-tula-environment'
 
@@ -145,6 +206,157 @@ describe('switching environment', () => {
 
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(current.api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+  })
+})
+
+// A request belongs to the environment of the screen that made it. Two layers, tested apart:
+// nothing waits for the network (so nothing is sent later, under another selection), and
+// the environment of a request is the caller's, never whatever is selected when it leaves.
+describe.each([
+  ['as shipped', false],
+  ['even with mutations queued while offline', true],
+] as const)('a save made offline, then a switch to production (%s)', (_name, queued) => {
+  test('a settings save is never sent to production', async () => {
+    const api = installFakeApi()
+    const { puts, documents } = settingsPerEnvironment(api)
+    const current = start(`${DEV_PATH}/password-policy`, { api })
+    if (queued) {
+      queueMutationsWhileOffline(current)
+    }
+    const { user } = current
+    const minimum = await screen.findByLabelText('Minimum length')
+    await user.clear(minimum)
+    await user.type(minimum, '16')
+    await screen.findByText('You have unsaved changes.')
+
+    const online = goOffline()
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    if (!queued) {
+      // Not kept for later: it failed, and the screen says so.
+      await screen.findByText(/The API did not answer/)
+      await screen.findByText('You have unsaved changes.')
+    }
+    await switchToProduction(current, '/password-policy')
+    online()
+
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/settings').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await waitFor(() => expect(minimumLength()).toBe('14'))
+    await screen.findByText('No unsaved changes.')
+    expect(puts.filter((put) => put.environment !== IDS.development)).toEqual([])
+    expect(documents[IDS.production]?.settings.password.minLength).toBe(14)
+    expect(documents[IDS.production]?.revision).toBe(3)
+  })
+
+  test('a provider secret is never sent to production', async () => {
+    const current = start(`${DEV_PATH}/sign-in-methods`)
+    if (queued) {
+      queueMutationsWhileOffline(current)
+    }
+    const { user, api } = current
+    const card = () => screen.getByRole('heading', { name: 'GitHub' }).closest('li') as HTMLElement
+    await screen.findByRole('heading', { name: 'GitHub' })
+    await user.type(within(card()).getByLabelText('Client ID'), 'dev-client')
+    await user.type(within(card()).getByLabelText('Client secret'), 'dev-secret-whole')
+
+    const online = goOffline()
+    await user.click(within(card()).getByRole('button', { name: 'Save GitHub' }))
+    if (!queued) {
+      await within(card()).findByText(/The API did not answer/)
+    }
+    await switchToProduction(current, '/sign-in-methods')
+    online()
+
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/oauth-providers').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await screen.findByRole('heading', { name: 'GitHub' })
+    const sent = api
+      .callsTo('PUT', '/v1/admin/oauth-providers/github')
+      .map((call) => call.headers.get(ENVIRONMENT))
+    expect(sent.filter((environment) => environment !== IDS.development)).toEqual([])
+    await waitFor(() =>
+      expect((within(card()).getByLabelText('Client ID') as HTMLInputElement).value).toBe('')
+    )
+    expect(document.documentElement.outerHTML.includes('dev-secret-whole')).toBe(false)
+  })
+})
+
+describe('an answer that arrives after the switch', () => {
+  test('a slow development list does not appear under production', async () => {
+    const api = installFakeApi()
+    const seeded = api.state.users[0]
+    if (!seeded) {
+      throw new Error('the fake seeds a user')
+    }
+    api.override('GET', /^\/v1\/admin\/users$/, (call) => ({
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 25 },
+      data: [
+        call.headers.get(ENVIRONMENT) === IDS.production
+          ? { ...seeded, email: 'only-in-production@example.com' }
+          : { ...seeded, email: 'only-in-development@example.com' },
+      ],
+    }))
+    const { release } = holdAnswers(
+      (path, headers) => path === '/v1/admin/users' && headers.get(ENVIRONMENT) === IDS.development
+    )
+    const current = start(`${DEV_PATH}/users`, { api })
+    await waitFor(() => expect(api.callsTo('GET', '/v1/admin/users')).toHaveLength(1))
+
+    await switchToProduction(current, '/users')
+    await screen.findByText('only-in-production@example.com')
+
+    // Development's answer arrives now.
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(screen.queryByText('only-in-development@example.com')).toBeNull()
+    expect(screen.getAllByText('only-in-production@example.com').length).toBeGreaterThan(0)
+    const asked = api.callsTo('GET', '/v1/admin/users').map((call) => call.headers.get(ENVIRONMENT))
+    expect(asked).toEqual([IDS.development, IDS.production])
+  })
+
+  test('a slow development save does not touch production’s screen or document', async () => {
+    const api = installFakeApi()
+    const { puts, documents } = settingsPerEnvironment(api)
+    const { release } = holdAnswers((path, _headers, method) => {
+      return path === '/v1/admin/settings' && method === 'PUT'
+    })
+    const current = start(`${DEV_PATH}/password-policy`, { api })
+    const { user } = current
+    const minimum = await screen.findByLabelText('Minimum length')
+    await user.clear(minimum)
+    await user.type(minimum, '16')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(puts).toHaveLength(1))
+
+    await switchToProduction(current, '/password-policy')
+    await waitFor(() => expect(minimumLength()).toBe('14'))
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+
+    // The save was development's and stays development's; production shows its own document.
+    expect(puts.map((put) => put.environment)).toEqual([IDS.development])
+    expect(minimumLength()).toBe('14')
+    await screen.findByText('No unsaved changes.')
+    expect(screen.queryByText('Settings saved')).toBeNull()
+    expect(documents[IDS.production]?.revision).toBe(3)
+    // Nothing of development's answer is in the cache production reads from.
+    const cached = JSON.stringify(
+      current.queryClient
+        .getQueryCache()
+        .findAll({ predicate: (query) => query.queryKey.includes(IDS.production) })
+        .map((query) => query.state.data)
+    )
+    expect(cached.includes('"minLength":16')).toBe(false)
   })
 })
 

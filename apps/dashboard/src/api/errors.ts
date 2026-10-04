@@ -22,8 +22,8 @@ export interface ApiErrorInit {
  * The one error every failed API call throws.
  *
  * Built from the contract's envelope, or with a client code of its own (`network.failed`,
- * `response.invalid`, `client.no_environment`; all `status: 0` except an unreadable answer,
- * which keeps its status). It never carries a response body or a network error's message.
+ * `response.invalid`, `client.no_environment`, `client.environment_changed`; all `status: 0`
+ * except an unreadable answer, which keeps its status). It never carries a response body or a network error's message.
  */
 export class ApiError extends Error {
   /** HTTP status, or 0 when no answer was received. */

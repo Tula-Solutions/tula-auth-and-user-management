@@ -140,6 +140,14 @@ async function tally(
  * address (never the address). A limiter that cannot count means the entry is written: a
  * failure is recorded once too often rather than not at all.
  *
+ * The count is **best-effort, not a total**. It is reported only by a failure in the minute
+ * right after: when a burst ends and nothing fails from that address in the following minute,
+ * how many of its failures went unwritten is never recorded (the entry that opened the burst
+ * is; that guessing happened, when and from where is never lost). Making it exact would take
+ * a write with no request to make it on (a timer per address, or a flush job): more moving
+ * parts than a number that is already capped by the sign-in rate limit is worth. Read
+ * `suppressedInPreviousMinute` as "at least this many more", never as a sum to add up.
+ *
  * @param deps - Control plane, limiter, keyed hash, ids and clock.
  * @param actor - The request's actor (no id: nobody signed in).
  */

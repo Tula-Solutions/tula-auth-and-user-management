@@ -26,7 +26,7 @@ import { Modal } from '~/components/modal'
 import { PageHeader, Section } from '~/components/page'
 import { EmptyState, QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
-import { useEnvironment } from '~/features/shell/environment-context'
+import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime, fullName } from '~/lib/format'
 import { SignInMethods } from './sign-in-methods'
 import { type EnvironmentScope, UserStatus } from './users-screen'
@@ -60,7 +60,10 @@ function SetPasswordDialog({
   const environment = useEnvironment()
   // `gcTime: 0`: the query client must not keep the mutation (its variables hold the new
   // password) once this dialog has let go of it.
-  const setPassword = useSetUserPassword({ mutation: { gcTime: 0 } })
+  const setPassword = useSetUserPassword({
+    mutation: { gcTime: 0 },
+    request: useEnvironmentRequest(),
+  })
   const [password, setPasswordValue] = useState('')
   const [typed, setTyped] = useState('')
   const [problem, setProblem] = useState<string>()
@@ -172,7 +175,10 @@ function SetPasswordDialog({
 }
 
 function Activity({ userId }: { userId: string }) {
-  const activity = useListAuditLogs({ targetId: userId, page: 1, size: 10 })
+  const activity = useListAuditLogs(
+    { targetId: userId, page: 1, size: 10 },
+    { request: useEnvironmentRequest() }
+  )
   return (
     <Section
       title='Recent activity'
@@ -223,25 +229,27 @@ export interface UserDetailScreenProps {
 export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProps) {
   const queryClient = useQueryClient()
   const environment = useEnvironment()
-  const user = useGetUser(userId)
-  const sessions = useListUserSessions(userId)
-  const authentication = useGetUserAuthentication(userId)
+  const request = useEnvironmentRequest()
+  const user = useGetUser(userId, { request })
+  const sessions = useListUserSessions(userId, { request })
+  const authentication = useGetUserAuthentication(userId, { request })
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [settingPassword, setSettingPassword] = useState(false)
   const [resetOutcome, setResetOutcome] = useState<ResetOutcome | null>(null)
-  const ban = useBanUser()
-  const unban = useUnbanUser()
-  const remove = useDeleteUser()
+  const ban = useBanUser({ request })
+  const unban = useUnbanUser({ request })
+  const remove = useDeleteUser({ request })
   const resetFactors = useResetUserFactors({
     request: {
+      ...request,
       onResponse: (response) =>
         setResetOutcome(
           response.headers.get(CAN_STILL_SIGN_IN_HEADER) === 'false' ? 'locked_out' : 'can_sign_in'
         ),
     },
   })
-  const revokeAll = useRevokeUserSessions()
-  const revokeOne = useRevokeUserSession()
+  const revokeAll = useRevokeUserSessions({ request })
+  const revokeOne = useRevokeUserSession({ request })
   const requireText = environment.kind === 'production' ? user.data?.email : undefined
 
   async function refresh() {

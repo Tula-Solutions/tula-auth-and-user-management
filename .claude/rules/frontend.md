@@ -14,7 +14,7 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   secret).
 - API access only through the Orval-generated hooks (`src/api/generated/api.gen.ts`,
   `bun run dashboard:generate` after `contract:generate`). Never call `fetch` from a
-  component: `dashboardFetch` adds the dashboard header and the environment, never sends
+  component: `dashboardFetch` adds the dashboard header, never sends
   `Authorization`, and turns the envelope into `ApiError`.
 - Generated, never edited by hand: `src/api/generated/**`, `src/routeTree.gen.ts`,
   `src/styles/tokens.gen.css`, and `src/components/ui/**` (shadcn's CLI: wrap or extend).
@@ -31,6 +31,13 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   environment id in the key of a list item that holds form state; bind a dialog the shell
   owns to the scope it was opened in. A screen with a draft, a typed secret or a
   confirmation gets a test in `src/environment-switch.test.tsx`.
+- A request belongs to the environment of the screen that made it. Give every generated admin
+  hook `request: useEnvironmentRequest()` (`~/features/shell/environment-context`; it takes
+  the call's other options, such as `If-Match`). `dashboardFetch` never reads the environment
+  from the scope store and refuses an admin call that names none, or one that is no longer
+  the selected one. Keep mutations on `networkMode: 'always'`: a write is never queued while
+  offline and sent later. A new save path gets an offline-then-switch case in
+  `src/environment-switch.test.tsx`.
 - Leave for the sign-in page only after `DELETE /v1/instance/session` succeeded; a failed
   sign-out stays put and says the session is still active.
 - A token, key, password or provider secret is component state only while its form or dialog

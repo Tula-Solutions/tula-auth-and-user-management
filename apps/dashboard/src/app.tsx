@@ -9,6 +9,7 @@ export const BASE_PATH = '/dashboard'
 /**
  * The query client: answers stay fresh for a few seconds, and only a request that got no
  * answer is tried again (a refusal would be refused again).
+ * A write is never queued for later (ADR 0032): offline, it fails at once.
  *
  * @returns A new client.
  */
@@ -20,7 +21,11 @@ export function createQueryClient(): QueryClient {
         refetchOnWindowFocus: false,
         retry: (failures, error) => failures < 1 && toApiError(error).code === 'network.failed',
       },
-      mutations: { retry: false },
+      // `always`: a mutation started while the browser is offline is attempted at once and
+      // fails, where the operator sees it. TanStack's default would hold it and send it when
+      // the network returns, by which time the operator may be looking at (and the request
+      // would be made under) another environment.
+      mutations: { retry: false, networkMode: 'always' },
     },
   })
 }

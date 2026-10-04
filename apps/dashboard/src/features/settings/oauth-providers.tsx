@@ -16,7 +16,7 @@ import { Section } from '~/components/page'
 import { QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
 import { Textarea } from '~/components/ui/textarea'
-import { useEnvironment } from '~/features/shell/environment-context'
+import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
 
 const PROVIDER_NAME: Record<OAuthProviderSettings['provider'], string> = {
@@ -37,8 +37,9 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
   const name = PROVIDER_NAME[provider.provider]
   const apple = provider.provider === 'apple'
   // `gcTime: 0` and the `reset()` after a save: a mutation's variables hold the secret.
-  const update = useUpdateOAuthProvider({ mutation: { gcTime: 0 } })
-  const remove = useDeleteOAuthProvider()
+  const request = useEnvironmentRequest()
+  const update = useUpdateOAuthProvider({ mutation: { gcTime: 0 }, request })
+  const remove = useDeleteOAuthProvider({ request })
   const [clientId, setClientId] = useState(provider.clientId ?? '')
   const [teamId, setTeamId] = useState(provider.teamId ?? '')
   const [keyId, setKeyId] = useState(provider.keyId ?? '')
@@ -236,7 +237,7 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
  */
 export function OAuthProviders() {
   const environment = useEnvironment()
-  const providers = useListOAuthProviders()
+  const providers = useListOAuthProviders({ request: useEnvironmentRequest() })
   return (
     <Section
       title='OAuth providers'

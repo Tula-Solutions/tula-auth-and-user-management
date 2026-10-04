@@ -14,7 +14,7 @@ import { ConfirmDialog } from '~/components/confirm-dialog'
 import { PageHeader } from '~/components/page'
 import { QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
-import { useEnvironment } from '~/features/shell/environment-context'
+import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { useScope } from '~/state/scope'
 import {
   classifyFailure,
@@ -62,7 +62,7 @@ export function useSettingsEditor() {
   // Keyed by the environment as well as the path: an answer in the cache is then known to
   // be this environment's, whatever was on the screen before.
   const queryKey = [...getGetEnvironmentSettingsQueryKey(), environment.id] as const
-  const query = useGetEnvironmentSettings({ query: { queryKey } })
+  const query = useGetEnvironmentSettings({ query: { queryKey }, request: useEnvironmentRequest() })
   const [loaded, setLoaded] = useState<LoadedSettings | null>(null)
   const [conflict, setConflict] = useState(false)
   const [confirming, setConfirming] = useState<SavePlan | null>(null)
@@ -72,7 +72,7 @@ export function useSettingsEditor() {
   const base = current?.base ?? null
   const draft = current?.draft ?? null
   const replace = useReplaceEnvironmentSettings({
-    request: { headers: { 'If-Match': etag(base?.revision ?? 0) } },
+    request: useEnvironmentRequest({ headers: { 'If-Match': etag(base?.revision ?? 0) } }),
   })
 
   function adopt(state: EnvironmentSettingsState) {
@@ -97,8 +97,8 @@ export function useSettingsEditor() {
 
   function send() {
     setConfirming(null)
-    // The environment header is read from the selection when the request is made. If the
-    // selection has moved on, this document would be written to another environment.
+    // The request names this screen's environment and `dashboardFetch` refuses it once the
+    // selection has moved on; checked here as well, so that nothing is even attempted.
     if (draft === null || !stillHere()) {
       return
     }

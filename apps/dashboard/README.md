@@ -64,9 +64,12 @@ has no way to call a client route.
 ## Rules
 
 - **Every API call goes through a generated hook**, and so through `dashboardFetch`. It adds
-  `x-tula-dashboard: 1`, sends the cookie, never sends `Authorization`, names the selected
-  environment on admin calls (`x-tula-environment`, from the scope store) and turns the error
-  envelope into one `ApiError`. A 401 `auth.unauthenticated` ends the session; the shell then
+  `x-tula-dashboard: 1`, sends the cookie, never sends `Authorization` and turns the error
+  envelope into one `ApiError`. An admin call names its own environment: pass
+  `request: useEnvironmentRequest()` to every admin hook. `dashboardFetch` never reads the
+  environment from the scope store; it refuses an admin call that names none, or one that is
+  no longer the selected one. Mutations run with `networkMode: 'always'`: nothing is queued
+  while offline and sent later. A 401 `auth.unauthenticated` ends the session; the shell then
   returns to sign-in and comes back to the same address afterwards.
 - **The address is the source of the selection.** `/w/<workspace>/p/<project>/e/<environment>/…`
   is shareable and survives a reload; the scope store only mirrors it (`syncScope`, called in

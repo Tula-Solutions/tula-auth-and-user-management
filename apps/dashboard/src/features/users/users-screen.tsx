@@ -14,6 +14,7 @@ import { notify } from '~/components/toaster'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
+import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime, fullName } from '~/lib/format'
 
 /** How many users one page of the table holds. */
@@ -66,7 +67,7 @@ const EMPTY_FORM: CreateUserForm = {
 function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient()
   // `gcTime: 0`: the mutation's variables may hold a password; see `close`.
-  const create = useCreateUser({ mutation: { gcTime: 0 } })
+  const create = useCreateUser({ mutation: { gcTime: 0 }, request: useEnvironmentRequest() })
   const [form, setForm] = useState(EMPTY_FORM)
   const [problems, setProblems] = useState<Record<string, string>>({})
 
@@ -211,7 +212,10 @@ export interface UsersScreenProps {
 export function UsersScreen({ scope, q, page, onSearch }: UsersScreenProps) {
   const [text, setText] = useState(q)
   const [creating, setCreating] = useState(false)
-  const users = useListUsers({ ...(q ? { q } : {}), page, size: USERS_PAGE_SIZE })
+  const users = useListUsers(
+    { ...(q ? { q } : {}), page, size: USERS_PAGE_SIZE },
+    { request: useEnvironmentRequest() }
+  )
 
   useEffect(() => {
     setText(q)

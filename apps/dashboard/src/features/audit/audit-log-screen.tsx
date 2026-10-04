@@ -13,6 +13,7 @@ import { SelectField, TextField } from '~/components/field'
 import { PageHeader } from '~/components/page'
 import { EmptyState, QueryState } from '~/components/states'
 import { NativeSelectOption } from '~/components/ui/native-select'
+import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
 import { pageSearch } from '~/lib/search'
 
@@ -127,6 +128,7 @@ const COLUMNS = [
 
 function useEntries(scope: 'environment' | 'instance', filters: AuditFilters) {
   const common = auditQuery(filters)
+  const request = useEnvironmentRequest()
   const environment = useListAuditLogs(
     {
       ...common,
@@ -135,7 +137,7 @@ function useEntries(scope: 'environment' | 'instance', filters: AuditFilters) {
         ? { actorType: filters.actorType }
         : {}),
     },
-    { query: { enabled: scope === 'environment' } }
+    { query: { enabled: scope === 'environment' }, request }
   )
   const instance = useListInstanceAuditLogs(
     {
