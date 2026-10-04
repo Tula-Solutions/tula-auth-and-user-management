@@ -386,7 +386,8 @@ describe('<OAuthCallback>', () => {
     expect(screen.getByRole('link', { name: 'Back to your account' }).getAttribute('href')).toBe(
       '/account'
     )
-    expect(linked).toEqual(['google'])
+    // The callback is called from an effect, a tick after the heading is drawn.
+    await waitFor(() => expect(linked).toEqual(['google']))
     expect(w.api.calls(EXCHANGE)).toHaveLength(0)
   })
 })
