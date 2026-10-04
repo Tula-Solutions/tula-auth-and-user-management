@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { screen, waitFor } from '@testing-library/react'
-import { json, ROUTE, TEST_USER, world } from '../testing/harness'
+import { json, openDialogs, ROUTE, TEST_USER, world } from '../testing/harness'
 import { UserButton } from './user-button'
 
 afterEach(() => {
@@ -119,7 +119,7 @@ describe('<UserButton>', () => {
     expect(screen.queryByRole('menu')).toBeNull()
     expect(await screen.findByRole('heading', { level: 2, name: 'Account' })).toBeTruthy()
     await w.user.click(screen.getByRole('button', { name: 'Close' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(openDialogs()).toBe(0))
     expect(document.activeElement).toBe(trigger)
   })
 

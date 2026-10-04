@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, jest, mock, spyOn, test } from 'bun:test'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { isStepUpRequired } from '@tula/core'
 import jsQR from 'jsqr'
 import { StrictMode, useState } from 'react'
@@ -11,6 +11,7 @@ import {
   failure,
   json,
   NEW_PASSWORD_STEP,
+  openDialogs,
   ROUTE,
   sessionTokens,
   started,
@@ -409,7 +410,7 @@ describe('<UserProfile> two-step verification', () => {
     })
     await w.user.type(password, PASSWORD)
     await w.user.click(within(dialog).getByRole('button', { name: 'Continue' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(openDialogs()).toBe(0))
     expect(w.api.calls(MFA.stepUp).at(-1)?.body).toEqual({ method: 'password', password: PASSWORD })
     // The action was retried once, with the stepped-up token.
     expect(w.api.calls(MFA.start)).toHaveLength(2)
@@ -586,7 +587,7 @@ describe('<UserProfile> two-step verification', () => {
     await w.user.click(await within(mfa).findByRole('button', { name: 'Turn off' }))
     const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(openDialogs()).toBe(0))
     expect(within(mfa).queryByRole('alert')).toBeNull()
     expect(w.api.calls(MFA.disable)).toHaveLength(1)
     expect(within(mfa).getByRole('button', { name: 'Turn off' })).toBeTruthy()
@@ -601,7 +602,7 @@ describe('<UserProfile> two-step verification', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
     expect(within(dialog).getByText(/sign out and sign in again/)).toBeTruthy()
     await w.user.click(within(dialog).getByRole('button', { name: 'Close' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(openDialogs()).toBe(0))
   })
 
   test('another failure is shown in the section', async () => {
@@ -645,7 +646,7 @@ describe('<UserProfile> two-step verification', () => {
       expect(await screen.findByRole('button', { name: 'Turn off' })).toBeTruthy()
     } else {
       await waitFor(() =>
-        expect(screen.queryByRole('heading', { name: 'Two-step verification' })).toBeNull()
+        expect(screen.queryAllByRole('heading', { name: 'Two-step verification' }).length).toBe(0)
       )
     }
   })
@@ -730,14 +731,18 @@ describe('useStepUp', () => {
     await waitFor(() => expect(w.client.state.status).toBe('signed-in'))
     await w.user.click(screen.getByRole('button', { name: 'Renew' }))
     const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
-    dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+    // What the browser sends a modal dialog on Escape. Through `fireEvent`, so that React
+    // has drawn what follows from it before the next line runs.
+    fireEvent(dialog, new Event('cancel', { cancelable: true }))
     await waitFor(() => expect(onResult).toHaveBeenCalledWith('declined'))
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(onResult).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(openDialogs()).toBe(0))
 
     await w.user.click(screen.getByRole('button', { name: 'Renew' }))
     await screen.findByRole('dialog', { name: 'Confirm it is you' })
-    await w.client.session.signOut()
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(onResult).toHaveBeenCalledTimes(2)
+    await act(() => w.client.session.signOut())
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await waitFor(() => expect(onResult).toHaveBeenCalledTimes(2))
+    expect(onResult).toHaveBeenLastCalledWith('declined')
   })
 })
