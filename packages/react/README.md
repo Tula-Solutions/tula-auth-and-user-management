@@ -147,6 +147,31 @@ colour, "Continue with …") but are **not the providers' own button artwork**: 
 and Apple's branding guidelines against your theme before you ship, and remember that App Store
 Review requires an iOS app that offers another social sign-in to offer Sign in with Apple.
 
+### Passkeys
+
+Where the environment has passkeys on (`signIn.methods.passkey` and `passkeys.rpId`, with the
+page's origin in `urls.allowedOrigins` and under that `rpId`) and the browser has WebAuthn, the
+components draw them with no props to set:
+
+- `<SignIn>` shows "Sign in with a passkey" on its first screen: no address is needed, and a
+  passkey needs no second step. The address field carries `autocomplete="username webauthn"`,
+  so a browser with conditional mediation offers the user's passkeys in its autofill. After an
+  address, the passkey is one of the "other ways".
+- The second-factor screen and the step-up dialog offer "Use your passkey" where the server
+  lists it, alone or next to a code.
+- `<UserProfile>` gains "Passkeys": the list (name, synced or on one device, added, last
+  used), "Add a passkey", rename, and remove after a confirmation. Removing the last way to
+  sign in is refused by the server, and its message is shown.
+
+In a browser without WebAuthn the sign-in button and "Add a passkey" are not drawn, and a step
+that only a passkey could pass says so. A dialog the user dismisses is not an error: the
+component says so quietly (`passkey.cancelled`) and the button works again. Building your own
+screens: `useSignIn()` has `canUsePasskey()`, `withPasskey()` and
+`submitSecondFactorWithPasskey()`; the rest is `useTula().user.passkeys` and
+`useTula().session.stepUpWithPasskey()`, wrapped in `useStepUp()` where the call is sensitive.
+The strings are in the `passkey` group of the localization table; the parts are
+`passkeyIcon`, `passkeyList`, `passkeyItem` and `confirmation`.
+
 ### `<SignUp>`
 
 Email and password with the **live password checklist**, then the emailed code. Where the

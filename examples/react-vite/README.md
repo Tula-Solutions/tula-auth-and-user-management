@@ -81,6 +81,36 @@ in the settings document: a user without it then sets it up while signing in. If
 authenticator and the codes, reset the user with the secret key
 (`DELETE /v1/admin/users/<id>/factors`); see [ADR 0025](../../docs/adr/0025-mfa.md).
 
+## Passkeys
+
+Passkeys are off until the environment switches them on. For this app, opened at
+`http://localhost:5174`, send these three with the rest of your settings (the `PUT` replaces the
+whole document; see [docs/self-host.md](../../docs/self-host.md#passkeys)):
+
+```bash
+curl -s -X PUT http://localhost:3003/v1/admin/settings \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" \
+  -H 'Content-Type: application/json' -H 'If-Match: "0"' \
+  -d '{
+    "signIn": { "methods": { "password": { "enabled": true }, "passkey": { "enabled": true } } },
+    "passkeys": { "rpId": "localhost" },
+    "urls": { "allowedOrigins": ["http://localhost:5174"] }
+  }'
+```
+
+`rpId` is the domain passkeys belong to, and the page's origin must be listed in
+`allowedOrigins` **and** be that domain or a subdomain of it, even in the `local` tier. Open the
+app at `http://localhost:5174`, not `http://127.0.0.1:5174`: a browser will not use a
+`localhost` passkey on another host. Changing `rpId` later orphans the passkeys made under the
+old one.
+
+Then: **Manage your account** → "Passkeys" → **Add a passkey**, sign out, and "Sign in with a
+passkey" on the sign-in page (no address needed; a browser that supports it also offers the
+passkey in the address field's autofill). `<SignIn>` and `<UserProfile>` draw all of it: the
+app adds nothing. In a browser without WebAuthn the button is not shown and the section says
+so. If the browser's dialog is dismissed the page says so quietly and the button works again.
+The config is cached for a minute, so a settings change can take that long to show.
+
 ## Browser tests
 
 ```bash
@@ -94,7 +124,11 @@ to start without `E2E=1` and is never part of the API image. The suite signs up,
 signs in and out, resets and changes a password, manages sessions from two browsers, completes
 sign-up with the keyboard only, signs in with an emailed code, opens a magic link in the same
 browser (the starting tab signs in) and in another one (nobody does), signs up without a
-password, and runs axe on every screen in light and dark.
+password, and runs axe on every screen in light and dark. `passkeys.spec.ts` gives Chromium a
+virtual authenticator through the DevTools protocol and registers a passkey, signs in with it
+(from the button and from the address field's autofill), uses it as a second factor and for a
+step-up, renames and removes it, and shows what a refused ceremony looks like: the browser's
+real WebAuthn calls, with a simulated device.
 
 ## Screenshots
 
@@ -117,6 +151,9 @@ them.
 | ![A replayed callback, refused by the API](docs/oauth-callback-replayed.png) | ![A ticket opened in another browser](docs/oauth-ticket-other-browser.png) |
 | ![The profile of a user with no password](docs/oauth-profile-passwordless.png) | ![Step-up by emailed code](docs/oauth-step-up-email-code.png) |
 | ![Step-up by emailed code, on a phone, dark](docs/oauth-mobile-step-up-email-code-dark.png) | ![A provider sign-in stopped at the second factor](docs/oauth-second-factor.png) |
+| ![Sign-in with the passkey button](docs/passkey-sign-in.png) | ![A passkey request that was cancelled](docs/passkey-cancelled.png) |
+| ![Passkeys in the account page](docs/passkey-profile.png) | ![Passkeys in the account page, on a phone, dark](docs/passkey-mobile-profile-dark.png) |
+| ![The passkey as the second factor](docs/passkey-second-factor.png) | ![Step-up with a passkey](docs/passkey-step-up.png) |
 
 The setup key and backup codes in these pictures belonged to an account in the test fixture's
 memory, which is gone when the fixture stops. They never worked anywhere else.

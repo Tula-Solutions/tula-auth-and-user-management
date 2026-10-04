@@ -21,6 +21,7 @@ import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { BackupCodesPanel, EnrolmentConfirmForm } from './mfa'
 import { ConnectedAccountsSection } from './oauth'
+import { PasskeysSection } from './passkey'
 import {
   Button,
   Form,
@@ -545,6 +546,7 @@ export function UserProfileSections(props: {
         <p className='tula-text'>{t.common.loading}</p>
       )}
       <TwoStepSection key={`mfa:${state.sessionId}`} onChanged={() => void sessions.reload()} />
+      <PasskeysSection key={`passkeys:${state.sessionId}`} />
       <ConnectedAccountsSection
         key={`identities:${state.sessionId}`}
         callbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
@@ -563,7 +565,8 @@ export function UserProfileSections(props: {
 }
 
 /**
- * Account management for the signed-in user: who they are, change the password, and where
+ * Account management for the signed-in user: who they are, change the password, two-step
+ * verification, passkeys (where the environment has them on), connected accounts, and where
  * they are signed in, with "this device" marked, one device or all the others signed out, and
  * sign out. Renders nothing while signed out.
  *

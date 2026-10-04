@@ -23,6 +23,16 @@ function Icon({ children }: { children: ReactNode }) {
   )
 }
 
+/** A key: a passkey. */
+export function KeyIcon() {
+  return (
+    <Icon>
+      <circle cx='7' cy='13' r='3.25' />
+      <path d='M9.5 10.5l6.5-6.5M13.5 6.5l2 2M11.5 8.5l1.5 1.5' />
+    </Icon>
+  )
+}
+
 /** A check mark: a met rule. */
 export function CheckIcon() {
   return (

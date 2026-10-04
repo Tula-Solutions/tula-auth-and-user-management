@@ -111,13 +111,29 @@ function json(body: unknown, status = 200): Response {
 let settingsRevision = 0
 
 /**
- * Replace the environment's settings with the defaults plus what a test asks for (which
- * sign-in methods are on, whether a sign-up needs a password). `{}` puts the defaults back.
+ * What every settings document of the fixture starts from: the defaults, with the example app
+ * as an allowed origin and `localhost` as the relying party for passkeys (ADR 0027). A browser
+ * honours a passkey only on the relying party's own host, which is why both servers are bound
+ * to `localhost` and not to `127.0.0.1`. The `passkey` method itself stays off until a
+ * scenario switches it on (`signIn.methods.passkey`).
+ */
+const FIXTURE_SETTINGS = {
+  ...DEFAULT_ENVIRONMENT_SETTINGS,
+  urls: {
+    ...DEFAULT_ENVIRONMENT_SETTINGS.urls,
+    allowedOrigins: [`http://localhost:${APP_PORT}`],
+  },
+  passkeys: { rpId: 'localhost' },
+}
+
+/**
+ * Replace the environment's settings with the fixture's defaults plus what a test asks for
+ * (which sign-in methods are on, whether a sign-up needs a password). `{}` puts them back.
  * The document is validated exactly as `PUT /v1/admin/settings` validates one.
  */
 async function replaceSettings(request: Request): Promise<Response> {
   const parsed = EnvironmentSettingsSchema.safeParse({
-    ...DEFAULT_ENVIRONMENT_SETTINGS,
+    ...FIXTURE_SETTINGS,
     ...((await request.json()) as object),
   })
   if (!parsed.success) {

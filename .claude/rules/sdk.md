@@ -125,6 +125,16 @@ paths:
 - Browser tests live in `e2e/tests`. A new screen or state gets a scenario and an
   `expectAccessible` call in both colour schemes; no axe rule is disabled without a comment
   saying why. `e2e/server.ts` must keep refusing to start without `E2E=1`.
+- Passkeys (ADR 0027): every ceremony the components start is in `components/passkey.tsx`.
+  Support is asked after mount (`usePasskeySupport`), never while rendering; the sign-in button
+  and the profile's "Add a passkey" are left out where the browser has no WebAuthn, and a
+  second factor or step-up that is only a passkey says so. The autofill request is started
+  from an effect with a signal per run, never marks the form pending, and is aborted before
+  the button's own ceremony (one WebAuthn request per page). `passkey.cancelled` goes to
+  `Status`, not to an alert, and focus returns to the button. Component tests fake
+  `navigator.credentials` through the world's `passkeys` option; browser tests use a DevTools
+  virtual authenticator (`addVirtualAuthenticator` in `e2e/tests/support.ts`), which answers a
+  conditional request by itself unless told to wait (`setAnswering(false)`).
 - Two-step verification (ADR 0025): `needs_second_factor` and `needs_factor_enrolment` have
   screens (`components/mfa.tsx`); an option this version does not know is left out, never
   guessed. The setup key, its QR code and backup codes are state only while their screen is

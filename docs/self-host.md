@@ -121,7 +121,8 @@ API key belongs to) has a settings document, read and replaced with its secret k
 | --- | --- |
 | `app.name`, `app.supportEmail` | The product's name and help address. Every email names the app; the default name is `Tula`. |
 | `password` | The password policy. |
-| `signIn.methods` | Which sign-in methods are offered: `password` (on by default), `emailCode` (a 6-digit code by email) and `emailLink` (a link in that email; needs `emailCode`). At least one must stay on. |
+| `signIn.methods` | Which sign-in methods are offered: `password` (on by default), `emailCode` (a 6-digit code by email), `emailLink` (a link in that email; needs `emailCode`) and `passkey` (needs `passkeys.rpId`; see [Passkeys](#passkeys)). At least one must stay on. |
+| `passkeys.rpId` | The WebAuthn relying-party id: the domain every passkey of this environment belongs to, e.g. `example.com`. `null` by default. A host name only (or `localhost`): no scheme, port, path or IP address. |
 | `signUp.password` | `required` (default), or `optional`: a sign-up may then leave the password out and the account signs in by email (needs `emailCode`). |
 | `urls.allowedOrigins` | Browser origins that may call the client API: exact origins such as `https://app.example.com`, no paths or wildcards, `http` only for localhost. |
 | `urls.allowedRedirectUrls` | URLs a flow may send users to, matched **exactly**. An emailed sign-in link leads only to a URL listed here. |
@@ -284,6 +285,52 @@ redirect URI `GET /v1/admin/oauth-providers` lists as `callbackUrl`
 with `TULA_MASTER_KEY` and never returned; no provider token is stored at all.
 `DELETE /v1/admin/oauth-providers/<provider>` removes the credentials (users keep their
 connected accounts). To try the flow without credentials, see `OAUTH_MOCK_PROVIDER` above.
+
+## Passkeys
+
+A passkey lets a user sign in with a fingerprint, face or screen lock, with no address typed and
+no second step ([ADR 0027](adr/0027-passkeys.md)). Passkeys are off until an environment
+switches them on, and switching them on takes three settings in the same document:
+
+```json
+{
+  "signIn": { "methods": { "password": { "enabled": true }, "passkey": { "enabled": true } } },
+  "passkeys": { "rpId": "example.com" },
+  "urls": { "allowedOrigins": ["https://app.example.com"] }
+}
+```
+
+(with the rest of your settings: the `PUT` replaces the whole document).
+
+- **`passkeys.rpId`** is the *relying party*: the domain a passkey is bound to. Choose the
+  registrable domain your sign-in pages share (`example.com` covers `app.example.com` and
+  `admin.example.com`), or `localhost` for local development. There is no default: the method
+  cannot be switched on without it (422).
+- **Every origin that uses passkeys must be listed in `urls.allowedOrigins` and be the `rpId`
+  or a subdomain of it.** The API checks each passkey response against the request's own
+  `Origin` header. A page on another domain, or on an origin that is not listed, gets
+  `request.origin_not_allowed` when it starts. This applies in the `local` tier too: the rule
+  that lets any `http://localhost:<port>` page call a local API does not extend to passkeys, so
+  list `http://localhost:5174` (or your port) explicitly. A page opened at `http://127.0.0.1:…`
+  cannot use an `rpId` of `localhost`: open it at `http://localhost:…`.
+- **Changing `rpId` orphans every passkey made under the old one.** A browser offers a passkey
+  only to the domain it was created for, so those passkeys can no longer sign in. Their rows
+  stay, and users can remove them from their account page and add new ones. Decide the domain
+  before you switch the method on, and prefer the registrable domain over a subdomain you may
+  rename.
+- **Https is required** outside `localhost`: browsers offer WebAuthn only in a secure context.
+- A passkey sign-in satisfies two-step verification by itself. After a password, a user's
+  passkey is asked for as the second step only where a second step is in force anyway (they
+  have an authenticator app, or `mfa.policy` is `required`).
+- A user who has lost every passkey and has no other way in is helped with the factor reset
+  (`DELETE /v1/admin/users/<id>/factors`), which removes their passkeys as well; they then sign
+  in another way or reset their password. Removing a user's last way to sign in is refused
+  (`passkey.last_sign_in_method`), and a user may hold at most ten passkeys.
+- Native apps cannot use passkeys yet (they have no `Origin`); that arrives with the native
+  SDKs.
+
+Switching the method off again keeps the passkeys: users can still list and remove them through
+the API, and they work again when it is switched back on with the same `rpId`.
 
 ## Running it for real
 

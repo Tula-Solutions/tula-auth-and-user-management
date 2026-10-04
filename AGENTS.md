@@ -155,6 +155,24 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   gets its own `AbortSignal` and is aborted in the cleanup; StrictMode, Fast Refresh and
   `<Activity>` clean up and set up again in one tick, and the second wait must not die with
   the first one's signal.
+- **One WebAuthn request at a time, and never during render** ([ADR 0027](docs/adr/0027-passkeys.md)).
+  Whether the browser can use a passkey is asked after mount (`usePasskeySupport`), and a
+  passkey control is hidden, not broken, where it cannot: a method that is the user's only
+  one says so in words. The request that waits in the address field's autofill
+  (`autocomplete="username webauthn"`, `withPasskey({ autofill: true })`) is an effect that
+  waits: its own signal per run, aborted in the cleanup, and **aborted before any other
+  ceremony starts** (`components/passkey.tsx` is the one place that starts one). It never sets
+  a pending state: the form it sits behind must stay usable.
+- **A dismissed passkey dialog is not an error.** `passkey.cancelled` is said through the quiet
+  `Status`, never `role="alert"`, the button works again and takes the focus back; every
+  other failure is the message its code has. Nothing of a ceremony (options, the credential,
+  the browser's own error text) is kept in state, rendered or logged.
+- **A passkey sign-in is an attempt of its own.** Its flow reaches the screens through
+  `adopt()`, which discards the attempt it replaces, and its completion is delivered even if
+  the screen has gone meanwhile (the client is signed in before the flow comes back, and an
+  app takes `<SignIn>` away at that moment). `useCompletion` waits one turn before it treats
+  a signed-in client as "was already signed in", so that this completion and the app's
+  `onComplete` win.
 - **Accessibility is part of done**: labelled fields, errors associated and announced, focus
   moved on a step change and on failure, state as text and not only colour, keyboard operation
   of everything. axe runs on every screen in the browser tests with no rule disabled.
@@ -222,12 +240,13 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 Anything about how sign-in behaves that differs between tenants lives in the environment's
 settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/adr/0018-environment-settings.md)):
 app name and support address, password policy, enabled sign-in methods (`password`,
-`emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether a sign-up needs a password (`signUp.password`), allowed
-origins and redirect URLs, audit retention, which security notices are emailed
-(`notifications`), and whether two-step verification is `off`, `optional` or `required`
-(`mfa.policy`). **Read it through `~/modules/settings/service`**
-(`Settings.current(deps, tenant)`), never from `deps.config`: `PASSWORD_POLICY` and
-`CORS_ORIGINS` are only the defaults of an environment that has saved nothing.
+`emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether
+a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit
+retention, which security notices are emailed (`notifications`), and whether two-step
+verification is `off`, `optional` or `required` (`mfa.policy`). **Read it through
+`~/modules/settings/service`** (`Settings.current(deps, tenant)`), never from `deps.config`:
+`PASSWORD_POLICY` and `CORS_ORIGINS` are only the defaults of an environment that has saved
+nothing.
 
 - `GET` / `PUT /v1/admin/settings` reads and replaces the whole document. The `PUT` needs
   `If-Match: "<revision>"` (428 `precondition.required` without it, 412 `precondition.failed`
@@ -291,9 +310,10 @@ The API never tells a client which screen to draw; it returns the next **flow st
 - **A sign-in method is registered in one place**: `FIRST_FACTORS` in
   `modules/factor/service.ts` maps the environment's settings to the strategies a sign-in
   offers (`password`, `email_code`, `email_link`, `passkey`, the OAuth providers); a second
-  factor registers a verifier in `SECOND_FACTOR_VERIFIERS` (`totp`, `backup_code`, `passkey`) and is submitted through
-  `Flows.submitSecondFactor` (`…/:attemptId/second-factor`). Adding a method means adding an
-  entry and the route that proves it, not editing the transition function or any SDK.
+  factor registers a verifier in `SECOND_FACTOR_VERIFIERS` (`totp`, `backup_code`, `passkey`)
+  and is submitted through `Flows.submitSecondFactor` (`…/:attemptId/second-factor`). Adding a
+  method means adding an entry and the route that proves it, not editing the transition
+  function or any SDK.
 - **Second factors live in `modules/mfa`** ([ADR 0025](docs/adr/0025-mfa.md)): enrolment under
   `/v1/client/me/factors`, the verifiers, step-up and the admin reset. `Factors.requiredFor`
   asks it which factors a user has; where the environment's `mfa.policy` is `required` and the
@@ -356,9 +376,9 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0017](docs/adr/0017-retention.md)): expired flow attempts, verification tokens an hour
   past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
   cascade), authenticator enrolments that were never confirmed, expired WebAuthn challenges.
-  A new table of short-lived
-  rows gets a batched purge method on its store, in both adapters and the shared suite, and a
-  line in that job. Audit entries and outbox events are never deleted by it.
+  A new table of short-lived rows gets a batched purge method on its store, in both adapters
+  and the shared suite, and a line in that job. Audit entries and outbox events are never
+  deleted by it.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 

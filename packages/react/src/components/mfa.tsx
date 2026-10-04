@@ -10,6 +10,7 @@ import { formatText } from '../localization'
 import type { QrDrawing } from '../qr'
 import { CODE_LENGTH, digitsOnly, useRetryAfter } from './flow-screens'
 import { type FieldResolver, formatDuration, placeErrors } from './form-errors'
+import { PasskeyPanel, usePasskeySupport } from './passkey'
 import { Button, Card, Form, FormError, Status, TextField, useUi } from './ui'
 
 /** Modules of white around a QR code: the quiet zone a scanner needs (the standard's four). */
@@ -31,7 +32,10 @@ const codeField: FieldResolver = (code, field) =>
     : null
 
 /** A second factor this version of the components can ask for. */
-export type DrawableFactor = 'totp' | 'backup_code'
+export type DrawableFactor = 'totp' | 'backup_code' | 'passkey'
+
+/** A second factor proven by typing a code. */
+type CodeFactor = Exclude<DrawableFactor, 'passkey'>
 
 /** The field for a 6-digit authenticator code. */
 export function TotpField(props: {
@@ -275,9 +279,13 @@ export function BackupCodesPanel(props: { codes: readonly string[]; onDone(): vo
 }
 
 /**
- * One second-factor form: the 6-digit authenticator code, or a backup code, with a switch
- * between the two where both are offered. Used by the sign-in and reset screens and by the
- * step-up dialog; it holds what was typed only while it is on screen.
+ * One second-factor form: the 6-digit authenticator code, a backup code, or the user's
+ * passkey, with a switch between the ones that are offered. Used by the sign-in and reset
+ * screens and by the step-up dialog; it holds what was typed only while it is on screen.
+ *
+ * A code is asked for first where one is offered: that form is the same in every browser. The
+ * passkey is one click away where the browser can use one, and is the screen itself where it
+ * is all the user has.
  */
 export function SecondFactorForm(props: {
   methods: readonly DrawableFactor[]
@@ -287,24 +295,39 @@ export function SecondFactorForm(props: {
   totpSubtitle: string
   backupSubtitle: string
   submit(proof: SecondFactorProof): Promise<boolean>
+  /** Above the passkey button. Defaults to the sign-in wording. */
+  passkeySubtitle?: string
+  /** Runs the passkey ceremony and sends its proof. Without it a passkey is not offered. */
+  submitPasskey?(signal: AbortSignal): Promise<boolean>
 }) {
   const { t } = useUi()
-  const { methods, error, isPending } = props
-  const [method, setMethod] = useState<DrawableFactor>(methods[0] ?? 'totp')
+  const { error, isPending, submitPasskey } = props
+  const passkeySupported = usePasskeySupport()
+  const methods = props.methods.filter((offered) => offered !== 'passkey' || submitPasskey)
+  const [chosen, setChosen] = useState<DrawableFactor | null>(null)
+  const method: DrawableFactor =
+    chosen && methods.includes(chosen) ? chosen : (methods[0] ?? 'totp')
+  // Which kind of proof the error on screen is about: a dismissed passkey dialog says nothing
+  // about a code, nor a wrong code about the passkey.
+  const [acted, setActed] = useState<'code' | 'passkey' | null>(null)
   const [code, setCode] = useState('')
   const [local, setLocal] = useState<{ message: string } | null>(null)
   const limits = useRetryAfter<'verify'>(error, 'verify')
   const wait = limits.secondsLeft('verify')
-  const placed = placeErrors(error, codeField)
+  const shown = acted === null || (acted === 'passkey') === (method === 'passkey') ? error : null
+  const placed = placeErrors(shown, codeField)
   const errors = local ? [local.message] : (placed.fields.code ?? [])
-  const other: DrawableFactor = method === 'totp' ? 'backup_code' : 'totp'
+  // The passkey is offered as a way out of a code form only where the browser can use one.
+  const others = methods.filter(
+    (offered) => offered !== method && (offered !== 'passkey' || passkeySupported === true)
+  )
   const form = useRef<HTMLDivElement>(null)
   const switched = useRef(false)
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the method changes
   useEffect(() => {
-    // Switching replaces the field: put the focus in the new one, where the user types next.
+    // Switching replaces the field: put the focus in the new one, where the user acts next.
     if (switched.current) {
-      form.current?.querySelector('input')?.focus()
+      form.current?.querySelector<HTMLElement>('input, button')?.focus()
     }
   }, [method])
 
@@ -320,14 +343,57 @@ export function SecondFactorForm(props: {
     }
     setLocal(null)
     limits.mark('verify')
-    if (!(await props.submit({ method, code: value }))) {
+    setActed('code')
+    if (!(await props.submit({ method: method as CodeFactor, code: value }))) {
       // A wrong code is retyped from scratch.
       setCode('')
     }
   }
+  const labels: Record<DrawableFactor, string> = {
+    totp: t.mfa.useAuthenticator,
+    backup_code: t.mfa.useBackupCode,
+    passkey: t.passkey.useInstead,
+  }
+  const switches =
+    others.length > 0 ? (
+      <div className='tula-actions'>
+        {others.map((other) => (
+          <Button
+            key={other}
+            kind='link'
+            onClick={() => {
+              switched.current = true
+              setChosen(other)
+              change('')
+            }}
+          >
+            {labels[other]}
+          </Button>
+        ))}
+      </div>
+    ) : null
+
+  if (method === 'passkey' && submitPasskey) {
+    return (
+      <div className='tula-form'>
+        <div className='tula-field-slot' ref={form}>
+          <PasskeyPanel
+            subtitle={props.passkeySubtitle ?? t.passkey.secondFactorSubtitle}
+            isPending={isPending}
+            error={shown}
+            use={(signal) => {
+              setActed('passkey')
+              return submitPasskey(signal)
+            }}
+          />
+        </div>
+        {switches}
+      </div>
+    )
+  }
 
   return (
-    <Form onSubmit={submit} failure={local ?? error} blocked={isPending || wait > 0}>
+    <Form onSubmit={submit} failure={local ?? shown} blocked={isPending || wait > 0}>
       <p className='tula-text'>{method === 'totp' ? props.totpSubtitle : props.backupSubtitle}</p>
       <div className='tula-field-slot' ref={form}>
         <FormError
@@ -343,20 +409,7 @@ export function SecondFactorForm(props: {
       <Button type='submit' pending={isPending} disabled={wait > 0}>
         {props.submitLabel}
       </Button>
-      {methods.includes(other) ? (
-        <div className='tula-actions'>
-          <Button
-            kind='link'
-            onClick={() => {
-              switched.current = true
-              setMethod(other)
-              change('')
-            }}
-          >
-            {other === 'totp' ? t.mfa.useAuthenticator : t.mfa.useBackupCode}
-          </Button>
-        </div>
-      ) : null}
+      {switches}
     </Form>
   )
 }
@@ -367,7 +420,7 @@ export function SecondFactorForm(props: {
  */
 export function drawableFactors(options: unknown): DrawableFactor[] {
   const offered: readonly unknown[] = Array.isArray(options) ? options : []
-  return (['totp', 'backup_code'] as const).filter((method) => offered.includes(method))
+  return (['totp', 'backup_code', 'passkey'] as const).filter((method) => offered.includes(method))
 }
 
 /** Whether a `needs_factor_enrolment` step offers the one method this version can enrol. */
@@ -382,9 +435,12 @@ export function SecondFactorScreen(props: {
   isPending: boolean
   error: TulaError | null
   submit(proof: SecondFactorProof): Promise<FlowStep | null>
+  /** Proves the user's passkey instead of a code. */
+  submitPasskey?(signal: AbortSignal): Promise<FlowStep | null>
   onRestart(): void
 }) {
   const { t } = useUi()
+  const { submitPasskey } = props
   return (
     <Card
       title={t.mfa.secondFactorTitle}
@@ -403,6 +459,9 @@ export function SecondFactorScreen(props: {
         totpSubtitle={t.mfa.totpSubtitle}
         backupSubtitle={t.mfa.backupSubtitle}
         submit={async (proof) => (await props.submit(proof)) !== null}
+        submitPasskey={
+          submitPasskey ? async (signal) => (await submitPasskey(signal)) !== null : undefined
+        }
       />
     </Card>
   )

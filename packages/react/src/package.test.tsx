@@ -115,9 +115,13 @@ describe('what @tula/react costs a browser bundle', () => {
    * section, their strings, and 1.5 kB in the client) took it to about 38 kB, and the budget
    * from 35 kB to 39 kB. The step-up by emailed code (its form in the dialog, its strings and
    * the client's call) and the passwordless profile's guidance took it to about 39.3 kB, and
-   * the budget to 40 kB.
+   * the budget to 40 kB. Passkeys (ADR 0027) took it to about 44.5 kB and the budget to 45.5 kB:
+   * 2.1 kB is the client's (the ceremonies with their base64url fallback, the guards of the
+   * passkey routes; measured at 41.4 kB before any screen existed) and 3.1 kB the components'
+   * (the sign-in button with its autofill request, the second-factor and step-up panel, the
+   * profile section with rename and remove, and their strings). No dependency was added.
    */
-  const GZIP_BUDGET_BYTES = 40_000
+  const GZIP_BUDGET_BYTES = 45_500
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

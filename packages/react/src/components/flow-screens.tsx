@@ -100,10 +100,19 @@ export function useCompletion(
   }, [])
 
   useEffect(() => {
-    if (alreadySignedIn && !done.current) {
-      done.current = true
-      go(latest.current.url, latest.current.navigate)
+    if (!alreadySignedIn || done.current) {
+      return
     }
+    // One turn later, not now. A sign-in that is an attempt of its own (a passkey) signs the
+    // client in a moment before its flow is handed to `finish`: that completion, with the
+    // app's `onComplete`, must not lose to this "was already signed in".
+    const timer = setTimeout(() => {
+      if (!done.current) {
+        done.current = true
+        go(latest.current.url, latest.current.navigate)
+      }
+    }, 0)
+    return () => clearTimeout(timer)
   }, [alreadySignedIn])
 
   return { signedIn: step?.status === 'complete' || alreadySignedIn, finish }

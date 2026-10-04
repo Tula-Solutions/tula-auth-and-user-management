@@ -30,6 +30,7 @@ import {
 import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
 import { OAuthButtons } from './oauth'
+import { PasskeySignIn, usePasskeyOffered, usePasskeySupport } from './passkey'
 import {
   Button,
   Card,
@@ -146,21 +147,26 @@ interface FirstFactorProps {
 
 /**
  * The first factors this version can draw, by strategy. A later step adds a method by adding
- * its form here (passkeys, OAuth); a strategy with no entry is skipped.
+ * its form here; a strategy with no entry is skipped (the OAuth ones are buttons on the first
+ * screen, not forms).
  */
 const FIRST_FACTOR_FORMS: Partial<Record<FirstFactorStrategy, ComponentType<FirstFactorProps>>> = {
   password: PasswordScreen,
   email_code: EmailCodeScreen,
   email_link: EmailLinkScreen,
+  passkey: PasskeyScreen,
 }
 
 function supportedStrategies(
   strategies: readonly string[],
-  canUseLink: boolean
+  can: { link: boolean; passkey: boolean }
 ): FirstFactorStrategy[] {
   return strategies.filter(
     (strategy): strategy is FirstFactorStrategy =>
-      Object.hasOwn(FIRST_FACTOR_FORMS, strategy) && (strategy !== 'email_link' || canUseLink)
+      Object.hasOwn(FIRST_FACTOR_FORMS, strategy) &&
+      (strategy !== 'email_link' || can.link) &&
+      // Hidden, not broken, in a browser without WebAuthn.
+      (strategy !== 'passkey' || can.passkey)
   )
 }
 
@@ -183,6 +189,7 @@ function IdentifierScreen(props: {
   const { t } = useUi()
   const { signIn, email } = props
   const appName = useClientConfig()?.app.name
+  const passkeys = usePasskeyOffered()
   const [missing, setMissing] = useState<{ message: string } | null>(null)
   const limits = useRetryAfter<'start'>(signIn.error)
   const placed = placeErrors(signIn.error, fieldResolver(['email']))
@@ -216,7 +223,8 @@ function IdentifierScreen(props: {
         <EmailField
           label={t.signIn.emailLabel}
           name='email'
-          autoComplete='username'
+          // `webauthn` lets the browser offer the user's passkeys in this field's autofill.
+          autoComplete={passkeys ? 'username webauthn' : 'username'}
           value={email}
           onValue={(value) => {
             props.setEmail(value)
@@ -229,6 +237,8 @@ function IdentifierScreen(props: {
           {t.signIn.continue}
         </Button>
       </Form>
+      {/* After the form in the document: Tab goes from the address to "Continue" first. */}
+      <PasskeySignIn autofill onFlow={signIn.adopt} disabled={signIn.isPending} />
     </Card>
   )
 }
@@ -455,6 +465,21 @@ function EmailFactorScreen(props: FirstFactorProps & { strategy: 'email_code' | 
   )
 }
 
+/**
+ * The `passkey` first factor, chosen after an address was given. A passkey names its own
+ * account, so this is a sign-in of its own that takes the place of the attempt on screen.
+ */
+function PasskeyScreen(props: FirstFactorProps) {
+  const { t } = useUi()
+  return (
+    <Card title={t.passkey.signIn} subtitle={t.passkey.signInPrompt} focusTitle={props.focusTitle}>
+      <IdentityRow email={props.email} onChange={props.onChangeEmail} />
+      <PasskeySignIn offered onFlow={props.signIn.adopt} disabled={props.signIn.isPending} />
+      {props.alternatives}
+    </Card>
+  )
+}
+
 function EmailCodeScreen(props: FirstFactorProps) {
   return <EmailFactorScreen {...props} strategy='email_code' />
 }
@@ -475,6 +500,8 @@ function strategyLabel(
       return t.signIn.emailCode
     case 'email_link':
       return t.signIn.emailLink
+    case 'passkey':
+      return t.passkey.signIn
     default:
       return null
   }
@@ -502,7 +529,13 @@ function FirstFactorScreen(
     setStorageUsable(canUse.current())
   }, [])
   const linkConfigured = safeUrl(props.emailLinkUrl, 'http://localhost') !== null
-  const known = supportedStrategies(step.strategies, storageUsable && linkConfigured)
+  // Until the browser has been asked (after mount) a passkey is not ruled out: where it is the
+  // only method, the screen must not open on "not supported" and then change its mind.
+  const passkeyUsable = usePasskeySupport() !== false
+  const known = supportedStrategies(step.strategies, {
+    link: storageUsable && linkConfigured,
+    passkey: passkeyUsable,
+  })
   // What the user picked on this screen; until then, what the server last emailed for, or the
   // first strategy on offer.
   const [chosen, setChosen] = useState<FirstFactorStrategy | null>(null)
@@ -786,6 +819,12 @@ function SignInScreens(props: SignInProps) {
     verifyEmail: (input) => signInFlow.verifyEmail(input).then(finish),
     attemptFirstFactor: (input) => signInFlow.attemptFirstFactor(input).then(finish),
     waitForEmailLink: (options) => signInFlow.waitForEmailLink(options).then(finish),
+    withPasskey: (request) => signInFlow.withPasskey(request).then(finish),
+    adopt(flow) {
+      // A passkey sign-in arrives past its first factor, usually complete.
+      signInFlow.adopt(flow)
+      finish(flow.step)
+    },
   }
   const reset: UseResetPasswordResult = {
     ...resetFlow,
@@ -823,6 +862,7 @@ function SignInScreens(props: SignInProps) {
           isPending={flow.isPending}
           error={flow.error}
           submit={(proof) => flow.submitSecondFactor(proof).then(finish)}
+          submitPasskey={(signal) => flow.submitSecondFactorWithPasskey({ signal }).then(finish)}
           onRestart={toSignIn}
         />
       )
@@ -928,6 +968,10 @@ function SignInScreens(props: SignInProps) {
  * A complete sign-in: email, then whatever the server asks for next (a password, an emailed
  * code or link, with a way to switch between the ones the environment offers), and "Forgot
  * password?" leading into the reset flow in the same card.
+ *
+ * Where the environment has passkeys on and the browser can use them, "Sign in with a passkey"
+ * is on the first screen (no address needed) and the address field offers the user's passkeys
+ * in the browser's autofill.
  *
  * To offer "Email me a link", give `emailLinkUrl` (here or on the provider): the page of your
  * app that renders `<EmailLinkCallback>`, listed in the environment's allowed redirect URLs.
