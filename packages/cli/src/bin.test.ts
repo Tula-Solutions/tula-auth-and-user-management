@@ -8,7 +8,7 @@ import { VERSION } from './version'
 // the thread the test runner's own timeout runs on, so a child that never exits would hang the
 // whole run instead of failing one test.
 const BIN = join(import.meta.dir, 'bin.ts')
-const TIMEOUT_MS = 20_000
+const TIMEOUT_MS = 8_000
 const SECRET_KEY = 'tula_sk_dev_binspawn0000000000000000000000000000'
 
 function tula(
@@ -87,5 +87,7 @@ describe('the tula executable', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+    // Six process starts in a row: about a second each on a slow runner, so the default five
+    // seconds for a test is not enough. Each spawn still has its own limit.
+  }, 60_000)
 })
