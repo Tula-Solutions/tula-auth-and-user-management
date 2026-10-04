@@ -40,7 +40,10 @@ export const READ_OPERATIONS = [
  */
 export type ReadOperationId = (typeof READ_OPERATIONS)[number]
 
-/** A read's parameters: the operation's path and query parameters, never a body. */
+/**
+ * A read's input: the operation's path and query parameters and a signal to abandon it with.
+ * Never a body, a header or a method.
+ */
 type ReadInput<Id extends ReadOperationId> = (AdminOperations[Id]['params'] extends Record<
   string,
   never
@@ -48,6 +51,7 @@ type ReadInput<Id extends ReadOperationId> = (AdminOperations[Id]['params'] exte
   ? { params?: undefined }
   : { params: AdminOperations[Id]['params'] }) & {
   query?: AdminOperations[Id]['query']
+  signal?: AbortSignal
 }
 
 type ReadArguments<Id extends ReadOperationId> =
@@ -56,7 +60,8 @@ type ReadArguments<Id extends ReadOperationId> =
 /**
  * The only way a tool reaches the admin API: one function, over the allow-listed `GET`
  * operations. It has no `call`, takes no body and no header, and does not hand out the client
- * it wraps, so there is no path from a tool to an operation that changes anything.
+ * it wraps, so there is no path from a tool to an operation that changes anything. Beside the
+ * parameters it takes one thing, an `AbortSignal`, which can only end a request early.
  *
  * @example
  * ```ts
@@ -68,7 +73,7 @@ export interface ReadOnlyAdmin {
    * Call one allow-listed read.
    *
    * @param id - The operation's id.
-   * @param input - Its path and query parameters.
+   * @param input - Its path and query parameters, and a signal that abandons the request.
    * @returns The answer's body, exactly as the API sent it: project it before returning it.
    * @throws TulaAdminError as the admin client does.
    * @throws Error when `id` is not on the allow-list (a programming error; nothing is sent).
@@ -122,14 +127,38 @@ export function readOnlyAdmin(
       if (typeof id !== 'string' || !allowed.has(id)) {
         throw new Error('not a read operation')
       }
-      const given = input[0] as { params?: unknown; query?: unknown } | undefined
-      // Only the path and query parameters are passed on: never a body or a header.
+      const given = input[0] as { params?: unknown; query?: unknown; signal?: unknown } | undefined
+      // Only the path and query parameters and a signal are passed on, each picked by name:
+      // never a body, a header, a method or a timeout of the caller's.
       const answer = await call(id, {
         ...(given?.params !== undefined ? { params: given.params } : {}),
         ...(given?.query !== undefined ? { query: given.query } : {}),
+        ...(given?.signal instanceof AbortSignal ? { signal: given.signal } : {}),
         timeoutMs,
       })
       return answer.data as AdminOperations[Id]['response']
     },
   })
+}
+
+/**
+ * The same facade with a signal added to every read: what a tool call is given, so that a
+ * call that is cancelled or runs out of time takes its requests with it, whichever tool made
+ * them. It is as closed as the facade it wraps: one function, the same allow-list.
+ *
+ * @param reads - The facade.
+ * @param signal - Aborted when the tool call is over.
+ * @returns A facade whose reads end when `signal` aborts.
+ *
+ * @example
+ * ```ts
+ * const controller = new AbortController()
+ * const reads = withSignal(readOnlyAdmin(admin), controller.signal)
+ * ```
+ */
+export function withSignal(reads: ReadOnlyAdmin, signal: AbortSignal): ReadOnlyAdmin {
+  const read = reads.read as (id: string, input: Record<string, unknown>) => Promise<unknown>
+  return Object.freeze({
+    read: (id: string, input?: Record<string, unknown>) => read(id, { ...input, signal }),
+  }) as ReadOnlyAdmin
 }

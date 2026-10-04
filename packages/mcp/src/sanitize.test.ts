@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   bound,
   cleanText,
+  inputWindow,
+  MAX_COMBINING_MARKS,
   MAX_OUTPUT_CHARS,
   MAX_STRING_CHARS,
   project,
@@ -9,11 +11,16 @@ import {
   redactor,
   S,
 } from './sanitize'
+import { ALL_HIDDEN, forbiddenCodePoints, HIDDEN, LEGITIMATE } from './testing/hidden'
 
 describe('cleanText', () => {
   test.each([
     ['control characters become spaces', 'a\u0000b\u001b[2Jc\nd\u0085e', 'a b [2Jc d e'],
-    ['bidirectional overrides and zero-width characters are removed', 'a‮b​c⁦d﻿', 'abcd'],
+    [
+      'bidirectional overrides and zero-width characters are removed',
+      'a\u{202E}b\u{200B}c\u{2066}d\u{FEFF}',
+      'abcd',
+    ],
     ['ordinary text is kept', 'Maya Lin — ünïcode', 'Maya Lin — ünïcode'],
   ])('%s', (_name, input, expected) => {
     expect(cleanText(input, 100)).toBe(expected)
@@ -25,10 +32,18 @@ describe('cleanText', () => {
     expect(text.endsWith('…')).toBe(true)
   })
 
+  test('the cut never leaves half a surrogate pair', () => {
+    const text = cleanText(`${'x'.repeat(9)}😀😀`, 10)
+    expect(forbiddenCodePoints(text)).toEqual([])
+    expect(text).toBe(`${'x'.repeat(9)}…`)
+  })
+
   test.each([
     ['a secret key', `tula_sk_live_${'a'.repeat(32)}`],
     ['a secret key inside text', `key is tula_sk_dev_${'b'.repeat(20)} ok`],
     ['a JWT', 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNpZ25hdHVyZQ'],
+    ['a JWT glued to other text', 'token_eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNp'],
+    ['a JWT after a short lookalike', 'eyJ.eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNp'],
     ['an argon2 hash', '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA'],
     ['an otpauth URI', 'otpauth://totp/App:maya?secret=JBSWY3DPEHPK3PXP'],
     ['a PEM block', '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----'],
@@ -41,6 +56,215 @@ describe('cleanText', () => {
     expect(text).not.toContain('MIIB')
     expect(text).not.toContain('c2lnbmF0dXJl')
     expect(text).not.toContain('aGFzaA')
+    expect(text).not.toContain('eyJzdWIi')
+  })
+
+  test('text that only looks like the start of a JWT is kept', () => {
+    expect(cleanText('eyJ is how a JWT starts. a.b.c')).toBe('eyJ is how a JWT starts. a.b.c')
+    expect(cleanText('eyJhbGciOiJ.short.x')).toBe('eyJhbGciOiJ.short.x')
+  })
+})
+
+describe('characters a reader cannot see', () => {
+  test.each(HIDDEN)('%s is not returned by cleanText', (_name, hidden) => {
+    const text = cleanText(`Ma${hidden}ya`)
+    expect(forbiddenCodePoints(text)).toEqual([])
+    // What was around it is still there (a separator becomes a space, like a newline).
+    expect(text.replaceAll(' ', '')).toBe('Maya')
+  })
+
+  test.each(HIDDEN)(
+    '%s is not returned by a projection of a user or a session',
+    (_name, hidden) => {
+      const user = project(
+        { id: 'u1', firstName: `Ma${hidden}ya`, lastName: `${hidden}Lin${hidden}` },
+        S.object({ id: S.string(64), firstName: S.string(), lastName: S.string() })
+      ) as { firstName: string; lastName: string }
+      const session = project(
+        { userAgent: `Mozilla/5.0 ${hidden}(Macintosh)${hidden}` },
+        S.object({ userAgent: S.string(256) })
+      ) as { userAgent: string }
+      expect(forbiddenCodePoints(JSON.stringify([user, session]))).toEqual([])
+      expect(user.firstName.replaceAll(' ', '')).toBe('Maya')
+      expect(user.lastName.trim()).toBe('Lin')
+      expect(session.userAgent.replaceAll(' ', '')).toBe('Mozilla/5.0(Macintosh)')
+    }
+  )
+
+  test('every hidden character at once, in a record’s key too', () => {
+    const all = ALL_HIDDEN
+    const out = project(
+      { [`we${all}b`]: { ttl: `60${all}s` } },
+      S.record(S.object({ ttl: S.string() }), 5)
+    )
+    expect(forbiddenCodePoints(JSON.stringify(out))).toEqual([])
+  })
+
+  test.each(LEGITIMATE)('%s survive unchanged', (_name, input) => {
+    expect(cleanText(input)).toBe(input)
+    expect(forbiddenCodePoints(cleanText(input))).toEqual([])
+  })
+
+  test.each([
+    ['a family joined by zero-width joiners comes apart', '👨\u{200D}👩\u{200D}👧', '👨👩👧'],
+    ['an emoji-style heart loses its selector', '\u{2764}\u{FE0F}', '\u{2764}'],
+    ['a keycap keeps its digit and its cap', '1\u{FE0F}\u{20E3}', '1\u{20E3}'],
+    ['a flag made of tags keeps only its base', '🏴\u{E0067}\u{E0062}\u{E007F}', '🏴'],
+    ['right-to-left text keeps its letters and loses the mark', 'אב\u{200F}ג', 'אבג'],
+  ])('%s', (_name, input, expected) => {
+    expect(cleanText(input)).toBe(expected)
+  })
+
+  test('a flood of combining marks is capped; the letter and the first marks stay', () => {
+    const flooded = `a${'\u{301}'.repeat(200)}b${'\u{489}\u{338}'.repeat(100)}`
+    const text = cleanText(flooded)
+    expect(text).toBe(
+      `a${'\u{301}'.repeat(MAX_COMBINING_MARKS)}b${'\u{489}\u{338}'.repeat(MAX_COMBINING_MARKS / 2)}`
+    )
+    // A stack as tall as real text uses is untouched.
+    const stacked = `e${'\u{301}\u{323}\u{302}\u{308}'}`
+    expect(cleanText(stacked)).toBe(stacked)
+  })
+})
+
+describe('a secret split by characters a reader cannot see', () => {
+  const KEY_BODY = 'abcdefghijklmnopqrstuvwxyz012345'
+  const SPLITTERS: readonly (readonly [string, string])[] = [
+    ['a zero-width space', '\u{200B}'],
+    ['a tag character', '\u{E0041}'],
+    ['a soft hyphen', '\u{AD}'],
+    ['a variation selector', '\u{FE0F}'],
+  ]
+  const split = (text: string, at: number, splitter: string) =>
+    `${text.slice(0, at)}${splitter}${text.slice(at)}`
+
+  describe.each(SPLITTERS)('by %s', (_name, splitter) => {
+    test.each([
+      ['a secret key, in its body', split(`tula_sk_live_${KEY_BODY}`, 16, splitter)],
+      ['a secret key, in its prefix', split(`tula_sk_live_${KEY_BODY}`, 4, splitter)],
+      [
+        'a JWT',
+        split('eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNpZ25hdHVyZQ', 28, splitter),
+      ],
+      [
+        'a JWT, between every character',
+        Array.from('eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNpZ25hdHVyZQ').join(
+          splitter
+        ),
+      ],
+      [
+        'a PEM block, in its header',
+        split(
+          '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----',
+          14,
+          splitter
+        ),
+      ],
+      [
+        'a PEM block, in its footer',
+        split(
+          '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBg\n-----END PRIVATE KEY-----',
+          50,
+          splitter
+        ),
+      ],
+    ])('%s is redacted with no remainder', (_what, input) => {
+      expect(cleanText(input)).toBe(REDACTED)
+    })
+  })
+})
+
+describe('the work is bounded', () => {
+  const PATHOLOGICAL: readonly (readonly [string, string])[] = [
+    ['the start of a JWT, repeated', 'eyJ'.repeat(200_000)],
+    ['JWT segments that never finish', 'eyJaaaaa.'.repeat(70_000).replaceAll('.', '!')],
+    ['the start of a secret key, repeated', 'tula_sk_a'.repeat(70_000)],
+    ['a secret key’s prefix with no end', `tula_sk_${'a'.repeat(600_000)}`],
+    ['the start of a hash, repeated', '$argon2id$2b'.repeat(50_000)],
+    ['the start of an authenticator URI, repeated', 'otpauth://'.repeat(60_000)],
+    ['PEM headers that never close', '-----BEGIN A'.repeat(50_000)],
+    [
+      'a PEM block with footers that never close',
+      `-----BEGIN A-----${'-----END A'.repeat(60_000)}`,
+    ],
+    ['a flood of combining marks', `a${'\u{301}'.repeat(600_000)}`],
+    ['a flood of zero-width characters', '\u{200B}'.repeat(600_000)],
+    ['a flood of lone surrogates', '\uD83D'.repeat(600_000)],
+  ]
+
+  /** The fastest of three runs: a pause of the garbage collector is not the code's time. */
+  function fastest(work: () => void): number {
+    let best = Number.POSITIVE_INFINITY
+    for (let run = 0; run < 3 && best >= 100; run += 1) {
+      const started = performance.now()
+      work()
+      best = Math.min(best, performance.now() - started)
+    }
+    return best
+  }
+
+  test.each(PATHOLOGICAL)('%s is cleaned in under 100 ms', (_name, input) => {
+    expect(fastest(() => cleanText(input))).toBeLessThan(100)
+    expect(cleanText(input).length).toBeLessThanOrEqual(MAX_STRING_CHARS + 1)
+  })
+
+  // With a cap so large that the window does not cut: each pattern is linear by itself, and
+  // does not depend on the window to be fast.
+  test.each(PATHOLOGICAL.map(([name, input]) => [name, input.slice(0, 120_000)] as const))(
+    '%s costs time in proportion to its length, not its square',
+    (_name, input) => {
+      expect(fastest(() => cleanText(input, 200_000))).toBeLessThan(100)
+    }
+  )
+
+  test('the window is four times the cap, and never under 4096 characters', () => {
+    expect(inputWindow(MAX_STRING_CHARS)).toBe(4096)
+    expect(inputWindow(64)).toBe(4096)
+    expect(inputWindow(2000)).toBe(8000)
+  })
+
+  test('what lies past the window is dropped, and the result says it was cut', () => {
+    const window = inputWindow(MAX_STRING_CHARS)
+    const text = cleanText(
+      `${'\u{200B}'.repeat(window - 4)}Maya and a tail that is past the window`
+    )
+    expect(text).toBe('Maya…')
+  })
+
+  const KEY = `tula_sk_live_${'k'.repeat(40)}`
+  const JWT = 'eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ1c2VyIn0.c2lnbmF0dXJlc2lnbmF0dXJl'
+  const PEM =
+    '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----'
+
+  test.each([
+    ['a secret key cut in its body', KEY, 17, ['kkk']],
+    ['a secret key cut after its body began to match', KEY, 30, ['kkk']],
+    ['a JWT cut in its first segment', JWT, 12, ['hbGci']],
+    ['a JWT cut in its second segment', JWT, 30, ['hbGci', 'zdWIi']],
+    ['a JWT cut in its signature', JWT, 44, ['hbGci', 'zdWIi', 'c2ln']],
+    ['a PEM block cut in its body', PEM, 40, ['MIIE']],
+    [
+      'a hash cut in the middle',
+      '$argon2id$v=19$m=65536,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2g',
+      48,
+      ['c2FsdHNhbHQ'],
+    ],
+    [
+      'an authenticator URI cut in its secret',
+      'otpauth://totp/App:maya?secret=JBSWY3DPEHPK3PXP',
+      38,
+      ['JBSW'],
+    ],
+  ])('%s by the window’s edge is not returned', (_name, secret, kept, pieces) => {
+    const window = inputWindow(MAX_STRING_CHARS)
+    // Invisible padding, so that the cleaned text is short and its end would be returned.
+    const input = `Maya ${'\u{200B}'.repeat(window - 5 - kept)}${secret}`
+    const text = cleanText(input)
+    for (const piece of pieces) {
+      expect(text).not.toContain(piece)
+    }
+    expect(text.startsWith('Maya ')).toBe(true)
+    expect(text.endsWith('…')).toBe(true)
   })
 })
 
@@ -147,5 +371,13 @@ describe('redactor', () => {
     expect(
       redact({ a: 'x hunter2hunter2 y', b: [{ c: 'hunter2hunter2' }], d: 3, e: null, f: 'tok' })
     ).toEqual({ a: `x ${REDACTED} y`, b: [{ c: REDACTED }], d: 3, e: null, f: 'tok' })
+  })
+
+  test('many secrets over a large value stay fast', () => {
+    const redact = redactor(Array.from({ length: 4 }, (_, index) => `secret-${index}-value`))
+    const value = { a: 'secret-0-valu'.repeat(MAX_OUTPUT_CHARS / 13) }
+    const started = performance.now()
+    redact(value)
+    expect(performance.now() - started).toBeLessThan(100)
   })
 })

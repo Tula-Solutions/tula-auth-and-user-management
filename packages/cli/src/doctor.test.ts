@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import type { AdminFetch } from '@tula/admin'
+import { type AdminFetch, createInstanceClient } from '@tula/admin'
 import type { MemoryDiagnostics } from '../../../apps/api/src/adapters/memory/diagnostics'
 import { createApp } from '../../../apps/api/src/index'
 import { sha256Hex } from '../../../apps/api/src/lib/crypto'
 import { createTestDeps, TEST_CONFIG, type TestDeps } from '../../../apps/api/src/testing'
-import { type CliIo, COMMANDS, runCli, VERSION } from './index'
+import { type CliIo, COMMANDS, examine, runCli, VERSION } from './index'
 
 const TOKEN = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
 const BASE_URL = 'http://localhost:3003'
@@ -375,4 +375,49 @@ describe('tula doctor against an API that misbehaves', () => {
     })
     expect(nowhere.stderr).toContain('cannot be read here')
   })
+})
+
+describe('examine: a run that is abandoned', () => {
+  test.each(['/v1/status', '/v1/instance/diagnostics'])(
+    'aborting the signal ends the request to %s, and the run answers with a failing check',
+    async (hanging) => {
+      const real = api()
+      let open = 0
+      const fetch: AdminFetch = async (url, init) => {
+        if (new URL(url).pathname !== hanging) {
+          return real.fetch(url, init)
+        }
+        // Never answers; ends only when its signal aborts.
+        open += 1
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            open -= 1
+            reject(init.signal?.reason)
+          })
+        })
+      }
+      const controller = new AbortController()
+      const run = examine({
+        apiUrl: BASE_URL,
+        instance: createInstanceClient({ baseUrl: BASE_URL, adminToken: TOKEN, fetch }),
+        io: {
+          stdout: { write: () => {} },
+          stderr: { write: () => {} },
+          env: {},
+          cwd: '/nowhere',
+          isTTY: false,
+          fetch,
+        },
+        signal: controller.signal,
+      })
+      for (let waited = 0; waited < 500 && open === 0; waited += 1) {
+        await Bun.sleep(2)
+      }
+      expect(open).toBe(1)
+      controller.abort()
+      const report = await run
+      expect(open).toBe(0)
+      expect(report.checks.at(-1)?.status).toBe('fail')
+    }
+  )
 })

@@ -178,13 +178,31 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   through `ReadOnlyAdmin.read` (`packages/mcp/src/read-only.ts`), over `READ_OPERATIONS`: an
   allow-list of `GET` operation ids, checked by type, on every call and when the facade is
   made. Never hand a tool the admin client, a body or a header, and never add a non-`GET` id
-  to the list. Write tools are a later phase and a separate facade.
+  to the list. Beside the parameters the facade forwards one thing, an `AbortSignal`, picked
+  by name: keep the test that hands it a body, headers and a method. Write tools are a later
+  phase and a separate facade.
 - **A result is an allow-list projection** (`project(value, shape)`): name every field a tool
   returns; never spread or pass through an API answer, and never interpolate a value into
   prose. Results are JSON (`structuredContent` and the same JSON as text), cleaned and capped
   by `sanitize.ts` (512 characters a string, 100 entries, 64,000 characters a result). A new
   field that could hold a secret is not named; a new kind of secret gets a pattern in
   `SECRET_SHAPES` and a test.
+- **`cleanText` works in a fixed order: window, invisible characters, secret shapes, cap.**
+  Never match a secret shape before the invisible characters are gone (a zero-width space
+  would split it), and never run a pattern over more than `inputWindow(max)` characters. The
+  invisible set is Unicode classes (`Cf`, `Co`, `Cn`, lone surrogates, variation selectors,
+  with `Cc`/`Zl`/`Zp` turned into a space and combining marks capped), matched with the `u`
+  flag: do not narrow it to a list of code points, and write such characters in source as
+  `\u{…}` escapes, never literally. A pattern added to `SECRET_SHAPES` must be linear (no
+  quantifier inside another, nothing that fails after a long scan and starts again inside
+  it) and gets a row in the "work is bounded" table. The tests check results a code point at
+  a time against their own ranges (`testing/hidden.ts`), not against the pattern.
+- **No request outlives its tool call, and reads are limited.** Every request a tool makes
+  carries the call's signal (`withSignal`, and the `signal` given to the doctor); four read
+  tools run at once, sixteen wait, the next is `busy`. A new read path takes the signal too.
+- **`@tula/cli` loads `@tula/mcp` only with `import()` inside `tula mcp`.** Never import it at
+  the top of a module of the CLI: `lazy-load.test.ts` fails if any other command loads it or
+  the MCP SDK.
 - **Never returned**: keys of either kind, tokens, hashes, TOTP secrets and URIs, backup
   codes, passkey credential ids, provider secrets. There is no key-listing tool.
 - **Credentials come from the environment or a file, resolved once at start**; never a tool

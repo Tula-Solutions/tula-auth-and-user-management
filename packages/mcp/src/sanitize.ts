@@ -39,29 +39,159 @@ export const MAX_OUTPUT_CHARS = 64_000
  */
 export const REDACTED = '[redacted]'
 
-// C0 and C1 control characters (an escape sequence, a newline that would break a field out of
-// its line) become a space; characters that reorder or hide text are removed.
-// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed
-const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g
-const INVISIBLE = /[​-‏‪-‮⁠-⁩﻿]/g
+/**
+ * The most combining marks kept in a row. Real text stacks a few on a letter (a Vietnamese
+ * vowel has two, pointed Hebrew up to four); hundreds are a flood that hides or buries the
+ * text around it, so the rest of a longer run is dropped.
+ *
+ * @example
+ * ```ts
+ * cleanText(`a${'\u{301}'.repeat(200)}`) // 'a' and MAX_COMBINING_MARKS accents
+ * ```
+ */
+export const MAX_COMBINING_MARKS = 8
+
+const MIN_WINDOW_CHARS = 4096
+
+/**
+ * How much of a string from the API is looked at for a field capped at `max` characters: four
+ * times the cap, and at least 4096 characters. What lies past it is dropped before any
+ * pattern runs, so one enormous value cannot keep the server (one thread, one pipe) busy.
+ *
+ * @param max - The field's cap.
+ * @returns The number of characters considered.
+ *
+ * @example
+ * ```ts
+ * inputWindow(512) // 4096
+ * ```
+ */
+export function inputWindow(max: number): number {
+  return Math.max(max * 4, MIN_WINDOW_CHARS)
+}
+
+// Controls (an escape sequence, a newline that would break a field out of its line) and the
+// line and paragraph separators become a space: they separate words, and still must.
+const SEPARATORS = /[\p{Cc}\p{Zl}\p{Zp}]/gu
+
+// What a reader cannot see and a model still reads, removed outright:
+// - `Cf`, format characters: zero-width spaces and joiners, bidirectional marks, embeddings,
+//   overrides and isolates, the soft hyphen, the tag characters ("ASCII smuggling": a whole
+//   sentence in code points that render as nothing), interlinear annotation;
+// - `Co` and `Cn`, private-use and unassigned code points (and noncharacters): they mean
+//   nothing a tool should pass on, and the tag block's unassigned ends are among them;
+// - `Cs`, a surrogate that is not half of a pair;
+// - the variation selectors (both blocks, and Mongolian's) and the combining grapheme joiner,
+//   which are marks and so not in the classes above;
+// - the Hangul fillers, letters that render as nothing.
+const VARIATION_SELECTORS = /[\u{FE00}-\u{FE0F}\u{180B}-\u{180F}\u{E0100}-\u{E01EF}]/gu
+const INVISIBLE = /[\p{Cf}\p{Co}\p{Cn}\p{Cs}]|\u{34F}|[\u{115F}\u{1160}\u{3164}\u{FFA0}]/gu
+const MARK_FLOOD = new RegExp(`(\\p{M}{${MAX_COMBINING_MARKS}})\\p{M}+`, 'gu')
+
+const JWT_START = 'eyJ'
+const KEY_START = 'tula_sk_'
+// The characters a key or a JWT is made of, with the dot that joins a JWT's parts.
+const TOKEN_RUN = /[A-Za-z0-9_.-]+/g
+
+/**
+ * Replace every JWT inside one run of token characters: `eyJ` and five more characters, a
+ * dot, and two more parts of five or more.
+ *
+ * Written by hand because the pattern for it (`eyJ…\.…\.…`) starts again at every `eyJ` of a
+ * run that has no dot, which is quadratic. Here each part of a run is looked at once.
+ */
+function redactJwtsInRun(run: string): string {
+  if (!run.includes(JWT_START)) {
+    return run
+  }
+  const parts = run.split('.')
+  const out: string[] = []
+  let index = 0
+  while (index < parts.length) {
+    const part = parts[index] as string
+    const at = part.indexOf(JWT_START)
+    const second = parts[index + 1]
+    const third = parts[index + 2]
+    if (
+      at !== -1 &&
+      part.length - at >= JWT_START.length + 5 &&
+      second !== undefined &&
+      second.length >= 5 &&
+      third !== undefined &&
+      third.length >= 5
+    ) {
+      out.push(`${part.slice(0, at)}${REDACTED}`)
+      index += 3
+    } else {
+      out.push(part)
+      index += 1
+    }
+  }
+  return out.join('.')
+}
 
 /**
  * Shapes that are secrets wherever they turn up: a Tula secret key, a JWT, a password hash,
  * an authenticator URI or its `secret=`, a PEM block. The projection already drops every field
  * that could hold one; this is for a secret that arrives inside a field that is kept (a user
  * who pasted a key into their name, an API that one day answers differently).
+ *
+ * Each costs time in proportion to the text: a pattern here has no quantifier inside another,
+ * and none that can fail after a long scan and start again inside what it scanned. They run
+ * after the cleaning, so a newline inside a PEM block is a space by now.
  */
-const SECRET_SHAPES: readonly RegExp[] = [
-  /tula_sk_[a-z]+_[A-Za-z0-9_-]{8,}/g,
-  /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g,
-  /\$(?:argon2(?:id|i|d)|2[aby]|scrypt)\$[^\s"']+/g,
-  /otpauth:\/\/[^\s"']+/g,
-  /-----BEGIN [A-Z ]+-----[\s\S]*?(?:-----END [A-Z ]+-----|$)/g,
+const SECRET_SHAPES: readonly ((text: string) => string)[] = [
+  (text) => text.replace(/tula_sk_[a-z]+_[A-Za-z0-9_-]{8,}/g, REDACTED),
+  (text) => text.replace(TOKEN_RUN, redactJwtsInRun),
+  (text) => text.replace(/\$(?:argon2(?:id|i|d)|2[aby]|scrypt)\$[^\s"']+/g, REDACTED),
+  (text) => text.replace(/otpauth:\/\/[^\s"']+/g, REDACTED),
+  (text) => text.replace(/-----BEGIN [A-Z ]+-----[\s\S]*?(?:-----END [A-Z ]+-----|$)/g, REDACTED),
 ]
 
+function isTokenCharacter(code: number): boolean {
+  return (
+    (code >= 0x30 && code <= 0x39) || // 0-9
+    (code >= 0x41 && code <= 0x5a) || // A-Z
+    (code >= 0x61 && code <= 0x7a) || // a-z
+    code === 0x5f || // _
+    code === 0x2d || // -
+    code === 0x2e // .
+  )
+}
+
 /**
- * Text from the API made safe to hand to a model: no control or invisible characters,
- * secret-shaped values replaced, and bounded.
+ * For text the window cut: a key or a JWT that began before the cut and did not finish is too
+ * short for its shape, and would be returned as it is. Replace it from where it starts. (A
+ * hash, an authenticator URI and a PEM block match however short they were cut.)
+ */
+function withoutCutSecret(text: string): string {
+  let start = text.length
+  while (start > 0 && isTokenCharacter(text.charCodeAt(start - 1))) {
+    start -= 1
+  }
+  const tail = text.slice(start)
+  const starts = [tail.indexOf(KEY_START), tail.indexOf(JWT_START)].filter((at) => at !== -1)
+  return starts.length === 0 ? text : `${text.slice(0, start + Math.min(...starts))}${REDACTED}`
+}
+
+/**
+ * Text from the API made safe to hand to a model, in this order:
+ *
+ * 1. Only the first {@link inputWindow} characters are considered; the rest is dropped.
+ * 2. Control characters and line and paragraph separators become a space. Characters a reader
+ *    cannot see are removed: format characters (zero-width, bidirectional controls, the soft
+ *    hyphen, tag characters), private-use and unassigned code points, lone surrogates,
+ *    variation selectors, the combining grapheme joiner and the Hangul fillers. A run of
+ *    combining marks is cut at {@link MAX_COMBINING_MARKS}.
+ * 3. Secret-shaped values are replaced. After step 2, so that a key split by a zero-width
+ *    space is whole again when it is looked for.
+ * 4. The text is cut at `max` and ends with `…` when anything was cut.
+ *
+ * Letters of every script survive, composed or decomposed, and so do emoji. The price is in
+ * the joiners and selectors: a family emoji comes apart into its people, an emoji that needed
+ * a variation selector is shown in its text form, and Arabic or Persian text loses its
+ * zero-width (non-)joiners. A code point newer than the runtime's Unicode tables counts as
+ * unassigned and is removed.
  *
  * @param value - The text.
  * @param max - The longest text kept.
@@ -70,16 +200,30 @@ const SECRET_SHAPES: readonly RegExp[] = [
  * @example
  * ```ts
  * cleanText('Maya\u001b[2J') // 'Maya [2J'
+ * cleanText('tula_sk_live_abc\u{200B}defghijklmnop') // '[redacted]'
  * ```
  */
 export function cleanText(value: string, max: number = MAX_STRING_CHARS): string {
-  // Secret shapes first: a PEM block spans lines, which the next step flattens.
-  let text = value
-  for (const shape of SECRET_SHAPES) {
-    text = text.replace(shape, REDACTED)
+  const window = inputWindow(max)
+  let cut = value.length > window
+  let text = (cut ? value.slice(0, window) : value)
+    .replace(SEPARATORS, ' ')
+    .replace(VARIATION_SELECTORS, '')
+    .replace(INVISIBLE, '')
+    .replace(MARK_FLOOD, '$1')
+  for (const redact of SECRET_SHAPES) {
+    text = redact(text)
   }
-  text = text.replace(CONTROL, ' ').replace(INVISIBLE, '')
-  return text.length > max ? `${text.slice(0, max)}…` : text
+  if (cut) {
+    text = withoutCutSecret(text)
+  }
+  if (text.length > max) {
+    // Not between the halves of a surrogate pair: half of one is not a character.
+    const last = text.charCodeAt(max - 1)
+    text = text.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max)
+    cut = true
+  }
+  return cut ? `${text}…` : text
 }
 
 /**

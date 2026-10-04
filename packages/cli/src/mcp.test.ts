@@ -444,6 +444,39 @@ describe('tula mcp: where its credentials come from', () => {
     expect(w.requests).not.toContain('GET /v1/instance/diagnostics')
   })
 
+  test('a doctor call the client cancels takes its request to the API with it', async () => {
+    const w = world()
+    let open = 0
+    // An API that never answers its status: the request ends only when its signal aborts.
+    w.io.fetch = (_url, init) => {
+      open += 1
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          open -= 1
+          reject(init.signal?.reason)
+        })
+      })
+    }
+    const client = await connect(w)
+    const cancel = new AbortController()
+    const doctor = client
+      .callTool({ name: 'run_doctor', arguments: {} }, { signal: cancel.signal })
+      .then(
+        () => 'answered',
+        () => 'cancelled'
+      )
+    const until = async (count: number) => {
+      for (let waited = 0; waited < 500 && open !== count; waited += 1) {
+        await Bun.sleep(2)
+      }
+      expect(open).toBe(count)
+    }
+    await until(1)
+    cancel.abort()
+    expect(await doctor).toBe('cancelled')
+    await until(0)
+  })
+
   test('the key is read from --secret-key-file and from the named environment’s variables', async () => {
     const fromFile = world({ TULA_SECRET_KEY: undefined }, { 'key.txt': `${SECRET_KEY}\n` })
     const first = await connect(fromFile, { 'secret-key-file': 'key.txt' })

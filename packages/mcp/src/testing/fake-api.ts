@@ -152,13 +152,16 @@ export const TEST_USER_ID = USER_ID
 
 /**
  * A `fetch` that records every request and answers from a table keyed `"<METHOD> <path>"`.
- * Anything not in the table is a contract 404.
+ * Anything not in the table is a contract 404. `outstanding` counts the requests to a
+ * `HANG` path that nothing has aborted yet.
  */
 export function fakeFetch(answers: Answers = defaultAnswers()): {
   fetch: AdminFetch
   requests: Recorded[]
+  outstanding(): number
 } {
   const requests: Recorded[] = []
+  let open = 0
   const fetch: AdminFetch = async (url, init) => {
     const parsed = new URL(url)
     const method = (init?.method ?? 'GET').toUpperCase()
@@ -171,8 +174,12 @@ export function fakeFetch(answers: Answers = defaultAnswers()): {
     const answer = answers[`${method} ${parsed.pathname}`]
     if (answer === HANG) {
       // Never answers; ends only when the caller's own timeout aborts the request.
+      open += 1
       return new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+        init?.signal?.addEventListener('abort', () => {
+          open -= 1
+          reject(init.signal?.reason)
+        })
       })
     }
     if (typeof answer === 'function') {
@@ -186,12 +193,16 @@ export function fakeFetch(answers: Answers = defaultAnswers()): {
     }
     return Response.json(answer)
   }
-  return { fetch, requests }
+  return { fetch, requests, outstanding: () => open }
 }
 
 /** An admin client over a fake `fetch`. */
-export function fakeAdmin(answers?: Answers): { admin: AdminClient; requests: Recorded[] } {
-  const { fetch, requests } = fakeFetch(answers)
+export function fakeAdmin(answers?: Answers): {
+  admin: AdminClient
+  requests: Recorded[]
+  outstanding(): number
+} {
+  const { fetch, requests, outstanding } = fakeFetch(answers)
   return {
     admin: createAdminClient({
       baseUrl: 'https://auth.example.com',
@@ -199,6 +210,7 @@ export function fakeAdmin(answers?: Answers): { admin: AdminClient; requests: Re
       fetch,
     }),
     requests,
+    outstanding,
   }
 }
 

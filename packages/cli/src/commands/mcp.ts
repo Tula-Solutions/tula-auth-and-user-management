@@ -1,11 +1,14 @@
 import { isTulaAdminError } from '@tula/admin'
-import { createTulaMcpServer, serveOverStdio, TOOL_NAMES } from '@tula/mcp'
 import { UsageError } from '../args'
 import { examine } from '../doctor'
 import { type Command, type CommandContext, EXIT } from '../framework'
 import type { Output } from '../output'
 import { resolveApiUrl, resolveInstance, resolveTarget } from '../target'
 import { VERSION } from '../version'
+
+// `@tula/mcp` is never imported at the top of this file: it brings the MCP SDK and Zod with
+// it, and this module is loaded by every run of `tula` (the command's name, options and help
+// are listed by `tula --help`). It is loaded with `import()` when the server is built.
 
 /** `prod-eu` → `PROD_EU`, as `resolveTarget` names an environment's own variables. */
 function suffix(name: string): string {
@@ -36,6 +39,8 @@ function reason(error: unknown): string {
  * becomes the "not configured" answer of the tools that needed it, and is said once on
  * standard error. The scaffold tools need none of it.
  *
+ * This is where `@tula/mcp` is loaded, on first use.
+ *
  * @param context - The command's context.
  * @returns The server, not yet connected.
  *
@@ -54,6 +59,7 @@ export async function buildMcpServer(context: CommandContext) {
       )
     }
   }
+  const { createTulaMcpServer, TOOL_NAMES } = await import('@tula/mcp')
   // Every credential that is resolved is registered for redaction; remember them, so that
   // the server can remove them from results too.
   const secrets: string[] = []
@@ -75,7 +81,7 @@ export async function buildMcpServer(context: CommandContext) {
     }
   )
 
-  let doctor: (() => Promise<unknown>) | null = null
+  let doctor: ((run: { signal: AbortSignal }) => Promise<unknown>) | null = null
   try {
     const named = io.env[`TULA_API_URL_${suffix(name)}`]?.trim()
     const apiUrl = resolveApiUrl(
@@ -83,7 +89,8 @@ export async function buildMcpServer(context: CommandContext) {
       io
     )
     const instance = await resolveInstance({ apiUrl, flags, io, output })
-    doctor = () => examine({ apiUrl, instance, io })
+    // The server aborts the signal when a run is out of time or its call was cancelled.
+    doctor = ({ signal }) => examine({ apiUrl, instance, io, signal })
   } catch (error) {
     unavailable.doctor = reason(error)
   }
@@ -170,6 +177,7 @@ export const mcpCommand: Command = {
       throw new UsageError('tula mcp needs the process’s standard input and output.')
     }
     const server = await buildMcpServer(context)
+    const { serveOverStdio } = await import('@tula/mcp')
     await serveOverStdio(server, serve)
     return EXIT.ok
   },

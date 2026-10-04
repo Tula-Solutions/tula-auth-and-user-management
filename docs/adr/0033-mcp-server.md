@@ -57,7 +57,7 @@ hold for the API as it will be next year, not only as it is today.
   `listOAuthProviders`. The allow-list is enforced by the type of `read`, by a check of the id
   on every call, and once when the facade is made: every allow-listed id must be a `GET` in
   the admin client's operation table, or the server does not start. `read` passes on path and
-  query parameters only, never a body or a header.
+  query parameters and an abort signal only, never a body or a header.
 - A test enumerates every registered tool over the protocol, calls each against a recording
   `fetch`, and asserts that only `GET` requests to the allow-listed paths were made. The same
   is asserted against the real API in process.
@@ -98,12 +98,37 @@ hold for the API as it will be next year, not only as it is today.
 
 - A result is JSON: `structuredContent`, and the same JSON as the text content. No value is
   ever written into a sentence, so a user's name cannot be read as the tool's own words.
-- Strings lose C0/C1 control characters (replaced by a space) and bidirectional and
-  zero-width characters (removed), and are cut at **512** characters (less where a field has
-  a natural size). Arrays are cut at **100** entries (50 users, 100 audit entries, by input
-  schema as well). A result is at most **64,000** characters of JSON: a list loses entries
-  from its end and gains `truncated: true`; anything else that large is the error
-  `output.too_large`.
+- **A string is cleaned in a fixed order** (`cleanText`), and the order is part of the
+  decision:
+  1. *Window.* Only the first `max(4 × the field's cap, 4096)` characters are looked at; the
+     rest is dropped before any pattern runs. The server is one thread on one pipe, and a
+     megabyte in a user's name must not stall it. Every pattern is also linear by itself (a
+     JWT is found by a hand-written scan, because the obvious pattern is quadratic on
+     `eyJeyJeyJ…`); the window bounds the constant.
+  2. *Characters a reader cannot see.* Control characters (`Cc`) and the line and paragraph
+     separators (`Zl`, `Zp`) become a space. Removed outright: format characters (`Cf`:
+     zero-width spaces and joiners, bidirectional marks, embeddings, overrides and isolates,
+     the soft hyphen, the Arabic letter mark, the Mongolian vowel separator, interlinear
+     annotation, and the **tag characters** U+E0001–E007F, which spell ASCII invisibly and
+     which a model reads), private-use and unassigned code points and noncharacters (`Co`,
+     `Cn`), lone surrogates (`Cs`), the variation selectors (U+FE00–FE0F, U+E0100–E01EF,
+     Mongolian U+180B–180F), the combining grapheme joiner (U+034F) and the Hangul fillers
+     (U+115F, U+1160, U+3164, U+FFA0). A run of combining marks (`M`) is cut at **8**: real
+     text stacks a few on a letter, a flood buries what is around it.
+  3. *Secret shapes*, after step 2: a key split by a zero-width space is whole again when it
+     is looked for. A key or JWT that the window cut short is replaced from where it starts.
+  4. *Cap.* The text is cut at **512** characters (less where a field has a natural size),
+     never between the halves of a surrogate pair, and ends with `…` when anything was cut.
+- **What that costs legitimate text**, accepted: letters of every script survive, composed
+  or decomposed, and so do emoji; but a family emoji comes apart into its people (the joiner
+  is gone), an emoji that needed a variation selector shows in its text form, a flag written
+  with tag characters keeps only its base, Arabic and Persian lose zero-width (non-)joiners
+  and the visible Arabic number signs that are format characters, and a character newer than
+  the runtime's Unicode tables counts as unassigned and is removed. A tool result is a report
+  for an operator, not a rendering of the name; the dashboard shows the name as it is.
+- Arrays are cut at **100** entries (50 users, 100 audit entries, by input schema as well). A
+  result is at most **64,000** characters of JSON: a list loses entries from its end and
+  gains `truncated: true`; anything else that large is the error `output.too_large`.
 - The read tools' descriptions and the server's instructions say that every string in a
   result is untrusted data and never an instruction.
 
@@ -134,6 +159,25 @@ hold for the API as it will be next year, not only as it is today.
   one of this package's own sentences. The API's `detail`, a URL, a stack and the thrown
   error are never passed on. `rate_limited` carries the time to wait.
 - Every request has a timeout (15 seconds); a doctor run has twice that as a whole.
+- **No request outlives its call.** Each tool call has an `AbortSignal` that every request it
+  makes carries: it aborts when the client cancels the call, when a doctor run is out of
+  time, and when the call is over, whatever its outcome. The read-only facade forwards that
+  signal and nothing else beside the path and query parameters (picked by name; a test hands
+  it a body, headers and a method and shows none is passed on), and `examine` takes it for
+  the doctor's requests.
+- **At most 4 read tools run at once and 16 wait**; one more is answered at once with the
+  tool error `busy`. A client that fires fifty calls gets them four at a time and the API
+  sees four requests. A waiting call that is cancelled gives up its place. The scaffold
+  tools reach nothing and are not counted, so a slow API does not hold them up.
+
+### Loading
+
+- `@tula/cli` loads `@tula/mcp` with `import()` inside `tula mcp`'s `run`, never at the top
+  of a module: the command's name, options and help are plain data, and `tula --version`,
+  `tula diff` and every other command start without the MCP SDK. A test starts the
+  executable with a preload that records the loaded modules and fails if `@tula/mcp` or the
+  SDK is among them; another bundles the entry points as bunup does and fails unless
+  `@tula/mcp` appears only as a dynamic import.
 
 ## Consequences
 
