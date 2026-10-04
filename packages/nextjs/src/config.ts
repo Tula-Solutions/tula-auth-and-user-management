@@ -50,11 +50,30 @@ export interface TulaServerOptions {
   /** Seconds a call to the API may take. Defaults to 15. */
   timeoutSeconds?: number
   /**
-   * The visitor's IP address, for the API's per-IP rate limits. Defaults to the **last** entry
-   * of the request's `X-Forwarded-For` (what the proxy in front of Next.js appended). Return
-   * `null` when it is not known.
+   * How many proxies in front of this server append the address they received the request
+   * from to `X-Forwarded-For` (a load balancer, a CDN, the platform's router).
+   * `TULA_TRUSTED_PROXY_HOPS`. Defaults to `0`.
+   *
+   * With `0` no forwarding header is believed, because anyone who can reach this server
+   * directly can write one, and **no visitor address is sent to the API**: it sees this
+   * server's address for every visitor, so they share one per-IP rate limit. With `N` the
+   * visitor's address is the `N`th entry from the right, the one the outermost trusted proxy
+   * appended; entries to its left are whatever the visitor sent and are ignored. Set it too
+   * high and a visitor chooses their own address: per-IP rate limits, lockout and the
+   * addresses in the audit log then mean nothing.
+   */
+  trustedProxyHops?: number
+  /**
+   * The visitor's IP address, for the API's per-IP rate limits, on a platform that states it
+   * in a header of its own. Replaces `trustedProxyHops`. Return `null` when it is not known.
+   * Only read a header the platform itself sets or overwrites.
    */
   clientIp?: (request: Request) => string | null
+  /**
+   * Where this package's warnings go: one line each, about a likely misconfiguration, never
+   * with a token, a key or a cookie in it. Defaults to `console.warn`.
+   */
+  onWarning?: (message: string) => void
   /** The `fetch` every call to the API goes through. Tests pass an in-process server. */
   fetch?: FetchLike
 }
@@ -76,6 +95,11 @@ export interface TulaConfig {
   path: string
   timeoutMs: number
   clientIp: (request: Request) => string | null
+  /**
+   * Report a likely misconfiguration, once per `key` for the life of the process: these are
+   * found on the request path, and a line per request would bury everything else.
+   */
+  warn: (key: string, message: string) => void
   fetch: FetchLike
 }
 
@@ -136,10 +160,80 @@ function httpUrl(value: string, option: string): URL {
   return url
 }
 
-/** What a proxy appended last is the only `X-Forwarded-For` entry a client cannot write. */
-function lastForwardedFor(request: Request): string | null {
-  const last = request.headers.get('x-forwarded-for')?.split(',').at(-1)?.trim()
-  return last && /^[0-9a-fA-F:.]{2,45}$/.test(last) ? last : null
+/**
+ * How the visitor's address is read from `X-Forwarded-For` behind `hops` trusted proxies.
+ *
+ * Each proxy appends the address it received the request from, so the entry `hops` from the
+ * right is the one the outermost trusted proxy wrote. Everything to its left arrived with the
+ * request and is the visitor's to choose; with no trusted proxy that is the whole header.
+ */
+function forwardedFor(hops: number): (request: Request) => string | null {
+  if (hops === 0) {
+    return () => null
+  }
+  return (request) => {
+    const entries = request.headers.get('x-forwarded-for')?.split(',') ?? []
+    const entry = entries.at(-hops)?.trim()
+    return entry && /^[0-9a-fA-F:.]{2,45}$/.test(entry) ? entry : null
+  }
+}
+
+function proxyHops(option: number | undefined): number {
+  const variable = env('TULA_TRUSTED_PROXY_HOPS')
+  const hops =
+    option ?? (variable !== undefined && /^\d+$/.test(variable) ? Number(variable) : variable)
+  if (hops === undefined) {
+    return 0
+  }
+  if (typeof hops !== 'number' || !Number.isSafeInteger(hops) || hops < 0) {
+    throw new TypeError(
+      '@tula/nextjs: `trustedProxyHops` must be a whole number, 0 or more (option, or TULA_TRUSTED_PROXY_HOPS)'
+    )
+  }
+  return hops
+}
+
+function consoleWarning(message: string): void {
+  // biome-ignore lint/suspicious/noConsole: a library has no logger of its own; `onWarning` replaces this.
+  console.warn(message)
+}
+
+/** Which warnings have been given: by the default sink, and by each `onWarning`. */
+interface Warned {
+  console: Set<string>
+  custom: WeakMap<(message: string) => void, Set<string>>
+}
+
+const WARNED = Symbol.for('@tula/nextjs:warned')
+
+/**
+ * The record of warnings given, kept on `globalThis`: Next.js loads the handler, the
+ * interceptor and the server helpers as separate bundles, each with its own copy of this
+ * module, and "once per process" has to hold across them.
+ */
+function warned(): Warned {
+  const store = globalThis as { [WARNED]?: Warned }
+  if (!store[WARNED]) {
+    store[WARNED] = { console: new Set(), custom: new WeakMap() }
+  }
+  return store[WARNED]
+}
+
+function warnOnce(custom: ((message: string) => void) | undefined): TulaConfig['warn'] {
+  return (key, message) => {
+    const record = warned()
+    let keys = custom ? record.custom.get(custom) : record.console
+    if (!keys) {
+      keys = new Set()
+      if (custom) {
+        record.custom.set(custom, keys)
+      }
+    }
+    if (!keys.has(key)) {
+      keys.add(key)
+      ;(custom ?? consoleWarning)(`@tula/nextjs: ${message}`)
+    }
+  }
 }
 
 /**
@@ -148,7 +242,8 @@ function lastForwardedFor(request: Request): string | null {
  * @param options - Explicit values; anything left out is read from its variable.
  * @returns The checked configuration.
  * @throws TypeError when the API URL, the publishable key or the environment id is missing,
- *   when a URL is not http(s), or when a key is of the wrong kind.
+ *   when a URL is not http(s), when a key is of the wrong kind, or when `trustedProxyHops` is
+ *   not a whole number of 0 or more.
  *
  * @example
  * ```ts
@@ -186,6 +281,19 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
   }
   const issuerOption = options.issuer ?? env('TULA_ISSUER')
   const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS
+  const hops = proxyHops(options.trustedProxyHops)
+  const warn = warnOnce(options.onWarning)
+  // NODE_ENV, not a tier of ours: it is the one thing a Next.js server knows about where it
+  // runs, and it only decides whether to say this. In development it would be noise.
+  if (hops === 0 && !options.clientIp && env('NODE_ENV') === 'production') {
+    warn(
+      'no-visitor-address',
+      'no visitor address is sent to the Tula API (trustedProxyHops is 0 and there is no ' +
+        "clientIp), so every visitor shares this server's address there and one per-IP rate " +
+        'limit. If a proxy in front of this server appends to X-Forwarded-For, set ' +
+        'TULA_TRUSTED_PROXY_HOPS to the number of such proxies.'
+    )
+  }
   return {
     apiUrl,
     publishableKey,
@@ -199,7 +307,8 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
     appOrigin: appUrl ? httpUrl(appUrl, 'appUrl').origin : null,
     path,
     timeoutMs: Math.max(1, timeoutSeconds) * 1000,
-    clientIp: options.clientIp ?? lastForwardedFor,
+    clientIp: options.clientIp ?? forwardedFor(hops),
+    warn,
     fetch: options.fetch ?? globalFetch,
   }
 }

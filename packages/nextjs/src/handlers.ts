@@ -16,8 +16,65 @@ import { apiHeaders, callApi, issuedSession, readRequestCookies } from './upstre
 // the browser's Origin, its Sec-Fetch-Site and the visitor's address are passed on as they
 // are. Nothing here is logged: requests and responses carry tokens, codes and passwords.
 
-/** The largest request body passed on, by its declared length. The API has its own limit. */
+/**
+ * The largest request body passed on: refused up front by its declared length, and cut off
+ * while streaming when there is none (a chunked upload). The API has its own limit.
+ */
 const MAX_BODY_BYTES = 1024 * 1024
+
+/** The largest JSON answer read into memory. No client route answers with anything near it. */
+const MAX_RESPONSE_BYTES = 1024 * 1024
+
+/**
+ * Pass a request body on, failing the stream once more than `limit` bytes have gone through.
+ *
+ * @returns The stream to send, and whether the limit is what ended it.
+ */
+function limited(
+  body: ReadableStream<Uint8Array>,
+  limit: number
+): { stream: ReadableStream<Uint8Array>; exceeded: () => boolean } {
+  let seen = 0
+  let exceeded = false
+  const stream = body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        seen += chunk.byteLength
+        if (seen > limit) {
+          exceeded = true
+          controller.error(new RangeError('request body too large'))
+          return
+        }
+        controller.enqueue(chunk)
+      },
+    })
+  )
+  return { stream, exceeded: () => exceeded }
+}
+
+/**
+ * Read a response body as text, giving up once it is larger than `limit` bytes.
+ *
+ * @returns The text, or `null` when the body was too large (it is cancelled, not drained).
+ */
+async function readText(body: ReadableStream<Uint8Array>, limit: number): Promise<string | null> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  let seen = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) {
+      return text + decoder.decode()
+    }
+    seen += value.byteLength
+    if (seen > limit) {
+      await reader.cancel()
+      return null
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+}
 
 /** Request headers passed on to the API. Everything else stays behind, cookies included. */
 const FORWARDED_REQUEST_HEADERS = [
@@ -76,6 +133,10 @@ function refusal(status: number, code: string, detail: string): Response {
   )
 }
 
+function tooLarge(): Response {
+  return refusal(413, 'request.too_large', 'The request body is too large.')
+}
+
 /**
  * The API path a request to the handler stands for, or `null` when it is not a client route.
  *
@@ -131,7 +192,7 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
     )
   }
   if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
-    return refusal(413, 'request.too_large', 'The request body is too large.')
+    return tooLarge()
   }
 
   const cookies = readRequestCookies(request, config)
@@ -142,7 +203,10 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
       headers.set(name, value)
     }
   }
-  const hasBody = request.method !== 'GET' && request.method !== 'HEAD' && request.body !== null
+  const body =
+    request.method !== 'GET' && request.method !== 'HEAD' && request.body !== null
+      ? limited(request.body, MAX_BODY_BYTES)
+      : null
 
   let upstream: Response
   try {
@@ -152,11 +216,20 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
         method: request.method,
         headers,
         // The body is streamed through, not read: it may hold a password.
-        ...(hasBody && { body: request.body, duplex: 'half' }),
+        ...(body && { body: body.stream, duplex: 'half' }),
       } as RequestInit)
     )
   } catch {
+    if (body?.exceeded()) {
+      return tooLarge()
+    }
     return refusal(503, 'service.unavailable', 'The service is temporarily unavailable.')
+  }
+  if (body?.exceeded()) {
+    // The API answered before it had read the whole body; the answer is to a request that
+    // was never sent complete.
+    await upstream.body?.cancel()
+    return tooLarge()
   }
   if (upstream.status >= 300 && upstream.status < 400) {
     // No client route answers a `fetch` with a redirect; one would send the browser wherever
@@ -176,57 +249,77 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
     out.set('cache-control', 'no-store')
   }
 
-  const { names, secure } = cookies
-  let ended = false
-  for (const line of upstream.headers.getSetCookie()) {
-    const cookie = readUpstreamCookie(line, config.environmentId)
-    if (!cookie) {
-      continue
-    }
-    const name = cookie.kind === 'refresh' ? names.refresh : names.session
-    if (cookie.value === null) {
-      ended = true
-      out.append('set-cookie', clearCookieLine(name, secure))
-    } else {
-      out.append('set-cookie', setCookieLine(name, cookie.value, { secure, maxAge: cookie.maxAge }))
-    }
-  }
   const ok = upstream.status >= 200 && upstream.status < 300
-  if (ok && path === '/v1/client/sessions/sign-out') {
-    // Whatever the API cleared, nothing of the session stays in this browser.
-    out.delete('set-cookie')
-    for (const name of [names.access, names.refresh, names.session]) {
-      out.append('set-cookie', clearCookieLine(name, secure))
+  const json = upstream.headers.get('content-type')?.includes('application/json') ?? false
+  // A JSON answer is read whole: a completed flow, a refresh and a step-up carry the access
+  // token, which the server side needs in a cookie of its own. Anything else is streamed.
+  let text: string | null = null
+  if (json && upstream.body !== null) {
+    text = await readText(upstream.body, MAX_RESPONSE_BYTES)
+    if (text === null) {
+      return refusal(502, 'service.unavailable', 'The service is temporarily unavailable.')
     }
-    ended = false
-  }
-  if (ended) {
-    out.append('set-cookie', clearCookieLine(names.access, secure))
   }
 
-  const json = upstream.headers.get('content-type')?.includes('application/json') ?? false
-  if (!json || upstream.body === null) {
-    return new Response(upstream.body, { status: upstream.status, headers: out })
-  }
-  // A JSON answer is read whole: a completed flow, a refresh and a step-up carry the access
-  // token, which the server side needs in a cookie of its own.
-  const text = await upstream.text()
-  if (ok) {
-    let session: ReturnType<typeof issuedSession> = null
-    try {
-      session = issuedSession(JSON.parse(text))
-    } catch {
-      session = null
+  // What this answer does to each of the app's three cookies: a value to keep, or `null` to
+  // remove it. One entry per cookie, so no response ever sets and clears the same name.
+  const { names, secure } = cookies
+  const changes = new Map<string, { value: string; maxAge: number | undefined } | null>()
+  if (ok && path === '/v1/client/sessions/sign-out') {
+    // Whatever the API cleared, nothing of the session stays in this browser.
+    for (const name of [names.access, names.refresh, names.session]) {
+      changes.set(name, null)
     }
-    if (session?.accessToken && isCookieValue(session.accessToken)) {
-      out.append(
-        'set-cookie',
-        setCookieLine(names.access, session.accessToken, {
-          secure,
+  } else {
+    for (const line of upstream.headers.getSetCookie()) {
+      const cookie = readUpstreamCookie(line, config.environmentId)
+      if (!cookie) {
+        continue
+      }
+      const name = cookie.kind === 'refresh' ? names.refresh : names.session
+      if (cookie.value === null) {
+        changes.set(name, null)
+        // The token of a session the API just ended.
+        changes.set(names.access, null)
+      } else {
+        changes.set(name, { value: cookie.value, maxAge: cookie.maxAge })
+      }
+    }
+    if (ok && text !== null) {
+      let session: ReturnType<typeof issuedSession> = null
+      try {
+        session = issuedSession(JSON.parse(text))
+      } catch {
+        session = null
+      }
+      if (session?.accessToken && isCookieValue(session.accessToken)) {
+        changes.set(names.access, {
+          value: session.accessToken,
           maxAge: session.accessTokenMaxAge,
         })
-      )
+      }
     }
+    // A browser holds one session. The middleware and `auth()` read the access token before
+    // the session cookie, so the cookies of the kind this answer did NOT issue must go: left
+    // behind, an earlier user's token would keep answering for the new one on the server.
+    if (changes.get(names.session)) {
+      changes.set(names.refresh, null)
+      changes.set(names.access, null)
+    } else if (changes.get(names.refresh) || changes.get(names.access)) {
+      changes.set(names.session, null)
+    }
+  }
+  for (const [name, change] of changes) {
+    out.append(
+      'set-cookie',
+      change === null
+        ? clearCookieLine(name, secure)
+        : setCookieLine(name, change.value, { secure, maxAge: change.maxAge })
+    )
+  }
+
+  if (text === null) {
+    return new Response(upstream.body, { status: upstream.status, headers: out })
   }
   return new Response(text, { status: upstream.status, headers: out })
 }
@@ -239,11 +332,17 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
  * `/v1/client/*` and nothing else, refuse a request that does not come from the app's own
  * pages, keep the API's refresh and session cookies as first-party cookies of the app, and
  * put the access token in an `HttpOnly` cookie so that the middleware and `auth()` can tell
- * who is signed in.
+ * who is signed in. A sign-in replaces whatever session the browser held: the cookies of the
+ * other kind (token cookies against a `stateful` session's cookie) are removed with it.
  *
- * The API sees this server's address unless it trusts the `X-Forwarded-For` this handler
- * sends: **run the API with `TRUST_PROXY=true`**, or every visitor shares one per-IP rate
- * limit. The app's origin must be among the environment's allowed origins.
+ * The API sees this server's address for every visitor, and they share one per-IP rate limit,
+ * unless both hold: this handler knows the visitor's address (`trustedProxyHops`, or
+ * `clientIp`; by default it trusts no forwarding header and sends none) and the API trusts
+ * the `X-Forwarded-For` it sends (**`TRUST_PROXY=true`**). The app's origin must be among the
+ * environment's allowed origins.
+ *
+ * A request body is passed on up to 1 MiB (`413` beyond it, declared or streamed), and a
+ * JSON answer is read up to 1 MiB (`502` beyond it).
  *
  * Configuration is read when the first request arrives, not when the module loads, so a
  * build without the environment variables does not fail.

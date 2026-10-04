@@ -170,10 +170,14 @@ paths:
   secret key. Configuration is read in server code only, on first use (never at module load:
   `next build` runs without it).
 - The route handler forwards `/v1/client/*` only, with allow-listed headers, the app's own
-  publishable key, the browser's `Origin` unchanged (never an invented one) and the visitor's
-  address as the one `X-Forwarded-For` entry. It refuses, before forwarding, a cross-site
-  request, a foreign `Origin` and an unsafe method with no `Origin`. It never follows or
-  passes on a redirect and never logs.
+  publishable key, the browser's `Origin` unchanged (never an invented one) and, only when
+  `trustedProxyHops` or `clientIp` says how it is known, the visitor's address as the one
+  `X-Forwarded-For` entry (default: none; no forwarding header of the request is ever
+  copied). It refuses, before forwarding, a cross-site request, a foreign `Origin` and an
+  unsafe method with no `Origin`. It never follows or passes on a redirect, caps the request
+  body while streaming it (413) and a buffered JSON answer (502), and never logs a request or
+  a response. An answer that issues a session cookie removes the token cookies and the other
+  way round (`changes` in `handlers.ts`: one entry per cookie).
 - Cookies are written only through `setCookieLine` / `clearCookieLine`; a value is checked
   with `isCookieValue` first. Over https only the `__Host-` names are read.
 - `verifyAccessToken` is the only way a token becomes a session, in the middleware and in
@@ -183,8 +187,11 @@ paths:
   with `sealClaims`, opened with `openClaims`, stripped from every incoming request by
   `resolveSession`. Tests cover a forged header with and without the middleware.
 - The middleware refreshes at most once per request, shares a refresh among requests with the
-  same token in one process, clears cookies only on a refusal (401/403) and leaves them on any
-  other failure. `real-api.test.ts` runs the package against the real API in process: change
+  same token in one process, clears cookies only when the API says the session is over
+  (`endsSession` in `upstream.ts`: `session.*`, `auth.user_banned`; **not**
+  `auth.unauthenticated` or `auth.invalid_key`, which are about the request) and leaves them
+  on any other failure, reporting a refusal of the request once through `config.warn`.
+  Warnings carry no token, key or cookie. `real-api.test.ts` runs the package against the real API in process: change
   the refresh path and its parallel-refresh and past-the-grace-window tests must still hold.
 - A destination read from the address bar goes through `safeRedirectPath`; `signInUrl` is
   checked with it when the middleware is created.

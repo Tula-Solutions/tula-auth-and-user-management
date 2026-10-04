@@ -13,6 +13,8 @@ NEXT_PUBLIC_TULA_PUBLISHABLE_KEY=tula_pk_live_…
 TULA_ENVIRONMENT_ID=<environment id>
 # TULA_ISSUER=…       only if the API's public URL differs from TULA_API_URL
 # TULA_APP_URL=…      only behind a proxy that rewrites Host
+# TULA_TRUSTED_PROXY_HOPS=1   proxies in front of this server that append to X-Forwarded-For
+#                             (default 0: none is trusted; see "What you must configure")
 # TULA_SECRET_KEY=…   only for `stateful` session profiles; never NEXT_PUBLIC_
 ```
 
@@ -93,12 +95,31 @@ export default async function Dashboard() {
 
 - **Allowed origins.** Add the app's origin to the environment's `urls.allowedOrigins`. The
   handler forwards the browser's `Origin` unchanged, so the API's own origin rules decide.
-- **`TRUST_PROXY=true`.** The handler sends the visitor's address in `X-Forwarded-For`; the
-  API reads it only with `TRUST_PROXY=true`. **Without it every visitor shares the Next.js
-  server's address, and therefore one per-IP rate limit: a few failed sign-ins by one person
-  can lock everyone out.** The Next.js server must reach the API directly; if Next.js itself is
-  exposed without a proxy in front, pass `clientIp` so a visitor cannot write their own
-  address.
+- **The visitor's address: two settings, both needed.** The API limits sign-in attempts per
+  IP address, and behind the handler it sees the Next.js server's address unless it is told
+  the visitor's.
+  - On the Next.js server, say how the address is known. **By default no forwarding header is
+    believed and no address is sent**: anyone who can reach the server directly can write an
+    `X-Forwarded-For` of their own. Set `TULA_TRUSTED_PROXY_HOPS` (or the `trustedProxyHops`
+    option) to the number of proxies in front of the Next.js server that append to
+    `X-Forwarded-For`: `1` behind one load balancer or one platform router, `2` behind a CDN
+    and a load balancer. The address is then the entry that many places from the right; what
+    is left of it came with the request and is ignored. On a platform that states the address
+    in its own header, pass `clientIp: (request) => …` instead. Too high a number lets a
+    visitor choose their address, and per-IP limits, lockout and the audit log's addresses
+    then mean nothing; when unsure, count low.
+  - On the API, set `TRUST_PROXY=true`, and have the Next.js server reach it directly.
+
+  **With either one missing every visitor shares the Next.js server's address, and therefore
+  one per-IP rate limit: a few failed sign-ins by one person can lock everyone out.** That is
+  safe but coarse, and in production the server says so once in its log.
+
+- **Callback pages, if you use emailed links or OAuth.** Give the provider `emailLinkUrl`
+  and `oauthCallbackUrl` (paths of your app), render `<EmailLinkCallback />` and
+  `<OAuthCallback />` on those pages, leave both routes public in the interceptor (a visitor
+  arrives there signed out), and list their full URLs in the environment's
+  `urls.allowedRedirectUrls`. Both finish through the handler; an OAuth provider returns the
+  visitor to the API's host first, so the provider's redirect URI stays the API's.
 
 ## How it behaves
 
@@ -109,6 +130,16 @@ export default async function Dashboard() {
   default), then is signed out at the refresh. `currentUser()` asks the API and notices at once.
 - **Clocks must agree.** Expiry is judged by the Next.js server's clock against the API's
   `exp` (five seconds of tolerance): keep both on NTP.
+- **One session per browser.** A sign-in replaces whatever the browser held: when the API
+  issues a `stateful` session's cookie the handler removes the token cookies, and the other
+  way round, so the server never answers for an earlier user.
+- **A refresh the API refuses for the session** (`session.*`, `auth.user_banned`) clears the
+  cookies. A refusal of the request itself (the app's origin is not among the allowed origins,
+  the publishable key is wrong) does not: the request is treated as signed out, the cookies
+  stay, and the server logs once what is likely misconfigured. Warnings go to `console.warn`,
+  or to `onWarning` when you pass one; they never contain a token, a key or a cookie.
+- **Sizes.** The handler passes on request bodies up to 1 MiB (`413` beyond, also for a
+  streamed body) and reads JSON answers up to 1 MiB (`502` beyond).
 - **Refresh** happens in the interceptor when the token is missing or about to expire. Requests
   racing with one refresh token are covered by the API's reuse grace window (10 seconds by
   default); do not use a profile with `refresh.reuseGracePeriod: null` behind it.

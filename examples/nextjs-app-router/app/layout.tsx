@@ -26,6 +26,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           afterSignInUrl='/dashboard'
           afterSignUpUrl='/dashboard'
           afterSignOutUrl='/'
+          // Pages of this app an emailed link and an OAuth provider lead back to.
+          emailLinkUrl='/auth/link'
+          oauthCallbackUrl='/oauth/callback'
           userProfileUrl='/profile'
         >
           <header className='top'>

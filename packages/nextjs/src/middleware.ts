@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { configFor, type TulaServerOptions } from './config'
 import { REDIRECT_PARAM, safeRedirectPath } from './paths'
-import { resolveSession } from './session'
+import { AUTH_HEADER, resolveSession } from './session'
 
 // The request interceptor: `proxy.ts` in Next.js 16 (Node.js runtime), `middleware.ts` in
 // Next.js 15 (Edge runtime by default). This module and everything it imports use web
@@ -156,8 +156,11 @@ export function tulaMiddleware(
     const config = configFor(options)
     const { pathname, search } = request.nextUrl
     if (pathname === config.path || pathname.startsWith(`${config.path}/`)) {
-      // The route handler does its own checks and talks to the API itself.
-      return NextResponse.next()
+      // The route handler does its own checks and talks to the API itself. The claims header
+      // is still not the browser's to send, on this path as on any other.
+      const headers = new Headers(request.headers)
+      headers.delete(AUTH_HEADER)
+      return NextResponse.next({ request: { headers } })
     }
 
     const { session, setCookies, requestHeaders } = await resolveSession(request, config)

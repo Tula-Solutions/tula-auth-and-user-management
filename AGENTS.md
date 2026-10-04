@@ -209,10 +209,22 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   configuration: `package.test.ts` builds the package and checks both, and that the client
   entry's output has no reference to the secret key. Every entry point is one file; keep
   `splitting: false`.
-- **The API needs `TRUST_PROXY=true` behind the handler**, or every visitor shares the Next.js
-  server's address and one per-IP rate limit. Say so wherever the setup is documented.
-- A refresh the API refuses clears the cookies; a refresh that could not be made changes
-  nothing. Parallel refreshes rely on the profile's reuse grace window: `real-api.test.ts`
+- **No forwarding header is trusted by default.** The visitor's address is sent to the API
+  only when the app says how it is known: `trustedProxyHops` (`TULA_TRUSTED_PROXY_HOPS`,
+  default 0; the Nth `X-Forwarded-For` entry from the right) or `clientIp`. Never read a
+  client-supplied address by any other rule. The API also needs `TRUST_PROXY=true`; without
+  both, every visitor shares the Next.js server's address and one per-IP rate limit. Say so
+  wherever the setup is documented.
+- **A browser holds one session.** When an answer issues a `stateful` session's cookie the
+  handler removes `tula_rt` and `tula_at`, and the other way round: the server reads the
+  token first, and an earlier user's must not answer for the new one.
+- A refresh the API refuses **for the session** (`session.*`, `auth.user_banned`) clears the
+  cookies. Anything else changes nothing, including a 401/403 about the request itself
+  (`auth.invalid_key`, and `auth.unauthenticated`, which here means the app's origin is not
+  allowed): the request is signed out, the cookies stay, and a warning names the likely
+  misconfiguration, once, with no secret in it.
+- The handler caps what it passes on (1 MiB request body, counted while streaming; 1 MiB JSON
+  answer). Parallel refreshes rely on the profile's reuse grace window: `real-api.test.ts`
   holds both sides of it against the real API in process.
 
 ### API module pattern (hybrid hexagonal — see ADR 0001)

@@ -102,6 +102,82 @@ describe('configuration', () => {
     }
   })
 
+  /** Run with environment variables set, and put them back. */
+  function withEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
+    const before = Object.keys(values).map((name) => [name, process.env[name]] as const)
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) {
+        delete process.env[name]
+      } else {
+        process.env[name] = value
+      }
+    }
+    try {
+      return run()
+    } finally {
+      for (const [name, value] of before) {
+        if (value === undefined) {
+          delete process.env[name]
+        } else {
+          process.env[name] = value
+        }
+      }
+    }
+  }
+
+  const forwarded = new Request('http://localhost:3000/x', {
+    headers: { 'x-forwarded-for': '6.6.6.6, 198.51.100.7, 10.0.0.1' },
+  })
+
+  test('the trusted proxy hops are read from the environment, and an option wins over it', () => {
+    withEnv({ TULA_TRUSTED_PROXY_HOPS: '2' }, () => {
+      expect(resolveConfig(base).clientIp(forwarded)).toBe('198.51.100.7')
+      expect(resolveConfig({ ...base, trustedProxyHops: 1 }).clientIp(forwarded)).toBe('10.0.0.1')
+      expect(resolveConfig({ ...base, trustedProxyHops: 0 }).clientIp(forwarded)).toBeNull()
+    })
+    withEnv({ TULA_TRUSTED_PROXY_HOPS: undefined }, () => {
+      expect(resolveConfig(base).clientIp(forwarded)).toBeNull()
+    })
+  })
+
+  test.each(['-1', '1.5', 'one', '1 '])('TULA_TRUSTED_PROXY_HOPS=%p is a TypeError', (value) => {
+    withEnv({ TULA_TRUSTED_PROXY_HOPS: value }, () => {
+      expect(() => resolveConfig(base)).toThrow(TypeError)
+    })
+  })
+
+  test('in production, forwarding no visitor address is said once per process', () => {
+    const warnings: string[] = []
+    const onWarning = (message: string) => warnings.push(message)
+    withEnv({ NODE_ENV: 'production', TULA_TRUSTED_PROXY_HOPS: undefined }, () => {
+      resolveConfig({ ...base, onWarning })
+      resolveConfig({ ...base, onWarning })
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('TULA_TRUSTED_PROXY_HOPS')
+      expect(warnings[0]).toContain('rate limit')
+      // Nothing to say when the app has decided how the address is known.
+      resolveConfig({ ...base, trustedProxyHops: 1, onWarning: (m) => warnings.push(m) })
+      resolveConfig({ ...base, clientIp: () => null, onWarning: (m) => warnings.push(m) })
+      expect(warnings).toHaveLength(1)
+    })
+    withEnv({ NODE_ENV: 'development', TULA_TRUSTED_PROXY_HOPS: undefined }, () => {
+      resolveConfig({ ...base, onWarning: (m) => warnings.push(m) })
+      expect(warnings).toHaveLength(1)
+    })
+  })
+
+  test('without onWarning a warning goes to console.warn', () => {
+    const spy = spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      resolveConfig(base).warn('test-only-key', 'something is misconfigured')
+      resolveConfig(base).warn('test-only-key', 'something is misconfigured')
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(spy.mock.calls[0]?.[0]).toBe('@tula/nextjs: something is misconfigured')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   test('without a fetch option the global fetch is used, and it is one function for every configuration', async () => {
     const spy = spyOn(globalThis, 'fetch').mockResolvedValue(new Response('ok'))
     try {

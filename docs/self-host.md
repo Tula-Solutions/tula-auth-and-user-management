@@ -452,11 +452,17 @@ proxy, clients can forge their address.
 **A Next.js app in front (`@tula/nextjs`).** With the Next.js SDK the browser talks to the
 app's own origin, and the app's server forwards to the API
 ([ADR 0029](adr/0029-nextjs-sdk.md)). Two settings follow. Add the **app's** origin to the
-environment's `urls.allowedOrigins`: the browser's `Origin` is forwarded unchanged. And run the
-API with `TRUST_PROXY=true`, reached by the Next.js server directly: the handler sends the
-visitor's address as `X-Forwarded-For`, and **without `TRUST_PROXY` every visitor shares the
-Next.js server's address and one per-IP rate limit**, so one person's failed sign-ins can lock
-everyone out. A `stateful` session profile also needs a secret key on the Next.js server
+environment's `urls.allowedOrigins`: the browser's `Origin` is forwarded unchanged (and list
+the app's callback pages for emailed links and OAuth in `urls.allowedRedirectUrls`). And tell
+the API who the visitor is, which takes a setting on each side. On the Next.js server set
+`TULA_TRUSTED_PROXY_HOPS` to the number of proxies in front of it that append to
+`X-Forwarded-For` (`1` behind one load balancer); it defaults to `0`, which believes no
+forwarding header and sends no address, because a server reachable without its proxy would
+otherwise let a visitor write their own. On the API set `TRUST_PROXY=true`, reached by the
+Next.js server directly. **With either missing every visitor shares the Next.js server's
+address and one per-IP rate limit**, so one person's failed sign-ins can lock everyone out; set
+the hops too high and a visitor chooses the address the rate limits, the lockout and the audit
+log see. A `stateful` session profile also needs a secret key on the Next.js server
 (`TULA_SECRET_KEY`), and costs one call to the API per request.
 
 **Redis and more than one instance.** Set `REDIS_URL` and you can run as many API instances

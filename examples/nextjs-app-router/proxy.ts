@@ -5,7 +5,8 @@ import { tulaMiddleware } from '@tula/nextjs/middleware'
 // access token has expired, and sends signed-out visitors of protected routes to /sign-in.
 export const proxy = tulaMiddleware({
   // Everything else needs a session. /sign-in, /sign-up and /api/tula are always public.
-  publicRoutes: ['/'],
+  // The two callback pages are where a visitor arrives while still signed out.
+  publicRoutes: ['/', '/auth/link', '/oauth/callback'],
 })
 
 export const config = {

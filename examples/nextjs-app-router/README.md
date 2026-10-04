@@ -40,11 +40,14 @@ PORT=3100 bun run dev
 
 - A local API (`ENVIRONMENT=local`) allows any loopback origin. Anywhere else, add this app's
   origin to the environment's `urls.allowedOrigins`.
-- Start the API with `TRUST_PROXY=true`: otherwise it sees every visitor at this server's
-  address, and they all share one per-IP rate limit.
+- Run as above, the API sees every visitor at this server's address and they share one
+  per-IP rate limit: fine on your own machine. Deployed behind a proxy, set
+  `TULA_TRUSTED_PROXY_HOPS` to the number of proxies in front of this server that append to
+  `X-Forwarded-For` (it trusts none by default) **and** start the API with `TRUST_PROXY=true`.
 - For a `stateful` session profile also set `TULA_SECRET_KEY`.
-- The example has no page for emailed sign-in links or OAuth callbacks; leave those methods
-  off, or add pages with `<EmailLinkCallback>` and `<OAuthCallback>`.
+- Emailed sign-in links lead to `/auth/link` and OAuth providers return to `/oauth/callback`
+  (`app/auth/link/page.tsx`, `app/oauth/callback/page.tsx`; both public in `proxy.ts`). Outside
+  a local API, list both full URLs in the environment's `urls.allowedRedirectUrls`.
 
 ## Tests
 

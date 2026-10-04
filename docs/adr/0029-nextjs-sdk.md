@@ -47,8 +47,11 @@ cookie becomes a first-party, host-only cookie of the app.
 - **Only `/v1/client/*` is forwarded.** The path is taken from the parsed URL; an encoded slash
   or backslash, an empty segment or a dot segment is refused (404), not normalised. The admin
   API is never reachable through it. A redirect from the API is never followed and never passed
-  on (502). The request body is streamed through, never read or logged; a JSON response is read
-  whole (see below), anything else is streamed. Calls have a timeout (15 seconds).
+  on (502). The request body is streamed through, never read or logged, and counted on the
+  way: more than 1 MiB is a 413, whether the length was declared or the body arrived in
+  chunks, and an answer to a body that was cut off is not passed on. A JSON response is read
+  whole (see below) up to 1 MiB (502 beyond it); anything else is streamed. Calls have a
+  timeout (15 seconds).
 - **Request headers are an allow-list**: `Origin`, `Sec-Fetch-*`, `Authorization`,
   `Content-Type`, `Accept`, `Accept-Language`, `If-Match`, `x-tula-client`, `x-tula-attempt`,
   `x-tula-session-profile`. The publishable key is always the app's own, whatever the browser
@@ -57,12 +60,21 @@ cookie becomes a first-party, host-only cookie of the app.
   login-CSRF rule (ADR 0019) therefore apply to the app's origin, which must be among the
   environment's `urls.allowedOrigins`. A test against the real API shows the API refusing an
   origin it does not allow through the handler.
-- **The visitor's address is sent as the one `X-Forwarded-For` entry** (by default the last
-  entry of the request's own `X-Forwarded-For`; `clientIp` replaces that). The API reads it
-  only with `TRUST_PROXY=true`. **Without it every visitor shares the Next.js server's address
-  and one per-IP rate limit**: one user's failed sign-ins can lock everyone out. The Next.js
-  server must reach the API directly (a proxy between them that appends its own entry hides
-  the visitor again).
+- **The visitor's address is sent only when the app says how it is known.** The first
+  version took the last entry of the request's `X-Forwarded-For` by default. Where the
+  Next.js server can be reached without a proxy that appends the real address, that entry is
+  the visitor's own, and the API (trusting this server) would have limited, locked out and
+  audited an address the visitor chose. Trust is therefore explicit: `trustedProxyHops`
+  (`TULA_TRUSTED_PROXY_HOPS`), **0 by default**. With 0 no forwarding header is read and no
+  `X-Forwarded-For` is sent: the API sees the Next.js server's address for everyone, which is
+  safe and coarse (one shared per-IP limit), and in production the server says so once in its
+  log. With N the address is the Nth entry from the right, the one the outermost trusted
+  proxy appended; fewer entries than N, or an entry that is not an address, means none.
+  `clientIp(request)` replaces the rule on platforms with a header of their own. When an
+  address is sent it is the one entry, and the API reads it only with `TRUST_PROXY=true`.
+  **Without both, every visitor shares the Next.js server's address and one per-IP rate
+  limit**: one user's failed sign-ins can lock everyone out. The Next.js server must reach
+  the API directly (a proxy between them that appends its own entry hides the visitor again).
 - **CSRF of the handler itself.** The browser attaches the app's cookies to a request from any
   page. Before anything is forwarded: a request marked `Sec-Fetch-Site: cross-site` is refused;
   a request with an `Origin` must name the app's own; a request that is not a `GET` or `HEAD`
@@ -98,6 +110,13 @@ on untouched, so the browser's client still keeps the token in memory and its si
 refresh works as before, through the handler. When the API clears its cookie (sign-out, a
 refused refresh), the handler clears `tula_at` with it.
 
+**A browser holds one session, of one kind.** The middleware and `auth()` read the access
+token before a `stateful` session's cookie. A browser that was user A on a `hybrid` profile
+and signs in as B on a `stateful` one would otherwise keep A's token cookies, and the server
+would go on answering for A. So when an answer issues a session cookie the handler removes
+`tula_rt` and `tula_at`, and when it issues a refresh cookie or an access token it removes
+`tula_session`. Each response names a cookie at most once.
+
 ### The middleware
 
 `tulaMiddleware({ publicRoutes | protectedRoutes, signInUrl, … })`:
@@ -111,9 +130,21 @@ refused refresh), the handler clears `tula_at` with it.
    visitor's address. The new token is verified like any other. The rotated cookies go on the
    response **and into the request's own `Cookie` header**, so server components of the same
    request see the new token.
-3. A refresh the API refuses (401, 403) clears the cookies; the request is signed out. A
-   refresh that could not be made (no answer, 429, 5xx) changes nothing: a token with seconds
-   left is still used, otherwise the request is signed out and the cookies stay.
+3. A refresh the API refuses **because the session is over** clears the cookies; the request
+   is signed out. That is decided by the error's code, not its status: `session.*` and
+   `auth.user_banned`. A refresh that could not be made (no answer, 429, 5xx) changes
+   nothing: a token with seconds left is still used, otherwise the request is signed out and
+   the cookies stay. So does a 401 or 403 that is about the request and not the session:
+   `auth.invalid_key` (a wrong publishable key) and `auth.unauthenticated`. The API answers
+   the latter to a refresh when it did not take the cookie into account at all, which for
+   this server-to-server call (it always presents the cookie) means the `Origin` it sent, the
+   app's, is not one the environment allows. The browser's client treats that code as the
+   end of a session because it cannot tell; here it can, and the API needed no change. The
+   first version cleared on any 401 or 403, so one wrong `TULA_APP_URL` would have deleted
+   every signed-in visitor's cookies on their next navigation. Such a refusal is logged once
+   per process with what is likely wrong (`onWarning`, or `console.warn`), never with a
+   token, a key or a cookie. A refresh cookie that could not be sent as a cookie at all is
+   dropped without asking.
 4. A protected route without a session redirects to `signInUrl` with `redirect_url`, or
    answers 401 in the contract's envelope for API routes and for anything but a `GET`. The
    sign-in and sign-up pages and the handler's path are never protected.
@@ -155,7 +186,8 @@ header, `x-tula-auth`. **The header is not trusted for being present.** Its valu
 plus an HMAC over them and over a digest of the session cookie they were verified for, keyed by
 the secret key; `auth()` checks the signature, the cookie and the claims' issuer, audience and
 expiry, and otherwise asks the API itself. The middleware also removes any copy the browser
-sent. A forged header therefore fails even on a route the middleware's matcher does not cover.
+sent, on every path including the route handler's. A forged header therefore fails even on a
+route the middleware's matcher does not cover.
 
 For `hybrid` sessions no header is trusted at all: `auth()` verifies the access-token cookie
 again (offline; the keys are cached).
@@ -184,7 +216,9 @@ again; a sign-out made in the page refreshes after the request has reached the s
 ## Consequences
 
 - An app's origin, not the API's, is what the environment's `urls.allowedOrigins` must list.
-- The API must run with `TRUST_PROXY=true` behind this handler, and be reached directly.
+- For per-visitor rate limits the Next.js server needs `TULA_TRUSTED_PROXY_HOPS` (or
+  `clientIp`) and the API `TRUST_PROXY=true`, reached directly. Without both, all visitors
+  share one address at the API.
 - The server side knows the user without a database call for `hybrid` sessions, and with one
   API call per request for `stateful` ones.
 - A secret key is needed only for `stateful` profiles. It is read only by the server entry
@@ -193,7 +227,10 @@ again; a sign-out made in the page refreshes after the request has reached the s
   `initialState` out there and accepts `loading` for the first paint.
 - `examples/nextjs-app-router` and a second Playwright project (`nextjs`) cover protected
   routes, server rendering, expiry and refresh, sign-out, revocation, a stateful profile,
-  cross-site requests, `redirect_url` and axe in both colour schemes. The example is built once
+  cross-site requests, `redirect_url`, an OAuth round trip and an emailed link (both finish
+  on a callback page of the app, through the handler: the provider returns to the API's host,
+  which sends the browser to the app's page with a ticket in the fragment; the bindings live
+  in the app origin's storage) and axe in both colour schemes. The example is built once
   per run, in the browser-test job, not in `verify`.
 
 ## Deferred
@@ -201,9 +238,6 @@ again; a sign-out made in the page refreshes after the request has reached the s
 - `auth.protect()` and role or permission checks (nothing to check yet).
 - The Pages Router, and Server Actions that refresh a session themselves.
 - Caching a stateful session's verification between requests.
-- Emailed links and OAuth round trips in the example: both work through the handler (the
-  binding lives in the app origin's storage), but the example has no callback pages for them
-  and no browser test drives them under Next.js.
 - A tab that learns of a sign-out from another tab re-renders its Server Components while the
   sign-out request may still be in flight, and can show the signed-in server render until its
   next navigation. Every request is still verified by the middleware.

@@ -306,6 +306,66 @@ describe('a hybrid session behind the route handler', () => {
     expect(browser.jar.size).toBe(0)
   })
 
+  test('a banned user is signed out at the next refresh, and the cookies go', async () => {
+    const w = await world()
+    const { browser } = await signUp(w)
+    const auth = await authenticate(
+      new Request(`${APP}/x`, { headers: { cookie: browser.cookieHeader() } }),
+      w.instance()
+    )
+    expect((await w.admin('POST', `/v1/admin/users/${auth.userId}/ban`)).status).toBeLessThan(300)
+    // Unbanned again: the refresh below must be refused for the ban, not for a revoked session.
+    w.advance(70_000)
+    const response = await browser.visit('/dashboard')
+    expect(response.status).toBe(307)
+    expect(browser.jar.size).toBe(0)
+  })
+
+  test('a refresh the API refuses for the app’s origin signs nobody out: the cookies stay', async () => {
+    const w = await world()
+    const { browser } = await signUp(w)
+    const before = new Map(browser.jar)
+    w.advance(70_000)
+
+    // The same API, but outside the `local` tier: a loopback origin is no longer allowed, as
+    // for an app whose origin the environment does not list (or whose TULA_APP_URL is wrong).
+    const strict = createApp({ ...w.deps, config: { ...w.deps.config, tier: 'prod' } })
+    const warnings: string[] = []
+    const misconfigured = w.instance({
+      fetch: async (request) => strict.request(request),
+      onWarning: (message) => warnings.push(message),
+    })
+    const response = await browser.visit('/dashboard', misconfigured)
+    expect(response.status).toBe(307)
+    expect(response.headers.getSetCookie()).toEqual([])
+    expect(new Map(browser.jar)).toEqual(before)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain(APP)
+    expect(warnings[0]).not.toContain(before.get('tula_rt') as string)
+
+    // Once the configuration is right again, the very same cookies still work.
+    expect(isNext(await browser.visit('/dashboard'))).toBe(true)
+  })
+
+  test('a refresh refused for a wrong publishable key signs nobody out: the cookies stay', async () => {
+    const w = await world()
+    const { browser } = await signUp(w)
+    const before = new Map(browser.jar)
+    w.advance(70_000)
+    const warnings: string[] = []
+    const response = await browser.visit(
+      '/dashboard',
+      w.instance({
+        publishableKey: 'tula_pk_dev_not_this_environments_key_000000',
+        onWarning: (message) => warnings.push(message),
+      })
+    )
+    expect(response.status).toBe(307)
+    expect(new Map(browser.jar)).toEqual(before)
+    expect(warnings).toHaveLength(1)
+    expect(isNext(await browser.visit('/dashboard'))).toBe(true)
+  })
+
   test('signing out through the handler leaves no cookie behind', async () => {
     const w = await world()
     const { browser } = await signUp(w)
@@ -367,6 +427,39 @@ describe('a stateful session behind the route handler', () => {
     const response = await browser.visit('/dashboard', w.instance())
     expect(response.status).toBe(307)
     expect([...browser.jar.keys()]).toEqual(['tula_session'])
+  })
+
+  test('signing in as someone else on a stateful profile: the server sees the new user, not the old token', async () => {
+    // User A on the default (hybrid) profile: access and refresh cookies.
+    const w = await world()
+    const first = await signUp(w)
+    const { browser } = first
+    expect([...browser.jar.keys()].sort()).toEqual(['tula_at', 'tula_rt'])
+
+    // The environment moves to a stateful profile, and B signs in from the same browser.
+    w.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: EnvironmentSettingsSchema.parse({
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: { profiles: { web: { type: 'stateful' } } },
+      }),
+    })
+    // Past every settings cache, and still inside A's access token.
+    w.advance(31_000)
+    const second = await signUp(w, browser)
+    expect(second.email).not.toBe(first.email)
+    expect([...browser.jar.keys()]).toEqual(['tula_session'])
+
+    const options = w.instance({ secretKey: SECRET_KEY })
+    const response = await browser.visit('/dashboard')
+    expect(isNext(response)).toBe(true)
+    // The middleware's view and the helper's, with and without the middleware's header.
+    expect((await fetchCurrentUser(passedOn(response), options))?.email).toBe(second.email)
+    const direct = new Request(`${APP}/x`, { headers: { cookie: browser.cookieHeader() } })
+    expect((await fetchCurrentUser(direct, options))?.email).toBe(second.email)
+    const auth = await authenticate(direct, options)
+    expect(auth.isSignedIn).toBe(true)
+    expect(await auth.getToken()).toBeNull()
   })
 
   test('sign-out ends it on the API and clears the cookie', async () => {

@@ -199,7 +199,7 @@ describe('refreshing', () => {
     const api = createFakeApi([signer])
     const fresh = await signer.sign()
     refreshing(api, fresh)
-    const response = await protect(api)(
+    const response = await protect(api, { trustedProxyHops: 1 })(
       get('/dashboard', {
         cookie: 'theme=dark; tula_rt=r1',
         'x-forwarded-for': '203.0.113.9',
@@ -247,11 +247,98 @@ describe('refreshing', () => {
 
   test('a refused refresh on a public page clears the cookies and hides them from the page', async () => {
     const api = createFakeApi([signer])
-    api.on('POST /v1/client/sessions/refresh', () => new Response(null, { status: 401 }))
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json({ status: 401, code: 'session.expired', detail: 'x' }, { status: 401 })
+    )
     const response = await protect(api)(get('/', { cookie: 'theme=dark; tula_rt=r1' }))
     expect(isNext(response)).toBe(true)
     expect(overridden(response).get('cookie')).toBe('theme=dark')
     expect((await authAfter(api, response)).isSignedIn).toBe(false)
+  })
+
+  test.each([
+    [401, 'session.revoked'],
+    [401, 'session.expired'],
+    [401, 'session.invalid_token'],
+    [401, 'session.reuse_detected'],
+    [403, 'auth.user_banned'],
+  ])('a refresh answered %i %s ends the session: the cookies go', async (status, code) => {
+    const api = createFakeApi([signer])
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json({ status, code, detail: 'x' }, { status })
+    )
+    const response = await protect(api)(get('/dashboard', { cookie: 'tula_rt=r1; tula_at=stale' }))
+    expect(response.status).toBe(307)
+    expect(response.headers.getSetCookie().sort()).toEqual([
+      'tula_at=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    ])
+  })
+
+  // None of these says the session is over: the API did not get as far as looking at it. A
+  // wrong app URL or key must not sign every visitor out for good.
+  test.each([
+    [
+      'the cookie was not honoured (the origin is not allowed)',
+      401,
+      'auth.unauthenticated',
+      /allowed origins/,
+    ],
+    ['the publishable key is wrong', 401, 'auth.invalid_key', /publishable key/],
+    ['the origin is refused outright', 403, 'request.origin_not_allowed', /allowed origins/],
+    ['a 401 has no body', 401, null, /401/],
+    ['a 403 names a code this version does not know', 403, 'something.new', /something\.new/],
+    ['a code is not a code', 401, 'x'.repeat(200), /401/],
+  ])(
+    'a refresh refused because %s keeps the cookies, and says what is likely wrong',
+    async (_name, status, code, hint) => {
+      const warnings: string[] = []
+      const api = createFakeApi([signer], { onWarning: (message) => warnings.push(message) })
+      api.on('POST /v1/client/sessions/refresh', () =>
+        code === null
+          ? new Response(null, { status })
+          : Response.json({ status, code, detail: 'x' }, { status })
+      )
+      const middleware = protect(api)
+      const response = await middleware(
+        get('/dashboard', { cookie: 'theme=dark; tula_rt=refresh-secret; tula_at=stale' })
+      )
+      // This request is signed out…
+      expect(response.status).toBe(307)
+      // …and nothing is taken from the browser.
+      expect(response.headers.getSetCookie()).toEqual([])
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toMatch(hint)
+      expect(warnings[0]).not.toContain('refresh-secret')
+      expect(warnings[0]).not.toContain(KEY)
+      expect(warnings[0]?.length).toBeLessThan(600)
+
+      // Said once, not on every request.
+      await middleware(get('/dashboard', { cookie: 'tula_rt=refresh-secret' }))
+      expect(warnings).toHaveLength(1)
+    }
+  )
+
+  test('on a public page such a refusal leaves the page its cookies', async () => {
+    const api = createFakeApi([signer], { onWarning: () => undefined })
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json({ status: 401, code: 'auth.unauthenticated', detail: 'x' }, { status: 401 })
+    )
+    const response = await protect(api)(get('/', { cookie: 'theme=dark; tula_rt=r1' }))
+    expect(isNext(response)).toBe(true)
+    expect(response.headers.getSetCookie()).toEqual([])
+    expect(overridden(response).get('cookie')).toBe('theme=dark; tula_rt=r1')
+    expect((await authAfter(api, response)).isSignedIn).toBe(false)
+  })
+
+  test('a refresh cookie that could never be sent is dropped without asking the API', async () => {
+    const api = createFakeApi([signer])
+    const response = await protect(api)(get('/dashboard', { cookie: 'tula_rt="quoted value"' }))
+    expect(response.status).toBe(307)
+    expect(api.count('/v1/client/sessions/refresh')).toBe(0)
+    expect(response.headers.getSetCookie()).toEqual([
+      'tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    ])
   })
 
   test.each([
@@ -474,6 +561,26 @@ describe('a forged header from the browser', () => {
     expect(isNext(response)).toBe(true)
     expect(overridden(response).has('x-tula-auth')).toBe(false)
     expect(response.headers.get('x-middleware-override-headers')).not.toContain('x-tula-auth')
+  })
+
+  test('it is removed from a request to the route handler’s path too', async () => {
+    const api = createFakeApi([signer], { secretKey: SECRET })
+    const response = await protect(api)(
+      get('/api/tula/v1/client/me', {
+        cookie: 'tula_session=sess-token',
+        'x-tula-auth': 'forged.AAAA',
+        'x-other': '1',
+      })
+    )
+    expect(isNext(response)).toBe(true)
+    // The handler does its own checks: nothing is asked of the API here.
+    expect(api.requests).toHaveLength(0)
+    const names = (response.headers.get('x-middleware-override-headers') ?? '').split(',')
+    expect(names).toContain('x-other')
+    expect(names).toContain('cookie')
+    expect(names).not.toContain('x-tula-auth')
+    expect(response.headers.has('x-middleware-request-x-tula-auth')).toBe(false)
+    expect(overridden(response).get('cookie')).toBe('tula_session=sess-token')
   })
 
   test('a route the middleware does not cover ignores it: the signature is checked, not the presence', async () => {

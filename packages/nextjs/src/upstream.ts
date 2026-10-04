@@ -3,6 +3,7 @@ import { appOrigin, type TulaConfig } from './config'
 import {
   type CookieNames,
   cookieNames,
+  isCookieValue,
   parseCookieHeader,
   readUpstreamCookie,
   upstreamCookieHeader,
@@ -60,8 +61,10 @@ export function readRequestCookies(
  * The headers of a call to the API's client routes made on behalf of a request to the app.
  *
  * Carries the app's publishable key, the visitor's address as the one `X-Forwarded-For` entry
- * (the API, with `TRUST_PROXY`, reads the last one; without it every visitor shares this
- * server's address), the visitor's user agent and the session cookies under the API's names.
+ * when the configuration says how to know it (`trustedProxyHops` or `clientIp`; the API, with
+ * `TRUST_PROXY`, reads the last entry; otherwise every visitor shares this server's address),
+ * the visitor's user agent and the session cookies under the API's names. No forwarding header
+ * of the request is ever copied.
  * `Origin` is copied only when the caller passes one: the API checks it against the
  * environment's allowed origins, so it must be the browser's own or the app's, never made up
  * for a request that had none.
@@ -178,10 +181,56 @@ export type RefreshOutcome =
       /** The rotated refresh token and how long the browser keeps it. */
       refresh: { value: string; maxAge: number | undefined } | null
     }
-  /** The API refused: the session is over, and its cookies should go. */
+  /** The API says the session is over (see {@link endsSession}): its cookies should go. */
   | { status: 'refused' }
-  /** No answer, or one that says nothing about the session (429, 5xx): keep the cookies. */
+  /**
+   * No answer, or one that says nothing about the session (429, 5xx, a refusal of the request
+   * itself: its origin, its key): keep the cookies.
+   */
   | { status: 'unavailable' }
+
+/**
+ * Whether an error code of the API means the session is over.
+ *
+ * `session.*` and `auth.user_banned` are answers about the session the refresh token belongs
+ * to. `auth.unauthenticated` is not one of them here, unlike in the browser's client: the
+ * refresh this package makes always presents the cookie, and the API answers that code only
+ * when it did not take the cookie into account at all (the request's origin is not one the
+ * environment allows). `auth.invalid_key` and `request.origin_not_allowed` are about the
+ * request too. Treating any of those as the end of a session would let one wrong setting of
+ * the app delete every visitor's cookies.
+ */
+function endsSession(code: string | null): boolean {
+  return code !== null && (code.startsWith('session.') || code === 'auth.user_banned')
+}
+
+/** The `code` of an error in the contract's envelope, if the body is one. */
+async function errorCode(response: Response): Promise<string | null> {
+  try {
+    const body: unknown = await response.json()
+    const code =
+      typeof body === 'object' && body !== null && Object.hasOwn(body, 'code')
+        ? (body as { code: unknown }).code
+        : null
+    // Shaped like a contract code, or not repeated anywhere.
+    return typeof code === 'string' && /^[a-z0-9_.]{1,64}$/.test(code) ? code : null
+  } catch {
+    return null
+  }
+}
+
+/** What a refusal that is not about the session most likely means, for the server's log. */
+function refusalHint(status: number, code: string | null, origin: string): string {
+  const said = `the Tula API answered a session refresh with ${status}${code ? ` ${code}` : ''}`
+  const kept = "The visitor's cookies were kept and this request was treated as signed out."
+  if (code === 'auth.invalid_key') {
+    return `${said}: it does not accept this app's publishable key. Check NEXT_PUBLIC_TULA_PUBLISHABLE_KEY and TULA_ENVIRONMENT_ID. ${kept}`
+  }
+  if (code === 'auth.unauthenticated' || code === 'request.origin_not_allowed') {
+    return `${said}: it did not honour the refresh cookie for the origin ${origin}. Check that this origin is among the environment's allowed origins (urls.allowedOrigins) and that TULA_APP_URL, if set, is the app's public origin. ${kept}`
+  }
+  return `${said}, which does not say the session is over. ${kept}`
+}
 
 // Requests that arrive together with the same refresh token share one call. The server's
 // reuse grace window would also cover them (it hands the same child token to each), but one
@@ -193,8 +242,10 @@ const refreshing = new WeakMap<TulaConfig['fetch'], Map<string, Promise<RefreshO
  * Exchange the browser's refresh cookie for new tokens, server to server.
  *
  * The call carries the app's own `Origin` (the API honours a refresh cookie only from an
- * origin the environment allows) and the visitor's address. A refusal with one of the API's
- * session errors ends the session; anything else leaves it alone.
+ * origin the environment allows) and the visitor's address when it is known. An answer that
+ * says the session is over (`session.*`, `auth.user_banned`) ends it; any other leaves it
+ * alone, and a refusal of the request itself (its origin, its key) is reported once through
+ * the configuration's `warn`.
  *
  * @param request - The request to the app that needs a session.
  * @param config - The configuration.
@@ -235,8 +286,14 @@ async function requestRefresh(
   config: TulaConfig,
   refreshToken: string
 ): Promise<RefreshOutcome> {
+  if (!isCookieValue(refreshToken)) {
+    // It could not be sent as a cookie, so the API would answer as if there were none. No
+    // token the API issued looks like this: it can never work.
+    return { status: 'refused' }
+  }
+  const origin = appOrigin(request, config)
   const headers = apiHeaders(request, config, { refresh: refreshToken })
-  headers.set('origin', appOrigin(request, config))
+  headers.set('origin', origin)
   headers.set(CLIENT_HEADER, 'web')
   headers.set('content-type', 'application/json')
   let response: Response
@@ -253,7 +310,15 @@ async function requestRefresh(
     return { status: 'unavailable' }
   }
   if (response.status === 401 || response.status === 403) {
-    return { status: 'refused' }
+    const code = await errorCode(response)
+    if (endsSession(code)) {
+      return { status: 'refused' }
+    }
+    config.warn(
+      `refresh-refused:${response.status}:${code}`,
+      refusalHint(response.status, code, origin)
+    )
+    return { status: 'unavailable' }
   }
   if (response.status !== 200) {
     return { status: 'unavailable' }

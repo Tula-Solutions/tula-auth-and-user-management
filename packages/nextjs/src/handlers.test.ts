@@ -102,24 +102,61 @@ describe('forwarding', () => {
     )
   })
 
-  test('the visitor’s address is the one X-Forwarded-For entry sent', async () => {
-    const { handlers, upstream } = setup()
+  async function forwardedFor(header: string | null, options: Record<string, unknown> = {}) {
+    const { handlers, upstream } = setup(undefined, options)
     await handlers.GET(
       new Request(`${APP}/api/tula/v1/client/config`, {
-        headers: { 'x-forwarded-for': '6.6.6.6, 203.0.113.9' },
+        headers: header === null ? {} : { 'x-forwarded-for': header },
+      })
+    )
+    return (upstream.requests[0] as Request).headers.get('x-forwarded-for')
+  }
+
+  test('by default no forwarding header is trusted: the visitor cannot choose the address the API sees', async () => {
+    expect(await forwardedFor('1.2.3.4')).toBeNull()
+    expect(await forwardedFor('6.6.6.6, 203.0.113.9')).toBeNull()
+    expect(await forwardedFor('1.2.3.4', { trustedProxyHops: 0 })).toBeNull()
+  })
+
+  test.each([
+    [1, '203.0.113.9', '203.0.113.9'],
+    [1, '6.6.6.6, 203.0.113.9', '203.0.113.9'],
+    [1, '6.6.6.6,7.7.7.7 ,  203.0.113.9', '203.0.113.9'],
+    [2, '198.51.100.7, 10.0.0.1', '198.51.100.7'],
+    // Whatever the visitor wrote comes first; the trusted proxies appended after it.
+    [2, '6.6.6.6, 7.7.7.7, 198.51.100.7, 10.0.0.1', '198.51.100.7'],
+    [1, '2001:db8::1', '2001:db8::1'],
+  ])('with %i trusted hop(s), "%s" is forwarded as %s alone', async (hops, header, expected) => {
+    expect(await forwardedFor(header, { trustedProxyHops: hops })).toBe(expected)
+  })
+
+  test.each([
+    ['no header', 1, null],
+    ['fewer entries than trusted hops', 2, '203.0.113.9'],
+    ['an entry that is not an address', 1, 'not an address'],
+    ['an entry with a port and a path', 1, '6.6.6.6, 203.0.113.9:80/x'],
+    ['an empty last entry', 1, '203.0.113.9, '],
+    ['an entry that could split a header', 1, '6.6.6.6, 203.0.113.9\tx'],
+  ])('%s: no address is forwarded', async (_name, hops, header) => {
+    expect(await forwardedFor(header, { trustedProxyHops: hops })).toBeNull()
+  })
+
+  test('a custom clientIp decides, whatever the hops say', async () => {
+    const clientIp = (request: Request) => request.headers.get('cf-connecting-ip')
+    const { handlers, upstream } = setup(undefined, { clientIp })
+    await handlers.GET(
+      new Request(`${APP}/api/tula/v1/client/config`, {
+        headers: { 'x-forwarded-for': '6.6.6.6', 'cf-connecting-ip': '203.0.113.9' },
       })
     )
     expect((upstream.requests[0] as Request).headers.get('x-forwarded-for')).toBe('203.0.113.9')
   })
 
-  test('without a known address no X-Forwarded-For is sent', async () => {
-    const { handlers, upstream } = setup()
-    await handlers.GET(
-      new Request(`${APP}/api/tula/v1/client/config`, {
-        headers: { 'x-forwarded-for': 'not an address' },
-      })
+  test.each([[-1], [1.5], [Number.NaN], ['2']])('trustedProxyHops %p is refused', async (hops) => {
+    const { handlers } = setup(undefined, { trustedProxyHops: hops })
+    await expect(handlers.GET(new Request(`${APP}/api/tula/v1/client/config`))).rejects.toThrow(
+      TypeError
     )
-    expect((upstream.requests[0] as Request).headers.has('x-forwarded-for')).toBe(false)
   })
 
   test('the API’s CORS and hop-by-hop headers do not reach the browser', async () => {
@@ -210,6 +247,113 @@ describe('what is never forwarded', () => {
     )
     expect(response.status).toBe(413)
     expect(upstream.requests).toHaveLength(0)
+  })
+})
+
+describe('size limits', () => {
+  const chunk = new Uint8Array(256 * 1024).fill(0x61)
+
+  function streamed(chunks: number): Request {
+    let sent = 0
+    return new Request(`${APP}/api/tula/v1/client/sign-ins`, {
+      method: 'POST',
+      headers: { origin: APP, 'content-type': 'application/json' },
+      // No Content-Length: a chunked upload.
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent === chunks) {
+            controller.close()
+            return
+          }
+          sent += 1
+          controller.enqueue(chunk)
+        },
+      }),
+      duplex: 'half',
+    } as RequestInit)
+  }
+
+  test('a streamed body with no declared length is cut off at the limit and answered 413', async () => {
+    let received = 0
+    const handlers = createTulaHandlers({
+      apiUrl: API,
+      publishableKey: KEY,
+      environmentId: ENV,
+      fetch: async (request) => {
+        const reader = (request.body as ReadableStream<Uint8Array>).getReader()
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) {
+            break
+          }
+          received += value.byteLength
+        }
+        return Response.json({ ok: true })
+      },
+    })
+    // 3 MiB against a limit of 1 MiB.
+    const response = await handlers.POST(streamed(12))
+    expect(response.status).toBe(413)
+    expect(((await response.json()) as { code: string }).code).toBe('request.too_large')
+    // The API was never handed more than the limit.
+    expect(received).toBeLessThanOrEqual(1024 * 1024)
+  })
+
+  test('an answer the API gave to a body that was cut off is not passed on', async () => {
+    const handlers = createTulaHandlers({
+      apiUrl: API,
+      publishableKey: KEY,
+      environmentId: ENV,
+      // An API that answers whatever became of the body.
+      fetch: async (request) => {
+        await request.text().catch(() => '')
+        return Response.json(
+          { sessionId: 's1', accessToken: 'aaa.bbb.ccc' },
+          { headers: { 'set-cookie': `tula_rt_${ENV}=refresh1; Max-Age=600` } }
+        )
+      },
+    })
+    const response = await handlers.POST(streamed(12))
+    expect(response.status).toBe(413)
+    expect(cookiesOf(response)).toEqual([])
+  })
+
+  test('a streamed body under the limit goes through whole', async () => {
+    const { handlers, upstream } = setup()
+    const response = await handlers.POST(streamed(2))
+    expect(response.status).toBe(200)
+    expect(upstream.bodies[0]).toHaveLength(2 * chunk.byteLength)
+  })
+
+  test('a JSON answer larger than the limit is not buffered: 502, and nothing of it is used', async () => {
+    let pulled = 0
+    const { handlers } = setup(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              // 16 MiB against a limit of 1 MiB.
+              if (pulled === 64) {
+                controller.close()
+                return
+              }
+              pulled += 1
+              controller.enqueue(chunk)
+            },
+          }),
+          {
+            headers: {
+              'content-type': 'application/json',
+              'set-cookie': `tula_rt_${ENV}=refresh1; Max-Age=600`,
+            },
+          }
+        )
+    )
+    const response = await handlers.POST(post('/v1/client/sign-ins'))
+    expect(response.status).toBe(502)
+    expect(((await response.json()) as { code: string }).code).toBe('service.unavailable')
+    expect(cookiesOf(response)).toEqual([])
+    expect(pulled).toBeLessThan(16)
   })
 })
 
@@ -353,15 +497,81 @@ describe('cookies', () => {
       )
     )
     const response = await handlers.POST(post('/v1/client/sign-ins/a1/password'))
-    expect(cookiesOf(response)).toEqual([
-      'tula_session=sess1; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600',
-    ])
+    expect(cookiesOf(response)).toContain(
+      'tula_session=sess1; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600'
+    )
     await handlers.GET(
       new Request(`${APP}/api/tula/v1/client/me`, { headers: { cookie: 'tula_session=sess1' } })
     )
     expect((upstream.requests[1] as Request).headers.get('cookie')).toBe(
       `__Host-tula_session_${ENV}=sess1; tula_session_${ENV}=sess1`
     )
+  })
+
+  test('a sign-in on a stateful profile removes the access and refresh cookies of an older session', async () => {
+    // The browser was user A on a hybrid profile; user B now signs in on a stateful one. Left
+    // in place, A's token cookies would keep answering for the server side.
+    const { handlers } = setup(() =>
+      Response.json(
+        { id: 'a1', step: { status: 'complete' }, session: { sessionId: 'sB' } },
+        { headers: { 'set-cookie': `tula_session_${ENV}=sessB; Max-Age=3600; Path=/; HttpOnly` } }
+      )
+    )
+    const response = await handlers.POST(
+      post('/v1/client/sign-ins/a1/password', {
+        headers: { cookie: 'tula_rt=refreshA; tula_at=aaa.bbb.ccc' },
+      })
+    )
+    expect(cookiesOf(response).sort()).toEqual([
+      'tula_at=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'tula_session=sessB; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600',
+    ])
+  })
+
+  test('a sign-in that issues a refresh cookie removes the session cookie of an older stateful session', async () => {
+    const { handlers } = setup(() =>
+      Response.json(
+        {
+          id: 'a1',
+          step: { status: 'complete' },
+          session: {
+            sessionId: 'sB',
+            accessToken: 'aaa.bbb.ccc',
+            accessTokenExpiresAt: expiresAt(),
+          },
+        },
+        {
+          headers: {
+            'set-cookie': `tula_rt_${ENV}=refreshB; Max-Age=600; Path=/v1/client/sessions`,
+          },
+        }
+      )
+    )
+    const response = await handlers.POST(
+      post('/v1/client/sign-ins/a1/password', { headers: { cookie: 'tula_session=sessA' } })
+    )
+    const cookies = cookiesOf(response)
+    expect(cookies).toContain('tula_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0')
+    expect(cookies).toContain('tula_rt=refreshB; Path=/; HttpOnly; SameSite=Lax; Max-Age=600')
+    expect(cookies.some((line) => line.startsWith('tula_at=aaa.bbb.ccc; '))).toBe(true)
+    expect(cookies).toHaveLength(3)
+  })
+
+  test('an answer that carries an access token alone removes an older session cookie too', async () => {
+    const { handlers } = setup(() =>
+      Response.json({
+        sessionId: 'sB',
+        accessToken: 'aaa.bbb.ccc',
+        accessTokenExpiresAt: expiresAt(),
+      })
+    )
+    const response = await handlers.POST(
+      post('/v1/client/sessions/refresh', { headers: { cookie: 'tula_session=sessA' } })
+    )
+    const cookies = cookiesOf(response)
+    expect(cookies).toContain('tula_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0')
+    expect(cookies).toHaveLength(2)
   })
 
   test('sign-out clears the refresh, session and access-token cookies', async () => {
