@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { StrictMode } from 'react'
 import {
   attempt,
+  expectFocus,
   failure,
   fakeLinkStorage,
   fakePage,
@@ -258,7 +259,7 @@ describe('<OAuthCallback>', () => {
       w.api.on(EXCHANGE, () => failure(status, code as never))
       w.mount(<OAuthCallback signInUrl='/sign-in' />)
       const heading = await screen.findByRole('heading', { name: title })
-      await waitFor(() => expect(document.activeElement).toBe(heading))
+      await expectFocus(heading)
       expect(document.querySelector(`[data-tula-oauth="${code}"]`)?.textContent).toContain(text)
       expect(screen.getByRole('link', { name: 'Sign in' }).getAttribute('href')).toBe('/sign-in')
       expect(w.client.state.status).not.toBe('signed-in')
