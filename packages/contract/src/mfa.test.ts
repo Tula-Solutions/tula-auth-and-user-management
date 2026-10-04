@@ -4,6 +4,7 @@ import {
   BACKUP_CODE_COUNT,
   BackupCodesSchema,
   FactorsSchema,
+  StepUpEmailCodeSchema,
   StepUpMethodSchema,
   StepUpRequestSchema,
   TOTP_DIGITS,
@@ -103,8 +104,9 @@ describe('TotpConfirmRequest', () => {
 })
 
 describe('StepUpRequest', () => {
-  test('the methods are the password, an authenticator code and a backup code', () => {
-    expect(StepUpMethodSchema.options).toEqual(['password', 'totp', 'backup_code'])
+  test('the methods are the password, an authenticator code, a backup code and an emailed code', () => {
+    // Additive: `email_code` came after the first three, whose order is kept.
+    expect(StepUpMethodSchema.options).toEqual(['password', 'totp', 'backup_code', 'email_code'])
   })
 
   test.each<[string, unknown]>([
@@ -119,6 +121,7 @@ describe('StepUpRequest', () => {
       'a backup code typed with spaces and capitals',
       { method: 'backup_code', code: ' ABCDE FGHJK ' },
     ],
+    ['an emailed code', { method: 'email_code', code: '012345' }],
   ])('accepts %s', (_, proof) => {
     expect(StepUpRequestSchema.parse(proof)).toEqual(proof as never)
   })
@@ -135,7 +138,11 @@ describe('StepUpRequest', () => {
     ['a backup code over 64 characters', { method: 'backup_code', code: 'a'.repeat(65) }],
     ['a passkey', { method: 'passkey', code: '123456' }],
     ['an SMS code', { method: 'sms_code', code: '123456' }],
-    ['an emailed code', { method: 'email_code', code: '123456' }],
+    ['a five-digit emailed code', { method: 'email_code', code: '12345' }],
+    ['an emailed code with a letter', { method: 'email_code', code: '12345a' }],
+    ['an emailed code with a space', { method: 'email_code', code: '123 456' }],
+    ['an emailed-code method with no code', { method: 'email_code' }],
+    ['an emailed sign-in link token', { method: 'email_link', token: 'x' }],
   ])('refuses %s', (_, proof) => {
     expect(StepUpRequestSchema.safeParse(proof).success).toBe(false)
   })
@@ -145,5 +152,30 @@ describe('StepUpRequest', () => {
       method: 'totp',
       code: '123456',
     })
+  })
+})
+
+describe('StepUpEmailCode', () => {
+  const receipt = {
+    method: 'email_code',
+    destination: 'm***@northline.app',
+    expiresAt: '2026-01-01T00:10:00.000Z',
+  }
+
+  test('is a receipt: the method, a masked destination and an expiry, and never a code', () => {
+    expect(StepUpEmailCodeSchema.parse({ ...receipt, code: '123456' })).toEqual(receipt as never)
+    expect(Object.keys(StepUpEmailCodeSchema.shape).sort()).toEqual([
+      'destination',
+      'expiresAt',
+      'method',
+    ])
+  })
+
+  test.each<[string, unknown]>([
+    ['another method', { ...receipt, method: 'password' }],
+    ['no destination', { method: 'email_code', expiresAt: receipt.expiresAt }],
+    ['an expiry that is not a timestamp', { ...receipt, expiresAt: 'soon' }],
+  ])('refuses %s', (_, value) => {
+    expect(StepUpEmailCodeSchema.safeParse(value).success).toBe(false)
   })
 })

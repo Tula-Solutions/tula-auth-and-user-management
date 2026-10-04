@@ -6,6 +6,7 @@ export {
   RevokedSessionsSchema,
   SessionListSchema,
   SessionTokensSchema,
+  StepUpEmailCodeSchema,
   StepUpRequestSchema,
 } from '@tula/contract'
 

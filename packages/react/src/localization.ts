@@ -237,6 +237,18 @@ export interface TulaLocalization {
     passwordWrong: string
     totpSubtitle: string
     backupSubtitle: string
+    /** `{destination}` (masked). Above the code field once the email was sent. */
+    emailSubtitle: string
+    /** Above the code field when a code was sent earlier and its destination is not known. */
+    emailSubtitleSent: string
+    /** While the email is being sent. */
+    emailSending: string
+    /** The button that sends the email again after a failure. */
+    emailSend: string
+    /** Offered next to the password: switch to a code by email. */
+    emailInstead: string
+    /** Offered next to the emailed code: switch back to the password. */
+    passwordInstead: string
     submit: string
     cancel: string
     /** Shown when the user has nothing to step up with: they must sign in again. */
@@ -264,6 +276,12 @@ export interface TulaLocalization {
     emailVerified: string
     emailUnverified: string
     passwordTitle: string
+    /**
+     * `{forgotPassword}` is the sign-in screen's "Forgot password?" label. Shown instead of the
+     * change-password form to a user who has no password (they signed up through a provider or
+     * by email).
+     */
+    passwordNotSet: string
     currentPasswordLabel: string
     currentPasswordWrong: string
     newPasswordLabel: string
@@ -527,6 +545,12 @@ export const EN_LOCALIZATION: TulaLocalization = {
     passwordWrong: 'That password is incorrect.',
     totpSubtitle: 'Enter the 6-digit code from your authenticator app to continue.',
     backupSubtitle: 'Enter one of your backup codes to continue. Each code works once.',
+    emailSubtitle: 'Enter the 6-digit code we sent to {destination}.',
+    emailSubtitleSent: 'Enter the 6-digit code we emailed you.',
+    emailSending: 'Sending you a code…',
+    emailSend: 'Send code',
+    emailInstead: 'Email me a code instead',
+    passwordInstead: 'Use your password instead',
     submit: 'Continue',
     cancel: 'Cancel',
     noMethod: 'For your security, sign out and sign in again to continue.',
@@ -550,6 +574,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     emailVerified: 'Verified',
     emailUnverified: 'Not verified',
     passwordTitle: 'Password',
+    passwordNotSet:
+      'This account has no password: you sign in another way. To add one, sign out and choose “{forgotPassword}” on the sign-in screen. We will email you a code to set it.',
     currentPasswordLabel: 'Current password',
     currentPasswordWrong: 'That is not your current password.',
     newPasswordLabel: 'New password',

@@ -195,6 +195,7 @@ describe('documentation routes', () => {
       '/v1/client/sessions/revoke-others',
       '/v1/client/sessions/{sessionId}',
       '/v1/client/sessions/step-up',
+      '/v1/client/sessions/step-up/email-code',
       '/v1/client/sign-ups',
       '/v1/client/sign-ins',
       '/v1/client/sign-ins/{attemptId}/password',

@@ -108,7 +108,7 @@ describe('requireRecentAuth', () => {
     const stale = await later('1s', stillRecent)
     const res = await call('default', stale.accessToken)
     expect(res.status).toBe(403)
-    expect(await res.json()).toEqual({ ...STEP_UP, params: { methods: 'password' } })
+    expect(await res.json()).toEqual({ ...STEP_UP, params: { methods: 'password,email_code' } })
   })
 
   test('a route may ask for a shorter age', async () => {

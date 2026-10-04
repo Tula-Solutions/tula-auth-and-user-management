@@ -136,7 +136,7 @@
           "status": 403,
           "code": "auth.step_up_required",
           "params": {
-            "methods": "password"
+            "methods": "password,email_code"
           }
         }
       }

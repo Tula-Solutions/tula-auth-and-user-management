@@ -13,6 +13,7 @@ import * as openapi from '~/openapi'
 import {
   ChangePasswordRequestSchema,
   CreateUserRequestSchema,
+  CurrentUserSchema,
   SetPasswordRequestSchema,
   UserIdParamSchema,
   UserListQuerySchema,
@@ -223,9 +224,12 @@ router.get(
     operationId: 'getMe',
     tags: ['Users'],
     summary: 'Get the signed-in user',
+    description:
+      'The user the access token belongs to. `hasPassword` says whether the account has a ' +
+      'password (someone who signed up through a provider or by email has none).',
     security: openapi.security.session,
     responses: {
-      200: { description: 'The signed-in user.', content: json(UserSchema) },
+      200: { description: 'The signed-in user.', content: json(CurrentUserSchema) },
       401: openapi.responses[401],
       404: openapi.responses[404],
       429: openapi.responses[429],
@@ -238,7 +242,7 @@ router.get(
   async (c) => {
     c.header('Cache-Control', 'no-store')
     return c.json(
-      UserSchema.parse(await Users.me(c.get('deps'), c.get('tenant'), c.get('session').sub))
+      CurrentUserSchema.parse(await Users.me(c.get('deps'), c.get('tenant'), c.get('session').sub))
     )
   }
 )

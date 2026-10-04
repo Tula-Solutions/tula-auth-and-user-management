@@ -285,6 +285,30 @@ describe('<UserProfile>', () => {
     ).toBe('true')
   })
 
+  test('a user without a password is told how to add one instead of being asked for the current one', async () => {
+    const w = signedInWorld([session('session_1', { current: true })])
+    w.api.on(ROUTE.me, () => json(200, { ...TEST_USER, hasPassword: false }))
+    w.mount(<UserProfile />)
+    const heading = await screen.findByRole('heading', { name: 'Password' })
+    const section = heading.closest('section') as HTMLElement
+    expect(section.getAttribute('aria-labelledby')).toBe(heading.id)
+    expect(section.textContent).toContain('This account has no password')
+    expect(section.textContent).toContain('Forgot password?')
+    expect(screen.queryByLabelText('Current password')).toBeNull()
+    expect(screen.queryByLabelText('New password')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Update password' })).toBeNull()
+    expect(w.api.calls(ROUTE.changePassword)).toHaveLength(0)
+  })
+
+  test('a server that does not say whether there is a password still gets the form', async () => {
+    const w = signedInWorld([session('session_1', { current: true })])
+    const { hasPassword: _unsaid, ...older } = TEST_USER
+    w.api.on(ROUTE.me, () => json(200, older))
+    w.mount(<UserProfile />)
+    expect(await screen.findByLabelText('Current password')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Update password' })).toBeTruthy()
+  })
+
   test('sign out: signed out even when the server cannot be told, then navigates', async () => {
     const w = signedInWorld([session('session_1', { current: true })])
     w.api.on(ROUTE.signOut, () => failure(503, 'service.unavailable'))

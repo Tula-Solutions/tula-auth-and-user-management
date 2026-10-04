@@ -189,6 +189,10 @@ a memory adapter used by unit tests via `createTestDeps()`. The rate limiter, lo
 revoked-session list also have Redis adapters (`adapters/redis/`), chosen when `REDIS_URL` is
 set so that several API instances share them; they are unit-tested on `FakeRedis` and proved
 against a real server by `redis.integration.ts` ([ADR 0016](docs/adr/0016-redis-and-multiple-instances.md)).
+`deps.environmentLock.runExclusive(environmentId, name, fn)` serializes a read-check-write on
+one environment across instances (a Postgres advisory lock): `Settings.replace` and
+`OAuth.update` take `sign_in_methods` so that neither switches off the last way to sign in on
+a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)).
 
 **Background jobs** are service functions `server.ts` runs on boot and on a timer, on every
 instance; `deps.jobLock.runExclusive(job, fn)` lets one instance through and the others skip
@@ -262,9 +266,12 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   `adapters/oauth/` (`arctic` + `jose`). An adapter returns a profile and nothing else: no
   provider token leaves it or is stored. Unit tests use `FakeOAuthProvider`
   (`createTestDeps().oauth.google.profile = …`).
-- **The mock provider** (`OAUTH_MOCK_PROVIDER=true`, `ENVIRONMENT=local` only) serves every
-  provider from the API itself, with a consent page at `/v1/dev/oauth/authorize`. The
-  conformance scenarios, SDK journeys and browser tests use it. Never loosen its guards.
+- **The mock provider** (`OAUTH_MOCK_PROVIDER=true`) serves every provider from the API
+  itself, with a consent page at `/v1/dev/oauth/authorize`. It needs `ENVIRONMENT=local`
+  **and** a loopback `PUBLIC_URL` (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`): `env.ts`
+  refuses to boot otherwise, `container.ts` checks the tier again, and it warns on every boot,
+  because with it on anyone who can reach the API signs in as any address. The conformance
+  scenarios, SDK journeys and browser tests use it. Never loosen its guards.
 - **Which account a provider identity signs in to is decided in one place**,
   `OAuth.resolveAccount`, and only at the exchange (after the binding is checked), never in
   the callback. "Can still sign in" is `OAuth.canStillSignIn`.
@@ -400,6 +407,16 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   verified access token and answers `auth.step_up_required` with `params.methods`. A user with
   a second factor steps up with it, never with the password alone
   (`POST /v1/client/sessions/step-up`).
+- **A user without a second factor may step up with an emailed code; a user with one never.**
+  `Mfa.stepUpMethods` is the only place that decides what a user can step up with:
+  `email_code` is listed exactly for a verified address and no confirmed second factor (next
+  to `password` when there is one). The code (`POST /v1/client/sessions/step-up/email-code`,
+  `Mfa.prepareStepUp`) is a verification token of purpose `step_up`, stored as a keyed hash
+  that also covers the asking session's id, so it steps up no other session and is honoured
+  for no other purpose; it carries no link. Guesses count under the non-MFA step-up key
+  (`step_up:<environment>:<user>`, shared with the password) before the check, and success
+  records `email` in `amr`. Never offer it beside a second factor, and never let it satisfy
+  `mfa` (ADR 0025, "Step-up by emailed code").
 - **A session records how it was authenticated.** `Sessions.create` takes `authMethods`; the
   access token carries `auth_time` and `amr` from the session row (never "now": refresh must
   not make an old sign-in look recent). Only `Sessions.recordAuthentication` moves them.
@@ -540,6 +557,12 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - Component tests (`packages/react`) run in happy-dom through a preload
   (`src/testing/setup.ts`) with Testing Library, against `@tula/core`'s own fake API
   (`src/testing/harness.tsx`).
+- **In a component test, wait for focus with `await expectFocus(element)` and for a dialog to
+  close with `waitFor(() => expect(openDialogs()).toBe(0))`** (both in `harness.tsx`). Never
+  `expect(element)` inside `waitFor`, and never a synchronous
+  `expect(document.activeElement).toBe(element)`: focus moves in an effect, so the check races
+  it, and a matcher that fails on a happy-dom element formats its whole window (a message of
+  over 100 MB, which is what times CI out).
 - **Every bug fix and every addressed review finding gets a regression test that fails first.**
 
 ## Definition of done (the feedback loop)

@@ -503,9 +503,15 @@
   border-radius: var(--_tula-radius);
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.12s ease;
 }
 
+/*
+ * No transition on a button's background, on purpose. A fade there also ran when the colour
+ * scheme changed under an open page: the label took its new colour at once while the
+ * background was still fading from the old scheme's, and for a few frames the label was
+ * unreadable (light on light, or dark on dark). Fading only into hover did not help a button
+ * the pointer was resting on.
+ */
 :where(.tula-primary-button) {
   background: var(--_tula-color-primary);
   color: var(--_tula-color-primary-text);

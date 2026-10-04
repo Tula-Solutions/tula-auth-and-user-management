@@ -90,6 +90,14 @@ Before finishing any change here, confirm each item holds and has a test:
     Test a stale `auth_time` (refused), a fresh one (accepted), a refreshed token (claims
     unchanged), and that a user with a second factor cannot step up with the password alone.
     `auth_time` and `amr` come from the session row, never from the request.
+    **Step-up by emailed code** (`email_code`): listed by `Mfa.stepUpMethods` only for a
+    verified address and no confirmed second factor. Test that a user with a second factor is
+    refused both the send and the code; that a code asked by one session, one user or for
+    another purpose (`email_verification`, `password_reset`, `sign_in`) steps up nothing, and
+    a `step_up` code is honoured nowhere else; expired, reused, replaced and out-of-guesses
+    codes; that the guess is counted (`step_up:<environment>:<user>`) before the check; the
+    send limits; and that neither the code nor the address reaches a log line, an audit entry
+    or a limiter key.
 23. **MFA secrets never leak:** no Base32 secret, `otpauth://` URI, backup code or TOTP code in
     a log line, audit entry, email or error body. Only the responses that return them (start,
     confirm, regenerate, in-flow confirm) carry them, with `Cache-Control: no-store`.

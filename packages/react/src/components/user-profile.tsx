@@ -85,6 +85,27 @@ function ProfileSection(props: { user: User }) {
   )
 }
 
+/**
+ * The password section of a user who has none (`hasPassword: false`): there is no current
+ * password to ask for, so it says how one is added (a password reset from the sign-in screen
+ * creates the first password) instead of drawing a form that could only fail. Only an explicit
+ * `false` gets this: an older server that does not say keeps the form.
+ */
+function NoPasswordSection() {
+  const { el, t } = useUi()
+  const titleId = useId()
+  return (
+    <section {...el('section')} aria-labelledby={titleId}>
+      <Heading offset={1} {...el('sectionTitle')} id={titleId}>
+        {t.userProfile.passwordTitle}
+      </Heading>
+      <p className='tula-text'>
+        {formatText(t.userProfile.passwordNotSet, { forgotPassword: t.signIn.forgotPassword })}
+      </p>
+    </section>
+  )
+}
+
 function PasswordSection(props: { user: User; onChanged(): void }) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
@@ -510,11 +531,15 @@ export function UserProfileSections(props: {
           <ProfileSection user={user} />
           {/* Keyed by the session: half-typed passwords, a pending change and its messages
               belong to whoever was signed in when they began, and go with them. */}
-          <PasswordSection
-            key={state.sessionId}
-            user={user}
-            onChanged={() => void sessions.reload()}
-          />
+          {user.hasPassword === false ? (
+            <NoPasswordSection />
+          ) : (
+            <PasswordSection
+              key={state.sessionId}
+              user={user}
+              onChanged={() => void sessions.reload()}
+            />
+          )}
         </>
       ) : (
         <p className='tula-text'>{t.common.loading}</p>

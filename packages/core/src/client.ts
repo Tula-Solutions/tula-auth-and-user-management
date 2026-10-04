@@ -9,7 +9,7 @@ import {
   signInFlow,
   signUpFlow,
 } from './flows'
-import { isBackupCodes, isFactors, isTotpEnrolment } from './mfa'
+import { isBackupCodes, isFactors, isStepUpPrepared, isTotpEnrolment } from './mfa'
 import {
   createOAuthStore,
   createOAuthTicketHolder,
@@ -37,6 +37,7 @@ import type {
   Factors,
   FetchLike,
   Session,
+  StepUpPrepared,
   StepUpProof,
   TotpEnrolment,
   User,
@@ -328,13 +329,16 @@ export interface TulaClient {
      * calls this by itself: ask the user, call it, then repeat the action.
      *
      * A user with two-step verification proves it with `totp` or `backup_code` (their password
-     * alone is refused); a user without it with `password`. The proof holds for ten minutes.
+     * alone is refused); a user without it with `password`, or with an `email_code` asked for
+     * with `prepareStepUp`. The proof holds for ten minutes.
      * Only the access token changes: the refresh token (or cookie) is untouched, and the
      * state does not change.
      *
      * @param proof - The method and its proof.
      * @throws TulaError `auth.invalid_credentials` (wrong password), `mfa.invalid_code` (wrong
-     *   or already used code), `auth.step_up_required` (a method this user may not use),
+     *   or already used code), `verification.invalid_code`, `verification.expired` or
+     *   `verification.too_many_attempts` (an emailed code that is wrong, used or too old, or
+     *   guessed at too often), `auth.step_up_required` (a method this user may not use),
      *   `rate_limited` after repeated wrong proofs, `auth.unauthenticated` when nobody is
      *   signed in or the session ended meanwhile.
      *
@@ -351,6 +355,37 @@ export interface TulaClient {
      * ```
      */
     stepUp(proof: StepUpProof): Promise<void>
+    /**
+     * Email the signed-in user a 6-digit code to step up with, when `stepUpMethods` lists
+     * `email_code`: a user with a verified address and no two-step verification (someone who
+     * signed up through a provider or by email has no password to prove). The code works for
+     * ten minutes, once, and only for this session; asking again replaces it. The client never
+     * calls this by itself: send the code when the user chooses to, then pass what they type
+     * to `stepUp`.
+     *
+     * @param request - The method to prepare; `email_code` is the only one that needs it.
+     * @returns Where the code went (masked) and when it expires. Never the code.
+     * @throws TulaError `rate_limited` with `retryAfterMs` when a code was sent less than a
+     *   minute ago (or too many this hour), `auth.step_up_required` when this user may not
+     *   step up by email (they have a second factor, or no verified address),
+     *   `response.invalid` for an answer that is not a receipt, `auth.unauthenticated` when
+     *   nobody is signed in.
+     *
+     * @example
+     * ```ts
+     * try {
+     *   await tula.oauth.unlink('google')
+     * } catch (error) {
+     *   if (stepUpMethods(error).includes('email_code')) {
+     *     const { destination } = await tula.session.prepareStepUp({ method: 'email_code' })
+     *     const code = await askForCode(`Enter the code we emailed to ${destination}`)
+     *     await tula.session.stepUp({ method: 'email_code', code })
+     *     await tula.oauth.unlink('google')
+     *   }
+     * }
+     * ```
+     */
+    prepareStepUp(request: { method: 'email_code' }): Promise<StepUpPrepared>
   }
   /** The signed-in user. */
   readonly user: {
@@ -647,6 +682,14 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       },
       revokeOthers: async () => (await session.authorized('revokeOtherSessions', {})).revoked,
       stepUp: (proof) => session.stepUp(proof),
+      async prepareStepUp() {
+        const { destination, expiresAt } = checked(
+          await session.authorized('sendStepUpEmailCode', {}),
+          isStepUpPrepared
+        )
+        // Only the receipt: whatever else an answer held does not travel further.
+        return { method: 'email_code', destination, expiresAt }
+      },
     },
     user: {
       async get() {

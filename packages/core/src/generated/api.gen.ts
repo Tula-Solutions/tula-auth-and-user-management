@@ -27,6 +27,17 @@ export interface Schemas {
       policy: Schemas['MfaPolicy']
     }
   }
+  CurrentUser: {
+    id: string
+    email: string
+    emailVerifiedAt: string | null
+    firstName: string | null
+    lastName: string | null
+    bannedAt: string | null
+    lastSignInAt: string | null
+    createdAt: string
+    hasPassword: boolean
+  }
   EmailLinkRequest: {
     token: string
     attemptId: string
@@ -218,6 +229,11 @@ export interface Schemas {
     firstName?: string
     lastName?: string
   }
+  StepUpEmailCode: {
+    method: 'email_code'
+    destination: string
+    expiresAt: string
+  }
   StepUpRequest: {
     method: 'password'
     password: string
@@ -227,6 +243,9 @@ export interface Schemas {
   } | {
     method: 'backup_code'
     code: string
+  } | {
+    method: 'email_code'
+    code: string
   }
   TotpConfirmRequest: {
     code: string
@@ -234,16 +253,6 @@ export interface Schemas {
   TotpEnrolment: {
     secret: string
     uri: string
-  }
-  User: {
-    id: string
-    email: string
-    emailVerifiedAt: string | null
-    firstName: string | null
-    lastName: string | null
-    bannedAt: string | null
-    lastSignInAt: string | null
-    createdAt: string
   }
   VerifyEmailRequest: {
     code: string
@@ -275,7 +284,7 @@ export interface Operations {
   /** Client configuration (`GET /v1/client/config`). */
   getClientConfig: { params: Record<string, never>; body: undefined; response: Schemas['ClientConfig'] }
   /** Get the signed-in user (`GET /v1/client/me`). */
-  getMe: { params: Record<string, never>; body: undefined; response: Schemas['User'] }
+  getMe: { params: Record<string, never>; body: undefined; response: Schemas['CurrentUser'] }
   /** Get my second factors (`GET /v1/client/me/factors`). */
   getMyFactors: { params: Record<string, never>; body: undefined; response: Schemas['Factors'] }
   /** Password policy (`GET /v1/client/password-policy`). */
@@ -300,6 +309,8 @@ export interface Operations {
   revokeOtherSessions: { params: Record<string, never>; body: undefined; response: Schemas['RevokedSessions'] }
   /** Sign out one of my devices (`DELETE /v1/client/sessions/{sessionId}`). */
   revokeSession: { params: { sessionId: string }; body: undefined; response: undefined }
+  /** Email me a code to prove it is still me (`POST /v1/client/sessions/step-up/email-code`). */
+  sendStepUpEmailCode: { params: Record<string, never>; body: undefined; response: Schemas['StepUpEmailCode'] }
   /** Sign out (`POST /v1/client/sessions/sign-out`). */
   signOut: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: undefined }
   /** Start connecting a provider account (`POST /v1/client/me/identities/oauth`). */
@@ -374,6 +385,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   resendSignUpCode: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/resend-code', session: false },
   revokeOtherSessions: { method: 'POST', path: '/v1/client/sessions/revoke-others', session: true },
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
+  sendStepUpEmailCode: { method: 'POST', path: '/v1/client/sessions/step-up/email-code', session: true },
   signOut: { method: 'POST', path: '/v1/client/sessions/sign-out', session: false },
   startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
   startOAuthSignIn: { method: 'POST', path: '/v1/client/sign-ins/oauth', session: false },

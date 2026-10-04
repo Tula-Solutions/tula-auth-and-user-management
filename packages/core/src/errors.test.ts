@@ -217,6 +217,8 @@ describe('auth.step_up_required', () => {
 
   test.each([
     ['password', ['password']],
+    ['password,email_code', ['password', 'email_code']],
+    ['email_code', ['email_code']],
     ['totp,backup_code', ['totp', 'backup_code']],
     ['backup_code,totp', ['backup_code', 'totp']],
     // No method: the user has to sign in again.

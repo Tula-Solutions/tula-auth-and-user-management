@@ -5,6 +5,7 @@ import { z } from 'zod'
 export {
   ChangePasswordRequestSchema,
   CreateUserRequestSchema,
+  CurrentUserSchema,
   SetPasswordRequestSchema,
   UserListSchema,
   UserSchema,

@@ -55,7 +55,7 @@ export type SecondFactorMethod = Schemas['SecondFactorMethod']
  * const user: User = await tula.user.get()
  * ```
  */
-export type User = Schemas['User']
+export type User = Schemas['CurrentUser']
 
 /**
  * One of the signed-in user's devices. `current` marks the one making the request.
@@ -206,8 +206,8 @@ export type BackupCodes = Schemas['BackupCodes']
 export type SecondFactorProof = Schemas['SecondFactorRequest']
 
 /**
- * The proof of a step-up: the password for a user without two-step verification, otherwise an
- * authenticator code or a backup code.
+ * The proof of a step-up: for a user without two-step verification their password or a code
+ * emailed with `session.prepareStepUp`, otherwise an authenticator code or a backup code.
  *
  * @example
  * ```ts
@@ -216,6 +216,18 @@ export type SecondFactorProof = Schemas['SecondFactorRequest']
  * ```
  */
 export type StepUpProof = Schemas['StepUpRequest']
+
+/**
+ * The receipt of an emailed step-up code: where it went (masked) and when it stops working.
+ * Never the code.
+ *
+ * @example
+ * ```ts
+ * const sent: StepUpPrepared = await tula.session.prepareStepUp({ method: 'email_code' })
+ * show(`We emailed a code to ${sent.destination}`)
+ * ```
+ */
+export type StepUpPrepared = Schemas['StepUpEmailCode']
 
 /**
  * A way to step up. An `auth.step_up_required` error says which ones the user may use; see

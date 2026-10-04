@@ -5,6 +5,7 @@ import {
   authenticatorCode,
   consentAtProvider,
   expectAccessible,
+  latestCode,
   resetLimits,
   signOut,
   signUp,
@@ -249,6 +250,144 @@ test('a provider is only the first factor: a user with an authenticator is asked
   await expect(page.getByRole('heading', { name: /^Hello/ })).toBeVisible()
 })
 
+test('an exchange that gets no answer can be tried again from the callback page, and then signs in', async ({
+  page,
+}) => {
+  const email = uniqueEmail('oauth-retry')
+  // The first exchange never reaches the API (the network drops it); later ones go through.
+  let dropped = 0
+  await page.route('**/v1/client/sign-ins/oauth/exchange', async (route) => {
+    if (dropped === 0) {
+      dropped += 1
+      await route.abort('connectionfailed')
+    } else {
+      await route.continue()
+    }
+  })
+  await continueWithGoogle(page, { email })
+
+  const retry = page.getByRole('button', { name: 'Try again' })
+  await expect(retry).toBeVisible()
+  await expect(page.getByRole('alert')).not.toBeEmpty()
+  await expect(page.getByRole('heading', { name: /^Hello/ })).toHaveCount(0)
+  expect(dropped).toBe(1)
+  // The ticket left the address before the request; only the binding is kept, for the retry.
+  expect(page.url()).not.toContain('tula_ticket')
+  expect(page.url()).not.toContain('#')
+  const kept = await storage(page)
+  expect(kept.local).toEqual([])
+  expect(kept.session).toHaveLength(1)
+  expect(kept.session[0]).toMatch(/^tula\.oauth\./)
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expectAccessible(page, `OAuth callback: no answer, try again (${colorScheme})`)
+  }
+  await page.emulateMedia({ colorScheme: 'light' })
+  // The keyboard reaches the retry.
+  await retry.focus()
+  await page.keyboard.press('Enter')
+
+  await expect(page.getByRole('heading', { name: /^Hello/ })).toBeVisible()
+  expect(await storage(page)).toEqual({ session: [], local: [] })
+})
+
+test('a user with no password steps up with an emailed code, and their profile says how to add a password', async ({
+  page,
+  request,
+}) => {
+  const email = uniqueEmail('oauth-step-up')
+  await continueWithGoogle(page, { email })
+  await expect(page.getByRole('heading', { name: /^Hello/ })).toBeVisible()
+
+  // No password: the profile explains how to add one instead of asking for the current one.
+  await page.goto('/account')
+  const account = page.getByRole('region', { name: 'Account' })
+  const password = account.locator('section', {
+    has: page.getByRole('heading', { name: 'Password', exact: true }),
+  })
+  await expect(password).toContainText('This account has no password')
+  await expect(password).toContainText('Forgot password?')
+  await expect(page.getByLabel('Current password')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Update password' })).toHaveCount(0)
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expectAccessible(page, `profile without a password (${colorScheme})`)
+  }
+  await page.emulateMedia({ colorScheme: 'light' })
+
+  // Eleven minutes on, turning two-step verification on needs a fresh proof. This user has
+  // no password and no second factor: the dialog emails a code, once.
+  await advanceClock(request, 11 * 60_000)
+  const twoStep = account.locator('section', {
+    has: page.getByRole('heading', { name: 'Two-step verification' }),
+  })
+  await twoStep.getByRole('button', { name: 'Turn on' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Confirm it is you' })
+  await expect(dialog.getByText(/Enter the 6-digit code we sent to .\*\*\*@/)).toBeVisible()
+  const field = dialog.getByLabel('Verification code')
+  await expect(field).toBeFocused()
+  await expect(dialog.getByLabel('Password', { exact: true })).toHaveCount(0)
+  const code = await latestCode(request, email)
+  const outbox = await request.get(`${API_URL}/__test/outbox?to=${encodeURIComponent(email)}`)
+  const { data } = (await outbox.json()) as { data: { subject: string; text: string }[] }
+  const codes = data.filter(({ subject }) => /^\d{6} is your .* confirmation code$/.test(subject))
+  expect(codes).toHaveLength(1)
+  // A step-up email carries a code and no link.
+  expect(codes[0]?.text).not.toMatch(/https?:\/\//)
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expectAccessible(page, `step-up dialog: emailed code (${colorScheme})`)
+  }
+
+  await field.fill(code === '000000' ? '111111' : '000000')
+  await dialog.getByRole('button', { name: 'Continue' }).click()
+  await expect(dialog.getByRole('alert')).toContainText('That code is incorrect. 4 attempts left.')
+  await expect(field).toBeFocused()
+  await expect(field).toHaveValue('')
+  for (const colorScheme of ['dark', 'light'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expectAccessible(page, `step-up dialog: wrong emailed code (${colorScheme})`)
+  }
+
+  await field.fill(code)
+  await dialog.getByRole('button', { name: 'Continue' }).click()
+  await expect(dialog).toHaveCount(0)
+  // The action that asked was repeated with the proof: the enrolment is on screen.
+  await expect(page.getByRole('group', { name: 'Setup key' })).toBeVisible()
+  // Nothing of the code is left in the page or its address.
+  expect(await page.content()).not.toContain(code)
+  expect(page.url()).not.toContain(code)
+})
+
+test('a user with a password is offered the emailed code as the other way, and nothing is sent until they ask', async ({
+  page,
+  request,
+}) => {
+  const email = uniqueEmail('step-up-choice')
+  await signUp(page, request, { email })
+  await advanceClock(request, 11 * 60_000)
+  await page.goto('/account')
+  const before = await request.get(`${API_URL}/__test/outbox?to=${encodeURIComponent(email)}`)
+  const sentBefore = ((await before.json()) as { data: unknown[] }).data.length
+  await page
+    .getByRole('region', { name: 'Account' })
+    .locator('section', { has: page.getByRole('heading', { name: 'Two-step verification' }) })
+    .getByRole('button', { name: 'Turn on' })
+    .click()
+  const dialog = page.getByRole('dialog', { name: 'Confirm it is you' })
+  await expect(dialog.getByLabel('Password', { exact: true })).toBeFocused()
+  await expectAccessible(page, 'step-up dialog: password or emailed code')
+  const during = await request.get(`${API_URL}/__test/outbox?to=${encodeURIComponent(email)}`)
+  expect(((await during.json()) as { data: unknown[] }).data).toHaveLength(sentBefore)
+
+  await dialog.getByRole('button', { name: 'Email me a code instead' }).click()
+  await expect(dialog.getByLabel('Verification code')).toBeFocused()
+  await dialog.getByLabel('Verification code').fill(await latestCode(request, email, sentBefore))
+  await dialog.getByRole('button', { name: 'Continue' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(page.getByRole('group', { name: 'Setup key' })).toBeVisible()
+})
+
 for (const colorScheme of ['light', 'dark'] as const) {
   test(`the provider buttons and the connected accounts are accessible (${colorScheme})`, async ({
     page,
@@ -275,4 +414,52 @@ for (const colorScheme of ['light', 'dark'] as const) {
     await expect(page.getByRole('heading', { name: 'Connected accounts' })).toBeVisible()
     await expectAccessible(page, `profile with connected accounts (${colorScheme})`)
   })
+}
+
+// The three provider buttons: each drawn with its mark, named, and readable in both schemes
+// at a desktop width and on a 375 px phone.
+for (const colorScheme of ['light', 'dark'] as const) {
+  for (const width of [1280, 375]) {
+    test(`Google, GitHub and Apple buttons render with their marks (${colorScheme}, ${width}px)`, async ({
+      page,
+      request,
+    }) => {
+      await useProviders(request, ['google', 'github', 'apple'])
+      await page.setViewportSize({ width, height: 800 })
+      await page.emulateMedia({ colorScheme })
+      await page.goto('/sign-in')
+      for (const name of ['Google', 'GitHub', 'Apple']) {
+        const button = page.getByRole('button', { name: `Continue with ${name}`, exact: true })
+        await expect(button).toBeVisible()
+        // The mark is decorative (the label names the provider), 18 px square, and drawn.
+        const mark = button.locator('svg')
+        await expect(mark).toHaveCount(1)
+        await expect(mark).toHaveAttribute('aria-hidden', 'true')
+        const box = await mark.boundingBox()
+        expect(Math.round(box?.width ?? 0)).toBe(18)
+        expect(Math.round(box?.height ?? 0)).toBe(18)
+        // On a phone the button fits the screen and its label is on one line.
+        const size = await button.boundingBox()
+        expect((size?.x ?? 0) + (size?.width ?? 0)).toBeLessThanOrEqual(width)
+        expect(size?.height ?? 0).toBeLessThan(60)
+      }
+      // GitHub's and Apple's marks take the label's colour; Google's keeps its own four.
+      const colours = await page.evaluate(() =>
+        [...document.querySelectorAll('.tula-oauth-buttons button')].map((button) => ({
+          label: getComputedStyle(button.querySelector('span') ?? button).color,
+          fills: [...button.querySelectorAll('svg path')].map(
+            (path) => getComputedStyle(path).fill
+          ),
+        }))
+      )
+      expect(colours).toHaveLength(3)
+      expect(new Set(colours[0]?.fills).size).toBe(4)
+      expect(colours[1]?.fills).toEqual([colours[1]?.label])
+      expect(colours[2]?.fills).toEqual([colours[2]?.label])
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width
+      )
+      await expectAccessible(page, `three provider buttons (${colorScheme}, ${width}px)`)
+    })
+  }
 }

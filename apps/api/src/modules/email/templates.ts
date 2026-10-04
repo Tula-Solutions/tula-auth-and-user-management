@@ -11,7 +11,7 @@ export interface EmailBrand {
 
 /** An emailed 6-digit code, and optionally a link that does the same. */
 export interface CodeMessage {
-  type: 'email_verification' | 'password_reset' | 'sign_in'
+  type: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up'
   code: string
   /** Minutes until the code and link expire. */
   ttlMinutes: number
@@ -141,6 +141,15 @@ const COPY: Record<(CodeMessage | NoticeMessage)['type'], Copy> = {
       'Or, in the browser where you asked to sign in, open this link (on any other device, use the code)',
     closing: [
       "If you didn't ask to sign in, you can safely ignore this email. Nobody can sign in without what is in it.",
+    ],
+  },
+  step_up: {
+    subject: 'is your {app} confirmation code',
+    lead: [
+      'You are about to change how your {app} account is protected. Enter this code to confirm it is you:',
+    ],
+    closing: [
+      "If you didn't ask for this, someone may be signed in to your account: open {app}, sign out of the devices you do not recognise and do not share this code.",
     ],
   },
   account_exists: {

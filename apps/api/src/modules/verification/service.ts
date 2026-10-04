@@ -38,6 +38,12 @@ export interface IssueInput {
   flowAttemptId?: string
   userId?: string
   /**
+   * Something only the asker has (a session id), mixed into the stored code hash: the code then
+   * checks out only when {@link VerifyCodeInput.binding} is the same. A value from the server's
+   * own records, never client input and never a secret that must not reach the keyed hash.
+   */
+  binding?: string
+  /**
    * Builds the magic-link URL from the link token. Omit to send a code only: the route that
    * accepts links belongs to the calling flow, so the flow decides the URL.
    */
@@ -164,7 +170,7 @@ export async function issue(
       flowAttemptId: input.flowAttemptId ?? null,
       purpose: input.purpose,
       destination,
-      codeHash: await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, `${id}:${code}`),
+      codeHash: await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, hashInput(id, code, input.binding)),
       linkTokenHash: linkToken ? sha256Hex(linkToken) : null,
       maxAttempts: MAX_ATTEMPTS,
       expiresAt,
@@ -175,11 +181,22 @@ export async function issue(
   return { id, destination: maskEmail(input.destination.trim()), expiresAt }
 }
 
+/**
+ * What a code's keyed hash is taken over: the token id, so equal codes hash differently, and
+ * the binding when the token was issued with one. A token with a binding never matches a
+ * check without it, or with another.
+ */
+function hashInput(tokenId: string, code: string, binding: string | undefined): string {
+  return binding === undefined ? `${tokenId}:${code}` : `${tokenId}:${binding}:${code}`
+}
+
 /** A code presented for a subject. */
 export interface VerifyCodeInput {
   purpose: VerificationPurpose
   subject: VerificationSubject
   code: string
+  /** The {@link IssueInput.binding} the code was issued with, when it had one. */
+  binding?: string
   /**
    * Pass `false` to leave a correct code unconsumed, when more must be checked before the code
    * is spent (a password reset checks the new password first). The caller then spends it with
@@ -222,7 +239,10 @@ export async function verifyCode(
     // Out of attempts, or a concurrent request consumed it. Either way: request a new code.
     throw new AuthError('verification.too_many_attempts')
   }
-  const presented = await deps.keyedHash.hmac(KEYED_HASH_PURPOSE, `${token.id}:${input.code}`)
+  const presented = await deps.keyedHash.hmac(
+    KEYED_HASH_PURPOSE,
+    hashInput(token.id, input.code, input.binding)
+  )
   if (!timingSafeEqual(presented, counted.codeHash)) {
     throw new AuthError('verification.invalid_code', {
       attemptsRemaining: counted.maxAttempts - counted.attempts,

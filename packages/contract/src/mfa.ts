@@ -50,24 +50,47 @@ export const BackupCodesSchema = z
   .object({ codes: z.array(z.string()) })
   .meta({ ref: 'BackupCodes' })
 
-/** What a step-up can be proven with. */
+/**
+ * What a step-up can be proven with.
+ *
+ * `email_code` is a 6-digit code emailed on request
+ * (`POST /v1/client/sessions/step-up/email-code`); it exists only for a user with a verified
+ * email address and **no** second factor.
+ */
 export const StepUpMethodSchema = z
-  .enum(['password', 'totp', 'backup_code'])
+  .enum(['password', 'totp', 'backup_code', 'email_code'])
   .meta({ ref: 'StepUpMethod' })
 
 /**
  * Prove a factor again for the current session (`POST /v1/client/sessions/step-up`).
  *
  * A user with two-step verification must use `totp` or `backup_code`: their password alone is
- * refused. A user without it uses `password`.
+ * refused. A user without it uses `password`, or an `email_code` they asked for from this
+ * session.
  */
 export const StepUpRequestSchema = z
   .discriminatedUnion('method', [
     z.object({ method: z.literal('password'), password: z.string().max(1024) }),
     z.object({ method: z.literal('totp'), code: z.string().regex(/^\d{6}$/) }),
     z.object({ method: z.literal('backup_code'), code: z.string().min(1).max(64) }),
+    z.object({ method: z.literal('email_code'), code: z.string().regex(/^\d{6}$/) }),
   ])
   .meta({ ref: 'StepUpRequest' })
+
+/**
+ * A step-up code was emailed (`POST /v1/client/sessions/step-up/email-code`). Never the code.
+ *
+ * The code works for ten minutes, a few guesses, once, and only for the session that asked.
+ */
+export const StepUpEmailCodeSchema = z
+  .object({
+    method: z.literal('email_code'),
+    /** The address it went to, masked: `m***@northline.app`. */
+    destination: z.string(),
+    /** When the code stops working. */
+    expiresAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'StepUpEmailCode' })
 
 /** Enrolled second factors. */
 export type Factors = z.infer<typeof FactorsSchema>
@@ -79,5 +102,7 @@ export type TotpConfirmRequest = z.infer<typeof TotpConfirmRequestSchema>
 export type BackupCodes = z.infer<typeof BackupCodesSchema>
 /** A step-up method. */
 export type StepUpMethod = z.infer<typeof StepUpMethodSchema>
+/** An emailed step-up code's receipt. */
+export type StepUpEmailCode = z.infer<typeof StepUpEmailCodeSchema>
 /** Step-up request body. */
 export type StepUpRequest = z.infer<typeof StepUpRequestSchema>

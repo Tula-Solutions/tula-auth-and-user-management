@@ -299,7 +299,7 @@ export function isStepUpRequired(value: unknown): value is TulaError {
   return isTulaError(value) && value.code === 'auth.step_up_required'
 }
 
-const STEP_UP_METHODS: readonly string[] = ['password', 'totp', 'backup_code']
+const STEP_UP_METHODS: readonly string[] = ['password', 'totp', 'backup_code', 'email_code']
 
 /**
  * What the user may step up with, read from an `auth.step_up_required` error (the API sends
@@ -312,7 +312,7 @@ const STEP_UP_METHODS: readonly string[] = ['password', 'totp', 'backup_code']
  *
  * @example
  * ```ts
- * stepUpMethods(error) // ['totp', 'backup_code'], ['password'] or []
+ * stepUpMethods(error) // ['totp', 'backup_code'], ['password', 'email_code'], ['email_code'] or []
  * ```
  */
 export function stepUpMethods(error: unknown): StepUpMethod[] {

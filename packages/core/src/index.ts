@@ -71,6 +71,7 @@ export type {
   SecondFactorProof,
   Session,
   StepUpMethod,
+  StepUpPrepared,
   StepUpProof,
   TotpEnrolment,
   User,

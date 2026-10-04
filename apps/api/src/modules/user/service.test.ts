@@ -513,9 +513,25 @@ describe('changePassword (own)', () => {
 describe('me', () => {
   test('returns the signed-in user, or 404 if they were deleted', async () => {
     const user = await create()
-    expect(await Users.me(deps, tenant, user.id)).toEqual(user)
+    expect(await Users.me(deps, tenant, user.id)).toEqual({ ...user, hasPassword: true })
     await Users.remove(deps, tenant, user.id, TEST_ACTOR)
     expect((await rejection(Users.me(deps, tenant, user.id))).status).toBe(404)
+  })
+})
+
+describe('me: hasPassword', () => {
+  test('is false for a user created without a password, and true once one is set', async () => {
+    const user = await create({ email: 'link@northline.app', password: undefined })
+    expect((await Users.me(deps, tenant, user.id)).hasPassword).toBe(false)
+    await Users.setPassword(deps, tenant, user.id, PASSWORD, TEST_ACTOR)
+    expect((await Users.me(deps, tenant, user.id)).hasPassword).toBe(true)
+  })
+
+  test('says nothing else about the credential', async () => {
+    const user = await create()
+    const me = await Users.me(deps, tenant, user.id)
+    expect(Object.keys(me).sort()).toEqual([...Object.keys(user), 'hasPassword'].sort())
+    expect(JSON.stringify(me)).not.toContain('argon2')
   })
 })
 

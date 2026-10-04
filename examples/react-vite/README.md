@@ -112,6 +112,11 @@ them.
 | ![Turning two-step verification on](docs/two-step-enrol.png) | ![Backup codes](docs/backup-codes.png) |
 | ![The second factor at sign-in](docs/second-factor.png) | ![The step-up dialog](docs/step-up.png) |
 | ![A backup code, on a phone, dark](docs/mobile-second-factor-dark.png) | |
+| ![Sign-in with the provider buttons](docs/oauth-sign-in.png) | ![The provider buttons on a phone, dark](docs/oauth-mobile-sign-in-dark.png) |
+| ![The mock provider's consent page](docs/oauth-mock-provider.png) | ![A callback that got no answer and can be retried](docs/oauth-callback-try-again.png) |
+| ![A replayed callback, refused by the API](docs/oauth-callback-replayed.png) | ![A ticket opened in another browser](docs/oauth-ticket-other-browser.png) |
+| ![The profile of a user with no password](docs/oauth-profile-passwordless.png) | ![Step-up by emailed code](docs/oauth-step-up-email-code.png) |
+| ![Step-up by emailed code, on a phone, dark](docs/oauth-mobile-step-up-email-code-dark.png) | ![A provider sign-in stopped at the second factor](docs/oauth-second-factor.png) |
 
 The setup key and backup codes in these pictures belonged to an account in the test fixture's
 memory, which is gone when the fixture stops. They never worked anywhere else.

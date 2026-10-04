@@ -1562,7 +1562,7 @@ describe('SDK journeys: two-step verification and step-up', () => {
       // A method the user does not have is refused, naming the one to use.
       const noFactor = await caught(tula.session.stepUp({ method: 'totp', code: '123456' }))
       expect(isStepUpRequired(noFactor)).toBe(true)
-      expect(stepUpMethods(noFactor)).toEqual(['password'])
+      expect(stepUpMethods(noFactor)).toEqual(['password', 'email_code'])
 
       const { secret } = await tula.mfa.startTotp()
       const { codes } = await tula.mfa.confirmTotp({ code: authenticator(s, secret) })
@@ -2017,6 +2017,73 @@ describe('SDK journeys: OAuth', () => {
       expect(new Set(decodeJwt(token ?? '').amr as string[])).toEqual(
         new Set(['fed', 'otp', 'mfa'])
       )
+    }
+  )
+
+  journey(
+    'step-up by emailed code',
+    'step-up by email: a user with no password asks for a code, proves it and repeats the sensitive call; with a second factor the code is gone',
+    async () => {
+      const s = await oauthServer()
+      const email = freshEmail()
+      const { outcome, landing } = await continueWithGoogle(s, { email })
+      expect(outcome.status).toBe('complete')
+      const { tula, cookies } = landing
+      expect((await tula.user.get()).hasPassword).toBe(false)
+      const sessionId = tula.state.status === 'signed-in' ? tula.state.sessionId : ''
+      const amr = async () => new Set(decodeJwt((await tula.session.getToken()) ?? '').amr as [])
+      const sends = () =>
+        s.exchanges.filter((sent) => sent.path === '/v1/client/sessions/step-up/email-code')
+
+      // Eleven minutes on, a sensitive call says what this user can prove: only an emailed code.
+      s.advance(11 * 60_000)
+      const refused = await caught(tula.mfa.startTotp())
+      expect(isStepUpRequired(refused)).toBe(true)
+      expect(stepUpMethods(refused)).toEqual(['email_code'])
+      // The SDK sent no email by itself.
+      expect(sends()).toHaveLength(0)
+
+      const receipt = await tula.session.prepareStepUp({ method: 'email_code' })
+      expect(receipt).toEqual({
+        method: 'email_code',
+        destination: expect.stringMatching(/^.\*\*\*@/),
+        expiresAt: expect.any(String),
+      })
+      const code = s.code(email)
+      expect(sends().at(-1)?.responseBody).not.toContain(code)
+      expect(await caught(tula.session.prepareStepUp({ method: 'email_code' }))).toMatchObject({
+        code: 'rate_limited',
+        status: 429,
+        retryAfterMs: expect.any(Number),
+      })
+
+      expect(
+        await caught(
+          tula.session.stepUp({
+            method: 'email_code',
+            code: code === '000000' ? '111111' : '000000',
+          })
+        )
+      ).toMatchObject({ code: 'verification.invalid_code', status: 422 })
+      const jar = JSON.stringify([...cookies])
+      await tula.session.stepUp({ method: 'email_code', code })
+      // The same session, a token that says the mailbox was proven, and the cookie untouched.
+      expect(tula.state).toMatchObject({ status: 'signed-in', sessionId })
+      expect(await amr()).toEqual(new Set(['fed', 'email']) as never)
+      expect(JSON.stringify([...cookies])).toBe(jar)
+      expect(await caught(tula.session.stepUp({ method: 'email_code', code }))).toMatchObject({
+        code: 'verification.expired',
+        status: 410,
+      })
+
+      // The repeated call succeeds; once the factor is on, the emailed code is no longer a way.
+      const { secret } = await tula.mfa.startTotp()
+      await tula.mfa.confirmTotp({ code: totp(base32Decode(secret), s.deps.clock.now()) })
+      const gone = await caught(tula.session.prepareStepUp({ method: 'email_code' }))
+      expect(stepUpMethods(gone)).toEqual(['totp', 'backup_code'])
+      expect(
+        stepUpMethods(await caught(tula.session.stepUp({ method: 'email_code', code })))
+      ).toEqual(['totp', 'backup_code'])
     }
   )
 })

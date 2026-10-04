@@ -1,13 +1,13 @@
-import type { StepUpMethod, StepUpProof, TulaError } from '@tula/core'
+import type { StepUpMethod, StepUpPrepared, StepUpProof, TulaError } from '@tula/core'
 import { type ReactNode, type SyntheticEvent, useEffect, useId, useRef, useState } from 'react'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
 import { useAuthState } from '../hooks/use-auth-state'
 import { formatText } from '../localization'
-import { useRetryAfter } from './flow-screens'
-import { formatDuration } from './form-errors'
+import { CODE_LENGTH, CodeField, ResendButton, useRetryAfter } from './flow-screens'
+import { attemptsLeft, formatDuration } from './form-errors'
 import { BackupCodesPanel, drawableFactors, SecondFactorForm } from './mfa'
-import { Button, Form, FormError, Heading, PasswordField, Root, useUi } from './ui'
+import { Button, Form, FormError, Heading, PasswordField, Root, Status, useUi } from './ui'
 
 /**
  * What the provider is asking the user, above whatever the app is showing: to prove who they
@@ -129,9 +129,167 @@ function PasswordStepUp(props: {
 }
 
 /**
+ * The emailed-code form of a step-up, for a user with no second factor: sends the code when
+ * it appears (the user chose it, or it is the only way they have), then takes the code.
+ *
+ * The send is asked for once per appearance: a ref outlives StrictMode's second run of the
+ * effect, so two runs send one email. A cooldown refusal at that first send means a code is
+ * already in the user's inbox (an earlier dialog asked), so the field is shown all the same.
+ */
+function EmailCodeStepUp(props: {
+  isPending: boolean
+  error: TulaError | null
+  submit(proof: StepUpProof): Promise<boolean>
+}) {
+  const { t } = useUi()
+  const { client } = useTulaContext()
+  const { isPending } = props
+  const [receipt, setReceipt] = useState<StepUpPrepared | null>(null)
+  const [sendError, setSendError] = useState<TulaError | null>(null)
+  const [sending, setSending] = useState(false)
+  const [resent, setResent] = useState(false)
+  const [code, setCode] = useState('')
+  const [incomplete, setIncomplete] = useState(false)
+  const [action, setAction] = useState<'send' | 'verify'>('send')
+  const error = action === 'send' ? sendError : props.error
+  const limits = useRetryAfter<'send' | 'verify'>(error)
+  const sendWait = limits.secondsLeft('send')
+  const verifyWait = limits.secondsLeft('verify')
+  const form = useRef<HTMLDivElement>(null)
+
+  const send = async (again: boolean) => {
+    const state = client.state
+    const sessionId = state.status === 'signed-in' ? state.sessionId : null
+    limits.mark('send')
+    setAction('send')
+    setSending(true)
+    setSendError(null)
+    setResent(false)
+    setIncomplete(false)
+    let answer: StepUpPrepared | null = null
+    let failure: TulaError | null = null
+    try {
+      answer = await client.session.prepareStepUp({ method: 'email_code' })
+    } catch (caught) {
+      failure = toTulaError(caught)
+    }
+    // A receipt belongs to the session that asked for it.
+    const now = client.state
+    if (now.status !== 'signed-in' || now.sessionId !== sessionId) {
+      return
+    }
+    setSending(false)
+    setSendError(failure)
+    if (answer) {
+      setReceipt(answer)
+      setResent(again)
+    }
+  }
+
+  const asked = useRef(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sent once, when the form appears.
+  useEffect(() => {
+    if (!asked.current) {
+      asked.current = true
+      void send(false)
+    }
+  }, [])
+
+  // A code may already be on its way when the first send is refused for being too soon.
+  const hasCode = receipt !== null || sendError?.code === 'rate_limited'
+  useEffect(() => {
+    // The field arrives after the dialog opened (the email had to be sent first): put the
+    // focus on it, as the dialog does for a field that is there from the start.
+    if (hasCode) {
+      form.current?.querySelector<HTMLElement>('input')?.focus()
+    }
+  }, [hasCode])
+
+  const submit = async () => {
+    setResent(false)
+    if (code.length !== CODE_LENGTH) {
+      setIncomplete(true)
+      return
+    }
+    setIncomplete(false)
+    limits.mark('verify')
+    setAction('verify')
+    if (!(await props.submit({ method: 'email_code', code }))) {
+      // A wrong code is retyped from scratch.
+      setCode('')
+    }
+  }
+
+  const retry = (seconds: number) =>
+    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
+
+  if (!hasCode) {
+    return (
+      <Form onSubmit={() => void send(false)} failure={sendError} blocked={sending || sendWait > 0}>
+        {sending ? <p className='tula-text'>{t.stepUp.emailSending}</p> : null}
+        <FormError message={sendError?.message ?? null} detail={retry(sendWait)} />
+        {sending ? null : (
+          <Button type='submit' pending={sending} disabled={sendWait > 0}>
+            {t.stepUp.emailSend}
+          </Button>
+        )}
+      </Form>
+    )
+  }
+
+  const wrong = action === 'verify' && props.error?.code === 'verification.invalid_code'
+  const hint = attemptsLeft(props.error, t)
+  const codeErrors = incomplete
+    ? [t.verification.codeIncomplete]
+    : wrong && props.error
+      ? [hint ? `${props.error.message} ${hint}` : props.error.message]
+      : []
+  // The cooldown that showed the field is not a failure to announce: the resend button says it.
+  const formMessage =
+    wrong || (action === 'send' && sendError?.code === 'rate_limited')
+      ? null
+      : (error?.message ?? null)
+  return (
+    <div ref={form}>
+      <Form
+        onSubmit={submit}
+        failure={incomplete || (action === 'verify' ? props.error : null)}
+        blocked={isPending || verifyWait > 0}
+      >
+        <p className='tula-text'>
+          {receipt
+            ? formatText(t.stepUp.emailSubtitle, { destination: receipt.destination })
+            : t.stepUp.emailSubtitleSent}
+        </p>
+        <FormError message={formMessage} detail={retry(verifyWait)} />
+        <CodeField
+          value={code}
+          onValue={(value) => {
+            setCode(value)
+            setIncomplete(false)
+          }}
+          errors={codeErrors}
+        />
+        <Button type='submit' pending={isPending} disabled={verifyWait > 0}>
+          {t.stepUp.submit}
+        </Button>
+        <div className='tula-actions'>
+          <ResendButton secondsLeft={sendWait} pending={sending} onResend={() => void send(true)} />
+        </div>
+        <Status message={resent ? t.verification.resent : null} />
+      </Form>
+    </div>
+  )
+}
+
+/**
  * The step-up dialog: asks for the factor the server said this user can step up with, sends
  * it (`client.session.stepUp`) and reports whether the session was stepped up. What is typed
  * lives in the dialog's state and goes when it closes.
+ *
+ * A user with a second factor is asked for it and nothing else. Without one: the password
+ * when they have one, with a code by email as the other way when the server lists it (sent
+ * only when they choose it); the emailed code at once when it is all they have.
  */
 function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: boolean): void }) {
   const { t } = useUi()
@@ -142,6 +300,23 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
   const [error, setError] = useState<TulaError | null>(null)
   const second = drawableFactors(methods)
   const signedIn = state.status === 'signed-in'
+  const canPassword = second.length === 0 && methods.includes('password')
+  const canEmail = second.length === 0 && methods.includes('email_code')
+  const [byEmail, setByEmail] = useState(!canPassword)
+  const body = useRef<HTMLDivElement>(null)
+  const switched = useRef(false)
+  useEffect(() => {
+    // Switching between the password and the emailed code: focus follows to the new form's
+    // field (the emailed code's field focuses itself once the email was sent).
+    if (switched.current && !byEmail) {
+      body.current?.querySelector<HTMLElement>('input')?.focus()
+    }
+  }, [byEmail])
+  const choose = (email: boolean) => {
+    switched.current = true
+    setError(null)
+    setByEmail(email)
+  }
 
   useEffect(() => {
     // Signed out underneath the dialog (another tab, a revoked session): nothing to prove.
@@ -176,13 +351,33 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
           backupSubtitle={t.stepUp.backupSubtitle}
           submit={submit}
         />
-      ) : methods.includes('password') ? (
-        <PasswordStepUp isPending={isPending} error={error} submit={submit} />
+      ) : canEmail && (byEmail || !canPassword) ? (
+        <div ref={body}>
+          <EmailCodeStepUp isPending={isPending} error={error} submit={submit} />
+          {canPassword ? (
+            <div className='tula-actions'>
+              <Button kind='link' onClick={() => choose(false)}>
+                {t.stepUp.passwordInstead}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : canPassword ? (
+        <div ref={body}>
+          <PasswordStepUp isPending={isPending} error={error} submit={submit} />
+          {canEmail ? (
+            <div className='tula-actions'>
+              <Button kind='link' onClick={() => choose(true)}>
+                {t.stepUp.emailInstead}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       ) : (
         <p className='tula-text'>{t.stepUp.noMethod}</p>
       )}
       <Button kind='secondary' onClick={cancel}>
-        {second.length > 0 || methods.includes('password') ? t.stepUp.cancel : t.stepUp.close}
+        {second.length > 0 || canPassword || canEmail ? t.stepUp.cancel : t.stepUp.close}
       </Button>
     </Modal>
   )

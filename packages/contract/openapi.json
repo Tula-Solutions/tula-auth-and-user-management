@@ -862,7 +862,46 @@
               "method",
               "code"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "const": "email_code"
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              }
+            },
+            "required": [
+              "method",
+              "code"
+            ]
           }
+        ]
+      },
+      "StepUpEmailCode": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "const": "email_code"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "method",
+          "destination",
+          "expiresAt"
         ]
       },
       "FlowKind": {
@@ -1624,6 +1663,84 @@
         },
         "required": [
           "password"
+        ]
+      },
+      "CurrentUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "emailVerifiedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "firstName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bannedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSignInAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "hasPassword": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "emailVerifiedAt",
+          "firstName",
+          "lastName",
+          "bannedAt",
+          "lastSignInAt",
+          "createdAt",
+          "hasPassword"
         ]
       },
       "ChangePasswordRequest": {
@@ -3789,7 +3906,7 @@
           "Sessions"
         ],
         "summary": "Prove it is still me",
-        "description": "Proves a factor again for the current session and returns a fresh access token whose `auth_time` is now and whose `amr` includes the method. Sensitive routes that answer `auth.step_up_required` accept that token for ten minutes. A user with two-step verification must use `totp` or `backup_code` (their password alone answers `auth.step_up_required`); a user without it uses `password`. A wrong password is `auth.invalid_credentials`, a wrong code `mfa.invalid_code`; wrong proofs back off per user. The refresh token is not rotated.",
+        "description": "Proves a factor again for the current session and returns a fresh access token whose `auth_time` is now and whose `amr` includes the method. Sensitive routes that answer `auth.step_up_required` accept that token for ten minutes. A user with two-step verification must use `totp` or `backup_code` (their password alone answers `auth.step_up_required`); a user without it uses `password`, or an `email_code` asked for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, a wrong emailed code `verification.invalid_code` (`verification.expired` once it is used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong proofs back off per user. The refresh token is not rotated.",
         "security": [
           {
             "publishableKey": [],
@@ -3855,6 +3972,16 @@
               }
             }
           },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "413": {
             "description": "The request body is larger than 64 KiB (`request.too_large`).",
             "content": {
@@ -3912,6 +4039,84 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/StepUpRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/sessions/step-up/email-code": {
+      "post": {
+        "operationId": "sendStepUpEmailCode",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Email me a code to prove it is still me",
+        "description": "Emails the signed-in user a 6-digit code to step up with (`POST /v1/client/sessions/step-up`, method `email_code`). Only for a user with a verified email address and **no** second factor: anyone else gets `auth.step_up_required` (403) with `params.methods`, and nothing is sent. The code works for ten minutes, five guesses, once, and only for the session that asked; a new one replaces it. One code a minute and five an hour per user: sooner answers `rate_limited` (429) with `Retry-After`. The response never holds the code.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code was emailed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepUpEmailCode"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
               }
             }
           }
@@ -8640,6 +8845,7 @@
           "Users"
         ],
         "summary": "Get the signed-in user",
+        "description": "The user the access token belongs to. `hasPassword` says whether the account has a password (someone who signed up through a provider or by email has none).",
         "security": [
           {
             "publishableKey": [],
@@ -8652,7 +8858,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/User"
+                  "$ref": "#/components/schemas/CurrentUser"
                 }
               }
             }

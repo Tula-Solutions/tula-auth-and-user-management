@@ -156,6 +156,21 @@ async function createUnverifiedUser(body: unknown): Promise<Response> {
   return json({ ok: created }, created ? 200 : 409)
 }
 
+/**
+ * A P-256 private key in PKCS#8 PEM, as Apple's `.p8` file holds one: what configuring Sign in
+ * with Apple asks for. Made when the fixture starts and kept in memory only; no key is ever
+ * committed, and this one signs nothing a real provider would accept.
+ */
+async function throwawayAppleKey(): Promise<string> {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+  ])
+  const der = Buffer.from(await crypto.subtle.exportKey('pkcs8', pair.privateKey))
+  const lines = der.toString('base64').match(/.{1,64}/g) ?? []
+  return ['-----BEGIN PRIVATE KEY-----', ...lines, '-----END PRIVATE KEY-----', ''].join('\n')
+}
+const APPLE_KEY = await throwawayAppleKey()
+
 /** Enable exactly the named OAuth providers for the environment (none by default). */
 async function enableProviders(body: unknown): Promise<Response> {
   const wanted = (body as { providers?: unknown }).providers
@@ -164,13 +179,21 @@ async function enableProviders(body: unknown): Promise<Response> {
   }
   const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
   const actor = { type: 'system', id: null, ipAddress: null, userAgent: null } as const
-  for (const provider of ['google', 'github'] as const) {
+  for (const provider of ['google', 'github', 'apple'] as const) {
     if (wanted.includes(provider)) {
       await OAuth.update(
         deps,
         tenant,
         provider,
-        { clientId: `e2e-${provider}`, clientSecret: 'e2e-client-secret', enabled: true },
+        provider === 'apple'
+          ? {
+              clientId: 'e2e.apple.services-id',
+              teamId: 'E2ETEAM000',
+              keyId: 'E2EKEY0000',
+              privateKey: APPLE_KEY,
+              enabled: true,
+            }
+          : { clientId: `e2e-${provider}`, clientSecret: 'e2e-client-secret', enabled: true },
         actor
       )
     } else if (await deps.oauthProviders.find(tenant.environmentId, provider)) {

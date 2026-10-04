@@ -112,6 +112,7 @@ describe('conformance scenarios, in process', () => {
       'OAuth sign-up and sign-in',
       'OAuth account linking',
       'OAuth with a second factor',
+      'step-up by emailed code',
     ])
   })
 

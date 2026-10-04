@@ -154,7 +154,7 @@ export function sessionTokens(
 }
 
 /** A user as `/v1/client/me` returns it. */
-export const TEST_USER: Schemas['User'] = {
+export const TEST_USER: Schemas['CurrentUser'] = {
   id: 'user_1',
   email: 'maya@northline.app',
   emailVerifiedAt: '2030-01-01T00:00:00.000Z',
@@ -163,6 +163,7 @@ export const TEST_USER: Schemas['User'] = {
   bannedAt: null,
   lastSignInAt: null,
   createdAt: '2030-01-01T00:00:00.000Z',
+  hasPassword: true,
 }
 
 /** A clock a test moves by hand. */
