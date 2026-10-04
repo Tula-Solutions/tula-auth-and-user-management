@@ -325,7 +325,7 @@
         },
         "claims": {
           "session.accessToken": {
-            "amr": ["pwd", "otp", "mfa"],
+            "amr": { "$set": ["pwd", "otp", "mfa"] },
             "auth_time": "$any"
           }
         }
@@ -506,7 +506,7 @@
         },
         "claims": {
           "session.accessToken": {
-            "amr": ["email", "otp", "mfa"],
+            "amr": { "$set": ["email", "otp", "mfa"] },
             "auth_time": "$any"
           }
         }

@@ -43,11 +43,42 @@ function got(expected: unknown, actual: unknown): string {
 }
 
 /**
+ * `{ "$set": [...] }`: an array holding exactly these members, in any order. For values that
+ * are sets on the wire, such as a token's `amr`, where order is not part of the contract.
+ */
+function matchSet(members: unknown, actual: unknown, path: string): Mismatch[] {
+  const at = path || 'body'
+  if (!Array.isArray(members)) {
+    return [{ path, message: `${at}: $set takes an array` }]
+  }
+  const remaining = Array.isArray(actual) ? [...actual] : null
+  const matched =
+    remaining !== null &&
+    remaining.length === members.length &&
+    members.every((member) => {
+      const index = remaining.findIndex((candidate) => match(member, candidate).length === 0)
+      if (index >= 0) {
+        remaining.splice(index, 1)
+      }
+      return index >= 0
+    })
+  return matched
+    ? []
+    : [
+        {
+          path,
+          message: `expected ${at} to hold exactly the ${members.length} given members in any order, got ${show(actual)}`,
+        },
+      ]
+}
+
+/**
  * Compare a response body with a step's expected body.
  *
  * Objects are matched as subsets (extra keys in `actual` are fine); arrays must have the same
  * length and match item by item; everything else is compared literally. The matchers `"$any"`,
- * `"$absent"`, `{ "$not": value }` and `{ "$matches": "regex" }` are described on `ExpectSchema`.
+ * `"$absent"`, `{ "$not": value }`, `{ "$matches": "regex" }` and `{ "$set": [...] }` (an array
+ * with exactly these members in any order) are described on `ExpectSchema`.
  *
  * Messages never quote a long or token-shaped string, an object or an array: they are read in
  * CI logs, and response bodies hold tokens.
@@ -74,9 +105,12 @@ export function match(expected: unknown, actual: unknown, path = ''): Mismatch[]
       ? []
       : [{ path, message: `expected ${at} to be absent, got ${show(actual)}` }]
   }
-  if (isRecord(expected) && ('$not' in expected || '$matches' in expected)) {
+  if (isRecord(expected) && ('$not' in expected || '$matches' in expected || '$set' in expected)) {
     if (Object.keys(expected).length !== 1) {
       return [{ path, message: `${at}: a matcher object takes exactly one key` }]
+    }
+    if ('$set' in expected) {
+      return matchSet(expected.$set, actual, path)
     }
     if ('$not' in expected) {
       // "Not the old token" must not pass because the field vanished.

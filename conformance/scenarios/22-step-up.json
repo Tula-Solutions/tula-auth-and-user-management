@@ -114,7 +114,7 @@
           "accessToken": {
             "sub": "{{userId}}",
             "auth_time": "$any",
-            "amr": ["email", "pwd"]
+            "amr": { "$set": ["email", "pwd"] }
           }
         }
       }
@@ -343,7 +343,7 @@
           "accessToken": {
             "sub": "{{userId}}",
             "auth_time": "$any",
-            "amr": ["email", "pwd", "otp", "mfa", "backup_code"]
+            "amr": { "$set": ["email", "pwd", "otp", "mfa", "backup_code"] }
           }
         }
       },

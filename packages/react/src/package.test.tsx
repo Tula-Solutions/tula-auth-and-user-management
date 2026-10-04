@@ -107,24 +107,42 @@ describe('server rendering', () => {
 
 describe('what @tula/react costs a browser bundle', () => {
   /**
-   * Minified and gzipped, with `@tula/core` and its part of the contract, without React. About
-   * 26.4 kB today; the emailed code and link (their screens, the landing-page component and
-   * the client's part) took it past the 26 kB it was first budgeted at.
+   * Minified and gzipped, with `@tula/core` and its part of the contract, without React.
+   * The emailed code and link took it past the 26 kB it was first budgeted at; two-step
+   * verification (the second-factor and enrolment screens, the profile section, the step-up
+   * and backup-code dialogs, and the client's part) took it to about 32.7 kB.
    */
-  const GZIP_BUDGET_BYTES = 30_000
+  const GZIP_BUDGET_BYTES = 35_000
+  /**
+   * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
+   * that never shows one does not pay for it.
+   */
+  const QR_CHUNK_GZIP_BUDGET_BYTES = 3_000
 
   test('the components stay within their size budget and bring no schema library', async () => {
     const built = await Bun.build({
       entrypoints: [join(import.meta.dir, 'index.ts')],
       target: 'browser',
       minify: true,
+      splitting: true,
       external: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
     })
     expect(built.success).toBe(true)
-    const code = (await built.outputs[0]?.text()) ?? ''
+    const outputs = await Promise.all(
+      built.outputs.map(async (output) => ({ kind: output.kind, code: await output.text() }))
+    )
+    const gzip = (code: string) => Bun.gzipSync(Buffer.from(code)).byteLength
+    // What a page loads up front: the entry and whatever it imports statically.
+    const eager = outputs.filter((output) => output.kind === 'entry-point')
+    const lazy = outputs.filter((output) => !eager.includes(output))
+    const code = eager.map((output) => output.code).join('\n')
     expect(code.includes('data-tula-element')).toBe(true)
-    expect(Bun.gzipSync(Buffer.from(code)).byteLength).toBeLessThan(GZIP_BUDGET_BYTES)
+    expect(gzip(code)).toBeLessThan(GZIP_BUDGET_BYTES)
     expect(['ZodType', '_zod', 'safeParse'].filter((marker) => code.includes(marker))).toEqual([])
+    // The encoder is not in what loads up front, and is small where it is.
+    expect(lazy).toHaveLength(1)
+    expect(code.includes('crispEdges')).toBe(true)
+    expect(gzip(lazy[0]?.code ?? '')).toBeLessThan(QR_CHUNK_GZIP_BUDGET_BYTES)
   })
 
   test('the stylesheet is small', () => {

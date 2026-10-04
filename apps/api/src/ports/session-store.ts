@@ -1,4 +1,4 @@
-import type { SessionClient } from '@tula/contract'
+import { AUTHENTICATION_METHODS, type SessionClient } from '@tula/contract'
 import type { Activity } from '~/ports/activity-log'
 
 /** Why a session ended early. */
@@ -81,15 +81,22 @@ export function authenticatedAt(
 }
 
 /**
- * A session's methods with newly proven ones added: no duplicates, earlier ones first. Shared
- * by every adapter so they agree.
+ * A session's methods with newly proven ones added: no duplicates, in **one canonical order**
+ * whatever order they were proven in: the order of `AUTHENTICATION_METHODS` in the contract
+ * (`pwd`, `email`, `otp`, `backup_code`, `mfa`), then any other value alphabetically. `amr` is
+ * a set; the fixed order only keeps tokens and stored rows stable. Shared by every adapter so
+ * they agree.
  *
  * @param current - The session's methods so far.
  * @param added - What was just proven.
  * @returns The combined list.
  */
 export function mergeAuthMethods(current: readonly string[], added: readonly string[]): string[] {
-  return [...new Set([...current, ...added])]
+  const known: readonly string[] = AUTHENTICATION_METHODS
+  const rank = (method: string) => (known.includes(method) ? known.indexOf(method) : known.length)
+  return [...new Set([...current, ...added])].sort(
+    (x, y) => rank(x) - rank(y) || (x < y ? -1 : x > y ? 1 : 0)
+  )
 }
 
 /** A refresh token to store. */

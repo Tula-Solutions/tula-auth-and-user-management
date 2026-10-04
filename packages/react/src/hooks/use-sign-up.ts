@@ -1,7 +1,12 @@
 import type { FlowStep, SignUpFlow } from '@tula/core'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useTulaContext } from '../context'
-import { type FlowState, useFlowController } from './use-flow'
+import {
+  enrolmentActions,
+  type FactorEnrolmentHookActions,
+  type FlowState,
+  useFlowController,
+} from './use-flow'
 
 /**
  * What {@link useSignUp} returns: the flow's state and the actions of a sign-up. Every action
@@ -13,7 +18,7 @@ import { type FlowState, useFlowController } from './use-flow'
  * const signUp: UseSignUpResult = useSignUp()
  * ```
  */
-export interface UseSignUpResult extends FlowState {
+export interface UseSignUpResult extends FlowState, FactorEnrolmentHookActions {
   /**
    * Start a sign-up: the server checks the email and password and emails a 6-digit code. A
    * password the policy rejects fails with the first unmet rule's code, and `error.errors`
@@ -72,5 +77,6 @@ export function useSignUp(): UseSignUpResult {
     [act]
   )
   const resendCode = useCallback(() => act((flow) => flow.resendCode()), [act])
-  return { ...state, start, verifyEmail, resendCode }
+  const enrolment = useMemo(() => enrolmentActions(act), [act])
+  return { ...state, ...enrolment, start, verifyEmail, resendCode }
 }

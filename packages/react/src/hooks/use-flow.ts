@@ -1,4 +1,10 @@
-import { type FlowStep, formatMessage, TulaError } from '@tula/core'
+import {
+  type FactorEnrolmentResult,
+  type FlowStep,
+  formatMessage,
+  type TotpEnrolment,
+  TulaError,
+} from '@tula/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
@@ -201,4 +207,65 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
   }, [client, reset])
 
   return { step, isPending, error, start, act, watch, reset, clearError }
+}
+
+/** A flow that can stop at `needs_factor_enrolment`. */
+interface EnrollingFlow extends CoreFlow {
+  startTotpEnrolment(): Promise<TotpEnrolment>
+  confirmTotpEnrolment(input: { code: string }): Promise<FactorEnrolmentResult>
+}
+
+/**
+ * The two actions of the `needs_factor_enrolment` step, as every flow hook offers them.
+ *
+ * @example
+ * ```ts
+ * const { startTotpEnrolment, confirmTotpEnrolment }: FactorEnrolmentHookActions = useSignIn()
+ * ```
+ */
+export interface FactorEnrolmentHookActions {
+  /**
+   * Start enrolling an authenticator app (step `needs_factor_enrolment`).
+   *
+   * @returns The secret and its `otpauth://` URI, or `null` when it failed (see `error`).
+   *   Show them once and keep them nowhere: the hook does not.
+   */
+  startTotpEnrolment(): Promise<TotpEnrolment | null>
+  /**
+   * Confirm the authenticator with the code it shows. Completes the flow.
+   *
+   * @param input - The 6-digit code.
+   * @returns The `complete` step and the backup codes (shown once), or `null` when it failed.
+   */
+  confirmTotpEnrolment(input: { code: string }): Promise<FactorEnrolmentResult | null>
+}
+
+/**
+ * Build the enrolment actions of a flow hook from its controller's `act`. What an action
+ * returns besides the step (a secret, backup codes) is handed to the caller and kept nowhere.
+ *
+ * @param act - The controller's `act`.
+ * @returns The two actions.
+ */
+export function enrolmentActions<Flow extends EnrollingFlow>(
+  act: FlowController<Flow>['act']
+): FactorEnrolmentHookActions {
+  return {
+    async startTotpEnrolment() {
+      let enrolment: TotpEnrolment | null = null
+      await act(async (flow) => {
+        enrolment = await flow.startTotpEnrolment()
+        return flow.step
+      })
+      return enrolment
+    },
+    async confirmTotpEnrolment(input) {
+      let result: FactorEnrolmentResult | null = null
+      await act(async (flow) => {
+        result = await flow.confirmTotpEnrolment(input)
+        return result.step
+      })
+      return result
+    },
+  }
 }

@@ -245,7 +245,7 @@
         },
         "claims": {
           "session.accessToken": {
-            "amr": ["pwd", "backup_code", "mfa"],
+            "amr": { "$set": ["pwd", "backup_code", "mfa"] },
             "auth_time": "$any"
           }
         }

@@ -699,22 +699,36 @@ describe('two-step verification notice', () => {
     expect(await mfaMail()).toHaveLength(1)
   })
 
-  test('at most three an hour per user, whatever changed, apart from the other notices’ allowance', async () => {
+  test('each change has its own allowance: three harmless notices never silence a reset or a turn-off', async () => {
     const { userId } = await registered()
     const account = { id: userId, email: EMAIL }
-    for (const change of [
+    const changes = [
       'enabled',
       'backup_code_used',
       'backup_codes_regenerated',
       'disabled',
       'admin_reset',
-    ] as const) {
+    ] as const
+    for (const change of changes) {
       notify({ change, at }, account)
+      await Notices.settled()
+    }
+    expect(await mfaMail()).toHaveLength(changes.length)
+    expect((await mfaMail()).at(-1)?.subject).toBe(
+      'Two-step verification was reset for your Tula account'
+    )
+  })
+
+  test('at most three an hour per user and change, apart from the other notices’ allowance', async () => {
+    const { userId } = await registered()
+    const account = { id: userId, email: EMAIL }
+    for (let sent = 0; sent < Notices.NOTICES_PER_HOUR + 2; sent++) {
+      notify({ change: 'admin_reset', at }, account)
       await Notices.settled()
     }
     expect(await mfaMail()).toHaveLength(Notices.NOTICES_PER_HOUR)
     // Another user has an allowance of their own, and so has another kind of notice.
-    notify({ change: 'enabled', at }, { id: 'someone-else', email: 'other@northline.app' })
+    notify({ change: 'admin_reset', at }, { id: 'someone-else', email: 'other@northline.app' })
     expect(await mfaMail()).toHaveLength(Notices.NOTICES_PER_HOUR + 1)
     await Users.setPassword(deps, tenant, userId, NEW_PASSWORD, TEST_ACTOR)
     expect(await sent(CHANGED_SUBJECT)).toHaveLength(1)
@@ -744,6 +758,9 @@ describe('two-step verification notice', () => {
   test('its allowance is keyed by kind, environment and user', () => {
     expect(Notices.limitKey('mfa_changed', tenant, 'user-1')).toBe(
       `notice_mfa_changed:${tenant.environmentId}:user-1`
+    )
+    expect(Notices.limitKey('mfa_changed', tenant, 'user-1', 'admin_reset')).toBe(
+      `notice_mfa_changed.admin_reset:${tenant.environmentId}:user-1`
     )
   })
 })

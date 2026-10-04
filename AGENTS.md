@@ -119,6 +119,13 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 
 ### React SDK (see ADR 0022)
 
+- **Dialogs that must outlive a page belong to the provider.** The step-up dialog and the
+  backup codes of an enrolment made inside a flow are drawn by `<TulaProvider>`
+  (`components/prompts.tsx`), reached through `useTulaContext().prompts` and `useStepUp()`:
+  an app unmounts `<SignIn>` the moment the client is signed in. An authenticator's setup
+  key, its QR code and backup codes are held in state only while their screen is open. The
+  QR encoder (`src/qr`) is the package's own and is loaded with `import()`; never add a QR
+  dependency or import it statically.
 - **Components render the server's step and nothing else.** A screen per `step.status`; a new
   sign-in method is a new screen and an entry in `FIRST_FACTOR_FORMS`
   (`packages/react/src/components/sign-in.tsx`). The default branch of every step `switch` is
@@ -311,9 +318,9 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - **Rows that expire are deleted by the retention job** (`modules/retention`,
   [ADR 0017](docs/adr/0017-retention.md)): expired flow attempts, verification tokens an hour
   past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
-  cascade), authenticator enrolments that were never confirmed. A new table of short-lived rows gets a batched purge method on its store, in both
-  adapters and the shared suite, and a line in that job. Audit entries and outbox events are
-  never deleted by it.
+  cascade), authenticator enrolments that were never confirmed. A new table of short-lived
+  rows gets a batched purge method on its store, in both adapters and the shared suite, and a
+  line in that job. Audit entries and outbox events are never deleted by it.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 
@@ -371,6 +378,7 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - **A session records how it was authenticated.** `Sessions.create` takes `authMethods`; the
   access token carries `auth_time` and `amr` from the session row (never "now": refresh must
   not make an old sign-in look recent). Only `Sessions.recordAuthentication` moves them.
+  `amr` is a set: never compare it as an ordered array (scenarios use `{ "$set": [...] }`).
 - **Nothing removes a second factor except its owner (after a step-up) or an admin reset.** A
   password reset stops at `needs_second_factor`; there is no emailed MFA bypass; the policy
   `off` still asks enrolled users for their factor.
@@ -435,16 +443,19 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   subject or HTML. A user agent never reaches an email at all: only the family
   `deviceFamily` (`~/lib/device`) derives from it, which is built from fixed names.
 - **A change to a password or to two-step verification, and a sign-in from a new device, are
-  announced to the account's owner** through `~/modules/notice/service` (ADR 0023, ADR 0025). A new code path that stores a password
-  goes through `Users.replacePassword`, and one that creates a session for a sign-in goes
-  through the flow engine's `finish`, so it is announced too. Notices are started after the
-  change is committed and are never awaited: they must not fail or delay what they describe.
-  They have their own per-user limit (`NOTICES_PER_HOUR`), and a limiter that cannot count
-  means no notice, never a refused sign-in. A notice carries no code, token or link, and its
-  subject never starts with digits. Tests wait for them with `Notices.settled()` and read a
-  code from the newest email whose subject leads with one, not from the newest email.
+  announced to the account's owner** through `~/modules/notice/service` (ADR 0023, ADR 0025).
+  A new code path that stores a password goes through `Users.replacePassword`, and one that
+  creates a session for a sign-in goes through the flow engine's `finish`, so it is announced
+  too. Notices are started after the change is committed and are never awaited: they must not
+  fail or delay what they describe. They have their own per-user limit (`NOTICES_PER_HOUR`;
+  each kind of two-step verification change has its own allowance, so that harmless ones
+  cannot silence "it was reset"), and a limiter that cannot count means no notice, never a
+  refused sign-in. A notice carries no code, token or link, and its subject never starts with
+  digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
+  whose subject leads with one, not from the newest email.
 - Treat every change under `modules/{flow,session,password,jwks,verification,mfa,factor}`,
-  `middleware/{cors,recent-auth}.ts`, `lib/crypto.ts` or `lib/totp.ts` as security-sensitive: it needs tests for the failure paths, not just the happy path.
+  `middleware/{cors,recent-auth}.ts`, `lib/crypto.ts` or `lib/totp.ts` as security-sensitive:
+  it needs tests for the failure paths, not just the happy path.
 
 ## Testing
 

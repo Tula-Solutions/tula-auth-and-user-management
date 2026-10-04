@@ -7,10 +7,11 @@ import { join } from 'node:path'
  * link (their actions, the link's binding store, the wait for a link and the landing-page
  * handler cost about 2 kB), and 1.3 kB more for two-step verification (fourteen more routes
  * in the operation table, the flow and `mfa` actions, their response guards and step-up).
- * That leaves almost no room: the next addition has to raise the budget, deliberately. It
- * still makes a dependency that drags a library in fail here rather than in someone's app.
+ * The budget was raised from 11 kB to 12 kB with that step, which had left twelve bytes of
+ * room: enough for fixes, and still far below what a dependency dragging a library in costs,
+ * which is what this test exists to catch.
  */
-const GZIP_BUDGET_BYTES = 11_000
+const GZIP_BUDGET_BYTES = 12_000
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

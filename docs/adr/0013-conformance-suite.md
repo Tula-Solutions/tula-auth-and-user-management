@@ -43,9 +43,19 @@ language-neutral suite every server and SDK must pass.
 - A live run needs the server to trust `X-Forwarded-For` (`TRUST_PROXY=true`). That is a test
   deployment setting; a server that ignores the header still passes unless a run exceeds a
   per-IP limit (ten sign-ups a minute).
-- A live run leaves its users and audit entries behind and takes about two and a half
-  minutes, because three scenarios really wait: 61 seconds for an address's email cooldown
-  (twice) and 11 for the refresh grace period.
+- A live run leaves its users and audit entries behind and takes about five and a half
+  minutes, because scenarios really wait: 61 seconds for an address's email cooldown (several
+  times), 11 for the refresh grace period, and, since the two-step verification scenarios
+  ([ADR 0025](0025-mfa.md)), 30 seconds between two uses of one authenticator (121 seconds in
+  all), because the server accepts a time step once.
+- **The target tells the runner the time.** A `totp` step computes the code an authenticator
+  app would show from a captured secret and `Target.now()`: the test clock in process (which
+  `wait` steps advance), the wall clock against a live server. A live run therefore needs the
+  runner's clock and the server's to agree to within the 30 seconds either side that the
+  server tolerates; it passed against the two-instance Compose stack on its first runs.
+- **Sets are matched as sets.** `{ "$set": [...] }` matches an array with exactly the given
+  members in any order. It exists for a token's `amr`, whose order is not part of the
+  contract, so that a server which emits another order still conforms.
 - Scenarios assume the default password policy and session profile. A deployment with other
   settings may fail the lockout or reuse scenario for reasons that are not bugs.
 - Browser cookie delivery, concurrent refresh and the SDK-side behaviour (single-flight refresh)

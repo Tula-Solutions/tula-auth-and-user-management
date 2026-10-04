@@ -42,10 +42,18 @@ export const APP_PORT = 4317
 /** A fixed, fake key for the memory environment. It opens nothing outside this process. */
 export const PUBLISHABLE_KEY = 'tula_pk_dev_e2e000000000000000000000000000000'
 
-/** The wall clock: browsers keep real time, so tokens and cookies must expire by it. */
+/**
+ * The wall clock: browsers keep real time, so tokens and cookies must expire by it. A test can
+ * move it forward (`/__test/advance-clock`) to make a sign-in old enough to need a step-up
+ * without waiting ten minutes; it never moves back.
+ */
 class WallClock extends FixedClock {
+  #aheadMs = 0
   override now(): Date {
-    return new Date()
+    return new Date(Date.now() + this.#aheadMs)
+  }
+  forward(ms: number): void {
+    this.#aheadMs += Math.max(0, ms)
   }
 }
 
@@ -135,6 +143,20 @@ function testRoute(request: Request): Response | Promise<Response> | null {
   }
   if (request.method === 'POST' && url.pathname === '/__test/settings') {
     return replaceSettings(request)
+  }
+  if (request.method === 'GET' && url.pathname === '/__test/now') {
+    // What the API takes the time to be: an authenticator code is computed from it.
+    return json({ now: clock.now().getTime() })
+  }
+  if (request.method === 'POST' && url.pathname === '/__test/advance-clock') {
+    return request.json().then((body) => {
+      const ms = Number((body as { ms?: unknown }).ms)
+      if (!Number.isFinite(ms) || ms < 0 || ms > 86_400_000) {
+        return json({ error: 'ms must be between 0 and one day' }, 422)
+      }
+      clock.forward(ms)
+      return json({ now: clock.now().getTime() })
+    })
   }
   return json({ error: 'unknown test route' }, 404)
 }

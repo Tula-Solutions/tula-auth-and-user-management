@@ -307,9 +307,13 @@ type ConfirmDeps = Pick<
  *   inside a sign-in has none).
  * @param code - The 6-digit code.
  * @param actor - The user, for the audit log.
+ * @param options - `notify: false` leaves the notice to the caller (an enrolment inside an
+ *   attempt announces it only once the attempt has completed).
  * @returns The ten backup codes, shown this once.
- * @throws AuthError `mfa.enrolment_expired` when nothing is pending or it lapsed,
- *   `mfa.already_enabled`, or `mfa.invalid_code`.
+ * @throws AuthError `mfa.not_available` when the environment's policy is `off` (checked before
+ *   the code is counted: an enrolment started before the switch-off cannot be finished after
+ *   it), `mfa.enrolment_expired` when nothing is pending or it lapsed, `mfa.already_enabled`,
+ *   or `mfa.invalid_code`.
  * @throws RateLimitError while the user is locked out after repeated wrong codes.
  */
 export async function confirmTotp(
@@ -317,10 +321,14 @@ export async function confirmTotp(
   scope: Scope,
   self: { userId: string; sessionId?: string },
   code: string,
-  actor: Actor
+  actor: Actor,
+  options: { notify?: boolean } = {}
 ): Promise<BackupCodes> {
   const { userId } = self
   const now = deps.clock.now()
+  if ((await Settings.current(deps, scope)).mfa.policy === 'off') {
+    throw new AuthError('mfa.not_available')
+  }
   const [factor, user] = await Promise.all([
     deps.factors.findTotp(scope.environmentId, userId),
     deps.users.findById(scope.environmentId, userId),
@@ -382,7 +390,9 @@ export async function confirmTotp(
       })
     }
   }
-  Notices.mfaChanged(deps, scope, user, { change: 'enabled', at: now })
+  if (options.notify !== false) {
+    Notices.mfaChanged(deps, scope, user, { change: 'enabled', at: now })
+  }
   return { codes: backup.codes }
 }
 

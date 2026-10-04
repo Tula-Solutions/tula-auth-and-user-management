@@ -11,6 +11,8 @@ export default defineConfig({
   preferredTsconfig: './tsconfig.build.json',
   // React, `@tula/core` and `@tula/contract` stay imports; nothing is bundled in.
   packages: 'external',
+  // The QR encoder is imported on demand (`import('../qr')`): keep it a chunk of its own.
+  splitting: true,
   // The production JSX runtime (`react/jsx-runtime`), whatever NODE_ENV the build runs with.
   jsx: { runtime: 'automatic', development: false },
   // `src/index.ts` starts with 'use client' and the bundler keeps the directive at the top of

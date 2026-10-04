@@ -156,6 +156,37 @@ describe('$not and matcher objects', () => {
   )
 })
 
+describe('$set', () => {
+  test('matches an array with exactly the given members, in any order', () => {
+    expect(match({ amr: { $set: ['pwd', 'otp', 'mfa'] } }, { amr: ['mfa', 'pwd', 'otp'] })).toEqual(
+      []
+    )
+    expect(match({ amr: { $set: [] } }, { amr: [] })).toEqual([])
+    expect(
+      match({ list: { $set: [{ id: 1 }, '$any'] } }, { list: ['x', { id: 1, extra: true }] })
+    ).toEqual([])
+  })
+
+  test.each<[string, unknown, unknown]>([
+    ['a missing member', ['pwd', 'otp'], ['pwd', 'mfa']],
+    ['an extra member', ['pwd'], ['pwd', 'otp']],
+    ['a member too few', ['pwd', 'otp'], ['pwd']],
+    ['a repeated member standing in for another', ['pwd', 'otp'], ['pwd', 'pwd']],
+    ['something that is not an array', ['pwd'], 'pwd'],
+    ['a missing value', ['pwd'], undefined],
+  ])('refuses %s', (_, members, actual) => {
+    const [mismatch] = match({ amr: { $set: members } }, { amr: actual })
+    expect(mismatch?.path).toBe('amr')
+    expect(mismatch?.message).toContain('in any order')
+  })
+
+  test('a $set that is not an array is an authoring error', () => {
+    expect(match({ amr: { $set: 'pwd' } }, { amr: ['pwd'] })).toEqual([
+      { path: 'amr', message: 'amr: $set takes an array' },
+    ])
+  })
+})
+
 describe('jwtClaims', () => {
   const encode = (value: unknown) =>
     Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url')

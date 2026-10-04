@@ -219,7 +219,12 @@ describe('<SignIn> first factors and steps it does not know', () => {
   })
 
   test.each([
-    ['needs_second_factor', { status: 'needs_second_factor', options: ['totp'] }],
+    [
+      'a second factor this version cannot ask for',
+      { status: 'needs_second_factor', options: ['passkey'] },
+    ],
+    ['a second-factor step with no options', { status: 'needs_second_factor' }],
+    ['an enrolment of a method this version cannot enrol', { status: 'needs_factor_enrolment' }],
     ['a status from a newer server', { status: 'needs_retina_scan' }],
     ['needs_new_password in a sign-in', NEW_PASSWORD_STEP],
   ] as [string, { status: string }][])(
@@ -437,7 +442,7 @@ describe('<SignIn> forgotten password', () => {
     expect(await screen.findByText('A new code is on its way.')).toBeTruthy()
 
     w.api.on(ROUTE.resetSubmit, () =>
-      attempt('password_reset', { status: 'needs_second_factor', options: ['totp'] })
+      attempt('password_reset', { status: 'needs_second_factor', options: ['passkey'] })
     )
     await w.user.type(screen.getByLabelText('Verification code'), '123456')
     await w.user.type(screen.getByLabelText('New password'), PASSWORD)

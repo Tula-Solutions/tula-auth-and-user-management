@@ -25,7 +25,7 @@ import {
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InvalidEmailError, RateLimitError, ValidationError } from '~/exceptions'
-import { cleanOrigin } from '~/lib/actor'
+import { cleanOrigin, systemActor } from '~/lib/actor'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
@@ -1524,9 +1524,13 @@ export async function startFactorEnrolment(
  * recorded, every existing session of the user ended, the owner emailed). Then the attempt
  * completes: the response carries the session **and the ten backup codes, once**.
  *
- * If the attempt cannot complete after the factor was confirmed (it expired in between), the
- * factor stays on and the codes are lost with the response: the user signs in with their
- * authenticator and makes new ones.
+ * **The factor and the session stand or fall together.** If the attempt cannot complete after
+ * the factor was confirmed (it expired in that instant, or the session could not be created),
+ * the response that would have carried the backup codes is lost, so the enrolment is undone:
+ * the factor and its codes are removed again (recorded as `user.mfa_disabled`, `method:
+ * 'enrolment_incomplete'`) and the user enrols afresh at their next sign-in. Nobody is left
+ * with a second factor whose backup codes they never saw. The owner is told the factor is on
+ * only once the attempt has completed.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -1556,10 +1560,38 @@ export async function confirmFactorEnrolment(
     throw new AuthError('auth.user_banned')
   }
   const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
-  const { codes } = await Mfa.confirmTotp(deps, tenant, { userId }, code, actor)
-  return finish(deps, tenant, attempt, proven(state, 'otp', 'mfa'), userId, context, {
-    backupCodes: codes,
+  const { codes } = await Mfa.confirmTotp(deps, tenant, { userId }, code, actor, {
+    notify: false,
   })
+  let result: FlowResult
+  try {
+    result = await finish(deps, tenant, attempt, proven(state, 'otp', 'mfa'), userId, context, {
+      backupCodes: codes,
+    })
+  } catch (error) {
+    try {
+      await deps.factors.removeForUser(
+        tenant.environmentId,
+        userId,
+        Audit.entry(deps, tenant, {
+          type: 'user.mfa_disabled',
+          actor: systemActor(context),
+          target: { type: 'user', id: userId },
+          data: { method: 'enrolment_incomplete' },
+        })
+      )
+    } catch (undo) {
+      // Both failed: the factor is on and its codes were never shown. The user signs in with
+      // the authenticator and makes new codes, or an administrator resets them.
+      logger.warn('could not undo an enrolment whose attempt did not complete', {
+        environmentId: tenant.environmentId,
+        err: undo instanceof Error ? undo.name : 'unknown',
+      })
+    }
+    throw error
+  }
+  Notices.mfaChanged(deps, tenant, user, { change: 'enabled', at: deps.clock.now() })
+  return result
 }
 
 /**

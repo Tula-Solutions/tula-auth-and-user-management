@@ -146,6 +146,76 @@ export interface TulaLocalization {
     /** One line per rule; `{min}` and `{max}` come from the policy. */
     rules: Record<PasswordRule, string>
   }
+  /** Two-step verification: the second factor at sign-in, enrolment, backup codes. */
+  mfa: {
+    secondFactorTitle: string
+    totpSubtitle: string
+    totpLabel: string
+    totpHint: string
+    codeIncomplete: string
+    submit: string
+    useBackupCode: string
+    useAuthenticator: string
+    backupSubtitle: string
+    backupLabel: string
+    backupHint: string
+    backupRequired: string
+    enrolTitle: string
+    /** Shown when the app requires two-step verification before a sign-in completes. */
+    enrolRequired: string
+    enrolStart: string
+    scanInstruction: string
+    /** The accessible name of the QR code. */
+    qrLabel: string
+    qrLoading: string
+    secretLabel: string
+    secretHint: string
+    confirmSubmit: string
+    cancel: string
+    backupCodesTitle: string
+    backupCodesIntro: string
+    /** The accessible name of the list of codes. */
+    backupCodesList: string
+    copy: string
+    copied: string
+    copyFailed: string
+    download: string
+    /** The name of the downloaded text file. */
+    downloadFileName: string
+    saved: string
+    savedRequired: string
+    done: string
+    sectionTitle: string
+    statusLoading: string
+    statusOff: string
+    /** `{date}`. */
+    statusOn: string
+    /** `{count}`. */
+    codesRemaining: string
+    codesRemainingOne: string
+    turnOn: string
+    turnOff: string
+    turnedOn: string
+    turnedOff: string
+    regenerate: string
+    regenerated: string
+    /** Shown instead of "Turn off" where the app requires two-step verification. */
+    requiredByApp: string
+  }
+  /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
+  stepUp: {
+    title: string
+    passwordSubtitle: string
+    passwordLabel: string
+    passwordWrong: string
+    totpSubtitle: string
+    backupSubtitle: string
+    submit: string
+    cancel: string
+    /** Shown when the user has nothing to step up with: they must sign in again. */
+    noMethod: string
+    close: string
+  }
   /** A step this version of the components cannot draw. */
   unsupported: {
     title: string
@@ -338,6 +408,69 @@ export const EN_LOCALIZATION: TulaLocalization = {
       repeated_characters: 'No more than {max} repeated characters in a row',
       sequence: 'No sequences like "abcd" or "1234"',
     },
+  },
+  mfa: {
+    secondFactorTitle: 'Two-step verification',
+    totpSubtitle: 'Enter the 6-digit code from your authenticator app.',
+    totpLabel: 'Authentication code',
+    totpHint: '6 digits',
+    codeIncomplete: 'Enter the 6-digit code.',
+    submit: 'Verify',
+    useBackupCode: 'Use a backup code',
+    useAuthenticator: 'Use your authenticator app',
+    backupSubtitle: 'Enter one of your backup codes. Each code works once.',
+    backupLabel: 'Backup code',
+    backupHint: '10 characters, for example abcde-fghjk',
+    backupRequired: 'Enter a backup code.',
+    enrolTitle: 'Set up two-step verification',
+    enrolRequired:
+      'This app requires two-step verification. Set up an authenticator app to finish signing in.',
+    enrolStart: 'Set up authenticator app',
+    scanInstruction:
+      'Scan this QR code with your authenticator app, or enter the setup key by hand. Then enter the 6-digit code the app shows.',
+    qrLabel: 'QR code for your authenticator app. If you cannot scan it, use the setup key.',
+    qrLoading: 'Preparing the QR code…',
+    secretLabel: 'Setup key',
+    secretHint: 'Keep this key private. It is shown only now.',
+    confirmSubmit: 'Turn on',
+    cancel: 'Cancel',
+    backupCodesTitle: 'Save your backup codes',
+    backupCodesIntro:
+      'Each code signs you in once if you cannot use your authenticator app. Keep them somewhere safe: they will not be shown again.',
+    backupCodesList: 'Backup codes',
+    copy: 'Copy',
+    copied: 'Copied.',
+    copyFailed: 'Could not copy. Select the codes and copy them by hand.',
+    download: 'Download',
+    downloadFileName: 'backup-codes.txt',
+    saved: 'I have saved these codes',
+    savedRequired: 'Confirm that you have saved the codes.',
+    done: 'Done',
+    sectionTitle: 'Two-step verification',
+    statusLoading: 'Checking two-step verification…',
+    statusOff: 'Off. Add a code from an authenticator app as a second step when you sign in.',
+    statusOn: 'On since {date}.',
+    codesRemaining: '{count} backup codes left.',
+    codesRemainingOne: '1 backup code left.',
+    turnOn: 'Turn on',
+    turnOff: 'Turn off',
+    turnedOn: 'Two-step verification is on.',
+    turnedOff: 'Two-step verification is off.',
+    regenerate: 'New backup codes',
+    regenerated: 'Your earlier backup codes no longer work.',
+    requiredByApp: 'This app requires two-step verification, so it cannot be turned off.',
+  },
+  stepUp: {
+    title: 'Confirm it is you',
+    passwordSubtitle: 'Enter your password to continue.',
+    passwordLabel: 'Password',
+    passwordWrong: 'That password is incorrect.',
+    totpSubtitle: 'Enter the 6-digit code from your authenticator app to continue.',
+    backupSubtitle: 'Enter one of your backup codes to continue. Each code works once.',
+    submit: 'Continue',
+    cancel: 'Cancel',
+    noMethod: 'For your security, sign out and sign in again to continue.',
+    close: 'Close',
   },
   unsupported: {
     title: 'This step is not supported',

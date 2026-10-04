@@ -1,7 +1,12 @@
-import type { FlowStep, SignInFlow } from '@tula/core'
-import { useCallback } from 'react'
+import type { FlowStep, SecondFactorProof, SignInFlow } from '@tula/core'
+import { useCallback, useMemo } from 'react'
 import { useTulaContext } from '../context'
-import { type FlowState, useFlowController } from './use-flow'
+import {
+  enrolmentActions,
+  type FactorEnrolmentHookActions,
+  type FlowState,
+  useFlowController,
+} from './use-flow'
 
 /**
  * What {@link useSignIn} returns: the flow's state and the actions of a sign-in. Every action
@@ -13,7 +18,7 @@ import { type FlowState, useFlowController } from './use-flow'
  * const signIn: UseSignInResult = useSignIn()
  * ```
  */
-export interface UseSignInResult extends FlowState {
+export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
   /**
    * Start a sign-in. The answer depends only on the environment's settings, never on the
    * identifier: `needs_password`, or `needs_first_factor` with the strategies on offer.
@@ -69,6 +74,13 @@ export interface UseSignInResult extends FlowState {
    * cannot.
    */
   canUseEmailLink(): boolean
+  /**
+   * Prove a second factor (step `needs_second_factor`): the 6-digit code an authenticator app
+   * shows, or an unused backup code.
+   *
+   * @param input - The method and its code.
+   */
+  submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
 }
 
 /**
@@ -130,6 +142,12 @@ export function useSignIn(): UseSignInResult {
     [watch]
   )
   const canUseEmailLink = useCallback(() => client.signIn.canUseEmailLink(), [client])
+  const submitSecondFactor = useCallback(
+    (input: SecondFactorProof) =>
+      act((flow) => flow.submitSecondFactor(input).then((result) => result.step)),
+    [act]
+  )
+  const enrolment = useMemo(() => enrolmentActions(act), [act])
   return {
     ...state,
     start,
@@ -140,5 +158,7 @@ export function useSignIn(): UseSignInResult {
     attemptFirstFactor,
     waitForEmailLink,
     canUseEmailLink,
+    submitSecondFactor,
+    ...enrolment,
   }
 }

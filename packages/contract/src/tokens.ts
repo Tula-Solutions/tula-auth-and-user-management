@@ -77,6 +77,10 @@ export const AccessTokenClaimsSchema = z
      * ({@link AUTHENTICATION_METHODS}), e.g. `["pwd"]`, `["pwd","otp","mfa"]`, `["email"]`.
      * `mfa` is present exactly when a second factor was proven. Plain strings, so a later
      * server's new method does not fail verification.
+     *
+     * **A set, not a sequence: the order means nothing.** Test membership
+     * (`amr.includes('mfa')`), never position or equality with an array. The server happens
+     * to emit the order of {@link AUTHENTICATION_METHODS}; that is not part of the contract.
      */
     amr: z.array(z.string()).optional(),
   })

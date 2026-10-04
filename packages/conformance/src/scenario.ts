@@ -96,7 +96,8 @@ export const ExpectSchema = z
     bodyExcludes: z.array(z.string().min(1)).optional(),
     /**
      * Claims of JWTs in the response, by the token's dot path in the body:
-     * `{ "session.accessToken": { "amr": ["pwd", "otp", "mfa"], "auth_time": "$any" } }`.
+     * `{ "session.accessToken": { "amr": { "$set": ["pwd", "otp", "mfa"] }, "auth_time": "$any" } }`.
+     * `{ "$set": [...] }` matches an array with exactly those members in any order.
      */
     claims: z.record(z.string(), z.unknown()).optional(),
   })

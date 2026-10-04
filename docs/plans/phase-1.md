@@ -328,9 +328,19 @@ The changes every new method needs, made once.
   enrolled users for their factor**. Under `required`, enrolment happens inside the attempt
   (`needs_factor_enrolment`, routes under all three flows) and returns the session and the
   backup codes together. Recovery from losing everything is the admin reset only. Notices:
-  `notifications.mfaChanged`. The conformance format gained a way to compute a TOTP code from
-  a captured secret. `@tula/react` draws its QR code with its own encoder (no runtime
-  dependency), proven in tests by decoding with `jsqr`.
+  `notifications.mfaChanged`, with an allowance per kind of change. `amr` is a set: the server
+  emits one canonical order and the scenarios match it with `$set`. An enrolment confirmed
+  inside an attempt that then cannot complete is undone, so nobody is left with a factor
+  whose backup codes they never saw. The conformance format gained a `totp` step (the code is
+  computed from a captured secret and the target's clock), `expect.claims` and the `$set`
+  matcher; eight scenarios (17 to 24) and their SDK journeys were added, and a live run takes
+  about five and a half minutes. `@tula/core` has `tula.mfa.*`, `session.stepUp`,
+  `submitSecondFactor` and the enrolment actions; it never prompts by itself. `@tula/react`
+  has the second-factor and enrolment screens, the profile section, and two dialogs owned by
+  the provider (step-up, through `useStepUp()`, and the backup codes of an in-flow enrolment,
+  which must outlive a sign-in page the app unmounts). It draws its QR code with its own
+  encoder (no runtime dependency; a lazily loaded 2.1 kB chunk), proven by decoding with
+  `jsqr` in tests and from a screenshot of the real page.
 
 ### 1.9 OAuth: Google, GitHub, Apple
 

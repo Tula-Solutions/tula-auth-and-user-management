@@ -172,7 +172,7 @@ export function describeSessionStore(
       })
     })
 
-    test('methods proven again are not listed twice, and the earlier order is kept', async () => {
+    test('methods proven again are not listed twice, and the order is the canonical one', async () => {
       const { session: s } = await seed(ctx.a, { authMethods: ['pwd', 'otp', 'mfa'] })
       const first = await ctx.store.recordAuthentication(ctx.a.environmentId, s.id, {
         at: later(1_000),
@@ -185,7 +185,7 @@ export function describeSessionStore(
       })
       expect(second).toMatchObject({
         factorVerifiedAt: later(2_000),
-        authMethods: ['pwd', 'otp', 'mfa', 'backup_code'],
+        authMethods: ['pwd', 'otp', 'backup_code', 'mfa'],
       })
       // Without an activity nothing is recorded.
       expect(await recorded(ctx.a, s.id)).toEqual([])

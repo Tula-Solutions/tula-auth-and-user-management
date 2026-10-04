@@ -1379,6 +1379,33 @@ describe('the environment’s MFA policy', () => {
     expect((await rejection(Mfa.startTotp(deps, tenant, user.id))).code).toBe('mfa.not_available')
   })
 
+  test('off: an enrolment started before the switch-off cannot be confirmed, and the guess is not counted', async () => {
+    const user = await seedUser()
+    const { secret } = await Mfa.startTotp(deps, tenant, user.id)
+    policy('off')
+    const err = await rejection(
+      Mfa.confirmTotp(deps, tenant, { userId: user.id }, codeFor(secret), actorOf(user.id))
+    )
+    expect(err.toJSON()).toMatchObject({ status: 403, code: 'mfa.not_available' })
+    expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({ totp: { enabled: false } })
+    expect(deps.activityLog.ofType('user.mfa_enabled')).toEqual([])
+    // Nothing was counted: every free guess is still there once the policy allows it again.
+    policy('optional')
+    for (let guess = 0; guess < CREDENTIAL_LOCKOUT.freeAttempts - 1; guess++) {
+      expect(
+        (
+          await rejection(
+            Mfa.confirmTotp(deps, tenant, { userId: user.id }, '000000', actorOf(user.id))
+          )
+        ).code
+      ).toBe('mfa.invalid_code')
+    }
+    expect(
+      (await Mfa.confirmTotp(deps, tenant, { userId: user.id }, codeFor(secret), actorOf(user.id)))
+        .codes
+    ).toHaveLength(10)
+  })
+
   test.each<['optional' | 'required']>([['optional'], ['required']])(
     '%s: a user can enrol',
     async (value) => {
@@ -1644,7 +1671,7 @@ describe('stepUp', () => {
     const claims = await claimsOf(tokens.accessToken)
     expect(claims.auth_time).toBe(Math.floor(deps.clock.now().getTime() / 1000))
     expect(claims.auth_time).toBe((before.auth_time as number) + 1_200)
-    expect(claims.amr).toEqual(['email', 'pwd'])
+    expect(claims.amr).toEqual(['pwd', 'email'])
     expect(claims).toMatchObject({ sub: user.id, sid: session.sessionId })
     await Mfa.requireRecentAuthentication(deps, tenant, claims)
     expect(deps.activityLog.ofType('session.stepped_up')).toEqual([

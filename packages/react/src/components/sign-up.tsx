@@ -9,10 +9,12 @@ import {
   SignedInNotice,
   UnsupportedScreen,
   useCompletion,
+  useEnrolmentCompletion,
   useRetryAfter,
   VerificationScreen,
 } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
+import { canEnrolTotp, FactorEnrolmentScreen } from './mfa'
 import { SwitchLink } from './sign-in'
 import {
   Button,
@@ -192,6 +194,7 @@ function SignUpScreens(props: SignUpProps) {
     start: (input) => flow.start(input).then(finish),
     verifyEmail: (input) => flow.verifyEmail(input).then(finish),
   }
+  const confirmEnrolment = useEnrolmentCompletion(flow, finish)
 
   if (signedIn) {
     return <SignedInNotice key={screen} focusTitle={focusTitle} />
@@ -211,8 +214,23 @@ function SignUpScreens(props: SignUpProps) {
           resend={signUp.resendCode}
         />
       )
+    case 'needs_factor_enrolment':
+      if (!canEnrolTotp(step.methods)) {
+        return <UnsupportedScreen key={screen} focusTitle={focusTitle} onRestart={signUp.reset} />
+      }
+      return (
+        <FactorEnrolmentScreen
+          key={screen}
+          focusTitle={focusTitle}
+          isPending={signUp.isPending}
+          error={signUp.error}
+          start={signUp.startTotpEnrolment}
+          confirm={confirmEnrolment}
+          onRestart={signUp.reset}
+        />
+      )
     default:
-      // A step a newer server added to sign-up (choosing a second factor, say).
+      // A step a newer server added to sign-up.
       return <UnsupportedScreen key={screen} focusTitle={focusTitle} onRestart={signUp.reset} />
   }
 }

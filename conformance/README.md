@@ -112,7 +112,9 @@ included: use `attempt`).
   the value to be present). `bodyExcludes` lists strings the raw response must not contain.
   `claims` checks what a JWT in the body says: each key is the dot path of a token, each value
   is matched like `body` (a subset, with the same matchers) against the token's decoded payload:
-  `"claims": { "session.accessToken": { "amr": ["pwd", "otp", "mfa"], "auth_time": "$any" } }`.
+  `"claims": { "session.accessToken": { "amr": { "$set": ["pwd", "otp", "mfa"] }, "auth_time": "$any" } }`.
+  `{ "$set": [...] }` matches an array with exactly those members **in any order**: `amr` is a
+  set, and its order is not part of the contract.
   The signature is not verified; an array, as everywhere, must match item by item.
 - **Capture.** `capture: { "variable": "dot.path" }` stores a string from the response body;
   a path can index an array (`codes[0]`).

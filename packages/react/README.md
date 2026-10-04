@@ -135,9 +135,55 @@ The user's initials; a menu with "Manage account" and "Sign out". Props: `afterS
 
 ### `<UserProfile>`
 
-Profile, change password (other devices are signed out), "Where you're signed in" with this
-device marked, sign out one device or all the others, sign out. Props: `afterSignOutUrl`,
-`appearance`, `headingLevel`.
+Profile, change password (other devices are signed out), two-step verification, "Where you're
+signed in" with this device marked, sign out one device or all the others, sign out. Props:
+`afterSignOutUrl`, `appearance`, `headingLevel`.
+
+## Two-step verification
+
+Nothing to add to your app: the screens appear when the server asks for them.
+
+- **At sign-in** (and after a password reset) a user who has it on gets a second screen: the
+  6-digit code from their authenticator app, or "Use a backup code".
+- **In `<UserProfile>`** the "Two-step verification" section turns it on (a QR code, the setup
+  key as text for typing by hand, then the code the app shows), shows the ten backup codes
+  once (copy, download as a text file, and an explicit "I have saved these codes" before the
+  screen lets go), makes new codes, and turns it off. It is hidden where the environment's
+  `mfa.policy` is `off`, and has no "Turn off" where it is `required`.
+- **Where the environment requires it**, a sign-in, sign-up or reset of a user without it
+  enrols inside the flow. Confirming signs the user in, so the backup codes are shown in a
+  dialog the provider owns, above whatever page your app has moved to; `onComplete` and the
+  after-URL wait until the user has confirmed.
+- **Step-up.** When a sensitive action answers `auth.step_up_required`, the provider opens a
+  dialog asking for what the server named (the authenticator or a backup code for a user with
+  two-step verification, otherwise the password), sends it, and the action runs again. For
+  your own sensitive calls:
+
+```tsx
+import { isStepUpRequired, useStepUp, useTula } from '@tula/react'
+
+function NewCodes() {
+  const tula = useTula()
+  const withStepUp = useStepUp()
+  const renew = async () => {
+    try {
+      const { codes } = await withStepUp(() => tula.mfa.regenerateBackupCodes())
+      show(codes) // once: keep them nowhere
+    } catch (error) {
+      if (!isStepUpRequired(error)) throw error // otherwise the user closed the dialog
+    }
+  }
+  return <button onClick={renew}>New backup codes</button>
+}
+```
+
+The QR code is drawn by the package itself (no dependency), as inline SVG, dark on white in
+both themes, and its encoder is loaded only when an enrolment is shown.
+
+| | |
+| --- | --- |
+| ![Turning it on](../../examples/react-vite/docs/two-step-enrol.png) | ![Backup codes](../../examples/react-vite/docs/backup-codes.png) |
+| ![The second factor at sign-in](../../examples/react-vite/docs/second-factor.png) | ![The step-up dialog](../../examples/react-vite/docs/step-up.png) |
 
 ### `<SignedIn>`, `<SignedOut>`, `<TulaLoading>`
 
@@ -155,8 +201,10 @@ The server decides the next step; a component maps `step.status` to a screen and
 | `needs_first_factor` | The form of each offered strategy this version knows (`password` today); unknown strategies are skipped |
 | `needs_email_verification` | The emailed code, with resend |
 | `needs_new_password` | The emailed code and the new password, together |
+| `needs_second_factor` | The authenticator code, or a backup code (the options this version knows) |
+| `needs_factor_enrolment` | Set up an authenticator app: QR code, setup key, code; then the backup codes |
 | `complete` | "You are signed in", then `onComplete` or the after-URL |
-| anything else (`needs_second_factor` until its screens ship, a status a newer server added) | **"This step is not supported"** with "Start again" |
+| anything else (a second factor this version cannot ask for, a status a newer server added) | **"This step is not supported"** with "Start again" |
 
 An old SDK against a newer server therefore shows a clear message, never a blank card, and
 never guesses at an action. A new sign-in method is one more entry in the strategy table in
@@ -294,6 +342,10 @@ await signIn.start({ identifier })
 await signIn.submitPassword({ password })           // resolves with the next step, or null (see error)
 await signIn.verifyEmail({ code })
 await signIn.resendCode()
+await signIn.submitSecondFactor({ method: 'totp', code })    // or { method: 'backup_code', code }
+const enrolment = await signIn.startTotpEnrolment()          // { secret, uri } | null: show once
+const done = await signIn.confirmTotpEnrolment({ code })     // { step, backupCodes } | null
+const withStepUp = useStepUp()                               // see Two-step verification
 await signIn.prepareFirstFactor({ strategy: 'email_code' })   // or { strategy: 'email_link', redirectUrl }
 await signIn.attemptFirstFactor({ strategy: 'email_code', code })
 signIn.canUseEmailLink()                            // false where the browser refuses storage
@@ -356,6 +408,10 @@ Server-side session checks (`auth()`, middleware) come with `@tula/nextjs`.
   its token is removed from the address bar before anything is sent.
 - Passwords and codes live in component state only while their form is on screen and are
   cleared when it is submitted or goes away. Nothing is logged.
+- An authenticator's setup key, its QR code and backup codes are shown once and held only
+  while their screen (or the provider's dialog) is open: afterwards nothing of them is in the
+  DOM, in web storage or in a URL. "Copy" and "Download" hand them to the user's clipboard or
+  a file and to nothing else.
 - Nothing from the server is rendered as HTML (no `dangerouslySetInnerHTML`); a session's user
   agent is only matched against fixed patterns to name the device.
 - Navigation targets are the developer's props only, checked to be relative or `http(s)`.

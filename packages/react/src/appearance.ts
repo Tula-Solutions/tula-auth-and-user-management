@@ -55,6 +55,12 @@ export const ELEMENT_NAMES = [
   'profile',
   'sessionList',
   'sessionItem',
+  'modal',
+  'qrCode',
+  'secret',
+  'backupCodes',
+  'backupCode',
+  'checkbox',
 ] as const
 
 /**

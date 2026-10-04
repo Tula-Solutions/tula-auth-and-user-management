@@ -1,16 +1,25 @@
-import type { Session, TulaError, User } from '@tula/core'
-import { useId, useState } from 'react'
+import {
+  type Factors,
+  isStepUpRequired,
+  type Session,
+  type TotpEnrolment,
+  type TulaError,
+  type User,
+} from '@tula/core'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
 import { useAuthState } from '../hooks/use-auth-state'
-import { usePasswordChecklist } from '../hooks/use-password-checklist'
+import { useClientConfig, usePasswordChecklist } from '../hooks/use-password-checklist'
 import { useSession } from '../hooks/use-session'
+import { useStepUp } from '../hooks/use-step-up'
 import { useUser } from '../hooks/use-user'
 import { formatText } from '../localization'
 import { go } from '../navigation'
 import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
+import { BackupCodesPanel, EnrolmentConfirmForm } from './mfa'
 import {
   Button,
   Form,
@@ -72,6 +81,7 @@ function ProfileSection(props: { user: User }) {
 function PasswordSection(props: { user: User; onChanged(): void }) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
+  const withStepUp = useStepUp()
   const { user } = props
   const titleId = useId()
   const [currentPassword, setCurrentPassword] = useState('')
@@ -120,12 +130,17 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
     setPending(true)
     limits.mark('change')
     try {
-      await client.user.changePassword({ currentPassword, newPassword })
+      // A user with two-step verification is asked for it first, when the server says so.
+      await withStepUp(() => client.user.changePassword({ currentPassword, newPassword }))
       setCurrentPassword('')
       setNewPassword('')
       setChanged(true)
       props.onChanged()
     } catch (caught) {
+      if (isStepUpRequired(caught)) {
+        // The user closed the step-up dialog: nothing was changed and nothing went wrong.
+        return
+      }
       const failure = toTulaError(caught)
       if (failure.code === 'auth.invalid_credentials') {
         // A wrong password is retyped from scratch, as at sign-in.
@@ -187,6 +202,182 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
         </Button>
         <Status message={changed ? t.userProfile.passwordChanged : null} />
       </Form>
+    </section>
+  )
+}
+
+/**
+ * "Two-step verification": turn it on (QR code, setup key, a code to confirm), see the backup
+ * codes once, make new ones, turn it off. Sensitive calls go through `useStepUp`, so the
+ * provider's dialog appears when the server asks for one. The secret and the codes live in
+ * this section's state only while their screen is shown.
+ */
+function TwoStepSection(props: { onChanged(): void }) {
+  const { el, t } = useUi()
+  const { client } = useTulaContext()
+  const policy = useClientConfig()?.mfa?.policy
+  const withStepUp = useStepUp()
+  const titleId = useId()
+  const [factors, setFactors] = useState<Factors | null>(null)
+  const [enrolment, setEnrolment] = useState<TotpEnrolment | null>(null)
+  const [codes, setCodes] = useState<string[] | null>(null)
+  const [busy, setBusy] = useState<'on' | 'confirm' | 'off' | 'codes' | null>(null)
+  const [error, setError] = useState<TulaError | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const mounted = useRef(true)
+
+  const load = useCallback(async () => {
+    try {
+      const next = await client.mfa.get()
+      if (mounted.current) {
+        setFactors(next)
+      }
+    } catch (caught) {
+      if (mounted.current) {
+        setError(toTulaError(caught))
+      }
+    }
+  }, [client])
+  useEffect(() => {
+    mounted.current = true
+    // Asked only once the app is known to offer (or to have offered) two-step verification.
+    if (policy !== undefined) {
+      void load()
+    }
+    return () => {
+      mounted.current = false
+    }
+  }, [load, policy])
+
+  /** Run one action; a step-up the user declined is their choice, not an error to show. */
+  const run = async (name: NonNullable<typeof busy>, work: () => Promise<void>) => {
+    setBusy(name)
+    setError(null)
+    setMessage(null)
+    try {
+      await work()
+      return true
+    } catch (caught) {
+      if (mounted.current && !isStepUpRequired(caught)) {
+        setError(toTulaError(caught))
+      }
+      return false
+    } finally {
+      if (mounted.current) {
+        setBusy(null)
+      }
+    }
+  }
+  const turnOn = () =>
+    run('on', async () => {
+      const started = await withStepUp(() => client.mfa.startTotp())
+      if (mounted.current) {
+        setEnrolment(started)
+      }
+    })
+  const confirm = (code: string) =>
+    run('confirm', async () => {
+      const result = await client.mfa.confirmTotp({ code })
+      if (mounted.current) {
+        setEnrolment(null)
+        setCodes(result.codes)
+      }
+    })
+  const regenerate = () =>
+    run('codes', async () => {
+      const result = await withStepUp(() => client.mfa.regenerateBackupCodes())
+      if (mounted.current) {
+        setCodes(result.codes)
+      }
+    })
+  const turnOff = () =>
+    run('off', async () => {
+      await withStepUp(() => client.mfa.disableTotp())
+      await load()
+      if (mounted.current) {
+        setMessage(t.mfa.turnedOff)
+      }
+    })
+  const codesSaved = async () => {
+    const wasOn = factors?.totp.enabled === true
+    setCodes(null)
+    await load()
+    if (mounted.current) {
+      setMessage(wasOn ? t.mfa.regenerated : t.mfa.turnedOn)
+    }
+    // Turning it on ended the user's other sessions.
+    props.onChanged()
+  }
+
+  const enabled = factors?.totp.enabled === true
+  if (policy === undefined || (policy === 'off' && factors !== null && !enabled && !codes)) {
+    // Not offered by this app (or not known yet): there is nothing to show.
+    return null
+  }
+  const remaining = factors?.backupCodes.remaining ?? 0
+  return (
+    <section {...el('section')} aria-labelledby={titleId}>
+      <Heading offset={1} {...el('sectionTitle')} id={titleId}>
+        {t.mfa.sectionTitle}
+      </Heading>
+      {codes ? (
+        <>
+          <p className='tula-profile-name'>{t.mfa.backupCodesTitle}</p>
+          <BackupCodesPanel codes={codes} onDone={codesSaved} />
+        </>
+      ) : enrolment ? (
+        <EnrolmentConfirmForm
+          enrolment={enrolment}
+          isPending={busy === 'confirm'}
+          error={error}
+          confirm={confirm}
+          onCancel={() => {
+            setEnrolment(null)
+            setError(null)
+          }}
+        />
+      ) : (
+        <>
+          <FormError message={error?.message ?? null} />
+          {factors === null ? (
+            <p className='tula-text'>{error ? null : t.mfa.statusLoading}</p>
+          ) : enabled ? (
+            <>
+              <p className='tula-text'>
+                <span {...el('badge', 'tula-is-positive')}>
+                  {formatText(t.mfa.statusOn, {
+                    date: new Date(factors.totp.confirmedAt ?? 0).toLocaleDateString(t.locale, {
+                      dateStyle: 'medium',
+                    }),
+                  })}
+                </span>{' '}
+                {remaining === 1
+                  ? t.mfa.codesRemainingOne
+                  : formatText(t.mfa.codesRemaining, { count: remaining })}
+              </p>
+              <div className='tula-button-row tula-is-compact'>
+                <Button kind='secondary' pending={busy === 'codes'} onClick={regenerate}>
+                  {t.mfa.regenerate}
+                </Button>
+                {policy === 'required' ? null : (
+                  <Button kind='danger' pending={busy === 'off'} onClick={turnOff}>
+                    {t.mfa.turnOff}
+                  </Button>
+                )}
+              </div>
+              {policy === 'required' ? <p {...el('hint')}>{t.mfa.requiredByApp}</p> : null}
+            </>
+          ) : (
+            <>
+              <p className='tula-text'>{t.mfa.statusOff}</p>
+              <Button kind='secondary' pending={busy === 'on'} onClick={turnOn}>
+                {t.mfa.turnOn}
+              </Button>
+            </>
+          )}
+          <Status message={message} />
+        </>
+      )}
     </section>
   )
 }
@@ -318,6 +509,7 @@ export function UserProfileSections(props: { afterSignOutUrl?: string }) {
       ) : (
         <p className='tula-text'>{t.common.loading}</p>
       )}
+      <TwoStepSection key={`mfa:${state.sessionId}`} onChanged={() => void sessions.reload()} />
       <SessionsSection key={state.sessionId} sessions={sessions} />
       <section {...el('section')} aria-labelledby={signOutTitleId}>
         <Heading offset={1} {...el('sectionTitle')} id={signOutTitleId}>

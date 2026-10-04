@@ -8,6 +8,7 @@ import {
 import type { Tenant } from '~/dependencies'
 import { NotFoundError, RateLimitError, ServiceException } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
+import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'
 import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Flows from '~/modules/flow/service'
@@ -946,6 +947,84 @@ describe('enrolment inside an attempt, where the environment requires a second f
     // The attempt is where it was: a new sign-in is what completes now.
     expect(await stored(attempt)).toMatchObject({ status: 'needs_factor_enrolment' })
     expect((await password(await startSignIn())).attempt.step.status).toBe('complete')
+  })
+
+  test('the policy switched off after the enrolment started: the confirmation is refused, nothing is turned on', async () => {
+    const { attempt, userId } = await LAST_PROOF.sign_in()
+    const enrolment = await startEnrolment(attempt)
+    configure({ policy: 'off' })
+    const err = await rejection(confirmEnrolment(attempt, codeFor(enrolment.secret)))
+    expect(err.toJSON()).toMatchObject({ status: 403, code: 'mfa.not_available' })
+    expect(await Mfa.status(deps, tenant, userId)).toMatchObject({ totp: { enabled: false } })
+    expect(await liveSessions(userId)).toEqual([])
+  })
+
+  test('a session that cannot be created undoes the enrolment: no factor is left whose codes were never shown', async () => {
+    const { attempt, userId } = await LAST_PROOF.sign_in()
+    const enrolment = await startEnrolment(attempt)
+    spies.push(
+      spyOn(deps.sessions, 'create').mockRejectedValueOnce(new Error('the database went away'))
+    )
+    await expect(confirmEnrolment(attempt, codeFor(enrolment.secret))).rejects.toThrow(
+      'the database went away'
+    )
+    await Notices.settled()
+    // Not on, no codes, and the owner was not told it was turned on.
+    expect(await Mfa.status(deps, tenant, userId)).toEqual({
+      totp: { enabled: false, confirmedAt: null },
+      backupCodes: { remaining: 0 },
+    })
+    expect(await deps.factors.findTotp(tenant.environmentId, userId)).toBeNull()
+    expect(deps.mailer.outbox.filter((mail) => mail.subject.includes('turned on'))).toEqual([])
+    expect(deps.activityLog.ofType('user.mfa_disabled').at(-1)).toMatchObject({
+      actor: { type: 'system', id: null },
+      data: { method: 'enrolment_incomplete' },
+    })
+    expect(await liveSessions(userId)).toEqual([])
+    // The way back in: a new sign-in enrols afresh and this time gets its codes.
+    deps.clock.advance('30s')
+    const again = await startSignIn()
+    expect((await password(again)).attempt.step.status).toBe('needs_factor_enrolment')
+    const fresh = await startEnrolment(again)
+    expect(fresh.secret).not.toBe(enrolment.secret)
+    const done = await confirmEnrolment(again, codeFor(fresh.secret))
+    expect(done.attempt.backupCodes).toHaveLength(10)
+  })
+
+  test('an undo that fails too is logged and the first error still surfaces', async () => {
+    const { attempt, userId } = await LAST_PROOF.sign_in()
+    const enrolment = await startEnrolment(attempt)
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    spies.push(
+      warn,
+      spyOn(deps.sessions, 'create').mockRejectedValueOnce(new Error('the database went away')),
+      spyOn(deps.factors, 'removeForUser').mockRejectedValueOnce(new Error('still away'))
+    )
+    await expect(confirmEnrolment(attempt, codeFor(enrolment.secret))).rejects.toThrow(
+      'the database went away'
+    )
+    expect(warn.mock.calls.map(([message]) => message)).toContain(
+      'could not undo an enrolment whose attempt did not complete'
+    )
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(enrolment.secret)
+    // The documented last resort: the factor is on; the user signs in with it and makes codes.
+    expect(await Mfa.status(deps, tenant, userId)).toMatchObject({ totp: { enabled: true } })
+    deps.clock.advance('30s')
+    const again = await startSignIn()
+    expect((await password(again)).attempt.step.status).toBe('needs_second_factor')
+    const done = await second(again, 'totp', codeFor(enrolment.secret))
+    const { sub, sid } = await verifyAccessToken(deps, done.tokens?.accessToken as string, tenant)
+    expect(
+      (
+        await Mfa.regenerateBackupCodes(deps, tenant, sub, {
+          type: 'user',
+          id: sub,
+          ipAddress: null,
+          userAgent: null,
+        })
+      ).codes
+    ).toHaveLength(10)
+    expect(sid).toBe(done.tokens?.sessionId as string)
   })
 
   test('two attempts of one user: the first to confirm wins, the other is told it is already on', async () => {

@@ -872,15 +872,18 @@ describe('what a session has proven (auth_time and amr)', () => {
     expect(authenticatedAt({ factorVerifiedAt: stepUp, createdAt })).toEqual(stepUp)
   })
 
-  test('methods merge without duplicates, the earlier ones first', () => {
+  test('methods merge without duplicates, in one canonical order whatever order they were proven in', () => {
     expect(mergeAuthMethods([], [])).toEqual([])
     expect(mergeAuthMethods(['pwd'], ['otp', 'mfa'])).toEqual(['pwd', 'otp', 'mfa'])
     expect(mergeAuthMethods(['pwd', 'otp', 'mfa'], ['backup_code', 'mfa', 'pwd'])).toEqual([
       'pwd',
       'otp',
-      'mfa',
       'backup_code',
+      'mfa',
     ])
+    expect(mergeAuthMethods(['email'], ['pwd'])).toEqual(['pwd', 'email'])
+    // A method a later server adds sorts after the known ones, alphabetically.
+    expect(mergeAuthMethods(['zzz', 'mfa'], ['hwk', 'pwd'])).toEqual(['pwd', 'mfa', 'hwk', 'zzz'])
     const current = ['pwd']
     mergeAuthMethods(current, ['otp'])
     expect(current).toEqual(['pwd'])

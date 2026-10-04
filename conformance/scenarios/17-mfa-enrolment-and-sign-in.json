@@ -314,7 +314,7 @@
         "claims": {
           "session.accessToken": {
             "sub": "{{userId}}",
-            "amr": ["pwd", "otp", "mfa"],
+            "amr": { "$set": ["pwd", "otp", "mfa"] },
             "auth_time": "$any"
           }
         }

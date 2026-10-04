@@ -118,6 +118,8 @@ export interface WorldOptions {
   policy?: PasswordPolicy
   /** Whether a sign-up may leave the password out. */
   signUpPassword?: 'required' | 'optional'
+  /** The environment's `mfa.policy`. Left out, the config says nothing (an older server). */
+  mfaPolicy?: 'off' | 'optional' | 'required'
   /** Storage shared by the browser's tabs; without it an emailed link cannot be used. */
   linkStorage?: FakeLinkStorage
   /** The address the page was opened at, for the page an emailed link leads to. */
@@ -142,6 +144,7 @@ export function world(options: WorldOptions = {}): World {
       signIn: { methods: ['password'] },
       signUp: { password: options.signUpPassword ?? 'required' },
       password: options.policy ?? PASSWORD_POLICY_PRESETS.recommended,
+      ...(options.mfaPolicy && { mfa: { policy: options.mfaPolicy } }),
     })
   )
   api.on(ROUTE.signOut, () => new Response(null, { status: 204 }))

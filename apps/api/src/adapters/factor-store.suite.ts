@@ -145,6 +145,28 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
         expect(await ctx.store.countBackupCodes(ctx.a.environmentId, userId)).toBe(0)
       })
 
+      test('two concurrent starts both succeed and leave one pending factor: neither is told a factor is on', async () => {
+        const userId = await ctx.a.user()
+        const [first, second] = [pending(ctx.a, userId), pending(ctx.a, userId)]
+        expect(
+          await Promise.all([ctx.store.startTotp(first), ctx.store.startTotp(second)])
+        ).toEqual([true, true])
+        const kept = await ctx.store.findTotp(ctx.a.environmentId, userId)
+        expect(kept?.confirmedAt).toBeNull()
+        expect([first.id, second.id]).toContain(kept?.id as string)
+        expect(kept?.secret).toBe(kept?.id === first.id ? first.secret : second.secret)
+      })
+
+      test('an expired pending factor is replaced like any other pending one', async () => {
+        const { userId } = await started(ctx.a, { expiresAt: later(1) })
+        const fresh = pending(ctx.a, userId, {
+          createdAt: later(TTL * 3),
+          expiresAt: later(TTL * 4),
+        })
+        expect(await ctx.store.startTotp(fresh)).toBe(true)
+        expect((await ctx.store.findTotp(ctx.a.environmentId, userId))?.id).toBe(fresh.id)
+      })
+
       test('is refused over a confirmed factor, which is left exactly as it was', async () => {
         const { userId, factor, backup } = await confirmed(ctx.a)
         const before = await ctx.store.findTotp(ctx.a.environmentId, userId)

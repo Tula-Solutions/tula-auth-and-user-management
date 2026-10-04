@@ -263,7 +263,7 @@
         },
         "claims": {
           "session.accessToken": {
-            "amr": ["pwd"],
+            "amr": { "$set": ["pwd"] },
             "auth_time": "$any"
           }
         }

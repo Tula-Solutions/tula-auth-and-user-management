@@ -1,5 +1,5 @@
 import { backupCodes, type Database, type Transaction, userFactors, withTenant } from '@tula/db'
-import { and, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from 'drizzle-orm'
+import { and, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import type { Activity } from '~/ports/activity-log'
 import type {
@@ -80,19 +80,29 @@ export class PostgresFactorStore implements FactorStore {
 
   /** @inheritdoc */
   async startTotp(factor: NewFactor): Promise<boolean> {
-    return withTenant(this.db, factor.environmentId, async (tx) => {
-      // The user started again: the earlier pending enrolment goes. A confirmed factor does not
-      // match, stays, and makes the insert below conflict.
-      await tx
-        .delete(userFactors)
-        .where(and(ofUser(factor.environmentId, factor.userId), isNull(userFactors.confirmedAt)))
-      const rows = await tx
+    // One statement, so two concurrent starts cannot trip over each other: the second waits
+    // for the first's row and then replaces it (the user started again), instead of failing on
+    // the unique key and being told a factor is already on. Only a **confirmed** row is left
+    // alone, and only then does nothing come back.
+    const rows = await withTenant(this.db, factor.environmentId, (tx) =>
+      tx
         .insert(userFactors)
         .values({ ...factor, updatedAt: factor.createdAt })
-        .onConflictDoNothing({ target: [userFactors.userId, userFactors.type] })
+        .onConflictDoUpdate({
+          target: [userFactors.userId, userFactors.type],
+          set: {
+            id: sql`excluded.id`,
+            secret: sql`excluded.secret`,
+            expiresAt: sql`excluded.expires_at`,
+            lastUsedStep: null,
+            createdAt: sql`excluded.created_at`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          setWhere: isNull(userFactors.confirmedAt),
+        })
         .returning({ id: userFactors.id })
-      return rows.length === 1
-    })
+    )
+    return rows.length === 1
   }
 
   /** @inheritdoc */
