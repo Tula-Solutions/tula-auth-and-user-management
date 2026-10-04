@@ -80,6 +80,10 @@ never sign in.
 - A code issued for one purpose (verifying an address, a reset, a sign-in, a step-up) is never
   accepted for another.
 - A user with two-step verification still gets the second step after the code.
+- A code that proves an address for the first time removes a password the account already had
+  (one an administrator set with `emailVerified: false`): whoever chose it did not prove the
+  address. The owner is sent a notice (where `notifications.passwordChanged` is on) and sets
+  a password of their own by a [reset](password.md).
 - Mail goes through your `SMTP_URL`; `tula doctor` checks that the relay accepts a connection.
 
 ## SDK calls

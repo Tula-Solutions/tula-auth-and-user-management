@@ -50,6 +50,7 @@ export class MemoryFlowAttemptStore implements FlowAttemptStore {
     }
     attempt.status = change.status
     attempt.userId = change.userId ?? attempt.userId
+    attempt.identifier = change.identifier ?? attempt.identifier
     attempt.state = change.state ? structuredClone(change.state) : attempt.state
     attempt.completedAt = change.completedAt ?? null
     attempt.secretHash = change.secretHash ?? attempt.secretHash

@@ -745,10 +745,20 @@ export const STEP_UP_EMAILS_PER_HOUR = 5
  * The lockout key of a step-up by a user who has no second factor: their password and their
  * emailed code share it, so guessing one uses up the guesses at the other.
  *
+ * It is the one budget for **every guess at the password by someone who already holds a
+ * session**: the current password of `Users.changePassword` counts here too. With a key of its
+ * own that route would hand a stolen session a second set of guesses at the same secret
+ * (ADR 0011). A sign-in's guesses stay per identifier (`signInLockKey`): they come from
+ * someone who holds no session, and must not lock the signed-in owner out of a step-up.
+ *
  * Kept apart from {@link secondFactorLockKey}: a second factor's budget must not be spent by
  * someone guessing at a weaker method.
+ *
+ * @param environmentId - The environment.
+ * @param userId - The signed-in user.
+ * @returns The key for `deps.lockout`. Ids only: lockout keys may live in Redis.
  */
-function stepUpLockKey(environmentId: string, userId: string): string {
+export function stepUpLockKey(environmentId: string, userId: string): string {
   return `step_up:${environmentId}:${userId}`
 }
 

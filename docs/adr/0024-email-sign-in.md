@@ -89,6 +89,36 @@ for explicitly, so a start still costs nothing and looks nothing up.
 - **A user without a password** where only the password is offered still gets the generic
   `auth.invalid_credentials`.
 
+### A password set before the address was proven
+
+An account can exist with a password and an **unverified** address: an administrator's
+`POST /v1/admin/users` with `password` and `emailVerified: false`. (A sign-up cannot make one:
+its account is created only once the address is verified.) Whoever chose that password is not
+known to be the address's owner. If the owner later signs in by emailed code or link, the
+address becomes verified, and without more the other party's password would start working at
+that moment: until then a password sign-in stopped at `needs_email_verification`, which only
+the inbox's owner can pass. That is a pre-hijack, the same one `OAuth.resolveAccount` refuses
+when it will not link into an unverified account (ADR 0026).
+
+So **an email first factor that verifies a previously unverified address removes the account's
+password**, in the same store transaction as the verification
+(`UserRepository.markEmailVerified` with `removePassword`): the address is never verified with
+the old password still in place. It is recorded as `user.password_changed` with
+`{ method: 'email_verification', removed: true }` (no secret and no address in it), and the
+owner is sent a password notice (`by: 'verification'`, ADR 0023) after the commit, in the
+background. They choose their own password through a password reset.
+
+It does **not** happen:
+
+- when the address was already verified (the common case: nothing changes);
+- in `verify-email` after a **password** sign-in: there the verifier knew the password;
+- in a sign-up (the password is the one the verifier just chose) or a password reset (which
+  replaces the password anyway).
+
+The same rule covers the one other verifier who has not proven the password: a **passkey**
+sign-in that stops at `needs_email_verification` (ADR 0027). If the write fails, nothing was
+changed: the address stays unverified and a password sign-in still needs the emailed code.
+
 ### An unknown address
 
 `prepare` looks the address up only to decide what to send. An address with no account is sent

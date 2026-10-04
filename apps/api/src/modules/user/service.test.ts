@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
+import * as Mfa from '~/modules/mfa/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Users from '~/modules/user/service'
@@ -462,6 +463,49 @@ describe('changePassword (own)', () => {
     expect(err.code).toBe('password.too_short')
     expect(await Passwords.verify(await storedPassword(), PASSWORD)).toBe(true)
     expect((await session(other.sessionId))?.revokedAt).toBeNull()
+  })
+
+  describe('one budget for guesses at the password by someone who holds a session', () => {
+    const stepUp = (self: { userId: string; sessionId: string }, password: string) =>
+      Mfa.stepUp(deps, tenant, self, { method: 'password', password })
+
+    test('wrong guesses at changing the password lock the password step-up too', async () => {
+      const { user, current, change } = await setup()
+      for (let i = 0; i <= CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+        expect((await rejection(change('not my password', NEW_PASSWORD))).code).toBe(
+          'auth.invalid_credentials'
+        )
+      }
+      const self = { userId: user.id, sessionId: current.sessionId }
+      // The right password, and still refused: the guesses above used this budget up.
+      expect(await rejection(stepUp(self, PASSWORD))).toBeInstanceOf(RateLimitError)
+    })
+
+    test('wrong guesses at the password step-up lock changing the password too', async () => {
+      const { user, current, change } = await setup()
+      const self = { userId: user.id, sessionId: current.sessionId }
+      for (let i = 0; i <= CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+        expect((await rejection(stepUp(self, 'not my password'))).code).toBe(
+          'auth.invalid_credentials'
+        )
+      }
+      expect(await rejection(change(PASSWORD, NEW_PASSWORD))).toBeInstanceOf(RateLimitError)
+      expect(await Passwords.verify(await storedPassword(), PASSWORD)).toBe(true)
+    })
+
+    test('a right current password clears the shared budget', async () => {
+      const { user, current, change } = await setup()
+      const self = { userId: user.id, sessionId: current.sessionId }
+      for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+        await rejection(stepUp(self, 'not my password'))
+      }
+      await change(PASSWORD, NEW_PASSWORD)
+      for (let i = 0; i < CREDENTIAL_LOCKOUT.freeAttempts; i++) {
+        expect((await rejection(stepUp(self, 'not my password'))).code).toBe(
+          'auth.invalid_credentials'
+        )
+      }
+    })
   })
 
   test('wrong guesses at the current password back off, per user', async () => {

@@ -87,6 +87,9 @@ allowed without being listed.
   authorizes nothing by itself).
 - The limits of the emailed code apply: one email a minute per address, the shared lockout,
   ten-minute attempts.
+- As with the code, a link that proves an address for the first time removes a password the
+  account already had: the owner is sent a notice and sets their own by a
+  [reset](password.md).
 
 ## SDK calls
 

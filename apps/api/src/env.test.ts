@@ -281,6 +281,41 @@ describe('loadEnv', () => {
       expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: '  ' }).TULA_ADMIN_TOKEN).toBeUndefined()
     })
 
+    describe('needs an encrypted or loopback PUBLIC_URL, in every tier', () => {
+      test.each([
+        ['dev', 'http://auth.example.com'],
+        ['local', 'http://auth.example.com'],
+        ['dev', 'http://192.168.1.20:3003'],
+        ['dev', 'http://localhost.example.com'],
+      ])('%s with %s and a token is refused, without echoing the token', (tier, url) => {
+        const source = { ...base, ENVIRONMENT: tier, PUBLIC_URL: url, TULA_ADMIN_TOKEN: token }
+        expect(invalidVars(source)).toEqual(['PUBLIC_URL'])
+        expect(issues(source).join('\n')).toContain('TULA_ADMIN_TOKEN')
+        expect(issues(source).join('\n')).not.toContain(token)
+      })
+
+      test.each([
+        ['dev', 'http://localhost:3003'],
+        ['dev', 'http://127.0.0.1:3003'],
+        ['local', 'http://[::1]:3003'],
+        ['local', 'http://api.localhost:3003'],
+        ['dev', 'https://auth.example.com'],
+      ])('%s with %s and a token is accepted', (tier, url) => {
+        const source = { ...base, ENVIRONMENT: tier, PUBLIC_URL: url, TULA_ADMIN_TOKEN: token }
+        expect(parseEnv(source).TULA_ADMIN_TOKEN).toBe(token)
+      })
+
+      test('without a token a plain-http address on another host is still accepted in dev', () => {
+        const source = { ...base, ENVIRONMENT: 'dev', PUBLIC_URL: 'http://auth.example.com' }
+        expect(parseEnv(source).PUBLIC_URL).toBe('http://auth.example.com')
+      })
+
+      test('a live tier names PUBLIC_URL once: the https rule already covers it', () => {
+        const source = { ...live, PUBLIC_URL: 'http://auth.example.com', TULA_ADMIN_TOKEN: token }
+        expect(invalidVars(source)).toEqual(['PUBLIC_URL'])
+      })
+    })
+
     test('accepts a generated value', () => {
       expect(parseEnv({ ...base, TULA_ADMIN_TOKEN: token }).TULA_ADMIN_TOKEN).toBe(token)
       const hex = 'f3a91c0b7d2e4856a1c9e0d37b5f2a6418c07e9d3b5a2f6c'

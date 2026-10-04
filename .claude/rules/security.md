@@ -48,6 +48,12 @@ Before finishing any change here, confirm each item holds and has a test:
     attempt with no stored hash: the same `flow.not_found` as an unknown attempt, with nothing
     counted, spent or sent. The secret is returned only by the start, stored only as SHA-256 and
     never logged or audited. Test every new step with each of those.
+    **Method still on:** every step, including the ones an attempt waits on after its first
+    factor (`needs_email_verification`, a second factor, an enrolment, a resend), calls
+    `requireProvenMethod` after `load` and before anything is counted, spent or sent: it
+    re-checks the first factor the attempt proved (`firstFactor` in its state: a settings
+    switch, `Passkeys.relyingParty`, or `OAuth.credentials`). Test each parked step with its
+    method switched off mid-attempt: `auth.method_disabled`, nothing used up.
 13. **Origin of a browser flow:** an attempt started as `web` is refused
     (`request.origin_not_allowed`) at its start and at every step from an origin the environment
     does not allow, before any state changes (no guess counted, no code consumed, no session, no
@@ -64,6 +70,12 @@ Before finishing any change here, confirm each item holds and has a test:
     refused for every other. Test known and unknown addresses side by side. A sign-up without
     a password re-checks on every step that `signUp.password` is still `optional`. Code
     attempts and link polls are limited per IP in separate buckets.
+    **Pre-hijack:** an emailed code or link (or the code after a passkey sign-in) that
+    verifies a previously unverified address removes the account's password in the same
+    store transaction (`markEmailVerified` with `removePassword`), audited
+    (`user.password_changed`, `removed: true`) and announced. After a password sign-in, in a
+    sign-up and in a reset the password stays. Test both, and that a failed transaction
+    leaves the address unverified **and** the password in place.
 17. **Link binding:** an emailed link is accepted only with the `linkBinding` the asking client
     was given (SHA-256 on the attempt, constant-time compare). Missing, wrong or another
     attempt's binding: `verification.different_browser`, with the token **not** consumed and no
@@ -92,6 +104,9 @@ Before finishing any change here, confirm each item holds and has a test:
     Test a stale `auth_time` (refused), a fresh one (accepted), a refreshed token (claims
     unchanged), and that a user with a second factor cannot step up with the password alone.
     `auth_time` and `amr` come from the session row, never from the request.
+    A password guess by someone who holds a session (a password step-up, the current
+    password of a change-password) counts under the one per-user key `Mfa.stepUpLockKey`,
+    never a key per route: test that guesses on one route use up the other's budget.
     **Step-up by emailed code** (`email_code`): listed by `Mfa.stepUpMethods` only for a
     verified address and no confirmed second factor. Test that a user with a second factor is
     refused both the send and the code; that a code asked by one session, one user or for

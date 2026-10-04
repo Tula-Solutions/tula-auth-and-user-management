@@ -47,7 +47,7 @@ use, and refresh tokens are 256-bit, so per-IP limits are enough.
 - *Passwords* use the `Lockout` port with `CREDENTIAL_LOCKOUT`: 5 free tries, then each further
   failure imposes a wait of 30s, 1m, 2m… capped at 15 minutes, forgotten after an hour of quiet.
   Sign-in is keyed by environment + a hash of the identifier; changing your own password by
-  environment + user id. An attacker gets 5 guesses at once, 5 more within the first 15 minutes
+  environment + user id (the step-up's key, see below). An attacker gets 5 guesses at once, 5 more within the first 15 minutes
   and 4 an hour after that.
 - The attempt is **counted as a failure before the password is compared and cleared on
   success**. Counting first is atomic, so parallel guesses can't all slip through while
@@ -58,10 +58,14 @@ use, and refresh tokens are 256-bit, so per-IP limits are enough.
 - *Verification codes* have their own counter: 5 guesses per code, and sends are limited to one
   a minute and five an hour per address (ADR 0007).
 - *API keys and refresh tokens* are 256-bit; they need no per-secret limit.
-- A user's password can be guessed through two doors with separate budgets: sign-in, and
-  changing their own password (which also needs a valid access token). An admin reset clears
-  the sign-in lockout, so wrong guesses at the old password don't keep the user out of the new
-  one.
+- A user's password can be guessed through two doors with separate budgets: sign-in (no
+  session, keyed by the identifier), and from inside a session (keyed by the user). The second
+  door has two routes, changing your own password and a password step-up (ADR 0025), and they
+  **share one key**, `Mfa.stepUpLockKey` (`step_up:<environment>:<user>`, also the emailed
+  step-up code's): a stolen session gets one budget of guesses at the password, not one per
+  route. The two doors stay apart on purpose: guesses made without a session must not lock the
+  signed-in owner out of a step-up. An admin reset clears the sign-in lockout, so wrong guesses
+  at the old password don't keep the user out of the new one.
 
 **What "per IP" means.** An IPv4 address is one bucket. An IPv6 address is counted by its /64,
 because one subscriber normally holds all 2^64 addresses of it, and an IPv4 address written as

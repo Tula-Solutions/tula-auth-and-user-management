@@ -6,7 +6,12 @@ import {
   type FlowKind,
 } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
-import { NotFoundError, RateLimitError, ServiceException } from '~/exceptions'
+import {
+  NotFoundError,
+  RateLimitError,
+  ServiceException,
+  ServiceUnavailableError,
+} from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'
@@ -50,9 +55,12 @@ const spies: ReturnType<typeof spyOn>[] = []
 
 interface Switches {
   policy?: EnvironmentSettings['mfa']['policy']
+  password?: boolean
   emailCode?: boolean
+  emailLink?: boolean
   signUpPassword?: EnvironmentSettings['signUp']['password']
 }
+const REDIRECT = 'https://app.northline.test/auth/link'
 
 let revision = 0
 function configure(switches: Switches = {}, target: Tenant = tenant) {
@@ -64,9 +72,12 @@ function configure(switches: Switches = {}, target: Tenant = tenant) {
       signIn: {
         methods: {
           ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods,
+          password: { enabled: switches.password ?? true },
           emailCode: { enabled: switches.emailCode ?? false },
+          emailLink: { enabled: switches.emailLink ?? false },
         },
       },
+      urls: { allowedOrigins: [], allowedRedirectUrls: [REDIRECT] },
       signUp: { password: switches.signUpPassword ?? 'required' },
       mfa: { policy: switches.policy ?? 'optional' },
     },
@@ -371,6 +382,32 @@ describe('a user with a real second factor', () => {
     expect(await liveSessions(userId)).toHaveLength(1)
   })
 
+  test('a session that cannot be created after a backup code: the code stays spent, the attempt is over and the error is the session’s', async () => {
+    const userId = await seedUser()
+    const { codes } = await enrol(userId)
+    const attempt = await startSignIn()
+    await password(attempt)
+    const create = spyOn(Sessions, 'create').mockRejectedValueOnce(new ServiceUnavailableError())
+    spies.push(create)
+    const failed = await rejection(second(attempt, 'backup_code', codes[0] as string))
+    // The session's own error, not a second-factor one: the proof was accepted.
+    expect(failed.code).toBe('service.unavailable')
+    expect(await liveSessions(userId)).toEqual([])
+    // The attempt was spent before the session was tried, so it cannot be continued…
+    expect((await rejection(second(attempt, 'backup_code', codes[1] as string))).code).toBe(
+      'flow.not_found'
+    )
+    // …and the backup code is gone: a new attempt refuses it and accepts the next one.
+    expect(deps.activityLog.ofType('user.backup_code_used')).toHaveLength(1)
+    const again = await startSignIn()
+    await password(again)
+    expect((await rejection(second(again, 'backup_code', codes[0] as string))).code).toBe(
+      'mfa.invalid_code'
+    )
+    const done = await second(again, 'backup_code', codes[1] as string)
+    expect(done.attempt).toMatchObject({ step: { status: 'complete' }, backupCodesRemaining: 8 })
+  })
+
   test('a TOTP sign-in does not report backup codes left', async () => {
     const userId = await seedUser()
     const { secret } = await enrol(userId)
@@ -542,6 +579,126 @@ describe('a user with a real second factor', () => {
     expect(await liveSessions(userId)).toEqual([])
     // Nothing was spent: the same code still completes the attempt.
     expect((await second(attempt, 'totp', code)).attempt.step.status).toBe('complete')
+  })
+})
+
+describe('a first factor switched off while the attempt waits on a later step', () => {
+  /** How each first factor is proven, and the settings with only that factor switched off. */
+  const FIRST_FACTORS: [
+    string,
+    Switches,
+    Switches,
+    (attempt: Presented) => Promise<Flows.FlowResult>,
+  ][] = [
+    ['password', { emailCode: true }, { password: false, emailCode: true }, (a) => password(a)],
+    [
+      'email_code',
+      { emailCode: true },
+      { emailCode: false },
+      async (attempt) => {
+        await Flows.prepareFirstFactor(deps, tenant, ref(attempt), { strategy: 'email_code' }, web)
+        return Flows.attemptFirstFactor(
+          deps,
+          tenant,
+          ref(attempt),
+          { strategy: 'email_code', code: sentCode() },
+          web
+        )
+      },
+    ],
+    [
+      'email_link',
+      { emailLink: true },
+      { emailLink: false },
+      async (attempt) => {
+        const prepared = await Flows.prepareFirstFactor(
+          deps,
+          tenant,
+          ref(attempt),
+          { strategy: 'email_link', redirectUrl: REDIRECT },
+          web
+        )
+        const url = /https?:\/\/\S+#\S+/.exec(deps.mailer.last().text)?.[0] as string
+        const token = new URLSearchParams(new URL(url).hash.slice(1)).get('tula_link') as string
+        await Flows.verifyEmailLink(
+          deps,
+          tenant,
+          { token, attemptId: attempt.id, binding: prepared.attempt.linkBinding },
+          web
+        )
+        return Flows.attemptFirstFactor(deps, tenant, ref(attempt), { strategy: 'email_link' }, web)
+      },
+    ],
+  ]
+
+  describe.each(FIRST_FACTORS)('%s', (_name, on, off, prove) => {
+    test('the second factor is refused, nothing is counted or spent, and it completes once the method is back', async () => {
+      configure(on)
+      const userId = await seedUser()
+      const { secret } = await enrol(userId)
+      const attempt = await startSignIn()
+      expect((await prove(attempt)).attempt.step.status).toBe('needs_second_factor')
+
+      configure({ ...on, ...off })
+      const counted = spyOn(deps.lockout, 'attempt')
+      const limited = spyOn(deps.rateLimiter, 'hit')
+      spies.push(counted, limited)
+      const code = codeFor(secret)
+      const refused = await rejection(second(attempt, 'totp', code))
+      expect(refused.code).toBe('auth.method_disabled')
+      expect(counted).not.toHaveBeenCalled()
+      expect(limited).not.toHaveBeenCalled()
+      expect(await liveSessions(userId)).toEqual([])
+      expect((await stored(attempt))?.status).toBe('needs_second_factor')
+
+      // The same code still works: its time step was not used up by the refusal.
+      configure(on)
+      expect((await second(attempt, 'totp', code)).attempt.step.status).toBe('complete')
+    })
+
+    test('an enrolment inside the attempt is refused at its start and at its confirmation', async () => {
+      configure({ ...on, policy: 'required' })
+      const userId = await seedUser()
+      const attempt = await startSignIn()
+      expect((await prove(attempt)).attempt.step.status).toBe('needs_factor_enrolment')
+
+      configure({ ...on, ...off, policy: 'required' })
+      expect((await rejection(startEnrolment(attempt))).code).toBe('auth.method_disabled')
+      expect(await deps.factors.findTotp(tenant.environmentId, userId)).toBeNull()
+
+      configure({ ...on, policy: 'required' })
+      const { secret } = await startEnrolment(attempt)
+      configure({ ...on, ...off, policy: 'required' })
+      const counted = spyOn(deps.lockout, 'attempt')
+      spies.push(counted)
+      const code = codeFor(secret)
+      expect((await rejection(confirmEnrolment(attempt, code))).code).toBe('auth.method_disabled')
+      expect(counted).not.toHaveBeenCalled()
+      expect(await Factors.requiredFor(deps, tenant, userId)).toEqual([])
+      expect(await liveSessions(userId)).toEqual([])
+
+      configure({ ...on, policy: 'required' })
+      expect((await confirmEnrolment(attempt, code)).attempt.step.status).toBe('complete')
+    })
+  })
+
+  test('a password reset parked on the second factor is refused once passwords are off', async () => {
+    configure()
+    const userId = await seedUser()
+    const { secret } = await enrol(userId)
+    const { attempt } = await Flows.startPasswordReset(deps, tenant, { email: EMAIL }, web)
+    const parked = await Flows.resetPassword(
+      deps,
+      tenant,
+      ref(attempt),
+      { code: sentCode(), password: NEW_PASSWORD },
+      web
+    )
+    expect(parked.attempt.step.status).toBe('needs_second_factor')
+    configure({ password: false, emailCode: true })
+    const refused = await rejection(second(attempt, 'totp', codeFor(secret), 'password_reset'))
+    expect(refused.code).toBe('auth.method_disabled')
+    expect(await liveSessions(userId)).toEqual([])
   })
 })
 

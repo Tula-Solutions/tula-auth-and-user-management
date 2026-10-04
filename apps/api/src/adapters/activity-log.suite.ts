@@ -299,6 +299,25 @@ export function describeActivityLog(
       )
     })
 
+    test('a password removed with the verification is recorded with it, and only when one was removed', async () => {
+      const userId = await seedUser(ctx.a)
+      const target = { type: 'user' as const, id: userId }
+      const verify = (at: Date) =>
+        ctx.users.markEmailVerified(
+          ctx.a.environmentId,
+          userId,
+          at,
+          activity(ctx.a, 'user.email_verified', target),
+          { activity: activity(ctx.a, 'user.password_changed', target) }
+        )
+      expect(await verify(later(1))).toEqual({ passwordRemoved: true })
+      expect(await verify(later(2))).toEqual({ passwordRemoved: false })
+      expect((await recorded(ctx.a, userId)).sort()).toEqual([
+        'user.email_verified',
+        'user.password_changed',
+      ])
+    })
+
     test('banning and unbanning are recorded only when the state changes', async () => {
       const userId = await seedUser(ctx.a)
       const target = { type: 'user' as const, id: userId }

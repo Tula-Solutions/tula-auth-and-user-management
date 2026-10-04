@@ -41,6 +41,7 @@ itself ran is in the [exit-criteria evidence](phase-1.md#exit-criteria--evidence
 | A real load balancer in front of several instances | The Compose stack's nginx on one machine (1.17). No instance was stopped or restarted during a run. | 1.17 |
 | A transaction-mode pooler (PgBouncer) in front of Postgres, managed Postgres, Postgres versions other than 17, Redis other than 7, Redis failover | Not run. | #14 |
 | `release.yml` on GitHub, and publishing anything | Never run; nothing is published. `bun run release:dry-run` only. | #20 |
+| **Valkey** as the shared store | `REDIS_URL` accepts `valkey://` and `valkeys://` URLs, and no test or run has ever used a Valkey server: every Redis test and every live run was Redis 7. | whole-phase review |
 | The CI workflow as changed by 1.17 (the `self-host` matrix and its `one-address` mode) | Its commands were run by hand on macOS against an isolated Compose project; the workflow itself has not run on GitHub. | 1.17 |
 | The dashboard's last round of fixes on a live stack | `verify` and the browser tests. | #31 |
 | An upgrade of a database with real data across migrations `0006` to `0016` | Migrations are applied to an empty database in every run; the upgrade notes in [self-host.md](../self-host.md#upgrading) are written from the SQL. | 1.17 |
@@ -54,3 +55,25 @@ itself ran is in the [exit-criteria evidence](phase-1.md#exit-criteria--evidence
 | Tests written after the code | "Most server and core tests" of passkeys, and some step-up tests of the OAuth step, were not seen failing first. The review-fix tests were. | #25, #26 |
 | A `verify` run that failed once with a missing bunup output for `@tula/nextjs` | It did not reproduce. | #28 |
 | The conformance run behind one address | It needs two concessions that a real deployment does not make: the proxy passes the runner's `X-Forwarded-For` through, and the runner waits 6 seconds after each settings change ([why](../../conformance/README.md#behind-one-address)). | 1.17 |
+
+## Known trade-offs recorded by the whole-phase threat review
+
+These are not gaps in testing. They are how Phase 1 behaves, on purpose or for now, and what
+that costs.
+
+- **Automatic linking trusts a provider's "verified" flag indefinitely.** If a provider hands
+  an email address to a new person (a recycled address), that person's provider account is
+  linked into the verified Tula account of whoever owns the address there.
+- **Under `mfa.policy: required`, the first factor alone enrols the second.** Whoever holds
+  only the password (or other first factor) of a user who has not enrolled yet enrols their
+  own authenticator.
+- **A passkey without an authenticator app does not count as a second factor for step-up.**
+- **The per-identifier lockout is shared by the password and the emailed code.** Anyone who
+  knows an address can keep it locked out of both.
+- **The `verify` ceiling is one bucket per environment**, shared by all of its users.
+- **The `local` tier accepts any loopback origin and any loopback redirect URL.**
+- **GitHub sign-in has no PKCE.** The library's GitHub client does not send it, so a stolen
+  authorization code is not bound to the attempt, unlike with Google.
+- **Revoking a user's other sessions needs no recent authentication.**
+- **The audit entry is an optional parameter of the store methods.** "Every change is
+  recorded" is held by tests and review, not by the compiler. Deferred to Phase 2.

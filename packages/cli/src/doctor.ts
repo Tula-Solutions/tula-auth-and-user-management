@@ -66,22 +66,48 @@ const STATUS_TIMEOUT_MS = 10_000
 const STATUSES: ReadonlySet<string> = new Set(['ok', 'warn', 'fail', 'skipped'])
 
 /**
- * Text from a server, made safe for a terminal: no control characters (an escape sequence
- * could rewrite the screen or the window title), and bounded.
+ * What a terminal acts on instead of showing, or draws as a break: C0 and C1 controls (an
+ * escape sequence could rewrite the screen or the window title) and the line and paragraph
+ * separators. Each becomes a space, so the words either side stay apart.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed
+const CONTROLS = /[\u{0}-\u{1F}\u{7F}-\u{9F}\p{Zl}\p{Zp}]/gu
+
+/**
+ * What a reader cannot see but a terminal obeys or hides: format characters (`Cf`: the bidi
+ * overrides and isolates that make text read in another order than it is stored, zero-width
+ * spaces and joiners, the byte-order mark, tag characters), private-use and unassigned code
+ * points (`Co`, `Cn`) and lone surrogates (`Cs`). Unicode classes with the `u` flag, never a
+ * list of code points: the list would be out of date with the next Unicode version.
+ */
+const INVISIBLE = /[\p{Cf}\p{Co}\p{Cn}\p{Cs}]/gu
+
+/**
+ * Text from a server, made safe for a terminal and bounded: no control characters (an escape
+ * sequence could rewrite the screen or the window title), and nothing invisible that changes
+ * how the rest reads (a right-to-left override would show `all good` for a failing check's
+ * text; a zero-width space splits a word a reader would search for).
  *
  * @param value - What the server sent.
- * @param max - The longest text kept.
+ * @param max - The longest text kept, in UTF-16 units; a character is never cut in half.
  * @returns Printable text.
  *
  * @example
  * ```ts
- * printable('ok\u001b[2J') // 'ok[2J'
+ * printable('ok\u001b[2J') // 'ok [2J'
+ * printable('ok\u{202E}txt.exe') // 'oktxt.exe'
  * ```
  */
 export function printable(value: unknown, max = 600): string {
   const text = typeof value === 'string' ? value : ''
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed
-  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, max)
+  return (
+    text
+      .replace(CONTROLS, ' ')
+      .replace(INVISIBLE, '')
+      .slice(0, max)
+      // The cut may have split a surrogate pair: half a character is a lone surrogate.
+      .replace(INVISIBLE, '')
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

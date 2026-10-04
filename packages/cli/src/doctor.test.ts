@@ -4,6 +4,7 @@ import type { MemoryDiagnostics } from '../../../apps/api/src/adapters/memory/di
 import { createApp } from '../../../apps/api/src/index'
 import { sha256Hex } from '../../../apps/api/src/lib/crypto'
 import { createTestDeps, TEST_CONFIG, type TestDeps } from '../../../apps/api/src/testing'
+import { printable } from './doctor'
 import { type CliIo, COMMANDS, examine, runCli, VERSION } from './index'
 
 const TOKEN = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
@@ -213,6 +214,58 @@ describe('tula doctor against an API that misbehaves', () => {
     expect(run.stdout).toContain('REDIS_URL')
   })
 
+  describe('printable: what a server sends is made safe for a terminal', () => {
+    test.each([
+      ['a right-to-left override', 'ok\u{202E}txt.exe', 'oktxt.exe'],
+      ['a zero-width space', 'pass\u{200B}word', 'password'],
+      ['bidi isolates', '\u{2066}a\u{2067}b\u{2069}', 'ab'],
+      ['a byte-order mark and a soft hyphen', '\u{FEFF}fi\u{AD}ne', 'fine'],
+      ['a zero-width joiner and non-joiner', 'a\u{200D}b\u{200C}c', 'abc'],
+      ['a tag character (astral, format)', 'ok\u{E0001}\u{E007F}', 'ok'],
+      ['a private-use character', 'a\u{E000}b\u{F0000}c', 'abc'],
+      ['an unassigned code point', 'a\u{0378}b\u{E0080}c', 'abc'],
+      ['a lone surrogate', 'a\u{D800}b\u{DFFF}c', 'abc'],
+      ['line and paragraph separators', 'a\u{2028}b\u{2029}c', 'a b c'],
+      ['C0 and C1 controls, as before', 'a\u{1B}[2Jb\u{9B}c\u{7F}', 'a [2Jb c '],
+    ])('%s is removed', (_name, sent, shown) => {
+      expect(printable(sent)).toBe(shown)
+    })
+
+    test.each(['Zażółć gęślą jaźń', '日本語のテキスト', 'done ✓ 🎉', 'a b\tc'.replace('\t', ' ')])(
+      'ordinary text is kept: %s',
+      (text) => {
+        expect(printable(text)).toBe(text)
+      }
+    )
+
+    test('the cap never leaves half a character', () => {
+      const cut = printable(`ab${'🎉'.repeat(4)}`, 5)
+      expect(cut).toBe('ab🎉')
+      expect(/\p{Cs}/u.test(cut)).toBe(false)
+    })
+
+    test('what is not a string is nothing', () => {
+      expect(printable(42)).toBe('')
+      expect(printable(null)).toBe('')
+    })
+
+    test('nothing invisible survives, a code point at a time', () => {
+      let sent = ''
+      for (let point = 0; point <= 0x10ffff; point += 1) {
+        if (/[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Zl}\p{Zp}]/u.test(String.fromCodePoint(point))) {
+          // One of each block is enough to see the class is covered without a megabyte of input.
+          if (point % 97 === 0 || point < 0x3000) {
+            sent += `x${String.fromCodePoint(point)}`
+          }
+        }
+      }
+      const shown = printable(sent, sent.length)
+      for (const character of shown) {
+        expect(character === 'x' || character === ' ').toBe(true)
+      }
+    })
+  })
+
   test('control characters in a server’s text never reach the terminal', async () => {
     const run = await tula(['doctor'], async (url) =>
       new URL(url).pathname === '/v1/status'
@@ -235,6 +288,31 @@ describe('tula doctor against an API that misbehaves', () => {
     )
     // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is looked for
     expect(run.stdout).not.toMatch(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/)
+    expect(run.code).toBe(1)
+  })
+
+  test('bidi overrides and zero-width characters in a server’s text never reach the terminal', async () => {
+    const run = await tula(['doctor'], async (url) =>
+      new URL(url).pathname === '/v1/status'
+        ? status()
+        : Response.json({
+            version: VERSION,
+            environment: 'local',
+            time: new Date().toISOString(),
+            publicUrl: 'http://localhost:3003',
+            checks: [
+              {
+                id: 'smtp\u{200B}',
+                status: 'fail',
+                summary: 'all good \u{202E}deliaf',
+                fix: 'run \u{2066}this\u{2069}',
+                values: ['a\u{FEFF}b\u{E000}'],
+              },
+            ],
+          })
+    )
+    expect(run.stdout).not.toMatch(/[\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Zl}\p{Zp}]/u)
+    expect(run.stdout).toContain('all good deliaf')
     expect(run.code).toBe(1)
   })
 

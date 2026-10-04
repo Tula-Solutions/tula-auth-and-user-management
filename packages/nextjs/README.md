@@ -12,7 +12,8 @@ TULA_API_URL=https://auth.example.com          # where the Next.js SERVER reache
 NEXT_PUBLIC_TULA_PUBLISHABLE_KEY=tula_pk_live_…
 TULA_ENVIRONMENT_ID=<environment id>
 # TULA_ISSUER=…       only if the API's public URL differs from TULA_API_URL
-# TULA_APP_URL=…      only behind a proxy that rewrites Host
+# TULA_APP_URL=https://app.example.com   recommended in production: the app's public origin
+#                     (required behind a proxy that rewrites Host)
 # TULA_TRUSTED_PROXY_HOPS=1   proxies in front of this server that append to X-Forwarded-For
 #                             (default 0: none is trusted; see "What you must configure")
 # TULA_SECRET_KEY=…   only for `stateful` session profiles; never NEXT_PUBLIC_
@@ -144,11 +145,21 @@ export default async function Dashboard() {
   streamed body) and reads JSON answers up to 1 MiB (`502` beyond).
 - **Refresh** happens in the interceptor when the token is missing or about to expire. Requests
   racing with one refresh token are covered by the API's reuse grace window (10 seconds by
-  default); do not use a profile with `refresh.reuseGracePeriod: null` behind it.
+  default); do not use a profile with `refresh.reuseGracePeriod: null` behind it. A refresh
+  waits at most 8 seconds whatever `timeoutSeconds` says, and one that got no answer at all is
+  sent once more at once: both stay inside that window.
+- **Set `TULA_APP_URL`** to the app's public origin. It decides whether the `__Host-` cookie
+  names are used, the same way in the interceptor, the handler and `auth()`. Without it the
+  proxy's `X-Forwarded-Proto` decides, and without that `auth()` and `currentUser()` (which
+  see no URL) go by whether the request carries a `__Host-` cookie.
+- **A failed sign-out is not a sign-out.** The handler clears the cookies only when the API
+  answered the sign-out; `<UserButton>` and `<UserProfile>` then stay on the page and say the
+  session may still be active, with "Try again".
 - **`stateful` session profiles** have no token. With `TULA_SECRET_KEY` the server asks the API
   on every matched request (one network call each); without it the server treats such a
   session as signed out.
 - **`redirect_url`** is written by the interceptor as a path and must be read through
-  `safeRedirectPath`, which refuses anything that leaves the origin.
+  `safeRedirectPath`, which refuses anything that leaves the origin, including a path that
+  only becomes a host once it is normalised (`/.//host`).
 - `auth()` in the root layout makes every route dynamic. For static pages leave `initialState`
   out; the state is then `loading` until the browser has asked.

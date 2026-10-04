@@ -70,6 +70,7 @@ export class PostgresFlowAttemptStore implements FlowAttemptStore {
         .set({
           status: change.status,
           ...(change.userId !== undefined && { userId: change.userId }),
+          ...(change.identifier !== undefined && { identifier: change.identifier }),
           ...(change.state !== undefined && { state: change.state }),
           ...(change.secretHash !== undefined && { secretHash: change.secretHash }),
           completedAt: change.completedAt ?? null,

@@ -121,6 +121,11 @@ A password that is set, reset or changed is announced to the owner by email
   it; a browser attempt is refused from an origin the environment does not allow.
 - A reset stops at the second factor for a user who has one: an emailed code alone never gets
   past two-step verification.
+- A password on an account whose address is still unverified (an administrator created it so)
+  is removed when the address is first proven by someone who did not prove that password: an
+  [emailed code](email-code.md) or [link](email-link.md), or the code after a
+  [passkey](passkeys.md) sign-in. The owner is sent a notice and sets a password by reset.
+  After a password sign-in, in a sign-up and in a reset the password stays.
 
 ## SDK calls
 

@@ -190,6 +190,10 @@ environment makes the password optional (`signUp.password: 'optional'`), the fie
 The user's initials; a menu with "Manage account" and "Sign out". Props: `afterSignOutUrl`,
 `userProfileUrl`, `onManageAccount`, `appearance`.
 
+"Sign out" goes to `afterSignOutUrl` only once the server has been told. When it could not be
+(offline, a 503), nothing navigates: the provider shows a dialog saying the session may still
+be active on this device, with "Try again". The same holds for `<UserProfile>`.
+
 ### `<UserProfile>`
 
 Profile, change password (other devices are signed out), two-step verification, "Where you're

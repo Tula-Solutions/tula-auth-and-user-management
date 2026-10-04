@@ -194,6 +194,70 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       })
     })
 
+    describe('verifying an address nobody had proven, with the password removed', () => {
+      const hashOf = async (input: NewUser) =>
+        (await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized))
+          ?.passwordHash
+
+      test('an unverified user is verified and loses the password, in one write', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null })
+        await ctx.users.create(input)
+        expect(
+          await ctx.users.markEmailVerified(ctx.a.environmentId, input.id, later(1), undefined, {})
+        ).toEqual({ passwordRemoved: true })
+        expect(await hashOf(input)).toBeNull()
+        expect((await ctx.users.findById(ctx.a.environmentId, input.id))?.emailVerifiedAt).toEqual(
+          later(1)
+        )
+      })
+
+      test('a user who was already verified keeps the password', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input)
+        expect(
+          await ctx.users.markEmailVerified(ctx.a.environmentId, input.id, later(1), undefined, {})
+        ).toEqual({ passwordRemoved: false })
+        expect(await hashOf(input)).toBe('$argon2id$hash')
+      })
+
+      test('an unverified user without a password is verified and nothing is removed', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null, passwordHash: null })
+        await ctx.users.create(input)
+        expect(
+          await ctx.users.markEmailVerified(ctx.a.environmentId, input.id, later(1), undefined, {})
+        ).toEqual({ passwordRemoved: false })
+      })
+
+      test('without the option the password stays, as before', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null })
+        await ctx.users.create(input)
+        expect(await ctx.users.markEmailVerified(ctx.a.environmentId, input.id, later(1))).toEqual({
+          passwordRemoved: false,
+        })
+        expect(await hashOf(input)).toBe('$argon2id$hash')
+      })
+
+      test('another environment’s call removes nothing', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null })
+        await ctx.users.create(input)
+        expect(
+          await ctx.users.markEmailVerified(ctx.b.environmentId, input.id, later(1), undefined, {})
+        ).toEqual({ passwordRemoved: false })
+        expect(await hashOf(input)).toBe('$argon2id$hash')
+      })
+
+      test('a password set afterwards is kept by a second call', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null })
+        await ctx.users.create(input)
+        await ctx.users.markEmailVerified(ctx.a.environmentId, input.id, later(1), undefined, {})
+        await ctx.users.setPasswordHash(ctx.a.environmentId, input.id, '$argon2id$own', later(2))
+        expect(
+          await ctx.users.markEmailVerified(ctx.a.environmentId, input.id, later(3), undefined, {})
+        ).toEqual({ passwordRemoved: false })
+        expect(await hashOf(input)).toBe('$argon2id$own')
+      })
+    })
+
     test('lists a page with the total, newest first by default sort', async () => {
       const inputs = [0, 1, 2, 3, 4].map((i) =>
         user(ctx.a, { createdAt: later(i * 1_000), emailNormalized: `list-${i}@page.test` })

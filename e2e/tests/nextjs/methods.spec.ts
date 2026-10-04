@@ -16,6 +16,7 @@ import {
   NEW_PASSWORD,
   PASSKEY_METHODS,
   PASSWORD,
+  resetClock,
   resetLimits,
   signIn,
   signUp,
@@ -42,6 +43,14 @@ test.beforeEach(async ({ request }) => {
 test.afterEach(async ({ request }) => {
   // Every scenario shares the one in-memory environment: put its settings back.
   await useSettings(request)
+})
+
+test.afterAll(async ({ request }) => {
+  // The last scenarios move the fixture's clock forward (over half an hour in all). The specs
+  // that run after this file get the real time back, and limits counted in the skewed time
+  // are emptied with it.
+  await resetClock(request)
+  await resetLimits(request)
 })
 
 const account = (page: Page) => page.getByRole('region', { name: 'Account' })

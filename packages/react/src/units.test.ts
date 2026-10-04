@@ -30,8 +30,28 @@ describe('safeUrl', () => {
     'http://[bad',
     '',
     '   ',
+    // A destination with no scheme means this origin: a host must be written with its scheme.
+    '//evil.example',
+    '//evil.example/app',
+    '/\\evil.example',
+    '\\\\evil.example',
+    '/\t/evil.example',
+    ' //evil.example',
+    '/.//evil.example',
+    '/a/..//evil.example',
+    '/%2e//evil.example',
   ])('%p is refused', (url) => {
     expect(safeUrl(url, page)).toBeNull()
+  })
+
+  test('go() hands a router no destination that names a host without a scheme', () => {
+    const seen: string[] = []
+    for (const url of ['//evil.example', '/\\evil.example', '/.//evil.example']) {
+      expect(go(url, (to) => seen.push(to))).toBe(false)
+    }
+    expect(seen).toEqual([])
+    expect(go('/app', (to) => seen.push(to))).toBe(true)
+    expect(seen).toEqual(['/app'])
   })
 
   test('undefined is refused, and go() does nothing for it', () => {

@@ -9,9 +9,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces the run in progress. On `develop` and `main` a run
+# in progress is never cancelled by a later push: it finishes, and the newest push runs next.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Actions are referenced by tag on purpose: Dependabot follows them (.github/dependabot.yml).
 
 jobs:
   verify:

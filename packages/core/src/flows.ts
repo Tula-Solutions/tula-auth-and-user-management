@@ -150,6 +150,24 @@ interface Flow<Kind extends FlowKind> extends FlowSnapshot<Kind> {
    * @throws TulaError `rate_limited` (with `retryAfterMs`) when asked too soon.
    */
   resendCode(): Promise<FlowStep>
+  /**
+   * Leave this attempt, for good: call it when the user goes back, starts again, picks another
+   * way to sign in or closes the screen.
+   *
+   * The flow forgets the attempt's secret, so every later action is refused with
+   * `flow.invalid_step` and no request, and the answer to an action still on its way is
+   * dropped: that action rejects with `flow.invalid_step`, and even a `complete` answer signs
+   * nobody in. A sign-in also stops waiting for its emailed link and forgets what it kept for
+   * it in the browser. On a flow that has completed it does nothing.
+   *
+   * @example
+   * ```ts
+   * const flow = await tula.signIn.start({ identifier: email })
+   * // The user pressed "Back":
+   * flow.discard()
+   * ```
+   */
+  discard(): void
   /** @returns The flow's snapshot. The attempt's secret is never included. */
   toJSON(): FlowSnapshot<Kind>
 }
@@ -285,11 +303,6 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    *   server refuses with.
    */
   waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep>
-  /**
-   * Leave this sign-in: stop waiting for a link and forget what the flow kept for it in the
-   * browser. Call it when the user goes back or the screen is closed.
-   */
-  discard(): void
 }
 
 /**
@@ -385,6 +398,8 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
   }
   let secret: string | null = started.attemptSecret ?? null
   let busy = false
+  /** The caller left the attempt (`discard()`): nothing of it is taken any more. */
+  let discarded = false
   // Only what the snapshot shows is kept: not the secret, and not a completed flow's tokens.
   let current: FlowSnapshot = {
     id: started.id,
@@ -394,6 +409,12 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
   }
 
   async function accept(next: FlowAttempt): Promise<FlowStep> {
+    // An answer to an action that was on its way when the attempt was left. The user is doing
+    // something else by now (another method, another account): a `complete` here must not
+    // sign them in, and nothing of it is kept.
+    if (discarded) {
+      throw refused('flow.invalid_step')
+    }
     // Checked before anything changes: an answer that cannot be used leaves the flow on the
     // step it was on, and signs nobody in.
     if (!isUsableAttempt(next)) {
@@ -446,7 +467,12 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
       // An action can complete the flow and set the session (and, in a browser, its cookie).
       // It must not overlap a refresh of the session it replaces.
       await context.session.idle()
-      return await action({ params: { attemptId: current.id }, attemptSecret: secret })
+      // Read again: the attempt may have been discarded while this waited.
+      const held = secret
+      if (held === null) {
+        throw refused('flow.invalid_step')
+      }
+      return await action({ params: { attemptId: current.id }, attemptSecret: held })
     } finally {
       busy = false
     }
@@ -458,8 +484,20 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
     refused,
     /** Whether an action is being sent right now. */
     busy: () => busy,
-    /** Whether the flow has completed. */
+    /** Whether the flow takes no more actions: it has completed, or it was discarded. */
     finished: () => secret === null,
+    /** Whether the flow reached `complete`. */
+    completed: () => current.step.status === 'complete',
+    /**
+     * Leave the attempt: forget its secret, so later actions are refused, and drop the answer
+     * of one still in flight. A completed flow has nothing left to leave.
+     */
+    discard(): void {
+      if (current.step.status !== 'complete') {
+        discarded = true
+        secret = null
+      }
+    },
     exclusive,
     /**
      * Send one call on this attempt and take the server's answer as the new step.
@@ -515,7 +553,7 @@ function enrolmentActions(
         try {
           return { step: await attempt.accept(next), backupCodes }
         } catch (error) {
-          if (!attempt.finished() || !isTulaError(error)) {
+          if (!attempt.completed() || !isTulaError(error)) {
             throw error
           }
           // The flow completed and the session is in memory; only saving it failed. The codes
@@ -600,6 +638,7 @@ export async function signUpFlow(context: FlowContext, started: FlowAttempt): Pr
       attempt.step((bound) => transport.call('verifySignUpEmail', { ...bound, body: { code } })),
     resendCode: () => attempt.step((bound) => transport.call('resendSignUpCode', bound)),
     ...enrolmentActions(context, attempt, 'sign_up'),
+    discard: () => attempt.discard(),
   })
 }
 
@@ -655,6 +694,7 @@ export async function signInFlow(
       ),
     waitForEmailLink: (options) => waiting.wait(options?.signal),
     discard() {
+      attempt.discard()
       waiting.stop()
       context.links.remove(attempt.snapshot().id)
     },
@@ -763,6 +803,11 @@ function emailLinkWait(context: FlowContext, attempt: Attempt) {
           if (!isTulaError(error)) {
             throw error
           }
+          if (stopping && attempt.finished() && !attempt.completed()) {
+            // Discarded while this round was on its way: its answer was dropped, and every
+            // caller has already left with the step as it stood.
+            return attempt.snapshot().step
+          }
           if (error.code === 'rate_limited') {
             delay = Math.max(delay, error.retryAfterMs ?? 0)
           } else if (
@@ -859,6 +904,7 @@ export async function passwordResetFlow(
       resendCode: () => attempt.step((bound) => transport.call('resendPasswordResetCode', bound)),
       ...secondFactorAction(context, attempt, 'submitPasswordResetSecondFactor'),
       ...enrolmentActions(context, attempt, 'password_reset'),
+      discard: () => attempt.discard(),
     }
   )
 }

@@ -72,6 +72,7 @@ export interface Host {
    *
    * @param path - Absolute path.
    * @param text - The contents.
+   * @throws UsageError when `path` is a symbolic link: nothing is written through one.
    */
   writeSecretFile(path: string, text: string): Promise<void>
   /**
@@ -81,6 +82,7 @@ export interface Host {
    * @param path - Absolute path.
    * @returns Whether the file was open to anyone else and has been closed. `false` when it
    *   already was owner-only, does not exist, or the platform has no such modes.
+   * @throws UsageError when `path` is a symbolic link: no mode is changed through one.
    */
   restrictFile(path: string): Promise<boolean>
   /**

@@ -132,7 +132,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `ENVIRONMENT` | yes | | `local`, `dev`, `staging` or `prod`. `staging` and `prod` require https, a real mail relay and sender (not Mailpit), breach checks and Redis. |
 | `DATABASE_URL` | yes | | PostgreSQL connection as the **non-owner** runtime role (see below). |
 | `TULA_MASTER_KEY` | yes | | 64 hex characters (`openssl rand -hex 32`). Encrypts signing keys, provider credentials and authenticator secrets, and keys the hashes of emailed codes and backup codes. |
-| `TULA_ADMIN_TOKEN` | | none | The instance admin token: the dashboard and `tula doctor` sign in with it. Unset, `/v1/instance/*` does not exist and the dashboard has no sign-in. At least 32 characters, generated (`openssl rand -hex 32`); the same on every instance. See [`tula doctor`](#checking-a-deployment-tula-doctor) and [the dashboard](#the-dashboard). |
+| `TULA_ADMIN_TOKEN` | | none | The instance admin token: the dashboard and `tula doctor` sign in with it. Unset, `/v1/instance/*` does not exist and the dashboard has no sign-in. At least 32 characters, generated (`openssl rand -hex 32`); the same on every instance. With it set, the server refuses to start, in any tier, when `PUBLIC_URL` is plain `http:` on a host that is not loopback: the token and the dashboard's session would cross the network unencrypted. See [`tula doctor`](#checking-a-deployment-tula-doctor) and [the dashboard](#the-dashboard). |
 | `DASHBOARD_DIR` | | `apps/dashboard/dist` next to the API | Directory of the dashboard's build output, served at `/dashboard`. The image ships it; a directory with no `index.html` means no dashboard. |
 | `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API. It is part of every access token's issuer. |
 | `PORT` | | `3003` | |
@@ -145,7 +145,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `API_DOCS` | | `on` in `local` and `dev`, `off` in `staging` and `prod` | `on` or `off`: whether the API reference page is served at `/v1/docs`. The page is on the same origin as the dashboard; it loads no script from another host (the reference's bundle is served by the API from its own installed package) and has its own Content-Security-Policy, and a deployment that does not need it should leave it off. `/v1/openapi.json` is served either way. |
 | `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log is never deleted. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
-| `REDIS_URL` | in `staging` and `prod` | none | Redis (or Valkey) shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
+| `REDIS_URL` | in `staging` and `prod` | none | Redis shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. A `valkey://` or `valkeys://` URL is accepted too, but only Redis 7 has been tested; Valkey has never been run. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
 
 ## Settings of an environment
@@ -596,7 +596,11 @@ What the load balancer has to do:
 - **No stickiness is needed.** Any request may go to any instance: sessions and attempts are in
   the database, limits and revocations in Redis.
 - **Overwrite `X-Forwarded-For`** with the address it saw (or append to a header it has
-  cleaned), and set `TRUST_PROXY=true` on the API. The API takes the last entry.
+  cleaned), and set `TRUST_PROXY=true` on the API. The API takes the last entry. That holds
+  for the edge proxy, the one clients connect to: a proxy that itself sits behind another
+  (a CDN, a cloud load balancer) sees only that one's address and scheme, so there use its
+  real-IP handling (in nginx, `set_real_ip_from` with the outer proxy's address and
+  `real_ip_header`) and pass the original scheme through instead of its own.
 - **Do not replay a failed request** on another instance (`proxy_next_upstream off` in nginx): a
   repeated `POST` would spend a code or count a guess twice.
 - Health-check `GET /v1/ready`.
@@ -636,8 +640,12 @@ are fixed for now. See [ADR 0017](adr/0017-retention.md).
 database, and Redis when it is configured, and is what the image's health check and a load
 balancer should use.
 
-**The image.** It runs as the unprivileged `bun` user, listens on 3003, and contains only the
-API's sources and production dependencies. Its base image is pinned by digest, as are the
+**The image.** It runs as the unprivileged `bun` user and listens on 3003. It contains the
+API's sources, the two workspace packages the API imports (`packages/db`, with the migrations
+and the seed, and `packages/contract`), the built dashboard (`apps/dashboard/dist` only), the
+migration, seed and key scripts, and the production dependencies of those; no tests, no
+browser-test fixture (`e2e/`), no browser package (React, Next.js, the SDKs' components or
+the examples) and nothing of the dashboard's toolchain. Its base image is pinned by digest, as are the
 PostgreSQL, Redis and Mailpit images in the Compose file, so a rebuild next month starts from
 the same bytes as today's; Dependabot proposes the updates. Build it from the repository root:
 

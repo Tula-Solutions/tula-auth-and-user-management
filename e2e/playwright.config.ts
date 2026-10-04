@@ -38,7 +38,9 @@ export default defineConfig({
   },
   projects: [
     // First: the Next.js server verifies tokens against the real time, and scenarios of the
-    // other project move the fixture's clock forward (it never moves back). With one worker,
+    // later projects move the fixture's clock forward and leave it there. This project's own
+    // methods.spec.ts moves it too, and puts it back when it is done (`/__test/reset-clock`
+    // in its `afterAll`), so the specs after it start from the real time. With one worker,
     // projects run in this order.
     {
       name: 'nextjs',

@@ -241,17 +241,29 @@ export interface UserRepository {
   /**
    * Record that the user proved control of their email. Keeps the first verification time.
    *
+   * **With `removePassword`**, an address that was unverified until this call also loses the
+   * account's password credential, in the same transaction. That is for a verification by
+   * someone who did not prove the password (an emailed sign-in code or link): a password that
+   * exists on an account whose address nobody had proven was chosen by whoever made the
+   * account, who is not known to be the address's owner, and must not start working the moment
+   * the owner verifies it (a pre-hijack; ADR 0024). An address that was already verified
+   * changes nothing and removes nothing.
+   *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param at - Verification time.
    * @param activity - Recorded in the same transaction, only if the email was unverified before.
+   * @param removePassword - Also remove the password, if the email was unverified before. Its
+   *   `activity` is recorded in the same transaction, only if a password was removed.
+   * @returns Whether a password was removed.
    */
   markEmailVerified(
     environmentId: string,
     userId: string,
     at: Date,
-    activity?: Activity
-  ): Promise<void>
+    activity?: Activity,
+    removePassword?: { activity?: Activity }
+  ): Promise<{ passwordRemoved: boolean }>
 
   /**
    * @param environmentId - The user's environment.

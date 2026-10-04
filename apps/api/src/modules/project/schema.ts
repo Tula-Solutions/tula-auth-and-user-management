@@ -48,11 +48,27 @@ export const ApiKeyListSchema = z
   .object({ data: z.array(ApiKeySchema) })
   .meta({ ref: 'ApiKeyList' })
 
+/** Longest name of a workspace, a project or an API key. */
+export const MAX_NAME_LENGTH = 100
+
+/**
+ * A name an operator typed for a workspace, a project or an API key: one line of text.
+ * Trimmed; no control characters, so it cannot break a log line or a terminal it is listed in
+ * (`tula`, the dashboard, an audit export).
+ */
+export const NameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_NAME_LENGTH)
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point.
+  .regex(/^[^\u0000-\u001f\u007f]*$/, 'Must not contain control characters.')
+
 /** Body of `POST /v1/admin/api-keys`. */
 export const CreateApiKeyRequestSchema = z
   .object({
     kind: ApiKeyKindSchema,
-    name: z.string().trim().min(1).max(100),
+    name: NameSchema,
   })
   .meta({ ref: 'CreateApiKeyRequest' })
 

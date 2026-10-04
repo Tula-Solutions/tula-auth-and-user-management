@@ -82,6 +82,7 @@ router.get(
     responses: {
       200: { description: 'The providers.', content: json(OAuthProviderSettingsListSchema) },
       ...errors,
+      ...openapi.adminResponses,
     },
   }),
   adminRateLimit(),
@@ -112,10 +113,10 @@ router.put(
     security: openapi.security.admin,
     responses: {
       200: { description: 'The provider.', content: json(OAuthProviderSettingsSchema) },
-      400: openapi.responses[400],
       413: openapi.responses[413],
       422: openapi.responses[422],
       ...errors,
+      ...openapi.adminResponses,
     },
   }),
   adminRateLimit(),
@@ -152,9 +153,9 @@ router.delete(
     security: openapi.security.admin,
     responses: {
       204: { description: 'Removed.' },
-      404: openapi.responses[404],
       422: openapi.responses[422],
       ...errors,
+      ...openapi.adminResponses,
     },
   }),
   adminRateLimit(),

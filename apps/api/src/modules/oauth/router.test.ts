@@ -808,6 +808,37 @@ describe('OAuth is a first factor', () => {
     expect(new Set(amr)).toEqual(new Set(['fed', 'otp', 'mfa']))
   })
 
+  test('a provider switched off while the attempt waits on the second factor: refused, nothing counted, and it completes once it is back', async () => {
+    const key = await enrolTotp()
+    const { res, trip } = await signInWith()
+    const attempt = await json<FlowAttempt>(res)
+    expect(attempt.step.status).toBe('needs_second_factor')
+    const submit = () =>
+      client(
+        'POST',
+        `/sign-ins/${trip.attemptId}/second-factor`,
+        { method: 'totp', code: totp(key, deps.clock.now()) },
+        { secret: attempt.attemptSecret }
+      )
+
+    // Another method must stay on, or switching the provider off is refused.
+    await saveSettings({
+      urls: { allowedRedirectUrls: [REDIRECT] },
+      signIn: { methods: { password: { enabled: true } } },
+    })
+    expect((await configure('google', { enabled: false })).status).toBe(200)
+    const counted = spyOn(deps.lockout, 'attempt')
+    const refused = await submit()
+    expect(refused.status).toBe(403)
+    expect(await codeOf(refused)).toBe('auth.method_disabled')
+    expect(counted).not.toHaveBeenCalled()
+    counted.mockRestore()
+    expect(refused.headers.get('set-cookie')).toBeNull()
+
+    expect((await configure('google', { enabled: true })).status).toBe(200)
+    expect((await json<FlowAttempt>(await submit())).step.status).toBe('complete')
+  })
+
   test('where the environment requires a second factor, a new user must enrol inside the attempt', async () => {
     await saveSettings({ urls: { allowedRedirectUrls: [REDIRECT] }, mfa: { policy: 'required' } })
     const { res, trip } = await signInWith()

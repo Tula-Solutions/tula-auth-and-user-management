@@ -125,6 +125,27 @@ export function describeFlowAttemptStore(
       })
     })
 
+    test('a transition can give the attempt an identifier, and otherwise keeps the one it has', async () => {
+      const input = { ...attempt(ctx.a), identifier: '' }
+      await ctx.store.create(input)
+      const move = (change: { identifier?: string }) =>
+        ctx.store.transition(
+          ctx.a.environmentId,
+          input.id,
+          'needs_password',
+          { status: 'needs_password', ...change },
+          later(1_000)
+        )
+      expect(await move({ identifier: 'maya@northline.app' })).toBe(true)
+      expect((await ctx.store.findById(ctx.a.environmentId, input.id))?.identifier).toBe(
+        'maya@northline.app'
+      )
+      expect(await move({})).toBe(true)
+      expect((await ctx.store.findById(ctx.a.environmentId, input.id))?.identifier).toBe(
+        'maya@northline.app'
+      )
+    })
+
     test('a transition from the wrong step writes nothing', async () => {
       const input = attempt(ctx.a)
       await ctx.store.create(input)

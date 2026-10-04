@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { screen, waitFor } from '@testing-library/react'
-import { expectFocus, json, openDialogs, ROUTE, TEST_USER, world } from '../testing/harness'
+import {
+  expectFocus,
+  failure,
+  json,
+  openDialogs,
+  ROUTE,
+  TEST_USER,
+  world,
+} from '../testing/harness'
 import { UserButton } from './user-button'
 
 afterEach(() => {
@@ -105,6 +113,56 @@ describe('<UserButton>', () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/'))
     expect(w.client.state.status).toBe('signed-out')
     expect(screen.queryByRole('button')).toBeNull()
+    expect(w.api.calls(ROUTE.signOut)).toHaveLength(1)
+  })
+
+  test.each([
+    ['the server answers 503', () => failure(503, 'service.unavailable')],
+    ['the request gets no answer', () => Promise.reject(new TypeError('offline'))],
+  ])(
+    'sign out when %s: no navigation, an announced error, and trying again finishes it',
+    async (_name, refuse) => {
+      const w = signedIn()
+      let failing = true
+      w.api.on(ROUTE.signOut, () => (failing ? refuse() : new Response(null, { status: 204 })))
+      const navigate = mock()
+      w.mount(<UserButton />, { afterSignOutUrl: '/', navigate })
+      await w.user.click(await screen.findByRole('button', { name: TRIGGER }))
+      await w.user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toContain('may still be signed in')
+      expect(openDialogs()).toBe(1)
+      expect(navigate).not.toHaveBeenCalled()
+
+      // A second failure changes nothing: still here, still said, still no navigation.
+      const retry = () => screen.getByRole('button', { name: 'Try again' })
+      await w.user.click(retry())
+      await waitFor(() => expect(w.api.calls(ROUTE.signOut)).toHaveLength(2))
+      await waitFor(() => expect(retry().getAttribute('aria-disabled')).toBeNull())
+      expect(screen.getByRole('alert').textContent).toContain('may still be signed in')
+      expect(navigate).not.toHaveBeenCalled()
+
+      failing = false
+      await w.user.click(retry())
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/'))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      expect(navigate).toHaveBeenCalledTimes(1)
+      expect(w.api.calls(ROUTE.signOut)).toHaveLength(3)
+    }
+  )
+
+  test('a failed sign-out that is closed stays where it is', async () => {
+    const w = signedIn()
+    w.api.on(ROUTE.signOut, () => failure(503, 'service.unavailable'))
+    const navigate = mock()
+    w.mount(<UserButton />, { afterSignOutUrl: '/', navigate })
+    await w.user.click(await screen.findByRole('button', { name: TRIGGER }))
+    await w.user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
+    await screen.findByRole('alert')
+    await w.user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(navigate).not.toHaveBeenCalled()
     expect(w.api.calls(ROUTE.signOut)).toHaveLength(1)
   })
 

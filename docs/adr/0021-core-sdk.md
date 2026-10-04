@@ -61,6 +61,14 @@ await tula.config.get({ force? })
   `flow.invalid_step`, the server's own code for it. Both have `status: 0`, which is how a
   locally raised error is told from the server's. The secret is dropped from the closure when
   the step becomes `complete`.
+- **`discard()` ends an attempt.** Every flow has it. It forgets the secret, so later actions
+  are refused with `flow.invalid_step` and no request, and the answer to an action that was on
+  its way is dropped before anything is taken from it: that action rejects with
+  `flow.invalid_step`, and a `complete` answer signs nobody in. A user who left a password
+  form for a passkey must not be signed in by the password's late answer. A browser may still
+  have been handed a session cookie by that answer; the client does not act on it, and it is
+  an ordinary session that the next load would find. On a completed flow `discard()` does
+  nothing.
 - **Flows cannot be resumed after a reload.** The attempt's secret is kept in a closure, in
   memory only. Persisting it (even in `sessionStorage`) would put a credential where any script
   on the page can read it, to save a user retyping an email within a ten-minute attempt. It is

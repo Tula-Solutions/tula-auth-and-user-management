@@ -7,6 +7,7 @@ import {
   EmailVerificationStrategySchema,
   type FirstFactorAttemptRequest,
   type FirstFactorPrepareRequest,
+  type FirstFactorStrategy,
   FirstFactorStrategySchema,
   type FlowAttempt,
   type FlowKind,
@@ -181,6 +182,53 @@ async function requireSignUpMethod(
   return Settings.requireMethod(deps, tenant, 'emailCode')
 }
 
+/**
+ * Refuse a step that comes **after** an attempt's first proof once the method that proof used
+ * has been switched off.
+ *
+ * "On every step" includes the steps an attempt is parked on: the emailed code of
+ * `needs_email_verification`, a second factor, an enrolment. An attempt lives ten minutes, and
+ * one that got past its first factor with a method the operator has since disabled must not
+ * end in a session. What is checked is the method the attempt **actually proved**:
+ *
+ * - a sign-up: its own rule ({@link requireSignUpMethod});
+ * - a password reset: the password;
+ * - a sign-in: the first factor recorded on the attempt. A password, an emailed code or link
+ *   by its settings switch; a passkey through `Passkeys.relyingParty` (which is also its
+ *   "still on" check, and holds the step to the relying party's origins); a provider through
+ *   `OAuth.credentials`. An attempt stored before the factor was recorded proved a password or
+ *   nothing this function lets through: it is held to the password's switch.
+ *
+ * Called after `load` and the step check, and before anything is counted, spent or sent, so a
+ * refusal uses up no guess, no code, no challenge and no rate limit.
+ *
+ * @throws AuthError `auth.method_disabled`, or `request.origin_not_allowed` for a passkey
+ *   attempt continued from an origin outside the relying party.
+ */
+async function requireProvenMethod(
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'oauthProviders' | 'secretBox'>,
+  tenant: Tenant,
+  attempt: Pick<FlowAttemptRecord, 'kind'>,
+  state: Pick<State, 'passwordless' | 'firstFactor'>,
+  context: Pick<ClientContext, 'origin'>
+): Promise<void> {
+  if (attempt.kind === 'sign_up') {
+    return requireSignUpMethod(deps, tenant, state)
+  }
+  const first = attempt.kind === 'password_reset' ? 'password' : (state.firstFactor ?? 'password')
+  if (first === 'password') {
+    return requirePasswordMethod(deps, tenant)
+  }
+  if (first === 'email_code' || first === 'email_link') {
+    return Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[first])
+  }
+  if (first === 'passkey') {
+    await Passkeys.relyingParty(deps, tenant, context.origin)
+    return
+  }
+  await OAuth.credentials(deps, tenant, OAuthProviderSchema.parse(first.slice('oauth_'.length)))
+}
+
 /** The device a flow request comes from. */
 export interface ClientContext {
   /**
@@ -258,6 +306,13 @@ const StateSchema = z.object({
   decoy: z.boolean().optional(),
   /** The first factors a sign-in was offered when it started. */
   strategies: z.array(FirstFactorStrategySchema).optional(),
+  /**
+   * The first factor a sign-in proved. Kept while the attempt waits on a later step (an emailed
+   * code, a second factor, an enrolment), because that step must still be refused once the
+   * method that got the attempt there is switched off ({@link requireProvenMethod}). Not
+   * derivable from `amr`: `email` is recorded by a code and by a link, `fed` by every provider.
+   */
+  firstFactor: FirstFactorStrategySchema.optional(),
   /** The second factors the user may choose from, while the attempt waits on one. */
   secondFactors: z.array(SecondFactorMethodSchema).optional(),
   /** A sign-up made without a password (`signUp.password: 'optional'`). */
@@ -402,6 +457,11 @@ function proven(state: State, ...methods: string[]): State {
   return { ...state, amr: [...new Set([...(state.amr ?? []), ...methods])] }
 }
 
+/** An attempt's state once its first factor is proven: what was proven, and by which factor. */
+function firstProven(state: State, strategy: FirstFactorStrategy, ...methods: string[]): State {
+  return { ...proven(state, ...methods), firstFactor: strategy }
+}
+
 /** What stands between a user who has passed everything else and their session. */
 interface Requirement {
   /** The second factors the user must prove one of. */
@@ -537,6 +597,14 @@ async function load(
  * stopped at a second factor or failed before this point created no session and sends nothing.
  * Only a sign-in is announced. A sign-up's session belongs to someone who has just verified the
  * address, and a password reset is announced by the password notice.
+ *
+ * **Spent first, on purpose.** If `Sessions.create` then fails (the store is unreachable, the
+ * concurrent-session rule refuses), the attempt is already `complete` and whatever proved its
+ * last step is used up: an emailed code, a time step of an authenticator, **a backup code**.
+ * The caller gets the session's error and starts again; a backup code spent this way is not
+ * given back. The other order (session first, then the compare-and-set) would let two racing
+ * requests each create a session from one proof, which is the worse failure: a lost backup
+ * code costs the user one of ten, and they are told how many remain.
  *
  * **No session without a factor the user has by now.** An attempt that did not prove a second
  * factor re-reads, after its session is created, whether the user has one. If they do (it was
@@ -906,10 +974,11 @@ export async function submitPassword(
     ...required,
   })
   if (next !== 'needs_email_verification') {
-    return advance(deps, tenant, attempt, proven(state, 'pwd'), user.id, next, required, context)
+    const done = firstProven(state, 'password', 'pwd')
+    return advance(deps, tenant, attempt, done, user.id, next, required, context)
   }
 
-  const pending: State = { ...proven(state, 'pwd'), email: user.email }
+  const pending: State = { ...firstProven(state, 'password', 'pwd'), email: user.email }
   const waiting = { ...attempt, status: next, userId: user.id }
   // Send the code before moving the attempt: if the send is refused (e.g. the address is on
   // its cooldown) the attempt stays on the password step and can simply be retried.
@@ -928,6 +997,42 @@ export async function submitPassword(
 }
 
 /**
+ * Mark an address verified for someone who proved the inbox **without proving the account's
+ * password**, and remove that password with it (see {@link completeEmailFactor}).
+ *
+ * One store transaction: the address is never verified with the old password still in place.
+ * The owner is told after the commit, in the background.
+ */
+async function verifyUnprovenAddress(
+  deps: Deps,
+  tenant: Tenant,
+  user: UserRecord,
+  context: ClientContext
+): Promise<void> {
+  const actor = { type: 'user', id: user.id, ...cleanOrigin(context) } as const
+  const target = { type: 'user', id: user.id } as const
+  const at = deps.clock.now()
+  const { passwordRemoved } = await deps.users.markEmailVerified(
+    tenant.environmentId,
+    user.id,
+    at,
+    Audit.entry(deps, tenant, { type: 'user.email_verified', actor, target }),
+    {
+      activity: Audit.entry(deps, tenant, {
+        type: 'user.password_changed',
+        actor,
+        target,
+        data: { method: 'email_verification', removed: true },
+      }),
+    }
+  )
+  if (passwordRemoved) {
+    // Not awaited and cannot throw: the notice must neither delay nor fail the sign-in.
+    Notices.passwordChanged(deps, tenant, user, { by: 'verification', added: false, at })
+  }
+}
+
+/**
  * Finish a sign-in whose email first factor (a code, or a link opened in the asking browser)
  * has just been proven for `user`.
  *
@@ -935,6 +1040,17 @@ export async function submitPassword(
  * audit entry) and the attempt never detours through `needs_email_verification`. A ban is
  * revealed only here, after the factor. A user with a second factor gets `needs_second_factor`
  * and no tokens.
+ *
+ * **An address proven here for the first time loses the account's password** (ADR 0024,
+ * "A password set before the address was proven"). An unverified account with a password
+ * exists only because someone other than the proven owner made it (an administrator's
+ * `POST /v1/admin/users` with a password and `emailVerified: false`); whoever chose that
+ * password would otherwise be able to sign in the moment the owner verifies the address (a
+ * pre-hijack). The password is removed in the same store transaction as the verification,
+ * recorded (`user.password_changed`, `removed: true`), and the owner is told once it is
+ * committed; they set their own through a password reset. An address that was already verified
+ * keeps its password, and so does one verified after a password sign-in ({@link verifyEmail}):
+ * there the verifier knew the password.
  *
  * @param spend - Uses the proof up. Called after the second factors are read and before
  *   anything is changed, so a failure to read them leaves the proof usable, and of two racing
@@ -963,19 +1079,12 @@ async function completeEmailFactor(
   await spend()
   if (user.emailVerifiedAt === null) {
     try {
-      await deps.users.markEmailVerified(
-        tenant.environmentId,
-        user.id,
-        deps.clock.now(),
-        Audit.entry(deps, tenant, {
-          type: 'user.email_verified',
-          actor: { type: 'user', id: user.id, ...cleanOrigin(context) },
-          target: { type: 'user', id: user.id },
-        })
-      )
+      await verifyUnprovenAddress(deps, tenant, user, context)
     } catch (error) {
-      // The proof is spent, so failing here would strand the user. A later password sign-in
-      // asks them to verify the address instead.
+      // The proof is spent, so failing here would strand the user. Nothing was written (the
+      // verification and the password's removal are one transaction), so the address is still
+      // unverified: a later password sign-in asks for a code sent to it, which only its owner
+      // can read.
       logger.warn('could not mark the email verified after an email sign-in', {
         environmentId: tenant.environmentId,
         err: error instanceof Error ? error.name : 'unknown',
@@ -989,7 +1098,8 @@ async function completeEmailFactor(
     linkVerified: _linkVerified,
     ...rest
   } = state
-  return advance(deps, tenant, attempt, proven(rest, 'email'), user.id, next, required, context)
+  const done = firstProven(rest, strategy, 'email')
+  return advance(deps, tenant, attempt, done, user.id, next, required, context)
 }
 
 /**
@@ -1727,7 +1837,7 @@ export async function exchangeOAuth(
     deps,
     tenant,
     attempt,
-    proven(state, 'fed'),
+    firstProven(state, OAuth.strategyOf(provider), 'fed'),
     user.id,
     next,
     required,
@@ -1785,6 +1895,14 @@ export async function exchangeOAuthLink(
  * in. For a sign-in it marks the user's email verified and completes the sign-in, unless the
  * user has a second factor: then the attempt moves to `needs_second_factor`, without tokens.
  *
+ * A sign-in gets here after a password or after a passkey, and the step is held to the method
+ * it proved ({@link requireProvenMethod}): the password's switch, or the passkey's relying
+ * party (so the request needs an `Origin` that belongs to it). An attempt that proved a passkey
+ * has already proven two factors and is never sent on to `needs_second_factor` or
+ * `needs_factor_enrolment`; and because its verifier did not prove the account's password, an
+ * address verified for the first time this way loses that password, as after an emailed
+ * sign-in ({@link completeEmailFactor}). After a password the password stays.
+ *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
  * @param kind - Which flow the route belongs to; an attempt of the other kind is not found.
@@ -1807,9 +1925,9 @@ export async function verifyEmail(
   const event = { type: 'email_verified' } as const
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
   assertAccepts(attempt.kind, attempt.status, event)
-  // A sign-in reaches this step only after a password (an email factor verifies the address
-  // itself), so its switch is the password's.
-  await requireSignUpMethod(deps, tenant, attempt.kind === 'sign_up' ? state : {})
+  // A sign-in reaches this step after a password or a passkey (an email factor verifies the
+  // address itself): the switch that must still be on is the one of the factor it proved.
+  await requireProvenMethod(deps, tenant, attempt, state, context)
   await chargeEnvironment(deps, tenant, 'verify')
 
   await Verification.verifyCode(deps, tenant, {
@@ -1829,17 +1947,27 @@ export async function verifyEmail(
     if (user.bannedAt !== null) {
       throw new AuthError('auth.user_banned')
     }
-    const required = await requirement(deps, tenant, user.id)
-    await deps.users.markEmailVerified(
-      tenant.environmentId,
-      user.id,
-      now,
-      Audit.entry(deps, tenant, {
-        type: 'user.email_verified',
-        actor: { type: 'user', id: user.id, ...context },
-        target: { type: 'user', id: user.id },
-      })
-    )
+    // An attempt that has already proven two factors (a passkey) is asked for nothing more:
+    // no second factor and no enrolment, exactly as when its address was verified already.
+    const required: Requirement = state.amr?.includes('mfa')
+      ? { secondFactors: [], enrolmentRequired: false }
+      : await requirement(deps, tenant, user.id)
+    if (state.amr?.includes('pwd')) {
+      // The verifier knows the password, so it stays.
+      await deps.users.markEmailVerified(
+        tenant.environmentId,
+        user.id,
+        now,
+        Audit.entry(deps, tenant, {
+          type: 'user.email_verified',
+          actor: { type: 'user', id: user.id, ...context },
+          target: { type: 'user', id: user.id },
+        })
+      )
+    } else {
+      // Proven by a passkey: a password on the still-unverified account is not this user's.
+      await verifyUnprovenAddress(deps, tenant, user, context)
+    }
     const next = nextStatus(attempt.kind, attempt.status, event, {
       strategies: state.strategies ?? [],
       emailVerified: true,
@@ -2074,6 +2202,13 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * says so too, as `backupCodesRemaining`) or a passkey (an assertion for the challenge of
  * {@link secondFactorPasskeyOptions}, which is used up whatever the assertion turns out to be).
  *
+ * **A proof is spent even if the session then cannot be created.** The verifier uses the proof
+ * up (a backup code is marked used and recorded) before `finish` creates the session, and
+ * `finish` spends the attempt before that too. If the session fails transiently
+ * (`service.unavailable`, `session.limit_reached`), the answer is that error, the attempt is
+ * over and the backup code stays spent: the user starts again with another code or their
+ * authenticator. Accepted, not an oversight: see `finish` for why the order is not reversed.
+ *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
  * @param kind - Which flow the route belongs to (`sign_in` or `password_reset`).
@@ -2082,8 +2217,9 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * @param context - The requesting device.
  * @returns `complete` with tokens.
  * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` (wrong
- *   step, or a method the attempt did not offer), `mfa.invalid_code` for a proof that does not
- *   verify, or `auth.user_banned`.
+ *   step, or a method the attempt did not offer), `auth.method_disabled` when the first factor
+ *   the attempt proved has been switched off since, `mfa.invalid_code` for a proof that does
+ *   not verify, or `auth.user_banned`.
  * @throws RateLimitError while the user is locked out after repeated wrong proofs.
  */
 export async function submitSecondFactor(
@@ -2100,6 +2236,9 @@ export async function submitSecondFactor(
   if (!userId || !state.secondFactors?.includes(proof.method)) {
     throw new AuthError('flow.invalid_step')
   }
+  // The first factor that parked the attempt here must still be on: before the guess is
+  // counted, the ceiling charged or anything spent.
+  await requireProvenMethod(deps, tenant, attempt, state, context)
   if (proof.method === 'passkey') {
     // Passkeys switched off since the attempt was offered one, or a foreign origin: refused
     // before the guess is counted or the challenge used.
@@ -2344,7 +2483,7 @@ export async function submitPasskey(
     emailVerified: user.emailVerifiedAt !== null,
     ...required,
   })
-  const done = proven(taken.state, ...asserted.methods, 'mfa')
+  const done = firstProven(taken.state, 'passkey', ...asserted.methods, 'mfa')
   if (next !== 'needs_email_verification') {
     return advance(deps, tenant, attempt, done, user.id, next, required, context)
   }
@@ -2355,7 +2494,9 @@ export async function submitPasskey(
     tenant.environmentId,
     attempt.id,
     attempt.status,
-    { status: next, userId: user.id, state: pending },
+    // The attempt started with no identifier (the passkey said who it is): it gets the user's
+    // address now, stored, so that every later read of the attempt agrees with this answer.
+    { status: next, userId: user.id, identifier: user.emailNormalized, state: pending },
     deps.clock.now()
   )
   if (!moved) {
@@ -2393,6 +2534,7 @@ export async function secondFactorPasskeyOptions(
   if (!attempt.userId || !state.secondFactors?.includes('passkey')) {
     throw new AuthError('flow.invalid_step')
   }
+  await requireProvenMethod(deps, tenant, attempt, state, context)
   const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
   await chargeEnvironment(deps, tenant, 'verify')
   const owned = await deps.passkeys.listForUser(tenant.environmentId, attempt.userId)
@@ -2414,6 +2556,8 @@ async function loadEnrolment(
   if (!attempt.userId) {
     throw new AuthError('flow.invalid_step')
   }
+  // Before the ceiling is charged, a pending factor stored or a guess counted.
+  await requireProvenMethod(deps, tenant, attempt, state, context)
   await chargeEnvironment(deps, tenant, 'verify')
   return { attempt, state, userId: attempt.userId }
 }
@@ -2433,6 +2577,7 @@ async function loadEnrolment(
  * @param context - The requesting device.
  * @returns The secret and its `otpauth://` URI, once.
  * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step`,
+ *   `auth.method_disabled` (the first factor the attempt proved was switched off since),
  *   `mfa.not_available` or `mfa.already_enabled`.
  */
 export async function startFactorEnrolment(
@@ -2470,6 +2615,7 @@ export async function startFactorEnrolment(
  * @param context - The requesting device.
  * @returns `complete` with tokens and `backupCodes`.
  * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step`,
+ *   `auth.method_disabled` (the first factor the attempt proved was switched off since),
  *   `mfa.enrolment_expired`, `mfa.already_enabled`, `mfa.invalid_code` or `auth.user_banned`.
  * @throws RateLimitError while the user is locked out after repeated wrong codes.
  */
@@ -2556,7 +2702,7 @@ export async function resendCode(
   if (attempt.status !== waitsOn) {
     throw new AuthError('flow.invalid_step')
   }
-  await requireSignUpMethod(deps, tenant, kind === 'sign_up' ? state : {})
+  await requireProvenMethod(deps, tenant, attempt, state, context)
   await issueCode(deps, tenant, attempt, state, {
     userId: attempt.userId ?? undefined,
     charge: true,

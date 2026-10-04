@@ -60,7 +60,8 @@ export const SECRET_KEY = 'tula_sk_dev_e2e000000000000000000000000000000'
 /**
  * The wall clock: browsers keep real time, so tokens and cookies must expire by it. A test can
  * move it forward (`/__test/advance-clock`) to make a sign-in old enough to need a step-up
- * without waiting ten minutes; it never moves back.
+ * without waiting ten minutes. It moves back only all the way, to the real time
+ * (`/__test/reset-clock`), so that the specs that run later do not inherit the skew.
  */
 class WallClock extends FixedClock {
   #aheadMs = 0
@@ -69,6 +70,9 @@ class WallClock extends FixedClock {
   }
   forward(ms: number): void {
     this.#aheadMs += Math.max(0, ms)
+  }
+  reset(): void {
+    this.#aheadMs = 0
   }
 }
 
@@ -314,6 +318,10 @@ function testRoute(request: Request): Response | Promise<Response> | null {
       clock.forward(ms)
       return json({ now: clock.now().getTime() })
     })
+  }
+  if (request.method === 'POST' && url.pathname === '/__test/reset-clock') {
+    clock.reset()
+    return json({ now: clock.now().getTime() })
   }
   return json({ error: 'unknown test route' }, 404)
 }

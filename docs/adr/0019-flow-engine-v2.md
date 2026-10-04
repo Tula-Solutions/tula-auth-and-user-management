@@ -88,7 +88,12 @@ one place for every present and future flow route instead of in each handler.
 - The strategies are stored on the attempt, and a step accepts exactly what the start offered:
   a password is accepted on `needs_password`, or on `needs_first_factor` when `password` is
   among the attempt's strategies. The method's own switch is still checked on every step
-  (ADR 0018), so a method switched off mid-attempt stops working at once.
+  (ADR 0018), so a method switched off mid-attempt stops working at once. "Every step"
+  includes the ones an attempt is parked on after its first factor (`needs_email_verification`,
+  `needs_second_factor`, `needs_factor_enrolment`): the attempt records the first factor it
+  proved (`firstFactor` in its state) and `requireProvenMethod` re-checks that method (a
+  settings switch, the passkey relying party, or the provider's credentials) after `load` and
+  before a guess is counted, a ceiling charged or anything spent.
 - One registry maps settings to strategies: `FIRST_FACTORS` in `modules/factor/service.ts`.
   Steps 1.7 to 1.10 add a strategy by adding an entry there and the route that proves it.
   Only `password` can be enabled today, so `needs_first_factor` is reachable only in tests.

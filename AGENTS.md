@@ -154,10 +154,14 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   `Host` (`packages/cli/src/host.ts`): an argument vector, never a shell line, always with a
   timeout, so unit tests need no Docker. `tula dev` writes keys only inside its marked block
   of `.env.local` (mode 0600, enforced on every run through `Host.restrictFile`, not only when
-  the contents change), never changes a line outside it, mints nothing when the block's
+  the contents change; written through a temporary file opened exclusively under a random
+  name, and a symbolic link at the file is refused rather than written or re-moded through),
+  never changes a line outside it, mints nothing when the block's
   keys still work, and prints the secret key only with `--show-keys`. `tula doctor` renders
   the server's diagnostics and never connects to a dependency itself; text from the server is
-  stripped of control characters before it is printed, and **an address from the server's
+  stripped of control characters and of what a reader cannot see (`printable()`: the Unicode
+  classes `Cf`, `Co`, `Cn` and lone surrogates, with the `u` flag) before it is printed, and
+  **an address from the server's
   answer is never requested** unless it is the origin the operator gave, and then only as
   `<origin>/v1/status`. `tula policy test` evaluates the
   password on the operator's machine: it is never sent, printed or logged.
@@ -249,7 +253,18 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - **Every user-visible string is in `localization.ts`**; server error messages come from
   `@tula/core`'s table by code. Strings are rendered as text, never as HTML.
 - **A destination is only ever a prop** (`afterSignInUrl`, …), checked to be relative or
-  `http(s)`. Nothing reads a URL from the address bar or the server.
+  `http(s)`. Nothing reads a URL from the address bar or the server. A relative destination
+  means this origin: `safeUrl` refuses a value with no scheme that names a host (`//host`,
+  `/\host`, a path that normalises to one).
+- **A failed sign-out is not a sign-out.** `@tula/core` signs out locally and throws when the
+  server could not be told, because the session (and a browser's cookie) may live on. The
+  components sign out through `useTulaContext().signOut`, never `client.session.signOut()`
+  with a swallowed error: it navigates only after a sign-out that went through, and otherwise
+  the provider shows `SignOutFailedDialog` (an alert, "Try again"), which is the provider's
+  because the component that asked is gone once the client is signed out.
+- **A flow that is left is discarded.** `flow.discard()` (every flow has it) forgets the
+  attempt's secret and drops the answer of an action still in flight, so a late `complete`
+  signs nobody in; `use-flow.ts` calls it on `reset()` and when `adopt()` replaces a flow.
 - **Nothing touches `window` or `document` during render**, and no token, code, password or
   attempt secret goes into storage, a URL, a DOM attribute or a log line. The one thing in web
   storage is `@tula/core`'s emailed-link binding (`tula.link.<attempt id>` in `localStorage`):
@@ -351,6 +366,13 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   Never add a header that is trusted for being present.
 - **A `redirect_url` is a path on this origin**: written by the middleware, read through
   `safeRedirectPath`. Never pass one to a redirect or a component any other way.
+  `safeRedirectPath` checks the value it **returns**: the URL parser turns `/.//host` into
+  `//host`, so a check of the input alone is not enough. Keep its table and the test that
+  builds paths from dot, encoded and empty segments.
+- **`auth()` and `currentUser()` see no URL.** The scheme they read cookies under is, in
+  order: the configured app URL (`TULA_APP_URL`, the recommended way), `X-Forwarded-Proto`,
+  and otherwise https exactly when the request carries one of the SDK's `__Host-` cookies
+  (`requestFromHeaders`). Never read both names for one request.
 - **The middleware imports no Node API** (it runs in the Edge runtime on Next.js 15), and the
   client entry (`src/index.ts`, `src/provider.tsx`) imports nothing that reads the server
   configuration: `package.test.ts` builds the package and checks both, and that the client
@@ -373,6 +395,10 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - The handler caps what it passes on (1 MiB request body, counted while streaming; 1 MiB JSON
   answer). Parallel refreshes rely on the profile's reuse grace window: `real-api.test.ts`
   holds both sides of it against the real API in process.
+- **The server-side refresh gives up inside the grace window**: at most `REFRESH_TIMEOUT_MS`
+  (8 s, below `MIN_REUSE_GRACE_PERIOD`; a test holds it and that it equals `@tula/core`'s),
+  whatever `timeoutSeconds` says, and a refresh that got no answer is repeated once, at once,
+  inside the single flight. An HTTP answer of any status is never repeated.
 
 ### API module pattern (hybrid hexagonal — see ADR 0001)
 
@@ -517,7 +543,11 @@ nothing.
   safety depends on taking effect everywhere immediately.
 - A flow that uses a sign-in method calls `Settings.requireMethod` on **every** step, after
   the attempt is loaded and before anything is counted, spent or sent: an attempt started
-  before a method was switched off must not finish with it.
+  before a method was switched off must not finish with it. That includes the steps an attempt
+  waits on **after** its first factor (the emailed code of `needs_email_verification`, a second
+  factor, an enrolment): they call the flow service's `requireProvenMethod`, which re-checks
+  the factor the attempt actually proved (`firstFactor` in its state: a settings switch,
+  `Passkeys.relyingParty`, or `OAuth.credentials`). A new parked step calls it too.
 - A `PUT` that leaves out `password` or `urls.allowedOrigins` stores the deployment's
   `PASSWORD_POLICY` / `CORS_ORIGINS` for them, not the schema defaults. The body is validated
   as `EnvironmentSettingsInput` (those two stay absent when left out) and only
@@ -624,8 +654,12 @@ The API never tells a client which screen to draw; it returns the next **flow st
 Every route uses `describeRoute()` with `operationId`, `tags`, `summary`, `security` and
 `responses` (reuse `~/openapi` error responses). Requests are validated with
 `validator('json' | 'query' | 'param', schema, handlers.validationHook)`. Responses are
-`c.json(Schema.parse(result))`. After changing any route or schema run `bun run contract:generate`
-and commit `packages/contract/openapi.json` — CI fails on drift.
+`c.json(Schema.parse(result))`. A route behind `secretKey()` spreads `...openapi.adminResponses`
+last into its `responses`, and one behind `instanceAdmin()` `...openapi.instanceResponses`: what
+the dashboard's way in can answer (400 mixed credentials, 401, 403 `request.origin_not_allowed`,
+404 unknown environment); `openapi.test.ts` walks the generated document and fails for an
+operation that takes a dashboard session and leaves one out. After changing any route or schema
+run `bun run contract:generate` and commit `packages/contract/openapi.json` — CI fails on drift.
 
 ### Data & tenancy
 
@@ -793,6 +827,14 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   send limits and the cost are the same. An emailed code counts against the same per-identifier
   lockout as the password, and a token issued for one purpose (`email_verification`,
   `password_reset`, `sign_in`) is never honoured for another.
+- **An address proven for the first time by someone who did not prove the password loses the
+  password.** An unverified account with a password was made by someone other than the
+  address's proven owner (an admin create); when an emailed code or link (or the code after a
+  passkey sign-in) verifies the address, the password is removed in the same store transaction
+  (`markEmailVerified` with `removePassword`), recorded (`user.password_changed`,
+  `removed: true`) and announced, and the owner sets one by reset. Never verify an address
+  for a verifier who has not proven the password by any other call; after a password sign-in,
+  in a sign-up and in a reset the password stays (ADR 0024).
 - **An emailed link is honoured only in the browser that asked for it.** The link's token is
   accepted only together with the `linkBinding` returned once to the asking client (stored as
   SHA-256 on the attempt, compared in constant time). Without it the answer is
@@ -845,7 +887,12 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
   that checks a guessable secret (a password) also goes through `deps.lockout` with
-  `CREDENTIAL_LOCKOUT`: count the attempt first, clear it on success.
+  `CREDENTIAL_LOCKOUT`: count the attempt first, clear it on success. A guess at the password
+  by someone who holds a session (a step-up, the current password of a password change) counts
+  under the one per-user key `Mfa.stepUpLockKey`, never a key per route (ADR 0011).
+  `route-guards.test.ts` walks the route table: every `/v1/client/*` write is behind
+  `publishableKey()` and has a per-IP limit of its own, or is in that test's allow-list with
+  the reason.
 - **Shared state fails closed.** When the store behind the rate limiter, the lockout or the
   revoked-session list cannot answer, the adapter throws `ServiceUnavailableError`
   (`service.unavailable`, 503); it never reports "allowed" or "not revoked", and nothing falls
@@ -903,7 +950,11 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   instead of failing one test (`.claude/hooks/*.test.ts` show the pattern). A single test (or
   hook) that starts more than two processes also gets an explicit per-test timeout sized to
   them, with a comment: each `bun` start can take a second on a slow runner, and Bun's default
-  is five. Never raise the timeout of a test that spawns nothing.
+  is five. Never raise the timeout of a test that spawns nothing, with one exception:
+  `apps/dashboard/bunfig.toml` sets 30 seconds for the whole package, because its component
+  tests render the whole app in happy-dom and wait up to 10 seconds in `findBy*` / `waitFor`
+  (`src/testing/setup.ts`); on a slow runner Bun's default would end a test before the query
+  could fail with its own message. Do not copy that setting to another package.
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
 - Route tests call `createApp(createTestDeps()).request(...)`.

@@ -356,7 +356,10 @@ export interface NavigationOptions {
   oauthCallbackUrl?: string
   /** Where to go once a sign-up completes. */
   afterSignUpUrl?: string
-  /** Where to go after signing out from `<UserButton>` or `<UserProfile>`. */
+  /**
+   * Where to go after signing out from `<UserButton>` or `<UserProfile>`: only once the server
+   * was told. A sign-out that did not reach it navigates nowhere and is said in a dialog.
+   */
   afterSignOutUrl?: string
   /** Where `<UserProfile>` lives. Without it `<UserButton>` opens the profile in a dialog. */
   userProfileUrl?: string
@@ -1631,6 +1634,14 @@ export interface TulaLocalization {
     message: string
     restart: string
   }
+  /** The dialog the provider shows when a sign-out did not reach the server. */
+  signOutFailed: {
+    title: string
+    /** Announced as an alert: the session may still be active on this device. */
+    message: string
+    retry: string
+    close: string
+  }
   /** `<UserButton>`. */
   userButton: {
     /** `{name}`. The trigger's accessible name. */
@@ -2192,6 +2203,10 @@ its first item; the arrow keys, Home and End move; Escape closes it and returns 
 button. "Manage account" opens `<UserProfile>` in a dialog unless the app has a profile page
 (`userProfileUrl`) or handles it itself (`onManageAccount`).
 
+"Sign out" goes to the after-sign-out URL only once the server has been told. When it could
+not be, nothing navigates and the provider says, in a dialog with "Try again", that the
+session may still be active on this device.
+
 ```ts
 export function UserButton(props: UserButtonProps)
 ```
@@ -2250,6 +2265,10 @@ Account management for the signed-in user: who they are, change the password, tw
 verification, passkeys (where the environment has them on), connected accounts, and where
 they are signed in, with "this device" marked, one device or all the others signed out, and
 sign out. Renders nothing while signed out.
+
+"Sign out" goes to the after-sign-out URL only once the server has been told. When it could
+not be, nothing navigates and the provider says, in a dialog with "Try again", that the
+session may still be active on this device.
 
 ```ts
 export function UserProfile(props: UserProfileProps)

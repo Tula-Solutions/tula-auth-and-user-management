@@ -471,7 +471,8 @@
           "name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 100
+            "maxLength": 100,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
           }
         },
         "required": [
@@ -4007,8 +4008,38 @@
               }
             }
           },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4077,8 +4108,38 @@
               }
             }
           },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4146,7 +4207,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4156,7 +4217,27 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4266,35 +4347,27 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4304,7 +4377,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4508,8 +4581,38 @@
               }
             }
           },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4578,8 +4681,38 @@
               }
             }
           },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5528,35 +5661,17 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -5566,7 +5681,17 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5666,35 +5791,17 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -5704,7 +5811,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5714,7 +5821,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5804,35 +5911,17 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -5842,7 +5931,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5852,7 +5941,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5937,35 +6026,17 @@
             "description": "The session has ended."
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -5975,7 +6046,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5985,7 +6056,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10508,35 +10579,37 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10651,35 +10724,37 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10788,35 +10863,27 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10826,7 +10893,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10909,35 +10976,27 @@
             "description": "The user was deleted."
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10947,7 +11006,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11039,35 +11098,27 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11077,7 +11128,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11169,35 +11220,27 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11207,7 +11250,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11299,35 +11342,27 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11337,7 +11372,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11422,35 +11457,27 @@
             "description": "The password was replaced."
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -11460,7 +11487,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12283,35 +12310,27 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12321,7 +12340,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12413,35 +12432,37 @@
             }
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12608,8 +12629,38 @@
               }
             }
           },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12715,7 +12766,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12725,7 +12776,27 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12901,8 +12972,38 @@
               }
             }
           },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12972,7 +13073,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -12982,7 +13083,27 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13083,35 +13204,27 @@
             "description": "Removed."
           },
           "400": {
-            "description": "Validation Error",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "enum": [
-                        false
-                      ]
-                    },
-                    "error": {
-                      "type": "array",
-                      "items": {}
-                    },
-                    "data": {}
-                  },
-                  "required": [
-                    "success",
-                    "error",
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -13121,7 +13234,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14396,8 +14509,28 @@
               }
             }
           },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14407,7 +14540,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14585,7 +14718,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14595,7 +14728,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14605,7 +14738,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14615,7 +14748,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14662,7 +14795,7 @@
           "Instance"
         ],
         "summary": "Sign out of the dashboard",
-        "description": "Removes the session cookies from the browser. Idempotent: it answers 204 with or without a session. A session is stateless, so a copy of the cookie made elsewhere stays valid until it expires (8 hours at most) or the admin token is rotated.",
+        "description": "Removes the session cookies from the browser. Idempotent: it answers 204 with or without a session, and a session’s sign-out is recorded once however often it is repeated. A session is stateless, so a copy of the cookie made elsewhere stays valid until it expires (8 hours at most) or the admin token is rotated.",
         "security": [
           {
             "dashboardSession": []
@@ -14673,7 +14806,17 @@
             "description": "Signed out. The cookies are cleared."
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14683,7 +14826,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14693,7 +14836,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14763,7 +14906,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14773,7 +14916,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14783,7 +14926,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14793,7 +14936,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14893,7 +15036,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14903,7 +15046,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -14913,7 +15056,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14923,7 +15066,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15023,7 +15166,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15033,7 +15176,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15043,7 +15186,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15053,7 +15196,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15162,7 +15305,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15172,7 +15315,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15182,7 +15325,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15192,7 +15335,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15292,7 +15435,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15302,7 +15445,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15312,7 +15455,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15322,7 +15465,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15434,7 +15577,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15444,7 +15587,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15454,7 +15597,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15464,7 +15607,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15575,7 +15718,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15585,7 +15728,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15595,7 +15738,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15605,7 +15748,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15727,7 +15870,7 @@
             }
           },
           "400": {
-            "description": "The request could not be read (`request.malformed`).",
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15737,7 +15880,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid credentials.",
+            "description": "Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -15747,7 +15890,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed.",
+            "description": "A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -15757,7 +15900,7 @@
             }
           },
           "404": {
-            "description": "The resource does not exist in this environment.",
+            "description": "The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.",
             "content": {
               "application/json": {
                 "schema": {

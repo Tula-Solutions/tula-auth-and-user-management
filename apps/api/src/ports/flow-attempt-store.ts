@@ -32,6 +32,11 @@ export type NewFlowAttempt = Omit<FlowAttemptRecord, 'completedAt'>
 export interface FlowAttemptChange {
   status: FlowStatus
   userId?: string
+  /**
+   * Gives the attempt an identifier it did not start with: a sign-in by passkey starts with
+   * none, and learns the user's address only once the passkey is proven.
+   */
+  identifier?: string
   state?: Record<string, unknown>
   /** Set when the new status is `complete`. */
   completedAt?: Date

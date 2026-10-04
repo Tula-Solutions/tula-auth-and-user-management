@@ -7,6 +7,7 @@ import type {
 import type { Deps } from '~/dependencies'
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '~/exceptions'
 import { type Actor, cleanOrigin } from '~/lib/actor'
+import { DASHBOARD_SESSION_TTL_MS } from '~/lib/dashboard-session'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import type {
@@ -60,21 +61,59 @@ export function entry(
 }
 
 /**
- * Record a dashboard sign-in or a sign-out. The entry carries who and from where, and
- * nothing of what was presented. A failed sign-in goes through {@link recordFailedSignIn}.
+ * Record a dashboard sign-in. The entry carries who and from where, and nothing of what was
+ * presented. A failed sign-in goes through {@link recordFailedSignIn}, a sign-out through
+ * {@link recordSignOut}.
  *
- * Awaited by its callers: a session is not handed out when its sign-in cannot be recorded.
+ * Awaited by its caller: a session is not handed out when its sign-in cannot be recorded.
  *
  * @param deps - Control plane, ids and clock.
- * @param type - Which of the two.
- * @param actor - The request's actor; its id is the session's, or `null` for a failure.
+ * @param actor - The request's actor; its id is the new session's.
  */
-export async function recordSession(
+export async function recordSignIn(
   deps: Pick<Deps, 'controlPlane' | 'ids' | 'clock'>,
-  type: 'instance.signed_in' | 'instance.signed_out',
   actor: Actor
 ): Promise<void> {
-  await deps.controlPlane.record(entry(deps, { type, actor }))
+  await deps.controlPlane.record(entry(deps, { type: 'instance.signed_in', actor }))
+}
+
+/**
+ * Record a dashboard sign-out, at most once per session.
+ *
+ * The session is stateless: signing out clears the cookie in one browser, and the value itself
+ * stays valid until it expires. So the same cookie can be sent to the sign-out again and again,
+ * and one entry per call would let whoever holds a session grow an append-only table. The
+ * first sign-out of a session is written; later ones are not. "First" is tallied in the rate
+ * limiter (shared between instances), for as long as the session can live, under a keyed hash
+ * of the session's id (never the id: limiter keys may live in Redis), as failed sign-ins are
+ * ({@link recordFailedSignIn}).
+ *
+ * A limiter that cannot count means the entry is written: a sign-out is recorded once too
+ * often rather than refused or lost. It never fails the sign-out for that reason.
+ *
+ * @param deps - Control plane, limiter, keyed hash, ids and clock.
+ * @param actor - The request's actor; its id is the session's.
+ */
+export async function recordSignOut(
+  deps: Pick<Deps, 'controlPlane' | 'rateLimiter' | 'keyedHash' | 'ids' | 'clock'>,
+  actor: Actor
+): Promise<void> {
+  try {
+    const session = await deps.keyedHash.hmac('instance-sign-outs', actor.id ?? 'unknown')
+    const first = await deps.rateLimiter.hit(
+      `instance_signed_out:${session}`,
+      1,
+      DASHBOARD_SESSION_TTL_MS
+    )
+    if (!first.allowed) {
+      return
+    }
+  } catch (error) {
+    if (!(error instanceof ServiceUnavailableError)) {
+      throw error
+    }
+  }
+  await deps.controlPlane.record(entry(deps, { type: 'instance.signed_out', actor }))
 }
 
 /**

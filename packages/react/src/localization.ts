@@ -316,6 +316,14 @@ export interface TulaLocalization {
     message: string
     restart: string
   }
+  /** The dialog the provider shows when a sign-out did not reach the server. */
+  signOutFailed: {
+    title: string
+    /** Announced as an alert: the session may still be active on this device. */
+    message: string
+    retry: string
+    close: string
+  }
   /** `<UserButton>`. */
   userButton: {
     /** `{name}`. The trigger's accessible name. */
@@ -655,6 +663,13 @@ export const EN_LOCALIZATION: TulaLocalization = {
     message:
       'This sign-in step is not supported by this version of the app. Update the app, or start again and choose another way to sign in.',
     restart: 'Start again',
+  },
+  signOutFailed: {
+    title: 'Sign-out did not finish',
+    message:
+      'We could not confirm the sign-out, so you may still be signed in on this device. Try again.',
+    retry: 'Try again',
+    close: 'Close',
   },
   userButton: {
     trigger: 'Account menu for {name}',

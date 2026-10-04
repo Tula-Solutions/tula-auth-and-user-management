@@ -74,6 +74,8 @@ More in [self-host.md](../self-host.md#passkeys).
   belong to `rpId`; user verification is always required.
 - A challenge is 32 random bytes, used once, valid five minutes.
 - A passkey sign-in satisfies two-step verification by itself.
+- A passkey sign-in by a user whose address is unverified asks for the emailed code
+  (`needs_email_verification`) and then completes without a second factor.
 - A failed passkey sign-in is always `auth.invalid_credentials`, whatever the reason.
 - A user may hold at most ten passkeys. Adding, renaming and removing need a recent sign-in.
 - A signature counter that does not grow is refused and recorded.

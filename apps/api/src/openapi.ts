@@ -39,6 +39,69 @@ export const responses = {
   ),
 } as const
 
+/**
+ * What every `/v1/admin/*` operation can answer before its handler runs, whichever of its two
+ * credentials is presented (`secretKey()`): spread it into the route's `responses`, **last**,
+ * so that these descriptions are the ones published. The dashboard's way in adds answers a
+ * secret key never gets, and a client generated from the document must know them:
+ *
+ * - 400: `Authorization` together with the dashboard's headers, or no `x-tula-environment`;
+ * - 401: no valid key and no valid session;
+ * - 403: the dashboard's origin rules (`request.origin_not_allowed`);
+ * - 404: an `x-tula-environment` that names no environment.
+ *
+ * `openapi.test.ts` walks the generated document and fails for an operation that takes a
+ * dashboard session and leaves one out.
+ *
+ * @example
+ * ```ts
+ * responses: { 200: { ... }, 422: openapi.responses[422], ...openapi.adminResponses }
+ * ```
+ */
+export const adminResponses = {
+  400: errorResponse(
+    'The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.'
+  ),
+  401: errorResponse(
+    'Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).'
+  ),
+  403: errorResponse(
+    'Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.'
+  ),
+  404: errorResponse(
+    'The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.'
+  ),
+} as const
+
+/**
+ * The same for every `/v1/instance/*` operation a dashboard session can authenticate
+ * (`instanceAdmin()`, `requireDashboardSession`). Spread it into the route's `responses`, last.
+ *
+ * - 400: `Authorization` together with the dashboard's header;
+ * - 401: a missing or wrong admin token, or no valid session;
+ * - 403: the dashboard's origin rules (`request.origin_not_allowed`);
+ * - 404: the deployment has no `TULA_ADMIN_TOKEN`, so the group does not exist.
+ *
+ * @example
+ * ```ts
+ * responses: { 200: { ... }, ...openapi.instanceResponses }
+ * ```
+ */
+export const instanceResponses = {
+  400: errorResponse(
+    'The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s header.'
+  ),
+  401: errorResponse(
+    'Missing or invalid credentials: a missing or wrong admin token (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).'
+  ),
+  403: errorResponse(
+    'A dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.'
+  ),
+  404: errorResponse(
+    'The resource does not exist; or the deployment has no instance admin token, so `/v1/instance/*` does not exist.'
+  ),
+} as const
+
 /** One alternative of a route's security: the schemes that must all be presented. */
 type SecurityRequirement = Record<string, string[]>
 

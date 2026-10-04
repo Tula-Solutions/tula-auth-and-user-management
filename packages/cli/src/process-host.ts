@@ -1,5 +1,43 @@
-import { chmod, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, open, readFile, rename, rm } from 'node:fs/promises'
+import { basename } from 'node:path'
+import { UsageError } from './args'
 import type { Host, RunResult } from './host'
+
+/** What is said when a file the CLI would write or re-mode turns out to be a symbolic link. */
+function linkRefusal(path: string): UsageError {
+  return new UsageError(
+    `${basename(path)} is a symbolic link. \`tula\` does not write a secret or change a mode through a link: replace it with a regular file.`
+  )
+}
+
+/**
+ * Refuse a symbolic link at `path`: writing or changing a mode through one would act on a file
+ * somebody else chose.
+ *
+ * @param path - The file about to be written or re-moded.
+ * @returns Whether anything is at `path`.
+ * @throws UsageError when `path` is a symbolic link, dangling or not.
+ */
+async function refuseLink(path: string): Promise<boolean> {
+  try {
+    if ((await lstat(path)).isSymbolicLink()) {
+      throw linkRefusal(path)
+    }
+    return true
+  } catch (error) {
+    if ((error as { code?: unknown }).code === 'ENOENT') {
+      return false
+    }
+    throw error
+  }
+}
+
+/** A name for a temporary file that nobody who can write to the directory can predict. */
+function unguessable(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
 
 /**
  * The real {@link Host}: child processes through `Bun.spawn`, files through the file system.
@@ -64,26 +102,58 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
       }
     },
     async writeSecretFile(path, text) {
+      await refuseLink(path)
       // Written beside the file and renamed over it: a reader never sees half a file, and the
-      // file is never, even for a moment, readable by anyone but its owner.
-      const temporary = `${path}.${process.pid}.tmp`
-      await writeFile(temporary, text, { mode: 0o600 })
-      await chmod(temporary, 0o600)
-      await rename(temporary, path)
+      // file is never, even for a moment, readable by anyone but its owner. The temporary
+      // file is created exclusively (`wx` fails on any existing name, and never follows a
+      // link) under a random name: a predictable one could be planted as a link to a file
+      // the secret would then be written into.
+      const temporary = `${path}.${unguessable()}.tmp`
+      try {
+        const file = await open(temporary, 'wx', 0o600)
+        try {
+          await file.writeFile(text)
+          // The mode given to `open` is cut by the umask only towards fewer bits; set again
+          // in case the platform ignored it.
+          await file.chmod(0o600)
+        } finally {
+          await file.close()
+        }
+        // Renaming replaces whatever is at `path` itself, never what a link there points at.
+        await rename(temporary, path)
+      } catch (error) {
+        await rm(temporary, { force: true }).catch(() => undefined)
+        throw error
+      }
     },
     async restrictFile(path) {
+      if (!(await refuseLink(path))) {
+        return false
+      }
+      // Opened without following a link and changed through the handle, so that what was
+      // checked is what is changed even if the name is swapped in between.
+      let file: Awaited<ReturnType<typeof open>>
       try {
-        if (((await stat(path)).mode & 0o077) === 0) {
+        file = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+      } catch (error) {
+        const code = (error as { code?: unknown }).code
+        if (code === 'ENOENT') {
           return false
         }
-        await chmod(path, 0o600)
-        // Where modes do not exist (Windows) the bits never change: nothing was closed.
-        return ((await stat(path)).mode & 0o077) === 0
-      } catch (error) {
-        if ((error as { code?: unknown }).code === 'ENOENT') {
-          return false
+        if (code === 'ELOOP') {
+          throw linkRefusal(path)
         }
         throw error
+      }
+      try {
+        if (((await file.stat()).mode & 0o077) === 0) {
+          return false
+        }
+        await file.chmod(0o600)
+        // Where modes do not exist (Windows) the bits never change: nothing was closed.
+        return ((await file.stat()).mode & 0o077) === 0
+      } finally {
+        await file.close()
       }
     },
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),

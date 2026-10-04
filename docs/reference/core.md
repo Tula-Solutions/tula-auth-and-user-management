@@ -892,11 +892,6 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    *   server refuses with.
    */
   waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep>
-  /**
-   * Leave this sign-in: stop waiting for a link and forget what the flow kept for it in the
-   * browser. Call it when the user goes back or the screen is closed.
-   */
-  discard(): void
 }
 ```
 

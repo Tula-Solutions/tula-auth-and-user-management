@@ -2,6 +2,7 @@ import { createTulaClient, type StepUpMethod, type TulaClient } from '@tula/core
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -9,13 +10,14 @@ import {
   useState,
 } from 'react'
 import type { Appearance } from './appearance'
-import { type Prompt, PromptHost } from './components/prompts'
+import { type Prompt, PromptHost, SignOutFailedDialog } from './components/prompts'
+import { Root } from './components/ui'
 import {
   type LocalizationOverrides,
   resolveLocalization,
   type TulaLocalization,
 } from './localization'
-import type { NavigationOptions } from './navigation'
+import { go, type NavigationOptions } from './navigation'
 
 /** What the provider shares with hooks and components. */
 export interface TulaContextValue {
@@ -29,6 +31,17 @@ export interface TulaContextValue {
   navigation: NavigationOptions
   /** Dialogs the provider shows above the app. */
   prompts: Prompts
+  /**
+   * Sign out as the components do: go to the after-sign-out URL only once the server has been
+   * told. When it could not be told, nothing navigates and the provider says, in a dialog with
+   * "Try again", that the session may still be active on this device (the client itself is
+   * signed out by then, so the component that asked is usually no longer on the page).
+   *
+   * @param redirectUrl - Where to go instead of the provider's `afterSignOutUrl`.
+   * @returns `true` once signed out here and on the server; `false` when the server could not
+   *   be told.
+   */
+  signOut(redirectUrl?: string): Promise<boolean>
 }
 
 /** The provider's dialogs: each returns a promise that settles when the user is done. */
@@ -248,12 +261,36 @@ export function TulaProvider(props: TulaProviderProps) {
     setPrompt(null)
   }
 
+  // A sign-out the server was not told about, and where it was going. Shown until a retry
+  // gets through, the user closes it, or someone signs in.
+  const [failedSignOut, setFailedSignOut] = useState<{ redirectUrl: string | undefined } | null>(
+    null
+  )
+  const signOut = useCallback(
+    async (redirectUrl?: string) => {
+      try {
+        await client.session.signOut()
+      } catch {
+        // The client is signed out, but the server may still hold the session and the browser
+        // its cookie. Going on to "you are signed out" would be a claim nobody checked.
+        setFailedSignOut({ redirectUrl })
+        return false
+      }
+      setFailedSignOut(null)
+      go(redirectUrl ?? afterSignOutUrl, navigate)
+      return true
+    },
+    [client, navigate, afterSignOutUrl]
+  )
+  const closeFailedSignOut = useCallback(() => setFailedSignOut(null), [])
+
   const value = useMemo<TulaContextValue>(
     () => ({
       client,
       appearance,
       localization,
       prompts,
+      signOut,
       navigation: {
         navigate,
         signInUrl,
@@ -271,6 +308,7 @@ export function TulaProvider(props: TulaProviderProps) {
       appearance,
       localization,
       prompts,
+      signOut,
       navigate,
       signInUrl,
       signUpUrl,
@@ -287,6 +325,14 @@ export function TulaProvider(props: TulaProviderProps) {
     <TulaContext.Provider value={value}>
       {children}
       <PromptHost prompt={prompt} onClose={closePrompt} />
+      {failedSignOut && prompt === null ? (
+        <Root appearance={undefined}>
+          <SignOutFailedDialog
+            retry={() => signOut(failedSignOut.redirectUrl)}
+            onClose={closeFailedSignOut}
+          />
+        </Root>
+      ) : null}
     </TulaContext.Provider>
   )
 }

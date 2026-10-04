@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { sha256Hex } from '~/lib/crypto'
 import {
+  DASHBOARD_SESSION_LEEWAY_MS,
   DASHBOARD_SESSION_PURPOSE,
   DASHBOARD_SESSION_TTL_MS,
   mintDashboardSession,
@@ -119,6 +120,39 @@ describe('verifyDashboardSession', () => {
     expect(await verifyDashboardSession(fresh, future)).toBeNull()
     fresh.clock.advance(61_000)
     expect(await verifyDashboardSession(fresh, future)).not.toBeNull()
+  })
+
+  test('an instance whose clock is a little behind the one that signed accepts the session', async () => {
+    // Two instances behind one address: one mints, the next request lands on the other.
+    const minter = createInstanceTestDeps()
+    const { value, session } = await mintDashboardSession(minter, SID)
+    const behind = createInstanceTestDeps()
+    behind.clock.set(new Date(minter.clock.now().getTime() - 2_000))
+    expect(await verifyDashboardSession(behind, value)).toEqual(session)
+    // Exactly at the allowance, and one second past it.
+    behind.clock.set(new Date(minter.clock.now().getTime() - DASHBOARD_SESSION_LEEWAY_MS))
+    expect(await verifyDashboardSession(behind, value)).not.toBeNull()
+    behind.clock.set(new Date(minter.clock.now().getTime() - DASHBOARD_SESSION_LEEWAY_MS - 1000))
+    expect(await verifyDashboardSession(behind, value)).toBeNull()
+  })
+
+  test('an instance a minute behind refuses it: the allowance is for drift, not for the future', async () => {
+    const minter = createInstanceTestDeps()
+    const { value } = await mintDashboardSession(minter, SID)
+    const behind = createInstanceTestDeps()
+    behind.clock.set(new Date(minter.clock.now().getTime() - 60_000))
+    expect(await verifyDashboardSession(behind, value)).toBeNull()
+  })
+
+  test('the allowance does not move the end: a session expires on its own clock, to the second', async () => {
+    const minter = createInstanceTestDeps()
+    const { value } = await mintDashboardSession(minter, SID)
+    const behind = createInstanceTestDeps()
+    behind.clock.set(new Date(minter.clock.now().getTime() - 2_000))
+    behind.clock.advance(DASHBOARD_SESSION_TTL_MS + 2_000 - 1000)
+    expect(await verifyDashboardSession(behind, value)).not.toBeNull()
+    behind.clock.advance(1000)
+    expect(await verifyDashboardSession(behind, value)).toBeNull()
   })
 
   test('a correctly signed payload that claims more than eight hours is refused', async () => {

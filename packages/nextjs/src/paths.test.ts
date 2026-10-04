@@ -23,6 +23,22 @@ describe('safeRedirectPath', () => {
     '/\tevil',
     '/\t/evil.example',
     '/a\nb',
+    // The parser's own normalisation must not produce a host: what is returned is checked.
+    '/.//evil.example',
+    '/..//evil.example',
+    '/a/..//evil.example',
+    '/%2e//evil.example',
+    '/%2E%2e//evil.example',
+    '/././/evil.example',
+    '/.//',
+    '/a/../\\evil.example',
+    '/.\\/evil.example',
+    '/%5cevil.example',
+    '/%5C/evil.example',
+    '/%2f/evil.example',
+    '/%2Fevil.example',
+    '/\revil.example',
+    '/.\t//evil.example',
     'javascript:alert(1)',
     'data:text/html,x',
     'dashboard',
@@ -37,6 +53,21 @@ describe('safeRedirectPath', () => {
   test.each(refused.map((value) => ({ value })))('$value is refused', ({ value }) => {
     expect(safeRedirectPath(value)).toBe('/')
     expect(safeRedirectPath(value, '/home')).toBe('/home')
+  })
+
+  test('what is returned never resolves to another origin, whatever it was made from', () => {
+    const segments = ['', '.', '..', 'a', '%2e', '%2E%2e', 'evil.example', '%5c', '%2f']
+    const page = 'https://app.example.com/sign-in'
+    for (const a of segments) {
+      for (const b of segments) {
+        for (const c of segments) {
+          const result = safeRedirectPath(`/${a}/${b}/${c}`)
+          expect(result.startsWith('/')).toBe(true)
+          expect(result.startsWith('//')).toBe(false)
+          expect(new URL(result, page).origin).toBe('https://app.example.com')
+        }
+      }
+    }
   })
 })
 

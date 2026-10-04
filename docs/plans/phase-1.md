@@ -644,20 +644,21 @@ is deliberately not a tool.
 ### Exit criteria — evidence
 
 What was run for each criterion on 2026-10-04, on one macOS machine (Docker Desktop), from the
-tree of step 1.17. Nothing here ran on GitHub. What none of it covers is in
-[phase-1-unverified.md](phase-1-unverified.md).
+tree of step 1.17. Nothing here ran on GitHub. Every test count, run time and coverage figure
+below is from that one local run: none was repeated, and none is a CI result. What none of it
+covers is in [phase-1-unverified.md](phase-1-unverified.md).
 
 | Criterion | What was run | Result |
 | --- | --- | --- |
 | Conformance in process | `apps/api/src/conformance.test.ts`, inside `bun run verify`: the 46 scenarios of `conformance/scenarios/` against `createApp` on memory adapters. | Pass. |
-| Conformance against two packaged instances behind one address | The Compose `app` profile as an isolated project (the image built from this tree; `TRUST_PROXY=true`, `OAUTH_MOCK_PROVIDER=true`, `LB_CLIENT_ADDRESS=client`, `API_PUBLIC_URL` the proxy's address), then `CONFORMANCE_BASE_URL=<proxy> CONFORMANCE_SETTLE_MS=6000 bun run conformance`. | `46 passed, 0 failed, 0 skipped … (one address, 6000 ms after each settings change)` in 14 min 53 s. The proxy's log: 749 API requests, 362 answered by one instance and 387 by the other. The same run before `CONFORMANCE_SETTLE_MS` and the pass-through existed: 24 passed, 22 failed (stale settings on the other instance; per-address rate limits). |
+| Conformance against two packaged instances behind one address | The Compose `app` profile as an isolated project (the image built from this tree; `TRUST_PROXY=true`, `OAUTH_MOCK_PROVIDER=true`, `LB_CLIENT_ADDRESS=client`, `API_PUBLIC_URL` the proxy's address), then `CONFORMANCE_BASE_URL=<proxy> CONFORMANCE_SETTLE_MS=6000 bun run conformance`. | `46 passed, 0 failed, 0 skipped … (one address, 6000 ms after each settings change)` in 14 min 53 s. The proxy's log: 749 API requests, 362 answered by one instance and 387 by the other. The same run before `CONFORMANCE_SETTLE_MS` and the pass-through existed: 24 passed, 22 failed (stale settings on the other instance; per-address rate limits). **One manual run on one machine.** What makes it repeatable is the CI job `self-host (one-address)`, which had not yet run on GitHub at the time of writing. |
 | Conformance against the two instances on their own ports (`CONFORMANCE_SECOND_BASE_URL`) | Not rerun in this step. It is CI's `self-host (two-ports)` job, unchanged in what it runs. | Not run here. |
 | Conformance through `@tula/core` | `apps/api/src/sdk-journeys.test.ts`, inside `bun run verify`, including its guard "every scenario is covered by an SDK journey or listed as server-only with a reason". | Pass. |
 | `bun run verify` | Biome, harness tests (138, with the new documentation and Compose checks), typecheck, tests with coverage, `db:check`, `contract:check`, `schema:check`, `packages:check` (nine packages built, packed, publint and attw clean), `docs:check`. | Green, 1 min 46 s, 35 of 35 Turborepo tasks, none cached. |
 | The Playwright job | `bun run e2e`: the projects `nextjs`, `dashboard` and `chromium`. | 132 passed, 9 skipped (the screenshot writers, which run only with `SCREENSHOTS=1`), 0 failed, 3 min 33 s. The ten new Next.js scenarios are 18.6 s of it; without them the same run is about 3 min 14 s (computed from the per-test times, not measured separately). |
 | Coverage targets | Each package's own threshold in its `bunfig.toml`, enforced by `test:coverage`. | Met; table below. |
 | Integration tests (not a criterion; recorded because earlier steps could not run them) | `bun run test:integration` with `DATABASE_URL`, `DATABASE_MIGRATION_URL` and `REDIS_TEST_URL` pointed at the isolated stack's Postgres 17 and Redis 7. | 45 passed (7 in `@tula/db`, 38 in `@tula/api`): all five `*.integration.ts` files. |
-| `create-tula` to a sign-in page with Google and a passkey, no server code edited | See the steps below. | Works, with the **mock** provider standing in for Google and a **virtual** authenticator for the passkey. |
+| `create-tula` to a sign-in page with Google and a passkey, no server code edited | See the steps below. | Works, **once, by hand, on one machine**: with the **mock** provider standing in for Google, a **virtual** authenticator for the passkey, and a Playwright script that is not in the repository. No CI job scaffolds a project, so nothing repeats this run. |
 | The whole-phase review | A later stage. | Not part of this step. |
 
 Coverage (functions / lines, as `bun test --coverage` reports them for each package's own files):
@@ -695,7 +696,8 @@ isolated Compose project on ports 53303 and 58325, the image built from this tre
    `bunx tula apply --yes` applied 2 changes (settings at revision 1); a second `tula diff`
    said "No changes".
 8. `bun run dev` (the scaffolded Next.js app, unedited).
-9. A Playwright script with a DevTools virtual authenticator, against that app: the sign-in
+9. A Playwright script (written for this run and not kept in the repository) with a DevTools
+   virtual authenticator, against that app: the sign-in
    page shows **Continue with Google** and **Sign in with a passkey**; sign up with a password
    and the code read from Mailpit; add a passkey in the profile; sign out; sign in with the
    passkey; sign out; **Continue with Google**, the mock consent page, signed in as a new

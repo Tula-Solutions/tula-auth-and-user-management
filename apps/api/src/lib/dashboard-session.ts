@@ -7,6 +7,15 @@ import { timingSafeEqual } from '~/lib/crypto'
  */
 export const DASHBOARD_SESSION_TTL_MS = 8 * 60 * 60_000
 
+/**
+ * How far ahead of this instance's clock a session's issue time may be. The session is
+ * stateless, so the instance that verifies it need not be the one that minted it, and two
+ * instances' clocks are never exactly equal: with no allowance, the request straight after a
+ * sign-in is refused whenever it lands on an instance a second behind. Five seconds covers
+ * NTP-kept clocks and nothing more; it does not lengthen a session, whose end is its own `exp`.
+ */
+export const DASHBOARD_SESSION_LEEWAY_MS = 5_000
+
 /** Key-separation label of the session MAC (`~/lib/keyed-hash`). */
 export const DASHBOARD_SESSION_PURPOSE = 'dashboard-sessions'
 
@@ -83,7 +92,9 @@ function readPayload(payload: string): { sid: string; iat: number; exp: number }
  *
  * The MAC is compared in constant time before the payload is parsed. A session is honoured
  * only between its `iat` and `exp`, and never for longer than {@link DASHBOARD_SESSION_TTL_MS}
- * whatever the payload claims.
+ * whatever the payload claims. An `iat` up to {@link DASHBOARD_SESSION_LEEWAY_MS} ahead of this
+ * instance's clock is accepted (another instance minted it a moment ago); `exp` has no
+ * allowance.
  *
  * @param deps - Keyed hash, clock and config.
  * @param value - The cookie's value, if any.
@@ -113,7 +124,11 @@ export async function verifyDashboardSession(
   const now = deps.clock.now().getTime()
   const issuedAt = claims.iat * 1000
   const expiresAt = claims.exp * 1000
-  if (issuedAt > now || expiresAt <= now || expiresAt - issuedAt > DASHBOARD_SESSION_TTL_MS) {
+  if (
+    issuedAt > now + DASHBOARD_SESSION_LEEWAY_MS ||
+    expiresAt <= now ||
+    expiresAt - issuedAt > DASHBOARD_SESSION_TTL_MS
+  ) {
     return null
   }
   return { id: claims.sid, expiresAt: new Date(expiresAt) }

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { NextRequest } from 'next/server'
-import { authenticate } from './helpers'
+import { authenticate, requestFromHeaders } from './helpers'
 import { tulaMiddleware } from './middleware'
 import {
   API,
@@ -683,5 +683,107 @@ describe('a forged header from the browser', () => {
       api.options
     )
     expect(auth.isSignedIn).toBe(false)
+  })
+})
+
+describe('the scheme auth() reads cookies under, with no URL to go by', () => {
+  /** What `auth()` says in a Server Component whose request had these headers. */
+  function auth(
+    api: FakeApi,
+    headers: Record<string, string>,
+    extra: Record<string, unknown> = {}
+  ) {
+    return authenticate(requestFromHeaders(new Headers(headers)), { ...api.options, ...extra })
+  }
+
+  test('a __Host- cookie with no forwarded scheme and no app URL means https: signed in', async () => {
+    const api = createFakeApi([signer])
+    // What the middleware and the handler wrote for a request whose own URL was https.
+    const result = await auth(api, {
+      host: 'app.example.com',
+      cookie: `__Host-tula_at=${await signer.sign()}`,
+    })
+    expect(result.isSignedIn).toBe(true)
+    expect(result.userId).toBe('user_1')
+  })
+
+  test.each(['__Host-tula_rt=r1', '__Host-tula_session=s1'])(
+    'any of the three __Host- cookies decides it: %s',
+    async (other) => {
+      const api = createFakeApi([signer])
+      // The unprefixed token is valid, and is not read: one name per request, never both.
+      const result = await auth(api, {
+        host: 'app.example.com',
+        cookie: `${other}; tula_at=${await signer.sign()}`,
+      })
+      expect(result.isSignedIn).toBe(false)
+    }
+  )
+
+  test('with both names present only the __Host- one is read', async () => {
+    const api = createFakeApi([signer])
+    const planted = await auth(api, {
+      host: 'app.example.com',
+      cookie: `__Host-tula_at=${await stranger.sign()}; tula_at=${await signer.sign()}`,
+    })
+    expect(planted.isSignedIn).toBe(false)
+    const real = await auth(api, {
+      host: 'app.example.com',
+      cookie: `tula_at=${await stranger.sign()}; __Host-tula_at=${await signer.sign()}`,
+    })
+    expect(real.isSignedIn).toBe(true)
+  })
+
+  test('only the unprefixed cookie, no forwarded scheme, no app URL: read as before', async () => {
+    const api = createFakeApi([signer])
+    const result = await auth(api, {
+      host: 'localhost:3000',
+      cookie: `tula_at=${await signer.sign()}`,
+    })
+    expect(result.isSignedIn).toBe(true)
+  })
+
+  test('a cookie whose name only resembles the SDK’s decides nothing', async () => {
+    const api = createFakeApi([signer])
+    const result = await auth(api, {
+      host: 'localhost:3000',
+      cookie: `__Host-other=1; x__Host-tula_at=1; tula_at=${await signer.sign()}`,
+    })
+    expect(result.isSignedIn).toBe(true)
+  })
+
+  test('x-forwarded-proto is believed before the cookies', async () => {
+    const api = createFakeApi([signer])
+    const token = await signer.sign()
+    const overHttp = { host: 'app.example.com', 'x-forwarded-proto': 'http' }
+    expect((await auth(api, { ...overHttp, cookie: `__Host-tula_at=${token}` })).isSignedIn).toBe(
+      false
+    )
+    expect((await auth(api, { ...overHttp, cookie: `tula_at=${token}` })).isSignedIn).toBe(true)
+    const overHttps = { host: 'app.example.com', 'x-forwarded-proto': 'https' }
+    expect((await auth(api, { ...overHttps, cookie: `tula_at=${token}` })).isSignedIn).toBe(false)
+    expect((await auth(api, { ...overHttps, cookie: `__Host-tula_at=${token}` })).isSignedIn).toBe(
+      true
+    )
+  })
+
+  test('the configured app URL is believed before everything', async () => {
+    const api = createFakeApi([signer])
+    const token = await signer.sign()
+    const http = { appUrl: 'http://app.example.com' }
+    const headers = { host: 'app.example.com', 'x-forwarded-proto': 'https' }
+    expect(
+      (await auth(api, { ...headers, cookie: `__Host-tula_at=${token}` }, http)).isSignedIn
+    ).toBe(false)
+    expect((await auth(api, { ...headers, cookie: `tula_at=${token}` }, http)).isSignedIn).toBe(
+      true
+    )
+    const https = { appUrl: 'https://app.example.com' }
+    expect((await auth(api, { host: 'x', cookie: `tula_at=${token}` }, https)).isSignedIn).toBe(
+      false
+    )
+    expect(
+      (await auth(api, { host: 'x', cookie: `__Host-tula_at=${token}` }, https)).isSignedIn
+    ).toBe(true)
   })
 })

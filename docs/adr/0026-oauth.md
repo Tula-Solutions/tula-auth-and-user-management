@@ -143,7 +143,11 @@ is never looked up, linked or created under the ASCII address it resembles. See 
 decisions" (F1).
 
 An unverified Tula account may have been created by someone who does not own the address,
-precisely to be linked into later; that is why both sides must have verified it.
+precisely to be linked into later; that is why both sides must have verified it. (The same
+account is why an emailed sign-in that verifies such an address removes its password:
+ADR 0024, "A password set before the address was proven". After that the address is verified,
+the password is gone, and a later provider sign-in links into an account only its owner can
+enter.)
 `oauth.account_exists` tells the caller an account exists. **That is acceptable here and
 nowhere else**: it is only reached with an address the provider asserts verified, so the
 caller has proven control of that inbox and learns nothing its own "forgot password" email

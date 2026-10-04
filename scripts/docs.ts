@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { ts } from 'ts-morph'
+import { dedent, withSnippets } from './snippets'
 
 // `bun run docs:generate` and `bun run docs:check`.
 //
@@ -77,17 +78,6 @@ function withoutBody(declaration: ts.Node, body: ts.Node | undefined): string {
   const source = declaration.getSourceFile().text
   const end = body ? body.getFullStart() : declaration.getEnd()
   return source.slice(declaration.getStart(), end).trim()
-}
-
-/** Remove the indentation a nested declaration carries, so code blocks start at column 0. */
-function dedent(text: string): string {
-  const lines = text.split('\n')
-  const indents = lines
-    .slice(1)
-    .filter((line) => line.trim() !== '')
-    .map((line) => line.length - line.trimStart().length)
-  const indent = indents.length > 0 ? Math.min(...indents) : 0
-  return [lines[0], ...lines.slice(1).map((line) => line.slice(indent))].join('\n')
 }
 
 function isHidden(member: ts.ClassElement): boolean {
@@ -307,71 +297,6 @@ function referencePages(): { pages: Map<string, string>; undocumented: string[] 
   return { pages, undocumented }
 }
 
-const SNIPPET = /^<!-- snippet: (\S+?)(?:#([\w-]+))? -->$/
-const SNIPPET_END = '<!-- /snippet -->'
-
-const LANGUAGES: Record<string, string> = {
-  ts: 'ts',
-  tsx: 'tsx',
-  json: 'json',
-  yml: 'yaml',
-  yaml: 'yaml',
-  conf: 'nginx',
-  sh: 'bash',
-  css: 'css',
-}
-
-/** The lines of a file, or of one `// #region name` … `// #endregion` block of it. */
-function snippetLines(path: string, region: string | undefined, from: string): string[] {
-  const file = join(root, path)
-  let text: string
-  try {
-    text = readFileSync(file, 'utf8')
-  } catch {
-    throw new Error(`docs: ${from} takes a snippet from ${path}, which does not exist`)
-  }
-  const lines = text.replace(/\n$/, '').split('\n')
-  if (!region) {
-    return lines
-  }
-  const start = lines.findIndex((line) => line.trim() === `// #region ${region}`)
-  const end = lines.findIndex((line, index) => index > start && line.trim() === '// #endregion')
-  if (start === -1 || end === -1) {
-    throw new Error(`docs: ${from} takes the region \`${region}\` from ${path}, which has none`)
-  }
-  return dedent(['', ...lines.slice(start + 1, end)].join('\n'))
-    .split('\n')
-    .slice(1)
-}
-
-/** A markdown file with every snippet block filled from its source. */
-function withSnippets(markdown: string, from: string): string {
-  const out: string[] = []
-  const lines = markdown.split('\n')
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index] as string
-    const match = SNIPPET.exec(line)
-    out.push(line)
-    if (!match) {
-      continue
-    }
-    const [, path = '', region] = match
-    const end = lines.indexOf(SNIPPET_END, index)
-    if (end === -1) {
-      throw new Error(`docs: ${from} opens a snippet (${path}) and never closes it`)
-    }
-    const extension = path.split('.').at(-1) ?? ''
-    out.push(
-      `\`\`\`${LANGUAGES[extension] ?? ''}`,
-      ...snippetLines(path, region, from),
-      '```',
-      SNIPPET_END
-    )
-    index = end
-  }
-  return out.join('\n')
-}
-
 /** Markdown files that may hold snippets: docs/** (not the generated reference) and READMEs. */
 function markdownFiles(): string[] {
   const found: string[] = []
@@ -415,7 +340,7 @@ const wanted = new Map(pages)
 for (const file of markdownFiles()) {
   const path = shown(file)
   const text = readFileSync(file, 'utf8')
-  const filled = withSnippets(text, path)
+  const filled = withSnippets(root, text, path)
   if (filled !== text) {
     wanted.set(path, filled)
   }

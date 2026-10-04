@@ -2,7 +2,7 @@ import 'server-only'
 import type { User } from '@tula/core'
 import { headers } from 'next/headers'
 import { cache } from 'react'
-import { type Auth, authenticate, fetchCurrentUser } from './helpers'
+import { type Auth, authenticate, fetchCurrentUser, requestFromHeaders } from './helpers'
 
 /**
  * `@tula/nextjs/server`: who is signed in, for Server Components, Route Handlers and Server
@@ -11,6 +11,10 @@ import { type Auth, authenticate, fetchCurrentUser } from './helpers'
  * Configuration comes from the environment: `TULA_API_URL`,
  * `NEXT_PUBLIC_TULA_PUBLISHABLE_KEY`, `TULA_ENVIRONMENT_ID`, and optionally `TULA_ISSUER`,
  * `TULA_APP_URL` and `TULA_SECRET_KEY` (for `stateful` session profiles).
+ *
+ * Set `TULA_APP_URL` to the app's public origin: it then decides, here as in the middleware
+ * and the route handler, whether the `__Host-` cookie names are read. Without it the proxy's
+ * `X-Forwarded-Proto` decides, and without that the presence of a `__Host-` cookie.
  */
 
 export type { User } from '@tula/core'
@@ -21,9 +25,12 @@ export type { SessionClaims } from './verify'
 /** One options object for the process: the configuration is resolved from it once. */
 const OPTIONS = {}
 
-/** The current request as the helpers need it: its headers (cookies included). */
+/**
+ * The current request as the helpers need it: its headers (cookies included), and the scheme
+ * {@link requestFromHeaders} works out for them.
+ */
 async function currentRequest(): Promise<Request> {
-  return new Request('http://localhost/', { headers: new Headers(await headers()) })
+  return requestFromHeaders(new Headers(await headers()))
 }
 
 /**

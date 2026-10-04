@@ -16,7 +16,6 @@ import { useSession } from '../hooks/use-session'
 import { useStepUp } from '../hooks/use-step-up'
 import { useUser } from '../hooks/use-user'
 import { formatText } from '../localization'
-import { go } from '../navigation'
 import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { BackupCodesPanel, EnrolmentConfirmForm } from './mfa'
@@ -503,7 +502,8 @@ export function UserProfileSections(props: {
   oauthCallbackUrl?: string
 }) {
   const { el, t } = useUi()
-  const { client, navigation } = useTulaContext()
+  const context = useTulaContext()
+  const { client, navigation } = context
   const state = useAuthState(client)
   const { user } = useUser()
   const sessions = useSession()
@@ -516,9 +516,10 @@ export function UserProfileSections(props: {
   }
   const signOut = async () => {
     setSigningOut(true)
-    // If the server cannot be told, the client is signed out all the same; go on.
-    await client.session.signOut().catch(() => undefined)
-    go(props.afterSignOutUrl ?? navigation.afterSignOutUrl, navigation.navigate)
+    // Navigates only once the server was told; a failure is said by the provider, which is
+    // still on the page when this profile (drawn for a signed-in user) no longer is.
+    await context.signOut(props.afterSignOutUrl)
+    setSigningOut(false)
   }
   return (
     <section {...el('card', 'tula-card-wide')} aria-labelledby={titleId}>
@@ -569,6 +570,10 @@ export function UserProfileSections(props: {
  * verification, passkeys (where the environment has them on), connected accounts, and where
  * they are signed in, with "this device" marked, one device or all the others signed out, and
  * sign out. Renders nothing while signed out.
+ *
+ * "Sign out" goes to the after-sign-out URL only once the server has been told. When it could
+ * not be, nothing navigates and the provider says, in a dialog with "Try again", that the
+ * session may still be active on this device.
  *
  * @param props - The after-sign-out URL and appearance; all optional.
  * @returns The component.

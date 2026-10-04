@@ -396,7 +396,10 @@ export interface NavigationOptions {
   oauthCallbackUrl?: string
   /** Where to go once a sign-up completes. */
   afterSignUpUrl?: string
-  /** Where to go after signing out from `<UserButton>` or `<UserProfile>`. */
+  /**
+   * Where to go after signing out from `<UserButton>` or `<UserProfile>`: only once the server
+   * was told. A sign-out that did not reach it navigates nowhere and is said in a dialog.
+   */
   afterSignOutUrl?: string
   /** Where `<UserProfile>` lives. Without it `<UserButton>` opens the profile in a dialog. */
   userProfileUrl?: string
@@ -1671,6 +1674,14 @@ export interface TulaLocalization {
     message: string
     restart: string
   }
+  /** The dialog the provider shows when a sign-out did not reach the server. */
+  signOutFailed: {
+    title: string
+    /** Announced as an alert: the session may still be active on this device. */
+    message: string
+    retry: string
+    close: string
+  }
   /** `<UserButton>`. */
   userButton: {
     /** `{name}`. The trigger's accessible name. */
@@ -2233,6 +2244,10 @@ its first item; the arrow keys, Home and End move; Escape closes it and returns 
 button. "Manage account" opens `<UserProfile>` in a dialog unless the app has a profile page
 (`userProfileUrl`) or handles it itself (`onManageAccount`).
 
+"Sign out" goes to the after-sign-out URL only once the server has been told. When it could
+not be, nothing navigates and the provider says, in a dialog with "Try again", that the
+session may still be active on this device.
+
 ```ts
 export function UserButton(props: UserButtonProps)
 ```
@@ -2291,6 +2306,10 @@ Account management for the signed-in user: who they are, change the password, tw
 verification, passkeys (where the environment has them on), connected accounts, and where
 they are signed in, with "this device" marked, one device or all the others signed out, and
 sign out. Renders nothing while signed out.
+
+"Sign out" goes to the after-sign-out URL only once the server has been told. When it could
+not be, nothing navigates and the provider says, in a dialog with "Try again", that the
+session may still be active on this device.
 
 ```ts
 export function UserProfile(props: UserProfileProps)
@@ -2933,6 +2952,10 @@ starts with a single `/` is accepted: an absolute URL, a protocol-relative one (
 backslash trick (`/\host`) or anything with a control character gets the fallback. This is
 what keeps a sign-in link from being used to send people to another site.
 
+The rule is applied to the value that is **returned**, not only to the one that came in: the
+URL parser removes dot segments, so `/.//host`, `/a/..//host` and `/%2e//host` all normalise
+to `//host`, which a browser and a router read as another origin.
+
 ```ts
 export function safeRedirectPath(value: unknown, fallback = '/'): string
 ```
@@ -2950,6 +2973,7 @@ export function safeRedirectPath(value: unknown, fallback = '/'): string
 safeRedirectPath('/dashboard?tab=1') // '/dashboard?tab=1'
 safeRedirectPath('https://evil.example') // '/'
 safeRedirectPath('//evil.example', '/home') // '/home'
+safeRedirectPath('/.//evil.example') // '/'
 ```
 
 ## `@tula/nextjs/middleware`
@@ -3075,7 +3099,11 @@ export interface TulaServerOptions {
   appUrl?: string
   /** Where the route handler is mounted. Defaults to `/api/tula`. */
   path?: string
-  /** Seconds a call to the API may take. Defaults to 15. */
+  /**
+   * Seconds a call to the API may take. Defaults to 15. A session refresh never waits longer
+   * than 8 seconds, whatever this says: it has to give up, and be repeated once, inside the
+   * API's refresh reuse grace window (10 seconds at the least).
+   */
   timeoutSeconds?: number
   /**
    * How many proxies in front of this server append the address they received the request
@@ -3128,6 +3156,10 @@ starts with a single `/` is accepted: an absolute URL, a protocol-relative one (
 backslash trick (`/\host`) or anything with a control character gets the fallback. This is
 what keeps a sign-in link from being used to send people to another site.
 
+The rule is applied to the value that is **returned**, not only to the one that came in: the
+URL parser removes dot segments, so `/.//host`, `/a/..//host` and `/%2e//host` all normalise
+to `//host`, which a browser and a router read as another origin.
+
 ```ts
 export function safeRedirectPath(value: unknown, fallback = '/'): string
 ```
@@ -3145,6 +3177,7 @@ export function safeRedirectPath(value: unknown, fallback = '/'): string
 safeRedirectPath('/dashboard?tab=1') // '/dashboard?tab=1'
 safeRedirectPath('https://evil.example') // '/'
 safeRedirectPath('//evil.example', '/home') // '/home'
+safeRedirectPath('/.//evil.example') // '/'
 ```
 
 ### `tulaMiddleware`

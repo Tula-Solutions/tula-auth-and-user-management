@@ -15,7 +15,9 @@ paths:
 - Prefer `spyOn(obj, 'fn')` + `mockRestore()` over `mock.module` (process-global in Bun).
 - A spawn in a test has its own `timeout`; a test or hook that starts more than two processes
   also has an explicit per-test timeout with a one-line comment. Tests that spawn nothing keep
-  the default.
+  the default. The one exception is `apps/dashboard` (30 s for the package, in its
+  `bunfig.toml`): whole-app component tests in happy-dom whose `waitFor` waits 10 s, on a slow
+  runner. Do not copy it elsewhere.
 - Test behaviour through the public function or HTTP route (`app.request`), not private helpers.
 - Security-sensitive modules test the **failure paths**: expired, reused, wrong environment,
   wrong key, too many attempts, malformed input.

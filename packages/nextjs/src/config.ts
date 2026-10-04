@@ -55,7 +55,11 @@ export interface TulaServerOptions {
   appUrl?: string
   /** Where the route handler is mounted. Defaults to `/api/tula`. */
   path?: string
-  /** Seconds a call to the API may take. Defaults to 15. */
+  /**
+   * Seconds a call to the API may take. Defaults to 15. A session refresh never waits longer
+   * than 8 seconds, whatever this says: it has to give up, and be repeated once, inside the
+   * API's refresh reuse grace window (10 seconds at the least).
+   */
   timeoutSeconds?: number
   /**
    * How many proxies in front of this server append the address they received the request
