@@ -163,13 +163,24 @@ export class PostgresFactorStore implements FactorStore {
   async removeForUser(
     environmentId: string,
     userId: string,
-    activity?: Activity
+    activity?: Activity,
+    onlyFactorId?: string
   ): Promise<boolean> {
     return withTenant(this.db, environmentId, async (tx) => {
+      // The id guard is part of the DELETE, so the row cannot change between a check and it.
       const rows = await tx
         .delete(userFactors)
-        .where(ofUser(environmentId, userId))
+        .where(
+          and(
+            ofUser(environmentId, userId),
+            onlyFactorId === undefined ? undefined : eq(userFactors.id, onlyFactorId)
+          )
+        )
         .returning({ confirmedAt: userFactors.confirmedAt })
+      if (onlyFactorId !== undefined && rows.length === 0) {
+        // Not the caller's factor: its backup codes belong to whichever factor is there now.
+        return false
+      }
       await tx.delete(backupCodes).where(codesOfUser(environmentId, userId))
       const removed = rows.some((row) => row.confirmedAt !== null)
       await recordActivity(tx, removed && activity ? [activity] : [])

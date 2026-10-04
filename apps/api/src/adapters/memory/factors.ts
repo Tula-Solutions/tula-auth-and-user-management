@@ -96,9 +96,13 @@ export class MemoryFactorStore implements FactorStore {
   async removeForUser(
     environmentId: string,
     userId: string,
-    activity?: Activity
+    activity?: Activity,
+    onlyFactorId?: string
   ): Promise<boolean> {
     const factor = this.#factor(environmentId, userId)
+    if (onlyFactorId !== undefined && factor?.id !== onlyFactorId) {
+      return false
+    }
     if (factor) {
       this.#factors.splice(this.#factors.indexOf(factor), 1)
     }

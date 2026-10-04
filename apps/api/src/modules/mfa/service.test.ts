@@ -1247,6 +1247,53 @@ describe('regenerateBackupCodes', () => {
   })
 })
 
+describe('a failure half-way leaves the safer state', () => {
+  test('reset: when the sessions cannot be ended the factor is still there, and a retry finishes', async () => {
+    const user = await seedUser()
+    const session = await newSession(user.id)
+    await enrol(user.id, session.sessionId)
+    spies.push(
+      spyOn(deps.sessions, 'revokeByUser').mockRejectedValueOnce(new Error('the database is away'))
+    )
+    await expect(Mfa.reset(deps, tenant, user.id, TEST_ACTOR)).rejects.toThrow(
+      'the database is away'
+    )
+    // Not "factor gone, a possibly stolen session alive": the factor still guards the account.
+    expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({ totp: { enabled: true } })
+    expect(deps.activityLog.ofType('user.mfa_disabled')).toEqual([])
+
+    await Mfa.reset(deps, tenant, user.id, TEST_ACTOR)
+    expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({ totp: { enabled: false } })
+    expect(await liveSessions(user.id)).toEqual([])
+  })
+
+  test('confirmTotp: when the other sessions cannot be ended the factor is not turned on, and the same enrolment can be retried', async () => {
+    const user = await seedUser()
+    const current = await newSession(user.id)
+    const other = await newSession(user.id)
+    const { secret } = await Mfa.startTotp(deps, tenant, user.id)
+    spies.push(
+      spyOn(deps.sessions, 'revokeByUser').mockRejectedValueOnce(new Error('the database is away'))
+    )
+    const confirm = () =>
+      Mfa.confirmTotp(
+        deps,
+        tenant,
+        { userId: user.id, sessionId: current.sessionId },
+        codeFor(secret),
+        actorOf(user.id)
+      )
+    await expect(confirm()).rejects.toThrow('the database is away')
+    // Not "factor on, a session that never proved it alive, backup codes lost".
+    expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({ totp: { enabled: false } })
+    expect(deps.activityLog.ofType('user.mfa_enabled')).toEqual([])
+
+    expect((await confirm()).codes).toHaveLength(10)
+    expect((await liveSessions(user.id)).map((session) => session.id)).toEqual([current.sessionId])
+    expect(await deps.revokedSessions.has(other.sessionId, deps.clock.now())).toBe(true)
+  })
+})
+
 describe('reset (admin)', () => {
   test('removes the factor and codes, ends and denylists every session, records the admin and tells the owner', async () => {
     const user = await seedUser()

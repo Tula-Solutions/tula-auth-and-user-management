@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
-import { screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, jest, mock, spyOn, test } from 'bun:test'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { isStepUpRequired } from '@tula/core'
 import jsQR from 'jsqr'
 import { StrictMode, useState } from 'react'
@@ -18,6 +18,7 @@ import {
   world,
 } from '../testing/harness'
 import { SignedIn, SignedOut } from './control'
+import { BACKUP_CODES_URL_LIFETIME_MS } from './mfa'
 import { SignIn } from './sign-in'
 import { SignUp } from './sign-up'
 import { UserProfile } from './user-profile'
@@ -58,6 +59,7 @@ const stepUpRequired = (methods: string) =>
   failure(403, 'auth.step_up_required', { params: { methods } })
 
 afterEach(() => {
+  jest.useRealTimers()
   mock.restore()
 })
 
@@ -480,11 +482,63 @@ describe('<UserProfile> two-step verification', () => {
     expect(create).toHaveBeenCalledTimes(1)
     expect(await blobs[0]?.text()).toBe(`${CODES.join('\n')}\n`)
     expect(clicked).toEqual([{ href: 'blob:codes', download: 'backup-codes.txt' }])
-    expect(revoke).toHaveBeenCalledWith('blob:codes')
+    // Not yet: see "the downloaded file's URL outlives the click".
+    expect(revoke).not.toHaveBeenCalled()
 
     await w.user.click(within(mfa).getByLabelText('I have saved these codes'))
     await w.user.click(within(mfa).getByRole('button', { name: 'Done' }))
     expect(await within(mfa).findByText('Your earlier backup codes no longer work.')).toBeTruthy()
+  })
+
+  /** Open the backup codes in the profile and spy on everything a download touches. */
+  async function codesWithDownloadSpies() {
+    const { w } = profileWorld({ enabled: true })
+    const view = w.mount(<UserProfile />)
+    const mfa = await section()
+    w.api.on(MFA.codes, () => json(200, { codes: CODES }))
+    await w.user.click(await within(mfa).findByRole('button', { name: 'New backup codes' }))
+    await within(mfa).findByRole('list', { name: 'Backup codes' })
+    spyOn(URL, 'createObjectURL').mockReturnValue('blob:codes')
+    const revoke = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    // Whether the link was in the document at the moment it was clicked.
+    const attached: boolean[] = []
+    spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      attached.push(this.isConnected)
+    })
+    // From here on the test owns the clock: the download's one timer fires when it says so.
+    jest.useFakeTimers()
+    return { view, mfa, revoke, attached }
+  }
+
+  test('the downloaded file’s URL outlives the click: the link is in the document when clicked, and the URL is revoked only later', async () => {
+    const { mfa, revoke, attached } = await codesWithDownloadSpies()
+    fireEvent.click(within(mfa).getByRole('button', { name: 'Download' }))
+    // A browser that resolves blob URLs asynchronously (Safari) would otherwise save an empty
+    // file, and these codes are shown once.
+    expect(attached).toEqual([true])
+    expect(revoke).not.toHaveBeenCalled()
+    // The link does not stay on the page.
+    expect(document.querySelector('a[download]')).toBeNull()
+    jest.advanceTimersByTime(BACKUP_CODES_URL_LIFETIME_MS - 1)
+    expect(revoke).not.toHaveBeenCalled()
+    jest.advanceTimersByTime(1)
+    expect(revoke.mock.calls).toEqual([['blob:codes']])
+    // Never twice.
+    jest.advanceTimersByTime(BACKUP_CODES_URL_LIFETIME_MS)
+    expect(revoke).toHaveBeenCalledTimes(1)
+  })
+
+  test('leaving the screen before the delay has passed revokes the URL then, once', async () => {
+    const { view, mfa, revoke } = await codesWithDownloadSpies()
+    fireEvent.click(within(mfa).getByRole('button', { name: 'Download' }))
+    jest.advanceTimersByTime(1_000)
+    expect(revoke).not.toHaveBeenCalled()
+    view.unmount()
+    expect(revoke.mock.calls).toEqual([['blob:codes']])
+    jest.advanceTimersByTime(BACKUP_CODES_URL_LIFETIME_MS)
+    expect(revoke).toHaveBeenCalledTimes(1)
   })
 
   test('turning it off: step-up with the authenticator or a backup code, never the password', async () => {

@@ -11,6 +11,7 @@ import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'
 import { verifyAccessToken } from '~/middleware/session-auth'
+import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
@@ -959,6 +960,37 @@ describe('enrolment inside an attempt, where the environment requires a second f
     expect(await liveSessions(userId)).toEqual([])
   })
 
+  test('the undo removes only the factor this request confirmed: another one, confirmed since, survives', async () => {
+    const { attempt, userId } = await LAST_PROOF.sign_in()
+    const enrolment = await startEnrolment(attempt)
+    let later: { secret: string; codes: string[] } | undefined
+    const create = deps.sessions.create.bind(deps.sessions)
+    spies.push(
+      spyOn(deps.sessions, 'create').mockImplementationOnce(async () => {
+        // Between this request's confirmation and its failure, an administrator resets the
+        // user and they enrol again: a different factor, which this request must not touch.
+        await Mfa.reset(deps, tenant, userId, TEST_ACTOR)
+        later = await enrol(userId)
+        throw new Error('the database went away')
+      })
+    )
+    await expect(confirmEnrolment(attempt, codeFor(enrolment.secret))).rejects.toThrow(
+      'the database went away'
+    )
+    expect(create).toBeDefined()
+    expect(later?.secret).not.toBe(enrolment.secret)
+    expect(await Mfa.status(deps, tenant, userId)).toMatchObject({
+      totp: { enabled: true },
+      backupCodes: { remaining: 10 },
+    })
+    expect(await Mfa.verifyTotp(deps, tenant, userId, codeFor(later?.secret as string))).toBe(true)
+    expect(
+      deps.activityLog
+        .ofType('user.mfa_disabled')
+        .filter((entry) => entry.data.method === 'enrolment_incomplete')
+    ).toEqual([])
+  })
+
   test('a session that cannot be created undoes the enrolment: no factor is left whose codes were never shown', async () => {
     const { attempt, userId } = await LAST_PROOF.sign_in()
     const enrolment = await startEnrolment(attempt)
@@ -1113,6 +1145,49 @@ describe('enrolment inside an attempt, where the environment requires a second f
     expect(await confirmEnrolment(attempt, '123456').catch((err) => err)).toBeInstanceOf(
       RateLimitError
     )
+  })
+})
+
+describe('a sign-in racing an enrolment', () => {
+  test('a first factor accepted before the user turned two-step verification on yields no session without it', async () => {
+    const userId = await seedUser()
+    const attempt = await startSignIn()
+    const create = deps.sessions.create.bind(deps.sessions)
+    spies.push(
+      // The user confirms an authenticator elsewhere after this sign-in was told "no second
+      // factor needed" and before its session is stored: the confirmation's sweep of "every
+      // other session" cannot see a session that does not exist yet.
+      spyOn(deps.sessions, 'create').mockImplementationOnce(async (...args) => {
+        await enrol(userId)
+        return create(...args)
+      })
+    )
+    const err = await rejection(password(attempt))
+    expect(err.toJSON()).toMatchObject({ status: 409, code: 'flow.invalid_step' })
+    // No session that never proved the factor survives, and its access token is refused.
+    expect(await liveSessions(userId)).toEqual([])
+    const [created] = deps.activityLog.ofType('session.created').slice(-1)
+    const sessionId = created?.target.id as string
+    expect(await deps.sessions.findById(tenant.environmentId, sessionId)).toMatchObject({
+      revokeReason: 'mfa_changed',
+    })
+    expect(await deps.revokedSessions.has(sessionId, deps.clock.now())).toBe(true)
+    await Notices.settled()
+    expect(deps.mailer.outbox.filter((mail) => mail.subject.startsWith('New sign-in'))).toEqual([])
+    // Starting again asks for the factor.
+    expect((await password(await startSignIn())).attempt.step.status).toBe('needs_second_factor')
+  })
+
+  test('a sign-in that proved the factor is not asked twice', async () => {
+    const userId = await seedUser()
+    const { secret } = await enrol(userId)
+    const attempt = await startSignIn()
+    await password(attempt)
+    const required = spyOn(Factors, 'requiredFor')
+    spies.push(required)
+    const done = await second(attempt, 'totp', codeFor(secret))
+    expect(done.tokens?.accessToken).toBeString()
+    expect(required).not.toHaveBeenCalled()
   })
 })
 

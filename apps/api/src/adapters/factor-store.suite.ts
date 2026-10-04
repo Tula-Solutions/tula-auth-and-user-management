@@ -407,6 +407,25 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
         expect(await recorded(ctx.a, userId)).toEqual([])
       })
 
+      test('guarded by a factor id: another factor of the user, and its codes, survive', async () => {
+        const { userId, factor, backup } = await confirmed(ctx.a)
+        const entry = activity(ctx.a, 'user.mfa_disabled', userId)
+        // Not the row the caller means: nothing is removed and nothing recorded.
+        expect(
+          await ctx.store.removeForUser(ctx.a.environmentId, userId, entry, Bun.randomUUIDv7())
+        ).toBe(false)
+        expect((await ctx.store.findTotp(ctx.a.environmentId, userId))?.id).toBe(factor.id)
+        expect(await ctx.store.countBackupCodes(ctx.a.environmentId, userId)).toBe(backup.length)
+        expect(await recorded(ctx.a, userId)).toEqual([])
+        // The row the caller means goes, with the codes.
+        expect(await ctx.store.removeForUser(ctx.a.environmentId, userId, entry, factor.id)).toBe(
+          true
+        )
+        expect(await ctx.store.findTotp(ctx.a.environmentId, userId)).toBeNull()
+        expect(await ctx.store.countBackupCodes(ctx.a.environmentId, userId)).toBe(0)
+        expect(await recorded(ctx.a, userId)).toEqual(['user.mfa_disabled'])
+      })
+
       test('after a removal the user can enrol again', async () => {
         const { userId } = await confirmed(ctx.a)
         await ctx.store.removeForUser(ctx.a.environmentId, userId)

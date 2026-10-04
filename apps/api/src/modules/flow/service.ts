@@ -425,6 +425,12 @@ async function load(
  * stopped at a second factor or failed before this point created no session and sends nothing.
  * Only a sign-in is announced. A sign-up's session belongs to someone who has just verified the
  * address, and a password reset is announced by the password notice.
+ *
+ * **No session without a factor the user has by now.** An attempt that did not prove a second
+ * factor re-reads, after its session is created, whether the user has one. If they do (it was
+ * confirmed while this attempt was between its first factor and here), the session is revoked,
+ * no tokens are returned and the answer is `flow.invalid_step`: start again. (Not for a
+ * sign-up: its account is created by the same request and cannot have a factor yet.)
  */
 async function finish(
   deps: Deps,
@@ -453,6 +459,25 @@ async function finish(
     ipAddress: context.ipAddress,
     authMethods: state.amr ?? [],
   })
+  if (
+    attempt.kind !== 'sign_up' &&
+    !state.amr?.includes('mfa') &&
+    (await Factors.requiredFor(deps, tenant, userId)).length > 0
+  ) {
+    // The user turned two-step verification on between this attempt's "no second factor
+    // needed" and the session just created. Their confirmation ended "every other session"
+    // before this one existed, so it would be the one session that never proved the factor.
+    // It is ended through the session service (so its access token is denylisted) and no
+    // tokens leave. The attempt is already `complete` and cannot be moved back under the
+    // compare-and-set rules, so the client starts again and is asked for the factor.
+    await Sessions.revoke(deps, tenant, {
+      userId,
+      sessionId: tokens.sessionId,
+      reason: 'mfa_changed',
+      actor: systemActor(context),
+    })
+    throw new AuthError('flow.invalid_step')
+  }
   if (attempt.kind === 'sign_in') {
     // Not awaited and cannot throw: the notice must neither delay nor fail the sign-in.
     Notices.newSignIn(deps, tenant, { userId, sessionId: tokens.sessionId })
@@ -1560,7 +1585,7 @@ export async function confirmFactorEnrolment(
     throw new AuthError('auth.user_banned')
   }
   const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
-  const { codes } = await Mfa.confirmTotp(deps, tenant, { userId }, code, actor, {
+  const { codes, factorId } = await Mfa.confirmTotp(deps, tenant, { userId }, code, actor, {
     notify: false,
   })
   let result: FlowResult
@@ -1578,7 +1603,10 @@ export async function confirmFactorEnrolment(
           actor: systemActor(context),
           target: { type: 'user', id: userId },
           data: { method: 'enrolment_incomplete' },
-        })
+        }),
+        // Only the factor this request confirmed: if the user was reset and enrolled again
+        // meanwhile, that factor is not this request's to remove.
+        factorId
       )
     } catch (undo) {
       // Both failed: the factor is on and its codes were never shown. The user signs in with

@@ -842,7 +842,12 @@
   align-items: center;
   justify-content: center;
   align-self: center;
+  /* 208px where there is room; in a narrow card it shrinks with it, but never below 160px,
+     about the least a phone camera reads comfortably at arm's length. The quiet zone is part
+     of the drawing, so it scales with the code. */
   width: min(13rem, 100%);
+  min-width: 10rem;
+  flex-shrink: 0;
   aspect-ratio: 1;
   overflow: hidden;
   border: 1px solid var(--_tula-color-border);

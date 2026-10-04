@@ -295,7 +295,9 @@ type ConfirmDeps = Pick<
  * ones (stored as keyed hashes only) and `user.mfa_enabled` is recorded. Of two concurrent
  * confirmations exactly one succeeds.
  *
- * Then every **other** session of the user ends: they were established without the factor.
+ * Every **other** session of the user ends: they were established without the factor. They
+ * are ended before the factor is turned on and swept again after, so a failure never leaves
+ * the factor on beside a session that did not prove it.
  * The session that made the request (if any) is kept and marked as having proven the factor.
  * The owner is emailed (`Notices.mfaChanged`).
  *
@@ -309,7 +311,8 @@ type ConfirmDeps = Pick<
  * @param actor - The user, for the audit log.
  * @param options - `notify: false` leaves the notice to the caller (an enrolment inside an
  *   attempt announces it only once the attempt has completed).
- * @returns The ten backup codes, shown this once.
+ * @returns The ten backup codes, shown this once, and the id of the factor that was confirmed
+ *   (for a caller that may have to undo exactly this confirmation; never sent to a client).
  * @throws AuthError `mfa.not_available` when the environment's policy is `off` (checked before
  *   the code is counted: an enrolment started before the switch-off cannot be finished after
  *   it), `mfa.enrolment_expired` when nothing is pending or it lapsed, `mfa.already_enabled`,
@@ -323,7 +326,7 @@ export async function confirmTotp(
   code: string,
   actor: Actor,
   options: { notify?: boolean } = {}
-): Promise<BackupCodes> {
+): Promise<BackupCodes & { factorId: string }> {
   const { userId } = self
   const now = deps.clock.now()
   if ((await Settings.current(deps, scope)).mfa.policy === 'off') {
@@ -347,6 +350,20 @@ export async function confirmTotp(
     throw new AuthError('mfa.invalid_code')
   }
   const backup = await newBackupCodes(deps, scope, userId)
+  // The other sessions end **before** the factor is turned on, and are swept once more after
+  // (as a password reset does). If this first sweep fails, nothing has changed: the enrolment
+  // is still pending and can be confirmed again. The other order could leave the factor on,
+  // sessions that never proved it alive, and the backup codes lost with the failed response.
+  const sweep = () =>
+    self.sessionId
+      ? Sessions.revokeOthers(deps, scope, {
+          userId,
+          currentSessionId: self.sessionId,
+          reason: 'mfa_changed',
+          actor,
+        })
+      : Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor)
+  await sweep()
   const confirmed = await deps.factors.confirmTotp(scope.environmentId, factor.id, {
     step,
     at: now,
@@ -363,14 +380,18 @@ export async function confirmTotp(
     throw new AuthError('mfa.enrolment_expired')
   }
   await deps.lockout.clear(lockKey)
-  await (self.sessionId
-    ? Sessions.revokeOthers(deps, scope, {
-        userId,
-        currentSessionId: self.sessionId,
-        reason: 'mfa_changed',
-        actor,
-      })
-    : Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor))
+  try {
+    // Again, now that the factor is on: a session created between the first sweep and the
+    // confirmation must not outlive it. (A sign-in completing after this point checks for the
+    // factor itself: see the flow service's `finish`.)
+    await sweep()
+  } catch (error) {
+    // The factor is on and the codes must still reach the user: they are shown once.
+    logger.warn('could not sweep the sessions again after turning two-step verification on', {
+      environmentId: scope.environmentId,
+      err: error instanceof Error ? error.name : 'unknown',
+    })
+  }
   if (self.sessionId) {
     try {
       // The session that enrolled has just proven the factor.
@@ -393,7 +414,7 @@ export async function confirmTotp(
   if (options.notify !== false) {
     Notices.mfaChanged(deps, scope, user, { change: 'enabled', at: now })
   }
-  return { codes: backup.codes }
+  return { codes: backup.codes, factorId: factor.id }
 }
 
 type ChangeDeps = Pick<
@@ -531,6 +552,10 @@ export async function reset(
   if (!user) {
     throw new NotFoundError()
   }
+  // Sessions first, then the factor. If ending the sessions fails, the factor still guards
+  // the account and the reset can simply be repeated; the other order could leave the factor
+  // gone while a possibly stolen session lives on. Both steps are idempotent.
+  await Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor)
   const removed = await deps.factors.removeForUser(
     scope.environmentId,
     userId,
@@ -541,6 +566,7 @@ export async function reset(
       data: { method: 'admin_reset' },
     })
   )
+  // Once more: a sign-in that completed with the factor between the two steps is ended too.
   await Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor)
   await forgetGuesses(deps, scope, userId)
   if (removed) {

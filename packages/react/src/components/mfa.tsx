@@ -18,6 +18,12 @@ const QUIET_ZONE = 4
 /** Longest backup code a field takes: ten characters, with room for spaces and a dash. */
 const BACKUP_CODE_MAX_LENGTH = 24
 
+/**
+ * How long the object URL of a downloaded backup-codes file is kept before it is revoked.
+ * Long enough for a browser that reads the blob after the click has returned.
+ */
+export const BACKUP_CODES_URL_LIFETIME_MS = 60_000
+
 /** A wrong authenticator or backup code belongs to the code field. */
 const codeField: FieldResolver = (code, field) =>
   field === 'code' || code === 'mfa.invalid_code' || code === 'mfa.enrolment_expired'
@@ -182,13 +188,37 @@ export function BackupCodesPanel(props: { codes: readonly string[]; onDone(): vo
       setStatus(t.mfa.copyFailed)
     }
   }
+  // Object URLs of downloads still alive, each with the timer that will revoke it.
+  const urls = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  useEffect(() => {
+    const pending = urls.current
+    return () => {
+      // The screen is going: whatever the browser has not read by now is released with it.
+      for (const [url, timer] of pending) {
+        clearTimeout(timer)
+        URL.revokeObjectURL(url)
+      }
+      pending.clear()
+    }
+  }, [])
   const download = () => {
     const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
     const link = document.createElement('a')
     link.href = url
     link.download = t.mfa.downloadFileName
+    link.hidden = true
+    // In the document while it is clicked, and the URL kept for a while after: some browsers
+    // (Safari, some Firefox versions) start the download after the click has returned, and a
+    // URL revoked in the same tick saves an empty file. This is the only copy of the codes.
+    document.body.append(link)
     link.click()
-    URL.revokeObjectURL(url)
+    link.remove()
+    const release = () => {
+      if (urls.current.delete(url)) {
+        URL.revokeObjectURL(url)
+      }
+    }
+    urls.current.set(url, setTimeout(release, BACKUP_CODES_URL_LIFETIME_MS))
   }
   const done = () => {
     if (!saved) {

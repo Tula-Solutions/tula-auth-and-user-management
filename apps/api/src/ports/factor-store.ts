@@ -104,9 +104,17 @@ export interface FactorStore {
    * @param userId - The user.
    * @param activity - Recorded in the same transaction, only if a **confirmed** factor was
    *   removed.
+   * @param onlyFactorId - Remove the factor only if it is this one. A caller undoing its own
+   *   work passes the id of the factor it made: when the user's factor is another one by now
+   *   (reset and enrolled again in between), nothing is removed, the backup codes included.
    * @returns Whether a confirmed factor was removed.
    */
-  removeForUser(environmentId: string, userId: string, activity?: Activity): Promise<boolean>
+  removeForUser(
+    environmentId: string,
+    userId: string,
+    activity?: Activity,
+    onlyFactorId?: string
+  ): Promise<boolean>
 
   /**
    * Replace every backup code of a user who has a confirmed factor.

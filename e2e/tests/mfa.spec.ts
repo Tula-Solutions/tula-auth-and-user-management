@@ -176,6 +176,64 @@ for (const colorScheme of ['light', 'dark'] as const) {
   })
 }
 
+test('the QR code keeps a readable size and its quiet zone from a wide page down to a 320px phone', async ({
+  page,
+  request,
+}) => {
+  await signUp(page, request, { email: uniqueEmail('mfa.qr') })
+  await page.goto('/account')
+  await section(page).getByRole('button', { name: 'Turn on' }).click()
+  const qr = page.getByRole('img', { name: /QR code for your authenticator app/ })
+  await expect(qr).toBeVisible()
+  for (const [width, least, most] of [
+    [1280, 208, 208],
+    [375, 160, 208],
+    [320, 160, 208],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 })
+    const box = (await qr.boundingBox()) as { width: number; height: number }
+    expect(Math.round(box.width), `QR width at ${width}px`).toBeGreaterThanOrEqual(least - 2)
+    expect(Math.round(box.width), `QR width at ${width}px`).toBeLessThanOrEqual(most)
+    expect(Math.round(box.height)).toBe(Math.round(box.width))
+    // Four modules of white on every side, as the drawing's own frame.
+    expect(await qr.getAttribute('viewBox')).toMatch(/^-4 -4 \d+ \d+$/)
+    // It stays inside its card: nothing of the code or its quiet zone is cut off.
+    const inside = await qr.evaluate((svg) => {
+      const frame = svg.getBoundingClientRect()
+      const card = (svg.closest('[data-tula-element="card"]') as Element).getBoundingClientRect()
+      return frame.left >= card.left && frame.right <= card.right
+    })
+    expect(inside, `QR inside its card at ${width}px`).toBe(true)
+  }
+})
+
+test('"Download" saves a text file holding exactly the codes on the page', async ({
+  page,
+  request,
+}) => {
+  await signUp(page, request, { email: uniqueEmail('mfa.download') })
+  await page.goto('/account')
+  await section(page).getByRole('button', { name: 'Turn on' }).click()
+  const secret = await setupKey(page)
+  await page.getByLabel('Authentication code').fill(await authenticatorCode(request, secret))
+  await section(page).getByRole('button', { name: 'Turn on' }).click()
+  const codes = await shownCodes(page)
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    section(page).getByRole('button', { name: 'Download', exact: true }).click(),
+  ])
+  expect(download.suggestedFilename()).toBe('backup-codes.txt')
+  const chunks: Buffer[] = []
+  for await (const chunk of await download.createReadStream()) {
+    chunks.push(chunk as Buffer)
+  }
+  // Not an empty file: the browser read the blob before its URL was let go.
+  expect(Buffer.concat(chunks).toString('utf8')).toBe(`${codes.join('\n')}\n`)
+  // The link that carried it is gone from the page.
+  await expect(page.locator('a[download]')).toHaveCount(0)
+})
+
 test('a backup code signs in once, and the profile counts it', async ({ page, request }) => {
   const email = uniqueEmail('mfa.backup')
   await signUp(page, request, { email })

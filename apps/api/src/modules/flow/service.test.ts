@@ -2218,7 +2218,8 @@ describe('second factor', () => {
     /** A user with a live session from before the reset. */
     async function userWithSession() {
       const userId = await user()
-      required.mockResolvedValueOnce([])
+      // Twice: when the password is accepted, and again once the session exists (`finish`).
+      required.mockResolvedValueOnce([]).mockResolvedValueOnce([])
       const before = await password(await startSignIn())
       return { userId, sessionId: before.tokens?.sessionId as string }
     }
