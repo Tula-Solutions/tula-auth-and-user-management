@@ -29,6 +29,7 @@ import {
 } from './flow-screens'
 import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
+import { OAuthButtons } from './oauth'
 import {
   Button,
   Card,
@@ -66,6 +67,12 @@ export interface SignInProps {
    * `emailLinkUrl`; without either, "Email me a link" is not offered.
    */
   emailLinkUrl?: string
+  /**
+   * The page an OAuth sign-in returns to: the one that renders `<OAuthCallback>`. It must be
+   * one of the environment's allowed redirect URLs, exactly. Overrides the provider's
+   * `oauthCallbackUrl`; without either, no "Continue with …" button is drawn.
+   */
+  oauthCallbackUrl?: string
   /** Puts an address in the email field to start with. */
   initialEmail?: string
   /** Theme tokens, colour scheme and class names for this component. */
@@ -171,6 +178,7 @@ function IdentifierScreen(props: {
   signIn: UseSignInResult
   focusTitle: boolean
   footer: ReactNode
+  oauthCallbackUrl: string | undefined
 }) {
   const { t } = useUi()
   const { signIn, email } = props
@@ -195,6 +203,7 @@ function IdentifierScreen(props: {
       focusTitle={props.focusTitle}
       footer={props.footer}
     >
+      <OAuthButtons callbackUrl={props.oauthCallbackUrl} />
       <Form
         onSubmit={submit}
         failure={missing ?? signIn.error}
@@ -882,6 +891,7 @@ function SignInScreens(props: SignInProps) {
           setEmail={setEmail}
           signIn={signIn}
           focusTitle={focusTitle}
+          oauthCallbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
           footer={
             <SwitchLink
               prompt={t.signIn.noAccount}

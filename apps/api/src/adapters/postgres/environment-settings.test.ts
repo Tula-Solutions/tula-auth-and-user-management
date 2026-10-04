@@ -86,6 +86,7 @@ describe('PostgresEnvironmentSettingsStore', () => {
       passwordChanged: false,
       newSignIn: true,
       mfaChanged: true,
+      identityChanged: true,
     })
   })
 

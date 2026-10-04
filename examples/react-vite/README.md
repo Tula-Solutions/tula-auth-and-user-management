@@ -55,6 +55,23 @@ link where you started" and signs nobody in, which is the point
 ([ADR 0024](../../docs/adr/0024-email-sign-in.md)). The app's config is cached by the browser
 for a minute, so a settings change can take that long to show.
 
+## Signing in with a provider
+
+`/oauth/callback` renders `<OAuthCallback>`, and the provider is given
+`oauthCallbackUrl='/oauth/callback'`, so `<SignIn>` and `<SignUp>` show a "Continue with …"
+button for every provider the environment has enabled, and the account page shows "Connected
+accounts". Without real OAuth credentials, start the API with `OAUTH_MOCK_PROVIDER=true`
+(local tier only) and enable a provider with any client id and secret:
+
+```bash
+curl -X PUT http://localhost:3003/v1/admin/oauth-providers/google \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "clientId": "local", "clientSecret": "local" }'
+```
+
+"Continue with Google" then leads to a consent page on the API where you type the address the
+"provider" reports. For real providers see [docs/providers](../../docs/providers).
+
 ## Two-step verification
 
 Open **Manage your account** and turn it on under "Two-step verification": scan the QR code

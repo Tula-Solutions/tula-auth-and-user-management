@@ -45,6 +45,7 @@ export type {
   SignInFlow,
   SignUpFlow,
 } from './flows'
+export type { Identity, OAuthCallbackOutcome, OAuthProvider } from './oauth'
 export {
   ACCESS_TOKEN_EXPIRY_SKEW_MS,
   MAX_REFRESH_BACKOFF_MS,

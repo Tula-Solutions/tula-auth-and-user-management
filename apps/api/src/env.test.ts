@@ -156,6 +156,23 @@ describe('parseEnv', () => {
   })
 })
 
+describe('OAUTH_MOCK_PROVIDER', () => {
+  test('is off unless asked for, and allowed in the local tier', () => {
+    expect(parseEnv(base).OAUTH_MOCK_PROVIDER).toBe(false)
+    expect(parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'false' }).OAUTH_MOCK_PROVIDER).toBe(false)
+    expect(parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'true' }).OAUTH_MOCK_PROVIDER).toBe(true)
+  })
+
+  test.each(['dev', 'staging', 'prod'])('refuses to boot with it in %s', (tier) => {
+    const source = tier === 'dev' ? base : live
+    expect(() => parseEnv({ ...source, ENVIRONMENT: tier, OAUTH_MOCK_PROVIDER: 'true' })).toThrow(
+      /OAUTH_MOCK_PROVIDER: is only allowed with ENVIRONMENT=local/
+    )
+    // Without it the same environment boots.
+    expect(parseEnv({ ...source, ENVIRONMENT: tier }).OAUTH_MOCK_PROVIDER).toBe(false)
+  })
+})
+
 describe('loadEnv', () => {
   test('exits with a readable report when invalid', () => {
     const saved = process.env.ENVIRONMENT

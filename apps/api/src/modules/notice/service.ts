@@ -5,6 +5,7 @@ import * as logger from '~/lib/logger'
 import { describeMailFailure } from '~/lib/safe-error'
 import * as Email from '~/modules/email/service'
 import type {
+  IdentityChangedMessage,
   MfaChangedMessage,
   PasswordChangedMessage,
   SecurityNoticeMessage,
@@ -41,6 +42,7 @@ const SWITCHES: Record<NoticeKind, keyof EnvironmentSettings['notifications']> =
   password_changed: 'passwordChanged',
   new_sign_in: 'newSignIn',
   mfa_changed: 'mfaChanged',
+  identity_changed: 'identityChanged',
 }
 
 // Notices still on their way to the relay. Module state, not a dependency: a notice outlives
@@ -66,7 +68,7 @@ export function limitKey(
   kind: NoticeKind,
   scope: Scope,
   userId: string,
-  change?: MfaChangedMessage['change']
+  change?: MfaChangedMessage['change'] | IdentityChangedMessage['change']
 ): string {
   return `notice_${kind}${change ? `.${change}` : ''}:${scope.environmentId}:${userId}`
 }
@@ -132,7 +134,9 @@ async function deliver(
       message.type,
       scope,
       user.id,
-      message.type === 'mfa_changed' ? message.change : undefined
+      message.type === 'mfa_changed' || message.type === 'identity_changed'
+        ? message.change
+        : undefined
     ),
     NOTICES_PER_HOUR,
     NOTICE_WINDOW_MS
@@ -207,6 +211,38 @@ export function mfaChanged(
   dispatch('mfa_changed', scope, user.id, async () => {
     if (await enabled(deps, scope, 'mfa_changed')) {
       await deliver(deps, scope, user, { type: 'mfa_changed', ...change })
+    }
+  })
+}
+
+/**
+ * Tell an account's owner that a provider account was connected to it or disconnected from it
+ * (ADR 0026): a new way in, or one fewer.
+ *
+ * Call it **after the change is stored**. It returns at once and never throws: the email is sent
+ * in the background, at most {@link NOTICES_PER_HOUR} an hour per user and kind of change, and
+ * only when the environment has `notifications.identityChanged` on. It names the provider and
+ * nothing of the provider account.
+ *
+ * @param deps - Mailer, settings store, config and rate limiter.
+ * @param scope - The environment.
+ * @param user - The account.
+ * @param change - What changed, for which provider, and when.
+ *
+ * @example
+ * ```ts
+ * Notices.identityChanged(deps, scope, user, { change: 'linked', provider: 'google', at })
+ * ```
+ */
+export function identityChanged(
+  deps: SendDeps,
+  scope: Scope,
+  user: Pick<UserRecord, 'id' | 'email'>,
+  change: Pick<IdentityChangedMessage, 'change' | 'provider' | 'at'>
+): void {
+  dispatch('identity_changed', scope, user.id, async () => {
+    if (await enabled(deps, scope, 'identity_changed')) {
+      await deliver(deps, scope, user, { type: 'identity_changed', ...change })
     }
   })
 }

@@ -201,6 +201,8 @@ describe('documentation routes', () => {
       '/v1/client/sign-ins/{attemptId}/first-factor/prepare',
       '/v1/client/sign-ins/{attemptId}/first-factor/attempt',
       '/v1/client/sign-ins/link',
+      '/v1/client/sign-ins/oauth',
+      '/v1/client/sign-ins/oauth/exchange',
       '/v1/client/sign-ups/{attemptId}/verify-email',
       '/v1/client/sign-ins/{attemptId}/verify-email',
       '/v1/client/password-resets',
@@ -231,6 +233,13 @@ describe('documentation routes', () => {
       '/v1/admin/audit-logs',
       '/v1/admin/settings',
       '/v1/client/config',
+      '/v1/admin/oauth-providers',
+      '/v1/admin/oauth-providers/{provider}',
+      '/v1/oauth/callback/{provider}',
+      '/v1/client/me/identities',
+      '/v1/client/me/identities/oauth',
+      '/v1/client/me/identities/oauth/exchange',
+      '/v1/client/me/identities/{identityId}',
     ])
     expect(Object.keys(doc.components.securitySchemes)).toEqual([
       'publishableKey',

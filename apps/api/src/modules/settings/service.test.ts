@@ -308,7 +308,7 @@ describe('clientConfig', () => {
     const config = Settings.clientConfig(settings)
     expect(config).toEqual({
       app: { name: 'Acme', supportEmail: 'help@acme.test' },
-      signIn: { methods: ['password'] },
+      signIn: { methods: ['password'], oauth: [] },
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
       mfa: { policy: 'optional' },
@@ -415,10 +415,20 @@ describe('weakened', () => {
     ['a notice that stays off', false, false, true, true],
   ])('%s', (_, passwordWas, passwordIs, signInWas, signInIs) => {
     const before = document({
-      notifications: { passwordChanged: passwordWas, newSignIn: signInWas, mfaChanged: true },
+      notifications: {
+        passwordChanged: passwordWas,
+        newSignIn: signInWas,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     const after = document({
-      notifications: { passwordChanged: passwordIs, newSignIn: signInIs, mfaChanged: true },
+      notifications: {
+        passwordChanged: passwordIs,
+        newSignIn: signInIs,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     expect(Settings.weakened(before, after)).toBe(
       (passwordWas && !passwordIs) || (signInWas && !signInIs)
@@ -432,7 +442,14 @@ describe('weakened', () => {
     [false, false, false],
   ])('the two-step verification notice from %p to %p → %p', (was, is, expected) => {
     const notifications = (mfaChanged: boolean) =>
-      document({ notifications: { passwordChanged: true, newSignIn: true, mfaChanged } })
+      document({
+        notifications: {
+          passwordChanged: true,
+          newSignIn: true,
+          mfaChanged,
+          identityChanged: true,
+        },
+      })
     expect(Settings.weakened(notifications(was), notifications(is))).toBe(expected)
   })
 
@@ -484,7 +501,9 @@ describe('weakened', () => {
     })
     await replace(
       2,
-      document({ notifications: { ...document().notifications, mfaChanged: false } })
+      document({
+        notifications: { ...document().notifications, mfaChanged: false, identityChanged: true },
+      })
     )
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 3,
@@ -495,7 +514,12 @@ describe('weakened', () => {
 
   test('switching a security notice off is flagged in the audit entry, switching it on is not', async () => {
     const off = document({
-      notifications: { passwordChanged: true, newSignIn: false, mfaChanged: true },
+      notifications: {
+        passwordChanged: true,
+        newSignIn: false,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     await replace(0, off)
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
@@ -505,7 +529,12 @@ describe('weakened', () => {
     })
     await replace(1, {
       ...off,
-      notifications: { passwordChanged: true, newSignIn: true, mfaChanged: true },
+      notifications: {
+        passwordChanged: true,
+        newSignIn: true,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 2,

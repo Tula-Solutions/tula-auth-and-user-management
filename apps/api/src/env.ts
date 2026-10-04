@@ -83,6 +83,12 @@ const fields = z.object({
    */
   TRUST_PROXY: flag,
   /**
+   * `true` serves every OAuth provider from the built-in mock provider, whose consent page lets
+   * a developer type the address the "provider" asserts (ADR 0026). For local development and
+   * tests, where nobody has real OAuth credentials. Refused outside `ENVIRONMENT=local`.
+   */
+  OAUTH_MOCK_PROVIDER: flag,
+  /**
    * Redis (or Valkey) for the state API instances must share: rate limits, the password lockout
    * and the list of revoked sessions. `rediss://` for TLS. Unset (or blank) in `local` and `dev`
    * keeps that state in process memory, which is correct for one instance only; live tiers must
@@ -95,6 +101,15 @@ const fields = z.object({
 })
 
 const schema = fields.superRefine((env, ctx) => {
+  if (env.OAUTH_MOCK_PROVIDER && env.ENVIRONMENT !== 'local') {
+    // Not a "live tiers" rule: the mock provider signs anyone in as any address they type, so
+    // it must be impossible in every deployment other people can reach, `dev` included.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['OAUTH_MOCK_PROVIDER'],
+      message: `is only allowed with ENVIRONMENT=local, not ${env.ENVIRONMENT}: the mock provider signs in anyone as any address`,
+    })
+  }
   if (!LIVE_TIERS.has(env.ENVIRONMENT)) {
     return
   }

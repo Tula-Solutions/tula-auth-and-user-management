@@ -217,6 +217,10 @@ async function runStep(
     readEmailLink(await linkFor(target, fill(step.emailLink.to, variables)), step, variables)
     return
   }
+  if ('oauth' in step) {
+    await runOAuth(target, step, variables)
+    return
+  }
   if ('totp' in step) {
     const secret = base32Decode(fill(step.totp.secret, variables))
     const now = target.now ? target.now() : Date.now()
@@ -287,6 +291,97 @@ async function runStep(
       }
       variables[name] = JSON.stringify(value)
     }
+  }
+}
+
+/** The path and query of a URL the server handed out, to be requested on the target itself. */
+function pathOf(url: string): string {
+  const parsed = new URL(url, 'http://placeholder.invalid')
+  return `${parsed.pathname}${parsed.search}`
+}
+
+/**
+ * Send one hop of an OAuth round trip, following nothing: the runner reads each `Location`
+ * itself, as a browser's address bar would show it.
+ */
+async function hop(
+  target: Target,
+  path: string,
+  origin: string,
+  form?: URLSearchParams
+): Promise<{ status: number; location: string | null }> {
+  const headers = new Headers({ 'x-forwarded-for': origin, 'user-agent': 'tula-conformance/1' })
+  if (form) {
+    headers.set('content-type', 'application/x-www-form-urlencoded')
+  }
+  const response = await target.fetch(
+    new Request(`${target.baseUrl}${path}`, {
+      method: form ? 'POST' : 'GET',
+      headers,
+      body: form?.toString(),
+      redirect: 'manual',
+    })
+  )
+  await response.body?.cancel()
+  return { status: response.status, location: response.headers.get('location') }
+}
+
+/** Play the user at the mock OAuth provider and read what the callback sends the app's page. */
+async function runOAuth(
+  target: Target,
+  step: Extract<Step, { oauth: unknown }>,
+  variables: Record<string, string>
+): Promise<void> {
+  const oauth = fill(step.oauth, variables)
+  const origin = variables.origin ?? ''
+  let callback = oauth.callback
+  if (oauth.authorizationUrl !== undefined) {
+    const authorization = new URL(oauth.authorizationUrl)
+    const form = new URLSearchParams(authorization.searchParams)
+    form.set('email', oauth.email ?? '')
+    form.set('subject', oauth.subject ?? '')
+    form.set('action', oauth.deny ? 'deny' : 'allow')
+    if (oauth.unverified) {
+      form.set('unverified', '1')
+    }
+    const consented = await hop(target, authorization.pathname, origin, form)
+    if (consented.status !== 302 || !consented.location) {
+      throw new Error(
+        `the provider's consent endpoint answered ${consented.status} without a redirect (is OAUTH_MOCK_PROVIDER on?)`
+      )
+    }
+    callback = pathOf(consented.location)
+  }
+  if (callback === undefined) {
+    throw new Error('the step names neither an authorization URL nor a callback')
+  }
+  if (oauth.captureCallback) {
+    variables[oauth.captureCallback] = callback
+  }
+  const answered = await hop(target, callback, origin)
+  const fragment = answered.location?.split('#')[1]
+  if (answered.status !== 303 || fragment === undefined) {
+    throw new Error(`the callback answered ${answered.status}, not a redirect with a fragment`)
+  }
+  if (answered.location?.split('#')[0]?.includes('?')) {
+    throw new Error('the callback put something in the query of the app’s URL')
+  }
+  const params = new URLSearchParams(fragment)
+  const ticket = params.get('tula_ticket')
+  const error = params.get('tula_error')
+  if (oauth.captureTicket) {
+    if (!ticket) {
+      throw new Error(`the callback sent no ticket (error: ${error ?? 'none'})`)
+    }
+    variables[oauth.captureTicket] = ticket
+  }
+  if (oauth.expectError !== undefined && (ticket || error !== oauth.expectError)) {
+    throw new Error(
+      `expected the callback to send the error ${oauth.expectError}, got ${ticket ? 'a ticket' : (error ?? 'nothing')}`
+    )
+  }
+  if (oauth.captureAttempt) {
+    variables[oauth.captureAttempt] = params.get('tula_attempt') ?? ''
   }
 }
 

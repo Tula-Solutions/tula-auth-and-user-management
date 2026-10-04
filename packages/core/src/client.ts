@@ -11,6 +11,15 @@ import {
 } from './flows'
 import { isBackupCodes, isFactors, isTotpEnrolment } from './mfa'
 import {
+  createOAuthStore,
+  handleOAuthCallback,
+  type Identity,
+  isIdentityList,
+  type OAuthCallbackOutcome,
+  type OAuthProvider,
+  startOAuth,
+} from './oauth'
+import {
   createSessionManager,
   LOCK_WAIT_MARGIN_MS,
   REFRESH_TIMEOUT_MS,
@@ -182,6 +191,63 @@ export interface TulaClient {
      * @throws TulaError when the API could not be reached or refused for another reason.
      */
     handleEmailLink(options?: { waitMs?: number }): Promise<EmailLinkOutcome>
+    /**
+     * Whether "continue with a provider" can be started here: the tab can keep the round
+     * trip's binding (`sessionStorage`). `false` on a server, in a native shell and in some
+     * sandboxed frames.
+     *
+     * @example
+     * ```ts
+     * if (tula.signIn.canUseOAuth()) showProviderButtons()
+     * ```
+     */
+    canUseOAuth(): boolean
+    /**
+     * "Continue with Google, GitHub or Apple": a sign-in that creates the account when the
+     * provider's verified address has none.
+     *
+     * Asks the API for the provider's URL, keeps the round trip's binding for this tab
+     * (`sessionStorage`; it is not a token), and **navigates the page there**. Pass
+     * `navigate: false` to get the URL and navigate yourself. The provider returns to the API,
+     * which redirects to `redirectUrl`; call `signIn.handleOAuthCallback()` on that page.
+     * `redirectUrl` must be one of the environment's allowed redirect URLs and on the same
+     * origin as this page.
+     *
+     * @throws TulaError `auth.method_disabled` (the provider is not enabled),
+     *   `request.redirect_not_allowed`, `link.cross_origin`, `storage.failed`.
+     *
+     * @example
+     * ```ts
+     * await tula.signIn.withOAuth({
+     *   provider: 'google',
+     *   redirectUrl: `${location.origin}/oauth/callback`,
+     * })
+     * ```
+     */
+    withOAuth(input: {
+      provider: OAuthProvider
+      redirectUrl: string
+      navigate?: boolean
+    }): Promise<{ url: string }>
+    /**
+     * Finish an OAuth round trip, on the page the API redirected to.
+     *
+     * Reads the ticket from the URL fragment, removes it from the address before anything is
+     * sent, and exchanges it together with the binding this tab kept. Serves sign-ins and
+     * links started from a profile alike. Safe to call on every load of the page, and twice in
+     * a row: without an OAuth answer in the address it answers `none`.
+     *
+     * @returns `complete` or `needs_step` with a flow positioned on the step (so
+     *   `flow.submitSecondFactor` works), `linked`, `different_browser`, `error` with a contract
+     *   code (`oauth.account_exists`, `oauth.access_denied`, …), or `none`.
+     *
+     * @example
+     * ```ts
+     * const outcome = await tula.signIn.handleOAuthCallback()
+     * if (outcome.status === 'complete') location.assign('/')
+     * ```
+     */
+    handleOAuthCallback(): Promise<OAuthCallbackOutcome>
   }
   /** Forgotten password. */
   readonly resetPassword: {
@@ -282,6 +348,47 @@ export interface TulaClient {
      *   has not proven it recently, `auth.step_up_required` (see `session.stepUp`).
      */
     changePassword(input: { currentPassword: string; newPassword: string }): Promise<void>
+    /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
+    readonly identities: {
+      /**
+       * @returns The connected accounts, oldest first.
+       *
+       * @example
+       * ```ts
+       * const accounts = await tula.user.identities.list()
+       * ```
+       */
+      list(): Promise<Identity[]>
+      /**
+       * Start connecting a provider account to the signed-in user: like `signIn.withOAuth`, it
+       * keeps a binding and navigates to the provider. `signIn.handleOAuthCallback()` on the
+       * page it comes back to answers `linked`. Needs a recent authentication
+       * (`auth.step_up_required` otherwise).
+       *
+       * @example
+       * ```ts
+       * await tula.user.identities.link({
+       *   provider: 'github',
+       *   redirectUrl: `${location.origin}/oauth/callback`,
+       * })
+       * ```
+       */
+      link(input: {
+        provider: OAuthProvider
+        redirectUrl: string
+        navigate?: boolean
+      }): Promise<{ url: string }>
+      /**
+       * Disconnect a provider account. Refused with `identity.last_sign_in_method` when nothing
+       * else would let the user sign in. Needs a recent authentication.
+       *
+       * @example
+       * ```ts
+       * await tula.user.identities.unlink({ identityId })
+       * ```
+       */
+      unlink(input: { identityId: string }): Promise<void>
+    }
   }
   /**
    * Two-step verification of the signed-in user: an authenticator app (TOTP) and backup codes.
@@ -433,6 +540,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   }
   const links = createLinkStore(environment, scope)
   const flows = { transport, session, messages: currentMessages, environment, links, scope }
+  const oauth = { ...flows, oauth: createOAuthStore(environment, scope) }
   let config: Promise<ClientConfig> | null = null
 
   /** A 200 that is not what the operation answers is not this API: nothing is built from it. */
@@ -443,6 +551,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     return answer
   }
   let handlingLink: Promise<EmailLinkOutcome> | null = null
+  let handlingOAuth: Promise<OAuthCallbackOutcome> | null = null
 
   return {
     get state() {
@@ -474,6 +583,21 @@ export function createClient(options: TulaClientOptions, environment: Environmen
           handlingLink = pending
         }
         return handlingLink
+      },
+      canUseOAuth: () => oauth.oauth.available(),
+      withOAuth: (input) => startOAuth(oauth, input, 'sign_in'),
+      handleOAuthCallback() {
+        // One exchange per answer: a UI calls this from an effect that may run twice, and the
+        // second call would find the address already cleaned and answer `none`.
+        if (!handlingOAuth) {
+          const pending = handleOAuthCallback(oauth).finally(() => {
+            if (handlingOAuth === pending) {
+              handlingOAuth = null
+            }
+          })
+          handlingOAuth = pending
+        }
+        return handlingOAuth
       },
     },
     resetPassword: {
@@ -513,6 +637,14 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       },
       async changePassword(input) {
         await session.authorized('changeMyPassword', { body: input })
+      },
+      identities: {
+        list: async () =>
+          checked(await session.authorized('listMyIdentities', {}), isIdentityList).data,
+        link: (input) => startOAuth(oauth, input, 'link'),
+        async unlink({ identityId }) {
+          await session.authorized('deleteMyIdentity', { params: { identityId } })
+        },
       },
     },
     mfa: {

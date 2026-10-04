@@ -81,6 +81,12 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * @param input - The method and its code.
    */
   submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
+  /**
+   * Continue a sign-in that was started elsewhere: the flow `signIn.handleOAuthCallback()`
+   * answers with, positioned on the step the OAuth round trip ended on. `step` becomes that
+   * flow's, and the actions above act on it.
+   */
+  adopt(flow: SignInFlow): void
 }
 
 /**

@@ -115,12 +115,30 @@ const PasswordMethod = z.object({ enabled: z.boolean().default(true) })
 // document saved before they existed keeps behaving as it did.
 const OptionalMethod = z.object({ enabled: z.boolean().default(false) })
 
-const atLeastOneMethod = {
-  message: 'at least one sign-in method must stay enabled',
-} as const
+/**
+ * What a settings document is refused with when it would leave an environment with no way to
+ * sign in. The rule is the server's, not this schema's: an environment whose only method is an
+ * OAuth provider (ADR 0026) switches every method below off, and whether a provider is enabled
+ * is not part of this document.
+ */
+export const AT_LEAST_ONE_SIGN_IN_METHOD = 'at least one sign-in method must stay enabled'
 
-function anyEnabled(methods: Record<string, { enabled: boolean }>): boolean {
-  return Object.values(methods).some((method) => method.enabled)
+/**
+ * Whether a settings document enables at least one of its own sign-in methods (the password, the
+ * email code, the email link). OAuth providers are configured apart from it.
+ *
+ * @param settings - The document, or just its `signIn` section.
+ * @returns `true` when any method is enabled.
+ *
+ * @example
+ * ```ts
+ * hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS) // true: the password
+ * ```
+ */
+export function hasEnabledSignInMethod(settings: {
+  signIn: { methods: Record<string, { enabled: boolean }> }
+}): boolean {
+  return Object.values(settings.signIn.methods).some((method) => method.enabled)
 }
 
 // An emailed link works only in the browser that asked for it, and the email always carries a
@@ -211,6 +229,12 @@ const Notifications = z.object({
    * in (ADR 0025). On by default; turning it off is recorded as a weakening.
    */
   mfaChanged: z.boolean().default(true),
+  /**
+   * Email the account's address when a provider account (Google, GitHub, Apple) is connected
+   * to it or disconnected from it (ADR 0026). On by default; turning it off is recorded as a
+   * weakening.
+   */
+  identityChanged: z.boolean().default(true),
 })
 
 /** Whether users can, or must, protect their account with a second factor. */
@@ -244,7 +268,6 @@ const SignIn = z
         emailCode: OptionalMethod.strict().prefault({}),
         emailLink: OptionalMethod.strict().prefault({}),
       })
-      .refine(anyEnabled, atLeastOneMethod)
       .refine(linkHasCode, linkNeedsCode)
       .prefault({}),
   })
@@ -270,13 +293,14 @@ const minLengthFloor = {
  *   {@link MIN_PASSWORD_MIN_LENGTH}.
  * - `signIn.methods`: which first factors are offered: `password` (on by default), `emailCode`
  *   (a 6-digit code by email) and `emailLink` (a link in that email, which needs `emailCode`
- *   too). At least one must stay enabled.
+ *   too). At least one must stay enabled, unless an OAuth provider is (the server checks:
+ *   providers are configured apart from this document, ADR 0026).
  * - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
  *   may leave it out (`optional`, which needs `emailCode`).
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
  * - `audit.retentionDays`: how long audit entries are kept.
  * - `notifications`: which security notices are emailed to an account's owner
- *   (`passwordChanged`, `newSignIn`, `mfaChanged`). All are on unless switched off.
+ *   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
  * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
  *   `required`.
  */
@@ -363,7 +387,6 @@ const Stored = z.object({
           emailCode: OptionalMethod.prefault({}),
           emailLink: OptionalMethod.prefault({}),
         })
-        .refine(anyEnabled, atLeastOneMethod)
         .prefault({}),
     })
     .prefault({}),
@@ -480,6 +503,8 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
  *
  * - `app.supportEmail` is included because a sign-in screen links to it ("Need help?") and every
  *   email already shows it. It is `null` when none is set.
+ * - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`), for
+ *   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
  * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`). It
  *   is an array of plain strings, not an enum, so a client built against this version keeps
  *   working when a server offers a method it does not know; it should ignore those.
@@ -494,7 +519,10 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
 export const ClientConfigSchema = z
   .object({
     app: z.object({ name: z.string(), supportEmail: z.string().nullable() }),
-    signIn: z.object({ methods: z.array(z.string()) }),
+    signIn: z.object({
+      methods: z.array(z.string()),
+      oauth: z.array(z.string()).optional(),
+    }),
     signUp: z.object({ password: SignUpPasswordModeSchema }).optional(),
     password: PasswordPolicySchema,
     mfa: z.object({ policy: MfaPolicySchema }).optional(),

@@ -1,0 +1,299 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "OAuth with a second factor",
+  "description": "An OAuth provider is a first factor. A user who has an authenticator app is not signed in by the provider's answer: exchanging the ticket yields needs_second_factor, no tokens, and a fresh attempt secret, and the session is created only when the second factor is proven. Its amr then names both. Uses the server's mock provider. The provider's credentials are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment's own google credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-client",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "sign up with Google",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding",
+        "aStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{email}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "start enrolling an authenticator app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "the authenticator shows a code",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "confirm it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      }
+    },
+    {
+      "name": "the next time step",
+      "wait": "31s"
+    },
+    {
+      "name": "continue with Google again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding",
+        "bStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{bUrl}}",
+        "email": "{{email}}",
+        "captureTicket": "bTicket",
+        "captureAttempt": "bId"
+      }
+    },
+    {
+      "name": "the provider is only the first factor: no tokens, and a fresh secret for the next step",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{bTicket}}",
+          "attemptId": "{{bId}}",
+          "binding": "{{bBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "attemptSecret": "$any",
+          "step": {
+            "status": "needs_second_factor",
+            "options": ["totp", "backup_code"]
+          }
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      },
+      "capture": {
+        "bSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the second factor is not skipped by asking without the secret",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{bId}}/second-factor",
+        "body": {
+          "method": "totp",
+          "code": "000000"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the authenticator shows the next code",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "code2"
+      }
+    },
+    {
+      "name": "prove the second factor",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{bId}}/second-factor",
+        "attempt": "{{bSecret}}",
+        "body": {
+          "method": "totp",
+          "code": "{{code2}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": "$any"
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed", "otp", "mfa"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

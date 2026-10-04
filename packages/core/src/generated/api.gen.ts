@@ -17,6 +17,7 @@ export interface Schemas {
     }
     signIn: {
       methods: string[]
+      oauth?: string[]
     }
     signUp?: {
       password: Schemas['SignUpPasswordMode']
@@ -35,7 +36,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -115,7 +116,36 @@ export interface Schemas {
     userId: string
     sessionId: string
   }
+  Identity: {
+    id: string
+    provider: string
+    createdAt: string
+  }
+  IdentityLinkStart: {
+    attemptId: string
+    expiresAt: string
+    authorizationUrl: string
+    binding: string
+  }
+  IdentityList: {
+    data: Schemas['Identity'][]
+  }
   MfaPolicy: 'off' | 'optional' | 'required'
+  OAuthExchangeRequest: {
+    ticket: string
+    attemptId: string
+    binding?: string
+  }
+  OAuthProvider: 'google' | 'github' | 'apple'
+  OAuthStart: {
+    attempt: Schemas['FlowAttempt']
+    authorizationUrl: string
+    binding: string
+  }
+  OAuthStartRequest: {
+    provider: Schemas['OAuthProvider']
+    redirectUrl: string
+  }
   PasswordAttemptRequest: {
     password: string
   }
@@ -234,8 +264,14 @@ export interface Operations {
   confirmSignUpTotpEnrolment: { params: { attemptId: string }; body: Schemas['TotpConfirmRequest']; response: Schemas['FlowAttempt'] }
   /** Confirm the authenticator app (`POST /v1/client/me/factors/totp/confirm`). */
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
+  /** Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). */
+  deleteMyIdentity: { params: { identityId: string }; body: undefined; response: undefined }
   /** Turn two-step verification off (`DELETE /v1/client/me/factors/totp`). */
   disableTotp: { params: Record<string, never>; body: undefined; response: undefined }
+  /** Finish connecting a provider account (`POST /v1/client/me/identities/oauth/exchange`). */
+  exchangeIdentityLinkTicket: { params: Record<string, never>; body: Schemas['OAuthExchangeRequest']; response: Schemas['Identity'] }
+  /** Exchange an OAuth ticket for the next step (`POST /v1/client/sign-ins/oauth/exchange`). */
+  exchangeOAuthTicket: { params: Record<string, never>; body: Schemas['OAuthExchangeRequest']; response: Schemas['FlowAttempt'] }
   /** Client configuration (`GET /v1/client/config`). */
   getClientConfig: { params: Record<string, never>; body: undefined; response: Schemas['ClientConfig'] }
   /** Get the signed-in user (`GET /v1/client/me`). */
@@ -244,6 +280,8 @@ export interface Operations {
   getMyFactors: { params: Record<string, never>; body: undefined; response: Schemas['Factors'] }
   /** Password policy (`GET /v1/client/password-policy`). */
   getPasswordPolicy: { params: Record<string, never>; body: undefined; response: Schemas['PasswordPolicy'] }
+  /** List my connected accounts (`GET /v1/client/me/identities`). */
+  listMyIdentities: { params: Record<string, never>; body: undefined; response: Schemas['IdentityList'] }
   /** List my sessions (`GET /v1/client/sessions`). */
   listSessions: { params: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
   /** Email a sign-in code or link (`POST /v1/client/sign-ins/{attemptId}/first-factor/prepare`). */
@@ -264,6 +302,10 @@ export interface Operations {
   revokeSession: { params: { sessionId: string }; body: undefined; response: undefined }
   /** Sign out (`POST /v1/client/sessions/sign-out`). */
   signOut: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: undefined }
+  /** Start connecting a provider account (`POST /v1/client/me/identities/oauth`). */
+  startIdentityLink: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['IdentityLinkStart'] }
+  /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). */
+  startOAuthSignIn: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['OAuthStart'] }
   /** Start a password reset (`POST /v1/client/password-resets`). */
   startPasswordReset: { params: Record<string, never>; body: Schemas['PasswordResetStartRequest']; response: Schemas['FlowAttempt'] }
   /** Start enrolling an authenticator app inside an attempt (`POST /v1/client/password-resets/{attemptId}/factor-enrolment/totp`). */
@@ -314,11 +356,15 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmSignInTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/factor-enrolment/totp/confirm', session: false },
   confirmSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp/confirm', session: false },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
+  deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
+  exchangeIdentityLinkTicket: { method: 'POST', path: '/v1/client/me/identities/oauth/exchange', session: true },
+  exchangeOAuthTicket: { method: 'POST', path: '/v1/client/sign-ins/oauth/exchange', session: false },
   getClientConfig: { method: 'GET', path: '/v1/client/config', session: false },
   getMe: { method: 'GET', path: '/v1/client/me', session: true },
   getMyFactors: { method: 'GET', path: '/v1/client/me/factors', session: true },
   getPasswordPolicy: { method: 'GET', path: '/v1/client/password-policy', session: false },
+  listMyIdentities: { method: 'GET', path: '/v1/client/me/identities', session: true },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
@@ -329,6 +375,8 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   revokeOtherSessions: { method: 'POST', path: '/v1/client/sessions/revoke-others', session: true },
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
   signOut: { method: 'POST', path: '/v1/client/sessions/sign-out', session: false },
+  startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
+  startOAuthSignIn: { method: 'POST', path: '/v1/client/sign-ins/oauth', session: false },
   startPasswordReset: { method: 'POST', path: '/v1/client/password-resets', session: false },
   startPasswordResetTotpEnrolment: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/factor-enrolment/totp', session: false },
   startSignIn: { method: 'POST', path: '/v1/client/sign-ins', session: false },

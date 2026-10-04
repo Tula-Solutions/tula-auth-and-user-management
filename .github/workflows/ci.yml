@@ -88,6 +88,9 @@ jobs:
       # Throwaway values for this job's own containers.
       TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
       TRUST_PROXY: 'true'
+      # The OAuth scenarios run against the API's own mock provider (ADR 0026). Compose runs
+      # the stack in the `local` tier, the only one the API accepts this in.
+      OAUTH_MOCK_PROVIDER: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

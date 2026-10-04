@@ -1,11 +1,31 @@
+import type { OAuthProvider } from '@tula/contract'
 import { credentials, type Database, identities, users, withTenant } from '@tula/db'
-import { and, asc, count, desc, eq, ilike, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
 import type { Activity } from '~/ports/activity-log'
 import type {
+  IdentityRecord,
+  LinkGuard,
+  LinkOutcome,
+  NewIdentity,
   NewUser,
   PasswordOutcome,
+  SignInMeans,
+  UnlinkOutcome,
   UserListCriteria,
   UserRecord,
   UserRepository,
@@ -107,7 +127,7 @@ export class PostgresUserRepository implements UserRepository {
 
   /** @inheritdoc */
   async create(user: NewUser, activity?: Activity): Promise<boolean> {
-    const { identityId, credentialId, passwordHash, ...record } = user
+    const { identityId, credentialId, passwordHash, oauthIdentity, ...record } = user
     const scope = { projectId: user.projectId, environmentId: user.environmentId }
     const stamps = { createdAt: user.createdAt, updatedAt: user.createdAt }
     try {
@@ -121,6 +141,16 @@ export class PostgresUserRepository implements UserRepository {
           providerSubject: user.emailNormalized,
           ...stamps,
         })
+        if (oauthIdentity) {
+          await tx.insert(identities).values({
+            id: oauthIdentity.id,
+            ...scope,
+            userId: user.id,
+            provider: oauthIdentity.provider,
+            providerSubject: oauthIdentity.subject,
+            ...stamps,
+          })
+        }
         if (passwordHash !== null) {
           await tx.insert(credentials).values({
             id: credentialId,
@@ -135,7 +165,8 @@ export class PostgresUserRepository implements UserRepository {
       })
       return true
     } catch (error) {
-      // users_environment_email_key (or the email identity's twin): the address is taken.
+      // users_environment_email_key (or the email identity's twin): the address is taken. Or
+      // identities_environment_provider_subject_key: the provider account is.
       if (isUniqueViolation(error)) {
         return false
       }
@@ -144,6 +175,159 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIdentity(
+    environmentId: string,
+    provider: OAuthProvider,
+    subject: string
+  ): Promise<UserRecord | null> {
+    const [row] = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select(columns)
+        .from(identities)
+        .innerJoin(
+          users,
+          and(eq(users.id, identities.userId), eq(users.environmentId, identities.environmentId))
+        )
+        .where(
+          and(
+            eq(identities.environmentId, environmentId),
+            eq(identities.provider, provider),
+            eq(identities.providerSubject, subject)
+          )
+        )
+        .limit(1)
+    )
+    return row ?? null
+  }
+
+  async listIdentities(environmentId: string, userId: string): Promise<IdentityRecord[]> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({
+          id: identities.id,
+          userId: identities.userId,
+          provider: identities.provider,
+          subject: identities.providerSubject,
+          createdAt: identities.createdAt,
+        })
+        .from(identities)
+        .where(
+          and(
+            eq(identities.environmentId, environmentId),
+            eq(identities.userId, userId),
+            ne(identities.provider, 'email')
+          )
+        )
+        .orderBy(asc(identities.createdAt), asc(identities.id))
+    )
+    // The `email` identity is filtered out above, so what is left is a provider's.
+    return rows.map((row) => ({ ...row, provider: row.provider as OAuthProvider }))
+  }
+
+  async linkIdentity(
+    identity: NewIdentity,
+    activity?: Activity,
+    guard?: LinkGuard
+  ): Promise<LinkOutcome> {
+    const { environmentId, userId } = identity
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        // Locked, so the user cannot be deleted, and their address cannot change, between this
+        // read and the insert.
+        const [owner] = await tx
+          .select({ emailNormalized: users.emailNormalized, verified: users.emailVerifiedAt })
+          .from(users)
+          .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+          .limit(1)
+          .for('update')
+        if (
+          !owner ||
+          (guard && (owner.emailNormalized !== guard.emailNormalized || owner.verified === null))
+        ) {
+          return 'user_changed'
+        }
+        await tx.insert(identities).values({
+          id: identity.id,
+          projectId: identity.projectId,
+          environmentId,
+          userId,
+          provider: identity.provider,
+          providerSubject: identity.subject,
+          createdAt: identity.createdAt,
+          updatedAt: identity.createdAt,
+        })
+        await recordActivity(tx, activity ? [activity] : [])
+        return 'linked'
+      })
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error
+      }
+      // Which key refused it: the provider account's (it belongs to someone), or the user's
+      // one-account-per-provider key.
+      const owner = await this.findByIdentity(environmentId, identity.provider, identity.subject)
+      return owner ? 'identity_in_use' : 'provider_linked'
+    }
+  }
+
+  async unlinkIdentity(
+    environmentId: string,
+    userId: string,
+    identityId: string,
+    allowed: (remaining: SignInMeans) => boolean,
+    activity?: Activity
+  ): Promise<UnlinkOutcome> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      // Locked, so two removals for one user run one after the other: the second sees what the
+      // first left.
+      const [owner] = await tx
+        .select({ verified: users.emailVerifiedAt })
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .limit(1)
+        .for('update')
+      const owned = await tx
+        .select({ id: identities.id, provider: identities.provider })
+        .from(identities)
+        .where(
+          and(
+            eq(identities.environmentId, environmentId),
+            eq(identities.userId, userId),
+            ne(identities.provider, 'email')
+          )
+        )
+      if (!owner || !owned.some((identity) => identity.id === identityId)) {
+        return 'not_found'
+      }
+      const [password] = await tx
+        .select({ id: credentials.id })
+        .from(credentials)
+        .where(
+          and(
+            eq(credentials.environmentId, environmentId),
+            eq(credentials.userId, userId),
+            eq(credentials.type, 'password')
+          )
+        )
+        .limit(1)
+      const remaining: SignInMeans = {
+        hasPassword: password !== undefined,
+        emailVerified: owner.verified !== null,
+        providers: owned
+          .filter((identity) => identity.id !== identityId)
+          .map((identity) => identity.provider as OAuthProvider),
+      }
+      if (!allowed(remaining)) {
+        return 'last_method'
+      }
+      await tx
+        .delete(identities)
+        .where(and(eq(identities.id, identityId), eq(identities.environmentId, environmentId)))
+      await recordActivity(tx, activity ? [activity] : [])
+      return 'unlinked'
+    })
+  }
+
   async setPasswordHash(
     environmentId: string,
     userId: string,

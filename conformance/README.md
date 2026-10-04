@@ -38,7 +38,7 @@ bun run conformance
 | `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
-audit entries, and leaves them there. A full run takes about five and a half minutes, most of
+audit entries, and leaves them there. A full run takes about seven minutes, most of
 it waiting: 61 seconds for an address's email cooldown (four times), 30 for an authenticator to
 move to its next code (twice), 11 for the refresh grace period and 6 for a settings change to
 reach the second instance. The runner computes authenticator codes from its own clock, so it
@@ -198,6 +198,20 @@ uses the redirect URL `https://app.conformance.example/auth/link`, which it adds
 allow-list itself; nothing is ever fetched from it. That an address with no account is sent a
 notice with no code and no link is covered by the API's own tests: the runner cannot assert
 what an email does not contain.
+
+### OAuth scenarios need the mock provider
+
+Scenarios 25 to 27 sign in through an OAuth provider. They use the server's **mock provider**:
+start the server with `OAUTH_MOCK_PROVIDER=true` (accepted only with `ENVIRONMENT=local`). An
+`oauth` step plays the user at the provider: it posts the consent form to the path of the
+`authorizationUrl` a start answered (`email`, `subject`, `unverified`, `deny`), calls the
+callback the answer redirects to, and reads the ticket (`captureTicket`, `captureAttempt`) or
+the error (`expectError`) from the fragment of the URL the callback redirects to. Nothing is
+followed automatically, and every request goes to the target's base URL. `captureCallback`
+keeps the callback's path so a later step can replay it (`callback`). The scenarios set the
+`google` provider's credentials at the start and remove them in `cleanup`: do not run them
+against an environment whose Google credentials you want to keep. They add about 95 seconds
+(a 61-second wait for a ticket to expire and a 31-second one for the next authenticator code).
 
 ## Adding a scenario
 

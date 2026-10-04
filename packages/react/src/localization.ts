@@ -104,6 +104,31 @@ export interface TulaLocalization {
     /** The link back to `<SignIn>`. */
     signIn: string
   }
+  /** Signing in with a provider (Google, GitHub, Apple), and the page it returns to. */
+  oauth: {
+    /** `{provider}` is the provider's name. */
+    continueWith: string
+    /** Between the provider buttons and the form. */
+    divider: string
+    loadingTitle: string
+    loadingMessage: string
+    differentBrowserTitle: string
+    differentBrowserMessage: string
+    accountExistsTitle: string
+    accountExistsMessage: string
+    cancelledTitle: string
+    refusedTitle: string
+    noneTitle: string
+    noneMessage: string
+    linkedTitle: string
+    /** `{provider}`. */
+    linkedMessage: string
+    errorTitle: string
+    /** The link back to `<SignIn>`. */
+    signIn: string
+    /** The link back to the account page after connecting an account. */
+    backToAccount: string
+  }
   /** The emailed-code screen of every flow. */
   verification: {
     title: string
@@ -260,6 +285,16 @@ export interface TulaLocalization {
     othersSignedOut: string
     signOutTitle: string
     signOut: string
+    connectedTitle: string
+    connectedLoading: string
+    connectedEmpty: string
+    /** `{provider}`. */
+    connect: string
+    disconnect: string
+    /** `{provider}`. The accessible name of a row's disconnect button. */
+    disconnectLabel: string
+    /** `{provider}`. */
+    disconnected: string
   }
   /**
    * Messages for error codes, replacing `@tula/core`'s English ones. Codes left out stay
@@ -363,6 +398,28 @@ export const EN_LOCALIZATION: TulaLocalization = {
       'This page finishes a sign-in started from an emailed link, and this address does not carry one.',
     errorTitle: 'We could not check your link',
     signIn: 'Sign in',
+  },
+  oauth: {
+    continueWith: 'Continue with {provider}',
+    divider: 'or',
+    loadingTitle: 'Signing you in…',
+    loadingMessage: 'Finishing sign-in.',
+    differentBrowserTitle: 'Start again in this browser',
+    differentBrowserMessage:
+      'This sign-in was started in another browser or tab, so it cannot be finished here. Nothing was changed. Start again on this device.',
+    accountExistsTitle: 'You already have an account',
+    accountExistsMessage:
+      'An account with this email address already exists. Sign in the way you usually do, then connect this provider under “Connected accounts” in your account.',
+    cancelledTitle: 'Sign-in was cancelled',
+    refusedTitle: 'We could not sign you in',
+    noneTitle: 'Nothing to finish here',
+    noneMessage:
+      'This page finishes a sign-in with Google, GitHub or Apple, and this address does not carry one.',
+    linkedTitle: 'Account connected',
+    linkedMessage: 'Your {provider} account is connected. You can now use it to sign in.',
+    errorTitle: 'We could not finish signing you in',
+    signIn: 'Sign in',
+    backToAccount: 'Back to your account',
   },
   verification: {
     title: 'Check your email',
@@ -509,6 +566,13 @@ export const EN_LOCALIZATION: TulaLocalization = {
     othersSignedOut: 'Signed out of {count} other devices.',
     signOutTitle: 'Sign out',
     signOut: 'Sign out',
+    connectedTitle: 'Connected accounts',
+    connectedLoading: 'Loading your connected accounts…',
+    connectedEmpty: 'No accounts are connected.',
+    connect: 'Connect {provider}',
+    disconnect: 'Disconnect',
+    disconnectLabel: 'Disconnect {provider}',
+    disconnected: '{provider} was disconnected.',
   },
   errors: {},
 }

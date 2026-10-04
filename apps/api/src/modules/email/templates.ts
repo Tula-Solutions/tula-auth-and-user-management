@@ -76,8 +76,26 @@ export interface MfaChangedMessage {
   remaining?: number
 }
 
+/**
+ * Tells an account's owner that a provider account (Google, GitHub, Apple) was connected to it
+ * or disconnected from it (ADR 0026). Never carries anything of the provider account itself.
+ */
+export interface IdentityChangedMessage {
+  type: 'identity_changed'
+  /** Connected, or disconnected. */
+  change: 'linked' | 'unlinked'
+  /** Which provider. One of a fixed set of names, never text from the provider. */
+  provider: 'google' | 'github' | 'apple'
+  /** When it happened. */
+  at: Date
+}
+
 /** An email that tells an account's owner about a change to who can get in. */
-export type SecurityNoticeMessage = PasswordChangedMessage | NewSignInMessage | MfaChangedMessage
+export type SecurityNoticeMessage =
+  | PasswordChangedMessage
+  | NewSignInMessage
+  | MfaChangedMessage
+  | IdentityChangedMessage
 
 /** Every email Tula sends. Adding a message means adding its copy to this module, nowhere else. */
 export type EmailMessage = CodeMessage | NoticeMessage | SecurityNoticeMessage
@@ -234,10 +252,41 @@ function mfaCopy(message: MfaChangedMessage): Copy {
   }
 }
 
+/** How each provider is named in an email. Fixed names: nothing from a provider reaches one. */
+const PROVIDER_NAMES: Record<IdentityChangedMessage['provider'], string> = {
+  google: 'Google',
+  github: 'GitHub',
+  apple: 'Apple',
+}
+
+/** The copy of a connected-account notice. */
+function identityCopy(message: IdentityChangedMessage): Copy {
+  const provider = PROVIDER_NAMES[message.provider]
+  const linked = message.change === 'linked'
+  return {
+    subject: linked
+      ? `A ${provider} account was connected to your {app} account`
+      : `A ${provider} account was disconnected from your {app} account`,
+    lead: [
+      linked
+        ? `A ${provider} account was connected to your {app} account. It can now be used to sign in.`
+        : `A ${provider} account was disconnected from your {app} account. It can no longer be used to sign in.`,
+    ],
+    details: [['When', utc(message.at)]],
+    closing: [
+      'If this was you, there is nothing more to do.',
+      `If it wasn't you, or you did not expect it, ${RESET_NOW}, then review the connected accounts in your profile.`,
+    ],
+  }
+}
+
 /** The copy of a security notice. Built per message: what it says depends on what happened. */
 function securityCopy(message: SecurityNoticeMessage): Copy {
   if (message.type === 'mfa_changed') {
     return mfaCopy(message)
+  }
+  if (message.type === 'identity_changed') {
+    return identityCopy(message)
   }
   if (message.type === 'new_sign_in') {
     return {
@@ -275,7 +324,8 @@ function isSecurityNotice(message: EmailMessage): message is SecurityNoticeMessa
   return (
     message.type === 'password_changed' ||
     message.type === 'new_sign_in' ||
-    message.type === 'mfa_changed'
+    message.type === 'mfa_changed' ||
+    message.type === 'identity_changed'
   )
 }
 

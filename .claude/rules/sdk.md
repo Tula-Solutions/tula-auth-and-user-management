@@ -36,6 +36,15 @@ paths:
   is unavailable and the code path remains. It is removed when the link is used, the sign-in
   completes or the flow is discarded, and expires on the device's own clock. Nothing else may
   be added to it.
+- **The one permitted use of `sessionStorage`** is the OAuth binding
+  (`packages/core/src/oauth.ts`, key `tula.oauth.<attempt id>`, ADR 0026): the page is replaced
+  by the provider's and loaded afresh, so memory does not survive, and only the same tab may
+  read it back. Like the link binding it is not a token and not the attempt's secret (which is
+  deliberately lost with the navigation; the exchange returns a new one). It is removed on
+  **every** outcome of `handleOAuthCallback()`, including errors, and expires on the device's
+  clock. An OAuth ticket is read from the URL fragment and removed from the address before any
+  request; a code from the fragment is passed on only if the contract defines it.
+  `redirectUrl` must be on the page's origin (`link.cross_origin`).
 - An emailed link leads to a page on the **same origin** as the page that asked (the binding is
   in that origin's storage); `prepareFirstFactor` refuses another origin with
   `link.cross_origin` where a page origin is known. `verification.expired` never removes a

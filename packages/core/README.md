@@ -117,6 +117,39 @@ the flow object is spent (its secret is dropped; further actions are refused loc
 Disable the submit button while an action is pending: a second one is refused with `flow.busy`.
 A flow cannot be resumed after a page reload; start again (attempts last ten minutes).
 
+## Signing in with a provider (OAuth)
+
+```ts
+// On the sign-in page: keeps a binding for this tab and navigates to the provider.
+await tula.signIn.withOAuth({ provider: 'google', redirectUrl: `${location.origin}/oauth/callback` })
+
+// On /oauth/callback, on every load:
+const outcome = await tula.signIn.handleOAuthCallback()
+switch (outcome.status) {
+  case 'complete':          // signed in
+  case 'needs_step':        // outcome.flow.step is needs_second_factor or needs_factor_enrolment:
+    break                   //   outcome.flow.submitSecondFactor({ method: 'totp', code })
+  case 'linked':            // a link started with tula.user.identities.link(): outcome.identity
+  case 'different_browser': // this browser did not start it; nothing was completed
+  case 'error':             // outcome.code: 'oauth.account_exists', 'oauth.access_denied', …
+  case 'none':              // no OAuth answer in the address
+}
+
+await tula.user.identities.list()
+await tula.user.identities.link({ provider: 'github', redirectUrl })   // needs a recent sign-in
+await tula.user.identities.unlink({ identityId })                      // refused for the last way in
+```
+
+The provider returns to the API, which redirects to `redirectUrl` with a single-use, 60-second
+ticket in the URL **fragment**. `handleOAuthCallback()` removes it from the address before it
+sends anything and exchanges it together with the binding. The binding is the one thing kept
+in `sessionStorage` (`tula.oauth.<attempt id>`): the page is replaced by the provider's, so
+memory does not survive, and only the same tab may finish. It is not a token and not the
+attempt's secret, it is removed on every outcome, and it expires after fifteen minutes.
+`redirectUrl` must be on the page's own origin (`link.cross_origin` otherwise) and on the
+environment's allow-list. `withOAuth({ navigate: false })` returns the URL instead of
+navigating. No provider token ever reaches the client.
+
 ## Session
 
 ```ts

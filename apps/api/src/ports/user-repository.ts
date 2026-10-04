@@ -1,4 +1,4 @@
-import type { UserSort } from '@tula/contract'
+import type { OAuthProvider, UserSort } from '@tula/contract'
 import type { Activity } from '~/ports/activity-log'
 
 /** An end user of a customer's app, scoped to one environment. */
@@ -26,7 +26,59 @@ export interface NewUser extends Omit<UserRecord, 'bannedAt' | 'lastSignInAt'> {
   credentialId: string
   /** argon2id hash of the password, or `null` for a user who has none (no credential row). */
   passwordHash: string | null
+  /**
+   * The provider account the user signed up with (ADR 0026), stored as a second identity beside
+   * the email one, in the same transaction.
+   */
+  oauthIdentity?: { id: string; provider: OAuthProvider; subject: string }
 }
+
+/** A provider account connected to a user. */
+export interface IdentityRecord {
+  id: string
+  userId: string
+  provider: OAuthProvider
+  /** The provider's stable id for the account. Never sent to a client. */
+  subject: string
+  createdAt: Date
+}
+
+/** A provider account to connect to an existing user. */
+export interface NewIdentity extends IdentityRecord {
+  projectId: string
+  environmentId: string
+}
+
+/**
+ * What must still be true of the user at the moment an identity is connected to them
+ * **automatically** (by a matching email): the address is still theirs, and verified.
+ */
+export interface LinkGuard {
+  emailNormalized: string
+}
+
+/**
+ * What connecting an identity did.
+ *
+ * - `linked`: the identity now belongs to the user.
+ * - `identity_in_use`: that provider account already belongs to a user (this one or another).
+ * - `provider_linked`: the user already has another account of that provider.
+ * - `user_changed`: the user is gone, or no longer satisfies the {@link LinkGuard}.
+ */
+export type LinkOutcome = 'linked' | 'identity_in_use' | 'provider_linked' | 'user_changed'
+
+/** The ways a user could still sign in, as the store sees them inside one transaction. */
+export interface SignInMeans {
+  /** The user has a password credential. */
+  hasPassword: boolean
+  /** The user's email address is verified. */
+  emailVerified: boolean
+  /** The providers of the identities the user would still have. */
+  providers: OAuthProvider[]
+}
+
+/** What disconnecting an identity did. */
+export type UnlinkOutcome = 'unlinked' | 'not_found' | 'last_method'
 
 /**
  * What storing a password did: `created` when the user had none before (their first password),
@@ -75,12 +127,69 @@ export interface UserRepository {
   ): Promise<{ user: UserRecord; passwordHash: string | null } | null>
 
   /**
-   * Create a user and their email identity atomically, with a password credential when
-   * `passwordHash` is given.
+   * The user a provider account belongs to.
    *
-   * @param user - The user and, optionally, their password.
+   * @param environmentId - The environment to look in.
+   * @param provider - The provider.
+   * @param subject - The provider's stable id for the account.
+   * @returns The user, or `null` when no user has that identity.
+   */
+  findByIdentity(
+    environmentId: string,
+    provider: OAuthProvider,
+    subject: string
+  ): Promise<UserRecord | null>
+
+  /**
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @returns Their provider identities (never the `email` one), oldest first.
+   */
+  listIdentities(environmentId: string, userId: string): Promise<IdentityRecord[]>
+
+  /**
+   * Connect a provider account to an existing user. The unique keys are the arbiter: a provider
+   * account belongs to one user, and a user has one account per provider. Of two concurrent
+   * links of the same account exactly one is `linked`.
+   *
+   * @param identity - The identity and the user it is for.
+   * @param activity - Recorded in the same transaction, only when the identity was linked.
+   * @param guard - For an automatic link: what must still hold of the user, checked under a
+   *   lock in the same transaction, so a deletion or an email change cannot race it.
+   * @returns What happened. Never throws for a conflict.
+   */
+  linkIdentity(identity: NewIdentity, activity?: Activity, guard?: LinkGuard): Promise<LinkOutcome>
+
+  /**
+   * Disconnect a provider account from a user, unless that would leave them no way to sign in.
+   *
+   * The decision is the caller's (`allowed`), but it is asked **inside the transaction**, with
+   * the user locked and with what they would have left, so two concurrent removals cannot each
+   * count on the other's identity remaining.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param identityId - The identity to remove. Another user's, or the `email` one: `not_found`.
+   * @param allowed - Whether the user could still sign in with what remains.
+   * @param activity - Recorded in the same transaction, only when the identity was removed.
+   * @returns What happened.
+   */
+  unlinkIdentity(
+    environmentId: string,
+    userId: string,
+    identityId: string,
+    allowed: (remaining: SignInMeans) => boolean,
+    activity?: Activity
+  ): Promise<UnlinkOutcome>
+
+  /**
+   * Create a user and their email identity atomically, with a password credential when
+   * `passwordHash` is given and a provider identity when `oauthIdentity` is.
+   *
+   * @param user - The user and, optionally, their password or provider account.
    * @param activity - Recorded in the same transaction, only if the user was created.
-   * @returns `false` when the email is already taken in that environment (nothing is written).
+   * @returns `false` when the email, or the provider account, is already taken in that
+   *   environment (nothing is written).
    */
   create(user: NewUser, activity?: Activity): Promise<boolean>
 

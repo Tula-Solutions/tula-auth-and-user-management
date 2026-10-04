@@ -61,6 +61,11 @@ export const ELEMENT_NAMES = [
   'backupCodes',
   'backupCode',
   'checkbox',
+  'oauthButtons',
+  'oauthIcon',
+  'divider',
+  'identityList',
+  'identityItem',
 ] as const
 
 /**

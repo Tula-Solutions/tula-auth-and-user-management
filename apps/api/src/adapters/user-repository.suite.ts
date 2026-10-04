@@ -368,5 +368,242 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       )
       expect(await stored()).toBe('$argon2id$changed')
     })
+
+    describe('provider identities', () => {
+      const identity = (tenant: UserSuiteTenant, userId: string, overrides = {}) => ({
+        id: Bun.randomUUIDv7(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        userId,
+        provider: 'google' as const,
+        subject: `sub-${Bun.randomUUIDv7()}`,
+        createdAt: now,
+        ...overrides,
+      })
+      const anyway = () => true
+
+      test('creates a user with a provider identity and finds them by it, in their environment only', async () => {
+        const oauthIdentity = {
+          id: Bun.randomUUIDv7(),
+          provider: 'github' as const,
+          subject: '583231',
+        }
+        const input = user(ctx.a, { passwordHash: null, oauthIdentity })
+        expect(await ctx.users.create(input)).toBe(true)
+        const found = await ctx.users.findByIdentity(ctx.a.environmentId, 'github', '583231')
+        expect(found?.id).toBe(input.id)
+        expect(await ctx.users.findByIdentity(ctx.b.environmentId, 'github', '583231')).toBeNull()
+        expect(await ctx.users.findByIdentity(ctx.a.environmentId, 'google', '583231')).toBeNull()
+        // The `email` identity is never listed: only provider accounts are.
+        expect(await ctx.users.listIdentities(ctx.a.environmentId, input.id)).toEqual([
+          {
+            id: oauthIdentity.id,
+            userId: input.id,
+            provider: 'github',
+            subject: '583231',
+            createdAt: now,
+          },
+        ])
+        expect(await ctx.users.listIdentities(ctx.b.environmentId, input.id)).toEqual([])
+      })
+
+      test('a provider account that is taken creates no second user, and nothing of it is written', async () => {
+        const oauthIdentity = {
+          id: Bun.randomUUIDv7(),
+          provider: 'google' as const,
+          subject: 'taken',
+        }
+        expect(await ctx.users.create(user(ctx.a, { oauthIdentity }))).toBe(true)
+        const second = user(ctx.a, { oauthIdentity: { ...oauthIdentity, id: Bun.randomUUIDv7() } })
+        expect(await ctx.users.create(second)).toBe(false)
+        expect(await ctx.users.findById(ctx.a.environmentId, second.id)).toBeNull()
+        expect(await ctx.users.findByEmail(ctx.a.environmentId, second.emailNormalized)).toBeNull()
+        // The same account in another environment is another account.
+        expect(
+          await ctx.users.create(
+            user(ctx.b, { oauthIdentity: { ...oauthIdentity, id: Bun.randomUUIDv7() } })
+          )
+        ).toBe(true)
+      })
+
+      test('two concurrent sign-ups with one provider account: exactly one user', async () => {
+        const subject = `race-${Bun.randomUUIDv7()}`
+        const inputs = [1, 2].map(() =>
+          user(ctx.a, {
+            oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'google' as const, subject },
+          })
+        )
+        const results = await Promise.all(inputs.map((input) => ctx.users.create(input)))
+        expect(results.filter(Boolean)).toHaveLength(1)
+      })
+
+      test('links an identity to a user; the account belongs to one user and a user has one per provider', async () => {
+        const [maya, zed] = [user(ctx.a), user(ctx.a)]
+        await ctx.users.create(maya)
+        await ctx.users.create(zed)
+        const first = identity(ctx.a, maya.id)
+        expect(await ctx.users.linkIdentity(first)).toBe('linked')
+        expect(
+          (await ctx.users.findByIdentity(ctx.a.environmentId, 'google', first.subject))?.id
+        ).toBe(maya.id)
+        // The same provider account, for anyone: in use.
+        expect(
+          await ctx.users.linkIdentity(identity(ctx.a, zed.id, { subject: first.subject }))
+        ).toBe('identity_in_use')
+        expect(await ctx.users.linkIdentity({ ...first, id: Bun.randomUUIDv7() })).toBe(
+          'identity_in_use'
+        )
+        // A second account of the same provider for the same user.
+        expect(await ctx.users.linkIdentity(identity(ctx.a, maya.id))).toBe('provider_linked')
+        // Another provider is fine.
+        expect(await ctx.users.linkIdentity(identity(ctx.a, maya.id, { provider: 'github' }))).toBe(
+          'linked'
+        )
+        expect(
+          (await ctx.users.listIdentities(ctx.a.environmentId, maya.id))
+            .map((i) => i.provider)
+            .sort()
+        ).toEqual(['github', 'google'])
+        expect(await ctx.users.listIdentities(ctx.a.environmentId, zed.id)).toEqual([])
+      })
+
+      test('two concurrent links of one provider account: exactly one is linked', async () => {
+        const [maya, zed] = [user(ctx.a), user(ctx.a)]
+        await ctx.users.create(maya)
+        await ctx.users.create(zed)
+        const subject = `race-${Bun.randomUUIDv7()}`
+        const outcomes = await Promise.all(
+          [maya, zed].map((owner) => ctx.users.linkIdentity(identity(ctx.a, owner.id, { subject })))
+        )
+        expect(outcomes.sort()).toEqual(['identity_in_use', 'linked'])
+      })
+
+      test('a link is refused for a user who is gone, or in another environment', async () => {
+        const maya = user(ctx.a)
+        await ctx.users.create(maya)
+        expect(await ctx.users.linkIdentity(identity(ctx.b, maya.id))).toBe('user_changed')
+        await ctx.users.delete(ctx.a.environmentId, maya.id)
+        expect(await ctx.users.linkIdentity(identity(ctx.a, maya.id))).toBe('user_changed')
+      })
+
+      test('a guarded link needs the address to still be the user’s, and verified', async () => {
+        const verified = user(ctx.a)
+        const unverified = user(ctx.a, { emailVerifiedAt: null })
+        await ctx.users.create(verified)
+        await ctx.users.create(unverified)
+        expect(
+          await ctx.users.linkIdentity(identity(ctx.a, unverified.id), undefined, {
+            emailNormalized: unverified.emailNormalized,
+          })
+        ).toBe('user_changed')
+        expect(
+          await ctx.users.linkIdentity(identity(ctx.a, verified.id), undefined, {
+            emailNormalized: 'someone-else@northline.app',
+          })
+        ).toBe('user_changed')
+        expect(await ctx.users.listIdentities(ctx.a.environmentId, verified.id)).toEqual([])
+        expect(
+          await ctx.users.linkIdentity(identity(ctx.a, verified.id), undefined, {
+            emailNormalized: verified.emailNormalized,
+          })
+        ).toBe('linked')
+      })
+
+      test('unlinking asks the caller with what would remain, and removes only when allowed', async () => {
+        const maya = user(ctx.a, { passwordHash: null, emailVerifiedAt: null })
+        await ctx.users.create(maya)
+        const [google, github] = [
+          identity(ctx.a, maya.id),
+          identity(ctx.a, maya.id, { provider: 'github' }),
+        ]
+        await ctx.users.linkIdentity(google)
+        await ctx.users.linkIdentity(github)
+        const seen: unknown[] = []
+        const refuse = (remaining: unknown) => {
+          seen.push(remaining)
+          return false
+        }
+        expect(
+          await ctx.users.unlinkIdentity(ctx.a.environmentId, maya.id, google.id, refuse)
+        ).toBe('last_method')
+        expect(seen).toEqual([{ hasPassword: false, emailVerified: false, providers: ['github'] }])
+        expect(await ctx.users.listIdentities(ctx.a.environmentId, maya.id)).toHaveLength(2)
+        expect(
+          await ctx.users.unlinkIdentity(ctx.a.environmentId, maya.id, google.id, anyway)
+        ).toBe('unlinked')
+        expect(
+          (await ctx.users.listIdentities(ctx.a.environmentId, maya.id)).map((i) => i.id)
+        ).toEqual([github.id])
+        expect(
+          await ctx.users.findByIdentity(ctx.a.environmentId, 'google', google.subject)
+        ).toBeNull()
+      })
+
+      test('what remains counts the password and the verified address', async () => {
+        const maya = user(ctx.a)
+        await ctx.users.create(maya)
+        const google = identity(ctx.a, maya.id)
+        await ctx.users.linkIdentity(google)
+        let remaining: unknown
+        await ctx.users.unlinkIdentity(ctx.a.environmentId, maya.id, google.id, (means) => {
+          remaining = means
+          return true
+        })
+        expect(remaining).toEqual({ hasPassword: true, emailVerified: true, providers: [] })
+      })
+
+      test('unlinking an unknown identity, another user’s, or across environments is not found', async () => {
+        const [maya, zed] = [user(ctx.a), user(ctx.a)]
+        await ctx.users.create(maya)
+        await ctx.users.create(zed)
+        const google = identity(ctx.a, maya.id)
+        await ctx.users.linkIdentity(google)
+        expect(await ctx.users.unlinkIdentity(ctx.a.environmentId, zed.id, google.id, anyway)).toBe(
+          'not_found'
+        )
+        expect(
+          await ctx.users.unlinkIdentity(ctx.b.environmentId, maya.id, google.id, anyway)
+        ).toBe('not_found')
+        expect(
+          await ctx.users.unlinkIdentity(ctx.a.environmentId, maya.id, Bun.randomUUIDv7(), anyway)
+        ).toBe('not_found')
+        expect(await ctx.users.listIdentities(ctx.a.environmentId, maya.id)).toHaveLength(1)
+      })
+
+      test('two concurrent removals cannot both count on the other identity remaining', async () => {
+        const maya = user(ctx.a, { passwordHash: null })
+        await ctx.users.create(maya)
+        const [google, github] = [
+          identity(ctx.a, maya.id),
+          identity(ctx.a, maya.id, { provider: 'github' }),
+        ]
+        await ctx.users.linkIdentity(google)
+        await ctx.users.linkIdentity(github)
+        const needsOne = (remaining: { providers: unknown[] }) => remaining.providers.length > 0
+        const outcomes = await Promise.all(
+          [google, github].map((target) =>
+            ctx.users.unlinkIdentity(ctx.a.environmentId, maya.id, target.id, needsOne)
+          )
+        )
+        expect(outcomes.sort()).toEqual(['last_method', 'unlinked'])
+        expect(await ctx.users.listIdentities(ctx.a.environmentId, maya.id)).toHaveLength(1)
+      })
+
+      test('deleting a user frees their provider accounts', async () => {
+        const maya = user(ctx.a)
+        await ctx.users.create(maya)
+        const google = identity(ctx.a, maya.id)
+        await ctx.users.linkIdentity(google)
+        await ctx.users.delete(ctx.a.environmentId, maya.id)
+        expect(
+          await ctx.users.findByIdentity(ctx.a.environmentId, 'google', google.subject)
+        ).toBeNull()
+        const zed = user(ctx.a)
+        await ctx.users.create(zed)
+        expect(
+          await ctx.users.linkIdentity(identity(ctx.a, zed.id, { subject: google.subject }))
+        ).toBe('linked')
+      })
+    })
   })
 }

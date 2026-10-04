@@ -15,6 +15,7 @@ export {
 export { SignedIn, SignedOut, TulaLoading } from './components/control'
 export { EmailLinkCallback, type EmailLinkCallbackProps } from './components/email-link-callback'
 export type { FlowResult } from './components/flow-screens'
+export { OAuthCallback, type OAuthCallbackProps } from './components/oauth'
 export { SignIn, type SignInProps } from './components/sign-in'
 export { SignUp, type SignUpProps } from './components/sign-up'
 export type { HeadingLevel } from './components/ui'
@@ -28,6 +29,11 @@ export {
   useEmailLinkCallback,
 } from './hooks/use-email-link-callback'
 export type { FactorEnrolmentHookActions, FlowState } from './hooks/use-flow'
+export {
+  type OAuthCallbackStatus,
+  type UseOAuthCallbackResult,
+  useOAuthCallback,
+} from './hooks/use-oauth-callback'
 export {
   type PasswordChecklist,
   useClientConfig,

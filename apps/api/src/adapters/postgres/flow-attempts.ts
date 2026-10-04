@@ -1,11 +1,12 @@
 import type { FlowKind, FlowStatus } from '@tula/contract'
 import { type Database, flowAttempts, withTenant } from '@tula/db'
-import { and, eq, gt, inArray, isNull, lte } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm'
 import type {
   FlowAttemptChange,
   FlowAttemptRecord,
   FlowAttemptStore,
   NewFlowAttempt,
+  StateGuard,
 } from '~/ports/flow-attempt-store'
 
 const columns = {
@@ -59,7 +60,8 @@ export class PostgresFlowAttemptStore implements FlowAttemptStore {
     id: string,
     from: FlowStatus,
     change: FlowAttemptChange,
-    at: Date
+    at: Date,
+    guard?: StateGuard
   ): Promise<boolean> {
     // One guarded UPDATE: the row lock makes concurrent transitions from one step exclusive.
     const rows = await withTenant(this.db, environmentId, (tx) =>
@@ -69,6 +71,7 @@ export class PostgresFlowAttemptStore implements FlowAttemptStore {
           status: change.status,
           ...(change.userId !== undefined && { userId: change.userId }),
           ...(change.state !== undefined && { state: change.state }),
+          ...(change.secretHash !== undefined && { secretHash: change.secretHash }),
           completedAt: change.completedAt ?? null,
           updatedAt: at,
         })
@@ -78,7 +81,8 @@ export class PostgresFlowAttemptStore implements FlowAttemptStore {
             eq(flowAttempts.environmentId, environmentId),
             eq(flowAttempts.status, from),
             isNull(flowAttempts.completedAt),
-            gt(flowAttempts.expiresAt, at)
+            gt(flowAttempts.expiresAt, at),
+            guard ? sql`${flowAttempts.state}->>${guard.key} = ${guard.value}` : undefined
           )
         )
         .returning({ id: flowAttempts.id })

@@ -1,8 +1,10 @@
 import { join, normalize } from 'node:path'
 import { FixedClock } from '../apps/api/src/adapters/memory/clock'
 import { MemoryRateLimiter } from '../apps/api/src/adapters/memory/rate-limiter'
+import { mockOAuthProviders } from '../apps/api/src/adapters/oauth/mock'
 import { createApp, MAX_BODY_BYTES } from '../apps/api/src/index'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
+import * as OAuth from '../apps/api/src/modules/oauth/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '../apps/api/src/testing'
 import {
@@ -76,7 +78,17 @@ const rateLimiter = new ResettableRateLimiter(clock)
 const deps = createTestDeps({
   clock,
   rateLimiter: rateLimiter as unknown as MemoryRateLimiter,
-  config: { ...TEST_CONFIG, publicUrl: `http://localhost:${API_PORT}` },
+  // OAuth runs against the API's own mock provider (ADR 0026), as a local deployment with
+  // `OAUTH_MOCK_PROVIDER=true` does: the real callback, ticket and exchange, and a consent page
+  // the tests fill in.
+  config: { ...TEST_CONFIG, publicUrl: `http://localhost:${API_PORT}`, oauthMock: true },
+})
+Object.assign(deps, {
+  oauth: mockOAuthProviders({
+    secretBox: deps.secretBox,
+    clock,
+    publicUrl: `http://localhost:${API_PORT}`,
+  }),
 })
 deps.environments.add({
   id: TEST_TENANT.environmentId,
@@ -120,6 +132,54 @@ async function replaceSettings(request: Request): Promise<Response> {
 }
 
 /** Test-only routes, next to the API's own. Reached by the test runner, never by the page. */
+/**
+ * Create an account whose address was never verified, as an administrator can
+ * (`POST /v1/admin/users`): what an OAuth sign-in must never be linked into.
+ */
+async function createUnverifiedUser(body: unknown): Promise<Response> {
+  const email = String((body as { email?: unknown }).email ?? '')
+  const now = clock.now()
+  const created = await deps.users.create({
+    id: deps.ids.next(),
+    projectId: TEST_TENANT.projectId,
+    environmentId: TEST_TENANT.environmentId,
+    email,
+    emailNormalized: email.toLowerCase(),
+    emailVerifiedAt: null,
+    firstName: null,
+    lastName: null,
+    createdAt: now,
+    identityId: deps.ids.next(),
+    credentialId: deps.ids.next(),
+    passwordHash: null,
+  })
+  return json({ ok: created }, created ? 200 : 409)
+}
+
+/** Enable exactly the named OAuth providers for the environment (none by default). */
+async function enableProviders(body: unknown): Promise<Response> {
+  const wanted = (body as { providers?: unknown }).providers
+  if (!Array.isArray(wanted)) {
+    return json({ error: 'providers must be a list' }, 422)
+  }
+  const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+  const actor = { type: 'system', id: null, ipAddress: null, userAgent: null } as const
+  for (const provider of ['google', 'github'] as const) {
+    if (wanted.includes(provider)) {
+      await OAuth.update(
+        deps,
+        tenant,
+        provider,
+        { clientId: `e2e-${provider}`, clientSecret: 'e2e-client-secret', enabled: true },
+        actor
+      )
+    } else if (await deps.oauthProviders.find(tenant.environmentId, provider)) {
+      await deps.oauthProviders.delete(tenant.environmentId, provider)
+    }
+  }
+  return json({ ok: true })
+}
+
 function testRoute(request: Request): Response | Promise<Response> | null {
   const url = new URL(request.url)
   if (!url.pathname.startsWith('/__test/')) {
@@ -143,6 +203,12 @@ function testRoute(request: Request): Response | Promise<Response> | null {
   }
   if (request.method === 'POST' && url.pathname === '/__test/settings') {
     return replaceSettings(request)
+  }
+  if (request.method === 'POST' && url.pathname === '/__test/unverified-user') {
+    return request.json().then(createUnverifiedUser)
+  }
+  if (request.method === 'POST' && url.pathname === '/__test/oauth') {
+    return request.json().then(enableProviders)
   }
   if (request.method === 'GET' && url.pathname === '/__test/now') {
     // What the API takes the time to be: an authenticator code is computed from it.

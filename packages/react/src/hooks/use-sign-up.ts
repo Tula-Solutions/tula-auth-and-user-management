@@ -66,7 +66,13 @@ export interface UseSignUpResult extends FlowState, FactorEnrolmentHookActions {
  */
 export function useSignUp(): UseSignUpResult {
   const { client } = useTulaContext()
-  const { start: begin, act, watch: _watch, ...state } = useFlowController<SignUpFlow>()
+  const {
+    start: begin,
+    act,
+    watch: _watch,
+    adopt: _adopt,
+    ...state
+  } = useFlowController<SignUpFlow>()
   const start = useCallback(
     (input: { email: string; password?: string; firstName?: string; lastName?: string }) =>
       begin(() => client.signUp.start(input)),

@@ -15,6 +15,8 @@ import type { IdGenerator } from '~/ports/id-generator'
 import type { JobLock } from '~/ports/job-lock'
 import type { Lockout } from '~/ports/lockout'
 import type { Mailer } from '~/ports/mailer'
+import type { OAuthProviders } from '~/ports/oauth-provider'
+import type { OAuthProviderStore } from '~/ports/oauth-provider-store'
 import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
 import type { SessionStore } from '~/ports/session-store'
@@ -39,6 +41,12 @@ export interface AppConfig {
    * settings. Read the policy that applies through `Passwords.policy`, never from here.
    */
   passwordPolicy: PasswordPolicy
+  /**
+   * Every OAuth provider is served by the built-in mock provider, and its consent page is
+   * mounted (`OAUTH_MOCK_PROVIDER`). Only ever `true` in the `local` tier: `env.ts` refuses to
+   * boot with it anywhere else. A development and test aid (ADR 0026).
+   */
+  oauthMock: boolean
 }
 
 /**
@@ -60,6 +68,10 @@ export interface Deps {
   /** Second factors (authenticator apps) and backup codes. */
   factors: FactorStore
   flowAttempts: FlowAttemptStore
+  /** Each environment's own OAuth credentials (sealed). */
+  oauthProviders: OAuthProviderStore
+  /** The protocol adapter of each OAuth provider. */
+  oauth: OAuthProviders
   /** Reads the audit log. Activity is written by the stores, with the change it records. */
   activityLog: ActivityLog
   /** Revoked session ids whose access tokens may still be unexpired. */

@@ -3,6 +3,7 @@ import type {
   EnvironmentSettings,
   FactorEnrolmentMethod,
   FirstFactorStrategy,
+  OAuthProvider,
   SecondFactorMethod,
   SignInMethod,
 } from '@tula/contract'
@@ -14,8 +15,11 @@ import * as Settings from '~/modules/settings/service'
 /** One way to prove who you are first, and the setting that switches it on. */
 interface FirstFactor {
   strategy: FirstFactorStrategy
-  /** Whether the environment offers it. Reads settings only: never anything about a user. */
-  enabled: (settings: EnvironmentSettings) => boolean
+  /**
+   * Whether the environment offers it. Reads the environment's settings and its enabled OAuth
+   * providers only: never anything about a user.
+   */
+  enabled: (settings: EnvironmentSettings, providers: readonly OAuthProvider[]) => boolean
 }
 
 /**
@@ -24,12 +28,16 @@ interface FirstFactor {
  * **The one place a sign-in method is registered.** Adding a method (OAuth, passkeys: steps 1.9
  * and 1.10) means adding an entry here and the route that proves it; the transition function
  * does not change. The email strategies (ADR 0024) are proven through
- * `sign-ins/:attemptId/first-factor/*`.
+ * `sign-ins/:attemptId/first-factor/*`; an OAuth provider (ADR 0026) through an attempt of its
+ * own (`sign-ins/oauth`, the provider's callback, `sign-ins/oauth/exchange`).
  */
 const FIRST_FACTORS: readonly FirstFactor[] = [
   { strategy: 'password', enabled: (settings) => settings.signIn.methods.password.enabled },
   { strategy: 'email_code', enabled: (settings) => settings.signIn.methods.emailCode.enabled },
   { strategy: 'email_link', enabled: (settings) => settings.signIn.methods.emailLink.enabled },
+  { strategy: 'oauth_google', enabled: (_settings, providers) => providers.includes('google') },
+  { strategy: 'oauth_github', enabled: (_settings, providers) => providers.includes('github') },
+  { strategy: 'oauth_apple', enabled: (_settings, providers) => providers.includes('apple') },
 ]
 
 /**
@@ -49,6 +57,7 @@ export const EMAIL_FACTOR_METHODS = {
  * depended on the account would tell a stranger whether an address has a password or a passkey.
  *
  * @param settings - The environment's settings.
+ * @param providers - The OAuth providers the environment has enabled (`OAuth.enabledProviders`).
  * @returns The enabled strategies, in registry order. Empty when every method is switched off.
  *
  * @example
@@ -56,8 +65,13 @@ export const EMAIL_FACTOR_METHODS = {
  * Factors.firstFactors(await Settings.current(deps, tenant)) // ['password']
  * ```
  */
-export function firstFactors(settings: EnvironmentSettings): FirstFactorStrategy[] {
-  return FIRST_FACTORS.filter((factor) => factor.enabled(settings)).map((factor) => factor.strategy)
+export function firstFactors(
+  settings: EnvironmentSettings,
+  providers: readonly OAuthProvider[] = []
+): FirstFactorStrategy[] {
+  return FIRST_FACTORS.filter((factor) => factor.enabled(settings, providers)).map(
+    (factor) => factor.strategy
+  )
 }
 
 /**

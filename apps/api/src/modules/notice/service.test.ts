@@ -687,7 +687,7 @@ describe('two-step verification notice', () => {
 
   test('nothing is sent when the environment has the notice switched off; the others are their own', async () => {
     const { userId } = await registered()
-    settings({ mfaChanged: false })
+    settings({ mfaChanged: false, identityChanged: true })
     notify({ change: 'enabled', at })
     notify({ change: 'admin_reset', at })
     expect(await mfaMail()).toEqual([])

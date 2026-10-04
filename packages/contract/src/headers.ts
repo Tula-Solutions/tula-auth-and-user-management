@@ -74,3 +74,30 @@ export const EMAIL_LINK_TOKEN_PARAM = 'tula_link'
  * ```
  */
 export const EMAIL_LINK_ATTEMPT_PARAM = 'tula_attempt'
+
+/**
+ * Name of the URL-fragment parameter carrying the single-use ticket an OAuth sign-in returns to
+ * the app's page with (ADR 0026).
+ *
+ * The API redirects to the app's URL followed by `#tula_ticket=<ticket>&tula_attempt=<attempt
+ * id>`. The page's script removes the fragment from the address and posts the ticket, with the
+ * binding its browser kept, to `/v1/client/sign-ins/oauth/exchange`. The ticket is not a token:
+ * it lasts a minute, works once, and only together with that binding.
+ *
+ * @example
+ * ```ts
+ * const ticket = new URLSearchParams(location.hash.slice(1)).get(OAUTH_TICKET_PARAM)
+ * ```
+ */
+export const OAUTH_TICKET_PARAM = 'tula_ticket'
+
+/**
+ * Name of the URL-fragment parameter carrying the contract error code of an OAuth sign-in that
+ * failed before a ticket was issued (the user cancelled, the provider failed).
+ *
+ * @example
+ * ```ts
+ * const code = new URLSearchParams(location.hash.slice(1)).get(OAUTH_ERROR_PARAM)
+ * ```
+ */
+export const OAUTH_ERROR_PARAM = 'tula_error'

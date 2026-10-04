@@ -36,6 +36,7 @@ describe('createContainer', () => {
       corsOrigins: ['https://app.test'],
       trustProxy: true,
       passwordPolicy: PASSWORD_POLICY_PRESETS.strict,
+      oauthMock: false,
     })
     expect(deps.breachChecker).toBeInstanceOf(HibpBreachChecker)
     expect(deps.mailer).toBeInstanceOf(SmtpMailer)

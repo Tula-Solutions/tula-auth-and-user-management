@@ -343,6 +343,8 @@ export interface FakePage extends PageLike {
   current: string
   /** Every address `replaceUrl` was given. */
   replaced: string[]
+  /** Every URL the page was sent to (`assign`), oldest first. */
+  assigned: string[]
 }
 
 /**
@@ -353,6 +355,10 @@ export function fakePage(url: string): FakePage {
   const page: FakePage = {
     current: url,
     replaced: [],
+    assigned: [],
+    assign(next) {
+      page.assigned.push(next)
+    },
     url: () => page.current,
     replaceUrl(next) {
       page.replaced.push(next)
@@ -410,6 +416,7 @@ export function fakeEnvironment(
     locks?: LockManagerLike
     hub?: FakeChannelHub
     linkStorage?: LinkStorageLike
+    tabStorage?: LinkStorageLike
     page?: PageLike
     timers?: FakeTimers
   } = {}
@@ -420,6 +427,7 @@ export function fakeEnvironment(
     locks: parts.locks,
     createChannel: hub ? (name) => hub.createChannel(name) : undefined,
     linkStorage: parts.linkStorage,
+    tabStorage: parts.tabStorage,
     page: parts.page,
     setTimer:
       parts.timers?.setTimer ??

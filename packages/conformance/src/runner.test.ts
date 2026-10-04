@@ -1053,3 +1053,217 @@ describe('headers and whole values', () => {
     expect(problems.join(' ')).not.toContain('tula_rt_opaque')
   })
 })
+
+describe('oauth steps', () => {
+  const AUTHORIZE =
+    'http://localhost:3003/v1/dev/oauth/authorize?provider=google&state=the-state&nonce=n&client_id=c'
+  const CALLBACK = 'http://localhost:3003/v1/oauth/callback/google?state=the-state&code=the-code'
+  const APP = 'http://localhost:5174/oauth/callback'
+
+  /** A server that plays the mock provider's consent endpoint and the API's callback. */
+  function oauthTarget(answers: {
+    consent?: { status: number; location?: string }
+    callback?: { status: number; location?: string }
+  }) {
+    const hops: { method: string; path: string; body: string; redirect: string; origin: string }[] =
+      []
+    const { target } = fakeTarget(() => ({ status: 200 }), {
+      fetch: async (request) => {
+        const path = request.url.replace('http://tula.test', '')
+        hops.push({
+          method: request.method,
+          path,
+          body: await request.text(),
+          redirect: request.redirect,
+          origin: request.headers.get('x-forwarded-for') ?? '',
+        })
+        if (path.startsWith('/v1/client')) {
+          return new Response(null, { status: 200 })
+        }
+        const answer = path.startsWith('/v1/dev/oauth')
+          ? (answers.consent ?? { status: 302, location: CALLBACK })
+          : (answers.callback ?? {
+              status: 303,
+              location: `${APP}#tula_ticket=tula_ot_abc&tula_attempt=attempt-1`,
+            })
+        return new Response(null, {
+          status: answer.status,
+          headers: answer.location ? { location: answer.location } : {},
+        })
+      },
+    })
+    return { target, hops }
+  }
+
+  const steps = (oauth: object, then: unknown[] = []) =>
+    scenario([{ name: 'provider', oauth: { authorizationUrl: AUTHORIZE, ...oauth } }, ...then])
+
+  test('posts the consent form to the target, follows the provider to the callback, and captures the fragment', async () => {
+    const { target, hops } = oauthTarget({})
+    const result = await runScenario(
+      steps(
+        {
+          email: 'maya@example.com',
+          subject: 'acct-1',
+          unverified: true,
+          captureTicket: 'ticket',
+          captureAttempt: 'attempt',
+          captureCallback: 'callback',
+        },
+        [
+          {
+            name: 'exchange',
+            request: {
+              method: 'POST',
+              path: '/v1/client/sign-ins/oauth/exchange',
+              body: { ticket: '{{ticket}}', attemptId: '{{attempt}}', replay: '{{callback}}' },
+            },
+            expect: { status: 200 },
+          },
+        ]
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(hops[0]).toMatchObject({
+      method: 'POST',
+      path: '/v1/dev/oauth/authorize',
+      redirect: 'manual',
+    })
+    expect(Object.fromEntries(new URLSearchParams(hops[0]?.body))).toEqual({
+      provider: 'google',
+      state: 'the-state',
+      nonce: 'n',
+      client_id: 'c',
+      email: 'maya@example.com',
+      subject: 'acct-1',
+      action: 'allow',
+      unverified: '1',
+    })
+    // The callback is asked on the target, whatever host the server put in the URL.
+    expect(hops[1]).toMatchObject({
+      method: 'GET',
+      path: '/v1/oauth/callback/google?state=the-state&code=the-code',
+      redirect: 'manual',
+    })
+    expect(hops[1]?.origin).toBe(hops[0]?.origin)
+    expect(JSON.parse(hops[2]?.body ?? '{}')).toEqual({
+      ticket: 'tula_ot_abc',
+      attemptId: 'attempt-1',
+      replay: '/v1/oauth/callback/google?state=the-state&code=the-code',
+    })
+  })
+
+  test('replays a captured callback without visiting the provider, and checks the error it sends', async () => {
+    const { target, hops } = oauthTarget({
+      callback: { status: 303, location: `${APP}#tula_error=oauth.state_invalid&tula_attempt=a` },
+    })
+    const replay = scenario([
+      {
+        name: 'replay',
+        oauth: {
+          callback: '/v1/oauth/callback/google?state=s&code=c',
+          expectError: 'oauth.state_invalid',
+        },
+      },
+    ])
+    expect((await runScenario(replay, target)).status).toBe('passed')
+    expect(hops.map((hop) => hop.path)).toEqual(['/v1/oauth/callback/google?state=s&code=c'])
+  })
+
+  test('a cancelled consent is posted as a denial', async () => {
+    const { target, hops } = oauthTarget({
+      callback: { status: 303, location: `${APP}#tula_error=oauth.access_denied&tula_attempt=a` },
+    })
+    const result = await runScenario(
+      steps({ deny: true, expectError: 'oauth.access_denied' }),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(new URLSearchParams(hops[0]?.body).get('action')).toBe('deny')
+  })
+
+  test.each([
+    [
+      'the consent endpoint does not redirect',
+      { consent: { status: 404 } },
+      { captureTicket: 't' },
+      "the provider's consent endpoint answered 404 without a redirect (is OAUTH_MOCK_PROVIDER on?)",
+    ],
+    [
+      'the callback answers a page',
+      { callback: { status: 400 } },
+      { captureTicket: 't' },
+      'the callback answered 400, not a redirect with a fragment',
+    ],
+    [
+      'the callback redirects without a fragment',
+      { callback: { status: 303, location: APP } },
+      { captureTicket: 't' },
+      'the callback answered 303, not a redirect with a fragment',
+    ],
+    [
+      'the callback puts something in the query',
+      { callback: { status: 303, location: `${APP}?ticket=x#tula_ticket=x` } },
+      { captureTicket: 't' },
+      'the callback put something in the query of the app’s URL',
+    ],
+    [
+      'an error arrives where a ticket was expected',
+      { callback: { status: 303, location: `${APP}#tula_error=oauth.provider_error` } },
+      { captureTicket: 't' },
+      'the callback sent no ticket (error: oauth.provider_error)',
+    ],
+    [
+      'nothing arrives where a ticket was expected',
+      { callback: { status: 303, location: `${APP}#x=1` } },
+      { captureTicket: 't' },
+      'the callback sent no ticket (error: none)',
+    ],
+    [
+      'a ticket arrives where an error was expected',
+      {},
+      { expectError: 'oauth.state_invalid' },
+      'expected the callback to send the error oauth.state_invalid, got a ticket',
+    ],
+    [
+      'another error arrives',
+      { callback: { status: 303, location: `${APP}#tula_error=oauth.provider_error` } },
+      { expectError: 'oauth.state_invalid' },
+      'expected the callback to send the error oauth.state_invalid, got oauth.provider_error',
+    ],
+    [
+      'nothing arrives where an error was expected',
+      { callback: { status: 303, location: `${APP}#x=1` } },
+      { expectError: 'oauth.state_invalid' },
+      'expected the callback to send the error oauth.state_invalid, got nothing',
+    ],
+  ] as [string, Parameters<typeof oauthTarget>[0], object, string][])(
+    'fails when %s',
+    async (_name, answers, oauth, problem) => {
+      const { target } = oauthTarget(answers)
+      const result = await runScenario(steps(oauth), target)
+      expect(result.status).toBe('failed')
+      expect(result.steps[0]?.problems).toEqual([problem])
+    }
+  )
+
+  test('an attempt id that is missing is captured as empty, and a step needs exactly one source', async () => {
+    const { target } = oauthTarget({ callback: { status: 303, location: `${APP}#tula_ticket=t` } })
+    const result = await runScenario(
+      steps({ captureAttempt: 'attempt' }, [
+        {
+          name: 'use',
+          request: { method: 'GET', path: '/v1/x?a={{attempt}}' },
+          expect: { status: 303 },
+        },
+      ]),
+      target
+    )
+    expect(result.status).toBe('passed')
+    const both = { name: 'x', oauth: { authorizationUrl: AUTHORIZE, callback: '/cb' } }
+    expect(() => scenario([both])).toThrow()
+    expect(() => scenario([{ name: 'x', oauth: {} }])).toThrow()
+    expect(() => scenario([{ name: 'x', oauth: { callback: '/cb', code: 'x' } }])).toThrow()
+  })
+})

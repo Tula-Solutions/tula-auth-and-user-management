@@ -9,9 +9,11 @@ import { join } from 'node:path'
  * in the operation table, the flow and `mfa` actions, their response guards and step-up).
  * The budget was raised from 11 kB to 12 kB with that step, which had left twelve bytes of
  * room: enough for fixes, and still far below what a dependency dragging a library in costs,
- * which is what this test exists to catch.
+ * which is what this test exists to catch. OAuth (ADR 0026) added about 1.5 kB (six routes, the
+ * tab-scoped binding store, the callback handler and eleven error messages), to 12.5 kB, and
+ * the budget moved from 12 kB to 13 kB.
  */
-const GZIP_BUDGET_BYTES = 12_000
+const GZIP_BUDGET_BYTES = 13_000
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

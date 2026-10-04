@@ -11,6 +11,14 @@ import {
   type FlowAttempt,
   type FlowKind,
   type FlowStep,
+  type Identity,
+  type IdentityLinkStart,
+  OAUTH_ERROR_PARAM,
+  OAUTH_TICKET_PARAM,
+  type OAuthExchangeRequest,
+  type OAuthProvider,
+  OAuthProviderSchema,
+  type OAuthStartRequest,
   type PasswordResetRequest,
   type PasswordResetStartRequest,
   type SecondFactorMethod,
@@ -25,7 +33,7 @@ import {
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, InvalidEmailError, RateLimitError, ValidationError } from '~/exceptions'
-import { cleanOrigin, systemActor } from '~/lib/actor'
+import { type Actor, cleanOrigin, systemActor } from '~/lib/actor'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
@@ -33,6 +41,7 @@ import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
+import * as OAuth from '~/modules/oauth/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
@@ -40,6 +49,7 @@ import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
+import { OAuthProviderError } from '~/ports/oauth-provider'
 import type { UserRecord } from '~/ports/user-repository'
 import { sendAccountExistsNotice, sendNoAccountNotice, sendNoAccountSignInNotice } from './mailer'
 import { assertAccepts, nextStatus } from './transitions'
@@ -53,6 +63,15 @@ export const ATTEMPT_SECRET_PREFIX = 'tula_at_'
  * asked for it. Recognisable, and unmistakably not a token: on its own it authorizes nothing.
  */
 export const LINK_BINDING_PREFIX = 'tula_lb_'
+/**
+ * Prefix of an OAuth binding: the value that ties a provider's answer to the browser that
+ * started the sign-in. Like a link binding it is not a token: alone it authorizes nothing.
+ */
+export const OAUTH_BINDING_PREFIX = 'tula_ob_'
+/** Prefix of the single-use ticket an OAuth callback hands to the app's page. */
+export const OAUTH_TICKET_PREFIX = 'tula_ot_'
+/** How long an OAuth ticket can be exchanged. Long enough for one redirect, no longer. */
+export const OAUTH_TICKET_TTL = '60s'
 // Stands in for the stored hash of an attempt that does not exist or has none. Not hex, so no
 // SHA-256 digest can ever equal it.
 const NO_SECRET_HASH = 'x'.repeat(64)
@@ -68,6 +87,7 @@ export const ENVIRONMENT_RATE_LIMITS = {
   emailSignIn: 600,
   password: 3_000,
   verify: 3_000,
+  oauth: 3_000,
 } as const
 
 type CeilingStep = keyof typeof ENVIRONMENT_RATE_LIMITS
@@ -224,6 +244,48 @@ const StateSchema = z.object({
    * session's `authMethods` when the attempt completes.
    */
   amr: z.array(z.string()).optional(),
+  /**
+   * Where an OAuth attempt is in its round trip (ADR 0026). Top-level, because each move is a
+   * compare-and-set on it (`StateGuard`): the attempt's `status` stays `needs_first_factor`
+   * from the start until the ticket is exchanged, so the status alone could not make a state or
+   * a ticket single-use.
+   *
+   * `started` (the user is at the provider) → `returned` (the callback consumed the state) →
+   * `proven` (the provider vouched; a ticket is out) → `exchanged` (the ticket was used).
+   */
+  oauthPhase: z.enum(['started', 'returned', 'proven', 'exchanged']).optional(),
+  /** What an OAuth attempt keeps server-side. None of it is ever sent to a client. */
+  oauth: z
+    .object({
+      provider: OAuthProviderSchema,
+      /** `sign_in` also creates the account; `link` connects the identity to a signed-in user. */
+      intent: z.enum(['sign_in', 'link']),
+      /** The app's page the callback redirects to. Checked against the allow-list at the start. */
+      redirectUrl: z.string(),
+      /** SHA-256 of the `state` parameter. */
+      stateHash: z.string(),
+      /** PKCE verifier and OIDC nonce: needed once, for the code exchange. */
+      codeVerifier: z.string().optional(),
+      nonce: z.string().optional(),
+      /** SHA-256 of the binding the starting browser was given. */
+      bindingHash: z.string(),
+      /** For `link`: the signed-in user the attempt was started by. */
+      linkUserId: z.string().optional(),
+      /** SHA-256 of the ticket, and when it stops being accepted (epoch milliseconds). */
+      ticketHash: z.string().optional(),
+      ticketExpiresAt: z.number().optional(),
+      /** What the provider vouched for, kept from the callback until the exchange. */
+      profile: z
+        .object({
+          subject: z.string(),
+          email: z.string().nullable(),
+          emailVerified: z.boolean(),
+          givenName: z.string().optional(),
+          familyName: z.string().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 })
 type State = z.infer<typeof StateSchema>
 
@@ -355,12 +417,14 @@ async function start(
   input: Pick<FlowAttemptRecord, 'kind' | 'status' | 'identifier'> & {
     state: State
     userId?: string
+    /** An id chosen by the caller, when the state has to name the attempt before it exists. */
+    id?: string
   }
 ): Promise<{ attempt: FlowAttemptRecord; secret: string }> {
   const now = deps.clock.now()
   const secret = `${ATTEMPT_SECRET_PREFIX}${randomToken()}`
   const attempt: FlowAttemptRecord = {
-    id: deps.ids.next(),
+    id: input.id ?? deps.ids.next(),
     projectId: tenant.projectId,
     environmentId: tenant.environmentId,
     userId: null,
@@ -687,13 +751,19 @@ async function issueCode(
  *   or `request.origin_not_allowed` for a browser attempt from an origin it does not allow.
  */
 export async function signIn(
-  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config'>,
+  deps: Pick<
+    Deps,
+    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'oauthProviders'
+  >,
   tenant: Tenant,
   input: SignInStartRequest,
   context: ClientContext
 ): Promise<FlowResult> {
   requireAllowedOrigin(context.client, context)
-  const strategies = Factors.firstFactors(await Settings.current(deps, tenant))
+  const strategies = Factors.firstFactors(
+    await Settings.current(deps, tenant),
+    await OAuth.enabledProviders(deps, tenant)
+  )
   if (strategies.length === 0) {
     throw new AuthError('auth.method_disabled')
   }
@@ -1142,6 +1212,521 @@ export async function verifyEmailLink(
     throw new AuthError('verification.expired')
   }
   return { status: 'verified' }
+}
+
+/** The parts of an OAuth `state`: which environment and attempt it belongs to. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * The fragment an OAuth callback sends the app's page.
+ *
+ * In the fragment, never the query: a fragment is not sent to the app's server, to a proxy or
+ * in `Referer`.
+ */
+function oauthRedirect(redirectUrl: string, attemptId: string, name: string, value: string) {
+  return `${redirectUrl}#${name}=${encodeURIComponent(value)}&${EMAIL_LINK_ATTEMPT_PARAM}=${attemptId}`
+}
+
+/** What starting an OAuth attempt answers, before a router shapes it. */
+export interface OAuthStartResult {
+  attempt: FlowAttempt
+  authorizationUrl: string
+  /** Returned once. Only its SHA-256 is kept. */
+  binding: string
+}
+
+/**
+ * Start "continue with a provider" (ADR 0026): a sign-in that creates the account when the
+ * provider's verified address has none, or (with `link`) connecting a provider account to the
+ * signed-in user.
+ *
+ * Nothing is looked up about any user. The answer depends on the environment alone: the
+ * provider must be enabled (`auth.method_disabled` otherwise) and `redirectUrl` must be,
+ * exactly, one of its `urls.allowedRedirectUrls` (`request.redirect_not_allowed`).
+ *
+ * Kept on the attempt, server-side: the hash of `state` (random, single use: the only link
+ * between the provider's answer and this attempt), the PKCE verifier and the OIDC nonce. The
+ * client receives the provider's URL, which carries `state`, the PKCE challenge and the nonce
+ * as the standard parameters, and a **binding**: 256 random bits, returned once, whose hash is
+ * kept. The provider's answer is honoured only together with it ({@link exchangeOAuth}), so a
+ * callback fed to another browser completes nothing there (login CSRF).
+ *
+ * The attempt is a sign-in on `needs_first_factor` offering only the provider's strategy: no
+ * password or emailed code is accepted on it.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param input - The provider and the app's page to return to.
+ * @param context - The requesting device.
+ * @param link - For connecting from a profile: the signed-in user.
+ * @returns The attempt (with its secret), the provider's URL and the binding.
+ * @throws AuthError `request.origin_not_allowed`, `auth.method_disabled` or
+ *   `request.redirect_not_allowed`.
+ * @throws RateLimitError when the environment's ceiling is reached.
+ */
+export async function startOAuth(
+  deps: Deps,
+  tenant: Tenant,
+  input: OAuthStartRequest,
+  context: ClientContext,
+  link?: { userId: string }
+): Promise<OAuthStartResult & { client: SessionClient }> {
+  requireAllowedOrigin(context.client, context)
+  const { provider } = input
+  const credentials = await OAuth.credentials(deps, tenant, provider)
+  const redirectUrl = await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl)
+  await chargeEnvironment(deps, tenant, 'oauth')
+
+  const id = deps.ids.next()
+  // The callback has no API key to say which environment it is for, so the state names the
+  // environment and the attempt; the random part is what makes it unguessable.
+  const oauthState = `${tenant.environmentId}.${id}.${randomToken()}`
+  const codeVerifier = randomToken()
+  const nonce = randomToken()
+  const binding = `${OAUTH_BINDING_PREFIX}${randomToken()}`
+  const state: State = {
+    client: context.client,
+    strategies: [OAuth.strategyOf(provider)],
+    oauthPhase: 'started',
+    oauth: {
+      provider,
+      intent: link ? 'link' : 'sign_in',
+      redirectUrl,
+      stateHash: sha256Hex(oauthState),
+      codeVerifier,
+      nonce,
+      bindingHash: sha256Hex(binding),
+      ...(link && { linkUserId: link.userId }),
+    },
+  }
+  const { attempt, secret } = await start(deps, tenant, {
+    id,
+    kind: 'sign_in',
+    status: 'needs_first_factor',
+    // An OAuth attempt has no identifier: who it is for is what the provider will say.
+    identifier: `oauth:${provider}`,
+    state,
+  })
+  const authorizationUrl = deps.oauth[provider].authorizationUrl(credentials, {
+    state: oauthState,
+    codeVerifier,
+    nonce,
+    redirectUri: OAuth.callbackUrl(deps.config, provider),
+  })
+  return {
+    attempt: toAttempt(attempt, stepFor(attempt, state), secret),
+    authorizationUrl,
+    binding,
+    client: state.client,
+  }
+}
+
+/**
+ * Start connecting a provider account to the signed-in user (ADR 0026).
+ *
+ * The same attempt as a sign-in's, bound to the user who asked: the callback and
+ * {@link exchangeOAuthLink} then connect the identity to **that** user, whatever email the
+ * provider reports. The attempt's secret is not returned: nothing is ever done with it.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment.
+ * @param userId - The signed-in user.
+ * @param input - The provider and the app's page to return to.
+ * @param context - The requesting device.
+ * @returns The attempt's id and expiry, the provider's URL and the binding.
+ * @throws AuthError as {@link startOAuth}.
+ */
+export async function startOAuthLink(
+  deps: Deps,
+  tenant: Tenant,
+  userId: string,
+  input: OAuthStartRequest,
+  context: ClientContext
+): Promise<IdentityLinkStart> {
+  const started = await startOAuth(deps, tenant, input, context, { userId })
+  return {
+    attemptId: started.attempt.id,
+    expiresAt: started.attempt.expiresAt,
+    authorizationUrl: started.authorizationUrl,
+    binding: started.binding,
+  }
+}
+
+/** What the provider sent to the callback: a query for most, a form post for Apple. */
+export interface OAuthCallbackInput {
+  state?: string
+  code?: string
+  /** An OAuth error code (`access_denied`, …). Only compared with known values, never shown. */
+  error?: string
+  /** Apple's unsigned `user` field. */
+  user?: string
+}
+
+/** Where the callback sends the browser: back to the app, or to a static page. */
+export type OAuthCallbackResult = { redirectTo: string } | { invalid: true }
+
+/**
+ * Handle a provider's answer (`GET`/`POST /v1/oauth/callback/:provider`).
+ *
+ * This request is cross-site by nature and carries no API key and no cookie. **`state` is the
+ * only thing that links it to an attempt**, and it is single use: it is consumed (a
+ * compare-and-set on the attempt's phase) before the code is exchanged, so a replayed callback
+ * finds nothing to do whether the first one succeeded or not.
+ *
+ * It sets no cookie, creates no session and returns no tokens. It exchanges the code with the
+ * verifier the attempt stored, has the adapter verify the provider's answer (for OIDC: the ID
+ * token's signature, issuer, audience, expiry and nonce), records **on the attempt** what the
+ * provider vouched for, and sends the browser to the attempt's allow-listed `redirectUrl` with a
+ * single-use, {@link OAUTH_TICKET_TTL} ticket in the URL **fragment**, or with a contract error
+ * code there. Which account that is, and whether to create or connect one, is decided only when
+ * the ticket is exchanged by the browser that holds the binding.
+ *
+ * Nothing the provider sent is ever reflected: the answer is a redirect to a URL the
+ * environment allows, or (when the state matches no attempt, so there is no such URL) a static
+ * page. Provider failures are logged by kind only and reach the app as one of
+ * `oauth.access_denied`, `oauth.provider_error`, `oauth.state_invalid`, `auth.method_disabled`
+ * or `rate_limited`.
+ *
+ * @param deps - All dependencies.
+ * @param provider - The provider named in the callback's path.
+ * @param input - What the provider sent.
+ * @returns Where to send the browser.
+ */
+export async function oauthCallback(
+  deps: Deps,
+  provider: OAuthProvider,
+  input: OAuthCallbackInput
+): Promise<OAuthCallbackResult> {
+  const [environmentId, attemptId, random] = (input.state ?? '').split('.')
+  if (
+    !environmentId ||
+    !attemptId ||
+    !random ||
+    !UUID.test(environmentId) ||
+    !UUID.test(attemptId)
+  ) {
+    return { invalid: true }
+  }
+  const attempt = await deps.flowAttempts.findById(environmentId, attemptId)
+  const parsed = attempt ? StateSchema.safeParse(attempt.state) : null
+  const state = parsed?.success ? parsed.data : null
+  // Compared in constant time, and compared even when there is nothing to compare with.
+  const known = timingSafeEqual(
+    sha256Hex(input.state ?? ''),
+    state?.oauth?.stateHash ?? NO_SECRET_HASH
+  )
+  if (!attempt || !state?.oauth || !known || state.oauth.provider !== provider) {
+    return { invalid: true }
+  }
+  const { oauth } = state
+  const tenant: Tenant = { projectId: attempt.projectId, environmentId, apiKeyId: '' }
+  try {
+    // The URL was allowed when the attempt started; the allow-list may have changed since.
+    await Settings.requireRedirectUrl(deps, tenant, oauth.redirectUrl)
+  } catch {
+    return { invalid: true }
+  }
+  const failed = (code: string): OAuthCallbackResult => ({
+    redirectTo: oauthRedirect(oauth.redirectUrl, attempt.id, OAUTH_ERROR_PARAM, code),
+  })
+
+  // The state is used up here, whatever happens next.
+  const returned: State = { ...state, oauthPhase: 'returned' }
+  const consumed = await deps.flowAttempts.transition(
+    environmentId,
+    attempt.id,
+    'needs_first_factor',
+    { status: 'needs_first_factor', state: returned },
+    deps.clock.now(),
+    { key: 'oauthPhase', value: 'started' }
+  )
+  if (!consumed) {
+    // Replayed, expired or already completed.
+    return failed('oauth.state_invalid')
+  }
+  if (input.error !== undefined) {
+    return failed(input.error === 'access_denied' ? 'oauth.access_denied' : 'oauth.provider_error')
+  }
+  if (!input.code || !oauth.codeVerifier || !oauth.nonce) {
+    return failed('oauth.provider_error')
+  }
+  try {
+    await chargeEnvironment(deps, tenant, 'oauth')
+  } catch {
+    // A JSON error would strand the browser on the API: the app's page shows this one.
+    return failed('rate_limited')
+  }
+
+  let profile: NonNullable<NonNullable<State['oauth']>['profile']>
+  try {
+    const credentials = await OAuth.credentials(deps, tenant, provider)
+    const answered = await deps.oauth[provider].exchange(credentials, {
+      code: input.code,
+      codeVerifier: oauth.codeVerifier,
+      nonce: oauth.nonce,
+      redirectUri: OAuth.callbackUrl(deps.config, provider),
+      ...(input.user !== undefined && { user: input.user }),
+    })
+    profile = {
+      subject: answered.subject,
+      email: answered.email,
+      emailVerified: answered.emailVerified,
+      ...(answered.givenName !== undefined && { givenName: answered.givenName }),
+      ...(answered.familyName !== undefined && { familyName: answered.familyName }),
+    }
+  } catch (error) {
+    if (error instanceof AuthError) {
+      // The provider was switched off after the attempt started.
+      return failed(error.code)
+    }
+    // The kind of failure only: a provider's response can hold a token or the user's address.
+    logger.warn('OAuth code exchange failed', {
+      environmentId,
+      provider,
+      failure: error instanceof OAuthProviderError ? error.failure : 'unexpected',
+    })
+    return failed('oauth.provider_error')
+  }
+
+  const ticket = `${OAUTH_TICKET_PREFIX}${randomToken()}`
+  // The verifier and the nonce have done their job and are not kept.
+  const { codeVerifier: _verifier, nonce: _nonce, ...kept } = oauth
+  const proven: State = {
+    ...state,
+    oauthPhase: 'proven',
+    oauth: {
+      ...kept,
+      profile,
+      ticketHash: sha256Hex(ticket),
+      ticketExpiresAt: deps.clock.now().getTime() + durationToMs(OAUTH_TICKET_TTL),
+    },
+  }
+  const stored = await deps.flowAttempts.transition(
+    environmentId,
+    attempt.id,
+    'needs_first_factor',
+    { status: 'needs_first_factor', state: proven },
+    deps.clock.now(),
+    { key: 'oauthPhase', value: 'returned' }
+  )
+  if (!stored) {
+    // The attempt expired while the provider was being asked.
+    return failed('oauth.state_invalid')
+  }
+  return { redirectTo: oauthRedirect(oauth.redirectUrl, attempt.id, OAUTH_TICKET_PARAM, ticket) }
+}
+
+/** An OAuth attempt whose ticket and binding were both accepted, and is now used up. */
+interface RedeemedTicket {
+  attempt: FlowAttemptRecord
+  /** The attempt's state without anything of the OAuth round trip. */
+  state: State
+  provider: OAuthProvider
+  profile: NonNullable<NonNullable<State['oauth']>['profile']>
+  linkUserId: string | undefined
+  /** The attempt's new secret: the one it was started with was lost in the navigation. */
+  secret: string
+}
+
+/**
+ * Accept an OAuth ticket from the browser that started the attempt, and use it up.
+ *
+ * Authorized by the ticket (256 bits, single use, {@link OAUTH_TICKET_TTL}) **together with**
+ * the binding the starting browser was given, not by the attempt's secret: the page the
+ * provider's round trip ends on is a fresh page and no longer has it.
+ *
+ * - An unknown, used or expired ticket, one for another attempt, or an attempt of the other
+ *   intent: `oauth.ticket_invalid`.
+ * - A good ticket **without the matching binding**: `oauth.different_browser`, and nothing is
+ *   used up or completed. This is the login-CSRF case: an attacker signs in to *their own*
+ *   provider account, stops before the app's page, and gets a victim's browser to open that
+ *   page with the attacker's ticket. The victim's browser was never given the attacker's
+ *   binding, so it cannot be signed in to the attacker's account.
+ * - Both good: the ticket is spent as a compare-and-set, so of two requests exactly one gets
+ *   past it, and the attempt's secret is **rotated**: the secret it was started with stops
+ *   working and the caller is handed a fresh one for the steps that may follow.
+ */
+async function redeemOAuthTicket(
+  deps: Deps,
+  tenant: Tenant,
+  input: OAuthExchangeRequest,
+  intent: 'sign_in' | 'link',
+  context: Pick<ClientContext, 'originAllowed'>
+): Promise<RedeemedTicket> {
+  const attempt = await deps.flowAttempts.findById(tenant.environmentId, input.attemptId)
+  const parsed = attempt ? StateSchema.safeParse(attempt.state) : null
+  const state = parsed?.success ? parsed.data : null
+  const oauth = state?.oauth
+  // Both compared in constant time, and compared even when there is nothing to compare with.
+  const ticketed = timingSafeEqual(sha256Hex(input.ticket), oauth?.ticketHash ?? NO_SECRET_HASH)
+  const bound = timingSafeEqual(
+    sha256Hex(input.binding ?? ''),
+    oauth?.bindingHash ?? NO_SECRET_HASH
+  )
+  const now = deps.clock.now()
+  if (
+    !attempt ||
+    !state ||
+    !oauth?.profile ||
+    !ticketed ||
+    attempt.kind !== 'sign_in' ||
+    attempt.status !== 'needs_first_factor' ||
+    attempt.completedAt !== null ||
+    attempt.expiresAt.getTime() <= now.getTime() ||
+    state.oauthPhase !== 'proven' ||
+    oauth.intent !== intent ||
+    (oauth.ticketExpiresAt ?? 0) <= now.getTime()
+  ) {
+    throw new AuthError('oauth.ticket_invalid')
+  }
+  if (!bound || input.binding === undefined) {
+    throw new AuthError('oauth.different_browser')
+  }
+  requireAllowedOrigin(state.client, context)
+  // A provider switched off while the user was away must not complete.
+  await OAuth.credentials(deps, tenant, oauth.provider)
+  await chargeEnvironment(deps, tenant, 'verify')
+
+  const secret = `${ATTEMPT_SECRET_PREFIX}${randomToken()}`
+  const { oauth: _oauth, oauthPhase: _phase, ...rest } = state
+  const spent = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    {
+      status: attempt.status,
+      // The profile leaves the attempt with the ticket: it is used in this request or never.
+      state: { ...rest, oauthPhase: 'exchanged' },
+      secretHash: sha256Hex(secret),
+    },
+    now,
+    { key: 'oauthPhase', value: 'proven' }
+  )
+  if (!spent) {
+    throw new AuthError('oauth.ticket_invalid')
+  }
+  return {
+    attempt,
+    state: { ...rest, oauthPhase: 'exchanged' },
+    provider: oauth.provider,
+    profile: oauth.profile,
+    linkUserId: oauth.linkUserId,
+    secret,
+  }
+}
+
+/**
+ * Exchange an OAuth ticket for the sign-in's next step (ADR 0026).
+ *
+ * With the ticket and the binding accepted ({@link redeemOAuthTicket}), the account is resolved
+ * (`OAuth.resolveAccount`: the identity's user, a new user, an automatic link, or a refusal) and
+ * the engine continues **exactly as after any first factor**: the ban check, `Factors.requiredFor`
+ * (a user with a second factor gets `needs_second_factor` and no tokens), the environment's MFA
+ * policy (`needs_factor_enrolment`), otherwise a session. The session records `fed` in `amr`.
+ *
+ * When the flow continues, the response carries the attempt's **new** secret as `attemptSecret`,
+ * so the second-factor and enrolment steps work as for any other attempt.
+ *
+ * A refusal here (`oauth.account_exists`, `oauth.email_unverified`, …) ends the attempt: its
+ * ticket is spent. The user starts again.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param input - The ticket and attempt id from the URL fragment, and this browser's binding.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens; or `needs_second_factor` / `needs_factor_enrolment`, without
+ *   tokens and with the new `attemptSecret`.
+ * @throws AuthError `oauth.ticket_invalid`, `oauth.different_browser`,
+ *   `request.origin_not_allowed`, `auth.method_disabled`, `oauth.email_missing`,
+ *   `oauth.email_unverified`, `oauth.account_exists` or `auth.user_banned`.
+ */
+export async function exchangeOAuth(
+  deps: Deps,
+  tenant: Tenant,
+  input: OAuthExchangeRequest,
+  context: ClientContext
+): Promise<FlowResult> {
+  const redeemed = await redeemOAuthTicket(deps, tenant, input, 'sign_in', context)
+  const { attempt, state, provider } = redeemed
+  const { user, created } = await OAuth.resolveAccount(
+    deps,
+    tenant,
+    provider,
+    redeemed.profile,
+    context
+  )
+  if (user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  // An account created a moment ago has no factor to prove, but the environment may require one.
+  const required: Requirement = created
+    ? { secondFactors: [], enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, []) }
+    : await requirement(deps, tenant, user.id)
+  const next = nextStatus(
+    attempt.kind,
+    attempt.status,
+    { type: 'first_factor_verified', strategy: OAuth.strategyOf(provider) },
+    {
+      strategies: state.strategies ?? [],
+      // The provider's identity is the proof here, not the inbox: the attempt never detours
+      // through `needs_email_verification`, and the address's own flag is left as it is.
+      emailVerified: true,
+      ...required,
+    }
+  )
+  const result = await advance(
+    deps,
+    tenant,
+    attempt,
+    proven(state, 'fed'),
+    user.id,
+    next,
+    required,
+    context
+  )
+  return result.tokens
+    ? result
+    : { ...result, attempt: { ...result.attempt, attemptSecret: redeemed.secret } }
+}
+
+/**
+ * Exchange an OAuth ticket of a **link** attempt: connect the provider account to the signed-in
+ * user who started it (ADR 0026).
+ *
+ * The caller must be signed in as the user the attempt was started by; anyone else's ticket is
+ * `oauth.ticket_invalid`. The ticket and the binding are checked as for a sign-in. No session is
+ * created and the attempt ends here.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment.
+ * @param userId - The signed-in user.
+ * @param input - The ticket and attempt id from the URL fragment, and this browser's binding.
+ * @param context - The requesting device.
+ * @param actor - The user with the request's origin, for the audit log.
+ * @returns The connected identity.
+ * @throws AuthError `oauth.ticket_invalid`, `oauth.different_browser`,
+ *   `request.origin_not_allowed`, `auth.method_disabled`, `oauth.identity_in_use` or
+ *   `oauth.already_linked`.
+ */
+export async function exchangeOAuthLink(
+  deps: Deps,
+  tenant: Tenant,
+  userId: string,
+  input: OAuthExchangeRequest,
+  context: ClientContext,
+  actor: Actor
+): Promise<Identity> {
+  const peek = await deps.flowAttempts.findById(tenant.environmentId, input.attemptId)
+  const owner = StateSchema.safeParse(peek?.state).data?.oauth?.linkUserId
+  if (owner !== undefined && owner !== userId) {
+    // Another user's link attempt: answered like a ticket that does not exist, and left alone.
+    throw new AuthError('oauth.ticket_invalid')
+  }
+  const redeemed = await redeemOAuthTicket(deps, tenant, input, 'link', context)
+  if (redeemed.linkUserId !== userId) {
+    throw new AuthError('oauth.ticket_invalid')
+  }
+  return OAuth.link(deps, tenant, userId, redeemed.provider, redeemed.profile, actor)
 }
 
 /**

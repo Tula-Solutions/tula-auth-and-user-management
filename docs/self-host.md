@@ -108,6 +108,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. The **default** password policy: it applies to an environment until that environment saves its own settings (below). |
 | `CORS_ORIGINS` | | none | Comma-separated browser origins. Allowed for `/v1/admin/*`, and the **default** allowed origins of an environment until it saves its own settings (below). |
 | `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. |
+| `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local`. |
 | `REDIS_URL` | in `staging` and `prod` | none | Redis (or Valkey) shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
 
@@ -264,6 +265,19 @@ rest of it: a `PUT` replaces the whole document):
 **Upgrading.** Signing in by email needs no migration. Migration `0008` adds the attempt secret. Sign-ups, sign-ins and resets that are
 in flight while you upgrade (they live ten minutes) cannot be continued afterwards; the user
 starts again.
+
+## Signing in with Google, GitHub or Apple
+
+Each environment uses **its own** OAuth credentials; none ship with Tula
+([ADR 0026](adr/0026-oauth.md)). For each provider: register an app with the provider using the
+redirect URI `GET /v1/admin/oauth-providers` lists as `callbackUrl`
+(`PUBLIC_URL/v1/oauth/callback/<provider>`), store the credentials with
+`PUT /v1/admin/oauth-providers/<provider>`, and add your app's landing page to
+`urls.allowedRedirectUrls`. Step-by-step: [Google](providers/google.md),
+[GitHub](providers/github.md), [Apple](providers/apple.md). The secret is stored encrypted
+with `TULA_MASTER_KEY` and never returned; no provider token is stored at all.
+`DELETE /v1/admin/oauth-providers/<provider>` removes the credentials (users keep their
+connected accounts). To try the flow without credentials, see `OAUTH_MOCK_PROVIDER` above.
 
 ## Running it for real
 

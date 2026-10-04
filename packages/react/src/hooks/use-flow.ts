@@ -70,6 +70,11 @@ export interface FlowController<Flow extends CoreFlow> extends FlowState {
    * @returns The step it resolved with, or `null` when it failed or no flow has been started.
    */
   watch(action: (flow: Flow) => Promise<FlowStep>): Promise<FlowStep | null>
+  /**
+   * Take over a flow that was started elsewhere (an OAuth round trip's, which the landing page
+   * receives already positioned on its step): the controller's actions continue it.
+   */
+  adopt(flow: Flow): void
 }
 
 /**
@@ -197,6 +202,12 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
 
   const clearError = useCallback(() => setError(null), [])
 
+  const adopt = useCallback((created: Flow) => {
+    flow.current = created
+    setStep(created.step)
+    setError(null)
+  }, [])
+
   // `client` is read so that a provider whose client changes starts from a clean slate.
   const lastClient = useRef(client)
   useEffect(() => {
@@ -206,7 +217,7 @@ export function useFlowController<Flow extends CoreFlow>(): FlowController<Flow>
     }
   }, [client, reset])
 
-  return { step, isPending, error, start, act, watch, reset, clearError }
+  return { step, isPending, error, start, act, watch, adopt, reset, clearError }
 }
 
 /** A flow that can stop at `needs_factor_enrolment`. */

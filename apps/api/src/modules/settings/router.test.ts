@@ -155,7 +155,7 @@ describe('PUT /v1/admin/settings', () => {
   )
 
   test('a document without `mfa` stores the default policy, and the notice switch is its own key', async () => {
-    const res = await put({ notifications: { mfaChanged: false } }, '"0"')
+    const res = await put({ notifications: { mfaChanged: false, identityChanged: true } }, '"0"')
     expect(res.status).toBe(200)
     const { settings } = (await res.json()) as State
     expect(settings.mfa).toEqual({ policy: 'optional' })
@@ -163,6 +163,7 @@ describe('PUT /v1/admin/settings', () => {
       passwordChanged: true,
       newSignIn: true,
       mfaChanged: false,
+      identityChanged: true,
     })
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 1,
@@ -351,7 +352,7 @@ describe('GET /v1/client/config', () => {
     expect(res.status).toBe(200)
     expect(ClientConfigSchema.parse(await res.json())).toEqual({
       app: { name: 'Tula', supportEmail: null },
-      signIn: { methods: ['password'] },
+      signIn: { methods: ['password'], oauth: [] },
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
       mfa: { policy: 'optional' },
@@ -374,7 +375,7 @@ describe('GET /v1/client/config', () => {
     const text = await (await config()).text()
     expect(JSON.parse(text)).toEqual({
       app: { name: 'Acme', supportEmail: 'help@acme.test' },
-      signIn: { methods: ['password'] },
+      signIn: { methods: ['password'], oauth: [] },
       signUp: { password: 'required' },
       password: strictPolicy,
       mfa: { policy: 'optional' },

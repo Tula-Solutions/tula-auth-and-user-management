@@ -202,7 +202,7 @@ export async function signUp(
   }
   await page.getByLabel('Email address').fill(account.email)
   await page.getByLabel('Password', { exact: true }).fill(account.password ?? PASSWORD)
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible()
   await page.getByLabel('Verification code').fill(await latestCode(request, account.email))
   await page.getByRole('button', { name: 'Verify' }).click()
@@ -213,7 +213,7 @@ export async function signUp(
 export async function signIn(page: Page, email: string, password = PASSWORD): Promise<void> {
   await page.goto('/sign-in')
   await page.getByLabel('Email address').fill(email)
-  await page.getByRole('button', { name: 'Continue' }).click()
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await page.getByLabel('Password', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Sign in' }).click()
 }
@@ -243,4 +243,36 @@ export async function expectAccessible(page: Page, state: string): Promise<void>
     nodes: violation.nodes.map((node) => `${node.target.join(' ')} — ${node.failureSummary}`),
   }))
   expect(problems, `axe violations on: ${state}`).toEqual([])
+}
+
+/**
+ * Enable exactly these OAuth providers for the fixture environment (none by default). They are
+ * served by the API's mock provider, whose consent page the test fills in. A scenario that
+ * enables one must put it back (`useProviders(request)`).
+ */
+export async function useProviders(
+  request: APIRequestContext,
+  providers: ('google' | 'github')[] = []
+): Promise<void> {
+  const response = await request.post(`${API_URL}/__test/oauth`, { data: { providers } })
+  expect(response.ok()).toBe(true)
+}
+
+/**
+ * Play the user at the mock provider's consent page, which the browser is on after
+ * "Continue with …": say which address the provider reports, and continue (or cancel).
+ */
+export async function consentAtProvider(
+  page: Page,
+  consent: { email: string; unverified?: boolean; subject?: string; cancel?: boolean }
+): Promise<void> {
+  await expect(page.getByRole('heading', { name: /^Mock .* sign-in$/ })).toBeVisible()
+  await page.getByLabel('Email address the provider reports').fill(consent.email)
+  if (consent.subject) {
+    await page.getByLabel(/^Account id/).fill(consent.subject)
+  }
+  if (consent.unverified) {
+    await page.getByLabel('Report the email as unverified').check()
+  }
+  await page.getByRole('button', { name: consent.cancel ? 'Cancel' : 'Continue' }).click()
 }

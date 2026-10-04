@@ -20,6 +20,7 @@ import { go } from '../navigation'
 import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { BackupCodesPanel, EnrolmentConfirmForm } from './mfa'
+import { ConnectedAccountsSection } from './oauth'
 import {
   Button,
   Form,
@@ -44,6 +45,12 @@ import { deviceName, fullName, initials, relativeTime } from './user-display'
 export interface UserProfileProps {
   /** Where to go after "Sign out". Overrides the provider's `afterSignOutUrl`. */
   afterSignOutUrl?: string
+  /**
+   * The page an OAuth round trip returns to: the one that renders `<OAuthCallback>`. Overrides
+   * the provider's `oauthCallbackUrl`; without either, "Connected accounts" offers no provider
+   * to connect.
+   */
+  oauthCallbackUrl?: string
   /** Theme tokens, colour scheme and class names for this component. */
   appearance?: Appearance
   /** The level of the "Account" title; section titles are one below. Defaults to 1. */
@@ -469,7 +476,10 @@ function SessionsSection(props: { sessions: ReturnType<typeof useSession> }) {
 }
 
 /** The profile's sections, without a root: `<UserButton>` puts them in its dialog. */
-export function UserProfileSections(props: { afterSignOutUrl?: string }) {
+export function UserProfileSections(props: {
+  afterSignOutUrl?: string
+  oauthCallbackUrl?: string
+}) {
   const { el, t } = useUi()
   const { client, navigation } = useTulaContext()
   const state = useAuthState(client)
@@ -510,6 +520,10 @@ export function UserProfileSections(props: { afterSignOutUrl?: string }) {
         <p className='tula-text'>{t.common.loading}</p>
       )}
       <TwoStepSection key={`mfa:${state.sessionId}`} onChanged={() => void sessions.reload()} />
+      <ConnectedAccountsSection
+        key={`identities:${state.sessionId}`}
+        callbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
+      />
       <SessionsSection key={state.sessionId} sessions={sessions} />
       <section {...el('section')} aria-labelledby={signOutTitleId}>
         <Heading offset={1} {...el('sectionTitle')} id={signOutTitleId}>
@@ -542,7 +556,10 @@ export function UserProfileSections(props: { afterSignOutUrl?: string }) {
 export function UserProfile(props: UserProfileProps) {
   return (
     <Root appearance={props.appearance} headingLevel={props.headingLevel}>
-      <UserProfileSections afterSignOutUrl={props.afterSignOutUrl} />
+      <UserProfileSections
+        afterSignOutUrl={props.afterSignOutUrl}
+        oauthCallbackUrl={props.oauthCallbackUrl}
+      />
     </Root>
   )
 }

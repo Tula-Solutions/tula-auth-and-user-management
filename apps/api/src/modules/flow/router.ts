@@ -23,6 +23,9 @@ import {
   FirstFactorPrepareRequestSchema,
   FLOW_ATTEMPT_HEADER,
   FlowAttemptSchema,
+  OAuthExchangeRequestSchema,
+  OAuthStartRequestSchema,
+  OAuthStartSchema,
   PasswordAttemptRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetStartRequestSchema,
@@ -386,6 +389,93 @@ router.post(
       )
     )
   }
+)
+
+router.post(
+  '/sign-ins/oauth',
+  describeRoute({
+    operationId: 'startOAuthSignIn',
+    tags: ['Flows'],
+    summary: 'Start signing in with an OAuth provider',
+    description:
+      '"Continue with Google, GitHub or Apple": a sign-in that creates the account when the ' +
+      'provider’s verified address has none. The provider must be enabled for the environment ' +
+      '(`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user ' +
+      'comes back to, must be exactly one of `urls.allowedRedirectUrls` ' +
+      '(`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the ' +
+      'browser there) and `binding`, once: keep it for the tab and send it back with the ' +
+      'ticket that page receives. The provider returns to this API, which redirects to ' +
+      '`redirectUrl` with `#tula_ticket=…&tula_attempt=…` (or `#tula_error=<code>`). No token ' +
+      'is ever put in a URL.' +
+      START,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: {
+        description: 'The attempt, the provider’s URL and the binding.',
+        content: { 'application/json': { schema: resolver(OAuthStartSchema) } },
+      },
+      400: openapi.responses[400],
+      403: openapi.responses[403],
+      ...errors,
+    },
+  }),
+  limited('sign_in_oauth'),
+  publishableKey(),
+  validator('header', ClientHeaderSchema, validationHook),
+  validator('json', OAuthStartRequestSchema, validationHook),
+  async (c) => {
+    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const { client: _client, ...started } = await Flows.startOAuth(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('json'),
+      context
+    )
+    c.header('Cache-Control', 'no-store')
+    return c.json(OAuthStartSchema.parse(started))
+  }
+)
+
+router.post(
+  '/sign-ins/oauth/exchange',
+  describeRoute({
+    operationId: 'exchangeOAuthTicket',
+    tags: ['Flows'],
+    summary: 'Exchange an OAuth ticket for the next step',
+    description:
+      'Called by the app’s page after the provider returned, with the ticket and attempt id ' +
+      'from the URL fragment and the `binding` this browser was given at the start. The ' +
+      'ticket works once, for 60 seconds. Without the matching binding the answer is ' +
+      '`oauth.different_browser` and nothing is completed or used up. Otherwise the sign-in ' +
+      'continues as after any first factor: `complete`, or `needs_second_factor` / ' +
+      '`needs_factor_enrolment` (no tokens), in which case the response carries a new ' +
+      '`attemptSecret` for the steps that follow. `oauth.account_exists`: the address ' +
+      'belongs to an account this provider cannot be connected to automatically.' +
+      DELIVERY,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The next step.'),
+      403: openapi.responses[403],
+      409: openapi.responses[409],
+      410: openapi.responses[410],
+      ...errors,
+    },
+  }),
+  limited('sign_in_oauth_exchange'),
+  publishableKey(),
+  validator('json', OAuthExchangeRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.exchangeOAuth(
+        c.get('deps'),
+        c.get('tenant'),
+        c.req.valid('json'),
+        await clientContext(c)
+      )
+    )
 )
 
 for (const [kind, path, tag] of [

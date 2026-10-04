@@ -269,5 +269,83 @@ export function describeFlowAttemptStore(
         'needs_password'
       )
     })
+
+    describe('a guarded transition (ADR 0026)', () => {
+      const oauth = (phase: string) => ({ client: 'web', oauthPhase: phase })
+
+      test('moves only while the stored state holds the guarded value', async () => {
+        const input = attempt(ctx.a, { status: 'needs_first_factor', state: oauth('started') })
+        await ctx.store.create(input)
+        const move = (from: string, to: string) =>
+          ctx.store.transition(
+            ctx.a.environmentId,
+            input.id,
+            'needs_first_factor',
+            { status: 'needs_first_factor', state: oauth(to) },
+            now,
+            { key: 'oauthPhase', value: from }
+          )
+        expect(await move('proven', 'exchanged')).toBe(false)
+        expect(await move('started', 'returned')).toBe(true)
+        expect(await move('started', 'returned')).toBe(false)
+        expect((await ctx.store.findById(ctx.a.environmentId, input.id))?.state).toEqual(
+          oauth('returned')
+        )
+      })
+
+      test('of two concurrent guarded transitions exactly one succeeds, though the status does not change', async () => {
+        const input = attempt(ctx.a, { status: 'needs_first_factor', state: oauth('started') })
+        await ctx.store.create(input)
+        const results = await Promise.all(
+          [1, 2].map(() =>
+            ctx.store.transition(
+              ctx.a.environmentId,
+              input.id,
+              'needs_first_factor',
+              { status: 'needs_first_factor', state: oauth('returned') },
+              now,
+              { key: 'oauthPhase', value: 'started' }
+            )
+          )
+        )
+        expect(results.filter(Boolean)).toHaveLength(1)
+      })
+
+      test('a guard on a key the state does not have matches nothing', async () => {
+        const input = attempt(ctx.a, { status: 'needs_first_factor', state: { client: 'web' } })
+        await ctx.store.create(input)
+        expect(
+          await ctx.store.transition(
+            ctx.a.environmentId,
+            input.id,
+            'needs_first_factor',
+            { status: 'needs_first_factor' },
+            now,
+            { key: 'oauthPhase', value: 'started' }
+          )
+        ).toBe(false)
+      })
+
+      test('a transition can replace the secret’s hash, and otherwise keeps it', async () => {
+        const input = attempt(ctx.a, { status: 'needs_first_factor', secretHash: 'a'.repeat(64) })
+        await ctx.store.create(input)
+        const move = (change: { secretHash?: string }) =>
+          ctx.store.transition(
+            ctx.a.environmentId,
+            input.id,
+            'needs_first_factor',
+            { status: 'needs_first_factor', ...change },
+            now
+          )
+        await move({})
+        expect((await ctx.store.findById(ctx.a.environmentId, input.id))?.secretHash).toBe(
+          'a'.repeat(64)
+        )
+        await move({ secretHash: 'b'.repeat(64) })
+        expect((await ctx.store.findById(ctx.a.environmentId, input.id))?.secretHash).toBe(
+          'b'.repeat(64)
+        )
+      })
+    })
   })
 }

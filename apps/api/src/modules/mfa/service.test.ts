@@ -1514,7 +1514,11 @@ describe('notices about two-step verification', () => {
 
   test('with notifications.mfaChanged off nothing is sent, and every change still happens', async () => {
     configure({
-      notifications: { ...DEFAULT_ENVIRONMENT_SETTINGS.notifications, mfaChanged: false },
+      notifications: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS.notifications,
+        mfaChanged: false,
+        identityChanged: true,
+      },
     })
     await everyChange()
     expect(deps.mailer.outbox).toEqual([])
@@ -1526,7 +1530,12 @@ describe('notices about two-step verification', () => {
 
   test('the other notices being off does not silence this one', async () => {
     configure({
-      notifications: { passwordChanged: false, newSignIn: false, mfaChanged: true },
+      notifications: {
+        passwordChanged: false,
+        newSignIn: false,
+        mfaChanged: true,
+        identityChanged: true,
+      },
     })
     const user = await seedUser()
     await enrol(user.id)

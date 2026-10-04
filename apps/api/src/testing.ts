@@ -11,6 +11,8 @@ import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryJobLock } from '~/adapters/memory/job-lock'
 import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryMailer } from '~/adapters/memory/mailer'
+import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
+import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
@@ -37,6 +39,8 @@ export interface TestDeps extends Deps {
   users: MemoryUserRepository
   factors: MemoryFactorStore
   flowAttempts: MemoryFlowAttemptStore
+  oauthProviders: MemoryOAuthProviderStore
+  oauth: FakeOAuthProviders
   activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
   mailer: MemoryMailer
@@ -56,6 +60,7 @@ export const TEST_CONFIG: AppConfig = {
   corsOrigins: [],
   trustProxy: false,
   passwordPolicy: PASSWORD_POLICY_PRESETS.recommended,
+  oauthMock: false,
 }
 
 /**
@@ -86,6 +91,8 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     users: new MemoryUserRepository(activityLog),
     factors: new MemoryFactorStore(activityLog),
     flowAttempts: new MemoryFlowAttemptStore(),
+    oauthProviders: new MemoryOAuthProviderStore(activityLog),
+    oauth: fakeOAuthProviders(),
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer: new MemoryMailer(),
     rateLimiter: new MemoryRateLimiter(clock),
