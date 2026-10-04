@@ -267,6 +267,17 @@ describe('the work is bounded', () => {
     return best
   }
 
+  /** The fastest of five runs, all of them taken: for comparing two sizes with each other. */
+  function quickest(work: () => void): number {
+    let best = Number.POSITIVE_INFINITY
+    for (let run = 0; run < 5; run += 1) {
+      const started = performance.now()
+      work()
+      best = Math.min(best, performance.now() - started)
+    }
+    return best
+  }
+
   test.each(PATHOLOGICAL)('%s is cleaned in under 100 ms', (_name, input) => {
     expect(fastest(() => cleanText(input))).toBeLessThan(100)
     expect(cleanText(input).length).toBeLessThanOrEqual(MAX_STRING_CHARS + 1)
@@ -274,10 +285,21 @@ describe('the work is bounded', () => {
 
   // With a cap so large that the window does not cut: each pattern is linear by itself, and
   // does not depend on the window to be fast.
-  test.each(PATHOLOGICAL.map(([name, input]) => [name, input.slice(0, 120_000)] as const))(
+  //
+  // Measured as a ratio, not against the clock: a runner under coverage is forty times slower
+  // than a laptop, and that says nothing about the pattern. Four times the input costs four
+  // times the work when the pattern is linear and sixteen when it is quadratic.
+  test.each(PATHOLOGICAL)(
     '%s costs time in proportion to its length, not its square',
     (_name, input) => {
-      expect(fastest(() => cleanText(input, 200_000))).toBeLessThan(100)
+      const large = input.slice(0, 400_000)
+      const small = large.slice(0, Math.floor(large.length / 4))
+      // A floor of a millisecond: below it the timer's own noise is the measurement.
+      const base = Math.max(
+        quickest(() => cleanText(small, 1_000_000)),
+        1
+      )
+      expect(quickest(() => cleanText(large, 1_000_000))).toBeLessThan(base * 10)
     }
   )
 
