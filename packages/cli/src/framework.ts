@@ -1,3 +1,4 @@
+import type { Readable, Writable } from 'node:stream'
 import { type AdminFetch, isTulaAdminError, type TulaAdminError } from '@tula/admin'
 import { isConfigError } from '@tula/config'
 import { type OptionSpec, type ParsedArgs, parseArgs, UsageError } from './args'
@@ -63,6 +64,19 @@ export interface CliIo {
   now?: () => Date
   /** How `tula dev` runs `docker compose` and touches the project's files. */
   host?: Host
+  /**
+   * The process's own standard input and output as streams, and its stop signals, for a
+   * command that serves a protocol on them (`tula mcp`). While it does, nothing else may be
+   * written to standard output: every other line goes to `stderr`.
+   */
+  serve?: {
+    /** Standard input. */
+    input: Readable
+    /** Standard output. */
+    output: Writable
+    /** Call `stop` on SIGTERM or SIGINT. Returns how to stop listening. */
+    onTerminate?: (stop: () => void) => () => void
+  }
 }
 
 /**

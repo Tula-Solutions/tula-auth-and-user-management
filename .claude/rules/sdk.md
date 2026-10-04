@@ -10,6 +10,7 @@ paths:
   - "packages/admin/**"
   - "packages/config/**"
   - "packages/cli/**"
+  - "packages/mcp/**"
   - "packages/create-tula/**"
   - "examples/tula-config/**"
 ---
@@ -256,3 +257,17 @@ paths:
   (`bun run --filter create-tula templates:sync`): edit the example in `examples/`, not the
   copy. The templates are found from the running module's directory (`findTemplates`), which
   differs between `src/` and the built `dist/`: keep its test.
+- `@tula/mcp` (ADR 0033): tools get `ReadOnlyAdmin` (`read-only.ts`), never the admin client;
+  `READ_OPERATIONS` holds `GET` ids only and the facade refuses anything else by type, per
+  call and at construction. Every result is `project(value, shape)`: name the fields, never
+  spread an API answer, never write a value into a sentence. `sanitize.ts` owns the caps (512
+  characters a string, 100 entries, 64,000 characters a result), the control-character
+  cleaning and `SECRET_SHAPES`. Inputs are `z.strictObject`; no input carries a credential.
+  A new tool goes in `TOOLS`, in the tests' argument tables (the enumeration, canary and
+  real-API tests run every tool), and in `docs/mcp.md`. Scaffold tools return files and
+  write nothing; `scaffolds.gen.ts` is generated (`bun run --filter create-tula
+  templates:sync`), so change the example in `examples/`. `detect.ts` reads one
+  `package.json` inside the server's directory: keep its confinement table. In `@tula/cli`,
+  `tula mcp` writes only protocol frames to standard output (the wire and spawned tests hold
+  this), resolves credentials once at start from the environment or a file, and refuses `-`
+  for both files.

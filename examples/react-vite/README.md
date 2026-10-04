@@ -4,7 +4,9 @@ A small React 19 app whose authentication is only `@tula/react`: `<SignUp>` with
 password checklist, `<SignIn>` with forgotten password and, where the environment enables them,
 an emailed code or link, `<EmailLinkCallback>` on `/auth/link`, `<UserButton>` and
 `<UserProfile>`, behind `<SignedIn>` / `<SignedOut>`. The app itself adds a header, its routes
-and a theme switch (`src/app.tsx`).
+and a theme switch (`src/app.tsx`); the provider wrapper, the protected route and the sign-in
+page are files of their own (`src/auth-provider.tsx`, `src/protected.tsx`,
+`src/sign-in-page.tsx`), which `create-tula` and the MCP server's scaffold tools hand out.
 
 It is also what the browser tests drive (`e2e/`).
 

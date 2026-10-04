@@ -154,6 +154,35 @@ uses. The password is never sent anywhere, printed or logged.
 
 Exit codes: 0 the password would be accepted, 2 it would be refused, 1 an error.
 
+## `tula mcp`
+
+```sh
+TULA_API_URL=https://auth.example.com TULA_SECRET_KEY=… tula mcp
+```
+
+Serves Tula's [Model Context Protocol](https://modelcontextprotocol.io) server on standard
+input and output, for an MCP client to start as a child process. It has read tools (users,
+sessions, audit entries, settings, OAuth providers, the doctor's checks) and scaffold tools
+(the provider, a protected route, a sign-in page). **No tool changes live data and none
+returns a secret.** The tools, the client configuration and exactly what is returned are in
+[docs/mcp.md](mcp.md).
+
+| Option | |
+| --- | --- |
+| `--env <name>` | Read `TULA_API_URL_<NAME>` and `TULA_SECRET_KEY_<NAME>` first. |
+| `--api-url <url>` | The API. Default: `TULA_API_URL_<NAME>`, then `TULA_API_URL`. |
+| `--secret-key-file <path>` | Read the secret key from a file. Default: `TULA_SECRET_KEY_<NAME>`, then `TULA_SECRET_KEY`. |
+| `--admin-token-file <path>` | Read the instance admin token from a file (`run_doctor` only). Default: `TULA_ADMIN_TOKEN`. |
+| `--insecure-http` | Allow a plain http API URL that is not localhost. |
+
+- Nothing is required. Without a secret key the read tools answer `not_configured` and the
+  scaffold tools still work.
+- `-` is refused for both files: standard input carries the protocol.
+- Standard output carries only protocol messages. What is configured, one line per tool call
+  (the tool, the outcome, the time; never an argument) and every error go to standard error.
+- It does not load `tula.config.ts`.
+- It exits 0 when the client closes standard input, and on SIGTERM or SIGINT.
+
 ## `tula diff` and `tula apply`
 
 See [config.md](config.md). Exit codes of `diff`: 0 no changes, 2 changes pending, 1 an error.

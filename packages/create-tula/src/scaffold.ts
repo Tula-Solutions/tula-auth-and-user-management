@@ -53,7 +53,16 @@ const FRAMEWORK_DETAILS: Record<Framework, { label: string; appUrl: string }> = 
 }
 
 /** Every Tula package a project can depend on, directly or through another. */
-const TULA_PACKAGES = ['contract', 'core', 'react', 'nextjs', 'admin', 'config', 'cli'] as const
+const TULA_PACKAGES = [
+  'contract',
+  'core',
+  'react',
+  'nextjs',
+  'admin',
+  'config',
+  'mcp',
+  'cli',
+] as const
 
 /** Never written over, whatever `force` says: they hold secrets that data depends on. */
 const NEVER_REPLACED: ReadonlySet<string> = new Set(['.env', '.env.local'])

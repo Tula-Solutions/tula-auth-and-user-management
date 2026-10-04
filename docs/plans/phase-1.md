@@ -565,6 +565,21 @@ address. Differences from the plan and the design:
   the detected framework. No tools that change live data in Phase 1.
 - The server never returns secrets or key material.
 
+**As built** ([ADR 0033](../adr/0033-mcp-server.md), guide: [docs/mcp.md](../mcp.md)).
+`packages/mcp` (`@tula/mcp`) exports `createTulaMcpServer`; `tula mcp` (a command of
+`@tula/cli`, so `npx tula mcp`) serves it over stdio on the official SDK
+(`@modelcontextprotocol/server` 2.x). Eleven tools, all annotated read-only. Read:
+`list_users`, `get_user` (with the sign-in methods view), `list_user_sessions`,
+`list_audit_entries`, `get_settings`, `list_oauth_providers`, `run_doctor`. Scaffold:
+`detect_framework`, `scaffold_provider`, `scaffold_protected_route`, `scaffold_sign_in_page`
+for `nextjs` and `react-vite`; they return the example apps' files (generated into
+`scaffolds.gen.ts` by `create-tula`'s template sync, with a drift check) and write nothing.
+Tools reach the API only through a facade over an allow-list of `GET` operations; every
+result passes an allow-list projection, a secret-shape scrub and size caps, and is JSON.
+Credentials come from the environment or a file and none is required. Beyond the plan's
+list: `list_oauth_providers` and `detect_framework` are tools of their own; listing API keys
+is deliberately not a tool.
+
 ---
 
 ## Milestone F — Exit

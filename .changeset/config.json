@@ -10,6 +10,7 @@
       "@tula/nextjs",
       "@tula/admin",
       "@tula/config",
+      "@tula/mcp",
       "@tula/cli",
       "create-tula"
     ]

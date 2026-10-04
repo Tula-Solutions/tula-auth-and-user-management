@@ -1,20 +1,14 @@
 {
-  "name": "@tula/cli",
+  "name": "@tula/mcp",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The tula command line: `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, and `tula diff` / `tula apply`, which keep an environment's settings and OAuth providers in step with tula.config.ts.",
+  "description": "Tula's Model Context Protocol server (`tula mcp`): read-only tools over an environment's users, sessions, audit entries and settings, and scaffolds for the provider, a protected route and a sign-in page. It changes nothing and returns no secret.",
   "sideEffects": false,
-  "bin": {
-    "tula": "./src/bin.ts"
-  },
   "exports": {
     ".": "./src/index.ts"
   },
   "publishConfig": {
-    "bin": {
-      "tula": "./dist/bin.js"
-    },
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
@@ -26,25 +20,23 @@
   "files": [
     "dist"
   ],
-  "engines": {
-    "bun": ">=1.2.0"
-  },
   "scripts": {
     "build": "bunup",
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "generate": "bun run scripts/sync-scaffolds.ts",
+    "generate:check": "bun run scripts/sync-scaffolds.ts --check"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.2.0",
     "@tula/admin": "workspace:*",
-    "@tula/config": "workspace:*",
-    "@tula/contract": "workspace:*",
-    "@tula/mcp": "workspace:*"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.2.0",
     "@tula/api": "workspace:*",
     "@tula/tsconfig": "workspace:*",
-    "zod": "^4.6.5"
+    "create-tula": "workspace:*"
   }
 }

@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { createInterface } from 'node:readline/promises'
+import type { Readable, Writable } from 'node:stream'
 import { UsageError } from './args'
 import type { CliIo } from './framework'
 import { createProcessHost } from './process-host'
@@ -36,6 +37,8 @@ export interface ProcessParts {
   readFile: (path: string) => Promise<string>
   /** A file's mode bits. */
   stat: (path: string) => Promise<{ mode: number }>
+  /** Call `stop` when the process is asked to end. Returns how to stop listening. */
+  onTerminate?: (stop: () => void) => () => void
 }
 
 /**
@@ -132,6 +135,11 @@ export function createProcessIo(parts: ProcessParts): CliIo {
     },
     now: () => new Date(),
     host: createProcessHost(parts.env),
+    serve: {
+      input: parts.stdin as Readable,
+      output: parts.stdout as Writable,
+      ...(parts.onTerminate ? { onTerminate: parts.onTerminate } : {}),
+    },
     // Only on a terminal that can stop echoing: anywhere else the secret is read from a pipe.
     ...(parts.stdin.isTTY === true && typeof parts.stdin.setRawMode === 'function'
       ? { promptSecret: (question: string) => readHidden(parts, question) }
@@ -173,5 +181,13 @@ export function processIo(): CliIo {
     platform: process.platform,
     readFile: (path) => readFile(path, 'utf8'),
     stat: (path) => stat(path),
+    onTerminate: (stop) => {
+      process.once('SIGTERM', stop)
+      process.once('SIGINT', stop)
+      return () => {
+        process.off('SIGTERM', stop)
+        process.off('SIGINT', stop)
+      }
+    },
   })
 }

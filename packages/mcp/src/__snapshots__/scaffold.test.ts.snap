@@ -1,0 +1,99 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`the scaffolds scaffold_protected_route for nextjs: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/nextjs",
+    "@tula/react",
+  ],
+  "environment": [],
+  "framework": "nextjs",
+  "notes": 3,
+  "paths": [
+    "proxy.ts",
+    "app/dashboard/page.tsx",
+    "app/dashboard/session-check.tsx",
+    "app/dashboard/actions.ts",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_sign_in_page for nextjs: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/nextjs",
+    "@tula/react",
+  ],
+  "environment": [],
+  "framework": "nextjs",
+  "notes": 1,
+  "paths": [
+    "app/sign-in/page.tsx",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_provider for react-vite: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/react",
+  ],
+  "environment": [
+    "VITE_TULA_PUBLISHABLE_KEY",
+    "VITE_TULA_API_URL",
+  ],
+  "framework": "react-vite",
+  "notes": 2,
+  "paths": [
+    "src/auth-provider.tsx",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_protected_route for react-vite: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/react",
+  ],
+  "environment": [],
+  "framework": "react-vite",
+  "notes": 1,
+  "paths": [
+    "src/protected.tsx",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_sign_in_page for react-vite: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/react",
+  ],
+  "environment": [],
+  "framework": "react-vite",
+  "notes": 1,
+  "paths": [
+    "src/sign-in-page.tsx",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_provider for nextjs: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/nextjs",
+    "@tula/react",
+  ],
+  "environment": [
+    "NEXT_PUBLIC_TULA_PUBLISHABLE_KEY",
+    "TULA_API_URL",
+    "TULA_SECRET_KEY",
+  ],
+  "framework": "nextjs",
+  "notes": 3,
+  "paths": [
+    "app/layout.tsx",
+    "app/api/tula/[...tula]/route.ts",
+  ],
+}
+`;

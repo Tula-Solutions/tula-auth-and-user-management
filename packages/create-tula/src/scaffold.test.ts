@@ -111,7 +111,10 @@ describe('scaffold', () => {
       'package.json',
       'src/app.css',
       'src/app.tsx',
+      'src/auth-provider.tsx',
       'src/main.tsx',
+      'src/protected.tsx',
+      'src/sign-in-page.tsx',
       'tsconfig.json',
       'tula.config.ts',
       'vite.config.ts',
@@ -213,7 +216,7 @@ describe('scaffold', () => {
   test('local tarballs: every Tula package, direct or transitive, comes from the directory', async () => {
     const tarballs = join(dir, 'release')
     await mkdir(tarballs)
-    for (const name of ['react', 'core', 'contract', 'cli', 'config', 'admin', 'nextjs']) {
+    for (const name of ['react', 'core', 'contract', 'cli', 'config', 'admin', 'nextjs', 'mcp']) {
       await writeFile(join(tarballs, `tula-${name}-${VERSION}.tgz`), '')
     }
     await scaffold({ cwd: dir, name: 'shop', framework: 'react-vite', tulaPackages: tarballs })
