@@ -199,16 +199,17 @@ test('Dependabot watches every place a digest or an action version is pinned', a
 
 test('the API image installs no browser package: their manifests never reach the install stage', async () => {
   // `bun install --production` installs the dependencies (and peers) of every workspace whose
-  // manifest it finds. With `packages/react` or an example copied in, the API image gains React.
+  // manifest it finds. With `packages/react`, `packages/nextjs` or an example copied in, the API image
+  // gains React (and Next.js).
   const dockerfile = await Bun.file(join(root, 'apps/api/Dockerfile')).text()
   const copied = dockerfile
     .split('\n')
     .filter((line) => line.startsWith('COPY ') && !line.startsWith('COPY --from'))
     .map((line) => line.split(/\s+/)[1] ?? '')
   expect(copied.length).toBeGreaterThan(5)
-  expect(copied.filter((source) => /^(packages\/react|examples|e2e)(\/|$)/.test(source))).toEqual(
-    []
-  )
+  expect(
+    copied.filter((source) => /^(packages\/react|packages\/nextjs|examples|e2e)(\/|$)/.test(source))
+  ).toEqual([])
   // Nothing copies the whole repository or a whole workspace group either.
   expect(
     copied.filter((source) => ['.', './', 'packages', 'packages/', 'apps'].includes(source))

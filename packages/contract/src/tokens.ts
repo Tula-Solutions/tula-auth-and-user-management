@@ -123,41 +123,7 @@ export const JwkSchema = z
 /** The public key set served at `/.well-known/jwks.json`. */
 export const JwksSchema = z.object({ keys: z.array(JwkSchema) }).meta({ ref: 'Jwks' })
 
-/**
- * The issuer (`iss`) of an environment's access tokens: its URL under the API.
- *
- * Standard JWKS clients fetch keys from a URL with no custom headers, so the environment is part
- * of the path, and the key set lives at {@link jwksUrl} of the issuer (OIDC-style discovery).
- *
- * @param apiUrl - The API's public base URL, e.g. `https://auth.example.com`.
- * @param environmentId - The environment id.
- * @returns The issuer URL, without a trailing slash.
- *
- * @example
- * ```ts
- * environmentIssuer('https://auth.example.com/', 'env_1')
- * // 'https://auth.example.com/v1/environments/env_1'
- * ```
- */
-export function environmentIssuer(apiUrl: string, environmentId: string): string {
-  return `${apiUrl.replace(/\/+$/, '')}/v1/environments/${encodeURIComponent(environmentId)}`
-}
-
-/**
- * Where an issuer publishes its public signing keys.
- *
- * @param issuer - The token's `iss` claim.
- * @returns The JWKS URL.
- *
- * @example
- * ```ts
- * jwksUrl('https://auth.example.com/v1/environments/env_1')
- * // 'https://auth.example.com/v1/environments/env_1/.well-known/jwks.json'
- * ```
- */
-export function jwksUrl(issuer: string): string {
-  return `${issuer.replace(/\/+$/, '')}/.well-known/jwks.json`
-}
+export { environmentIssuer, jwksUrl } from './issuer'
 
 /** Access token claims. */
 export type AccessTokenClaims = z.infer<typeof AccessTokenClaimsSchema>

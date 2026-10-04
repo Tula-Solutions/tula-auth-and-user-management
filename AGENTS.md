@@ -87,18 +87,20 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/tsconfig` | Shared tsconfig bases. |
 | `packages/core` | `@tula/core` — the headless TypeScript client: flows, session, single-flight refresh. Runs in browsers, Node, Bun and edge runtimes ([ADR 0021](docs/adr/0021-core-sdk.md)). |
 | `packages/react` | `@tula/react` — provider, hooks and prebuilt components (sign-up, sign-in, reset, account) with one themeable stylesheet ([ADR 0022](docs/adr/0022-react-sdk.md)). |
-| `packages/{nextjs,expo,config,cli,mcp}` | SDKs and tooling (Phase 1+). |
+| `packages/nextjs` | `@tula/nextjs` — the Next.js App Router SDK: a same-origin route handler, a request interceptor that verifies sessions offline, server helpers and the React components ([ADR 0029](docs/adr/0029-nextjs-sdk.md)). |
+| `packages/{expo,config,cli,mcp}` | SDKs and tooling (Phase 1+). |
 | `native/{swift,android}` | Native SDKs (Phase 2). |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema. |
 | `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). |
 | `examples/core-playground` | A static page for trying `@tula/core` by hand in a browser (`bun run playground`). Not a workspace package. |
 | `examples/react-vite` | `@tula/example-react-vite` — a Vite + React app built only from `@tula/react` components. A workspace package; also what the browser tests drive. |
+| `examples/nextjs-app-router` | `@tula/example-nextjs` — a Next.js 16 App Router app on `@tula/nextjs`: protected routes, a server-rendered dashboard, a route handler and a server action. A workspace package, driven by the `nextjs` Playwright project. Configured by environment variables only. |
 | `e2e/` | Playwright browser tests and their fixture, `e2e/server.ts`: the real API in process on memory adapters, plus the built example app. Not a workspace package and never in the API image. |
 
 ### Publishable packages (see ADR 0020)
 
-`@tula/contract`, `@tula/core` and `@tula/react` are built for npm; **nothing is published yet** and every
+`@tula/contract`, `@tula/core`, `@tula/react` and `@tula/nextjs` are built for npm; **nothing is published yet** and every
 package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 
 - `exports` point at `./src/*.ts`, so the workspace resolves packages from source with no build
@@ -109,7 +111,7 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - A change to a publishable package comes with a changeset (`bunx changeset`).
 - **`@tula/core` must not pull Zod into an application's bundle.** Import run-time values from
   the contract's Zod-free entry points (`@tula/contract/error-codes`, `/headers`,
-  `/password-rules`, `/theme`) and types from `src/generated`. Anything an SDK needs at run time goes in
+  `/password-rules`, `/theme`, `/issuer`) and types from `src/generated`. Anything an SDK needs at run time goes in
   a contract module that does not import Zod.
 - `@tula/core` ships no Node or Bun API: `typecheck:portable` checks its sources against web
   platform types only.
@@ -179,6 +181,39 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - **Accessibility is part of done**: labelled fields, errors associated and announced, focus
   moved on a step change and on failure, state as text and not only colour, keyboard operation
   of everything. axe runs on every screen in the browser tests with no rule disabled.
+
+### Next.js SDK (see ADR 0029)
+
+- **The browser talks to the app's origin, never to the API's host.** The route handler
+  (`createTulaHandlers`, mounted at `app/api/tula/[...tula]/route.ts`) forwards `/v1/client/*`
+  and nothing else. It forwards the browser's `Origin` and `Sec-Fetch-Site` **unchanged** and
+  never invents an `Origin`: the API's allow-list and login-CSRF rules must keep deciding.
+  Request and response headers are allow-lists; a redirect from the API is never followed or
+  passed on; nothing of a request or response is logged.
+- **The handler refuses what does not come from the app's own pages**, before forwarding: a
+  cross-site request, a foreign `Origin`, and any request other than `GET`/`HEAD` with no
+  `Origin`.
+- **Three first-party cookies** (`tula_rt`, `tula_session`, `tula_at`): `HttpOnly`,
+  `SameSite=Lax`, `Path=/`, no `Domain`, `Secure` and `__Host-` over https. Write them only
+  with `setCookieLine` / `clearCookieLine` (`packages/nextjs/src/cookies.ts`), never copy an
+  attribute from the API's cookie, and read only the name for the request's own scheme.
+- **A session is verified, never assumed.** `verifyAccessToken` (`EdDSA` only, `kid`, `iss`,
+  `aud`, `exp`, `sub`, `sid`) runs in the middleware and again in `auth()`. The one header
+  that carries claims (`x-tula-auth`, stateful sessions) is honoured only with this app's HMAC
+  over the claims and the session cookie; the middleware strips any copy the browser sent.
+  Never add a header that is trusted for being present.
+- **A `redirect_url` is a path on this origin**: written by the middleware, read through
+  `safeRedirectPath`. Never pass one to a redirect or a component any other way.
+- **The middleware imports no Node API** (it runs in the Edge runtime on Next.js 15), and the
+  client entry (`src/index.ts`, `src/provider.tsx`) imports nothing that reads the server
+  configuration: `package.test.ts` builds the package and checks both, and that the client
+  entry's output has no reference to the secret key. Every entry point is one file; keep
+  `splitting: false`.
+- **The API needs `TRUST_PROXY=true` behind the handler**, or every visitor shares the Next.js
+  server's address and one per-IP rate limit. Say so wherever the setup is documented.
+- A refresh the API refuses clears the cookies; a refresh that could not be made changes
+  nothing. Parallel refreshes rely on the profile's reuse grace window: `real-api.test.ts`
+  holds both sides of it against the real API in process.
 
 ### API module pattern (hybrid hexagonal — see ADR 0001)
 
@@ -446,7 +481,9 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   verification (TOTP, backup codes, step-up, the MFA policy): [ADR 0025](docs/adr/0025-mfa.md);
   OAuth sign-in and account linking: [ADR 0026](docs/adr/0026-oauth.md); passkeys:
   [ADR 0027](docs/adr/0027-passkeys.md); session profiles, the stateful session type and its CSRF
-  argument, and the concurrent-session rule: [ADR 0028](docs/adr/0028-session-profiles.md).
+  argument, and the concurrent-session rule: [ADR 0028](docs/adr/0028-session-profiles.md);
+  the Next.js SDK (the same-origin route handler, its cookies, offline verification and the
+  header that carries a stateful session's claims): [ADR 0029](docs/adr/0029-nextjs-sdk.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
   takes the `Origin` header and accepts it only when the environment allows it **and** it
   belongs to `passkeys.rpId`; nothing in a body chooses the origin or the relying party. Call
@@ -636,7 +673,12 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   context: keep it that way. Its `/__test/*` routes go through `e2e/guard.ts` (no `Origin`,
   the exact loopback `Host`, no cross-site `Sec-Fetch-Site`), which `bun run test:harness`
   tests. The API image's install stage copies no manifest of a browser package
-  (`packages/react`, `examples/*`): `bun install --production` would install React into it.
+  (`packages/react`, `packages/nextjs`, `examples/*`): `bun install --production` would
+  install React (and Next.js) into it. A second Playwright project, `nextjs`
+  (`e2e/tests/nextjs/`), drives `examples/nextjs-app-router`, built once per run and served by
+  `next start`, against the same fixture; the build is part of `bun run e2e`, never of
+  `verify`. Its server is started with `exec` so that Playwright stops it: a Next.js server
+  left running keeps the keys of a fixture that is gone.
 - Component tests (`packages/react`) run in happy-dom through a preload
   (`src/testing/setup.ts`) with Testing Library, against `@tula/core`'s own fake API
   (`src/testing/harness.tsx`).
@@ -733,8 +775,8 @@ bun run --filter @tula/example-react-vite dev
 bun run --filter @tula/react generate
                             # rewrite the stylesheet's token block from @tula/contract/theme
 bun run e2e:install         # once: download Chromium for Playwright
-bun run e2e                 # browser tests: the example app against the real API in process, with axe
-bun run e2e:screenshots     # regenerate the screenshots in examples/react-vite/docs
+bun run e2e                 # browser tests: both example apps against the real API in process, with axe
+bun run e2e:screenshots     # regenerate the screenshots in examples/{react-vite,nextjs-app-router}/docs
 bun run db:generate         # generate a migration from schema changes (then read the SQL)
 bun run db:check            # fail if src/schema changed without a migration
 bun run db:migrate          # apply migrations as the schema owner (DATABASE_MIGRATION_URL)

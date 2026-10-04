@@ -24,3 +24,7 @@ e2e/playwright-report/
 .claude/settings.local.json
 .claude/.state/
 .claude/worktrees/
+
+# Next.js (examples/nextjs-app-router)
+.next/
+next-env.d.ts

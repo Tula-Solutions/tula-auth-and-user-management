@@ -11,13 +11,17 @@ const LOADING: AuthState = Object.freeze({ status: 'loading' })
  * a change, so the snapshot is stable and components do not re-render every minute.
  *
  * @param client - The client.
- * @returns The current state; `loading` during server rendering.
+ * @returns The current state; during server rendering and hydration the client's
+ *   `serverState`, or `loading` when it has none.
  */
 export function useAuthState(client: TulaClient): AuthState {
   const subscribe = useCallback((notify: () => void) => client.onChange(notify), [client])
   return useSyncExternalStore(
     subscribe,
     () => client.state,
-    () => LOADING
+    // The server and hydration: what the server knew (a framework integration says), else
+    // `loading`. Never `client.state`: a client that loaded before hydration would not match
+    // the server's HTML.
+    () => client.serverState ?? LOADING
   )
 }

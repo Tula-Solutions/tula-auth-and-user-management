@@ -72,11 +72,12 @@ describe('nothing can be published yet', () => {
 })
 
 describe('publishable packages', () => {
-  test('are the contract, the core client and the React SDK, dependencies first', () => {
+  test('are the contract, the core client and the React and Next.js SDKs, dependencies first', () => {
     expect([...PUBLISHABLE_PACKAGES]).toEqual([
       'packages/contract',
       'packages/core',
       'packages/react',
+      'packages/nextjs',
     ])
   })
 

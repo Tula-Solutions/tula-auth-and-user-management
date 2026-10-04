@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./error-codes": "./src/error-codes.ts",
     "./headers": "./src/headers.ts",
+    "./issuer": "./src/issuer.ts",
     "./password-rules": "./src/password-rules.ts",
     "./theme": "./src/theme.ts",
     "./openapi.json": "./openapi.json"
@@ -26,6 +27,10 @@
       "./headers": {
         "types": "./dist/headers.d.ts",
         "default": "./dist/headers.js"
+      },
+      "./issuer": {
+        "types": "./dist/issuer.d.ts",
+        "default": "./dist/issuer.js"
       },
       "./password-rules": {
         "types": "./dist/password-rules.d.ts",
