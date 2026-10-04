@@ -6,11 +6,13 @@ import { defineConfig, env } from '@tula/config'
 //   export TULA_SECRET_KEY=tula_sk_dev_…        # bun run api-key:create --environment <id>
 //   bun run tula -- diff --config examples/tula-config/tula.config.ts --env dev
 //
-// The full guide is docs/config.md.
+// The full guide is docs/config.md. The `#region` comments mark the parts docs/methods/*.md
+// show (`bun run docs:generate` copies them).
 
 /** Settings both environments share. A config is code: share with a spread, not a copy. */
 const shared = {
   app: { name: 'Northline', supportEmail: 'help@northline.app' },
+  // #region methods
   signIn: {
     methods: {
       password: { enabled: true },
@@ -18,6 +20,7 @@ const shared = {
       emailLink: { enabled: true },
     },
   },
+  // #endregion
   notifications: {
     passwordChanged: true,
     newSignIn: true,
@@ -51,6 +54,7 @@ export default defineConfig({
       kind: 'production',
       settings: {
         ...shared,
+        // #region password
         password: {
           preset: 'custom',
           minLength: 12,
@@ -69,14 +73,24 @@ export default defineConfig({
           history: 5,
           expiryDays: null,
         },
+        // #endregion
+        // #region sign-up
         signUp: { password: 'required' },
+        // #endregion
+        // #region urls
         urls: {
           allowedOrigins: ['https://app.northline.app'],
           allowedRedirectUrls: ['https://app.northline.app/auth/callback'],
         },
+        // #endregion
         audit: { retentionDays: 365 },
+        // #region mfa
         mfa: { policy: 'required' },
+        // #endregion
+        // #region passkeys
         passkeys: { rpId: 'northline.app' },
+        // #endregion
+        // #region sessions
         sessions: {
           maxPerUser: 10,
           onLimit: 'end_oldest',
@@ -85,7 +99,9 @@ export default defineConfig({
             mobile: { idleTimeout: '30d', absoluteTimeout: '90d' },
           },
         },
+        // #endregion
       },
+      // #region providers
       providers: {
         google: {
           clientId: '1234567890-abc.apps.googleusercontent.com',
@@ -100,6 +116,7 @@ export default defineConfig({
           privateKey: env('APPLE_PRIVATE_KEY'),
         },
       },
+      // #endregion
     },
   },
 })

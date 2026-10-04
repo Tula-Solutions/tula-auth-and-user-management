@@ -35,6 +35,7 @@ bun run conformance
 | `CONFORMANCE_SECRET_KEY` | none | A secret key of the same environment. Without it, scenarios marked `needsSecretKey` are skipped. |
 | `CONFORMANCE_BASE_URL` | `http://localhost:3003` | Origin of the API. |
 | `CONFORMANCE_MAILPIT_URL` | `http://localhost:8025` | Mailpit's web address. |
+| `CONFORMANCE_SETTLE_MS` | `0` | For a run through one address in front of several instances ([below](#behind-one-address)): how long to wait after each step that changes the environment's settings. At most 60000. |
 | `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
@@ -51,6 +52,53 @@ status, the error code and short plain values that differed. Tokens, long string
 arrays are described (`a string of 52 characters`), never quoted, and a value the scenario
 generated or captured appears as its placeholder (`{{password}}`), because the output ends up
 in CI logs.
+
+## Behind one address
+
+A real deployment is several instances behind a load balancer, and a client's requests land
+on whichever instance is next. The Compose `app` profile has that arrangement: `lb`
+(`docker/lb/nginx.conf`, round robin, port 3005) in front of `api` and `api-2`. To run every
+scenario through it:
+
+```bash
+export TULA_MASTER_KEY=$(openssl rand -hex 32)
+TRUST_PROXY=true OAUTH_MOCK_PROVIDER=true LB_CLIENT_ADDRESS=client \
+API_PUBLIC_URL=http://localhost:3005 docker compose --profile app up -d --build
+# seed and mint the two keys as above, then:
+CONFORMANCE_BASE_URL=http://localhost:3005 CONFORMANCE_SETTLE_MS=6000 \
+CONFORMANCE_PUBLISHABLE_KEY=tula_pk_dev_… CONFORMANCE_SECRET_KEY=tula_sk_dev_… \
+bun run conformance
+```
+
+Three things differ from a run against one instance:
+
+- **`CONFORMANCE_SETTLE_MS=6000`.** An instance caches the environment's settings and may serve
+  the previous document for up to 5 seconds after another instance changed it (ADR 0018). The
+  scenarios change settings and use them in the next step, which behind a load balancer lands
+  on the other instance. With this set, the runner waits after every successful write to
+  `/v1/admin/settings`. Without it, about half of the settings-changing scenarios fail with
+  `auth.method_disabled` or a stale `GET /v1/client/config`: that is the documented delay, not
+  a fault. It adds about six minutes to a run.
+- **`LB_CLIENT_ADDRESS=client`.** The runner sends each scenario from an address of its own in
+  `X-Forwarded-For`, playing the edge proxy; all scenarios from one address run into the
+  per-address rate limits. By default the proxy overwrites that header with the peer it saw
+  (what a real proxy must do); this setting passes the runner's header through. It lets any
+  caller choose its rate-limit bucket, so it is for this run only.
+- **`API_PUBLIC_URL`** is the proxy's address: it is the issuer of the tokens and where the
+  mock provider's pages are reached.
+
+The summary line ends `against http://localhost:3005 (one address, 6000 ms after each settings
+change)`. That the requests really alternated is in the proxy's log, one line per request with
+the instance that answered:
+
+```bash
+docker compose --profile app logs --no-log-prefix lb | grep -o 'upstream=[0-9.:]*' | sort | uniq -c
+```
+
+Steps marked `"instance": "second"` go to the one address like every other step in this mode.
+The run against the two ports (`CONFORMANCE_SECOND_BASE_URL`) stays the one that proves a
+particular request went to a particular instance. CI runs both (`self-host` in
+`.github/workflows/ci.yml`).
 
 ## Scenario format
 

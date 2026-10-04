@@ -1,9 +1,11 @@
 # Local V1 stack (business plan §5.8).
 #   Development:  `docker compose up -d` then `bun run dev` (Postgres, Redis and Mailpit only).
-#   Packaged API: `docker compose --profile app up -d --build` also runs the migrations and two
-#                 instances of the API image. See docs/self-host.md.
+#   Packaged API: `docker compose --profile app up -d --build` also runs the migrations, two
+#                 instances of the API image and a proxy that puts both behind one address
+#                 (http://localhost:3005). See docs/self-host.md.
 # Host ports can be moved with POSTGRES_PORT, REDIS_PORT, MAILPIT_SMTP_PORT, MAILPIT_UI_PORT,
-# API_PORT and API_2_PORT, e.g. to run a second stack next to this one.
+# API_PORT, API_2_PORT and LB_PORT, and the built image's tag with API_IMAGE, e.g. to run a
+# second stack next to this one (with `docker compose -p <another name>`).
 # After using the profile, stop with it too: `docker compose --profile app down`. A plain
 # `docker compose down` leaves the API containers running and holding the network.
 # Ports bind to 127.0.0.1 only: Docker bypasses host firewalls, and these services use dev
@@ -15,7 +17,7 @@
 # Shared by both instances below: they must differ in nothing but the host port.
 x-api: &api
   profiles: ['app']
-  image: tula-api:local
+  image: ${API_IMAGE:-tula-api:local}
   build:
     context: .
     dockerfile: apps/api/Dockerfile
@@ -31,6 +33,7 @@ x-api: &api
     # inside this container is the container itself).
     # Both instances share one PUBLIC_URL: it is the issuer of every access token, so a token
     # signed by one instance is only accepted by the other if they agree on it.
+    # When clients reach the API through the proxy (`lb`), set API_PUBLIC_URL to its address.
     PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
     SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
     # Not `REDIS_URL`, for the same reason: in a developer's `.env` it points at 127.0.0.1.
@@ -39,6 +42,9 @@ x-api: &api
     BREACH_CHECK: ${BREACH_CHECK:-offline}
     PASSWORD_POLICY: ${PASSWORD_POLICY:-recommended}
     CORS_ORIGINS: ${CORS_ORIGINS:-}
+    # `true` only when every request comes through a proxy that overwrites X-Forwarded-For, as
+    # `lb` does. The instances' own ports stay published here for comparison, so leave it
+    # `false` unless the run goes through the proxy.
     TRUST_PROXY: ${TRUST_PROXY:-false}
     # Development and tests only: serves every OAuth provider from the built-in mock provider
     # (ADR 0026). The API refuses to start with it unless ENVIRONMENT is `local`.
@@ -89,7 +95,7 @@ services:
   # Applies pending migrations as the schema owner, then exits. The API waits for it.
   migrate:
     profiles: ['app']
-    image: tula-api:local
+    image: ${API_IMAGE:-tula-api:local}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -111,6 +117,26 @@ services:
   api-2:
     <<: *api
     ports: ['127.0.0.1:${API_2_PORT:-3004}:3003']
+
+  # Both instances behind one address, round robin (docker/lb/nginx.conf). This is what the
+  # exit criterion "two packaged instances behind one address" runs against
+  # (conformance/README.md, "Behind one address").
+  lb:
+    profiles: ['app']
+    image: nginx:1.28-alpine@sha256:a8b39bd9cf0f83869a2162827a0caf6137ddf759d50a171451b335cecc87d236
+    ports: ['127.0.0.1:${LB_PORT:-3005}:8080']
+    volumes:
+      - ./docker/lb/nginx.conf:/etc/nginx/nginx.conf:ro
+      # `peer` (the default) tells the API the address this proxy saw. `client` passes the
+      # caller's X-Forwarded-For through and is for the conformance run only: read
+      # docker/lb/forwarded-for.client.conf before using it.
+      - ./docker/lb/forwarded-for.${LB_CLIENT_ADDRESS:-peer}.conf:/etc/nginx/forwarded-for.conf:ro
+    depends_on:
+      api:
+        condition: service_started
+      api-2:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   postgres-data:

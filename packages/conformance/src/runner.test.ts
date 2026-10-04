@@ -567,6 +567,64 @@ describe('runScenario', () => {
     expect(requests).toEqual([])
   })
 
+  test('behind one address, a settings change is given time to reach every instance', async () => {
+    const { target, waits, requests } = fakeTarget(() => ({ status: 200, body: {} }), {
+      settleMs: 6_000,
+    })
+    const put = { method: 'PUT', path: '/v1/admin/settings', auth: 'secret', body: {} }
+    await runScenario(
+      scenario(
+        [
+          {
+            name: 'read',
+            request: get('/v1/admin/settings', { auth: 'secret' }),
+            expect: { status: 200 },
+          },
+          { name: 'change', request: put, expect: { status: 200 } },
+          {
+            name: 'another admin write',
+            request: { ...put, path: '/v1/admin/users', method: 'POST' },
+            expect: { status: 200 },
+          },
+          { name: 'use', request: get('/v1/client/config'), expect: { status: 200 } },
+        ],
+        { needsSecretKey: true }
+      ),
+      target
+    )
+    // One wait, after the write and before the next request: reads and other writes need none.
+    expect(waits).toEqual([6_000])
+    expect(requests.map((seen) => `${seen.method} ${seen.path}`)).toEqual([
+      'GET /v1/admin/settings',
+      'PUT /v1/admin/settings',
+      'POST /v1/admin/users',
+      'GET /v1/client/config',
+    ])
+  })
+
+  test('a refused settings change is not waited for, and without settleMs nothing waits', async () => {
+    const put = { method: 'PUT', path: '/v1/admin/settings', auth: 'secret', body: {} }
+    const refused = fakeTarget(() => ({ status: 412, body: { code: 'precondition.failed' } }), {
+      settleMs: 6_000,
+    })
+    await runScenario(
+      scenario([{ name: 'stale', request: put, expect: { status: 412 } }], {
+        needsSecretKey: true,
+      }),
+      refused.target
+    )
+    expect(refused.waits).toEqual([])
+
+    const direct = fakeTarget(() => ({ status: 200, body: {} }))
+    await runScenario(
+      scenario([{ name: 'change', request: put, expect: { status: 200 } }], {
+        needsSecretKey: true,
+      }),
+      direct.target
+    )
+    expect(direct.waits).toEqual([])
+  })
+
   test('a wait step passes the duration to the target', async () => {
     const { target, waits } = fakeTarget(() => ({ status: 200 }))
     await runScenario(scenario([{ name: 'pause', wait: '11s' }]), target)

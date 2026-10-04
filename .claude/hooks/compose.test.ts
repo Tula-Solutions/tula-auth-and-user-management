@@ -29,6 +29,8 @@ interface Service {
   image?: string
   environment?: Record<string, string>
   ports?: { published: string; target: number; host_ip?: string }[]
+  volumes?: { source: string; target: string; read_only?: boolean }[]
+  depends_on?: Record<string, unknown>
 }
 
 /** The Compose file as Docker resolves it, with only the given variables set. */
@@ -140,6 +142,7 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
     expect(Object.keys(services).sort()).toEqual([
       'api',
       'api-2',
+      'lb',
       'mailpit',
       'migrate',
       'postgres',
@@ -155,6 +158,41 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
     expect(api?.ports?.[0]).toMatchObject({ published: '3010', target: 3003 })
     expect(second?.ports?.[0]).toMatchObject({ published: '3011', target: 3003 })
     expect(resolved({})['api-2']?.ports?.[0]).toMatchObject({ published: '3004', target: 3003 })
+  })
+
+  test('one address in front of both instances, published on this machine only', () => {
+    const services = resolved({})
+    const { lb } = services
+    expect(lb?.ports).toHaveLength(1)
+    expect(lb?.ports?.[0]).toMatchObject({ published: '3005', target: 8080, host_ip: '127.0.0.1' })
+    expect(resolved({ LB_PORT: '3015' }).lb?.ports?.[0]).toMatchObject({ published: '3015' })
+    expect(Object.keys(lb?.depends_on ?? {}).sort()).toEqual(['api', 'api-2'])
+    // Its configuration is the file in the repository, mounted read-only.
+    expect(lb?.volumes).toEqual([
+      expect.objectContaining({
+        source: join(root, 'docker/lb/nginx.conf'),
+        target: '/etc/nginx/nginx.conf',
+        read_only: true,
+      }),
+      // By default the API is told the address the proxy saw, never one the client sent.
+      expect.objectContaining({
+        source: join(root, 'docker/lb/forwarded-for.peer.conf'),
+        target: '/etc/nginx/forwarded-for.conf',
+        read_only: true,
+      }),
+    ])
+    expect(resolved({ LB_CLIENT_ADDRESS: 'client' }).lb?.volumes?.[1]).toMatchObject({
+      source: join(root, 'docker/lb/forwarded-for.client.conf'),
+      target: '/etc/nginx/forwarded-for.conf',
+    })
+  })
+
+  test('the built image can be given another tag, so two stacks do not overwrite each other', () => {
+    const services = resolved({ API_IMAGE: 'tula-api:other' })
+    expect(services.api?.image).toBe('tula-api:other')
+    expect(services['api-2']?.image).toBe('tula-api:other')
+    expect(services.migrate?.image).toBe('tula-api:other')
+    expect(resolved({}).migrate?.image).toBe('tula-api:local')
   })
 
   test('every image that is pulled is pinned by digest', () => {
@@ -173,6 +211,60 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
       'postgres',
       'redis',
     ])
+  })
+})
+
+describe('docker/lb/nginx.conf', () => {
+  const config = Bun.file(join(root, 'docker/lb/nginx.conf')).text()
+
+  test('requests alternate between exactly the two API instances', async () => {
+    const upstream = /upstream\s+tula_api\s*\{([^}]*)\}/.exec(await config)?.[1] ?? ''
+    const servers = upstream
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('server '))
+    expect(servers).toEqual(['server api:3003;', 'server api-2:3003;'])
+    // Round robin is nginx's default; any of these would pin a client to one instance.
+    expect(upstream).not.toMatch(/ip_hash|hash |sticky|least_conn|backup|weight=/)
+  })
+
+  test('the forwarded address is the peer the proxy saw, unless the conformance run asks otherwise', async () => {
+    // TRUST_PROXY makes the API read the last X-Forwarded-For entry (lib/client-ip.ts). By
+    // default the proxy overwrites the header, so a client cannot choose its rate-limit bucket.
+    const text = await config
+    const directives = (file: string) =>
+      Bun.file(join(root, 'docker/lb', file))
+        .text()
+        .then((body) => body.split('\n').filter((line) => line !== '' && !line.startsWith('#')))
+    expect(text).toContain('include /etc/nginx/forwarded-for.conf;')
+    expect(text).not.toContain('proxy_set_header X-Forwarded-For')
+    expect(text).not.toContain('$proxy_add_x_forwarded_for')
+    expect(await directives('forwarded-for.peer.conf')).toEqual([
+      'proxy_set_header X-Forwarded-For $remote_addr;',
+    ])
+    // The other file passes the runner's header through, and says what that gives away.
+    expect(await directives('forwarded-for.client.conf')).toEqual([
+      'proxy_set_header X-Forwarded-For $http_x_forwarded_for;',
+    ])
+    expect(await Bun.file(join(root, 'docker/lb/forwarded-for.client.conf')).text()).toContain(
+      'Never use it'
+    )
+  })
+
+  test('the access log names the instance and never a query string or a header', async () => {
+    const text = await config
+    const format = /log_format\s+upstream\s+'([^']*)'/.exec(text)?.[1] ?? ''
+    expect(format).toContain('$upstream_addr')
+    // An OAuth callback carries its code and state in the query; `$request` and
+    // `$request_uri` would write them to the log. `$uri` is the path alone.
+    expect(format).toContain('$uri')
+    expect(text).not.toMatch(/\$request\b|\$request_uri|\$args|\$query_string|\$http_|\$cookie_/)
+    expect(text).toContain('access_log /dev/stdout upstream;')
+  })
+
+  test('a failed request is not replayed against the other instance', async () => {
+    // A retried POST would spend a code or count a guess twice.
+    expect(await config).toContain('proxy_next_upstream off;')
   })
 })
 

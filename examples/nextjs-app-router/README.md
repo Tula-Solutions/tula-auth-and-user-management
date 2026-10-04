@@ -22,6 +22,28 @@ handler, a server action and the account page.
 | `app/sign-in/page.tsx` | `<SignIn>` with a `redirect_url` checked by `safeRedirectPath`. |
 | `app/profile/page.tsx` | `<UserProfile>`. |
 
+## Which sign-in methods it has
+
+All of them, and none in its code: `<SignIn>`, `<SignUp>` and `<UserProfile>` draw what the
+environment's settings enable. Switch a method on (dashboard, `tula.config.ts` or the admin
+API; [one page per method](../../docs/README.md#sign-in-methods)) and it appears here.
+
+| Method or feature | Where it shows up | Browser test (`e2e/tests/nextjs/`) |
+| --- | --- | --- |
+| Password sign-up, sign-in | `/sign-up`, `/sign-in` | `app.spec.ts` |
+| Password reset | `/sign-in`, "Forgot password?" | `methods.spec.ts` |
+| Emailed code; sign-up without a password | `/sign-in`, `/sign-up` | `methods.spec.ts` |
+| Emailed link (same browser) | `/sign-in`, then `/auth/link` | `callbacks.spec.ts` |
+| Google, GitHub, Apple | `/sign-in`, then `/oauth/callback` | `callbacks.spec.ts` (mock provider) |
+| Passkeys: button, autofill, add, rename, remove | `/sign-in`, `/profile` | `methods.spec.ts` (virtual authenticator) |
+| Passkey as the second step and as step-up | `/sign-in`, the "Confirm it is you" dialog | `methods.spec.ts` |
+| Authenticator app and backup codes; enrolment required at sign-in | `/profile`, `/sign-in` | `methods.spec.ts` |
+| Step-up by authenticator, passkey or emailed code | the "Confirm it is you" dialog | `methods.spec.ts` |
+| Devices: list and sign out | `/profile` | `methods.spec.ts` |
+| The hybrid profile's cookies and their refresh; a stateful profile | every page | `app.spec.ts`, `methods.spec.ts` |
+| The concurrent-session limit | `/sign-in` | `methods.spec.ts` |
+| Server component, route handler, server action | `/dashboard`, `/api/whoami` | `app.spec.ts` |
+
 ## Run it
 
 It is configured by environment variables only ([`.env.example`](.env.example) lists them).
@@ -52,4 +74,4 @@ PORT=3100 bun run dev
 ## Tests
 
 `bun run e2e` builds this app once and drives it with Playwright against the real API in
-process (`e2e/tests/nextjs/`). `bun run e2e:screenshots` regenerates the screenshots above.
+process (`e2e/tests/nextjs/`), with axe on every page and state in light and dark. `bun run e2e:screenshots` regenerates the screenshots above.

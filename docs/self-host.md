@@ -4,9 +4,21 @@ Tula's API is one container image, a PostgreSQL database and, for more than one 
 Redis. This guide covers trying it locally with Docker Compose, and what to change for a real
 deployment.
 
-Phase 0 status: email and password sign-up and sign-in, sessions, user administration and the
-audit log. Administration is through the dashboard at `/dashboard` ([dashboard.md](dashboard.md))
-or the HTTP API (`/v1/docs` lists it).
+Phase 1 status: passwords, emailed codes and links, Google, GitHub and Apple, passkeys,
+two-step verification, session profiles, user administration and the audit log (one page per
+method under [methods/](README.md#sign-in-methods)). Administration is through the dashboard at
+`/dashboard` ([dashboard.md](dashboard.md)), settings as code (`tula apply`,
+[config.md](config.md)) or the HTTP API (`/v1/docs` lists it). **No image and no package is
+published yet**: the image is built from this repository. What has only been tested against a
+stand-in (real providers, a physical passkey authenticator, and more) is listed in
+[plans/phase-1-unverified.md](plans/phase-1-unverified.md).
+
+Contents: [try it locally](#try-it-locally) · [the server's settings](#settings) ·
+[an environment's settings](#settings-of-an-environment) ·
+[providers](#signing-in-with-google-github-or-apple) · [sessions](#sessions) ·
+[passkeys](#passkeys) · [`tula doctor`](#checking-a-deployment-tula-doctor) ·
+[the dashboard](#the-dashboard) · [running it for real](#running-it-for-real) (the database,
+https and the proxy, Redis and several instances, retention) · [upgrading](#upgrading).
 
 ## Try it locally
 
@@ -24,9 +36,10 @@ This starts PostgreSQL, Redis and Mailpit (a local inbox at http://localhost:802
 database migrations, and starts **two instances** of the API: http://localhost:3003 and
 http://localhost:3004. They are the same image with the same settings, sharing the database and
 Redis, so you can see for yourself that they behave as one server: sign in through one and the
-other accepts the token; sign out through one and the other refuses it. Use either; a real
-deployment puts a load balancer in front of them (see
-[Redis and more than one instance](#running-it-for-real)). The APIs wait for the migrations to
+other accepts the token; sign out through one and the other refuses it. A third address,
+http://localhost:3005, is a small proxy (`lb`) that sends each request to whichever instance is
+next, which is how a real deployment is reached (see
+[Redis and more than one instance](#running-it-for-real)). Use any of the three. The APIs wait for the migrations to
 finish. Keep the same `TULA_MASTER_KEY` for every later start: put it in a `.env` file next to
 `docker-compose.yml` (`TULA_MASTER_KEY=…`) rather than exporting it each time.
 
@@ -69,10 +82,13 @@ packaged stack:
 | `TULA_MASTER_KEY` | none | Required. |
 | `API_PORT` | `3003` | Host port of the first API instance. |
 | `API_2_PORT` | `3004` | Host port of the second API instance. |
-| `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The `PUBLIC_URL` of **both** instances: it is the issuer of every access token, so they must agree on it. A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
+| `LB_PORT` | `3005` | Host port of the proxy in front of both instances. |
+| `LB_CLIENT_ADDRESS` | `peer` | What the proxy tells the API the client's address is: `peer` is the address it saw. `client` passes the caller's `X-Forwarded-For` through and is for the conformance run only (below); with it any caller chooses its own rate-limit bucket. |
+| `API_IMAGE` | `tula-api:local` | The tag the image is built as, so that a second stack (`docker compose -p <name>`) does not overwrite the first one's. |
+| `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The `PUBLIC_URL` of **both** instances: it is the issuer of every access token, so they must agree on it. When clients come through the proxy, set it to the proxy's address (`http://localhost:3005`). A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
 | `API_REDIS_URL` | `redis://redis:6379` | The API's `REDIS_URL`: the stack's own Redis unless you point it elsewhere. A separate name for the same reason. |
 | `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. Required in `staging` and `prod`, where the bundled Mailpit is refused. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
-| `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. |
+| `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `TULA_ADMIN_TOKEN`, `OAUTH_MOCK_PROVIDER`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. Set `TRUST_PROXY=true` only when every request comes through the proxy: the instances' own ports are published here too, and on those a client could then write its own address. |
 | `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `5432`, `6379`, `1025`, `8025` | Host ports of the other services. |
 
 The database addresses inside the stack are fixed; `DATABASE_URL` from `.env` is not used.
@@ -92,6 +108,21 @@ signs in through one instance and out through the other, and spreads wrong passw
 to show one shared lockout; the summary line then ends `against http://localhost:3003 and
 http://localhost:3004`. Without it every step goes to the first instance.
 
+To run every scenario **through the one address**, so that each request lands on whichever
+instance is next, start the stack with `TRUST_PROXY=true`, `LB_CLIENT_ADDRESS=client` and
+`API_PUBLIC_URL=http://localhost:3005`, and run:
+
+```bash
+CONFORMANCE_BASE_URL=http://localhost:3005 CONFORMANCE_SETTLE_MS=6000 CONFORMANCE_PUBLISHABLE_KEY=tula_pk_dev_… CONFORMANCE_SECRET_KEY=tula_sk_dev_… bun run conformance
+```
+
+`CONFORMANCE_SETTLE_MS` makes the runner wait after each change of the environment's settings:
+an instance may serve the settings it had cached for up to 5 seconds after another instance
+changed them, and without the wait the next step can land on that instance. The summary line
+ends `(one address, 6000 ms after each settings change)`, and
+`docker compose --profile app logs lb` shows which instance answered each request. See
+[`conformance/README.md`](../conformance/README.md#behind-one-address).
+
 ## Settings
 
 The API reads its settings from the environment and refuses to start if one is invalid.
@@ -100,7 +131,9 @@ The API reads its settings from the environment and refuses to start if one is i
 | --- | --- | --- | --- |
 | `ENVIRONMENT` | yes | | `local`, `dev`, `staging` or `prod`. `staging` and `prod` require https, a real mail relay and sender (not Mailpit), breach checks and Redis. |
 | `DATABASE_URL` | yes | | PostgreSQL connection as the **non-owner** runtime role (see below). |
-| `TULA_MASTER_KEY` | yes | | 64 hex characters (`openssl rand -hex 32`). Encrypts signing keys and keys the hashes of emailed codes. |
+| `TULA_MASTER_KEY` | yes | | 64 hex characters (`openssl rand -hex 32`). Encrypts signing keys, provider credentials and authenticator secrets, and keys the hashes of emailed codes and backup codes. |
+| `TULA_ADMIN_TOKEN` | | none | The instance admin token: the dashboard and `tula doctor` sign in with it. Unset, `/v1/instance/*` does not exist and the dashboard has no sign-in. At least 32 characters, generated (`openssl rand -hex 32`); the same on every instance. See [`tula doctor`](#checking-a-deployment-tula-doctor) and [the dashboard](#the-dashboard). |
+| `DASHBOARD_DIR` | | `apps/dashboard/dist` next to the API | Directory of the dashboard's build output, served at `/dashboard`. The image ships it; a directory with no `index.html` means no dashboard. |
 | `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API. It is part of every access token's issuer. |
 | `PORT` | | `3003` | |
 | `SMTP_URL` | | `smtp://127.0.0.1:1025` | Your mail relay, e.g. `smtps://user:pass@smtp.example.com:465`. |
@@ -274,15 +307,9 @@ rest of it: a `PUT` replaces the whole document):
 - An address with no account that asks to sign in by email is sent a short notice instead of a
   code, so the screens look the same for every address.
 
-**Upgrading.** Migration `0010` (OAuth) adds a unique key on `identities (user_id, provider)` and stops with an
-error if a user already has two identities of one provider. Tula itself never created such
-rows; if the table was ever written by hand, check first as the owner and remove the extras:
-`select user_id, provider, count(*) from tula.identities group by 1, 2 having count(*) > 1;`
-(no rows means the migration will apply). Switching a sign-in method or an OAuth provider off
-takes up to 5 seconds to reach every instance with Redis and up to 30 without: settings are
-cached per instance. Signing in by email needs no migration. Migration `0008` adds the attempt secret. Sign-ups, sign-ins and resets that are
-in flight while you upgrade (they live ten minutes) cannot be continued afterwards; the user
-starts again.
+Switching a sign-in method or an OAuth provider off takes up to 5 seconds to reach every
+instance with Redis and up to 30 without: settings are cached per instance. What each migration
+needs from you is under [Upgrading](#upgrading).
 
 ## Signing in with Google, GitHub or Apple
 
@@ -558,10 +585,30 @@ themselves survive: refreshing a token needs only the database and keeps working
 no backup. If it loses its data, counters and lockouts start again and nothing else is lost.
 See [ADR 0016](adr/0016-redis-and-multiple-instances.md).
 
-Every instance needs the same `PUBLIC_URL`, `TULA_MASTER_KEY`, `DATABASE_URL` and `REDIS_URL`.
-The Compose file shows the arrangement with two instances (`api` and `api-2`) built from one
-set of settings; it publishes each on its own port only so that they can be compared. Publish
-your load balancer instead, and keep the instances' clocks in sync (NTP).
+Every instance needs the same `PUBLIC_URL`, `TULA_MASTER_KEY`, `TULA_ADMIN_TOKEN`,
+`DATABASE_URL` and `REDIS_URL`. The Compose file shows the arrangement with two instances (`api`
+and `api-2`) built from one set of settings, behind a proxy (`lb`, `docker/lb/nginx.conf`); it
+also publishes each instance on its own port, only so that they can be compared. Publish your
+load balancer alone, and keep the instances' clocks in sync (NTP).
+
+What the load balancer has to do:
+
+- **No stickiness is needed.** Any request may go to any instance: sessions and attempts are in
+  the database, limits and revocations in Redis.
+- **Overwrite `X-Forwarded-For`** with the address it saw (or append to a header it has
+  cleaned), and set `TRUST_PROXY=true` on the API. The API takes the last entry.
+- **Do not replay a failed request** on another instance (`proxy_next_upstream off` in nginx): a
+  repeated `POST` would spend a code or count a guess twice.
+- Health-check `GET /v1/ready`.
+- `PUBLIC_URL` is the load balancer's public address, the same on every instance.
+
+**What is not instant across instances.** An environment's settings, and the signing keys, are
+cached in each instance. The instance that receives a change applies it at once; the others
+within 5 seconds (30 if Redis is unreachable). So for a few seconds after you switch a method
+off, another instance may still offer it, and a `GET /v1/client/config` right after a `PUT` of
+the settings may show the previous document. Nothing whose safety depends on taking effect
+everywhere at once is a setting: revoking a session, a lockout and a rate limit are shared
+through Redis and are immediate.
 
 Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
 separately, and a restart forgets all three.
@@ -575,7 +622,10 @@ transaction-mode pooler (PgBouncer in `transaction` mode) retention can stop wit
 
 - sign-in and sign-up attempts that have expired;
 - emailed codes and links one hour after they expire;
-- sessions, with their refresh tokens, 30 days after they were revoked or expired.
+- sessions, with their refresh tokens, 30 days after they were revoked or expired;
+- authenticator enrolments that were started and never confirmed, and expired passkey
+  challenges;
+- entries of the **instance** audit log older than `INSTANCE_AUDIT_RETENTION_DAYS`.
 
 It never deletes audit entries or outbox events (an environment's `audit.retentionDays`
 setting is stored but not applied yet). Each run logs one line, `retention run
@@ -594,6 +644,34 @@ the same bytes as today's; Dependabot proposes the updates. Build it from the re
 ```bash
 docker build -f apps/api/Dockerfile -t tula-api .
 ```
+
+## Upgrading
+
+Back up the database, apply the migrations as the **owner** (`DATABASE_MIGRATION_URL`, see
+[Migrations](#running-it-for-real)), then start the new version. Migrations only move forward.
+Every migration from `0006` on is additive (new tables, new columns with defaults, a
+constraint, a function, a grant), so with several instances the old version keeps running
+while they are applied and the instances can then be replaced one at a time. `tula doctor`
+reports whether the database is at the version the running image ships.
+
+| Migration | What it does | What you do |
+| --- | --- | --- |
+| `0006` API keys | Ties each API key's project to its environment with a foreign key. | Nothing. It fails only if a key row was written by hand with a project that is not its environment's. |
+| `0007` environment settings | The table behind `GET`/`PUT /v1/admin/settings`. | Nothing. Every environment starts at revision 0 with the defaults, including your `PASSWORD_POLICY` and `CORS_ORIGINS`, until it saves a document. |
+| `0008` attempt secret | Every sign-up, sign-in and reset attempt now has a secret its client must present. | Nothing. Attempts in flight during the upgrade (they live ten minutes) cannot be continued: the user starts again. Clients must be on an SDK that sends `x-tula-attempt`. |
+| `0009` two-step verification | Tables for authenticator secrets and backup codes. | Decide the policy: `mfa.policy` is `optional` unless you set it, which lets users turn it on. From here on, **changing `TULA_MASTER_KEY` breaks every user's second factor**. |
+| `0010` OAuth | The provider credentials table, and a unique key on `identities (user_id, provider)`. | It stops with an error if a user already has two identities of one provider. Tula never created such rows; if the table was ever written by hand, check as the owner first and remove the extras: `select user_id, provider, count(*) from tula.identities group by 1, 2 having count(*) > 1;` (no rows means it will apply). |
+| `0011` passkeys | Tables for passkeys and their challenges. | Nothing. Passkeys stay off until an environment sets `passkeys.rpId` and switches the method on. |
+| `0012` session profiles | A `type` on every session (`hybrid` for the existing ones). | Nothing. Existing sessions keep their lifetimes; the `sessions` settings start at the previous fixed values (60 seconds, 7 days idle, 30 days in all). |
+| `0013` managed by | Records which config file last applied an environment's settings (`tula apply`). | Nothing. |
+| `0014` diagnostics | A function, owned by the schema owner, that tells the API which migrations are applied (for `tula doctor`). | Nothing, as long as migrations run as the owner and the API as a member of `tula_app`: the function is how the non-owner role reads that one fact. |
+| `0015` instance audit log | The log of dashboard sign-ins and of workspaces, projects and environments being created. | Nothing. It is written only where `TULA_ADMIN_TOKEN` is set. |
+| `0016` instance audit retention | Lets the API delete instance audit entries older than `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30). | Set the variable if a year is not what you want. An environment's audit log is still never deleted. |
+
+Settings added since Phase 0 that a deployment behind a proxy or with several instances should
+look at: `REDIS_URL` (required in `staging` and `prod`), `TRUST_PROXY`, `TULA_ADMIN_TOKEN`,
+`API_DOCS` (off by default in `staging` and `prod`), and for a Next.js app in front,
+`TULA_TRUSTED_PROXY_HOPS` on the app's server.
 
 ## Housekeeping
 

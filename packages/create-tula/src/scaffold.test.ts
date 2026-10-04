@@ -378,12 +378,31 @@ describe('scaffold', () => {
     expect(await tree(dir)).toEqual([])
   })
 
+  test('the mock OAuth provider can be switched on from .env, and is off until then', async () => {
+    await scaffold({ cwd: dir, name: 'shop', framework: 'nextjs' })
+    const root = join(dir, 'shop')
+    // Trying "Continue with Google" before there are real credentials is configuration, not
+    // an edit of the Compose file: the API reads the switch from the project's `.env`.
+    expect(await readFile(join(root, 'compose.yaml'), 'utf8')).toMatch(
+      /^ {6}OAUTH_MOCK_PROVIDER: \$\{OAUTH_MOCK_PROVIDER:-false\}$/m
+    )
+    // It signs in anyone as any address: never on in a new project.
+    expect(await readFile(join(root, '.env'), 'utf8')).not.toMatch(/^OAUTH_MOCK_PROVIDER=/m)
+    expect(await readFile(join(root, '.env.example'), 'utf8')).toContain(
+      '# OAUTH_MOCK_PROVIDER=true'
+    )
+  })
+
   test('the pinned service images are the repository’s own', async () => {
     const repo = await readFile(join(import.meta.dir, '../../../docker-compose.yml'), 'utf8')
     const template = await readFile(join(import.meta.dir, '../templates/base/compose.yaml'), 'utf8')
     const pinned = (text: string): string[] =>
       [...(text.match(/image: \S+@sha256:[0-9a-f]{64}/g) ?? [])].sort()
-    expect(pinned(template)).toEqual([...new Set(pinned(repo))].sort())
+    // The repository's stack also has the proxy in front of its two API instances (`lb`); a
+    // new project runs one instance and has none.
+    const shared = [...new Set(pinned(repo))].filter((image) => !image.startsWith('image: nginx:'))
+    expect(pinned(repo).filter((image) => image.startsWith('image: nginx:'))).toHaveLength(1)
+    expect(pinned(template)).toEqual(shared.sort())
     expect(pinned(template)).toHaveLength(3)
   })
 })

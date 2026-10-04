@@ -1,5 +1,10 @@
 # Sign in with Apple: setup checklist
 
+> **Not verified against the live console.** Nothing in this repository has real credentials
+> for this provider: the flow is tested against the API's built-in mock provider. The redirect
+> URI and the scopes below are what the code sends; the console steps are written from the
+> provider's documentation and have not been clicked through.
+
 What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)). Needs a paid
 Apple Developer account.
 

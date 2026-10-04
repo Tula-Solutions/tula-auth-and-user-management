@@ -55,6 +55,8 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | The `tokens:start` … `tokens:end` block of `packages/react/src/styles.css` | Generated from `@tula/contract/theme` by `bun run --filter @tula/react generate`. Change a token in the contract, then regenerate. |
 | `apps/dashboard/src/api/generated/api.gen.ts`, `apps/dashboard/src/routeTree.gen.ts`, `apps/dashboard/src/styles/tokens.gen.css` | Orval's hooks, TanStack Router's route tree and the theme tokens: `bun run dashboard:generate` (after `contract:generate`, after adding a route file, after changing a theme token). |
 | `apps/dashboard/src/components/ui/**` | shadcn primitives, written by its CLI (`bunx shadcn@latest add <name>` in `apps/dashboard`) — wrap or extend, don't modify. They import `cn` from the bare specifier `cn`, as the registry ships them; `tsconfig.json` and `vite.config.ts` map it to `src/lib/utils.ts`. |
+| `docs/reference/**` | The SDK reference, written from the JSDoc of the public entry points of `@tula/{core,react,nextjs,admin,config,contract}` by `bun run docs:generate` (`scripts/docs.ts`). Change the JSDoc, then regenerate; `bun run docs:check` (part of `verify`) fails on drift. Biome already ignores `docs/`. |
+| A block between `<!-- snippet: path#region -->` and `<!-- /snippet -->` in `docs/**` and the READMEs | Copied from that file (or its `// #region name` … `// #endregion` lines) by `bun run docs:generate`. Change the source file, then regenerate. Every TypeScript, JSON and YAML sample in `docs/methods/` must be such a block (`.claude/hooks/docs.test.ts`). |
 | `bun.lock` | Manage via `bun add` / `bun remove`. |
 | `.env*` (except `.env.example`) | Local secrets; never read, print or commit them. |
 
@@ -98,7 +100,9 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `native/{swift,android}` | Native SDKs (Phase 2). |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema. |
-| `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). |
+| `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. |
+| `docker/` | `postgres/init.sql` (the roles of a fresh local database) and `lb/` (the nginx proxy that puts the two packaged API instances behind one address in the Compose `app` profile; a development and CI fixture). |
+| `examples/docs-snippets` | The `@tula/core` and `@tula/admin` calls shown in `docs/methods/*.md`, as compiled TypeScript (`typecheck:scripts`). Not a workspace package; nothing runs it. A sample in the docs is a `#region` here or a file of an example app. |
 | `examples/core-playground` | A static page for trying `@tula/core` by hand in a browser (`bun run playground`). Not a workspace package. |
 | `examples/tula-config` | `@tula/example-config` — an example `tula.config.ts` (two environments), typechecked and loaded by `@tula/config`'s tests. |
 | `examples/react-vite` | `@tula/example-react-vite` — a Vite + React app built only from `@tula/react` components. A workspace package; also what the browser tests drive. |
@@ -950,6 +954,12 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   `expect(document.activeElement).toBe(element)`: focus moves in an effect, so the check races
   it, and a matcher that fails on a happy-dom element formats its whole window (a message of
   over 100 MB, which is what times CI out).
+- **The documentation is tested** (`.claude/hooks/docs.test.ts`, in `test:harness`): every
+  relative link and anchor in `docs/**` and the READMEs resolves; every variable in
+  `apps/api/src/env.ts` is in `.env.example` and in the settings table of `docs/self-host.md`,
+  and nothing else is; every method page has the same sections, error codes the contract
+  defines, and no hand-typed TypeScript sample. A new environment variable, a renamed heading
+  or a new method page changes those files in the same change.
 - **Every bug fix and every addressed review finding gets a regression test that fails first.**
 
 ## Definition of done (the feedback loop)
@@ -957,7 +967,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 A change is done only when all of these hold:
 
 1. **`bun run verify` is green** — Biome, harness tests, typecheck, tests with coverage,
-   `db:check`, `contract:check` and the conformance `schema:check`.
+   `db:check`, `contract:check`, the conformance `schema:check`, `packages:check` and
+   `docs:check`.
 2. **An otterbot-review pass reports no blocking findings.** Run the `otterbot-review` skill
    (github.com/otternaut/otterbot, installed globally) in local mode on the change. In Claude Code
    use `/review-loop`, which runs it on Sonnet 5.5 through the `ollie-reviewer` subagent. Fix every
@@ -1015,7 +1026,8 @@ bun install
 docker compose up -d        # postgres, redis, mailpit (http://localhost:8025)
 docker compose --profile app up -d --build
                             # also migrations + two instances of the packaged API image, on
-                            # ports 3003 and 3004 (docs/self-host.md)
+                            # ports 3003 and 3004, and a proxy in front of both on 3005
+                            # (docs/self-host.md)
                             # roles come from docker/postgres/init.sql on a FRESH volume only;
                             # after changing it: docker compose --profile app down -v
                             # (wipes local data; the profile also stops the packaged API)
@@ -1041,6 +1053,8 @@ bun run --filter create-tula templates:sync
 bun run dashboard:generate  # regenerate the dashboard's hooks, route tree and theme tokens
 bun run dashboard:dev       # the dashboard on http://localhost:5175/dashboard/, proxying /v1 to the API
 bun run dashboard:build     # apps/dashboard/dist, which `bun run dev` then serves at /dashboard
+bun run docs:generate       # rewrite docs/reference/ from the JSDoc and fill the docs' snippet blocks
+bun run docs:check          # fail if either is out of date (part of verify)
 bun run packages:check      # build, pack, publint + attw every publishable package (part of verify)
 bun run release:dry-run     # the same, then report what a release would publish (publishes nothing)
 bun run playground          # @tula/core test bench on http://localhost:5173 (examples/core-playground)
@@ -1062,4 +1076,6 @@ bun run test:integration    # Postgres and Redis tests against docker compose (n
 bun run conformance         # run conformance/ scenarios against a live server (see conformance/README.md)
                             # the OAuth scenarios need the server started with OAUTH_MOCK_PROVIDER=true
                             # CONFORMANCE_SECOND_BASE_URL=http://localhost:3004 also checks a second instance
+                            # CONFORMANCE_BASE_URL=http://localhost:3005 CONFORMANCE_SETTLE_MS=6000 runs it
+                            # through the proxy in front of both (conformance/README.md, "Behind one address")
 ```

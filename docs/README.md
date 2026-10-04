@@ -1,0 +1,62 @@
+# Tula Auth documentation
+
+Tula Auth is a self-hosted authentication and user-management server with SDKs for the web.
+**Nothing is published yet**: no package is on npm and no image is in a registry, so
+everything here is run from a checkout of the repository ([quickstart](quickstart.md)).
+
+## Start here
+
+| | |
+| --- | --- |
+| [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
+| [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
+| [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. |
+
+## Sign-in methods
+
+One page each: how to switch it on (dashboard, `tula.config.ts`, admin API), what the user
+sees, the security properties that matter to an integrator, the SDK calls, and troubleshooting
+by error code. Their code samples are copied from files of this repository by
+`bun run docs:generate`.
+
+| Method | |
+| --- | --- |
+| [Password](methods/password.md) | Sign-up, sign-in, reset, the password policy. |
+| [Emailed code](methods/email-code.md) | A 6-digit code; sign-up without a password. |
+| [Emailed link](methods/email-link.md) | A link that works in the browser that asked for it. |
+| [Google, GitHub, Apple](methods/oauth.md) | OAuth sign-in and connected accounts. Setup checklists: [Google](providers/google.md), [GitHub](providers/github.md), [Apple](providers/apple.md). |
+| [Passkeys](methods/passkeys.md) | WebAuthn: sign-in, second step, step-up. |
+| [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
+| [Sessions](methods/sessions.md) | Profiles, devices, the concurrent-session limit, what your server sees. |
+
+## Tools
+
+| | |
+| --- | --- |
+| [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula mcp`. |
+| [Settings as code](config.md) | `tula.config.ts`, what `diff` and `apply` do, using them in CI. |
+| [Dashboard](dashboard.md) | The operator's screens at `/dashboard`. |
+| [MCP server](mcp.md) | Read-only tools for an AI assistant. |
+| [Conformance suite](../conformance/README.md) | The scenarios every server and SDK must pass, and how to run them against yours. |
+
+## SDK reference
+
+Generated from the JSDoc of every public entry point ([how](reference/README.md)):
+[`@tula/core`](reference/core.md), [`@tula/react`](reference/react.md),
+[`@tula/nextjs`](reference/nextjs.md), [`@tula/admin`](reference/admin.md),
+[`@tula/config`](reference/config.md), [`@tula/contract`](reference/contract.md).
+
+The packages' own READMEs are the guides: [`@tula/core`](../packages/core/README.md),
+[`@tula/react`](../packages/react/README.md), [`@tula/nextjs`](../packages/nextjs/README.md),
+[`@tula/admin`](../packages/admin/README.md), [`@tula/config`](../packages/config/README.md).
+The example apps: [Next.js](../examples/nextjs-app-router/README.md),
+[Vite + React](../examples/react-vite/README.md).
+
+## For contributors
+
+| | |
+| --- | --- |
+| [Architecture decisions](adr/) | One record per decision, with the reasoning the pages above link to. |
+| [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
+| [Releasing](releasing.md) | How the packages are built, packed and checked. |
+| [Business plan](business-plan.md) | Product context. |

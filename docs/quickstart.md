@@ -15,7 +15,8 @@ In the Tula repository:
 docker build -f apps/api/Dockerfile -t tula-api:local .
 ```
 
-`tula-api:local` is the image a new project names by default (`TULA_API_IMAGE` in its `.env`).
+`tula-api:local` is the image a new project names by default (`TULA_API_IMAGE` in its `.env`;
+`--api-image` in step 3 names another).
 
 ## 2. Pack the packages
 
@@ -40,7 +41,8 @@ bun install
 ```
 
 `--framework` is `react-vite` or `nextjs`. `--tula-packages` points the project's `@tula/*`
-dependencies at the tarballs; leave it out once they are on npm.
+dependencies at the tarballs; leave it out once they are on npm. `--api-port` and
+`--mailpit-port` move the two published ports (3003 and 8025) if they are taken.
 
 The project has a `.env` with secrets generated for it (a master key, an instance admin token,
 two database passwords; readable by you only and ignored by git). **Back up
@@ -87,6 +89,41 @@ Open the app (<http://localhost:5174> for Vite, <http://localhost:3000> for Next
 **Create an account**, and enter a name, an email address and a password. The verification
 code arrives in Mailpit (<http://localhost:8025>): type it in, and you are signed in.
 
+![The scaffolded Next.js app's sign-in page, with Google and a passkey switched on](assets/quickstart-sign-in.png)
+
+## 7. Google and a passkey, without touching server code
+
+Both are settings of the environment, so they go in `tula.config.ts` and nothing else changes.
+In the `dev` entry:
+
+- under `settings.signIn.methods`, add `passkey: { enabled: true }`;
+- beside it, `passkeys: { rpId: 'localhost' }` and
+  `urls: { allowedOrigins: ['http://localhost:3000'] }` (the app's origin: passkeys need it
+  listed even locally; use `5174` for Vite);
+- beside `settings`, `providers: { google: { clientId: '…', clientSecret: env('GOOGLE_CLIENT_SECRET') } }`,
+  importing `env` from `@tula/config`.
+
+```sh
+export GOOGLE_CLIENT_SECRET=…   # the secret is read from the environment, never from the file
+bunx tula diff
+bunx tula apply
+```
+
+Reload the sign-in page: it now has **Continue with Google** and **Sign in with a passkey**,
+and the account page has a **Passkeys** section. The app's code did not change; the components
+draw what the environment enables.
+
+For real Google credentials follow [providers/google.md](providers/google.md). To try the
+button before you have any, add `OAUTH_MOCK_PROVIDER=true` to the project's `.env` and run
+`bunx tula dev` again: Google is then served by a built-in mock whose consent page signs in as
+whatever address you type. It is for local development only, and `tula doctor` warns while it
+is on.
+
+This path was last run end to end on 2026-10-04 with the Next.js template, the mock provider
+and Chromium's virtual authenticator: sign up, add a passkey, sign out, sign in with the
+passkey, sign in with the Google button. Real Google and a physical authenticator were not
+exercised ([what was not verified](plans/phase-1-unverified.md)).
+
 ## Afterwards
 
 ```sh
@@ -96,4 +133,5 @@ bunx tula dev down --volumes   # stop it and delete the database
 ```
 
 Every command and option is in [cli.md](cli.md); settings as code in [config.md](config.md);
-running Tula for real in [self-host.md](self-host.md).
+each sign-in method in [its own page](README.md#sign-in-methods); running Tula for real in
+[self-host.md](self-host.md).

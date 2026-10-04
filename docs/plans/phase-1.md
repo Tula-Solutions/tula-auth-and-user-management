@@ -592,6 +592,46 @@ is deliberately not a tool.
 - A four-pass review of the whole phase, as at the end of Phase 0, plus a focused threat review
   of OAuth linking, attempt binding, step-up and passkeys.
 
+**As built** (the whole-phase review is a separate stage and is not recorded here).
+
+- **Example.** `examples/nextjs-app-router` needed no new page: its `<SignIn>`, `<SignUp>` and
+  `<UserProfile>` draw whatever the environment enables, and its layout already named the
+  emailed-link and OAuth callback pages. What was missing was the proof. `e2e/tests/nextjs/methods.spec.ts`
+  adds ten scenarios through the app and its proxy (emailed code, sign-up without a password,
+  password reset, devices, the session limit, required enrolment inside a sign-in, a passkey as
+  the second step, authenticator app with step-up and a backup code, step-up by emailed code,
+  and a passkey from the profile used to sign in and to step up), each with axe in light and
+  dark on the states the app had not shown before. The table in the example's README maps every
+  method to its page and its test.
+- **One address.** The Compose `app` profile gained `lb`: nginx, round robin, in front of the
+  two instances (`docker/lb/`). Two things the conformance run needs through it are opt-in and
+  documented as concessions: `LB_CLIENT_ADDRESS=client` (the proxy passes the runner's
+  per-scenario `X-Forwarded-For` through; by default it overwrites the header) and
+  `CONFORMANCE_SETTLE_MS` (the runner waits after each settings change, because another
+  instance may serve the cached settings for up to 5 seconds; ADR 0018). Without the second,
+  22 of 46 scenarios failed on exactly that delay. CI's `self-host` job is now a matrix:
+  `two-ports` as before, and `one-address`, which also checks in the proxy's log that both
+  instances answered.
+- **Docs.** `docs/README.md` (index), `docs/methods/*.md` (seven pages, one shape),
+  `docs/reference/*.md`, `docs/plans/phase-1-unverified.md`, and updates to the quickstart, the
+  self-host guide (the proxy, what a load balancer must do, what is not instant across
+  instances, upgrade notes for migrations `0006` to `0016`) and the READMEs.
+- **Docs that cannot rot.** `bun run docs:generate` (`scripts/docs.ts`) writes the SDK
+  reference from the JSDoc of the six packages' entry points and fills every
+  `<!-- snippet: path#region -->` block from its source file; `bun run docs:check` is part of
+  `verify`. A small generator on the TypeScript compiler API was chosen over TypeDoc: the
+  repository compiles with TypeScript 7, which has no stable compiler API and which TypeDoc
+  does not support, so the generator uses the compiler bundled in `ts-morph` (pinned to an
+  exact version, no `tsc` binary of its own, no network). The method pages' TypeScript samples
+  are regions of `examples/docs-snippets/*.ts` (compiled against the real `@tula/core` and
+  `@tula/admin`), of `examples/tula-config/tula.config.ts`, or whole files of the example app.
+  `.claude/hooks/docs.test.ts` checks every relative link and anchor, that every variable in
+  `env.ts` is in `.env.example` and the self-host guide and the other way round, and that no
+  method page holds a hand-typed sample or an error code the contract does not define.
+- **`create-tula`.** The scaffold's Compose file did not pass `OAUTH_MOCK_PROVIDER` to the API,
+  so a new project could not try a provider button without editing it. It now reads the switch
+  from `.env` (off unless set).
+
 ### Exit criteria
 
 - Conformance passes in process, against two packaged instances behind one address, and through
@@ -600,6 +640,74 @@ is deliberately not a tool.
 - A new project goes from `npx create-tula` to a working sign-in page with Google and a passkey
   without editing server code.
 - The whole-phase review reports no blocking findings.
+
+### Exit criteria — evidence
+
+What was run for each criterion on 2026-10-04, on one macOS machine (Docker Desktop), from the
+tree of step 1.17. Nothing here ran on GitHub. What none of it covers is in
+[phase-1-unverified.md](phase-1-unverified.md).
+
+| Criterion | What was run | Result |
+| --- | --- | --- |
+| Conformance in process | `apps/api/src/conformance.test.ts`, inside `bun run verify`: the 46 scenarios of `conformance/scenarios/` against `createApp` on memory adapters. | Pass. |
+| Conformance against two packaged instances behind one address | The Compose `app` profile as an isolated project (the image built from this tree; `TRUST_PROXY=true`, `OAUTH_MOCK_PROVIDER=true`, `LB_CLIENT_ADDRESS=client`, `API_PUBLIC_URL` the proxy's address), then `CONFORMANCE_BASE_URL=<proxy> CONFORMANCE_SETTLE_MS=6000 bun run conformance`. | `46 passed, 0 failed, 0 skipped … (one address, 6000 ms after each settings change)` in 14 min 53 s. The proxy's log: 749 API requests, 362 answered by one instance and 387 by the other. The same run before `CONFORMANCE_SETTLE_MS` and the pass-through existed: 24 passed, 22 failed (stale settings on the other instance; per-address rate limits). |
+| Conformance against the two instances on their own ports (`CONFORMANCE_SECOND_BASE_URL`) | Not rerun in this step. It is CI's `self-host (two-ports)` job, unchanged in what it runs. | Not run here. |
+| Conformance through `@tula/core` | `apps/api/src/sdk-journeys.test.ts`, inside `bun run verify`, including its guard "every scenario is covered by an SDK journey or listed as server-only with a reason". | Pass. |
+| `bun run verify` | Biome, harness tests (138, with the new documentation and Compose checks), typecheck, tests with coverage, `db:check`, `contract:check`, `schema:check`, `packages:check` (nine packages built, packed, publint and attw clean), `docs:check`. | Green, 1 min 46 s, 35 of 35 Turborepo tasks, none cached. |
+| The Playwright job | `bun run e2e`: the projects `nextjs`, `dashboard` and `chromium`. | 132 passed, 9 skipped (the screenshot writers, which run only with `SCREENSHOTS=1`), 0 failed, 3 min 33 s. The ten new Next.js scenarios are 18.6 s of it; without them the same run is about 3 min 14 s (computed from the per-test times, not measured separately). |
+| Coverage targets | Each package's own threshold in its `bunfig.toml`, enforced by `test:coverage`. | Met; table below. |
+| Integration tests (not a criterion; recorded because earlier steps could not run them) | `bun run test:integration` with `DATABASE_URL`, `DATABASE_MIGRATION_URL` and `REDIS_TEST_URL` pointed at the isolated stack's Postgres 17 and Redis 7. | 45 passed (7 in `@tula/db`, 38 in `@tula/api`): all five `*.integration.ts` files. |
+| `create-tula` to a sign-in page with Google and a passkey, no server code edited | See the steps below. | Works, with the **mock** provider standing in for Google and a **virtual** authenticator for the passkey. |
+| The whole-phase review | A later stage. | Not part of this step. |
+
+Coverage (functions / lines, as `bun test --coverage` reports them for each package's own files):
+
+| Package | Threshold | Functions | Lines | Tests |
+| --- | --- | --- | --- | --- |
+| `@tula/api` | 80% | 99.51% | 99.45% | 3444 |
+| `@tula/dashboard` | 80% | 99.57% | 99.35% | 142 |
+| `@tula/contract` | 80% | 100.00% | 99.95% | 526 |
+| `@tula/db` | 80% | 100.00% | 100.00% | 81 |
+| `@tula/conformance` | 80% | 100.00% | 100.00% | 213 |
+| `@tula/core` | 95% | 99.79% | 99.77% | 533 |
+| `@tula/admin` | 95% | 100.00% | 99.46% | 71 |
+| `@tula/config` | 95% | 100.00% | 99.46% | 48 |
+| `@tula/mcp` | 95% | 100.00% | 99.45% | 312 |
+| `@tula/react` | 90% | 99.43% | 99.43% | 399 |
+| `@tula/nextjs` | 90% | 99.21% | 97.67% | 218 |
+| `@tula/cli` | 90% | 99.86% | 99.75% | 277 |
+| `create-tula` | 90% | 96.97% | 99.61% | 63 |
+
+**The `create-tula` run, step by step** (in a scratch directory outside the repository, an
+isolated Compose project on ports 53303 and 58325, the image built from this tree):
+
+1. `bun run packages:check` packed the nine packages into `.release/`.
+2. `bun <extracted create-tula>/dist/bin.js tula-exit-c3 --framework nextjs --tula-packages <repo>/.release --api-image … --api-port 53303 --mailpit-port 58325`: 25 files, secrets generated into `.env`.
+3. `bun install` (42 packages, from the tarballs).
+4. `OAUTH_MOCK_PROVIDER=true` appended to the project's `.env`. This is the one thing that did
+   not work at first: the scaffold's Compose file did not pass the variable to the API. Fixed
+   in the template, with a test.
+5. `bunx tula dev`: the stack up, migrated, seeded, keys minted into `.env.local` (14 s).
+6. `bunx tula doctor`: 10 ok, 0 failed, 1 warning (the mock provider is on).
+7. `tula.config.ts` edited: `passkey: { enabled: true }`, `passkeys: { rpId: 'localhost' }`,
+   `urls.allowedOrigins` with the app's origin, and a `google` provider with
+   `clientSecret: env('GOOGLE_CLIENT_SECRET')`. `bunx tula diff` listed exactly those changes;
+   `bunx tula apply --yes` applied 2 changes (settings at revision 1); a second `tula diff`
+   said "No changes".
+8. `bun run dev` (the scaffolded Next.js app, unedited).
+9. A Playwright script with a DevTools virtual authenticator, against that app: the sign-in
+   page shows **Continue with Google** and **Sign in with a passkey**; sign up with a password
+   and the code read from Mailpit; add a passkey in the profile; sign out; sign in with the
+   passkey; sign out; **Continue with Google**, the mock consent page, signed in as a new
+   account. Five of five steps passed, and after each sign-in the server component showed the
+   right address.
+10. The sign-in page was also opened in a browser by hand (no passkey control was pressed
+    there); `docs/assets/quickstart-sign-in.png` is that page.
+11. `bunx tula policy test` and `bunx tula dev down --volumes --yes`; afterwards no container,
+    volume or image tag of the run was left.
+
+Not exercised in that run: real Google, a physical authenticator, the `react-vite` template,
+and `npx` itself (nothing is on npm: the packed `create-tula` was run with `bun`).
 
 ---
 

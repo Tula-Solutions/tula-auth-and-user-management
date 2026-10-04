@@ -81,10 +81,40 @@ jobs:
   # with Compose, and run the conformance scenarios against them over HTTP. The `two instances`
   # scenario signs in through one and out through the other, and spreads wrong passwords over
   # both, so this job is what proves the instances share their state (ADR 0016).
+  #
+  # It runs twice, side by side. `two-ports` talks to each instance on its own port, which is
+  # the only way to say which instance a step went to. `one-address` sends every scenario
+  # through the proxy in front of both (`lb`, round robin), as a real deployment is reached:
+  # the Phase 1 exit criterion "two packaged instances behind one address"
+  # (conformance/README.md, "Behind one address").
   self-host:
+    name: self-host (${{ matrix.mode }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # A full run is about ten minutes of waiting the scenarios ask for; through the one
+    # address, about six more for the settings to reach the other instance after each change.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: two-ports
+            base_url: http://localhost:3003
+            second_base_url: http://localhost:3004
+            public_url: ''
+            lb_client_address: peer
+            settle_ms: '0'
+          - mode: one-address
+            base_url: http://localhost:3005
+            second_base_url: ''
+            # The issuer of the tokens, and where the mock provider's pages are reached.
+            public_url: http://localhost:3005
+            # The runner sends each scenario from its own address in X-Forwarded-For; the
+            # proxy passes it through for this run only (docker/lb/forwarded-for.client.conf).
+            lb_client_address: client
+            settle_ms: '6000'
     env:
+      API_PUBLIC_URL: ${{ matrix.public_url }}
+      LB_CLIENT_ADDRESS: ${{ matrix.lb_client_address }}
       # Throwaway values for this job's own containers.
       TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
       TRUST_PROXY: 'true'
@@ -102,7 +132,8 @@ jobs:
         run: |
           for attempt in $(seq 1 60); do
             if curl -fsS http://localhost:3003/v1/ready > /dev/null &&
-              curl -fsS http://localhost:3004/v1/ready > /dev/null; then
+              curl -fsS http://localhost:3004/v1/ready > /dev/null &&
+              curl -fsS http://localhost:3005/v1/ready > /dev/null; then
               exit 0
             fi
             sleep 2
@@ -110,6 +141,7 @@ jobs:
           echo "the API instances did not both become ready" >&2
           exit 1
       - name: The image serves the dashboard under its Content-Security-Policy
+        if: matrix.mode == 'two-ports'
         run: |
           set -euo pipefail
           headers=$(curl -fsS -o /dev/null -D - http://localhost:3003/dashboard/)
@@ -149,8 +181,9 @@ jobs:
           done
       - name: Run the conformance scenarios against both instances
         env:
-          CONFORMANCE_BASE_URL: http://localhost:3003
-          CONFORMANCE_SECOND_BASE_URL: http://localhost:3004
+          CONFORMANCE_BASE_URL: ${{ matrix.base_url }}
+          CONFORMANCE_SECOND_BASE_URL: ${{ matrix.second_base_url }}
+          CONFORMANCE_SETTLE_MS: ${{ matrix.settle_ms }}
         run: |
           # Every scenario must run: a missing secret key would skip the admin ones.
           test -n "$CONFORMANCE_PUBLISHABLE_KEY" && test -n "$CONFORMANCE_SECRET_KEY"
@@ -161,10 +194,29 @@ jobs:
             echo "scenarios were skipped" >&2
             exit 1
           fi
-          # The cross-instance scenario must have run, and against two instances: without the
-          # second URL its steps would all go to one server and prove nothing about sharing.
           grep -Eq '(^|: )PASSED two instances$' conformance.log
-          grep -Eq ' 0 failed, 0 skipped against http://localhost:3003 and http://localhost:3004$' conformance.log
+          if [ "${{ matrix.mode }}" = two-ports ]; then
+            # The cross-instance scenario must have run against two instances: without the
+            # second URL its steps would all go to one server and prove nothing about sharing.
+            grep -Eq ' 0 failed, 0 skipped against http://localhost:3003 and http://localhost:3004$' conformance.log
+          else
+            grep -Eq ' 0 failed, 0 skipped against http://localhost:3005 \(one address, 6000 ms after each settings change\)$' conformance.log
+          fi
+        shell: bash -euo pipefail {0}
+      - name: Both instances answered behind the one address
+        if: matrix.mode == 'one-address'
+        run: |
+          # The proxy logs the instance that answered each request. Round robin over two
+          # instances: each must have answered at least a third of them, or the run did not
+          # exercise what it claims to.
+          docker compose --profile app logs --no-color --no-log-prefix lb > lb.log
+          total=$(grep -c 'upstream=' lb.log)
+          instances=$(grep -o 'upstream=[0-9.]*:3003' lb.log | sort | uniq -c | awk '{print $1}')
+          echo "requests: $total; per instance: $(echo $instances)"
+          test "$(echo "$instances" | wc -l)" -eq 2
+          for count in $instances; do
+            test "$((count * 3))" -ge "$total"
+          done
         shell: bash -euo pipefail {0}
       - name: Stack logs
         if: failure()
