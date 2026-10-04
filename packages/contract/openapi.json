@@ -143,6 +143,7 @@
           "session.expired",
           "session.revoked",
           "session.reuse_detected",
+          "session.limit_reached",
           "rate_limited",
           "request.malformed",
           "request.too_large",
@@ -712,9 +713,7 @@
           }
         },
         "required": [
-          "sessionId",
-          "accessToken",
-          "accessTokenExpiresAt"
+          "sessionId"
         ]
       },
       "RefreshTokenRequest": {
@@ -1045,6 +1044,81 @@
           "userVerification"
         ]
       },
+      "AccessTokenClaims": {
+        "type": "object",
+        "properties": {
+          "iss": {
+            "type": "string"
+          },
+          "sub": {
+            "type": "string"
+          },
+          "aud": {
+            "type": "string"
+          },
+          "sid": {
+            "type": "string"
+          },
+          "pid": {
+            "type": "string"
+          },
+          "eid": {
+            "type": "string"
+          },
+          "iat": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "exp": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "v": {
+            "type": "number",
+            "const": 1
+          },
+          "auth_time": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "amr": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "iss",
+          "sub",
+          "aud",
+          "sid",
+          "pid",
+          "eid",
+          "iat",
+          "exp",
+          "v"
+        ]
+      },
+      "VerifySessionRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
       "FlowKind": {
         "type": "string",
         "enum": [
@@ -1302,6 +1376,12 @@
           "expiresAt",
           "step"
         ]
+      },
+      "SessionProfileName": {
+        "description": "The session profile the client would like. Honoured only when the environment marks that profile `clientSelectable`; any other name is ignored and the session gets the profile of its client kind (`web`, or `mobile` for every other client).",
+        "type": "string",
+        "maxLength": 32,
+        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
       },
       "SignUpRequest": {
         "type": "object",
@@ -2182,6 +2262,122 @@
           "required"
         ]
       },
+      "SessionType": {
+        "default": "hybrid",
+        "type": "string",
+        "enum": [
+          "hybrid",
+          "stateful"
+        ]
+      },
+      "Duration": {
+        "type": "string"
+      },
+      "SessionProfile": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/SessionType"
+          },
+          "accessTokenTtl": {
+            "$ref": "#/components/schemas/Duration"
+          },
+          "idleTimeout": {
+            "$ref": "#/components/schemas/Duration"
+          },
+          "absoluteTimeout": {
+            "default": "30d",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Duration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stepUpAfter": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Duration"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clientSelectable": {
+            "default": false,
+            "type": "boolean"
+          },
+          "refresh": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "reuseGracePeriod": {
+                "default": "10s",
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Duration"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "SessionLimitAction": {
+        "default": "end_oldest",
+        "type": "string",
+        "enum": [
+          "end_oldest",
+          "refuse_newest"
+        ]
+      },
+      "SessionSettings": {
+        "default": {},
+        "type": "object",
+        "properties": {
+          "profiles": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "web": {
+                "$ref": "#/components/schemas/SessionProfile"
+              },
+              "mobile": {
+                "$ref": "#/components/schemas/SessionProfile"
+              }
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SessionProfile"
+            }
+          },
+          "maxPerUser": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "onLimit": {
+            "$ref": "#/components/schemas/SessionLimitAction"
+          }
+        },
+        "additionalProperties": false
+      },
       "EnvironmentSettingsState": {
         "type": "object",
         "properties": {
@@ -2384,6 +2580,9 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "sessions": {
+                "$ref": "#/components/schemas/SessionSettings"
               }
             },
             "required": [
@@ -2599,6 +2798,9 @@
               }
             },
             "additionalProperties": false
+          },
+          "sessions": {
+            "$ref": "#/components/schemas/SessionSettings"
           }
         },
         "additionalProperties": false
@@ -3901,7 +4103,7 @@
           "Sessions"
         ],
         "summary": "Refresh a session",
-        "description": "Exchanges a refresh token for a new access token and the next refresh token. Native and server clients send `refreshToken` in the body and receive the next one in the response. Browsers send no body: the token travels in an httpOnly cookie and the next one is set the same way. The cookie is honoured only from an origin the environment allows (`urls.allowedOrigins`). Refresh tokens are single-use; presenting a used one signs the session out (`session.reuse_detected`), except for an immediate retry, which returns the same token again.",
+        "description": "Exchanges a refresh token for a new access token and the next refresh token. Native and server clients send `refreshToken` in the body and receive the next one in the response. Browsers send no body: the token travels in an httpOnly cookie and the next one is set the same way. The cookie is honoured only from an origin the environment allows (`urls.allowedOrigins`). Refresh tokens are single-use; presenting a used one signs the session out (`session.reuse_detected`), except for an immediate retry, which returns the same token again (within the `refresh.reuseGracePeriod` of the session’s profile). A browser whose session is of a `stateful` profile has no refresh token: called with only its session cookie, this answers `{ sessionId }` with no token when the session is still live (nothing is rotated), and 401 when it is not.",
         "security": [
           {
             "publishableKey": []
@@ -4036,7 +4238,7 @@
           "Sessions"
         ],
         "summary": "Sign out",
-        "description": "Ends the session the refresh token (body or cookie) belongs to and clears the cookie. Always succeeds, including when the token is missing or unknown, so a client can sign out with an expired access token.",
+        "description": "Ends the session the refresh token (body or cookie) or the `stateful` session cookie belongs to and clears the cookie. Always succeeds, including when the token is missing or unknown, so a client can sign out with an expired access token.",
         "security": [
           {
             "publishableKey": []
@@ -4411,7 +4613,7 @@
           "Sessions"
         ],
         "summary": "Prove it is still me",
-        "description": "Proves a factor again for the current session and returns a fresh access token whose `auth_time` is now and whose `amr` includes the method. Sensitive routes that answer `auth.step_up_required` accept that token for ten minutes. A user with two-step verification must use `totp` or `backup_code` (their password alone answers `auth.step_up_required`); a user without it uses `password`, or an `email_code` asked for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, a wrong emailed code `verification.invalid_code` (`verification.expired` once it is used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong proofs back off per user. The refresh token is not rotated.",
+        "description": "Proves a factor again for the current session and returns a fresh access token whose `auth_time` is now and whose `amr` includes the method (for a `stateful` session: `{ sessionId }` only; the session itself now carries the proof). Sensitive routes that answer `auth.step_up_required` accept it for ten minutes, or for the `stepUpAfter` of the session’s profile. A user with two-step verification must use `totp` or `backup_code` (their password alone answers `auth.step_up_required`); a user without it uses `password`, or an `email_code` asked for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, a wrong emailed code `verification.invalid_code` (`verification.expired` once it is used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong proofs back off per user. The refresh token is not rotated.",
         "security": [
           {
             "publishableKey": [],
@@ -4706,6 +4908,278 @@
         }
       }
     },
+    "/v1/admin/sessions/verify": {
+      "post": {
+        "operationId": "verifySession",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Verify a session for a backend",
+        "description": "Checks a session on behalf of an application’s backend and answers with its claims (`sub`, `sid`, `auth_time`, `amr`, `sp`, …): the same shape an access token carries. A backend cannot verify the cookie of a `stateful` session offline, so it sends the cookie’s value here; `exp` says how long it may rely on the answer (one `accessTokenTtl` of the session’s profile) before asking again. A call counts as activity on the session. An access token of a `hybrid` session is accepted too (verified, then checked against the revoked-session list), for a backend that would rather not verify JWTs itself. A refresh token is never accepted. Unknown, revoked and expired sessions answer 401 with `session.invalid_token`, `session.revoked` or `session.expired`; a session of another environment is unknown.",
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The session’s claims.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTokenClaims"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifySessionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/users/{userId}/sessions": {
+      "delete": {
+        "operationId": "revokeUserSessions",
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Sign a user out everywhere",
+        "description": "Ends every session of a user (reason `revoked_by_admin`), each recorded in the audit log. A `stateful` session is refused on its very next request; a `hybrid` one cannot refresh any more and its access token is refused through the revoked-session list. Idempotent: a user with no live session answers `revoked: 0`. This is also how an operator frees a user who is kept out by the session limit (`sessions.onLimit: refuse_newest`). An unknown user answers 404.",
+        "security": [
+          {
+            "secretKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many sessions ended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokedSessions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
     "/v1/client/sign-ups": {
       "post": {
         "operationId": "startSignUp",
@@ -4835,6 +5309,13 @@
             "name": "x-tula-client",
             "schema": {
               "$ref": "#/components/schemas/SessionClient"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tula-session-profile",
+            "schema": {
+              "$ref": "#/components/schemas/SessionProfileName"
             }
           }
         ],
@@ -4979,6 +5460,13 @@
             "name": "x-tula-client",
             "schema": {
               "$ref": "#/components/schemas/SessionClient"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tula-session-profile",
+            "schema": {
+              "$ref": "#/components/schemas/SessionProfileName"
             }
           }
         ],
@@ -5771,6 +6259,13 @@
             "schema": {
               "$ref": "#/components/schemas/SessionClient"
             }
+          },
+          {
+            "in": "header",
+            "name": "x-tula-session-profile",
+            "schema": {
+              "$ref": "#/components/schemas/SessionProfileName"
+            }
           }
         ]
       }
@@ -6062,6 +6557,13 @@
             "name": "x-tula-client",
             "schema": {
               "$ref": "#/components/schemas/SessionClient"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tula-session-profile",
+            "schema": {
+              "$ref": "#/components/schemas/SessionProfileName"
             }
           }
         ],
@@ -6733,6 +7235,13 @@
             "name": "x-tula-client",
             "schema": {
               "$ref": "#/components/schemas/SessionClient"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-tula-session-profile",
+            "schema": {
+              "$ref": "#/components/schemas/SessionProfileName"
             }
           }
         ],

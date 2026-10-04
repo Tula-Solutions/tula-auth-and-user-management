@@ -5,7 +5,7 @@ import {
   type Factors,
   FLOW_ATTEMPT_HEADER,
   type FlowAttempt,
-  type SessionTokens,
+  type HybridSessionTokens as SessionTokens,
   type TotpEnrolment,
 } from '@tula/contract'
 import { decodeJwt } from 'jose'

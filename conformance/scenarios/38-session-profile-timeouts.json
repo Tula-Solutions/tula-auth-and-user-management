@@ -1,0 +1,352 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "session profile timeouts",
+  "description": "A session lives by its profile as the environment has it configured now. A native client gets the mobile profile: its access tokens name it (sp) and last as long as it says; a session idle for longer than the profile's idle timeout cannot refresh; one that stays active still ends at the absolute timeout. Tightening the profile reaches sessions that already exist: one created under the old limits is refused at its next refresh once it is over the new ones. The settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "verify the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken",
+        "sessionId": "session.sessionId"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urls": "settings.urls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeySettings": "settings.passkeys",
+        "original": "settings"
+      }
+    },
+    {
+      "name": "tighten the mobile profile: 30-second access tokens, a minute idle, ninety seconds in all",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urls}}"
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeySettings}}"
+          },
+          "sessions": {
+            "profiles": {
+              "mobile": {
+                "accessTokenTtl": "30s",
+                "idleTimeout": "1m",
+                "absoluteTimeout": "90s"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sessions": {
+              "profiles": {
+                "mobile": {
+                  "type": "hybrid",
+                  "accessTokenTtl": "30s",
+                  "idleTimeout": "1m",
+                  "absoluteTimeout": "90s"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "start sign-in 1",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signIn1Id": "id",
+        "signIn1Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a new sign-in gets a session of the tightened profile, and its token names it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn1Id}}/password",
+        "attempt": "{{signIn1Secret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "sp": "mobile"
+          }
+        }
+      },
+      "capture": {
+        "activeToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "fifty seconds pass",
+      "wait": "50s"
+    },
+    {
+      "name": "a session that was active within the idle timeout refreshes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{activeToken}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "activeToken2": "refreshToken"
+      }
+    },
+    {
+      "name": "forty-five more seconds pass: ninety-five in all",
+      "wait": "45s"
+    },
+    {
+      "name": "the absolute timeout ends a session that was active forty-five seconds ago",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{activeToken2}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "session.expired"
+        }
+      }
+    },
+    {
+      "name": "the session from before the change, which was created with seven days to live, ends at its next refresh",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "session.expired"
+        }
+      }
+    },
+    {
+      "name": "start sign-in 2",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signIn2Id": "id",
+        "signIn2Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "signing in again still works",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn2Id}}/password",
+        "attempt": "{{signIn2Secret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

@@ -594,7 +594,7 @@ describe('exchanging the ticket', () => {
     expect(user?.emailVerifiedAt).not.toBeNull()
     const found = await deps.users.findByEmailWithPassword(TEST_TENANT.environmentId, EMAIL)
     expect(found?.passwordHash).toBeNull()
-    expect(decodeJwt<AccessTokenClaims>(attempt.session.accessToken).amr).toEqual(['fed'])
+    expect(decodeJwt<AccessTokenClaims>(attempt.session.accessToken as string).amr).toEqual(['fed'])
     expect(attempt.session.refreshToken).toBeTruthy()
     expect(attempt.attemptSecret).toBeUndefined()
     const created = deps.activityLog.entries.find((entry) => entry.type === 'user.created')
@@ -888,7 +888,7 @@ describe('connected accounts', () => {
       )
     )
     session = done.session as NonNullable<FlowAttempt['session']>
-    return session.accessToken
+    return session.accessToken as string
   }
   let session: NonNullable<FlowAttempt['session']>
 
@@ -975,7 +975,9 @@ describe('connected accounts', () => {
     }
     const other = await completed()
     deps.oauth.google.profile = { subject: 'mine', email: null, emailVerified: false }
-    expect(await codeOf(await finish(other.session.accessToken, trip))).toBe('oauth.ticket_invalid')
+    expect(await codeOf(await finish(other.session.accessToken as string, trip))).toBe(
+      'oauth.ticket_invalid'
+    )
     expect((await finish(token, trip)).status).toBe(200)
     // And a sign-in ticket is not a link ticket.
     const signIn = await roundTrip()
@@ -1020,19 +1022,19 @@ describe('connected accounts', () => {
 
   test('refuses to remove the last way to sign in', async () => {
     const { session } = await completed()
-    const [identity] = await list(session.accessToken)
+    const [identity] = await list(session.accessToken as string)
     const res = await client('DELETE', `/me/identities/${identity?.id}`, undefined, {
       token: session.accessToken,
     })
     expect(res.status).toBe(409)
     expect(await codeOf(res)).toBe('identity.last_sign_in_method')
-    expect(await list(session.accessToken)).toHaveLength(1)
+    expect(await list(session.accessToken as string)).toHaveLength(1)
     expect(actions()).not.toContain('user.identity_unlinked')
   })
 
   test('a user cannot remove another user’s identity', async () => {
     const maya = await completed()
-    const [identity] = await list(maya.session.accessToken)
+    const [identity] = await list(maya.session.accessToken as string)
     deps.oauth.google.profile = { subject: 'zed', email: 'zed@elsewhere.test', emailVerified: true }
     const other = await completed()
     const res = await client('DELETE', `/me/identities/${identity?.id}`, undefined, {

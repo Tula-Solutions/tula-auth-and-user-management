@@ -1,5 +1,5 @@
-import { type Database, refreshTokens, sessions, withTenant } from '@tula/db'
-import { and, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from 'drizzle-orm'
+import { type Database, refreshTokens, sessions, users, withTenant } from '@tula/db'
+import { and, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
 import type { Activity } from '~/ports/activity-log'
@@ -11,7 +11,9 @@ import {
   type RefreshTokenRecord,
   type RevokeByUserOptions,
   type Rotation,
+  type SessionCreation,
   type SessionDevice,
+  type SessionLimit,
   type SessionRecord,
   type SessionRevokeReason,
   type SessionStore,
@@ -23,6 +25,7 @@ const sessionColumns = {
   environmentId: sessions.environmentId,
   userId: sessions.userId,
   profile: sessions.profile,
+  type: sessions.type,
   client: sessions.client,
   userAgent: sessions.userAgent,
   ipAddress: sessions.ipAddress,
@@ -70,12 +73,89 @@ export class PostgresSessionStore implements SessionStore {
   constructor(private readonly db: Database) {}
 
   /** @inheritdoc */
-  async create(session: NewSession, token: NewRefreshToken, activity?: Activity): Promise<void> {
-    await withTenant(this.db, session.environmentId, async (tx) => {
-      await tx.insert(sessions).values({ ...session, updatedAt: session.createdAt })
-      await tx.insert(refreshTokens).values(tokenValues(session, token))
-      await recordActivity(tx, activity ? [activity] : [])
-    })
+  async create(
+    session: NewSession,
+    token: NewRefreshToken,
+    activity?: Activity,
+    limit?: SessionLimit
+  ): Promise<SessionCreation> {
+    const { environmentId, userId } = session
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        let ended: string[] = []
+        if (limit) {
+          // The user's row is the lock sign-ins of one user take turns on: the second waits
+          // here until the first commits, then counts the session the first one created.
+          await tx
+            .select({ id: users.id })
+            .from(users)
+            .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+            .for('update')
+          if (limit.end.length > 0) {
+            const rows = await tx
+              .update(sessions)
+              .set({ revokedAt: limit.at, revokeReason: 'session_limit', updatedAt: limit.at })
+              .where(
+                and(
+                  inArray(sessions.id, [...limit.end]),
+                  eq(sessions.environmentId, environmentId),
+                  eq(sessions.userId, userId),
+                  isNull(sessions.revokedAt)
+                )
+              )
+              .returning({ id: sessions.id })
+            ended = rows.map((row) => row.id)
+          }
+          const [live] = await tx
+            .select({ count: count() })
+            .from(sessions)
+            .where(
+              and(
+                eq(sessions.environmentId, environmentId),
+                eq(sessions.userId, userId),
+                isNull(sessions.revokedAt),
+                gt(sessions.idleExpiresAt, limit.at),
+                or(isNull(sessions.absoluteExpiresAt), gt(sessions.absoluteExpiresAt, limit.at))
+              )
+            )
+          if ((live?.count ?? 0) >= limit.max) {
+            // Rolls the endings back too: nothing changes unless the session is created.
+            throw new LostRace()
+          }
+          const { activity: ending } = limit
+          await recordActivity(tx, ending ? ended.map(ending) : [])
+        }
+        await tx.insert(sessions).values({ ...session, updatedAt: session.createdAt })
+        await tx.insert(refreshTokens).values(tokenValues(session, token))
+        await recordActivity(tx, activity ? [activity] : [])
+        return { created: true, ended }
+      })
+    } catch (error) {
+      if (error instanceof LostRace) {
+        return { created: false }
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async touch(environmentId: string, id: string, at: Date, idleExpiresAt: Date): Promise<boolean> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(sessions)
+        .set({ lastActiveAt: at, idleExpiresAt, updatedAt: at })
+        .where(
+          and(
+            eq(sessions.id, id),
+            eq(sessions.environmentId, environmentId),
+            isNull(sessions.revokedAt),
+            gt(sessions.idleExpiresAt, at),
+            or(isNull(sessions.absoluteExpiresAt), gt(sessions.absoluteExpiresAt, at))
+          )
+        )
+        .returning({ id: sessions.id })
+    )
+    return rows.length === 1
   }
 
   /** @inheritdoc */

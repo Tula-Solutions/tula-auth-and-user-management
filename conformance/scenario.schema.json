@@ -167,6 +167,25 @@
                 "additionalProperties": {
                   "type": "string"
                 }
+              },
+              "captureCookie": {
+                "type": "object",
+                "properties": {
+                  "match": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "pair": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["match"],
+                "additionalProperties": false
               }
             },
             "required": ["name", "request", "expect"],
@@ -497,6 +516,25 @@
                 "additionalProperties": {
                   "type": "string"
                 }
+              },
+              "captureCookie": {
+                "type": "object",
+                "properties": {
+                  "match": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "pair": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["match"],
+                "additionalProperties": false
               }
             },
             "required": ["name", "request", "expect"],

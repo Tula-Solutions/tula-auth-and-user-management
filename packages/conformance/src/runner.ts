@@ -297,6 +297,25 @@ async function runStep(
       }
       variables[name] = value
     }
+    if (step.captureCookie) {
+      const { match: part, pair, value } = step.captureCookie
+      const found = response.headers
+        .getSetCookie()
+        .map((cookie) => cookie.split(';', 1)[0] ?? '')
+        .find((cookie) => {
+          const at = cookie.indexOf('=')
+          return at > 0 && cookie.slice(0, at).includes(part) && cookie.length > at + 1
+        })
+      if (found === undefined) {
+        throw new StepFailure([`cannot capture a cookie: none set whose name contains ${part}`])
+      }
+      if (pair) {
+        variables[pair] = found
+      }
+      if (value) {
+        variables[value] = found.slice(found.indexOf('=') + 1)
+      }
+    }
     for (const [name, path] of Object.entries(step.captureJson ?? {})) {
       const value = pick(body, path)
       if (value === undefined) {

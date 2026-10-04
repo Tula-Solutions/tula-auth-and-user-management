@@ -10,6 +10,10 @@ export type SessionRevokeReason =
   | 'reuse_detected'
   | 'user_banned'
   | 'mfa_changed'
+  | 'session_limit'
+
+/** How a session is held: access and refresh tokens, or one cookie checked on every request. */
+export type SessionKind = 'hybrid' | 'stateful'
 
 /** A signed-in device. A session is also the refresh-token family. */
 export interface SessionRecord {
@@ -19,6 +23,11 @@ export interface SessionRecord {
   userId: string
   /** Session profile name, e.g. `web`. */
   profile: string
+  /**
+   * How the session is held, fixed at creation. A `stateful` session has exactly one token row,
+   * never rotated: the hash of its cookie.
+   */
+  type: SessionKind
   client: SessionClient
   userAgent: string | null
   ipAddress: string | null
@@ -52,12 +61,44 @@ export interface RefreshTokenRecord {
   createdAt: Date
 }
 
-/** A session to store. Without `factorVerifiedAt` and `authMethods` it has proven nothing. */
+/**
+ * A session to store. Without `factorVerifiedAt` and `authMethods` it has proven nothing;
+ * without a `type` it is `hybrid`.
+ */
 export type NewSession = Omit<
   SessionRecord,
-  'revokedAt' | 'revokeReason' | 'factorVerifiedAt' | 'authMethods'
+  'revokedAt' | 'revokeReason' | 'factorVerifiedAt' | 'authMethods' | 'type'
 > &
-  Partial<Pick<SessionRecord, 'factorVerifiedAt' | 'authMethods'>>
+  Partial<Pick<SessionRecord, 'factorVerifiedAt' | 'authMethods' | 'type'>>
+
+/**
+ * The concurrent-session rule a new session is created under (ADR 0028).
+ *
+ * The caller names the sessions to end to make room (`end`); the store ends them, checks the
+ * limit and inserts in **one** step that sign-ins of the same user take in turn. It never picks
+ * a session to end by itself: the caller has already put those ids on the revoked-session
+ * list, and a session must not be revoked in the database without being on it.
+ */
+export interface SessionLimit {
+  /** The most sessions the user may have once the new one exists. */
+  max: number
+  /**
+   * Sessions of the same user to end first (reason `session_limit`). Ids of another user or
+   * environment, and sessions already revoked, are ignored.
+   */
+  end: readonly string[]
+  /** The moment "live" is judged at, and the revocation time of the ended sessions. */
+  at: Date
+  /** Builds the activity for each ended session; recorded in the same transaction. */
+  activity?: (sessionId: string) => Activity
+}
+
+/** What {@link SessionStore.create} did. */
+export type SessionCreation =
+  /** The session exists; `ended` are the sessions of `limit.end` that were live and ended. */
+  | { created: true; ended: string[] }
+  /** The user would have had more than `limit.max` live sessions: nothing was written. */
+  | { created: false }
 
 /** A factor proven again for a session: a step-up, or a factor confirmed while signed in. */
 export interface Authentication {
@@ -192,10 +233,24 @@ export interface SessionStore {
    * Store a new session and its first refresh token atomically.
    *
    * @param session - The session.
+   * With a `limit`, the write is conditional and serialised per user: the sessions named in
+   * `limit.end` are ended, the user's live sessions at `limit.at` are counted, and the new
+   * session is stored only if that leaves fewer than `limit.max`. Otherwise nothing at all is
+   * written, not even the ending of `limit.end`. Of several simultaneous calls for one user
+   * at most as many succeed as there is room for.
+   *
+   * @param session - The session.
    * @param token - Its root refresh token (`parentId: null`).
    * @param activity - Recorded in the same transaction.
+   * @param limit - The concurrent-session rule, when the environment has one.
+   * @returns Whether the session was stored, and which sessions were ended for it.
    */
-  create(session: NewSession, token: NewRefreshToken, activity?: Activity): Promise<void>
+  create(
+    session: NewSession,
+    token: NewRefreshToken,
+    activity?: Activity,
+    limit?: SessionLimit
+  ): Promise<SessionCreation>
 
   /**
    * @param environmentId - The environment to look in.
@@ -297,6 +352,20 @@ export interface SessionStore {
     authentication: Authentication,
     activity?: Activity
   ): Promise<SessionRecord | null>
+
+  /**
+   * Record activity on a session that is checked on every request (a `stateful` one): move
+   * `lastActiveAt` to `at` and its idle expiry to `idleExpiresAt`. Guarded: only a session that
+   * is unrevoked and has not reached its stored idle or absolute expiry at `at` is changed, so
+   * a touch can never bring an ended session back.
+   *
+   * @param environmentId - The session's environment.
+   * @param id - Session id.
+   * @param at - The moment of the activity.
+   * @param idleExpiresAt - The session's new idle expiry.
+   * @returns `false` when the session does not exist or has ended.
+   */
+  touch(environmentId: string, id: string, at: Date, idleExpiresAt: Date): Promise<boolean>
 
   /**
    * Revoke every unrevoked session of a user, optionally keeping one.

@@ -442,7 +442,7 @@ describe('confirmTotp', () => {
     ])
     // The kept session's next access token says so.
     const refreshed = await Sessions.refresh(deps, tenant, current.refreshToken as string)
-    expect(await claimsOf(refreshed.accessToken)).toMatchObject({
+    expect(await claimsOf(refreshed.accessToken as string)).toMatchObject({
       amr: ['pwd', 'otp', 'mfa'],
       auth_time: Math.floor(now.getTime() / 1000),
     })
@@ -1729,7 +1729,7 @@ describe('stepUp', () => {
   test('a user without a second factor steps up with their password', async () => {
     const user = await seedUser()
     const session = await newSession(user.id, ['email'])
-    const before = await claimsOf(session.accessToken)
+    const before = await claimsOf(session.accessToken as string)
     deps.clock.advance('20m')
     const tokens = await stepUp(user.id, session.sessionId, {
       method: 'password',
@@ -1737,7 +1737,7 @@ describe('stepUp', () => {
     })
     expect(tokens.sessionId).toBe(session.sessionId)
     expect(tokens).not.toHaveProperty('refreshToken')
-    const claims = await claimsOf(tokens.accessToken)
+    const claims = await claimsOf(tokens.accessToken as string)
     expect(claims.auth_time).toBe(Math.floor(deps.clock.now().getTime() / 1000))
     expect(claims.auth_time).toBe((before.auth_time as number) + 1_200)
     expect(claims.amr).toEqual(['pwd', 'email'])
@@ -1878,7 +1878,7 @@ describe('stepUp', () => {
     deps.clock.advance('15m')
     const code = codeFor(secret)
     const tokens = await stepUp(user.id, session.sessionId, { method: 'totp', code })
-    const claims = await claimsOf(tokens.accessToken)
+    const claims = await claimsOf(tokens.accessToken as string)
     expect(claims).toMatchObject({
       auth_time: Math.floor(deps.clock.now().getTime() / 1000),
       amr: ['pwd', 'otp', 'mfa'],
@@ -1899,7 +1899,11 @@ describe('stepUp', () => {
       method: 'backup_code',
       code: (codes[0] as string).toUpperCase(),
     })
-    expect((await claimsOf(tokens.accessToken)).amr).toEqual(['pwd', 'backup_code', 'mfa'])
+    expect((await claimsOf(tokens.accessToken as string)).amr).toEqual([
+      'pwd',
+      'backup_code',
+      'mfa',
+    ])
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({ backupCodes: { remaining: 9 } })
     expect(deps.activityLog.ofType('user.backup_code_used')).toEqual([
       expect.objectContaining({ ipAddress: '203.0.113.7', userAgent: 'tula-tests/1.0' }),
@@ -1933,7 +1937,7 @@ describe('stepUp', () => {
     const user = await seedUser()
     const { secret } = await enrol(user.id)
     const session = await newSession(user.id)
-    const issued = await claimsOf(session.accessToken)
+    const issued = await claimsOf(session.accessToken as string)
     expect(issued).toMatchObject({
       auth_time: Math.floor(deps.clock.now().getTime() / 1000),
       amr: ['pwd'],
@@ -1941,7 +1945,7 @@ describe('stepUp', () => {
 
     deps.clock.advance('30m')
     const refreshed = await Sessions.refresh(deps, tenant, session.refreshToken as string)
-    const afterRefresh = await claimsOf(refreshed.accessToken)
+    const afterRefresh = await claimsOf(refreshed.accessToken as string)
     expect(afterRefresh.iat).toBe((issued.iat as number) + 1_800)
     expect(afterRefresh).toMatchObject({ auth_time: issued.auth_time, amr: ['pwd'] })
 
@@ -1950,13 +1954,13 @@ describe('stepUp', () => {
       method: 'totp',
       code: codeFor(secret),
     })
-    const afterStepUp = await claimsOf(stepped.accessToken)
+    const afterStepUp = await claimsOf(stepped.accessToken as string)
     expect(afterStepUp.auth_time).toBe((issued.auth_time as number) + 1_860)
     expect(afterStepUp.amr).toEqual(['pwd', 'otp', 'mfa'])
 
     deps.clock.advance('30m')
     const again = await Sessions.refresh(deps, tenant, refreshed.refreshToken as string)
-    expect(await claimsOf(again.accessToken)).toMatchObject({
+    expect(await claimsOf(again.accessToken as string)).toMatchObject({
       auth_time: afterStepUp.auth_time,
       amr: ['pwd', 'otp', 'mfa'],
     })
@@ -2070,7 +2074,7 @@ describe('step-up by emailed code', () => {
       method: 'email_code',
       code: latestCode(),
     })
-    const claims = await claimsOf(tokens.accessToken)
+    const claims = await claimsOf(tokens.accessToken as string)
     expect(claims.auth_time).toBe(Math.floor(deps.clock.now().getTime() / 1000))
     expect(new Set(claims.amr)).toEqual(new Set(['fed', 'email']))
     expect(deps.activityLog.ofType('session.stepped_up').at(-1)).toMatchObject({

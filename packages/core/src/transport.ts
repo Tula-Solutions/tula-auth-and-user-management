@@ -1,4 +1,9 @@
-import { CLIENT_HEADER, FLOW_ATTEMPT_HEADER, PUBLISHABLE_KEY_HEADER } from '@tula/contract/headers'
+import {
+  CLIENT_HEADER,
+  FLOW_ATTEMPT_HEADER,
+  PUBLISHABLE_KEY_HEADER,
+  SESSION_PROFILE_HEADER,
+} from '@tula/contract/headers'
 import {
   clientError,
   type ErrorParams,
@@ -60,6 +65,11 @@ export interface TransportOptions {
   timeoutMs: number
   /** The current locale table (read per error, so it can change). */
   messages: () => Messages
+  /**
+   * The session profile to ask for (`x-tula-session-profile`), if any. Sent with every call;
+   * the API reads it when an attempt starts.
+   */
+  sessionProfile?: string
 }
 
 type Json = Record<string, unknown>
@@ -174,6 +184,9 @@ export function createTransport(options: TransportOptions): Transport {
       [PUBLISHABLE_KEY_HEADER]: options.publishableKey,
       [CLIENT_HEADER]: options.client,
     })
+    if (options.sessionProfile) {
+      headers.set(SESSION_PROFILE_HEADER, options.sessionProfile)
+    }
     if (input.body !== undefined) {
       headers.set('content-type', 'application/json')
     }

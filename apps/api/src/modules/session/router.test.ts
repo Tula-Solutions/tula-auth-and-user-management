@@ -101,8 +101,8 @@ describe('POST /v1/client/sessions/refresh', () => {
     const body = (await res.json()) as SessionTokens
     expect(body.sessionId).toBe(first.sessionId)
     expect(body.refreshToken).toBeString()
-    expect(body.refreshToken).not.toBe(rt(first))
-    expect(body.accessToken.split('.')).toHaveLength(3)
+    expect(body.refreshToken as string).not.toBe(rt(first))
+    expect(body.accessToken?.split('.')).toHaveLength(3)
   })
 
   test('browsers send a cookie and get the next token only as an httpOnly cookie', async () => {
@@ -111,7 +111,7 @@ describe('POST /v1/client/sessions/refresh', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as SessionTokens
     expect(body).not.toHaveProperty('refreshToken')
-    expect(body.accessToken.split('.')).toHaveLength(3)
+    expect(body.accessToken?.split('.')).toHaveLength(3)
 
     const cookie = setCookie(res)
     const next = new RegExp(`^${COOKIE}=([^;]+)`).exec(cookie)?.[1]
@@ -459,7 +459,7 @@ describe('POST /v1/client/sessions/step-up', () => {
     const res = await stepUp(
       { method: 'password', password: PASSWORD },
       // A browser sends its refresh cookie along; the step-up must not touch it.
-      { accessToken: tokens.accessToken, cookie: `${COOKIE}=${rt(tokens)}` }
+      { accessToken: tokens.accessToken as string, cookie: `${COOKIE}=${rt(tokens)}` }
     )
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
@@ -467,7 +467,7 @@ describe('POST /v1/client/sessions/step-up', () => {
     const body = (await res.json()) as SessionTokens
     expect(Object.keys(body).sort()).toEqual(['accessToken', 'accessTokenExpiresAt', 'sessionId'])
     expect(body.sessionId).toBe(tokens.sessionId)
-    expect(claimsOf(body.accessToken)).toMatchObject({
+    expect(claimsOf(body.accessToken as string)).toMatchObject({
       sub: userId,
       sid: tokens.sessionId,
       auth_time: Math.floor(deps.clock.now().getTime() / 1000),
@@ -574,7 +574,7 @@ describe('POST /v1/client/sessions/step-up', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as SessionTokens
     expect(body).not.toHaveProperty('refreshToken')
-    expect(claimsOf(body.accessToken).amr).toEqual(['pwd', 'otp', 'mfa'])
+    expect(claimsOf(body.accessToken as string).amr).toEqual(['pwd', 'otp', 'mfa'])
   })
 
   test('is rate limited per IP, ahead of the token check', async () => {

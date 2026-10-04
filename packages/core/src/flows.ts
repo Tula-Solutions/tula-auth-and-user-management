@@ -14,7 +14,7 @@ import {
   type PasskeyAuthenticator,
   type PasskeyRequest,
 } from './passkey'
-import { isSessionTokens, type SessionManager } from './session'
+import { isSessionTokens, isStatefulSession, type SessionManager } from './session'
 import type { Transport } from './transport'
 import type { FlowKind, FlowStep, SecondFactorProof, TotpEnrolment } from './types'
 
@@ -364,7 +364,9 @@ function isUsableAttempt(value: unknown): value is FlowAttempt {
     return false
   }
   return value.step.status === 'complete'
-    ? isSessionTokens(value.session)
+    ? // Tokens, or a stateful session's bare id; the session manager refuses the latter for a
+      // client that is not a browser.
+      isSessionTokens(value.session) || isStatefulSession(value.session)
     : value.session === undefined
 }
 

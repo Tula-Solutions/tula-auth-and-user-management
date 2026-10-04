@@ -90,6 +90,12 @@ export interface TestSettings {
   }
   signUp?: { password: 'required' | 'optional' }
   mfa?: { policy: 'off' | 'optional' | 'required' }
+  /** Session profiles and the concurrent-session rule (ADR 0028). */
+  sessions?: {
+    profiles?: Record<string, { type?: 'hybrid' | 'stateful'; stepUpAfter?: string }>
+    maxPerUser?: number | null
+    onLimit?: 'end_oldest' | 'refuse_newest'
+  }
 }
 
 /**

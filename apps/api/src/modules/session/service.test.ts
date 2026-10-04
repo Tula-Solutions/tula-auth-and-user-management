@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import {
+  DEFAULT_WEB_SESSION_PROFILE,
   durationToMs,
   environmentIssuer,
   REFRESH_TOKEN_PREFIX,
@@ -77,7 +78,7 @@ const session = (id: string) => deps.sessions.findById(tenant.environmentId, id)
 describe('create', () => {
   test('issues a 60-second EdDSA access token with the contract claims', async () => {
     const tokens = await create()
-    const claims = await verifyAccessToken(deps, tokens.accessToken, tenant)
+    const claims = await verifyAccessToken(deps, tokens.accessToken as string, tenant)
     const iat = Math.floor(deps.clock.now().getTime() / 1000)
     expect(claims).toEqual({
       iss: environmentIssuer(TEST_CONFIG.publicUrl, tenant.environmentId),
@@ -91,6 +92,7 @@ describe('create', () => {
       v: 1,
       auth_time: iat,
       amr: [],
+      sp: 'web',
     })
     expect(tokens.accessTokenExpiresAt).toBe(new Date((iat + 60) * 1000).toISOString())
   })
@@ -111,7 +113,7 @@ describe('create', () => {
     const now = deps.clock.now()
     expect(await session(tokens.sessionId)).toMatchObject({
       userId: USER,
-      profile: 'web',
+      profile: 'mobile',
       client: 'ios',
       userAgent: 'Mozilla/5.0',
       ipAddress: '203.0.113.7',
@@ -147,7 +149,7 @@ describe('refresh', () => {
     expect(second.sessionId).toBe(first.sessionId)
     expect(rt(second)).not.toBe(rt(first))
     expect(second.accessToken).not.toBe(first.accessToken)
-    const claims = await verifyAccessToken(deps, second.accessToken, tenant)
+    const claims = await verifyAccessToken(deps, second.accessToken as string, tenant)
     expect(claims).toMatchObject({ sub: USER, sid: first.sessionId })
 
     const parent = await deps.sessions.findToken(tenant.environmentId, sha256Hex(rt(first)))
@@ -195,7 +197,7 @@ describe('refresh', () => {
   test('reusing a rotated token after the grace window revokes the whole session', async () => {
     const first = await create()
     const second = await refresh(rt(first))
-    deps.clock.advance(Sessions.profile().refresh.reuseGracePeriod)
+    deps.clock.advance(DEFAULT_WEB_SESSION_PROFILE.refresh.reuseGracePeriod as string)
 
     const err = await rejection(refresh(rt(first)))
     expect(err.status).toBe(401)
@@ -226,12 +228,14 @@ describe('refresh', () => {
   test('within the grace window a retry gets the same child token, never a new one', async () => {
     const first = await create()
     const second = await refresh(rt(first))
-    deps.clock.advance(durationToMs(Sessions.profile().refresh.reuseGracePeriod) - 1)
+    deps.clock.advance(
+      durationToMs(DEFAULT_WEB_SESSION_PROFILE.refresh.reuseGracePeriod as string) - 1
+    )
 
     const retry = await refresh(rt(first))
     expect(rt(retry)).toBe(rt(second))
     expect(retry.sessionId).toBe(first.sessionId)
-    await verifyAccessToken(deps, retry.accessToken, tenant)
+    await verifyAccessToken(deps, retry.accessToken as string, tenant)
     // Nothing new was minted and the session is intact.
     const child = await deps.sessions.findToken(tenant.environmentId, sha256Hex(rt(second)))
     expect(child?.token).toMatchObject({ usedAt: null, replacedById: null })
@@ -365,7 +369,11 @@ describe('revoke', () => {
       revokeReason: 'revoked_by_user',
     })
     expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
+    // For the longest an access token may live under any profile, not this profile's 60s:
+    // the profile may have been shortened since the token was signed (ADR 0028).
     deps.clock.advance('60s')
+    expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(true)
+    deps.clock.advance('14m')
     expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(false)
   })
 
@@ -487,7 +495,7 @@ describe('revokeOthers / revokeAllForUser', () => {
       actor: TEST_ACTOR,
     })
     expect(await deps.revokedSessions.has(current.sessionId, deps.clock.now())).toBe(false)
-    await verifyAccessToken(deps, current.accessToken, tenant)
+    await verifyAccessToken(deps, current.accessToken as string, tenant)
   })
 
   test('if the store fails after the denylist write, the error surfaces and a retry completes', async () => {
@@ -723,7 +731,12 @@ describe('activity', () => {
     const next = await refresh(rt(tokens))
     await Sessions.signOut(deps, tenant, rt(next))
     const written = JSON.stringify(deps.activityLog.entries)
-    for (const secret of [rt(tokens), rt(next), tokens.accessToken, sha256Hex(rt(tokens))]) {
+    for (const secret of [
+      rt(tokens),
+      rt(next),
+      tokens.accessToken as string,
+      sha256Hex(rt(tokens)),
+    ]) {
       expect(written).not.toContain(secret)
     }
   })
@@ -769,7 +782,8 @@ describe('when the signing key cannot be loaded', () => {
 
 describe('what a session has proven (auth_time and amr)', () => {
   const seconds = (date: Date) => Math.floor(date.getTime() / 1000)
-  const claimsOf = (tokens: SessionTokens) => verifyAccessToken(deps, tokens.accessToken, tenant)
+  const claimsOf = (tokens: SessionTokens) =>
+    verifyAccessToken(deps, tokens.accessToken as string, tenant)
 
   test('a session records the methods it was created with, once each, and when', async () => {
     const tokens = await create({ authMethods: ['pwd', 'otp', 'mfa', 'otp'] })

@@ -245,8 +245,9 @@ settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/ad
 app name and support address, password policy, enabled sign-in methods (`password`,
 `emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether
 a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit
-retention, which security notices are emailed (`notifications`), and whether two-step
-verification is `off`, `optional` or `required` (`mfa.policy`). **Read it through
+retention, which security notices are emailed (`notifications`), whether two-step
+verification is `off`, `optional` or `required` (`mfa.policy`), and the session profiles and
+the concurrent-session rule (`sessions`, [ADR 0028](docs/adr/0028-session-profiles.md)). **Read it through
 `~/modules/settings/service`** (`Settings.current(deps, tenant)`), never from `deps.config`:
 `PASSWORD_POLICY` and `CORS_ORIGINS` are only the defaults of an environment that has saved
 nothing.
@@ -399,6 +400,30 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   defined and documented in `packages/contract/src/session-profile.ts`): re-presenting a token
   rotated within that window returns the *same* child refresh token (derived as
   `HMAC(key, parent id)`, never stored) with a fresh access token — never a new refresh token.
+- **Session lifetimes come from the session's profile, as configured now** ([ADR 0028](docs/adr/0028-session-profiles.md)).
+  Never a constant: read the profile with `Sessions.profileOf(deps, scope, session)` and apply
+  it through the session service, which ends a session at the earlier of what was stored and
+  what the profile says today. A profile is chosen only in `Sessions.create`
+  (`resolveSessionProfile`): by client kind, or the one the client asked for
+  (`x-tula-session-profile`) **when the environment marks it `clientSelectable`**. Never let a
+  request pick a profile by any other path, and never answer differently for a profile that
+  exists and one that does not. A revoked session is denylisted for `MAX_ACCESS_TOKEN_TTL`
+  (the longest any profile may set), not for its own profile's lifetime. The grace window is
+  10 to 60 seconds or `null`; `@tula/core`'s `REFRESH_TIMEOUT_MS` stays below the floor.
+- **A `stateful` session is a cookie checked against the store on every request.** Its token
+  is derived (`tula_st_…`), stored only as SHA-256, never rotated, never in a response body,
+  and never accepted as a refresh token (nor a refresh token as it). It is read only through
+  `sessionAuth()` / `Sessions.authenticate`, set and cleared only with the helpers in
+  `~/modules/session/cookies`, and honoured only when `requestMayUseSessionCookie(c)`
+  (`~/middleware/cors`) says so: not `Sec-Fetch-Site: cross-site`, an `Origin` the environment
+  allows, and an `Origin` present on every state-changing request. When that fails the cookie
+  is ignored (the request is unauthenticated); it is never an error that says a cookie was
+  there. A route under `/v1/client/*` that changes state must stay behind `publishableKey()`
+  (the custom header a form cannot send). Stateful is for `web` clients only.
+- **The concurrent-session rule is enforced in the session store's `create`**, in one
+  transaction per user (`SessionLimit`). The service names the sessions to end (oldest by
+  sign-in time) and denylists them before the store ends them; the store never chooses.
+  Never count sessions and insert in two steps.
 - Access tokens are issued per environment: `iss` is `environmentIssuer(PUBLIC_URL, environmentId)`
   and keys are published at `jwksUrl(iss)`. Private signing keys are sealed with `~/lib/secret-box`
   (AES-256-GCM, key derived from `TULA_MASTER_KEY`, bound to key id + environment). See
@@ -420,7 +445,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   links, passwordless sign-up): [ADR 0024](docs/adr/0024-email-sign-in.md); two-step
   verification (TOTP, backup codes, step-up, the MFA policy): [ADR 0025](docs/adr/0025-mfa.md);
   OAuth sign-in and account linking: [ADR 0026](docs/adr/0026-oauth.md); passkeys:
-  [ADR 0027](docs/adr/0027-passkeys.md).
+  [ADR 0027](docs/adr/0027-passkeys.md); session profiles, the stateful session type and its CSRF
+  argument, and the concurrent-session rule: [ADR 0028](docs/adr/0028-session-profiles.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
   takes the `Origin` header and accepts it only when the environment allows it **and** it
   belongs to `passkeys.rpId`; nothing in a body chooses the origin or the relying party. Call

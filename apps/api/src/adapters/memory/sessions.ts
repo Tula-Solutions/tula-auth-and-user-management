@@ -11,7 +11,9 @@ import {
   type RefreshTokenRecord,
   type RevokeByUserOptions,
   type Rotation,
+  type SessionCreation,
   type SessionDevice,
+  type SessionLimit,
   type SessionRecord,
   type SessionRevokeReason,
   type SessionStore,
@@ -33,9 +35,41 @@ export class MemorySessionStore implements SessionStore {
   }
 
   /** @inheritdoc */
-  async create(session: NewSession, token: NewRefreshToken, activity?: Activity): Promise<void> {
+  async create(
+    session: NewSession,
+    token: NewRefreshToken,
+    activity?: Activity,
+    limit?: SessionLimit
+  ): Promise<SessionCreation> {
+    // No await between the check and the writes: the whole method is one turn of the event
+    // loop, which is what serialises simultaneous sign-ins here.
+    const mine = (id: string) => {
+      const candidate = this.#session(session.environmentId, id)
+      return candidate && candidate.userId === session.userId ? candidate : undefined
+    }
+    const ending = (limit?.end ?? [])
+      .map(mine)
+      .filter((candidate) => candidate !== undefined && candidate.revokedAt === null)
+    if (limit) {
+      const live = [...this.#sessions.values()].filter(
+        (other) =>
+          other.environmentId === session.environmentId &&
+          other.userId === session.userId &&
+          !ending.includes(other) &&
+          isActive(other, limit.at)
+      )
+      if (live.length >= limit.max) {
+        return { created: false }
+      }
+      for (const ended of ending as SessionRecord[]) {
+        ended.revokedAt = limit.at
+        ended.revokeReason = 'session_limit'
+        this.#activityLog.record(limit.activity ? [limit.activity(ended.id)] : [])
+      }
+    }
     this.#sessions.set(session.id, {
       ...session,
+      type: session.type ?? 'hybrid',
       factorVerifiedAt: session.factorVerifiedAt ?? null,
       authMethods: [...(session.authMethods ?? [])],
       revokedAt: null,
@@ -43,6 +77,18 @@ export class MemorySessionStore implements SessionStore {
     })
     this.#tokens.set(token.id, { ...token, replacedById: null, usedAt: null })
     this.#activityLog.record(activity ? [activity] : [])
+    return { created: true, ended: (ending as SessionRecord[]).map((ended) => ended.id) }
+  }
+
+  /** @inheritdoc */
+  async touch(environmentId: string, id: string, at: Date, idleExpiresAt: Date): Promise<boolean> {
+    const session = this.#session(environmentId, id)
+    if (!session || !isActive(session, at)) {
+      return false
+    }
+    session.lastActiveAt = at
+    session.idleExpiresAt = idleExpiresAt
+    return true
   }
 
   /** @inheritdoc */

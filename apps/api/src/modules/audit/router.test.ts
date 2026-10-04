@@ -213,7 +213,12 @@ describe('GET /v1/admin/audit-logs', () => {
     const tokens = await signIn(user.id)
     await client('POST', '/sessions/sign-out', undefined, { refreshToken: tokens.refreshToken })
     const body = JSON.stringify(await log()).toLowerCase()
-    for (const secret of [PASSWORD, 'northline', tokens.refreshToken ?? 'x', tokens.accessToken]) {
+    for (const secret of [
+      PASSWORD,
+      'northline',
+      tokens.refreshToken ?? 'x',
+      tokens.accessToken ?? 'x',
+    ]) {
       expect(body).not.toContain(secret.toLowerCase())
     }
   })

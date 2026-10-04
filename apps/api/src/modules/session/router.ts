@@ -4,7 +4,7 @@ import type { AppEnv } from '~/dependencies'
 import { AuthError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { requestOrigin, userActor } from '~/lib/actor'
-import { originMayUseCookies } from '~/middleware/cors'
+import { originMayUseCookies, requestMayUseSessionCookie } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
@@ -12,7 +12,13 @@ import * as Mfa from '~/modules/mfa/service'
 import { PasskeyRequestOptionsSchema } from '~/modules/passkey/schema'
 import * as Sessions from '~/modules/session/service'
 import * as openapi from '~/openapi'
-import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './cookies'
+import {
+  clearRefreshCookie,
+  clearSessionCookie,
+  readRefreshCookie,
+  readSessionCookie,
+  setRefreshCookie,
+} from './cookies'
 import {
   RefreshTokenRequestSchema,
   RevokedSessionsSchema,
@@ -45,7 +51,10 @@ router.post(
       'the same way. The cookie is honoured only from an origin the environment allows ' +
       '(`urls.allowedOrigins`). Refresh tokens are single-use; presenting a used one signs the session ' +
       'out (`session.reuse_detected`), except for an immediate retry, which returns the same ' +
-      'token again.',
+      'token again (within the `refresh.reuseGracePeriod` of the session’s profile). ' +
+      'A browser whose session is of a `stateful` profile has no refresh token: called with ' +
+      'only its session cookie, this answers `{ sessionId }` with no token when the session is ' +
+      'still live (nothing is rotated), and 401 when it is not.',
     security: openapi.security.client,
     responses: {
       413: openapi.responses[413],
@@ -82,20 +91,34 @@ router.post(
         ? undefined
         : readRefreshCookie(c, deps.config, tenant.environmentId)
     const presented = fromBody ?? fromCookie
-    if (!presented) {
-      throw new AuthError('auth.unauthenticated')
-    }
     c.header('Cache-Control', 'no-store')
+    if (!presented) {
+      // No refresh token: a browser on a `stateful` profile has only its session cookie, and
+      // asks here whether it is still signed in. Nothing is rotated and no token is returned.
+      const sessionToken = readSessionCookie(c, deps.config, tenant.environmentId)
+      if (!sessionToken || !(await requestMayUseSessionCookie(c))) {
+        throw new AuthError('auth.unauthenticated')
+      }
+      try {
+        const { sid } = await Sessions.authenticate(deps, tenant, sessionToken, requestOrigin(c))
+        return c.json(SessionTokensSchema.parse({ sessionId: sid }))
+      } catch (error) {
+        if (error instanceof AuthError) {
+          clearSessionCookie(c, deps.config, tenant.environmentId)
+        }
+        throw error
+      }
+    }
     try {
-      const { refreshToken, ...tokens } = await Sessions.refresh(
+      const { refreshToken, cookieMaxAge, ...tokens } = await Sessions.refresh(
         deps,
         tenant,
         presented,
         requestOrigin(c)
       )
-      if (fromCookie && refreshToken) {
+      if (fromCookie && refreshToken && cookieMaxAge) {
         // Browsers never see the refresh token in JavaScript.
-        setRefreshCookie(c, deps.config, tenant.environmentId, refreshToken)
+        setRefreshCookie(c, deps.config, tenant.environmentId, refreshToken, cookieMaxAge)
         return c.json(SessionTokensSchema.parse(tokens))
       }
       return c.json(SessionTokensSchema.parse({ ...tokens, refreshToken }))
@@ -116,7 +139,8 @@ router.post(
     tags: ['Sessions'],
     summary: 'Sign out',
     description:
-      'Ends the session the refresh token (body or cookie) belongs to and clears the cookie. ' +
+      'Ends the session the refresh token (body or cookie) or the `stateful` session cookie ' +
+      'belongs to and clears the cookie. ' +
       'Always succeeds, including when the token is missing or unknown, so a client can sign ' +
       'out with an expired access token.',
     security: openapi.security.client,
@@ -144,6 +168,12 @@ router.post(
     await Sessions.signOut(deps, tenant, presented, requestOrigin(c))
     if (cookies) {
       clearRefreshCookie(c, deps.config, tenant.environmentId)
+    }
+    // A `stateful` session's cookie, under its own (stricter) rule: sign-out changes state.
+    const sessionToken = readSessionCookie(c, deps.config, tenant.environmentId)
+    if (sessionToken && (await requestMayUseSessionCookie(c))) {
+      await Sessions.signOut(deps, tenant, sessionToken, requestOrigin(c))
+      clearSessionCookie(c, deps.config, tenant.environmentId)
     }
     return c.body(null, 204)
   }
@@ -173,6 +203,9 @@ router.get(
       userId: sub,
       currentSessionId: sid,
     })
+    // Devices, user agents and IP addresses of one user, which a cookie can now authenticate:
+    // no cache may keep the answer and serve it to the next person at that browser.
+    c.header('Cache-Control', 'no-store')
     return c.json(SessionListSchema.parse({ data }))
   }
 )
@@ -237,6 +270,9 @@ router.delete(
     await Sessions.revoke(deps, tenant, { userId: sub, sessionId, actor: userActor(c) })
     if (sessionId === sid) {
       clearRefreshCookie(c, deps.config, tenant.environmentId)
+      if (readSessionCookie(c, deps.config, tenant.environmentId)) {
+        clearSessionCookie(c, deps.config, tenant.environmentId)
+      }
     }
     return c.body(null, 204)
   }
@@ -250,8 +286,10 @@ router.post(
     summary: 'Prove it is still me',
     description:
       'Proves a factor again for the current session and returns a fresh access token whose ' +
-      '`auth_time` is now and whose `amr` includes the method. Sensitive routes that answer ' +
-      '`auth.step_up_required` accept that token for ten minutes. A user with two-step ' +
+      '`auth_time` is now and whose `amr` includes the method (for a `stateful` session: ' +
+      '`{ sessionId }` only; the session itself now carries the proof). Sensitive routes that ' +
+      'answer `auth.step_up_required` accept it for ten minutes, or for the `stepUpAfter` of ' +
+      'the session’s profile. A user with two-step ' +
       'verification must use `totp` or `backup_code` (their password alone answers ' +
       '`auth.step_up_required`); a user without it uses `password`, or an `email_code` asked ' +
       'for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong ' +

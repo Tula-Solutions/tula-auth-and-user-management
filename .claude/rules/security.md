@@ -169,3 +169,32 @@ Before finishing any change here, confirm each item holds and has a test:
     `user.passkey_removed` entry, by `OAuth.canStillSignIn` (test a passkey-only user: `false`);
     no response, audit entry, email or log line holds a public
     key or a credential id.
+37. **Session profiles (ADR 0028):** a session's limits are its profile's **as configured
+    now**, through `Sessions.profileOf` and the session service. Test both sides of every
+    limit you touch, a profile tightened after the session was created (ended at its next
+    refresh or request), one loosened (never past the stored absolute limit), and a deleted
+    one (the built-in for the client kind). The profile a client asks for
+    (`x-tula-session-profile`) is honoured only when `clientSelectable`: test an unknown name,
+    one not offered, the other kind's built-in and an inherited object key (`constructor`);
+    each gives the client kind's built-in and the same answer. Read profiles by own key only.
+38. **Stateful sessions:** the token (`tula_st_…`) is derived, stored only as SHA-256, never
+    rotated and never in a body. Test that it is refused as a refresh token and a refresh token
+    as it; another environment's key; a revoked, idle and over-age session on the **very next**
+    request; and that a Bearer header, when present, decides alone.
+39. **Cookie authentication and CSRF:** the session cookie is read only where
+    `requestMayUseSessionCookie` allows. Test, for a read and for every kind of mutating
+    route: an `Origin` the environment does not allow, `Sec-Fetch-Site: cross-site` with an
+    allowed `Origin`, and an unsafe method with no `Origin`. Each must leave the request
+    unauthenticated with **nothing changed and no `Set-Cookie`** (a foreign page must not be
+    able to clear the cookie either). Cookies only through `~/modules/session/cookies`
+    (`__Host-` prefix over https, `HttpOnly`, `SameSite=Lax`, no `Domain`).
+40. **Concurrent sessions:** the limit is enforced by `SessionStore.create` in one
+    transaction per user; the service names and denylists the sessions to end first. Test
+    simultaneous sign-ins at the limit in the shared store suite (both adapters), that only
+    live sessions count, that another user's and another environment's sessions are never
+    ended or counted, and that `refuse_newest` creates no session, sets no cookie, and is
+    answered only after every factor was proven (a wrong password at the limit is still
+    `auth.invalid_credentials`).
+41. **Backend verification:** `POST /v1/admin/sessions/verify` needs a secret key of the
+    session's own environment, never answers a refresh token with claims, and never writes
+    the token to a log or an audit entry.

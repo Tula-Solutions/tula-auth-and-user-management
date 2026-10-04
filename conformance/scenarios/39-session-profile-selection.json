@@ -1,0 +1,410 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "session profile selection",
+  "description": "A session's profile is chosen by the server: by client kind, unless the client names a profile the environment marks clientSelectable. A profile the operator did not offer, a name that does not exist and the other kind's built-in are not errors: the session simply gets the profile of its client kind, so a client can never give itself a longer-lived session. The settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urls": "settings.urls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeySettings": "settings.passkeys",
+        "original": "settings"
+      }
+    },
+    {
+      "name": "define one profile clients may ask for and one they may not",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urls}}"
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeySettings}}"
+          },
+          "sessions": {
+            "profiles": {
+              "conformance-offered": {
+                "accessTokenTtl": "2m",
+                "clientSelectable": true
+              },
+              "conformance-kept": {
+                "idleTimeout": "365d",
+                "absoluteTimeout": null
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sessions": {
+              "profiles": {
+                "web": {
+                  "type": "hybrid"
+                },
+                "mobile": {
+                  "type": "hybrid"
+                },
+                "conformance-offered": {
+                  "clientSelectable": true
+                },
+                "conformance-kept": {
+                  "clientSelectable": false,
+                  "absoluteTimeout": null
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "headers": {
+          "x-tula-session-profile": "conformance-kept"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "verify the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        },
+        "headers": {
+          "x-tula-session-profile": "conformance-kept"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sp": "mobile"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken",
+        "sessionId": "session.sessionId"
+      }
+    },
+    {
+      "name": "start sign-in 1",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        },
+        "headers": {
+          "x-tula-session-profile": "conformance-offered"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signIn1Id": "id",
+        "signIn1Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "asking for the offered profile gets it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn1Id}}/password",
+        "attempt": "{{signIn1Secret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sp": "conformance-offered"
+          }
+        }
+      }
+    },
+    {
+      "name": "start sign-in 2",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        },
+        "headers": {
+          "x-tula-session-profile": "conformance-kept"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signIn2Id": "id",
+        "signIn2Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "asking for the profile the operator kept gives the mobile profile, not an error",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn2Id}}/password",
+        "attempt": "{{signIn2Secret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sp": "mobile"
+          }
+        }
+      }
+    },
+    {
+      "name": "start sign-in 3",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        },
+        "headers": {
+          "x-tula-session-profile": "no-such-profile"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signIn3Id": "id",
+        "signIn3Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "asking for a profile that does not exist gives the mobile profile",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn3Id}}/password",
+        "attempt": "{{signIn3Secret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sp": "mobile"
+          }
+        }
+      }
+    },
+    {
+      "name": "start sign-in 4",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        },
+        "headers": {
+          "x-tula-session-profile": "web"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signIn4Id": "id",
+        "signIn4Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a native client asking for the web built-in gets its own kind's profile",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn4Id}}/password",
+        "attempt": "{{signIn4Secret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sp": "mobile"
+          }
+        }
+      }
+    },
+    {
+      "name": "a malformed profile name is refused when the attempt starts",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "headers": {
+          "x-tula-session-profile": "Not A Name"
+        },
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 422
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

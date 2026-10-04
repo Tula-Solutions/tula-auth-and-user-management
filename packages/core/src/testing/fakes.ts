@@ -145,7 +145,7 @@ export function accessToken(label: string, lifetimeSeconds = 60): string {
 export function sessionTokens(
   label: string,
   overrides: Partial<Schemas['SessionTokens']> = {}
-): Schemas['SessionTokens'] {
+): Schemas['SessionTokens'] & { accessToken: string; accessTokenExpiresAt: string } {
   return {
     sessionId: 'session_1',
     accessToken: accessToken(label),

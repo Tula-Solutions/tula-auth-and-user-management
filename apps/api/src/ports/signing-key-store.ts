@@ -1,16 +1,15 @@
-import { DEFAULT_WEB_SESSION_PROFILE, durationToMs, type Jwk } from '@tula/contract'
+import { durationToMs, type Jwk, MAX_ACCESS_TOKEN_TTL } from '@tula/contract'
 import type { Activity } from '~/ports/activity-log'
 
 /** Lifecycle of a signing key: `next` is published ahead of use, `active` signs, `retired` verifies. */
 export type SigningKeyStatus = 'next' | 'active' | 'retired'
 
 /**
- * How long a retired key stays usable for verification: twice the longest access-token TTL, so
- * every token it signed has expired and external JWKS caches have refreshed.
- *
- * Phase 0 issues only the default web profile; this must grow with configurable profiles.
+ * How long a retired key stays usable for verification: twice the longest access-token TTL a
+ * session profile may set (`MAX_ACCESS_TOKEN_TTL`, ADR 0028), so every token it signed has
+ * expired and external JWKS caches have refreshed.
  */
-export const RETIRED_KEY_RETENTION_MS = 2 * durationToMs(DEFAULT_WEB_SESSION_PROFILE.accessTokenTtl)
+export const RETIRED_KEY_RETENTION_MS = 2 * durationToMs(MAX_ACCESS_TOKEN_TTL)
 
 /**
  * Whether a key can verify tokens at `now`.

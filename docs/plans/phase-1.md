@@ -416,6 +416,30 @@ The changes every new method needs, made once.
 - JWT templates are **not** in Phase 1: custom claims are a hook surface that needs its own
   design (Phase 2, with webhooks).
 
+**As built** ([ADR 0028](../adr/0028-session-profiles.md)):
+
+- `sessions.profiles` in the environment's settings: `web` and `mobile` always, up to ten
+  custom ones, each with `type`, `accessTokenTtl`, `idleTimeout`, `absoluteTimeout`,
+  `refresh.reuseGracePeriod` (10 to 60 seconds, or none), `stepUpAfter` and
+  `clientSelectable`. The defaults are the old constants. Limits are read as configured now.
+- The profile is chosen by client kind; a client may ask for another with
+  `x-tula-session-profile` (`createTulaClient({ sessionProfile })`) and gets it only when the
+  profile is `clientSelectable`, otherwise its kind's built-in, never an error.
+- `stateful`: one httpOnly `__Host-` cookie checked against the store on every request; no
+  token in the browser; `sessionAuth()` accepts it under the CSRF rules of ADR 0028;
+  `POST /v1/admin/sessions/verify` for backends; browsers only. `@tula/core` works against it
+  (`getToken()` is `null`).
+- Rules: `sessions.maxPerUser` with `onLimit` (`end_oldest` / `refuse_newest`,
+  `session.limit_reached`), enforced atomically in the session store; `stepUpAfter` tunes the
+  window of routes that already require recent authentication.
+- Also added, beyond the plan: `DELETE /v1/admin/users/:userId/sessions` (an operator signs a
+  user out everywhere; the way out of `refuse_newest`), the access-token claim `sp`, a
+  `sessions.type` column, the revoke reason `session_limit`, and `captureCookie` in the
+  conformance scenario format.
+- Not done here: a cookie `Domain` for stateful sessions (a backend on another host than the
+  API cannot see the cookie; decided with `@tula/nextjs`, 1.12), stateful for native clients,
+  and the other session types.
+
 ### 1.12 `@tula/nextjs`
 
 - Middleware that verifies the access token against the environment's JWKS at the edge (no

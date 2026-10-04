@@ -7,10 +7,10 @@ import {
   type Factors,
   type PasskeyRequestOptions,
   type SessionTokens,
-  STEP_UP_MAX_AGE_SECONDS,
   type StepUpEmailCode,
   type StepUpMethod,
   type StepUpRequest,
+  stepUpWindowSeconds,
   type TotpEnrolment,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
@@ -810,7 +810,10 @@ function stepUpRequired(methods: readonly StepUpMethod[]): AuthError {
 
 /** Options of {@link requireRecentAuthentication}. */
 export interface RecentAuthenticationOptions {
-  /** How old the session's last proof may be, in seconds. Default ten minutes. */
+  /**
+   * How old the session's last proof may be, in seconds. Default: the `stepUpAfter` of the
+   * session's profile, or ten minutes (`STEP_UP_MAX_AGE_SECONDS`) when it sets none.
+   */
   maxAgeSeconds?: number
   /**
    * Only demand it from a user who has a second factor. For actions another check already
@@ -822,7 +825,8 @@ export interface RecentAuthenticationOptions {
 /**
  * Refuse a sensitive action unless the session proved who the user is recently.
  *
- * Reads the verified access token's claims: `auth_time` must be within `maxAgeSeconds`, and for
+ * Reads the session's claims: `auth_time` must be within the window (the profile's
+ * `stepUpAfter`, see {@link RecentAuthenticationOptions}), and for
  * a user who has a second factor `amr` must include `mfa` (the session proved it). The claims
  * are the source of truth: access tokens are verified without a database read and live about a
  * minute, and a step-up returns a fresh one at once. A session that was revoked is stopped by
@@ -838,10 +842,13 @@ export interface RecentAuthenticationOptions {
 export async function requireRecentAuthentication(
   deps: SecondFactorDeps & Pick<Deps, 'users' | 'clock'>,
   scope: Pick<Scope, 'environmentId'>,
-  claims: Pick<AccessTokenClaims, 'sub' | 'auth_time' | 'amr'>,
+  claims: Pick<AccessTokenClaims, 'sub' | 'auth_time' | 'amr' | 'sp'>,
   options: RecentAuthenticationOptions = {}
 ): Promise<void> {
-  const maxAge = options.maxAgeSeconds ?? STEP_UP_MAX_AGE_SECONDS
+  // The window of the session's profile, as configured now; a route may fix its own.
+  const maxAge =
+    options.maxAgeSeconds ??
+    stepUpWindowSeconds((await Settings.current(deps, scope)).sessions, claims.sp)
   const { methods, hasSecondFactor } = await stepUpState(deps, scope, claims.sub)
   if (options.onlyWithSecondFactor && !hasSecondFactor) {
     return

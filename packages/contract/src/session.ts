@@ -42,6 +42,20 @@ export const RefreshTokenRequestSchema = z
   .object({ refreshToken: z.string().max(512).optional() })
   .meta({ ref: 'RefreshTokenRequest' })
 
+/**
+ * Longest token `POST /v1/admin/sessions/verify` reads: room for an access token (a JWT of a
+ * few hundred bytes) with plenty to spare, and nothing a body could be padded with.
+ */
+export const MAX_VERIFIED_TOKEN_LENGTH = 4096
+
+/**
+ * Body of `POST /v1/admin/sessions/verify`: the value of a `stateful` session's cookie
+ * (`tula_st_…`), or a `hybrid` session's access token. Never a refresh token.
+ */
+export const VerifySessionRequestSchema = z
+  .object({ token: z.string().min(1).max(MAX_VERIFIED_TOKEN_LENGTH) })
+  .meta({ ref: 'VerifySessionRequest' })
+
 /** Result of revoking the user's other sessions. */
 export const RevokedSessionsSchema = z
   .object({ revoked: z.number().int().min(0) })
@@ -57,3 +71,5 @@ export type SessionList = z.infer<typeof SessionListSchema>
 export type RefreshTokenRequest = z.infer<typeof RefreshTokenRequestSchema>
 /** Count of revoked sessions. */
 export type RevokedSessions = z.infer<typeof RevokedSessionsSchema>
+/** Body of `POST /v1/admin/sessions/verify`. */
+export type VerifySessionRequest = z.infer<typeof VerifySessionRequestSchema>

@@ -98,6 +98,13 @@ export const AccessTokenClaimsSchema = z
      * to emit the order of {@link AUTHENTICATION_METHODS}; that is not part of the contract.
      */
     amr: z.array(z.string()).optional(),
+    /**
+     * The name of the session's profile (`web`, `mobile` or one the environment defined), as
+     * stored when the session was created (ADR 0028). The server reads it to find the
+     * profile's step-up window; a resource server may use it to tell an `admin` session from
+     * an ordinary one. Optional: tokens issued before profiles existed do not carry it.
+     */
+    sp: z.string().optional(),
   })
   .meta({ ref: 'AccessTokenClaims' })
 

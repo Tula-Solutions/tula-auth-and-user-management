@@ -111,7 +111,11 @@ type SessionTokens = Schemas['SessionTokens']
 
 /** The access token in memory, with its expiry on this device's clock. */
 interface Tokens {
-  readonly accessToken: string
+  /**
+   * The access token, or `null` for a session of a `stateful` profile: the browser then holds
+   * only an httpOnly cookie, and there is no token for JavaScript to keep (ADR 0028).
+   */
+  readonly accessToken: string | null
   readonly sessionId: string
   /** When the token expires. */
   readonly expiresAt: number
@@ -233,9 +237,13 @@ function jwtLifetimeMs(token: string): number | undefined {
  * can be minutes off. With a 60-second token, a clock two minutes fast would see every token as
  * already expired, and a slow one would keep using dead tokens.
  */
-function accessTokenLifetimeMs(issued: SessionTokens, now: number): number {
+function accessTokenLifetimeMs(
+  issued: { accessToken: string; accessTokenExpiresAt?: string },
+  now: number
+): number {
   return (
-    jwtLifetimeMs(issued.accessToken) ?? Math.max(0, Date.parse(issued.accessTokenExpiresAt) - now)
+    jwtLifetimeMs(issued.accessToken) ??
+    Math.max(0, Date.parse(issued.accessTokenExpiresAt ?? '') - now)
   )
 }
 
@@ -266,6 +274,34 @@ export function isSessionTokens(value: unknown): value is SessionTokens {
  * A banned user's refresh is refused with a 403; every other ending is a `session.*` code or
  * `auth.unauthenticated` (no cookie, or no token).
  */
+/**
+ * Whether a value is the answer of a session of a `stateful` profile: a session id and **no
+ * token of any kind**. The browser was given an httpOnly cookie instead, which this client
+ * never sees (ADR 0028).
+ *
+ * Only a `web` client accepts such an answer: every other kind has no cookie jar, so for it a
+ * token-less answer is not a session at all.
+ *
+ * @param value - A parsed response body.
+ * @returns `true` when it names a session and carries no access or refresh token.
+ *
+ * @example
+ * ```ts
+ * isStatefulSession({ sessionId: 's1' }) // true
+ * isStatefulSession({ sessionId: 's1', accessToken: 'eyJ…' }) // false
+ * ```
+ */
+export function isStatefulSession(value: unknown): value is { sessionId: string } {
+  return (
+    isRecord(value) &&
+    typeof value.sessionId === 'string' &&
+    value.sessionId !== '' &&
+    value.accessToken === undefined &&
+    value.accessTokenExpiresAt === undefined &&
+    value.refreshToken === undefined
+  )
+}
+
 function sessionIsGone(error: TulaError): boolean {
   return (
     error.code.startsWith('session.') ||
@@ -318,6 +354,10 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   const web = options.client === 'web'
   const storageKey = `tula.refresh.${options.scope}`
   const listeners = new Set<(state: AuthState) => void>()
+
+  /** What this client accepts as a session: tokens, or (a browser only) a stateful session. */
+  const isSession = (value: unknown): value is SessionTokens =>
+    isSessionTokens(value) || (web && isStatefulSession(value))
 
   let state: AuthState = Object.freeze({ status: 'loading' })
   let tokens: Tokens | null = null
@@ -398,9 +438,10 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     }
   }
 
-  async function fetchUser(accessToken: string): Promise<User | null> {
+  async function fetchUser(accessToken: string | null): Promise<User | null> {
     try {
-      return await transport.call('getMe', { accessToken })
+      // A stateful session sends no token: its cookie goes with the request.
+      return await transport.call('getMe', accessToken ? { accessToken } : {})
     } catch {
       // The session itself is fine; the profile is fetched again by `user.get()` or by the
       // next refresh, and until then the state says `user: null`.
@@ -428,12 +469,24 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     generation += 1
     endedSessions.delete(issued.sessionId)
     const now = environment.now()
-    const lifetime = accessTokenLifetimeMs(issued, now)
-    tokens = {
-      accessToken: issued.accessToken,
-      sessionId: issued.sessionId,
-      expiresAt: now + lifetime,
-      refreshAt: now + lifetime - Math.min(ACCESS_TOKEN_EXPIRY_SKEW_MS, lifetime / 2),
+    const { accessToken } = issued
+    if (accessToken === undefined) {
+      // Stateful: nothing expires on this side. The server checks the cookie on every request
+      // and a refusal there is how this client learns the session has ended.
+      tokens = {
+        accessToken: null,
+        sessionId: issued.sessionId,
+        expiresAt: Number.MAX_SAFE_INTEGER,
+        refreshAt: Number.MAX_SAFE_INTEGER,
+      }
+    } else {
+      const lifetime = accessTokenLifetimeMs({ ...issued, accessToken }, now)
+      tokens = {
+        accessToken,
+        sessionId: issued.sessionId,
+        expiresAt: now + lifetime,
+        refreshAt: now + lifetime - Math.min(ACCESS_TOKEN_EXPIRY_SKEW_MS, lifetime / 2),
+      }
     }
     backoff = null
     if (!web && issued.refreshToken) {
@@ -487,7 +540,8 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     }
     if (
       data.type === 'session' &&
-      typeof data.accessToken === 'string' &&
+      // `null` is another tab's stateful session: the cookie is shared, there is no token.
+      (typeof data.accessToken === 'string' || data.accessToken === null) &&
       typeof data.sessionId === 'string' &&
       typeof data.expiresAt === 'number' &&
       typeof data.refreshAt === 'number'
@@ -627,7 +681,7 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       }
       throw error
     }
-    if (!isSessionTokens(issued)) {
+    if (!isSession(issued)) {
       // A 200 that is not session tokens (a wrong base URL, a proxy's page). Nothing is
       // installed, stored or announced, and the session this client has is left alone.
       throw clientError('response.invalid', options.messages())
@@ -641,7 +695,7 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       return current()
     }
     const installed = commit(issued)
-    return { token: issued.accessToken, installed, failure: await persist(issued) }
+    return { token: issued.accessToken ?? null, installed, failure: await persist(issued) }
   }
 
   async function runRefresh(explicit: boolean): Promise<string | null> {
@@ -680,7 +734,8 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     if (state.status === 'signed-out') {
       return null
     }
-    if (tokens && environment.now() < tokens.refreshAt) {
+    if (tokens && (tokens.accessToken === null || environment.now() < tokens.refreshAt)) {
+      // Also a stateful session, which has no token and never will: nothing is asked.
       return tokens.accessToken
     }
     try {
@@ -703,7 +758,7 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   }
 
   async function adopt(issued: SessionTokens): Promise<void> {
-    if (!isSessionTokens(issued)) {
+    if (!isSession(issued)) {
       throw clientError('response.invalid', options.messages())
     }
     openChannel()
@@ -788,6 +843,28 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   }
 
   /**
+   * A call of a stateful session: no `Authorization`, the browser's cookie authenticates it.
+   * The server looks the session up on every request, so a 401 here is final: there is
+   * nothing to refresh and no second try. This client and the other tabs are signed out,
+   * unless the session changed while the call was in flight.
+   */
+  async function sendWithCookie<Id extends OperationId>(
+    id: Id,
+    input: CallInput<Id>,
+    sessionId: string
+  ): Promise<{ answer: Operations[Id]['response']; sent: number }> {
+    const sent = generation
+    try {
+      return { answer: await transport.call(id, input), sent }
+    } catch (error) {
+      if (tokenWasRefused(error) && generation === sent && tokens?.sessionId === sessionId) {
+        endLocal(true)
+      }
+      throw error
+    }
+  }
+
+  /**
    * Send an operation with the user's access token, refreshing once if the API refuses the
    * token. `sent` is the session generation the answered request was sent under, for a caller
    * that installs something from the answer.
@@ -798,6 +875,9 @@ export function createSessionManager(options: SessionOptions): SessionManager {
   ): Promise<{ answer: Operations[Id]['response']; sent: number }> {
     const accessToken = await getToken()
     if (!accessToken) {
+      if (tokens?.accessToken === null && state.status !== 'signed-out') {
+        return sendWithCookie(id, input, tokens.sessionId)
+      }
       throw unauthenticated()
     }
     let sent = generation
@@ -836,13 +916,17 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     // A refresh already in flight would otherwise hand the proof a token about to be replaced.
     await refreshing?.catch(ignore)
     const { answer, sent } = await send('stepUpSession', { body: proof })
-    if (!isSessionTokens(answer)) {
+    if (!isSession(answer)) {
       throw clientError('response.invalid', options.messages())
     }
     // Signed out, or signed in as someone else, while the proof was in flight: the answer is
     // about a session this client no longer has. A step-up never changes whose session it is.
     if (state.status === 'signed-out' || tokens?.sessionId !== answer.sessionId) {
       throw unauthenticated()
+    }
+    if (answer.accessToken === undefined) {
+      // Stateful: the proof is on the session itself; there is no token to install.
+      return
     }
     if (generation === sent && !refreshing) {
       // Only the access token: a step-up does not rotate the refresh token, and one that a

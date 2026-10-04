@@ -88,6 +88,7 @@ export function describeSessionStore(
       const { session: s, root } = await seed(ctx.a)
       expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toEqual({
         ...s,
+        type: 'hybrid',
         factorVerifiedAt: null,
         authMethods: [],
         revokedAt: null,
@@ -158,6 +159,7 @@ export function describeSessionStore(
       )
       expect(updated).toEqual({
         ...s,
+        type: 'hybrid',
         factorVerifiedAt: later(60_000),
         authMethods: ['pwd', 'otp', 'mfa'],
         revokedAt: null,
@@ -499,6 +501,149 @@ export function describeSessionStore(
       await ctx.store.deleteEnded(ctx.a.environmentId, justBefore, 100)
       expect(await ctx.store.findById(ctx.a.environmentId, s.id)).not.toBeNull()
       expect(await ctx.store.findToken(ctx.a.environmentId, root.tokenHash)).not.toBeNull()
+    })
+
+    function limited(tenant: SessionSuiteTenant, sessionId: string): Activity {
+      return {
+        id: Bun.randomUUIDv7(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        type: 'session.revoked',
+        actor: { type: 'system', id: null },
+        target: { type: 'session', id: sessionId },
+        ipAddress: null,
+        userAgent: null,
+        data: { reason: 'session_limit' },
+        occurredAt: later(1000),
+      }
+    }
+
+    async function createLimited(
+      tenant: SessionSuiteTenant,
+      userId: string,
+      max: number,
+      end: readonly string[] = [],
+      overrides: Partial<NewSession> = {}
+    ) {
+      const s = session(tenant, userId, { createdAt: later(1000), ...overrides })
+      const result = await ctx.store.create(s, token(s.id), undefined, {
+        max,
+        end,
+        at: later(1000),
+        activity: (id) => limited(tenant, id),
+      })
+      return { session: s, result }
+    }
+
+    test('a session keeps the type it was created with', async () => {
+      const { session: s } = await seed(ctx.a, { type: 'stateful' })
+      expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.type).toBe('stateful')
+    })
+
+    test('creating without a limit reports the session as created', async () => {
+      const userId = await ctx.a.user()
+      const s = session(ctx.a, userId)
+      expect(await ctx.store.create(s, token(s.id))).toEqual({ created: true, ended: [] })
+    })
+
+    test('a session under the limit is created', async () => {
+      const { userId } = await seed(ctx.a)
+      const { session: s, result } = await createLimited(ctx.a, userId, 2)
+      expect(result).toEqual({ created: true, ended: [] })
+      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).not.toBeNull()
+    })
+
+    test('a session at the limit is not created, and nothing else changes', async () => {
+      const { userId, session: first } = await seed(ctx.a)
+      await seed(ctx.a, { userId })
+      const { session: s, result } = await createLimited(ctx.a, userId, 2)
+      expect(result).toEqual({ created: false })
+      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toBeNull()
+      expect((await ctx.store.findById(ctx.a.environmentId, first.id))?.revokedAt).toBeNull()
+      expect(
+        await ctx.store.listActiveByUser(ctx.a.environmentId, userId, later(1000))
+      ).toHaveLength(2)
+    })
+
+    test('ending the named sessions makes room, in the same step, and is recorded', async () => {
+      const { userId, session: oldest } = await seed(ctx.a)
+      const { session: kept } = await seed(ctx.a, { userId, createdAt: later(10) })
+      const { session: s, result } = await createLimited(ctx.a, userId, 2, [oldest.id])
+      expect(result).toEqual({ created: true, ended: [oldest.id] })
+      const ended = await ctx.store.findById(ctx.a.environmentId, oldest.id)
+      expect(ended?.revokedAt).toEqual(later(1000))
+      expect(ended?.revokeReason).toBe('session_limit')
+      const active = await ctx.store.listActiveByUser(ctx.a.environmentId, userId, later(1000))
+      expect(active.map((row) => row.id).sort()).toEqual([kept.id, s.id].sort())
+      expect(await recorded(ctx.a, oldest.id)).toEqual(['session.revoked'])
+    })
+
+    test('when ending the named sessions is not enough, nothing is ended or created', async () => {
+      const { userId, session: oldest } = await seed(ctx.a)
+      await seed(ctx.a, { userId })
+      await seed(ctx.a, { userId })
+      const { session: s, result } = await createLimited(ctx.a, userId, 2, [oldest.id])
+      expect(result).toEqual({ created: false })
+      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toBeNull()
+      expect((await ctx.store.findById(ctx.a.environmentId, oldest.id))?.revokedAt).toBeNull()
+      expect(await recorded(ctx.a, oldest.id)).toEqual([])
+    })
+
+    test('only sessions that can still be used count towards the limit', async () => {
+      const userId = await ctx.a.user()
+      const { session: revoked } = await seed(ctx.a, { userId })
+      await ctx.store.revoke(ctx.a.environmentId, revoked.id, 'sign_out', later(1))
+      await seed(ctx.a, { userId, idleExpiresAt: later(500) })
+      await seed(ctx.a, { userId, absoluteExpiresAt: later(500), idleExpiresAt: later(500) })
+      const { result } = await createLimited(ctx.a, userId, 1)
+      expect(result).toEqual({ created: true, ended: [] })
+    })
+
+    test('another user’s session, and another environment’s, are never ended or counted', async () => {
+      const { session: theirs } = await seed(ctx.a)
+      const { session: foreign } = await seed(ctx.b)
+      const userId = await ctx.a.user()
+      const { result } = await createLimited(ctx.a, userId, 1, [theirs.id, foreign.id])
+      expect(result).toEqual({ created: true, ended: [] })
+      expect((await ctx.store.findById(ctx.a.environmentId, theirs.id))?.revokedAt).toBeNull()
+      expect((await ctx.store.findById(ctx.b.environmentId, foreign.id))?.revokedAt).toBeNull()
+    })
+
+    test('of two simultaneous sign-ins at the limit only one gets a session', async () => {
+      const { userId } = await seed(ctx.a)
+      const results = await Promise.all([
+        createLimited(ctx.a, userId, 2),
+        createLimited(ctx.a, userId, 2),
+        createLimited(ctx.a, userId, 2),
+      ])
+      expect(results.filter(({ result }) => result.created)).toHaveLength(1)
+      expect(
+        await ctx.store.listActiveByUser(ctx.a.environmentId, userId, later(1000))
+      ).toHaveLength(2)
+    })
+
+    test('touching a live session moves its activity and idle expiry', async () => {
+      const { session: s } = await seed(ctx.a)
+      expect(await ctx.store.touch(ctx.a.environmentId, s.id, later(60_000), later(DAY))).toBe(true)
+      const touched = await ctx.store.findById(ctx.a.environmentId, s.id)
+      expect(touched?.lastActiveAt).toEqual(later(60_000))
+      expect(touched?.idleExpiresAt).toEqual(later(DAY))
+    })
+
+    test('a revoked, expired, unknown or foreign session cannot be touched', async () => {
+      const { session: revoked } = await seed(ctx.a)
+      await ctx.store.revoke(ctx.a.environmentId, revoked.id, 'sign_out', later(1))
+      const { session: expired } = await seed(ctx.a, { idleExpiresAt: later(500) })
+      const { session: live } = await seed(ctx.a)
+      const env = ctx.a.environmentId
+      expect(await ctx.store.touch(env, revoked.id, later(1000), later(DAY))).toBe(false)
+      expect(await ctx.store.touch(env, expired.id, later(1000), later(DAY))).toBe(false)
+      expect(await ctx.store.touch(env, Bun.randomUUIDv7(), later(1000), later(DAY))).toBe(false)
+      expect(await ctx.store.touch(ctx.b.environmentId, live.id, later(1000), later(DAY))).toBe(
+        false
+      )
+      expect((await ctx.store.findById(env, expired.id))?.idleExpiresAt).toEqual(later(500))
+      expect((await ctx.store.findById(env, live.id))?.lastActiveAt).toEqual(now)
     })
 
     test('one environment cannot read, rotate, list or revoke another’s sessions', async () => {

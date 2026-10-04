@@ -117,12 +117,17 @@ export const FlowKindSchema = z
  *
  * `refreshToken` is only present for native/server clients. Browsers receive it as an httpOnly
  * cookie and never see it in JavaScript.
+ *
+ * `accessToken` and `accessTokenExpiresAt` are absent for a session of a `stateful` profile
+ * (ADR 0028): the browser holds only an httpOnly session cookie, there is nothing for
+ * JavaScript to keep, and requests are authenticated by sending that cookie
+ * (`credentials: 'include'`). Every `hybrid` session carries both.
  */
 export const SessionTokensSchema = z
   .object({
     sessionId: z.string(),
-    accessToken: z.string(),
-    accessTokenExpiresAt: z.iso.datetime(),
+    accessToken: z.string().optional(),
+    accessTokenExpiresAt: z.iso.datetime().optional(),
     refreshToken: z.string().optional(),
   })
   .meta({ ref: 'SessionTokens' })
@@ -306,6 +311,13 @@ export type FlowStep = z.infer<typeof FlowStepSchema>
 export type FlowKind = z.infer<typeof FlowKindSchema>
 /** Issued session tokens. */
 export type SessionTokens = z.infer<typeof SessionTokensSchema>
+
+/**
+ * The tokens of a `hybrid` session: {@link SessionTokens} with the access token present. What
+ * every sign-in returns unless the environment made the session's profile `stateful`.
+ */
+export type HybridSessionTokens = SessionTokens &
+  Required<Pick<SessionTokens, 'accessToken' | 'accessTokenExpiresAt'>>
 /** A flow attempt. */
 export type FlowAttempt = z.infer<typeof FlowAttemptSchema>
 /** Sign-up request body. */

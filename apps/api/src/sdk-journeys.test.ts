@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { loadScenarios, VirtualAuthenticator } from '@tula/conformance'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+import {
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  type EnvironmentSettings,
+  EnvironmentSettingsSchema,
+} from '@tula/contract'
 import {
   type AuthState,
   type ClientKind,
@@ -103,6 +107,8 @@ interface Server {
        * network failure and the browser never applies the response's `Set-Cookie`.
        */
       loseResponse?: (request: Request) => boolean
+      /** The session profile the client asks for (`createTulaClient({ sessionProfile })`). */
+      sessionProfile?: string
     }
   ): { tula: TulaClient; states: AuthState[]; cookies: Map<string, string> }
   code(email: string): string
@@ -151,7 +157,10 @@ async function server(prepare?: (deps: TestDeps) => void): Promise<Server> {
           // matches. The SDK cannot see or set either.
           headers.set('origin', options.origin ?? APP_ORIGIN)
           const path = new URL(request.url).pathname
-          const matching = [...cookies].filter(() => path.startsWith('/v1/client/sessions'))
+          // The refresh cookie's path is `/v1/client/sessions`; a stateful session's is `/`.
+          const matching = [...cookies].filter(
+            ([name]) => name.includes('tula_session_') || path.startsWith('/v1/client/sessions')
+          )
           if (matching.length > 0) {
             headers.set('cookie', matching.map(([name, value]) => `${name}=${value}`).join('; '))
           }
@@ -171,10 +180,10 @@ async function server(prepare?: (deps: TestDeps) => void): Promise<Server> {
           throw new TypeError('the response was lost on the way back')
         }
         const setCookie = response.headers.get('set-cookie')
-        if (kind === 'web' && setCookie) {
-          const [pair = ''] = setCookie.split(';')
+        for (const cookie of kind === 'web' ? response.headers.getSetCookie() : []) {
+          const [pair = ''] = cookie.split(';')
           const [name = '', value = ''] = pair.split('=')
-          if (value === '' || /max-age=0/i.test(setCookie)) {
+          if (value === '' || /max-age=0/i.test(cookie)) {
             cookies.delete(name)
           } else {
             cookies.set(name, value)
@@ -198,6 +207,7 @@ async function server(prepare?: (deps: TestDeps) => void): Promise<Server> {
         fetch,
         onSessionChange: (state) => states.push(state),
         ...(kind === 'web' ? {} : { storage: options.storage ?? memoryStorage() }),
+        ...(options.sessionProfile && { sessionProfile: options.sessionProfile }),
       })
       return { tula, states, cookies }
     },
@@ -2312,6 +2322,171 @@ describe('passkeys through the SDK', () => {
       )
       plugIn(laptop)
       expect((await s.client('web').tula.signIn.withPasskey()).step.status).toBe('complete')
+    }
+  )
+})
+
+describe('SDK journeys: session profiles and rules', () => {
+  let revision = 0
+
+  /** Save a `sessions` section, validated as the admin API would. */
+  function configure(s: Server, sessions: unknown): void {
+    revision += 1
+    s.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision,
+      settings: EnvironmentSettingsSchema.parse({ ...DEFAULT_ENVIRONMENT_SETTINGS, sessions }),
+    })
+  }
+
+  const profileOf = async (tula: TulaClient) => decodeJwt((await tula.session.getToken()) ?? '').sp
+
+  journey(
+    'session profile timeouts',
+    'a session past its profile’s limits signs the client out at its next refresh',
+    async () => {
+      const s = await server()
+      const before = await signUp(s)
+      configure(s, {
+        profiles: { mobile: { accessTokenTtl: '30s', idleTimeout: '1m', absoluteTimeout: '90s' } },
+      })
+      const active = await signIn(s, before.email)
+      expect(await profileOf(active.tula)).toBe('mobile')
+
+      s.advance(50_000)
+      expect(await active.tula.session.refresh()).toBeString()
+      expect(active.tula.state.status).toBe('signed-in')
+
+      s.advance(45_000)
+      // Active 45 seconds ago, but 95 seconds old: the absolute timeout ends it.
+      expect(await active.tula.session.refresh()).toBeNull()
+      expect(active.tula.state.status).toBe('signed-out')
+      // The session from before the profile was tightened ends at its next refresh too.
+      expect(await before.tula.session.refresh()).toBeNull()
+      expect(before.states.at(-1)?.status).toBe('signed-out')
+    }
+  )
+
+  journey(
+    'session profile selection',
+    'sessionProfile gets a profile the environment offers, and is otherwise ignored',
+    async () => {
+      const s = await server()
+      configure(s, {
+        profiles: {
+          'back-office': { accessTokenTtl: '2m', clientSelectable: true },
+          kept: { idleTimeout: '365d', absoluteTimeout: null },
+        },
+      })
+      const { email } = await signUp(s)
+      const as = async (sessionProfile?: string) => {
+        const { tula } = s.client('server', { sessionProfile })
+        await (await tula.signIn.start({ identifier: email })).submitPassword({
+          password: PASSWORD,
+        })
+        return profileOf(tula)
+      }
+      expect(await as('back-office')).toBe('back-office')
+      expect(await as('kept')).toBe('mobile')
+      expect(await as('no-such-profile')).toBe('mobile')
+      expect(await as()).toBe('mobile')
+    }
+  )
+
+  journey(
+    'concurrent session limit',
+    'end_oldest signs the oldest client out; refuse_newest fails the sign-in with session.limit_reached',
+    async () => {
+      const s = await server()
+      configure(s, { maxPerUser: 2, onLimit: 'end_oldest' })
+      const first = await signUp(s)
+      const second = await signIn(s, first.email)
+      const third = await signIn(s, first.email)
+      expect(third.step.status).toBe('complete')
+      // The oldest device finds out on its next call: its token is refused and it cannot refresh.
+      expect((await caught(first.tula.session.list())).code).toBe('session.revoked')
+      expect(first.tula.state.status).toBe('signed-out')
+      expect(await second.tula.session.list()).toHaveLength(2)
+
+      configure(s, { maxPerUser: 2, onLimit: 'refuse_newest' })
+      const refused = s.client('server')
+      const flow = await refused.tula.signIn.start({ identifier: first.email })
+      const error = await caught(flow.submitPassword({ password: PASSWORD }))
+      expect(error.code).toBe('session.limit_reached')
+      expect(error.status).toBe(403)
+      expect(error.message).toContain('too many devices')
+      expect(refused.tula.state.status).not.toBe('signed-in')
+
+      await second.tula.session.signOut()
+      expect((await signIn(s, first.email)).step.status).toBe('complete')
+    }
+  )
+
+  journey(
+    'stateful session',
+    'a browser on a stateful profile holds no token: the cookie signs it in, across a reload, until it is revoked',
+    async () => {
+      const s = await server()
+      configure(s, { profiles: { web: { type: 'stateful' } } })
+      const { tula, cookies, email } = await signUp(s, 'web')
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect(await tula.session.getToken()).toBeNull()
+      expect([...cookies.keys()]).toEqual([`tula_session_${TEST_TENANT.environmentId}`])
+
+      // No response body ever held a token, and no request an Authorization header.
+      const calls = s.exchanges.filter((exchange) => exchange.path.startsWith('/v1/client'))
+      expect(calls.some((call) => /tula_st_|tula_rt_|accessToken/.test(call.responseBody))).toBe(
+        false
+      )
+      expect(calls.some((call) => call.headers.has('authorization'))).toBe(false)
+
+      // Authenticated calls work on the cookie alone.
+      expect(await tula.session.list()).toHaveLength(1)
+      const user = await tula.user.get()
+      expect(user.email).toBe(email)
+
+      // A reload: a new client with the same cookie jar restores the session from it.
+      const reloaded = s.client('web', { cookies })
+      expect(await reloaded.tula.load()).toMatchObject({ status: 'signed-in', user: { email } })
+      expect(await reloaded.tula.session.getToken()).toBeNull()
+
+      // A page on an origin the environment does not allow gets nothing from the cookie.
+      // (The `local` tier allows every loopback origin, so the foreign page is not one.)
+      const foreign = s.client('web', {
+        cookies: new Map(cookies),
+        origin: 'https://evil.example',
+      })
+      expect((await foreign.tula.load()).status).toBe('signed-out')
+
+      // A backend verifies the cookie's value with the secret key.
+      const [token] = [...cookies.values()]
+      const verified = await s.admin('POST', '/v1/admin/sessions/verify', { token })
+      expect(await verified.json()).toMatchObject({ sub: user.id, sp: 'web' })
+
+      // An operator ends the sessions: the very next call signs the client out.
+      const ended = await s.admin('DELETE', `/v1/admin/users/${user.id}/sessions`)
+      expect(await ended.json()).toEqual({ revoked: 1 })
+      expect((await caught(tula.session.list())).code).toBe('session.revoked')
+      expect(tula.state.status).toBe('signed-out')
+      expect((await s.client('web', { cookies }).tula.load()).status).toBe('signed-out')
+    }
+  )
+
+  journey(
+    'step-up window per profile',
+    'a sensitive call past the profile’s window asks for a step-up, and works again after it',
+    async () => {
+      const s = await server()
+      configure(s, { profiles: { mobile: { accessTokenTtl: '5m', stepUpAfter: '1m' } } })
+      const { tula } = await signUp(s)
+      await tula.mfa.startTotp()
+      s.advance(61_000)
+      const error = await caught(tula.mfa.startTotp())
+      expect(isStepUpRequired(error)).toBe(true)
+      expect(stepUpMethods(error)).toContain('password')
+      // An ordinary call is not held to the window.
+      expect((await tula.user.get()).id).toBeString()
+      await tula.session.stepUp({ method: 'password', password: PASSWORD })
+      expect((await tula.mfa.startTotp()).secret).toBeString()
     }
   )
 })

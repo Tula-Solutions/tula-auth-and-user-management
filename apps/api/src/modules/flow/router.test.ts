@@ -111,7 +111,7 @@ describe('sign-up over HTTP', () => {
     expect(verified.status).toBe(200)
     const done = await json<FlowAttempt>(verified)
     expect(done.step.status).toBe('complete')
-    expect(done.session?.accessToken.split('.')).toHaveLength(3)
+    expect(done.session?.accessToken?.split('.')).toHaveLength(3)
     expect(done.session).not.toHaveProperty('refreshToken')
     const cookie = setCookie(verified)
     expect(cookie.startsWith(`${COOKIE}=tula_rt_`)).toBe(true)

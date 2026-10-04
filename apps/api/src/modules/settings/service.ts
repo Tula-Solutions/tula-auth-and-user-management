@@ -2,12 +2,16 @@ import {
   AT_LEAST_ONE_SIGN_IN_METHOD,
   type ClientConfig,
   DEFAULT_ENVIRONMENT_SETTINGS,
+  DEFAULT_STEP_UP_AFTER,
+  durationToMs,
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
   EnvironmentSettingsSchema,
   hasEnabledSignInMethod,
   type OAuthProvider,
   type PasswordPolicy,
+  type SessionProfile,
+  type SessionSettings,
   type SignInMethod,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
@@ -161,7 +165,8 @@ const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> 
  * True when a security notice that was on is switched off (`notifications.passwordChanged`,
  * `notifications.newSignIn`, `notifications.mfaChanged`, `notifications.identityChanged`: the
  * owner would no longer be told),
- * when the MFA policy moves towards `off` (`required` → `optional` → `off`), or when the new password
+ * when the MFA policy moves towards `off` (`required` → `optional` → `off`), when the session
+ * settings let sessions live longer or be had more freely (see `sessionsWeakened`), or when the new password
  * policy, compared with the old one:
  * - allows a shorter password (`minLength` is lower);
  * - checks breached passwords less strictly (`block` → `warn` → `off`);
@@ -191,7 +196,70 @@ export function weakened(before: EnvironmentSettings, after: EnvironmentSettings
     repeats(is) > repeats(was) ||
     is.history < was.history ||
     NOTICES.some((notice) => before.notifications[notice] && !after.notifications[notice]) ||
-    MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy]
+    MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy] ||
+    sessionsWeakened(before.sessions, after.sessions)
+  )
+}
+
+/** A duration in milliseconds, with what "none" means for the field it came from. */
+function span(duration: string | null, none: number): number {
+  return duration === null ? none : durationToMs(duration)
+}
+
+/**
+ * Whether `is` lets a session live longer than `than` does: a longer idle or absolute timeout,
+ * access-token lifetime or refresh grace window, or a step-up asked for later (none of its own
+ * is the default window).
+ */
+function looser(is: SessionProfile, than: SessionProfile): boolean {
+  const never = Number.POSITIVE_INFINITY
+  const stepUp = durationToMs(DEFAULT_STEP_UP_AFTER)
+  return (
+    span(is.idleTimeout, never) > span(than.idleTimeout, never) ||
+    span(is.absoluteTimeout, never) > span(than.absoluteTimeout, never) ||
+    span(is.accessTokenTtl, never) > span(than.accessTokenTtl, never) ||
+    span(is.refresh.reuseGracePeriod, 0) > span(than.refresh.reuseGracePeriod, 0) ||
+    span(is.stepUpAfter, stepUp) > span(than.stepUpAfter, stepUp)
+  )
+}
+
+/**
+ * Whether the `sessions` section got weaker:
+ *
+ * - the concurrent-session limit was raised or removed;
+ * - a profile that existed now lets its sessions live longer (see `looser`) or became
+ *   selectable by clients;
+ * - a profile that was removed: it is compared with the built-in `web` profile its sessions
+ *   fall back to;
+ * - a **new** profile that clients may select and that is looser in any limit than the
+ *   built-in `web` profile of the same document. A client that names it gets a session the
+ *   built-in would not have given, which is exactly how sessions come to "be had more
+ *   freely". One that is no looser than `web`, or that clients cannot select (nothing can
+ *   get it), weakens nothing.
+ *
+ * Changing `onLimit` or a profile's `type` is not a weakening either way.
+ */
+function sessionsWeakened(before: SessionSettings, after: SessionSettings): boolean {
+  if (
+    before.maxPerUser !== null &&
+    (after.maxPerUser === null || after.maxPerUser > before.maxPerUser)
+  ) {
+    return true
+  }
+  const existing = Object.entries(before.profiles).some(([name, was]) => {
+    const is = Object.hasOwn(after.profiles, name) ? (after.profiles[name] ?? was) : null
+    return is
+      ? looser(is, was) || (is.clientSelectable && !was.clientSelectable)
+      : looser(after.profiles.web, was)
+  })
+  return (
+    existing ||
+    Object.entries(after.profiles).some(
+      ([name, is]) =>
+        !Object.hasOwn(before.profiles, name) &&
+        is.clientSelectable &&
+        looser(is, after.profiles.web)
+    )
   )
 }
 
