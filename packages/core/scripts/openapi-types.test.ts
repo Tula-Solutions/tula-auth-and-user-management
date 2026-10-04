@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { type OpenApiDocument, renderClientApi, renderType, type SchemaNode } from './openapi-types'
+import {
+  type OpenApiDocument,
+  renderAdminApi,
+  renderClientApi,
+  renderType,
+  type SchemaNode,
+} from './openapi-types'
 
 describe('renderType', () => {
   test.each([
@@ -59,6 +65,24 @@ describe('renderType', () => {
         },
       })
     ).toBe("{\n  id: string\n  /** An odd one. */\n  'x-odd'?: boolean\n}")
+  })
+
+  test('a map with named optional entries widens its index signature so both typecheck', () => {
+    expect(
+      renderType({
+        type: 'object',
+        properties: { web: { type: 'number' } },
+        additionalProperties: { type: 'number' },
+      })
+    ).toBe('{\n  web?: number\n  [key: string]: number | undefined\n}')
+    expect(
+      renderType({
+        type: 'object',
+        required: ['web'],
+        properties: { web: { type: 'number' } },
+        additionalProperties: { type: 'number' },
+      })
+    ).toBe('{\n  web: number\n  [key: string]: number\n}')
   })
 
   test.each([
@@ -175,5 +199,79 @@ describe('renderClientApi', () => {
     const snapshot = await Bun.file(join(import.meta.dir, '../../contract/openapi.json')).json()
     const committed = await Bun.file(join(import.meta.dir, '../src/generated/api.gen.ts')).text()
     expect(renderClientApi(snapshot as OpenApiDocument)).toBe(committed)
+  })
+})
+
+describe('renderAdminApi', () => {
+  function adminDocument(): OpenApiDocument {
+    const base = document()
+    const list = base.paths['/v1/admin/things']?.get
+    if (list) {
+      list.security = [{ secretKey: [] }]
+    }
+    base.paths['/v1/admin/things/{thingId}'] = {
+      put: {
+        operationId: 'replaceThing',
+        summary: 'Replace a thing',
+        security: [{ secretKey: [] }],
+        parameters: [
+          { in: 'path', name: 'thingId', required: true },
+          { in: 'header', name: 'If-Match', required: true, schema: { type: 'string' } },
+          { in: 'header', name: 'x-tula-managed-by', schema: { type: 'string' } },
+          { in: 'query', name: 'page', schema: { type: 'integer' } },
+          { in: 'query', name: 'q', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: {
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/Part' } } },
+        },
+        responses: {
+          200: {
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Thing' } } },
+          },
+        },
+      },
+    }
+    return base
+  }
+
+  test('renders admin operations only, with query and header parameters', () => {
+    const source = renderAdminApi(adminDocument())
+    expect(source).toContain('bun run --filter @tula/admin generate')
+    expect(source).toContain('  AdminOnly: string')
+    expect(source).not.toContain('getThing')
+    expect(source).not.toContain('Failure')
+    expect(source).toContain(
+      '  adminThings: { params: Record<string, never>; query: Record<string, never>; ' +
+        "headers: Record<string, never>; body: undefined; response: Schemas['AdminOnly'] }"
+    )
+    expect(source).toContain(
+      '  replaceThing: { params: { thingId: string }; query: { page?: number; q: string }; ' +
+        "headers: { 'If-Match': string; 'x-tula-managed-by'?: string }; " +
+        "body: Schemas['Part']; response: Schemas['Thing'] }"
+    )
+    expect(source).toContain("  adminThings: { method: 'GET', path: '/v1/admin/things' },")
+    expect(source).toContain(
+      "  replaceThing: { method: 'PUT', path: '/v1/admin/things/{thingId}' },"
+    )
+    // No `session` column: every admin operation takes the secret key.
+    expect(source).not.toContain('session:')
+  })
+
+  test('a parameter without a schema is a string', () => {
+    const broken = adminDocument()
+    const operation = broken.paths['/v1/admin/things/{thingId}']?.put
+    if (operation) {
+      operation.parameters = [{ in: 'query', name: 'sort' }]
+    }
+    expect(renderAdminApi(broken)).toContain('query: { sort?: string }')
+  })
+
+  test('an admin operation that does not take the secret key fails the generation', () => {
+    const broken = adminDocument()
+    const operation = broken.paths['/v1/admin/things/{thingId}']?.put
+    if (operation) {
+      operation.security = [{ publishableKey: [] }]
+    }
+    expect(() => renderAdminApi(broken)).toThrow('replaceThing: an admin operation must take')
   })
 })

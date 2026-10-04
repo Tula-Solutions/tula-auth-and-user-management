@@ -462,6 +462,27 @@ The changes every new method needs, made once.
   elsewhere. `tula diff` is the dry run. The dashboard shows when settings are managed by a
   config file.
 
+**As built** ([ADR 0030](../adr/0030-config-and-apply.md), guide: [docs/config.md](../config.md)):
+three packages. `@tula/admin` is the generated admin client 1.14 refers to (types from
+`openapi.json` by the renderer `@tula/core` uses, `bun run admin:generate`, drift checked in
+`verify`; server-side only). `@tula/config` is `defineConfig()`, `env()` and `loadConfig()`;
+one file holds several environments, each with `settings` (the `PUT` body) and `providers`,
+and a secret is `env('NAME')` or a type error and a load error. `@tula/cli` is the `tula`
+executable on Bun with a small command frame (`Command` objects in `COMMANDS`) that 1.14's
+commands are added to. `diff` exits 0 / 2 / 1; `apply` confirms (`--yes`), replaces the
+settings under `If-Match` (`--expect-revision` pins the plan a reviewer saw), orders provider
+writes so that no intermediate state is without a way to sign in, and reports a partial
+failure exactly. Providers the file leaves out are unmanaged unless `--prune`. The URL and the
+secret key come from the environment (`TULA_API_URL[_<NAME>]`, `TULA_SECRET_KEY[_<NAME>]`) or
+`--secret-key-file`, never from the file or the command line. Beyond the plan's wording:
+`settingsWeakenings()` moved into the contract so the CLI warns with the server's own
+definition; the two settings whose default is the deployment's (`password`,
+`urls.allowedOrigins`) are kept as the server has them when the file leaves them out; and
+the "managed by a config file" marker is server-side now (`x-tula-managed-by` +
+`x-tula-config-hash` on the `PUT`, `managedBy` with `drifted` on the answer, migration
+`0013_settings_managed_by`, conformance scenario 43). Showing it is the dashboard's part
+(1.15).
+
 ### 1.14 CLI
 
 - `create-tula`: scaffolds a project (Compose file, `.env` with a generated master key,

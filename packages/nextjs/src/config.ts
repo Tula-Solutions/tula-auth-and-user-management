@@ -40,6 +40,14 @@ export interface TulaServerOptions {
    */
   secretKey?: string
   /**
+   * Allow `secretKey` to be sent to an `apiUrl` that is plain `http:` and not this machine.
+   * `TULA_ALLOW_INSECURE_HTTP=true`. Off by default: over http the key crosses the network in
+   * clear text, so a mistyped scheme must fail instead. For a private network you trust (a
+   * cluster-internal address) only; `localhost`, `*.localhost`, `127.0.0.1` and `[::1]`
+   * never need it.
+   */
+  allowInsecureHttp?: boolean
+  /**
    * The app's own public origin, e.g. `https://app.example.com`. `TULA_APP_URL`. When set, it
    * decides whether a request comes from the app itself and whether cookies are `Secure`;
    * otherwise the request's `Host` (or `X-Forwarded-Host`) and scheme do.
@@ -160,6 +168,14 @@ function httpUrl(value: string, option: string): URL {
   return url
 }
 
+/** Hosts that are this machine: plain http to them never leaves it. */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  return (
+    host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '[::1]'
+  )
+}
+
 /**
  * How the visitor's address is read from `X-Forwarded-For` behind `hops` trusted proxies.
  *
@@ -242,8 +258,9 @@ function warnOnce(custom: ((message: string) => void) | undefined): TulaConfig['
  * @param options - Explicit values; anything left out is read from its variable.
  * @returns The checked configuration.
  * @throws TypeError when the API URL, the publishable key or the environment id is missing,
- *   when a URL is not http(s), when a key is of the wrong kind, or when `trustedProxyHops` is
- *   not a whole number of 0 or more.
+ *   when a URL is not http(s), when a key is of the wrong kind, when a secret key would be
+ *   sent over plain http to a host other than this machine without `allowInsecureHttp`, or
+ *   when `trustedProxyHops` is not a whole number of 0 or more.
  *
  * @example
  * ```ts
@@ -273,6 +290,21 @@ export function resolveConfig(options: TulaServerOptions = {}): TulaConfig {
   const secretKey = options.secretKey ?? env('TULA_SECRET_KEY') ?? null
   if (secretKey !== null && !secretKey.startsWith('tula_sk_')) {
     throw new TypeError('@tula/nextjs: `secretKey` must be a secret key (tula_sk_…)')
+  }
+  // The key is sent to `apiUrl` on every request of a stateful session. Over http to another
+  // machine it is readable on the way.
+  const insecureHttp = options.allowInsecureHttp ?? env('TULA_ALLOW_INSECURE_HTTP') === 'true'
+  if (
+    secretKey !== null &&
+    api.protocol === 'http:' &&
+    !isLoopbackHost(api.hostname) &&
+    !insecureHttp
+  ) {
+    throw new TypeError(
+      '@tula/nextjs: `apiUrl` is plain http and `secretKey` is set: the key would cross the ' +
+        'network in clear text. Use an https URL, or, on a private network you trust, set ' +
+        '`allowInsecureHttp` (TULA_ALLOW_INSECURE_HTTP=true)'
+    )
   }
   const appUrl = options.appUrl ?? env('TULA_APP_URL')
   const path = `/${(options.path ?? DEFAULT_HANDLER_PATH).replace(/^\/+|\/+$/g, '')}`

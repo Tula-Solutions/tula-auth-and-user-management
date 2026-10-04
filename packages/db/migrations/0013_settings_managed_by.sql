@@ -1,0 +1,1 @@
+ALTER TABLE "tula"."environment_settings" ADD COLUMN "managed_by" jsonb;

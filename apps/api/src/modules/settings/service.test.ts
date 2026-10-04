@@ -43,6 +43,7 @@ describe('defaults', () => {
     expect(await Settings.get(deps, tenant)).toEqual({
       revision: 0,
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      managedBy: null,
     })
   })
 
@@ -195,6 +196,7 @@ describe('replace', () => {
     expect(await replace(0, document())).toEqual({
       revision: 0,
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      managedBy: null,
     })
     expect(await deps.environmentSettings.get(tenant.environmentId)).toBeNull()
     const saved = await replace(0, document({ app: { name: 'Acme', supportEmail: null } }))

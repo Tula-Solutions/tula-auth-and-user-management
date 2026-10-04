@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+import { resetStoredManagerWarnings } from '~/adapters/settings-manager'
+import * as logger from '~/lib/logger'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 
@@ -16,6 +18,11 @@ export interface SettingsSuiteContext {
   log: ActivityLog
   /** A tenant no other test has touched. */
   freshTenant: () => Promise<SettingsSuiteTenant>
+  /**
+   * Put a managing-tool record on a tenant's saved settings directly, past the store's own
+   * write path: what another version, or a hand, may have left there.
+   */
+  storeManager: (tenant: SettingsSuiteTenant, manager: unknown) => Promise<void>
 }
 
 /**
@@ -80,6 +87,164 @@ export function describeEnvironmentSettingsStore(
       })
       return entries.map((entry) => entry.data)
     }
+
+    const HASH = `sha256:${'ab'.repeat(32)}`
+
+    test('a replace that names a manager stores it with the revision it wrote', async () => {
+      const saved = await ctx.store.replace(
+        a.environmentId,
+        0,
+        named('Managed'),
+        now,
+        activity(a, ['app.name']),
+        { tool: 'tula-apply', configHash: HASH }
+      )
+      const managedBy = { tool: 'tula-apply', configHash: HASH, at: now.toISOString(), revision: 1 }
+      expect(saved?.managedBy).toEqual(managedBy)
+      expect((await ctx.store.get(a.environmentId, true))?.managedBy).toEqual(managedBy)
+    })
+
+    test('a replace that names no manager keeps the one on record, at its old revision', async () => {
+      await ctx.store.replace(a.environmentId, 0, named('Managed'), now, activity(a, []), {
+        tool: 'tula-apply',
+        configHash: HASH,
+      })
+      const later = new Date(now.getTime() + 60_000)
+      const edited = await ctx.store.replace(
+        a.environmentId,
+        1,
+        named('Edited by hand'),
+        later,
+        activity(a, ['app.name'])
+      )
+      expect(edited?.revision).toBe(2)
+      expect(edited?.managedBy).toEqual({
+        tool: 'tula-apply',
+        configHash: HASH,
+        at: now.toISOString(),
+        revision: 1,
+      })
+    })
+
+    test('a replace that names `null` removes the manager', async () => {
+      await ctx.store.replace(a.environmentId, 0, named('Managed'), now, activity(a, []), {
+        tool: 'tula-apply',
+        configHash: HASH,
+      })
+      const detached = await ctx.store.replace(
+        a.environmentId,
+        1,
+        named('Managed'),
+        now,
+        activity(a, []),
+        null
+      )
+      expect(detached?.managedBy).toBeUndefined()
+      expect((await ctx.store.get(a.environmentId, true))?.managedBy).toBeUndefined()
+    })
+
+    describe('a stored manager this version would not answer', () => {
+      test.each<[string, unknown]>([
+        [
+          'a tool name outside the pattern',
+          { tool: 'Bad Tool!', configHash: 'x', at: 'now', revision: 1 },
+        ],
+        [
+          'a hash that is not one',
+          { tool: 'tula-apply', configHash: 'x', at: now.toISOString(), revision: 1 },
+        ],
+        [
+          'a time that is not one',
+          { tool: 'tula-apply', configHash: HASH, at: 'now', revision: 1 },
+        ],
+        [
+          'a revision below 1',
+          { tool: 'tula-apply', configHash: HASH, at: now.toISOString(), revision: 0 },
+        ],
+        [
+          'a revision that is not whole',
+          { tool: 'tula-apply', configHash: HASH, at: now.toISOString(), revision: 1.5 },
+        ],
+        ['a missing field', { tool: 'tula-apply', configHash: HASH }],
+        ['a string', 'tula-apply'],
+        ['a list', ['tula-apply']],
+      ])('%s reads as unmanaged, and a replace still answers', async (_name, manager) => {
+        await replace(a, 0, named('One'))
+        await ctx.storeManager(a, manager)
+        expect(await ctx.store.get(a.environmentId, true)).toEqual({
+          revision: 1,
+          settings: named('One'),
+        })
+        // A replace that names no manager keeps the column as it is: what it answers must
+        // still be something the API can send.
+        expect(await replace(a, 1, named('Two'))).toEqual({ revision: 2, settings: named('Two') })
+        expect(await ctx.store.get(a.environmentId, true)).toEqual({
+          revision: 2,
+          settings: named('Two'),
+        })
+      })
+
+      test('it is said once per environment, with none of the record in the log', async () => {
+        resetStoredManagerWarnings()
+        const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+        try {
+          await replace(a, 0, named('One'))
+          await ctx.storeManager(a, { tool: 'Bad Tool!', configHash: 'x', at: 'now', revision: 1 })
+          await ctx.store.get(a.environmentId, true)
+          await ctx.store.get(a.environmentId, true)
+          await replace(a, 1, named('Two'))
+          expect(warn.mock.calls).toEqual([
+            [
+              'the stored record of which tool manages the settings is not valid; the settings are treated as unmanaged',
+              { environmentId: a.environmentId },
+            ],
+          ])
+          expect(JSON.stringify(warn.mock.calls)).not.toContain('Bad Tool!')
+        } finally {
+          warn.mockRestore()
+        }
+      })
+
+      test('a replace that names a manager puts a good record in its place', async () => {
+        await replace(a, 0, named('One'))
+        await ctx.storeManager(a, { tool: 'Bad Tool!', configHash: 'x', at: 'now', revision: 1 })
+        const saved = await ctx.store.replace(
+          a.environmentId,
+          1,
+          named('Two'),
+          now,
+          activity(a, []),
+          {
+            tool: 'tula-apply',
+            configHash: HASH,
+          }
+        )
+        expect(saved?.managedBy).toEqual({
+          tool: 'tula-apply',
+          configHash: HASH,
+          at: now.toISOString(),
+          revision: 2,
+        })
+      })
+
+      test('a record that is valid is still read as it was stored', async () => {
+        await replace(a, 0, named('One'))
+        const manager = { tool: 'terraform', configHash: HASH, at: now.toISOString(), revision: 1 }
+        await ctx.storeManager(a, manager)
+        expect((await ctx.store.get(a.environmentId, true))?.managedBy).toEqual(manager)
+      })
+    })
+
+    test('a refused replace leaves the manager as it was', async () => {
+      await ctx.store.replace(a.environmentId, 0, named('Managed'), now, activity(a, []), {
+        tool: 'tula-apply',
+        configHash: HASH,
+      })
+      expect(
+        await ctx.store.replace(a.environmentId, 0, named('Stale'), now, activity(a, []), null)
+      ).toBeNull()
+      expect((await ctx.store.get(a.environmentId, true))?.managedBy?.revision).toBe(1)
+    })
 
     test('an environment that never saved settings has none', async () => {
       expect(await ctx.store.get(a.environmentId)).toBeNull()

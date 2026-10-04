@@ -2378,6 +2378,39 @@
         },
         "additionalProperties": false
       },
+      "SettingsManagedBy": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$"
+          },
+          "configHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "drifted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tool",
+          "configHash",
+          "at",
+          "revision",
+          "drifted"
+        ]
+      },
       "EnvironmentSettingsState": {
         "type": "object",
         "properties": {
@@ -2589,11 +2622,22 @@
               "urls"
             ],
             "additionalProperties": false
+          },
+          "managedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingsManagedBy"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
           "revision",
-          "settings"
+          "settings",
+          "managedBy"
         ]
       },
       "WebOrigin": {
@@ -11585,7 +11629,7 @@
           "Settings"
         ],
         "summary": "Replace the environment’s settings",
-        "description": "Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. Two defaults are the deployment’s rather than the schema’s: a `password` section that is left out takes the deployment’s `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` returns at revision 0), so a partial document never loosens the policy or locks browser apps out by accident; a value that is sent, an empty list included, is taken as sent. If the deployment’s default for a field that was left out is one settings cannot store (a plain-http origin in `CORS_ORIGINS`), the request is refused with a field error and that field has to be sent explicitly. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values, and `weakened: true` when it made the password policy weaker. Other API instances apply it within a few seconds.",
+        "description": "Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. Two defaults are the deployment’s rather than the schema’s: a `password` section that is left out takes the deployment’s `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` returns at revision 0), so a partial document never loosens the policy or locks browser apps out by accident; a value that is sent, an empty list included, is taken as sent. If the deployment’s default for a field that was left out is one settings cannot store (a plain-http origin in `CORS_ORIGINS`), the request is refused with a field error and that field has to be sent explicitly. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values, and `weakened: true` when it made the password policy weaker. A tool that applies a config file names itself in `x-tula-managed-by` with the config’s fingerprint in `x-tula-config-hash`; the answer’s `managedBy` then says so, and `managedBy.drifted` turns true when the settings are later replaced without them. Other API instances apply it within a few seconds.",
         "security": [
           {
             "secretKey": []
@@ -11597,6 +11641,24 @@
             "in": "header",
             "required": true,
             "description": "The revision being replaced, quoted, e.g. `\"3\"` (`\"0\"` for the first save).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-tula-managed-by",
+            "in": "header",
+            "required": false,
+            "description": "The tool applying these settings from a config file (`tula-apply`), recorded with them and returned as `managedBy`; `none` removes the record. Leave it out for a change made by hand: the record is kept and shows as `drifted`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-tula-config-hash",
+            "in": "header",
+            "required": false,
+            "description": "With a tool name: the fingerprint of the config being applied, `sha256:` and 64 hex characters.",
             "schema": {
               "type": "string"
             }

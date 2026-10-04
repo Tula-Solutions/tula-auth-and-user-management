@@ -22,6 +22,9 @@
   redirects to sign-in with a same-origin `redirect_url` (`safeRedirectPath`). It clears the
   cookies only when the API says the session is over; a refusal caused by the app's own
   configuration (origin, key) keeps them and is reported once (`onWarning`).
+- `@tula/nextjs` refuses a configuration that would send the secret key (`stateful` session
+  profiles) to a plain `http:` `apiUrl` that is not this machine; `allowInsecureHttp`
+  (`TULA_ALLOW_INSECURE_HTTP=true`) allows it on a private network you trust.
 - `@tula/nextjs/server`: `auth()`, `currentUser()` and `getToken()` for Server Components,
   Route Handlers and Server Actions.
 - `@tula/nextjs`: `<TulaProvider>` for the App Router (takes the server's `initialState`, so

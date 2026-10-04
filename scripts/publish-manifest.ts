@@ -4,6 +4,9 @@ export const PUBLISHABLE_PACKAGES = [
   'packages/core',
   'packages/react',
   'packages/nextjs',
+  'packages/admin',
+  'packages/config',
+  'packages/cli',
 ] as const
 
 /** The fields of a package.json this tooling reads. */

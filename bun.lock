@@ -78,6 +78,55 @@
         "vite": "^8.3.1",
       },
     },
+    "examples/tula-config": {
+      "name": "@tula/example-config",
+      "version": "0.0.0",
+      "dependencies": {
+        "@tula/config": "workspace:*",
+      },
+      "devDependencies": {
+        "@tula/tsconfig": "workspace:*",
+      },
+    },
+    "packages/admin": {
+      "name": "@tula/admin",
+      "version": "0.0.0",
+      "dependencies": {
+        "@tula/contract": "workspace:*",
+      },
+      "devDependencies": {
+        "@tula/api": "workspace:*",
+        "@tula/tsconfig": "workspace:*",
+      },
+    },
+    "packages/cli": {
+      "name": "@tula/cli",
+      "version": "0.0.0",
+      "bin": {
+        "tula": "./src/bin.ts",
+      },
+      "dependencies": {
+        "@tula/admin": "workspace:*",
+        "@tula/config": "workspace:*",
+        "@tula/contract": "workspace:*",
+      },
+      "devDependencies": {
+        "@tula/api": "workspace:*",
+        "@tula/tsconfig": "workspace:*",
+        "zod": "^4.6.5",
+      },
+    },
+    "packages/config": {
+      "name": "@tula/config",
+      "version": "0.0.0",
+      "dependencies": {
+        "@tula/contract": "workspace:*",
+        "zod": "^4.6.5",
+      },
+      "devDependencies": {
+        "@tula/tsconfig": "workspace:*",
+      },
+    },
     "packages/conformance": {
       "name": "@tula/conformance",
       "version": "0.0.0",
@@ -625,7 +674,13 @@
 
     "@testing-library/user-event": ["@testing-library/user-event@14.6.7", "", { "peerDependencies": { "@testing-library/dom": ">=7.21.4" } }, "sha512-MPCpX8bxe8zS+JmmTwLp8jd0dy1rAm60Te/SL8JrQM3qvQJcBOs1d7IefJMyZzqM3EWBrDn/LWDt1BCGu4ASfg=="],
 
+    "@tula/admin": ["@tula/admin@workspace:packages/admin"],
+
     "@tula/api": ["@tula/api@workspace:apps/api"],
+
+    "@tula/cli": ["@tula/cli@workspace:packages/cli"],
+
+    "@tula/config": ["@tula/config@workspace:packages/config"],
 
     "@tula/conformance": ["@tula/conformance@workspace:packages/conformance"],
 
@@ -634,6 +689,8 @@
     "@tula/core": ["@tula/core@workspace:packages/core"],
 
     "@tula/db": ["@tula/db@workspace:packages/db"],
+
+    "@tula/example-config": ["@tula/example-config@workspace:examples/tula-config"],
 
     "@tula/example-nextjs": ["@tula/example-nextjs@workspace:examples/nextjs-app-router"],
 

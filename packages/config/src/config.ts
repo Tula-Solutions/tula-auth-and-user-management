@@ -1,0 +1,524 @@
+import {
+  type EnvironmentSettingsInput,
+  EnvironmentSettingsInputSchema,
+  OAUTH_PROVIDERS,
+  type OAuthProvider,
+} from '@tula/contract'
+import { z } from 'zod'
+import { ConfigError, type ConfigIssue, invalidConfig } from './errors'
+
+/** An environment variable's name, as shells accept it and as CI systems write it. */
+const VARIABLE_NAME = /^[A-Z_][A-Z0-9_]*$/
+
+/** An environment's name in a config file: what `--env` takes. */
+const ENVIRONMENT_NAME = /^[a-z][a-z0-9-]{0,31}$/
+
+/**
+ * A secret, by the name of the environment variable that holds it. The only form a secret may
+ * take in a config file.
+ *
+ * @example
+ * ```ts
+ * const secret: SecretRef = env('GOOGLE_CLIENT_SECRET')
+ * ```
+ */
+export interface SecretRef {
+  /** The variable's name. */
+  readonly $env: string
+}
+
+/**
+ * Refer to a secret by the environment variable that holds it.
+ *
+ * A config file is committed, reviewed and printed in diffs; a secret in it is leaked. So a
+ * provider's `clientSecret` or `privateKey` is typed as a reference and nothing else: a string
+ * there does not compile and is refused when the file is loaded. The variable is read only by
+ * `tula apply`, at the moment the provider is written.
+ *
+ * @param name - The variable's name: capitals, digits and underscores.
+ * @returns The reference.
+ * @throws ConfigError `config.invalid` when `name` is not a variable name.
+ *
+ * @example
+ * ```ts
+ * providers: { google: { clientId: '1234.apps.googleusercontent.com', clientSecret: env('GOOGLE_CLIENT_SECRET') } }
+ * ```
+ */
+export function env(name: string): SecretRef {
+  if (typeof name !== 'string' || !VARIABLE_NAME.test(name)) {
+    throw invalidConfig([
+      {
+        path: 'env()',
+        message: 'takes the name of an environment variable, e.g. GOOGLE_CLIENT_SECRET',
+      },
+    ])
+  }
+  return { $env: name }
+}
+
+/**
+ * Whether a value is a secret reference made by {@link env}.
+ *
+ * @param value - Anything.
+ * @returns `true` for `{ $env: 'NAME' }` and nothing else.
+ *
+ * @example
+ * ```ts
+ * isSecretRef(env('A')) // true
+ * isSecretRef('a literal') // false
+ * ```
+ */
+export function isSecretRef(value: unknown): value is SecretRef {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false
+  }
+  const keys = Object.keys(value)
+  const name = (value as { $env?: unknown }).$env
+  return (
+    keys.length === 1 && keys[0] === '$env' && typeof name === 'string' && VARIABLE_NAME.test(name)
+  )
+}
+
+const SECRET_MESSAGE =
+  "must be env('NAME'): a secret is read from an environment variable, never written in the config file"
+
+const Secret = z.custom<SecretRef>(isSecretRef, { message: SECRET_MESSAGE })
+
+const text = (max: number) => z.string().trim().min(1).max(max)
+
+const ClientProvider = z.strictObject({
+  clientId: text(512),
+  clientSecret: Secret,
+  enabled: z.boolean().default(true),
+})
+
+const AppleProvider = z.strictObject({
+  clientId: text(512),
+  teamId: text(64),
+  keyId: text(64),
+  privateKey: Secret,
+  enabled: z.boolean().default(true),
+})
+
+const Providers = z.strictObject({
+  google: ClientProvider.optional(),
+  github: ClientProvider.optional(),
+  apple: AppleProvider.optional(),
+})
+
+const Environment = z.strictObject({
+  kind: z.enum(['development', 'production']).optional(),
+  settings: EnvironmentSettingsInputSchema.prefault({}),
+  providers: Providers.prefault({}),
+})
+
+const Config = z.strictObject({
+  environments: z.record(z.string(), Environment).superRefine((environments, context) => {
+    const names = Object.keys(environments)
+    if (names.length === 0) {
+      context.addIssue({ code: 'custom', message: 'at least one environment is needed' })
+    }
+    for (const name of names) {
+      if (!ENVIRONMENT_NAME.test(name)) {
+        context.addIssue({
+          code: 'custom',
+          path: [name],
+          message:
+            'an environment’s name is lowercase letters, digits and dashes, e.g. dev or prod',
+        })
+      }
+    }
+  }),
+})
+
+/**
+ * Google's or GitHub's credentials for one environment.
+ *
+ * @example
+ * ```ts
+ * const github: OAuthClientConfig = { clientId: 'Iv1.abc', clientSecret: env('GITHUB_CLIENT_SECRET') }
+ * ```
+ */
+export interface OAuthClientConfig {
+  /** The OAuth client id. Not a secret. */
+  clientId: string
+  /** The client secret, by reference: `env('NAME')`. */
+  clientSecret: SecretRef
+  /** Whether sign-in offers the provider. Defaults to `true`. */
+  enabled?: boolean
+}
+
+/**
+ * Apple's credentials for one environment.
+ *
+ * @example
+ * ```ts
+ * const apple: AppleProviderConfig = {
+ *   clientId: 'app.northline.web',
+ *   teamId: 'A1B2C3D4E5',
+ *   keyId: 'K1L2M3N4O5',
+ *   privateKey: env('APPLE_PRIVATE_KEY'),
+ * }
+ * ```
+ */
+export interface AppleProviderConfig {
+  /** The Services ID. */
+  clientId: string
+  /** The developer team id. */
+  teamId: string
+  /** The id of the signing key. */
+  keyId: string
+  /** The `.p8` file's contents (PKCS#8 PEM), by reference: `env('NAME')`. */
+  privateKey: SecretRef
+  /** Whether sign-in offers the provider. Defaults to `true`. */
+  enabled?: boolean
+}
+
+/**
+ * The OAuth providers of one environment. A provider left out is not managed by the file:
+ * `tula apply` leaves it alone unless it is run with `--prune`.
+ *
+ * @example
+ * ```ts
+ * const providers: ProvidersConfig = { google: { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') } }
+ * ```
+ */
+export interface ProvidersConfig {
+  /** Google. */
+  google?: OAuthClientConfig
+  /** GitHub. */
+  github?: OAuthClientConfig
+  /** Sign in with Apple. */
+  apple?: AppleProviderConfig
+}
+
+/**
+ * The settings document of one environment, as it is written in a config file: every field
+ * optional. It is the body of `PUT /v1/admin/settings` (`EnvironmentSettingsInput`).
+ *
+ * @example
+ * ```ts
+ * const settings: EnvironmentSettingsConfig = { mfa: { policy: 'required' } }
+ * ```
+ */
+export type EnvironmentSettingsConfig = z.input<typeof EnvironmentSettingsInputSchema>
+
+/**
+ * Which kind of environment an entry is for. `tula` refuses a secret key of the other kind
+ * (`tula_sk_dev_…` against `production`), so a prod config is never applied with a dev key.
+ *
+ * @example
+ * ```ts
+ * const kind: EnvironmentKind = 'production'
+ * ```
+ */
+export type EnvironmentKind = 'development' | 'production'
+
+/**
+ * One environment in a config file, as written.
+ *
+ * @example
+ * ```ts
+ * const dev: EnvironmentConfigInput = { kind: 'development', settings: { app: { name: 'Northline' } } }
+ * ```
+ */
+export interface EnvironmentConfigInput {
+  /** The kind of environment this entry is for; checked against the secret key. */
+  kind?: EnvironmentKind
+  /** The settings document. A field left out takes its default. */
+  settings?: EnvironmentSettingsConfig
+  /** The OAuth providers the file manages. */
+  providers?: ProvidersConfig
+}
+
+/**
+ * A config file's content, as written: what {@link defineConfig} takes.
+ *
+ * @example
+ * ```ts
+ * const config: TulaConfigInput = { environments: { dev: {}, prod: { kind: 'production' } } }
+ * ```
+ */
+export interface TulaConfigInput {
+  /** The environments the file describes, by the name `tula --env <name>` takes. */
+  environments: Record<string, EnvironmentConfigInput>
+}
+
+/**
+ * One environment of a validated config: defaults filled in.
+ *
+ * `settings.password` and `settings.urls.allowedOrigins` stay absent when the file leaves them
+ * out: their defaults are the deployment's (`PASSWORD_POLICY`, `CORS_ORIGINS`), which only the
+ * server knows.
+ *
+ * @example
+ * ```ts
+ * const environment: EnvironmentConfig = selectEnvironment(config, 'prod')
+ * ```
+ */
+export interface EnvironmentConfig {
+  /** The kind of environment this entry is for, when the file says. */
+  kind?: EnvironmentKind
+  /** The settings document. */
+  settings: EnvironmentSettingsInput
+  /** The providers the file manages. */
+  providers: {
+    google?: Required<OAuthClientConfig>
+    github?: Required<OAuthClientConfig>
+    apple?: Required<AppleProviderConfig>
+  }
+}
+
+/**
+ * A validated config.
+ *
+ * @example
+ * ```ts
+ * const { config } = await loadConfig('tula.config.ts')
+ * Object.keys(config.environments) // ['dev', 'prod']
+ * ```
+ */
+export interface TulaConfig {
+  /** The environments, by name. */
+  environments: Record<string, EnvironmentConfig>
+}
+
+/** `a.b.c` for an issue path, with the unknown keys of a strict object as one issue each. */
+function toIssues(error: z.ZodError): ConfigIssue[] {
+  const issues: ConfigIssue[] = []
+  for (const issue of error.issues) {
+    const path = issue.path.map(String)
+    if (issue.code === 'unrecognized_keys') {
+      for (const key of issue.keys) {
+        issues.push({ path: [...path, key].join('.'), message: 'unknown key' })
+      }
+    } else {
+      issues.push({ path: path.join('.'), message: issue.message })
+    }
+  }
+  return issues
+}
+
+/**
+ * Validate a config.
+ *
+ * @param input - A config file's content, of unknown shape.
+ * @returns The config with defaults filled in.
+ * @throws ConfigError `config.invalid` listing every problem by its path.
+ */
+export function parseConfig(input: unknown): TulaConfig {
+  const result = Config.safeParse(input)
+  if (!result.success) {
+    throw invalidConfig(toIssues(result.error))
+  }
+  return result.data as TulaConfig
+}
+
+/**
+ * Define the config of a `tula.config.ts`.
+ *
+ * Typed, so an editor completes every setting, and validated with the contract's schemas, so a
+ * mistake fails when the file is loaded and not half-way through an apply. Unknown keys are
+ * errors (a misspelt `pasword` section would otherwise silently mean "the default policy").
+ *
+ * One file can describe several environments. The name is only a label: which environment a
+ * run changes is decided by the secret key it is given (`tula diff --env prod` with
+ * `TULA_SECRET_KEY`), and an entry's `kind` makes the CLI refuse a key of the other kind.
+ *
+ * @param config - The environments, each with its settings and providers.
+ * @returns The validated config, defaults filled in.
+ * @throws ConfigError `config.invalid` listing every problem by its path.
+ *
+ * @example
+ * ```ts
+ * import { defineConfig, env } from '@tula/config'
+ *
+ * export default defineConfig({
+ *   environments: {
+ *     prod: {
+ *       kind: 'production',
+ *       settings: {
+ *         app: { name: 'Northline', supportEmail: 'help@northline.app' },
+ *         signIn: { methods: { emailCode: { enabled: true } } },
+ *         urls: { allowedOrigins: ['https://app.northline.app'] },
+ *         mfa: { policy: 'required' },
+ *       },
+ *       providers: {
+ *         google: { clientId: '1234.apps.googleusercontent.com', clientSecret: env('GOOGLE_CLIENT_SECRET') },
+ *       },
+ *     },
+ *   },
+ * })
+ * ```
+ */
+export function defineConfig(config: TulaConfigInput): TulaConfig {
+  return parseConfig(config)
+}
+
+/**
+ * Pick one environment of a config by name.
+ *
+ * @param config - The validated config.
+ * @param name - The environment's name; may be left out when the file has exactly one.
+ * @returns The environment.
+ * @throws ConfigError `config.environment_required` when the file has several and none was
+ *   named, `config.environment_unknown` when the name is not in the file.
+ *
+ * @example
+ * ```ts
+ * const prod = selectEnvironment(config, 'prod')
+ * ```
+ */
+export function selectEnvironment(config: TulaConfig, name: string | undefined): EnvironmentConfig {
+  const names = Object.keys(config.environments)
+  const chosen = name ?? (names.length === 1 ? names[0] : undefined)
+  if (chosen === undefined) {
+    throw new ConfigError(
+      'config.environment_required',
+      `The config has several environments (${names.join(', ')}): say which with --env <name>.`
+    )
+  }
+  const environment = Object.hasOwn(config.environments, chosen)
+    ? config.environments[chosen]
+    : undefined
+  if (!environment) {
+    throw new ConfigError(
+      'config.environment_unknown',
+      `The config has no environment "${chosen}". It has: ${names.join(', ')}.`
+    )
+  }
+  return environment
+}
+
+/**
+ * Read a secret from the environment.
+ *
+ * @param ref - The reference from the config.
+ * @param variables - The environment to read (`process.env`).
+ * @returns The secret.
+ * @throws ConfigError `config.secret_missing`, naming the variable, when it is unset or blank.
+ *
+ * @example
+ * ```ts
+ * const clientSecret = resolveSecret(provider.clientSecret, process.env)
+ * ```
+ */
+export function resolveSecret(
+  ref: SecretRef,
+  variables: Readonly<Record<string, string | undefined>>
+): string {
+  const value = Object.hasOwn(variables, ref.$env) ? variables[ref.$env] : undefined
+  if (value === undefined || value.trim() === '') {
+    throw new ConfigError(
+      'config.secret_missing',
+      `The environment variable ${ref.$env} is not set. It holds a secret the config refers to.`
+    )
+  }
+  return value
+}
+
+/**
+ * The environment variable each configured provider's secret is read from.
+ *
+ * @param providers - The providers of one environment.
+ * @returns Provider → variable name, in provider-name order.
+ *
+ * @example
+ * ```ts
+ * requiredSecrets(environment.providers) // { google: 'GOOGLE_CLIENT_SECRET' }
+ * ```
+ */
+export function requiredSecrets(
+  providers: EnvironmentConfig['providers']
+): Partial<Record<OAuthProvider, string>> {
+  const names: Partial<Record<OAuthProvider, string>> = {}
+  for (const provider of [...OAUTH_PROVIDERS].sort()) {
+    const ref = providerSecret(providers, provider)
+    if (ref) {
+      names[provider] = ref.$env
+    }
+  }
+  return names
+}
+
+/**
+ * The secret reference of one provider in a config.
+ *
+ * @param providers - The providers of one environment.
+ * @param provider - The provider.
+ * @returns Its `clientSecret` (Google, GitHub) or `privateKey` (Apple), or `undefined` when the
+ *   file does not configure the provider.
+ *
+ * @example
+ * ```ts
+ * providerSecret(environment.providers, 'apple')?.$env // 'APPLE_PRIVATE_KEY'
+ * ```
+ */
+export function providerSecret(
+  providers: EnvironmentConfig['providers'],
+  provider: OAuthProvider
+): SecretRef | undefined {
+  return provider === 'apple' ? providers.apple?.privateKey : providers[provider]?.clientSecret
+}
+
+/** The `<env>` segment of a secret key (`tula_sk_<env>_…`), by environment kind. */
+const KEY_SEGMENT: Record<EnvironmentKind, string> = { development: 'dev', production: 'prod' }
+
+/**
+ * Whether a secret key is of the kind a config entry says it is for.
+ *
+ * A key carries its environment's kind in clear (`tula_sk_dev_…`, `tula_sk_prod_…`). This is a
+ * guard against a mix-up, not a security check: the server alone decides what a key may do.
+ *
+ * @param kind - The entry's `kind`, or `undefined` when the file does not say.
+ * @param secretKey - The secret key the run was given.
+ * @returns `false` only when the entry names a kind and the key is of another.
+ *
+ * @example
+ * ```ts
+ * secretKeyMatchesKind('production', 'tula_sk_dev_…') // false
+ * ```
+ */
+export function secretKeyMatchesKind(
+  kind: EnvironmentKind | undefined,
+  secretKey: string
+): boolean {
+  return kind === undefined || secretKey.startsWith(`tula_sk_${KEY_SEGMENT[kind]}_`)
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonical)
+  }
+  if (typeof value === 'object' && value !== null) {
+    const sorted: Record<string, unknown> = {}
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = canonical((value as Record<string, unknown>)[key])
+    }
+    return sorted
+  }
+  return value
+}
+
+/**
+ * A fingerprint of one environment's config: what `tula apply` records with the settings it
+ * writes, so the dashboard and a later `tula diff` can say which version of the file is in
+ * force.
+ *
+ * It covers the settings and the providers as written, with each secret as the **name** of its
+ * variable: no secret value is hashed, so the fingerprint reveals nothing about one.
+ *
+ * @param environment - The environment's validated config.
+ * @returns `sha256:` and 64 hex characters. The same for the same content in any key order.
+ *
+ * @example
+ * ```ts
+ * await hashEnvironmentConfig(selectEnvironment(config, 'prod')) // 'sha256:9f2c…'
+ * ```
+ */
+export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string> {
+  const text = JSON.stringify(canonical(environment))
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `sha256:${hex}`
+}

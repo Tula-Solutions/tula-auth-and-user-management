@@ -12,21 +12,24 @@ import {
 } from '@tula/db'
 import { and, eq, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
+import { readStoredManager } from '~/adapters/settings-manager'
 import * as logger from '~/lib/logger'
 import type { Activity } from '~/ports/activity-log'
 import type {
   EnvironmentSettingsStore,
+  SettingsManagerInput,
   StoredEnvironmentSettings,
 } from '~/ports/environment-settings-store'
 
 const columns = {
   revision: environmentSettings.revision,
   settings: environmentSettings.settings,
+  managedBy: environmentSettings.managedBy,
 }
 
 function toStored(
   environmentId: string,
-  row: { revision: number; settings: unknown }
+  row: { revision: number; settings: unknown; managedBy: unknown }
 ): StoredEnvironmentSettings {
   // Parsed on the way out as well: the document may predate a field this version added, or
   // hold a list entry this version would not accept. Settings are read on the request path,
@@ -39,7 +42,9 @@ function toStored(
       { environmentId, dropped }
     )
   }
-  return { revision: row.revision, settings }
+  // The column is free-form JSON: only a record the answer's own schema accepts is passed on.
+  const managedBy = readStoredManager(environmentId, row.managedBy)
+  return { revision: row.revision, settings, ...(managedBy && { managedBy }) }
 }
 
 /** The usable origins of one stored document, whatever shape another version left it in. */
@@ -75,8 +80,17 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
     expectedRevision: number,
     settings: EnvironmentSettings,
     at: Date,
-    activity: Activity
+    activity: Activity,
+    manager?: SettingsManagerInput | null
   ): Promise<StoredEnvironmentSettings | null> {
+    // `undefined` leaves the column out of the update (the manager on record is kept), `null`
+    // clears it, and a named manager is stored with this write's time and revision.
+    const managedBy =
+      manager === undefined
+        ? undefined
+        : manager === null
+          ? null
+          : { ...manager, at: at.toISOString(), revision: expectedRevision + 1 }
     return withTenant(this.db, environmentId, async (tx) => {
       // Revision 0 means "no row yet": the unique key on environment_id decides which of two
       // first writers wins. Afterwards the guarded update does.
@@ -89,6 +103,7 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
                 environmentId,
                 settings,
                 revision: 1,
+                managedBy: managedBy ?? null,
                 createdAt: at,
                 updatedAt: at,
               })
@@ -96,7 +111,12 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
               .returning(columns)
           : await tx
               .update(environmentSettings)
-              .set({ settings, revision: expectedRevision + 1, updatedAt: at })
+              .set({
+                settings,
+                revision: expectedRevision + 1,
+                updatedAt: at,
+                ...(managedBy !== undefined && { managedBy }),
+              })
               .where(
                 and(
                   eq(environmentSettings.environmentId, environmentId),

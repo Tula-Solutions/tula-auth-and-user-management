@@ -7,7 +7,7 @@ import {
   queryRows,
   type TestDatabase,
 } from '@tula/db/testing'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresEnvironmentSettingsStore } from '~/adapters/postgres/environment-settings'
@@ -29,6 +29,14 @@ describeEnvironmentSettingsStore('PostgresEnvironmentSettingsStore', async () =>
   store: new PostgresEnvironmentSettingsStore(testDb.db),
   log: new PostgresActivityLog(testDb.db),
   freshTenant,
+  storeManager: async (tenant, manager) => {
+    await withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx
+        .update(environmentSettings)
+        .set({ managedBy: manager as Record<string, unknown> })
+        .where(eq(environmentSettings.environmentId, tenant.environmentId))
+    )
+  },
 }))
 
 describe('PostgresEnvironmentSettingsStore', () => {

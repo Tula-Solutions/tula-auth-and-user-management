@@ -77,6 +77,58 @@ describe('configuration', () => {
     expect(() => resolveConfig(options)).toThrow(TypeError)
   })
 
+  describe('the secret key over plain http', () => {
+    const secretKey = 'tula_sk_dev_x'
+
+    test.each([
+      ['an internal name', 'http://api:3003'],
+      ['a public host', 'http://auth.example.com'],
+      ['a host that only starts like localhost', 'http://localhost.example.com'],
+    ])('is refused for %s, without the key in the message', (_name, apiUrl) => {
+      let message = ''
+      try {
+        resolveConfig({ ...base, apiUrl, secretKey })
+      } catch (error) {
+        expect(error).toBeInstanceOf(TypeError)
+        message = (error as Error).message
+      }
+      expect(message).toContain('allowInsecureHttp')
+      expect(message).not.toContain(secretKey)
+    })
+
+    test.each([
+      'https://auth.example.com',
+      'http://localhost:3003',
+      'http://api.tula.localhost:3003',
+      'http://127.0.0.1:3003',
+      'http://[::1]:3003',
+    ])('is allowed for %s', (apiUrl) => {
+      expect(resolveConfig({ ...base, apiUrl, secretKey }).secretKey).toBe(secretKey)
+    })
+
+    test('is allowed on a private network that was opted in, by option or by variable', () => {
+      const options = { ...base, secretKey }
+      expect(resolveConfig({ ...options, allowInsecureHttp: true }).secretKey).toBe(secretKey)
+      const before = process.env.TULA_ALLOW_INSECURE_HTTP
+      try {
+        process.env.TULA_ALLOW_INSECURE_HTTP = 'true'
+        expect(resolveConfig(options).secretKey).toBe(secretKey)
+        process.env.TULA_ALLOW_INSECURE_HTTP = '1'
+        expect(() => resolveConfig(options)).toThrow(TypeError)
+      } finally {
+        if (before === undefined) {
+          delete process.env.TULA_ALLOW_INSECURE_HTTP
+        } else {
+          process.env.TULA_ALLOW_INSECURE_HTTP = before
+        }
+      }
+    })
+
+    test('without a secret key an internal http address is as before', () => {
+      expect(resolveConfig(base).apiUrl).toBe('http://api:3003')
+    })
+  })
+
   test('what is left out is read from the environment, and an option wins over it', () => {
     const names = ['TULA_API_URL', 'NEXT_PUBLIC_TULA_PUBLISHABLE_KEY', 'TULA_ENVIRONMENT_ID']
     const before = names.map((name) => process.env[name])

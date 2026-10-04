@@ -47,6 +47,7 @@ beforeEach(() => build())
 interface State {
   revision: number
   settings: EnvironmentSettings
+  managedBy: null
 }
 
 interface Failure {
@@ -85,6 +86,7 @@ describe('GET /v1/admin/settings', () => {
     expect((await res.json()) as State).toEqual({
       revision: 0,
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      managedBy: null,
     })
   })
 
@@ -135,6 +137,7 @@ describe('PUT /v1/admin/settings', () => {
         app: { name: 'Acme', supportEmail: 'help@acme.test' },
         password: strictPolicy,
       },
+      managedBy: null,
     })
     expect((await (await read()).json()) as State).toEqual(saved)
   })
@@ -343,6 +346,50 @@ describe('PUT /v1/admin/settings', () => {
     expect(res.status).toBe(200)
     expect(((await (await read()).json()) as State).settings.app.name).toBe('Dev only')
     expect(((await (await read(PROD_SK)).json()) as State).settings.app.name).toBe('Prod')
+  })
+})
+
+describe('a managing-tool record this version would not answer', () => {
+  const odd = { tool: 'Bad Tool!', configHash: 'x', at: 'now', revision: 1 }
+
+  beforeEach(async () => {
+    expect((await put({ app: { name: 'Acme' } }, '"0"')).status).toBe(200)
+    deps.environmentSettings.seedManager(TEST_TENANT.environmentId, odd)
+  })
+
+  test('GET answers the settings as unmanaged instead of failing', async () => {
+    const res = await read()
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as State).managedBy).toBeNull()
+  })
+
+  test('a replace made by hand answers 200 for the write it committed', async () => {
+    const res = await put({ app: { name: 'Edited' } }, '"1"')
+    expect(res.status).toBe(200)
+    const state = (await res.json()) as State
+    expect(state.revision).toBe(2)
+    expect(state.managedBy).toBeNull()
+    expect((await deps.environmentSettings.get(TEST_TENANT.environmentId))?.revision).toBe(2)
+  })
+
+  test('a replace that names a manager records it', async () => {
+    const res = await app.request(ADMIN, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${SK}`,
+        'if-match': '"1"',
+        'x-tula-managed-by': 'tula-apply',
+        'x-tula-config-hash': `sha256:${'ab'.repeat(32)}`,
+      },
+      body: JSON.stringify({ app: { name: 'Applied' } }),
+    })
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { managedBy: unknown }).managedBy).toMatchObject({
+      tool: 'tula-apply',
+      revision: 2,
+      drifted: false,
+    })
   })
 })
 

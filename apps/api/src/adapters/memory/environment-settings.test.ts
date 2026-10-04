@@ -6,9 +6,11 @@ import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-se
 
 describeEnvironmentSettingsStore('MemoryEnvironmentSettingsStore', async () => {
   const log = new MemoryActivityLog()
+  const store = new MemoryEnvironmentSettingsStore(log)
   return {
-    store: new MemoryEnvironmentSettingsStore(log),
+    store,
     log,
+    storeManager: async (tenant, manager) => store.seedManager(tenant.environmentId, manager),
     freshTenant: async () => ({
       projectId: '00000000-0000-7000-8000-00000000a001',
       environmentId: Bun.randomUUIDv7(),

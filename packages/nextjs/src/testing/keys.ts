@@ -4,7 +4,7 @@ import type { TulaServerOptions } from '../config'
 // Test doubles: an environment's signing key, the JWKS the API would publish for it, and a
 // fake API that answers the few routes the server side of the package calls.
 
-export const API = 'http://api.internal:3003'
+export const API = 'https://api.internal:3003'
 export const APP = 'http://localhost:3000'
 export const ENV = 'env_1'
 export const KEY = 'tula_pk_dev_0000'

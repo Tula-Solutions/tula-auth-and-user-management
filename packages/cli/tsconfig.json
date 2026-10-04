@@ -1,0 +1,11 @@
+{
+  "extends": "@tula/tsconfig/library.json",
+  "compilerOptions": {
+    // Declarations are the build's business (tsconfig.build.json): this project also compiles
+    // the API's sources, which are not written to be emitted as declarations.
+    "declaration": false,
+    // The integration tests drive the real API in process, whose sources use this alias.
+    "paths": { "~/*": ["../../apps/api/src/*"] }
+  },
+  "include": ["src/**/*"]
+}

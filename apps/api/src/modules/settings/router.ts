@@ -1,3 +1,4 @@
+import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
@@ -90,6 +91,9 @@ router.put(
       '`precondition.failed`. The change is recorded in the audit log as ' +
       '`environment.settings_updated` with the keys that changed, never their values, and ' +
       '`weakened: true` when it made the password policy weaker. ' +
+      'A tool that applies a config file names itself in `x-tula-managed-by` with the ' +
+      'config’s fingerprint in `x-tula-config-hash`; the answer’s `managedBy` then says so, ' +
+      'and `managedBy.drifted` turns true when the settings are later replaced without them. ' +
       'Other API instances apply it within a few seconds.',
     security: openapi.security.admin,
     parameters: [
@@ -98,6 +102,25 @@ router.put(
         in: 'header',
         required: true,
         description: 'The revision being replaced, quoted, e.g. `"3"` (`"0"` for the first save).',
+        schema: { type: 'string' },
+      },
+      {
+        name: CONFIG_MANAGED_BY_HEADER,
+        in: 'header',
+        required: false,
+        description:
+          'The tool applying these settings from a config file (`tula-apply`), recorded with ' +
+          'them and returned as `managedBy`; `none` removes the record. Leave it out for a ' +
+          'change made by hand: the record is kept and shows as `drifted`.',
+        schema: { type: 'string' },
+      },
+      {
+        name: CONFIG_HASH_HEADER,
+        in: 'header',
+        required: false,
+        description:
+          'With a tool name: the fingerprint of the config being applied, `sha256:` and 64 hex ' +
+          'characters.',
         schema: { type: 'string' },
       },
     ],
@@ -128,6 +151,10 @@ router.put(
       {
         expectedRevision: Settings.expectedRevision(c.req.header('if-match')),
         settings: c.req.valid('json'),
+        manager: Settings.managerFromHeaders(
+          c.req.header(CONFIG_MANAGED_BY_HEADER),
+          c.req.header(CONFIG_HASH_HEADER)
+        ),
       },
       adminActor(c)
     )

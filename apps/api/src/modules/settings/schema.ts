@@ -1,4 +1,4 @@
-import { EnvironmentSettingsSchema } from '@tula/contract'
+import { EnvironmentSettingsSchema, SettingsManagedBySchema } from '@tula/contract'
 import { z } from 'zod'
 
 /** The document and the client view are owned by the contract, so SDKs and the CLI share them. */
@@ -25,11 +25,16 @@ const ReturnedSettings = EnvironmentSettingsSchema.safeExtend({
  * `revision` is 0 for an environment that has saved nothing yet (its `settings` are then the
  * deployment's defaults) and grows by one with every change. Send it back as
  * `If-Match: "<revision>"` to replace the settings.
+ *
+ * `managedBy` says which tool applies these settings from a config file, if one does, and
+ * whether they have been changed around it since (`drifted`); `null` when nobody manages them
+ * (ADR 0030).
  */
 export const EnvironmentSettingsStateSchema = z
   .object({
     revision: z.number().int().min(0),
     settings: ReturnedSettings,
+    managedBy: SettingsManagedBySchema.nullable(),
   })
   .meta({ ref: 'EnvironmentSettingsState' })
 

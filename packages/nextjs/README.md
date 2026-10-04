@@ -16,6 +16,8 @@ TULA_ENVIRONMENT_ID=<environment id>
 # TULA_TRUSTED_PROXY_HOPS=1   proxies in front of this server that append to X-Forwarded-For
 #                             (default 0: none is trusted; see "What you must configure")
 # TULA_SECRET_KEY=…   only for `stateful` session profiles; never NEXT_PUBLIC_
+#                     With it, TULA_API_URL must be https (or localhost); on a private network
+#                     you trust, TULA_ALLOW_INSECURE_HTTP=true allows plain http
 ```
 
 **1. The route handler.** The browser talks to this route, never to the API's host.

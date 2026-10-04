@@ -129,6 +129,7 @@ describe('conformance scenarios, in process', () => {
       'concurrent session limit',
       'stateful session',
       'step-up window per profile',
+      'settings managed by a config file',
     ])
   })
 
