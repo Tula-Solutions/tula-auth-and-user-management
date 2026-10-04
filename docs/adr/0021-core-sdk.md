@@ -98,7 +98,9 @@ One runtime dependency, `@tula/contract`, and only its Zod-free entry points
 | `createTulaClient` | 19.2 kB | 6.4 kB |
 | `createTulaClient` + `evaluatePassword` (adds the common-password list) | 22.5 kB | 7.7 kB |
 
-No Zod in either.
+No Zod in either. (Those were the first measurements. The emailed code and link, then
+two-step verification and step-up, took the client to just under 11.0 kB gzip; the test's
+budget is 12 kB.)
 
 ### Errors: one class
 
@@ -210,6 +212,21 @@ memory; silently continuing would turn into an unexplained sign-out at the next 
   in flight, clears storage, and tells the server. If the server cannot be told the call
   rejects (the session may live on, and a browser still has its cookie), but the client is
   signed out either way.
+- **Step-up installs a token without rotating anything** ([ADR 0025](0025-mfa.md)).
+  `session.stepUp(proof)` asks the API to prove a factor again and gets back an access token
+  for the **same** session and no refresh token. The token is installed under the generation
+  it was asked under, and handed to other tabs. If the session's token was replaced while the
+  proof was on its way (a refresh here or in another tab), the step-up's token is not put
+  over the newer one: the client refreshes once more instead, so the token it ends with was
+  issued after the proof. **The ordering rule across tabs:** of two tokens for one session,
+  the one issued later wins; a token another tab announces late never replaces a newer one.
+  After `mfa.confirmTotp` the client refreshes for the same reason (the token in hand does
+  not say `mfa` yet); the backup codes are returned whether or not that refresh could be made.
+  The client never prompts and never retries an action that answered
+  `auth.step_up_required`: `isStepUpRequired` and `stepUpMethods` read the error, and the UI
+  layer decides.
+- **Secrets pass through.** A TOTP secret, its URI and backup codes are returned to the caller
+  once and kept on no object, in no storage and in no error.
 
 ### Portability
 

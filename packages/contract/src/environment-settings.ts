@@ -205,6 +205,32 @@ const Notifications = z.object({
    * sessions has (ADR 0023). On by default; turning it off is recorded as a weakening.
    */
   newSignIn: z.boolean().default(true),
+  /**
+   * Email the account's address when its two-step verification is turned on, turned off or
+   * reset by an administrator, when its backup codes are replaced, and when one is used to sign
+   * in (ADR 0025). On by default; turning it off is recorded as a weakening.
+   */
+  mfaChanged: z.boolean().default(true),
+})
+
+/** Whether users can, or must, protect their account with a second factor. */
+export const MfaPolicySchema = z.enum(['off', 'optional', 'required']).meta({ ref: 'MfaPolicy' })
+
+/** Whether users can, or must, protect their account with a second factor. */
+export type MfaPolicy = z.infer<typeof MfaPolicySchema>
+
+const Mfa = z.object({
+  /**
+   * - `optional` (the default): a user may turn two-step verification on in their profile.
+   * - `required`: a user without a second factor must enrol one before a sign-in, sign-up or
+   *   password reset completes (`needs_factor_enrolment`), and cannot turn it off.
+   * - `off`: nobody can enrol. **A factor a user already has is still asked for** until they
+   *   or an administrator remove it: switching the policy off never silently drops anyone's
+   *   second factor.
+   *
+   * Moving towards `off` (`required` → `optional` → `off`) is recorded as a weakening.
+   */
+  policy: MfaPolicySchema.default('optional'),
 })
 
 const password = PasswordPolicySchema.default(PASSWORD_POLICY_PRESETS.recommended)
@@ -250,7 +276,9 @@ const minLengthFloor = {
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
  * - `audit.retentionDays`: how long audit entries are kept.
  * - `notifications`: which security notices are emailed to an account's owner
- *   (`passwordChanged`, `newSignIn`). Both are on unless switched off.
+ *   (`passwordChanged`, `newSignIn`, `mfaChanged`). All are on unless switched off.
+ * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
+ *   `required`.
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({
@@ -262,6 +290,7 @@ export const EnvironmentSettingsSchema = z
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
+    mfa: Mfa.strict().prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
@@ -304,6 +333,7 @@ export const EnvironmentSettingsInputSchema = z
       .prefault({}),
     audit: Audit.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
+    mfa: Mfa.strict().prefault({}),
   })
   .refine(
     (settings) =>
@@ -341,6 +371,7 @@ const Stored = z.object({
   urls: Urls.prefault({}),
   audit: Audit.prefault({}),
   notifications: Notifications.prefault({}),
+  mfa: Mfa.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */
@@ -454,6 +485,9 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
  *   working when a server offers a method it does not know; it should ignore those.
  * - `signUp.password` says whether the sign-up form must ask for a password. Optional in the
  *   schema, so a client reading an older server's answer treats a missing one as `required`.
+ * - `mfa.policy` says whether a profile screen should offer two-step verification (`off`: hide
+ *   it) and whether it can be turned off (`required`: it cannot). Optional in the schema, so a
+ *   client reading an older server's answer treats a missing one as `off`.
  * - The allow-lists (`urls`), the audit settings and the notice switches (`notifications`) are
  *   deliberately absent.
  */
@@ -463,6 +497,7 @@ export const ClientConfigSchema = z
     signIn: z.object({ methods: z.array(z.string()) }),
     signUp: z.object({ password: SignUpPasswordModeSchema }).optional(),
     password: PasswordPolicySchema,
+    mfa: z.object({ policy: MfaPolicySchema }).optional(),
   })
   .meta({ ref: 'ClientConfig' })
 

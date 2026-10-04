@@ -1,4 +1,5 @@
 import { ERROR_DEFINITIONS, type ErrorCode } from '@tula/contract/error-codes'
+import type { StepUpMethod } from './types'
 
 /**
  * Codes for failures that happen in the client, before or instead of an API answer. They sit
@@ -270,6 +271,57 @@ export function isTulaError(value: unknown): value is TulaError {
     value instanceof TulaError ||
     (value instanceof Error && value.name === 'TulaError' && 'code' in value && 'status' in value)
   )
+}
+
+/**
+ * Whether a caught value is the API asking the user to prove who they are again
+ * (`auth.step_up_required`, 403) before a sensitive action: turning two-step verification on
+ * or off, new backup codes, or, for a user with two-step verification, a password change.
+ *
+ * The client never prompts or retries by itself. Ask the user for one of
+ * {@link stepUpMethods}, call `tula.session.stepUp(proof)`, then repeat the action.
+ *
+ * @param value - The caught value.
+ * @returns `true` for a `TulaError` with the code `auth.step_up_required`.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   await tula.mfa.disableTotp()
+ * } catch (error) {
+ *   if (isStepUpRequired(error)) {
+ *     askForProof(stepUpMethods(error))
+ *   }
+ * }
+ * ```
+ */
+export function isStepUpRequired(value: unknown): value is TulaError {
+  return isTulaError(value) && value.code === 'auth.step_up_required'
+}
+
+const STEP_UP_METHODS: readonly string[] = ['password', 'totp', 'backup_code']
+
+/**
+ * What the user may step up with, read from an `auth.step_up_required` error (the API sends
+ * them as one comma-separated param). An empty list means no proof will do: the user has to
+ * sign in again.
+ *
+ * @param error - The caught value.
+ * @returns The methods, in the server's order; empty for any other error, and without any
+ *   method this client does not know.
+ *
+ * @example
+ * ```ts
+ * stepUpMethods(error) // ['totp', 'backup_code'], ['password'] or []
+ * ```
+ */
+export function stepUpMethods(error: unknown): StepUpMethod[] {
+  if (!isStepUpRequired(error)) {
+    return []
+  }
+  return (ownString(error.params, 'methods') ?? '')
+    .split(',')
+    .filter((method): method is StepUpMethod => STEP_UP_METHODS.includes(method))
 }
 
 /**

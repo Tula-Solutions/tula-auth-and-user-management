@@ -23,6 +23,12 @@ export const FirstFactorStrategySchema = z
   ])
   .meta({ ref: 'FirstFactorStrategy' })
 
+/**
+ * Second factors a user can enrol. `totp` is an authenticator app (RFC 6238). Passkeys join
+ * with step 1.10.
+ */
+export const FactorEnrolmentMethodSchema = z.enum(['totp']).meta({ ref: 'FactorEnrolmentMethod' })
+
 /** How an email address can be verified. */
 export const EmailVerificationStrategySchema = z
   .enum(['email_code', 'email_link'])
@@ -81,6 +87,15 @@ export const FlowStepSchema = z
       options: z.array(SecondFactorMethodSchema).min(1),
     }),
     z.object({
+      /**
+       * The environment requires a second factor (`mfa.policy: 'required'`) and the user has
+       * none: enrol one of `methods` inside this attempt (`factor-enrolment/totp`, then
+       * `…/confirm`). No session exists and no tokens are returned until it is confirmed.
+       */
+      status: z.literal('needs_factor_enrolment'),
+      methods: z.array(FactorEnrolmentMethodSchema).min(1),
+    }),
+    z.object({
       status: z.literal('complete'),
       userId: z.string(),
       sessionId: z.string(),
@@ -132,6 +147,17 @@ export const FlowAttemptSchema = z
     linkBinding: z.string().optional(),
     /** Present only when `step.status === 'complete'`. */
     session: SessionTokensSchema.optional(),
+    /**
+     * Present **only** in the response that confirms a second factor enrolled inside the attempt
+     * (`factor-enrolment/totp/confirm`): the user's ten backup codes, shown this once and never
+     * again. Show them to the user and keep them nowhere.
+     */
+    backupCodes: z.array(z.string()).optional(),
+    /**
+     * Present **only** when the attempt was completed with a backup code: how many unused
+     * backup codes the user has left.
+     */
+    backupCodesRemaining: z.number().int().min(0).optional(),
   })
   .meta({ ref: 'FlowAttempt' })
 
@@ -221,6 +247,26 @@ export const VerifyEmailRequestSchema = z
   .object({ code: z.string().regex(/^\d{6}$/) })
   .meta({ ref: 'VerifyEmailRequest' })
 
+/** Longest backup code a request may carry: ten characters, generously padded with separators. */
+const MAX_BACKUP_CODE_INPUT_LENGTH = 64
+
+/**
+ * Prove a second factor for an attempt waiting on `needs_second_factor`.
+ *
+ * - `totp`: the 6-digit code the authenticator app shows now.
+ * - `backup_code`: one of the user's unused backup codes. Case, spaces and dashes are ignored.
+ *   Each works once.
+ */
+export const SecondFactorRequestSchema = z
+  .discriminatedUnion('method', [
+    z.object({ method: z.literal('totp'), code: z.string().regex(/^\d{6}$/) }),
+    z.object({
+      method: z.literal('backup_code'),
+      code: z.string().min(1).max(MAX_BACKUP_CODE_INPUT_LENGTH),
+    }),
+  ])
+  .meta({ ref: 'SecondFactorRequest' })
+
 /** Start a password reset for an email address. */
 export const PasswordResetStartRequestSchema = z
   .object({ email: z.string().max(320) })
@@ -235,6 +281,10 @@ export const PasswordResetRequestSchema = z
 export type FirstFactorStrategy = z.infer<typeof FirstFactorStrategySchema>
 /** Second-factor method. */
 export type SecondFactorMethod = z.infer<typeof SecondFactorMethodSchema>
+/** A second factor a user can enrol. */
+export type FactorEnrolmentMethod = z.infer<typeof FactorEnrolmentMethodSchema>
+/** Second-factor request body. */
+export type SecondFactorRequest = z.infer<typeof SecondFactorRequestSchema>
 /** Email verification strategy. */
 export type EmailVerificationStrategy = z.infer<typeof EmailVerificationStrategySchema>
 /** Server-decided next step. */

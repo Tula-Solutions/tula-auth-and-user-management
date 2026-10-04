@@ -27,7 +27,7 @@ export {
   type UseEmailLinkCallbackResult,
   useEmailLinkCallback,
 } from './hooks/use-email-link-callback'
-export type { FlowState } from './hooks/use-flow'
+export type { FactorEnrolmentHookActions, FlowState } from './hooks/use-flow'
 export {
   type PasswordChecklist,
   useClientConfig,
@@ -37,6 +37,7 @@ export { type UseResetPasswordResult, useResetPassword } from './hooks/use-reset
 export { type UseSessionResult, useSession } from './hooks/use-session'
 export { type UseSignInResult, useSignIn } from './hooks/use-sign-in'
 export { type UseSignUpResult, useSignUp } from './hooks/use-sign-up'
+export { useStepUp, type WithStepUp } from './hooks/use-step-up'
 export { useTula } from './hooks/use-tula'
 export { type UseUserResult, useUser } from './hooks/use-user'
 export {

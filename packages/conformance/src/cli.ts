@@ -36,6 +36,8 @@ const target: Target = {
   emailCode: mailpitCodes(mailpit),
   emailLink: mailpitLinks(mailpit),
   wait: (ms) => Bun.sleep(ms),
+  // Authenticator codes are computed for the wall clock, which is the server's clock too.
+  now: () => Date.now(),
 }
 
 const counts = { passed: 0, failed: 0, skipped: 0 }

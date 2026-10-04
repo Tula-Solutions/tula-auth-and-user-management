@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { screen, waitFor } from '@testing-library/react'
-import { json, ROUTE, TEST_USER, world } from '../testing/harness'
+import { expectFocus, json, openDialogs, ROUTE, TEST_USER, world } from '../testing/harness'
 import { UserButton } from './user-button'
 
 afterEach(() => {
@@ -46,7 +46,7 @@ describe('<UserButton>', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     const items = screen.getAllByRole('menuitem')
     expect(items.map((item) => item.textContent)).toEqual(['Manage account', 'Sign out'])
-    expect(document.activeElement).toBe(items[0] as HTMLElement)
+    await expectFocus(items[0] as HTMLElement)
     expect(trigger.getAttribute('aria-controls')).toBe(screen.getByRole('menu').id)
     expect(screen.getByText(TEST_USER.email)).toBeTruthy()
 
@@ -65,26 +65,26 @@ describe('<UserButton>', () => {
     w.mount(<UserButton />)
     const trigger = await screen.findByRole('button', { name: TRIGGER })
     await w.user.tab()
-    expect(document.activeElement).toBe(trigger)
+    await expectFocus(trigger)
     await w.user.keyboard('{ArrowDown}')
     const [manage, signOut] = screen.getAllByRole('menuitem') as [HTMLElement, HTMLElement]
-    expect(document.activeElement).toBe(manage)
+    await expectFocus(manage)
     await w.user.keyboard('{ArrowDown}')
-    expect(document.activeElement).toBe(signOut)
+    await expectFocus(signOut)
     // Wraps around.
     await w.user.keyboard('{ArrowDown}')
-    expect(document.activeElement).toBe(manage)
+    await expectFocus(manage)
     await w.user.keyboard('{ArrowUp}')
-    expect(document.activeElement).toBe(signOut)
+    await expectFocus(signOut)
     await w.user.keyboard('{Home}')
-    expect(document.activeElement).toBe(manage)
+    await expectFocus(manage)
     await w.user.keyboard('{End}')
-    expect(document.activeElement).toBe(signOut)
+    await expectFocus(signOut)
     await w.user.keyboard('a')
     expect(screen.getByRole('menu')).toBeTruthy()
     await w.user.keyboard('{Escape}')
     expect(screen.queryByRole('menu')).toBeNull()
-    expect(document.activeElement).toBe(trigger)
+    await expectFocus(trigger)
 
     // Enter opens too (a button's click), and Tab closes the menu behind it.
     await w.user.keyboard('{Enter}')
@@ -119,8 +119,8 @@ describe('<UserButton>', () => {
     expect(screen.queryByRole('menu')).toBeNull()
     expect(await screen.findByRole('heading', { level: 2, name: 'Account' })).toBeTruthy()
     await w.user.click(screen.getByRole('button', { name: 'Close' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    expect(document.activeElement).toBe(trigger)
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await expectFocus(trigger)
   })
 
   test('manage account goes to the profile page, or to the app’s callback, when given', async () => {

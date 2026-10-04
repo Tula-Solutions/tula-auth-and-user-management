@@ -42,6 +42,8 @@ export interface RetentionCounts {
   flowAttempts: number
   verificationTokens: number
   sessions: number
+  /** Authenticator enrolments that were started and never confirmed. */
+  pendingFactors: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -54,7 +56,7 @@ export interface RetentionReport extends RetentionCounts {
 
 type RetentionDeps = Pick<
   Deps,
-  'environments' | 'flowAttempts' | 'verificationTokens' | 'sessions' | 'clock'
+  'environments' | 'flowAttempts' | 'verificationTokens' | 'sessions' | 'factors' | 'clock'
 >
 
 /** Repeat one batched delete until a batch comes back short, or the ceiling is reached. */
@@ -76,7 +78,9 @@ async function drain(deleteBatch: (limit: number) => Promise<number>): Promise<n
  * - flow attempts past their expiry (with their verification tokens);
  * - verification tokens expired for longer than {@link EXPIRED_VERIFICATION_TOKEN_RETENTION};
  * - sessions that ended more than {@link ENDED_SESSION_RETENTION} ago, with their refresh
- *   tokens.
+ *   tokens;
+ * - authenticator enrolments that were never confirmed and lapsed more than
+ *   {@link EXPIRED_VERIFICATION_TOKEN_RETENTION} ago (a sealed secret nobody will use).
  *
  * Audit entries are never deleted here, and neither are outbox events: nothing delivers events
  * yet (Phase 2), so none is safe to drop (ADR 0017).
@@ -98,6 +102,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     flowAttempts: 0,
     verificationTokens: 0,
     sessions: 0,
+    pendingFactors: 0,
   }
   for (const { id } of await deps.environments.listAll()) {
     report.environments += 1
@@ -108,6 +113,11 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       )
       report.sessions += await drain((limit) =>
         deps.sessions.deleteEnded(id, sessionsBefore, limit)
+      )
+      // The same grace as tokens: a confirmation in flight when the enrolment lapses still
+      // finds the row and answers `mfa.enrolment_expired` rather than racing the purge.
+      report.pendingFactors += await drain((limit) =>
+        deps.factors.deleteExpiredPending(id, tokensBefore, limit)
       )
     } catch (error) {
       report.failed += 1
@@ -138,7 +148,8 @@ export async function run(
     return null
   }
   const report = outcome.value
-  const removed = report.flowAttempts + report.verificationTokens + report.sessions
+  const removed =
+    report.flowAttempts + report.verificationTokens + report.sessions + report.pendingFactors
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

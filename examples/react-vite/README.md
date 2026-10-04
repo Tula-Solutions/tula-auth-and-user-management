@@ -55,6 +55,15 @@ link where you started" and signs nobody in, which is the point
 ([ADR 0024](../../docs/adr/0024-email-sign-in.md)). The app's config is cached by the browser
 for a minute, so a settings change can take that long to show.
 
+## Two-step verification
+
+Open **Manage your account** and turn it on under "Two-step verification": scan the QR code
+with an authenticator app (or type the setup key), enter the code, save the backup codes. The
+next sign-in asks for the code. To make it mandatory, send `"mfa": { "policy": "required" }`
+in the settings document: a user without it then sets it up while signing in. If you lose the
+authenticator and the codes, reset the user with the secret key
+(`DELETE /v1/admin/users/<id>/factors`); see [ADR 0025](../../docs/adr/0025-mfa.md).
+
 ## Browser tests
 
 ```bash
@@ -83,3 +92,9 @@ them.
 | ![Other ways to sign in](docs/sign-in-methods.png) | ![An emailed code](docs/email-code.png) |
 | ![Waiting for the emailed link](docs/email-link-waiting.png) | ![The link opened in another browser](docs/email-link-other-browser.png) |
 | ![Sign-up with an optional password](docs/sign-up-optional-password.png) | ![Waiting for the link, on a phone, dark](docs/mobile-email-link-dark.png) |
+| ![Turning two-step verification on](docs/two-step-enrol.png) | ![Backup codes](docs/backup-codes.png) |
+| ![The second factor at sign-in](docs/second-factor.png) | ![The step-up dialog](docs/step-up.png) |
+| ![A backup code, on a phone, dark](docs/mobile-second-factor-dark.png) | |
+
+The setup key and backup codes in these pictures belonged to an account in the test fixture's
+memory, which is gone when the fixture stops. They never worked anywhere else.

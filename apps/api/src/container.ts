@@ -12,6 +12,7 @@ import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentSettingsStore } from '~/adapters/postgres/environment-settings'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
+import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
 import { databaseProbe } from '~/adapters/postgres/health'
 import { PostgresJobLock } from '~/adapters/postgres/job-lock'
@@ -113,6 +114,7 @@ export function createContainer(env: Env): Container {
     verificationTokens: new PostgresVerificationTokenStore(database.db),
     sessions: new PostgresSessionStore(database.db),
     users: new PostgresUserRepository(database.db),
+    factors: new PostgresFactorStore(database.db),
     flowAttempts: new PostgresFlowAttemptStore(database.db),
     activityLog: new PostgresActivityLog(database.db),
     revokedSessions: redis

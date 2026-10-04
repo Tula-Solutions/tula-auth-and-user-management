@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { match, pick } from './match'
+import { jwtClaims, match, pick } from './match'
 
 const body = {
   id: 'a1',
@@ -154,4 +154,61 @@ describe('$not and matcher objects', () => {
       ])
     }
   )
+})
+
+describe('$set', () => {
+  test('matches an array with exactly the given members, in any order', () => {
+    expect(match({ amr: { $set: ['pwd', 'otp', 'mfa'] } }, { amr: ['mfa', 'pwd', 'otp'] })).toEqual(
+      []
+    )
+    expect(match({ amr: { $set: [] } }, { amr: [] })).toEqual([])
+    expect(
+      match({ list: { $set: [{ id: 1 }, '$any'] } }, { list: ['x', { id: 1, extra: true }] })
+    ).toEqual([])
+  })
+
+  test.each<[string, unknown, unknown]>([
+    ['a missing member', ['pwd', 'otp'], ['pwd', 'mfa']],
+    ['an extra member', ['pwd'], ['pwd', 'otp']],
+    ['a member too few', ['pwd', 'otp'], ['pwd']],
+    ['a repeated member standing in for another', ['pwd', 'otp'], ['pwd', 'pwd']],
+    ['something that is not an array', ['pwd'], 'pwd'],
+    ['a missing value', ['pwd'], undefined],
+  ])('refuses %s', (_, members, actual) => {
+    const [mismatch] = match({ amr: { $set: members } }, { amr: actual })
+    expect(mismatch?.path).toBe('amr')
+    expect(mismatch?.message).toContain('in any order')
+  })
+
+  test('a $set that is not an array is an authoring error', () => {
+    expect(match({ amr: { $set: 'pwd' } }, { amr: ['pwd'] })).toEqual([
+      { path: 'amr', message: 'amr: $set takes an array' },
+    ])
+  })
+})
+
+describe('jwtClaims', () => {
+  const encode = (value: unknown) =>
+    Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url')
+  const jwt = (payload: unknown) => `${encode({ alg: 'EdDSA' })}.${encode(payload)}.c2ln`
+
+  test('reads the payload of a JWT, non-ASCII and URL-safe characters included', () => {
+    const claims = { sub: 'u1', amr: ['pwd', 'otp', 'mfa'], auth_time: 1_700_000_000 }
+    expect(jwtClaims(jwt(claims))).toEqual(claims)
+    // "ÿ?>" encodes to Base64 with both `-` and `_` in its URL-safe form.
+    expect(jwtClaims(jwt({ name: 'Zoë ÿ?>ÿÿ~~' }))).toEqual({ name: 'Zoë ÿ?>ÿÿ~~' })
+  })
+
+  test.each([
+    [undefined],
+    [42],
+    ['tula_rt_opaque'],
+    ['a.b'],
+    ['a..c'],
+    ['a.!!!.c'],
+    [`a.${encode('not json')}.c`],
+    [`a.${encode([1, 2])}.c`],
+  ])('is undefined for %p, which is not a JWT with an object payload', (token) => {
+    expect(jwtClaims(token)).toBeUndefined()
+  })
 })

@@ -27,6 +27,11 @@ const MESSAGES: EmailMessage[] = [
   { type: 'no_account_sign_in' },
   signIn,
   { type: 'password_changed', by: 'self', added: false, at },
+  { type: 'mfa_changed', change: 'enabled', at },
+  { type: 'mfa_changed', change: 'disabled', at },
+  { type: 'mfa_changed', change: 'admin_reset', at },
+  { type: 'mfa_changed', change: 'backup_codes_regenerated', at },
+  { type: 'mfa_changed', change: 'backup_code_used', at, remaining: 9 },
 ]
 
 describe('render', () => {
@@ -142,6 +147,17 @@ describe('render', () => {
   test.each<[string, EmailMessage]>([
     ['new_sign_in', signIn],
     ['password_changed', { type: 'password_changed', by: 'reset', added: false, at }],
+    ['mfa_changed (enabled)', { type: 'mfa_changed', change: 'enabled', at }],
+    ['mfa_changed (disabled)', { type: 'mfa_changed', change: 'disabled', at }],
+    ['mfa_changed (admin_reset)', { type: 'mfa_changed', change: 'admin_reset', at }],
+    [
+      'mfa_changed (backup_codes_regenerated)',
+      { type: 'mfa_changed', change: 'backup_codes_regenerated', at },
+    ],
+    [
+      'mfa_changed (backup_code_used)',
+      { type: 'mfa_changed', change: 'backup_code_used', at, remaining: 3 },
+    ],
   ])(
     '%s carries no code, no link and no token, and its subject does not lead with digits',
     (_, message) => {
@@ -157,6 +173,88 @@ describe('render', () => {
       expect(render({ name: 'Acme', supportEmail: null }, message).text).not.toContain('contact')
     }
   )
+
+  type MfaChange = Extract<EmailMessage, { type: 'mfa_changed' }>['change']
+
+  test.each<[MfaChange, string, string]>([
+    [
+      'enabled',
+      'Two-step verification was turned on for your Acme account',
+      'Signing in now needs a code from your authenticator app as well. Every other device was signed out.',
+    ],
+    [
+      'disabled',
+      'Two-step verification was turned off for your Acme account',
+      'Signing in no longer asks for a code from an authenticator app.',
+    ],
+    [
+      'admin_reset',
+      'Two-step verification was reset for your Acme account',
+      'An administrator of Acme reset two-step verification for your account. Your authenticator app and backup codes no longer work, and every device was signed out.',
+    ],
+    [
+      'backup_codes_regenerated',
+      'New backup codes were created for your Acme account',
+      'The earlier backup codes no longer work.',
+    ],
+    [
+      'backup_code_used',
+      'A backup code was used to sign in to your Acme account',
+      'A backup code was used instead of your authenticator app to sign in to your Acme account. That code cannot be used again.',
+    ],
+  ])(
+    'a two-step verification notice for `%s` says what happened, when, and what to do',
+    (change, subject, lead) => {
+      const email = render(acme, { type: 'mfa_changed', change, at })
+      expect(email.subject).toBe(subject)
+      expect(email.text).toContain(lead)
+      expect(email.html).toContain(lead)
+      expect(email.text).toContain('\n\nWhen: 2026-10-03 14:05 UTC\n\n')
+      expect(email.html).toContain('<p>When: 2026-10-03 14:05 UTC</p>')
+      expect(email.text).toContain(
+        change === 'admin_reset'
+          ? 'If you expected this, sign in and turn two-step verification on again.'
+          : 'If this was you, there is nothing more to do.'
+      )
+      expect(email.text).toContain(
+        "If it wasn't you, or you did not expect it, open Acme and reset your password"
+      )
+      // No count of backup codes unless one was given.
+      expect(`${email.text}${email.html}`).not.toContain('Backup codes left')
+    }
+  )
+
+  test.each<[number]>([[9], [1], [0]])(
+    'a used backup code says that %d are left, under the time',
+    (remaining) => {
+      const email = render(acme, {
+        type: 'mfa_changed',
+        change: 'backup_code_used',
+        at,
+        remaining,
+      })
+      expect(email.text).toContain(
+        `\n\nWhen: 2026-10-03 14:05 UTC\nBackup codes left: ${remaining}\n\n`
+      )
+      expect(email.html).toContain(
+        `<p>When: 2026-10-03 14:05 UTC<br>Backup codes left: ${remaining}</p>`
+      )
+    }
+  )
+
+  test('a two-step verification notice has no field a secret or a code could travel in', () => {
+    // Whatever a caller adds to the message, only `change`, `at` and `remaining` are rendered.
+    const email = render(acme, {
+      type: 'mfa_changed',
+      change: 'enabled',
+      at,
+      secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',
+      codes: ['abcde-fghjk'],
+    } as EmailMessage)
+    const everything = `${email.subject}${email.text}${email.html}`
+    expect(everything).not.toContain('GEZDGNBVGY3TQOJQ')
+    expect(everything).not.toContain('abcde-fghjk')
+  })
 
   test('what a notice shows is escaped in the HTML, whatever it is', () => {
     const hostile = '<img src=x onerror=alert(1)>'

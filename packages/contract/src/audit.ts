@@ -16,9 +16,17 @@ export const ACTIVITY_TYPES = [
   'user.unbanned',
   'user.deleted',
   'user.password_changed',
+  // Two-step verification: turned on (a confirmed authenticator), turned off (`method` says by
+  // the user or by an admin reset), a new set of backup codes, and a backup code used to get in.
+  'user.mfa_enabled',
+  'user.mfa_disabled',
+  'user.backup_codes_regenerated',
+  'user.backup_code_used',
   'session.created',
   'session.revoked',
   'session.reuse_detected',
+  // A signed-in user proved a factor again for a session (a step-up); `methods` says which.
+  'session.stepped_up',
   'api_key.created',
   'api_key.revoked',
   'signing_key.rotated',

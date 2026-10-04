@@ -7,9 +7,10 @@ import {
 import type { Environment } from './environment'
 import { clientError, formatMessage, isTulaError, type Messages, TulaError } from './errors'
 import type { Schemas } from './generated/api.gen'
+import { isCodes, isTotpEnrolment } from './mfa'
 import { isSessionTokens, type SessionManager } from './session'
 import type { Transport } from './transport'
-import type { FlowKind, FlowStep } from './types'
+import type { FlowKind, FlowStep, SecondFactorProof, TotpEnrolment } from './types'
 
 type FlowAttempt = Schemas['FlowAttempt']
 
@@ -31,6 +32,86 @@ export interface FlowSnapshot<Kind extends FlowKind = FlowKind> {
   readonly step: FlowStep
   /** When the attempt expires (ISO 8601). Start again after that. */
   readonly expiresAt: string
+}
+
+/**
+ * What submitting a second factor answers with.
+ *
+ * @example
+ * ```ts
+ * const { step, backupCodesRemaining } = await flow.submitSecondFactor({ method: 'backup_code', code })
+ * if (backupCodesRemaining !== undefined && backupCodesRemaining < 3) {
+ *   suggestNewBackupCodes()
+ * }
+ * ```
+ */
+export interface SecondFactorResult {
+  /** The next step: `complete` when the proof was right. */
+  readonly step: FlowStep
+  /** After a backup code: how many unused ones the user has left. Absent otherwise. */
+  readonly backupCodesRemaining?: number
+}
+
+/**
+ * What confirming an authenticator inside a flow answers with. `backupCodes` are handed over
+ * here, once: the flow object and the client keep no copy, and the server cannot show them
+ * again.
+ *
+ * @example
+ * ```ts
+ * const { step, backupCodes } = await flow.confirmTotpEnrolment({ code })
+ * showOnce(backupCodes)
+ * ```
+ */
+export interface FactorEnrolmentResult {
+  /** The next step: `complete`. The client is signed in. */
+  readonly step: FlowStep
+  /** The user's ten backup codes. Shown once. */
+  readonly backupCodes: string[]
+  /**
+   * Set when the flow completed and the client is signed in, but the session could not be
+   * saved on this device (`storage.failed`). It is reported here rather than thrown because
+   * throwing would lose the backup codes.
+   */
+  readonly failure?: TulaError
+}
+
+/** The actions of a flow that can stop at `needs_factor_enrolment`: all three kinds. */
+interface FactorEnrolmentActions {
+  /**
+   * Start enrolling an authenticator app (step `needs_factor_enrolment`: the environment
+   * requires two-step verification and the user has none). Calling it again replaces the
+   * pending secret. The step does not change.
+   *
+   * @returns The secret and its `otpauth://` URI, once. The flow keeps neither.
+   * @throws TulaError `flow.invalid_step` on any other step.
+   */
+  startTotpEnrolment(): Promise<TotpEnrolment>
+  /**
+   * Confirm the authenticator with the 6-digit code it shows now. Completes the flow and signs
+   * the client in.
+   *
+   * @param input - The code.
+   * @returns The `complete` step and the user's backup codes, once.
+   * @throws TulaError `mfa.invalid_code` for a wrong code, `mfa.enrolment_expired` when nothing
+   *   was started or it was started more than ten minutes ago, `rate_limited` after repeated
+   *   wrong codes.
+   */
+  confirmTotpEnrolment(input: { code: string }): Promise<FactorEnrolmentResult>
+}
+
+/** The action of a flow that can stop at `needs_second_factor`: sign-in and password reset. */
+interface SecondFactorActions {
+  /**
+   * Prove a second factor (step `needs_second_factor`): the 6-digit code an authenticator app
+   * shows now, or an unused backup code (spent by this call). Completes the flow.
+   *
+   * @param input - One of the step's `options`, and its code.
+   * @returns The next step and, after a backup code, how many are left.
+   * @throws TulaError `mfa.invalid_code` for a wrong (or already used) code, and
+   *   `rate_limited` (with `retryAfterMs`) after repeated wrong codes.
+   */
+  submitSecondFactor(input: SecondFactorProof): Promise<SecondFactorResult>
 }
 
 /**
@@ -65,7 +146,7 @@ interface Flow<Kind extends FlowKind> extends FlowSnapshot<Kind> {
  * // step.status === 'complete': tula.state.status is now 'signed-in'
  * ```
  */
-export interface SignUpFlow extends Flow<'sign_up'> {
+export interface SignUpFlow extends Flow<'sign_up'>, FactorEnrolmentActions {
   /**
    * Submit the emailed 6-digit code (step `needs_email_verification`).
    *
@@ -81,8 +162,9 @@ export interface SignUpFlow extends Flow<'sign_up'> {
  * A sign-in in progress. `step` says what the server is waiting for; each action sends one
  * request and resolves with the next step. When the step is `complete` the client is signed in.
  *
- * A `needs_second_factor` step has no action yet: the API gets its second-factor route with
- * TOTP (plan step 1.8), and this flow gets `submitSecondFactor` with it.
+ * A user with two-step verification stops at `needs_second_factor` (answer it with
+ * `submitSecondFactor`); where the environment requires it and the user has none, at
+ * `needs_factor_enrolment` (`startTotpEnrolment`, then `confirmTotpEnrolment`).
  *
  * @example
  * ```ts
@@ -104,8 +186,16 @@ export interface SignUpFlow extends Flow<'sign_up'> {
  *   await flow.attemptFirstFactor({ strategy: 'email_code', code: '123456' })
  * }
  * ```
+ *
+ * @example
+ * ```ts
+ * // A user with two-step verification:
+ * if (flow.step.status === 'needs_second_factor') {
+ *   const { step } = await flow.submitSecondFactor({ method: 'totp', code: '123456' })
+ * }
+ * ```
  */
-export interface SignInFlow extends Flow<'sign_in'> {
+export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, SecondFactorActions {
   /**
    * Submit the password (step `needs_password`, or `needs_first_factor` offering `password`).
    *
@@ -194,12 +284,16 @@ export interface SignInFlow extends Flow<'sign_in'> {
  * await flow.submit({ code: '123456', password: newPassword })
  * ```
  */
-export interface PasswordResetFlow extends Flow<'password_reset'> {
+export interface PasswordResetFlow
+  extends Flow<'password_reset'>,
+    FactorEnrolmentActions,
+    SecondFactorActions {
   /**
    * Submit the emailed code and the new password (step `needs_new_password`).
    *
    * @param input - The code and the new password.
-   * @returns The next step: `complete`, or `needs_second_factor` for a user who has one.
+   * @returns The next step: `complete`, or `needs_second_factor` for a user who has one
+   *   (answer it with `submitSecondFactor`).
    * @throws TulaError `verification.*` for the code, or the first unmet password rule's code
    *   (`password.too_short`, …) with one field error per unmet rule.
    */
@@ -302,6 +396,37 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
     return new TulaError({ code, message: formatMessage(code, { messages: context.messages() }) })
   }
 
+  /**
+   * Run one action on this attempt, alone.
+   *
+   * Two things are refused here, without a request, because the client knows the answer and a
+   * request could only do harm: an action on a completed flow (`flow.invalid_step`, the code
+   * the server uses for the same thing), and a second action while one is still being sent
+   * (`flow.busy`: a double-clicked button would otherwise spend two guesses, or send two
+   * emails).
+   *
+   * @param action - Makes the call, given the attempt's id and secret, and reads its answer.
+   * @returns What the action returns.
+   * @throws TulaError `flow.invalid_step` or `flow.busy`, both with `status: 0`.
+   */
+  async function exclusive<T>(action: (binding: Binding) => Promise<T>): Promise<T> {
+    if (secret === null) {
+      throw refused('flow.invalid_step')
+    }
+    if (busy) {
+      throw refused('flow.busy')
+    }
+    busy = true
+    try {
+      // An action can complete the flow and set the session (and, in a browser, its cookie).
+      // It must not overlap a refresh of the session it replaces.
+      await context.session.idle()
+      return await action({ params: { attemptId: current.id }, attemptSecret: secret })
+    } finally {
+      busy = false
+    }
+  }
+
   return {
     snapshot: <Kind extends FlowKind>(): FlowSnapshot<Kind> => current as FlowSnapshot<Kind>,
     accept,
@@ -310,42 +435,89 @@ function createAttempt(context: FlowContext, started: FlowAttempt) {
     busy: () => busy,
     /** Whether the flow has completed. */
     finished: () => secret === null,
+    exclusive,
     /**
      * Send one call on this attempt and take the server's answer as the new step.
-     *
-     * Two things are refused here, without a request, because the client knows the answer
-     * and a request could only do harm: an action on a completed flow (`flow.invalid_step`,
-     * the code the server uses for the same thing), and a second action while one is still
-     * being sent (`flow.busy`: a double-clicked button would otherwise spend two guesses, or
-     * send two emails).
      *
      * @param send - Makes the call, given the attempt's id and secret.
      * @returns The next step.
      * @throws TulaError `flow.invalid_step` or `flow.busy`, both with `status: 0`.
      */
-    async step(send: (binding: Binding) => Promise<FlowAttempt>): Promise<FlowStep> {
-      if (secret === null) {
-        throw refused('flow.invalid_step')
-      }
-      if (busy) {
-        throw refused('flow.busy')
-      }
-      busy = true
-      try {
-        // A step can complete the flow and set the session (and, in a browser, its cookie).
-        // It must not overlap a refresh of the session it replaces.
-        await context.session.idle()
-        return await accept(
-          await send({ params: { attemptId: current.id }, attemptSecret: secret })
-        )
-      } finally {
-        busy = false
-      }
-    },
+    step: (send: (binding: Binding) => Promise<FlowAttempt>): Promise<FlowStep> =>
+      exclusive(async (bound) => accept(await send(bound))),
   }
 }
 
 type Attempt = ReturnType<typeof createAttempt>
+
+/** The in-flow enrolment operations of each kind of flow: start, then confirm. */
+const ENROLMENT = {
+  sign_up: ['startSignUpTotpEnrolment', 'confirmSignUpTotpEnrolment'],
+  sign_in: ['startSignInTotpEnrolment', 'confirmSignInTotpEnrolment'],
+  password_reset: ['startPasswordResetTotpEnrolment', 'confirmPasswordResetTotpEnrolment'],
+} as const
+
+/**
+ * The actions that enrol an authenticator inside an attempt.
+ *
+ * The secret, its URI and the backup codes pass through to the caller. Nothing here, on the
+ * attempt or on the flow object keeps them: they are shown once and cannot be fetched again.
+ */
+function enrolmentActions(
+  context: FlowContext,
+  attempt: Attempt,
+  kind: FlowKind
+): FactorEnrolmentActions {
+  const [start, confirm] = ENROLMENT[kind]
+  return {
+    startTotpEnrolment: () =>
+      attempt.exclusive(async (bound) => {
+        const enrolment: unknown = await context.transport.call(start, bound)
+        if (!isTotpEnrolment(enrolment)) {
+          throw clientError('response.invalid', context.messages())
+        }
+        return { secret: enrolment.secret, uri: enrolment.uri }
+      }),
+    confirmTotpEnrolment: ({ code }) =>
+      attempt.exclusive(async (bound) => {
+        const next = await context.transport.call(confirm, { ...bound, body: { code } })
+        const backupCodes: unknown = isRecord(next) ? next.backupCodes : undefined
+        // Checked before the attempt is accepted: an answer without the codes is not this
+        // API's, and must not sign anybody in.
+        if (!isCodes(backupCodes)) {
+          throw clientError('response.invalid', context.messages())
+        }
+        try {
+          return { step: await attempt.accept(next), backupCodes }
+        } catch (error) {
+          if (!attempt.finished() || !isTulaError(error)) {
+            throw error
+          }
+          // The flow completed and the session is in memory; only saving it failed. The codes
+          // exist nowhere else, so the failure travels with them instead of replacing them.
+          return { step: attempt.snapshot().step, backupCodes, failure: error }
+        }
+      }),
+  }
+}
+
+/** The action that proves a second factor on an attempt. */
+function secondFactorAction(
+  context: FlowContext,
+  attempt: Attempt,
+  operation: 'submitSignInSecondFactor' | 'submitPasswordResetSecondFactor'
+): SecondFactorActions['submitSecondFactor'] {
+  return ({ method, code }) =>
+    attempt.exclusive(async (bound) => {
+      const next = await context.transport.call(operation, { ...bound, body: { method, code } })
+      const remaining: unknown = isRecord(next) ? next.backupCodesRemaining : undefined
+      if (remaining !== undefined && !(Number.isInteger(remaining) && Number(remaining) >= 0)) {
+        throw clientError('response.invalid', context.messages())
+      }
+      const step = await attempt.accept(next)
+      return remaining === undefined ? { step } : { step, backupCodesRemaining: Number(remaining) }
+    })
+}
 
 /**
  * Build a flow object: live `id`, `kind`, `step` and `expiresAt` properties, `toJSON`, and the
@@ -377,6 +549,7 @@ export async function signUpFlow(context: FlowContext, started: FlowAttempt): Pr
     verifyEmail: ({ code }) =>
       attempt.step((bound) => transport.call('verifySignUpEmail', { ...bound, body: { code } })),
     resendCode: () => attempt.step((bound) => transport.call('resendSignUpCode', bound)),
+    ...enrolmentActions(context, attempt, 'sign_up'),
   })
 }
 
@@ -400,6 +573,8 @@ export async function signInFlow(context: FlowContext, started: FlowAttempt): Pr
     verifyEmail: ({ code }) =>
       attempt.step((bound) => transport.call('verifySignInEmail', { ...bound, body: { code } })),
     resendCode: () => attempt.step((bound) => transport.call('resendSignInCode', bound)),
+    submitSecondFactor: secondFactorAction(context, attempt, 'submitSignInSecondFactor'),
+    ...enrolmentActions(context, attempt, 'sign_in'),
     async prepareFirstFactor(input) {
       if (input.strategy === 'email_link' && !context.links.available()) {
         // Without somewhere to keep the binding the link could never be honoured: say so
@@ -623,6 +798,8 @@ export async function passwordResetFlow(
           transport.call('submitPasswordReset', { ...bound, body: { code, password } })
         ),
       resendCode: () => attempt.step((bound) => transport.call('resendPasswordResetCode', bound)),
+      submitSecondFactor: secondFactorAction(context, attempt, 'submitPasswordResetSecondFactor'),
+      ...enrolmentActions(context, attempt, 'password_reset'),
     }
   )
 }

@@ -6,6 +6,7 @@ import {
   attempt,
   CODE_STEP,
   completed,
+  expectFocus,
   failure,
   NEW_PASSWORD_STEP,
   ROUTE,
@@ -45,7 +46,7 @@ describe('<SignIn> draws the step the server answers with', () => {
     await toPassword(w)
     const title = await screen.findByRole('heading', { name: 'Enter your password' })
     // The new step's title takes focus, so the change is announced.
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     expect(screen.getByText(EMAIL)).toBeTruthy()
 
     w.api.on(ROUTE.signInPassword, () => completed('sign_in'))
@@ -73,13 +74,13 @@ describe('<SignIn> draws the step the server answers with', () => {
     const w = world()
     w.mount(<SignIn />)
     await screen.findByRole('heading', { name: 'Sign in' })
-    expect(document.activeElement).toBe(document.body)
+    await expectFocus(document.body)
     await w.user.click(screen.getByRole('button', { name: 'Continue' }))
     const email = screen.getByLabelText('Email address')
     expect(email.getAttribute('aria-invalid')).toBe('true')
     expect(screen.getByRole('alert').textContent).toBe('This field is required.')
     expect(email.getAttribute('aria-describedby')).toContain(screen.getByRole('alert').id)
-    expect(document.activeElement).toBe(email)
+    await expectFocus(email)
     expect(w.api.calls(ROUTE.signIn)).toHaveLength(0)
     // Typing clears the message.
     await w.user.type(email, 'm')
@@ -99,7 +100,7 @@ describe('<SignIn> draws the step the server answers with', () => {
     expect(field.getAttribute('aria-invalid')).toBe('true')
     expect(field.getAttribute('aria-describedby')).toContain(alert.id)
     expect(field.value).toBe('')
-    expect(document.activeElement).toBe(field)
+    await expectFocus(field)
   })
 
   test('a lockout shows the server’s countdown and refuses to submit until it ends', async () => {
@@ -148,7 +149,7 @@ describe('<SignIn> draws the step the server answers with', () => {
     w.mount(<SignIn />)
     await toPassword(w)
     const title = await screen.findByRole('heading', { name: 'Enter your password' })
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     const reached: string[] = []
     for (let presses = 0; presses < 5; presses++) {
       await w.user.tab()
@@ -212,14 +213,19 @@ describe('<SignIn> first factors and steps it does not know', () => {
     w.mount(<SignIn />)
     await toPassword(w, { status: 'needs_first_factor', strategies: ['passkey', 'constructor'] })
     const title = await screen.findByRole('heading', { name: 'This step is not supported' })
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     expect(screen.getByText(/not supported by this version/)).toBeTruthy()
     await w.user.click(screen.getByRole('button', { name: 'Start again' }))
     expect(await screen.findByLabelText('Email address')).toBeTruthy()
   })
 
   test.each([
-    ['needs_second_factor', { status: 'needs_second_factor', options: ['totp'] }],
+    [
+      'a second factor this version cannot ask for',
+      { status: 'needs_second_factor', options: ['passkey'] },
+    ],
+    ['a second-factor step with no options', { status: 'needs_second_factor' }],
+    ['an enrolment of a method this version cannot enrol', { status: 'needs_factor_enrolment' }],
     ['a status from a newer server', { status: 'needs_retina_scan' }],
     ['needs_new_password in a sign-in', NEW_PASSWORD_STEP],
   ] as [string, { status: string }][])(
@@ -285,7 +291,7 @@ describe('<SignIn> email verification', () => {
       expect(screen.getByRole('alert').textContent).toBe('That code is incorrect. 2 attempts left.')
     )
     expect(field.value).toBe('')
-    expect(document.activeElement).toBe(field)
+    await expectFocus(field)
 
     w.api.on(ROUTE.signInVerify, () =>
       failure(422, 'verification.invalid_code', { params: { attemptsRemaining: 1 } })
@@ -352,7 +358,7 @@ describe('<SignIn> forgotten password', () => {
     w.api.on(ROUTE.reset, () => started('password_reset', NEW_PASSWORD_STEP))
     await w.user.click(screen.getByRole('button', { name: 'Send code' }))
     const title = await screen.findByRole('heading', { name: 'Choose a new password' })
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     expect(w.api.calls(ROUTE.reset)[0]?.body).toEqual({ email: EMAIL })
 
     const password = screen.getByLabelText('New password') as HTMLInputElement
@@ -366,7 +372,7 @@ describe('<SignIn> forgotten password', () => {
       'Enter the 6-digit code.',
       'This field is required.',
     ])
-    expect(document.activeElement).toBe(screen.getByLabelText('Verification code'))
+    await expectFocus(screen.getByLabelText('Verification code'))
 
     w.api.on(ROUTE.resetSubmit, () => completed('password_reset'))
     await w.user.type(screen.getByLabelText('Verification code'), '123456')
@@ -413,7 +419,7 @@ describe('<SignIn> forgotten password', () => {
     ])
     expect(password.getAttribute('aria-invalid')).toBe('true')
     expect(code.getAttribute('aria-invalid')).toBeNull()
-    expect(document.activeElement).toBe(password)
+    await expectFocus(password)
 
     w.api.on(ROUTE.resetSubmit, () =>
       failure(422, 'verification.invalid_code', { params: { attemptsRemaining: 4 } })
@@ -421,7 +427,7 @@ describe('<SignIn> forgotten password', () => {
     await w.user.click(screen.getByRole('button', { name: 'Reset password' }))
     await waitFor(() => expect(code.getAttribute('aria-invalid')).toBe('true'))
     expect(screen.getByRole('alert').textContent).toBe('That code is incorrect.')
-    expect(document.activeElement).toBe(code)
+    await expectFocus(code)
   })
 
   test('resend, a second factor after a reset, and the way back to sign-in', async () => {
@@ -437,7 +443,7 @@ describe('<SignIn> forgotten password', () => {
     expect(await screen.findByText('A new code is on its way.')).toBeTruthy()
 
     w.api.on(ROUTE.resetSubmit, () =>
-      attempt('password_reset', { status: 'needs_second_factor', options: ['totp'] })
+      attempt('password_reset', { status: 'needs_second_factor', options: ['passkey'] })
     )
     await w.user.type(screen.getByLabelText('Verification code'), '123456')
     await w.user.type(screen.getByLabelText('New password'), PASSWORD)

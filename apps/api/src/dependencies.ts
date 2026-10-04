@@ -8,6 +8,7 @@ import type { BreachChecker } from '~/ports/breach-checker'
 import type { Clock } from '~/ports/clock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
+import type { FactorStore } from '~/ports/factor-store'
 import type { FlowAttemptStore } from '~/ports/flow-attempt-store'
 import type { HealthProbe } from '~/ports/health-probe'
 import type { IdGenerator } from '~/ports/id-generator'
@@ -56,6 +57,8 @@ export interface Deps {
   verificationTokens: VerificationTokenStore
   sessions: SessionStore
   users: UserRepository
+  /** Second factors (authenticator apps) and backup codes. */
+  factors: FactorStore
   flowAttempts: FlowAttemptStore
   /** Reads the audit log. Activity is written by the stores, with the change it records. */
   activityLog: ActivityLog

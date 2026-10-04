@@ -140,14 +140,23 @@ const BREACH_CHECK_STRENGTH: Record<PasswordPolicy['breachCheck'], number> = {
 const NOTICES = [
   'passwordChanged',
   'newSignIn',
+  'mfaChanged',
 ] as const satisfies readonly (keyof EnvironmentSettings['notifications'])[]
+
+/** How much each MFA policy asks of an account. Moving to a lower one is a weakening. */
+const MFA_POLICY_STRENGTH: Record<EnvironmentSettings['mfa']['policy'], number> = {
+  off: 0,
+  optional: 1,
+  required: 2,
+}
 
 /**
  * Whether replacing `before` with `after` makes an account easier to take over, or a takeover
  * harder to notice: the definition behind the audit entry's `weakened` flag.
  *
  * True when a security notice that was on is switched off (`notifications.passwordChanged`,
- * `notifications.newSignIn`: the owner would no longer be told), or when the new password
+ * `notifications.newSignIn`, `notifications.mfaChanged`: the owner would no longer be told),
+ * when the MFA policy moves towards `off` (`required` → `optional` → `off`), or when the new password
  * policy, compared with the old one:
  * - allows a shorter password (`minLength` is lower);
  * - checks breached passwords less strictly (`block` → `warn` → `off`);
@@ -176,7 +185,8 @@ export function weakened(before: EnvironmentSettings, after: EnvironmentSettings
     is.minCharacterClasses < was.minCharacterClasses ||
     repeats(is) > repeats(was) ||
     is.history < was.history ||
-    NOTICES.some((notice) => before.notifications[notice] && !after.notifications[notice])
+    NOTICES.some((notice) => before.notifications[notice] && !after.notifications[notice]) ||
+    MFA_POLICY_STRENGTH[after.mfa.policy] < MFA_POLICY_STRENGTH[before.mfa.policy]
   )
 }
 
@@ -365,6 +375,7 @@ export function clientConfig(settings: EnvironmentSettings): ClientConfig {
     },
     signUp: { password: settings.signUp.password },
     password: settings.password,
+    mfa: { policy: settings.mfa.policy },
   }
 }
 

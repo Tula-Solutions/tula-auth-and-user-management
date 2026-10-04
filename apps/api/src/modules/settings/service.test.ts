@@ -225,6 +225,19 @@ describe('replace', () => {
   })
 })
 
+describe('the MFA policy of an environment', () => {
+  test('is `optional` for an environment that saved nothing', async () => {
+    expect((await Settings.current(deps, tenant)).mfa).toEqual({ policy: 'optional' })
+    expect((await Settings.current(deps, tenant)).notifications.mfaChanged).toBe(true)
+  })
+
+  test('is saved and read back, per environment', async () => {
+    await replace(0, document({ mfa: { policy: 'required' } }))
+    expect((await Settings.current(deps, tenant)).mfa.policy).toBe('required')
+    expect((await Settings.current(deps, other)).mfa.policy).toBe('optional')
+  })
+})
+
 describe('changedKeys', () => {
   test('lists dotted keys, sorted, comparing lists whole', () => {
     const before = document({
@@ -298,9 +311,19 @@ describe('clientConfig', () => {
       signIn: { methods: ['password'] },
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
+      mfa: { policy: 'optional' },
     })
     expect(JSON.stringify(config)).not.toContain('https://acme.test')
   })
+
+  test.each<[EnvironmentSettings['mfa']['policy']]>([['off'], ['optional'], ['required']])(
+    'shows the MFA policy `%s`, so a profile screen knows whether to offer it',
+    (value) => {
+      expect(Settings.clientConfig(document({ mfa: { policy: value } })).mfa).toEqual({
+        policy: value,
+      })
+    }
+  )
 
   test('a method that is switched off is not listed', () => {
     const settings = document({
@@ -392,23 +415,98 @@ describe('weakened', () => {
     ['a notice that stays off', false, false, true, true],
   ])('%s', (_, passwordWas, passwordIs, signInWas, signInIs) => {
     const before = document({
-      notifications: { passwordChanged: passwordWas, newSignIn: signInWas },
+      notifications: { passwordChanged: passwordWas, newSignIn: signInWas, mfaChanged: true },
     })
-    const after = document({ notifications: { passwordChanged: passwordIs, newSignIn: signInIs } })
+    const after = document({
+      notifications: { passwordChanged: passwordIs, newSignIn: signInIs, mfaChanged: true },
+    })
     expect(Settings.weakened(before, after)).toBe(
       (passwordWas && !passwordIs) || (signInWas && !signInIs)
     )
   })
 
+  test.each<[boolean, boolean, boolean]>([
+    [true, false, true],
+    [true, true, false],
+    [false, true, false],
+    [false, false, false],
+  ])('the two-step verification notice from %p to %p → %p', (was, is, expected) => {
+    const notifications = (mfaChanged: boolean) =>
+      document({ notifications: { passwordChanged: true, newSignIn: true, mfaChanged } })
+    expect(Settings.weakened(notifications(was), notifications(is))).toBe(expected)
+  })
+
+  type MfaPolicy = EnvironmentSettings['mfa']['policy']
+
+  // Only a move towards `off` asks less of an account.
+  test.each<[MfaPolicy, MfaPolicy, boolean]>([
+    ['off', 'off', false],
+    ['off', 'optional', false],
+    ['off', 'required', false],
+    ['optional', 'off', true],
+    ['optional', 'optional', false],
+    ['optional', 'required', false],
+    ['required', 'off', true],
+    ['required', 'optional', true],
+    ['required', 'required', false],
+  ])('the MFA policy from %s to %s → %p', (was, is, expected) => {
+    expect(
+      Settings.weakened(document({ mfa: { policy: was } }), document({ mfa: { policy: is } }))
+    ).toBe(expected)
+  })
+
+  test('a stricter MFA policy does not hide a weaker password policy, nor the other way round', () => {
+    expect(
+      Settings.weakened(
+        document({ password: strict.password, mfa: { policy: 'optional' } }),
+        document({ password: policy({ minLength: 8 }).password, mfa: { policy: 'required' } })
+      )
+    ).toBe(true)
+    expect(
+      Settings.weakened(
+        document({ password: policy({ minLength: 8 }).password, mfa: { policy: 'required' } }),
+        document({ password: strict.password, mfa: { policy: 'optional' } })
+      )
+    ).toBe(true)
+  })
+
+  test('relaxing the MFA policy is flagged in the audit entry with the key, never the value', async () => {
+    await replace(0, document({ mfa: { policy: 'required' } }))
+    expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
+      revision: 1,
+      changed: ['mfa.policy'],
+    })
+    await replace(1, document({ mfa: { policy: 'off' } }))
+    expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
+      revision: 2,
+      changed: ['mfa.policy'],
+      weakened: true,
+    })
+    await replace(
+      2,
+      document({ notifications: { ...document().notifications, mfaChanged: false } })
+    )
+    expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
+      revision: 3,
+      changed: ['mfa.policy', 'notifications.mfaChanged'],
+      weakened: true,
+    })
+  })
+
   test('switching a security notice off is flagged in the audit entry, switching it on is not', async () => {
-    const off = document({ notifications: { passwordChanged: true, newSignIn: false } })
+    const off = document({
+      notifications: { passwordChanged: true, newSignIn: false, mfaChanged: true },
+    })
     await replace(0, off)
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 1,
       changed: expect.arrayContaining(['notifications.newSignIn']),
       weakened: true,
     })
-    await replace(1, { ...off, notifications: { passwordChanged: true, newSignIn: true } })
+    await replace(1, {
+      ...off,
+      notifications: { passwordChanged: true, newSignIn: true, mfaChanged: true },
+    })
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 2,
       changed: ['notifications.newSignIn'],

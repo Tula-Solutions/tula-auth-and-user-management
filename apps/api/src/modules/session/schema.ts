@@ -6,6 +6,7 @@ export {
   RevokedSessionsSchema,
   SessionListSchema,
   SessionTokensSchema,
+  StepUpRequestSchema,
 } from '@tula/contract'
 
 /** Path parameter naming one of the user's sessions. */

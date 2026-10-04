@@ -1,4 +1,5 @@
-import { type RenderResult, render } from '@testing-library/react'
+import { expect } from 'bun:test'
+import { type RenderResult, render, screen, waitFor } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { PASSWORD_POLICY_PRESETS, type PasswordPolicy } from '@tula/contract'
 import type { FlowKind, FlowStep, TulaClient } from '@tula/core'
@@ -65,6 +66,35 @@ export const ROUTE = {
   resetResend: 'POST /v1/client/password-resets/attempt_1/resend-code',
 } as const
 
+/**
+ * How many dialogs are on the page, for waiting until one has closed:
+ * `await waitFor(() => expect(openDialogs()).toBe(0))`.
+ *
+ * Never hand `expect` the element itself inside a `waitFor`. A matcher that fails formats what
+ * it received, and a happy-dom element drags its whole window along: one failed poll builds a
+ * message of over a hundred megabytes, synchronously, which takes about a second on a laptop
+ * and long enough on a CI runner that the test dies at its timeout while the page was right.
+ *
+ * @returns The number of elements with the `dialog` role.
+ */
+export function openDialogs(): number {
+  return screen.queryAllByRole('dialog').length
+}
+
+/**
+ * Wait until focus is on an element: `await expectFocus(title)`.
+ *
+ * Focus is moved by an effect, a tick after the element is on the page, so a synchronous check
+ * right after `findByRole` races it on a slow machine. The comparison is made to a boolean for
+ * the reason given at {@link openDialogs}: a failed matcher must never format an element.
+ *
+ * @param element - The element that should hold focus.
+ * @returns When it does; rejects at `waitFor`'s timeout otherwise.
+ */
+export async function expectFocus(element: Element | null): Promise<void> {
+  await waitFor(() => expect(document.activeElement === element).toBe(true))
+}
+
 /** A step as any answer after the start carries it. */
 export function attempt(kind: FlowKind, step: FlowStep | { status: string }, extra: object = {}) {
   return json(200, {
@@ -118,6 +148,8 @@ export interface WorldOptions {
   policy?: PasswordPolicy
   /** Whether a sign-up may leave the password out. */
   signUpPassword?: 'required' | 'optional'
+  /** The environment's `mfa.policy`. Left out, the config says nothing (an older server). */
+  mfaPolicy?: 'off' | 'optional' | 'required'
   /** Storage shared by the browser's tabs; without it an emailed link cannot be used. */
   linkStorage?: FakeLinkStorage
   /** The address the page was opened at, for the page an emailed link leads to. */
@@ -142,6 +174,7 @@ export function world(options: WorldOptions = {}): World {
       signIn: { methods: ['password'] },
       signUp: { password: options.signUpPassword ?? 'required' },
       password: options.policy ?? PASSWORD_POLICY_PRESETS.recommended,
+      ...(options.mfaPolicy && { mfa: { policy: options.mfaPolicy } }),
     })
   )
   api.on(ROUTE.signOut, () => new Response(null, { status: 204 }))

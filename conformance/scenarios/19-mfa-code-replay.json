@@ -1,0 +1,321 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "authenticator code replay",
+  "description": "An authenticator code is accepted once. The code that confirmed the enrolment does not also sign the user in; the next 30-second step's code does, and that code is refused when it is presented again on another attempt.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "start an authenticator enrolment",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{accessToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "secret": {
+            "$matches": "^[A-Z2-7]{32}$"
+          },
+          "uri": {
+            "$matches": "^otpauth://totp/"
+          }
+        }
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "compute the code the authenticator shows",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "enrolCode"
+      }
+    },
+    {
+      "name": "confirm it: two-step verification is on, with ten backup codes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "code": "{{enrolCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "codes": [
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "backupCode": "codes[0]"
+      }
+    },
+    {
+      "name": "start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_password"
+          }
+        }
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the password alone yields needs_second_factor and no tokens",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_second_factor",
+            "options": ["totp", "backup_code"]
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the code that confirmed the enrolment is refused: it was used",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/second-factor",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "method": "totp",
+          "code": "{{enrolCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "mfa.invalid_code"
+        }
+      }
+    },
+    {
+      "name": "let the authenticator move to its next code",
+      "wait": "30s"
+    },
+    {
+      "name": "compute the next code",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the next code completes the sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/second-factor",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "method": "totp",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "start a second sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_password"
+          }
+        }
+      },
+      "capture": {
+        "signIn2Id": "id",
+        "signIn2Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the password yields needs_second_factor again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn2Id}}/password",
+        "attempt": "{{signIn2Secret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_second_factor",
+            "options": ["totp", "backup_code"]
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the same code is refused a second time",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn2Id}}/second-factor",
+        "attempt": "{{signIn2Secret}}",
+        "body": {
+          "method": "totp",
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "mfa.invalid_code",
+          "session": "$absent"
+        }
+      }
+    }
+  ]
+}

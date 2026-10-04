@@ -23,10 +23,12 @@ import {
   SignedInNotice,
   UnsupportedScreen,
   useCompletion,
+  useEnrolmentCompletion,
   useRetryAfter,
   VerificationScreen,
 } from './flow-screens'
 import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
+import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
 import {
   Button,
   Card,
@@ -780,6 +782,7 @@ function SignInScreens(props: SignInProps) {
     ...resetFlow,
     submit: (input) => resetFlow.submit(input).then(finish),
   }
+  const confirmEnrolment = useEnrolmentCompletion(active, finish)
 
   const toSignIn = () => {
     reset.reset()
@@ -798,6 +801,38 @@ function SignInScreens(props: SignInProps) {
   const unsupported = (
     <UnsupportedScreen key={screen} focusTitle={focusTitle} onRestart={toSignIn} />
   )
+  // The two steps that can stand between a first factor (or a reset) and the session. The
+  // same screens serve a sign-in and a reset.
+  const afterFactors = (flow: typeof signInFlow | typeof resetFlow) => {
+    if (step?.status === 'needs_second_factor') {
+      const methods = drawableFactors(step.options)
+      return methods.length === 0 ? null : (
+        <SecondFactorScreen
+          key={screen}
+          methods={methods}
+          focusTitle={focusTitle}
+          isPending={flow.isPending}
+          error={flow.error}
+          submit={(proof) => flow.submitSecondFactor(proof).then(finish)}
+          onRestart={toSignIn}
+        />
+      )
+    }
+    if (step?.status === 'needs_factor_enrolment' && canEnrolTotp(step.methods)) {
+      return (
+        <FactorEnrolmentScreen
+          key={screen}
+          focusTitle={focusTitle}
+          isPending={flow.isPending}
+          error={flow.error}
+          start={flow.startTotpEnrolment}
+          confirm={confirmEnrolment}
+          onRestart={toSignIn}
+        />
+      )
+    }
+    return null
+  }
 
   if (view === 'reset-password') {
     switch (step?.status) {
@@ -824,8 +859,8 @@ function SignInScreens(props: SignInProps) {
           />
         )
       default:
-        // `needs_second_factor` after a reset, or a step a newer server added.
-        return unsupported
+        // A step a newer server added.
+        return afterFactors(resetFlow) ?? unsupported
     }
   }
 
@@ -874,8 +909,8 @@ function SignInScreens(props: SignInProps) {
         />
       )
     default:
-      // `needs_second_factor` (its screens arrive with TOTP), or a step a newer server added.
-      return unsupported
+      // A step a newer server added.
+      return afterFactors(signInFlow) ?? unsupported
   }
 }
 

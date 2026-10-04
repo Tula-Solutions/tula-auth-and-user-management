@@ -102,3 +102,13 @@ paths:
 - Browser tests live in `e2e/tests`. A new screen or state gets a scenario and an
   `expectAccessible` call in both colour schemes; no axe rule is disabled without a comment
   saying why. `e2e/server.ts` must keep refusing to start without `E2E=1`.
+- Two-step verification (ADR 0025): `needs_second_factor` and `needs_factor_enrolment` have
+  screens (`components/mfa.tsx`); an option this version does not know is left out, never
+  guessed. The setup key, its QR code and backup codes are state only while their screen is
+  open: a test asserts nothing of them is left in the DOM afterwards. Backup codes of an
+  in-flow enrolment and the step-up dialog are drawn by the provider (`components/prompts.tsx`),
+  because the component that asked may be unmounted; completion waits for "I have saved these
+  codes". Sensitive calls go through `useStepUp()`; no component decides which calls those are.
+  The QR code comes from `src/qr` (no dependency), loaded with `import('../qr')` so it stays a
+  separate chunk (a test holds both budgets), drawn dark on white with a four-module quiet
+  zone, and decoded by `jsqr` in tests.

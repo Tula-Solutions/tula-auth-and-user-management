@@ -1,0 +1,420 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "step-up",
+  "description": "A sensitive action needs a recent proof of who the user is, and for a user with two-step verification a proof that includes the second factor. A user without one steps up with their password and gets a fresh access token and no refresh token. Once the factor is on, an access token that does not say it was proven is refused with auth.step_up_required and the methods to use; the password alone does not step up, a backup code does, and the repeated action then succeeds.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "newPassword": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "a wrong password does not step up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "password",
+          "password": "{{password}}-wrong"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "without a second factor the password steps up: a fresh access token, no refresh token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "password",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "$any",
+          "accessToken": "$any",
+          "accessTokenExpiresAt": "$any",
+          "refreshToken": "$absent"
+        },
+        "claims": {
+          "accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": { "$set": ["email", "pwd"] }
+          }
+        }
+      }
+    },
+    {
+      "name": "a method the user does not have is refused, naming the one to use",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "backup_code",
+          "code": "22222-22222"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "password"
+          }
+        }
+      }
+    },
+    {
+      "name": "start an authenticator enrolment",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{accessToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "secret": {
+            "$matches": "^[A-Z2-7]{32}$"
+          },
+          "uri": {
+            "$matches": "^otpauth://totp/"
+          }
+        }
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "compute the code the authenticator shows",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "enrolCode"
+      }
+    },
+    {
+      "name": "confirm it: two-step verification is on, with ten backup codes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "code": "{{enrolCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "codes": [
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "backupCode": "codes[0]",
+        "secondCode": "codes[1]"
+      }
+    },
+    {
+      "name": "a token from before the factor was proven is refused on a sensitive action",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/backup-codes",
+        "accessToken": "{{accessToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "totp,backup_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "turning the factor off is refused the same way",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "totp,backup_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "and so is changing the password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/password",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "currentPassword": "{{password}}",
+          "newPassword": "{{newPassword}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required"
+        }
+      }
+    },
+    {
+      "name": "the password alone no longer steps up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "password",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "totp,backup_code"
+          }
+        }
+      }
+    },
+    {
+      "name": "a wrong backup code does not step up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "backup_code",
+          "code": "22222-22222"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "mfa.invalid_code"
+        }
+      }
+    },
+    {
+      "name": "a backup code steps up: a fresh access token, no refresh token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/step-up",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "method": "backup_code",
+          "code": "{{backupCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "$any",
+          "accessToken": "$any",
+          "accessTokenExpiresAt": "$any",
+          "refreshToken": "$absent"
+        },
+        "claims": {
+          "accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": { "$set": ["email", "pwd", "otp", "mfa", "backup_code"] }
+          }
+        }
+      },
+      "capture": {
+        "steppedToken": "accessToken"
+      }
+    },
+    {
+      "name": "the repeated action succeeds with the fresh token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/backup-codes",
+        "accessToken": "{{steppedToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "codes": [
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the old token is still refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/backup-codes",
+        "accessToken": "{{accessToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.step_up_required",
+          "params": {
+            "methods": "totp,backup_code"
+          }
+        }
+      }
+    }
+  ]
+}

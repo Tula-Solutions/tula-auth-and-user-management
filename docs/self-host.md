@@ -166,10 +166,10 @@ curl -s -X PUT http://localhost:3003/v1/admin/settings \
 Without `If-Match` the answer is 428 (`precondition.required`); with a revision that is no
 longer current, 412 (`precondition.failed`): read again and retry. Each change is in the audit
 log as `environment.settings_updated`, listing the keys that changed and never their values,
-with `"weakened": true` when the change made the password policy weaker or switched a security
-notice off.
+with `"weakened": true` when the change made the password policy weaker, switched a security
+notice off or moved the MFA policy towards `off`.
 
-**Security notices.** The two `notifications` switches control the emails that let a user
+**Security notices.** The `notifications` switches control the emails that let a user
 notice a takeover ([ADR 0023](adr/0023-security-notices.md)). They are sent after the change,
 in the background: a mail relay that is slow or down never fails or delays a sign-in or a
 password change, it only costs the notice, and the API logs `security notice not sent` with the
@@ -177,7 +177,37 @@ error's name and SMTP status (never the address). A user is sent at most three o
 hour. The notices contain no link and no code. "A new device" is judged from the browser and
 operating system in the `User-Agent` header, so it is a hint to the user, not a guarantee: it
 does not replace the audit log. To turn one off, send it in the settings document:
-`"notifications": { "newSignIn": false }` (the other keeps its default).
+`"notifications": { "newSignIn": false }` (the others keep their defaults). The third switch,
+`mfaChanged`, covers two-step verification being turned on, turned off or reset, new backup
+codes, and a backup code being used to sign in.
+
+**Two-step verification.** Users can protect their account with an authenticator app (TOTP)
+and ten single-use backup codes ([ADR 0025](adr/0025-mfa.md)). `"mfa": { "policy": … }` in the
+settings document says who must:
+
+| `mfa.policy` | Meaning |
+| --- | --- |
+| `optional` (default) | A user may turn it on in their profile. |
+| `required` | A user without it must set it up before a sign-in, sign-up or password reset completes, and cannot turn it off. |
+| `off` | Nobody can set it up. **Users who already have it are still asked for their code** until they turn it off or you reset them. |
+
+A user who has lost both their authenticator and their backup codes cannot get in by email:
+that would turn two factors back into one. Reset them with the secret key, which also signs
+them out everywhere and emails them:
+
+```bash
+curl -X DELETE "$TULA_URL/v1/admin/users/$USER_ID/factors" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY"
+```
+
+The authenticator secrets are encrypted with `TULA_MASTER_KEY` and the backup codes are hashed
+with a key derived from it: **changing the master key makes every user's second factor stop
+working** (reset them afterwards). Keep the servers' clocks in sync (NTP): a code is accepted
+for the current 30 seconds and the 30 on either side.
+
+Access tokens carry `auth_time` (when the user last proved a factor for the session, in epoch
+seconds) and `amr` (what they proved, e.g. `["pwd","otp","mfa"]`), so your backend can demand a
+recent or a two-factor sign-in for its own sensitive actions without calling Tula.
 
 An environment that has never saved settings is at revision 0 and uses the defaults, including
 `PASSWORD_POLICY` and `CORS_ORIGINS` from the table above. Once it saves a document, those two

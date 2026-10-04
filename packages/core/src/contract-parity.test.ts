@@ -33,6 +33,14 @@ const parity: {
   attempt: Same<Schemas['FlowAttempt'], Contract.FlowAttempt>
   errorCode: Same<Schemas['ErrorCode'], Contract.ErrorCode>
   envelope: Same<Schemas['ErrorEnvelope'], Contract.ErrorEnvelope>
+  factors: Same<Core.Factors, Contract.Factors>
+  totpEnrolment: Same<Core.TotpEnrolment, Contract.TotpEnrolment>
+  backupCodes: Same<Core.BackupCodes, Contract.BackupCodes>
+  secondFactorProof: Same<Core.SecondFactorProof, Contract.SecondFactorRequest>
+  stepUpProof: Same<Core.StepUpProof, Contract.StepUpRequest>
+  stepUpMethod: Same<Core.StepUpMethod, Contract.StepUpMethod>
+  mfaPolicy: Same<Core.MfaPolicy, Contract.MfaPolicy>
+  enrolmentMethod: Same<Core.FactorEnrolmentMethod, Contract.FactorEnrolmentMethod>
 } = {
   flowStep: true,
   flowKind: true,
@@ -47,6 +55,14 @@ const parity: {
   attempt: true,
   errorCode: true,
   envelope: true,
+  factors: true,
+  totpEnrolment: true,
+  backupCodes: true,
+  secondFactorProof: true,
+  stepUpProof: true,
+  stepUpMethod: true,
+  mfaPolicy: true,
+  enrolmentMethod: true,
 }
 
 describe('parity with @tula/contract', () => {
@@ -76,7 +92,7 @@ describe('parity with @tula/contract', () => {
     for (const route of Object.values(OPERATIONS)) {
       expect(route.path.startsWith('/v1/client/')).toBe(true)
     }
-    expect(Object.keys(OPERATIONS)).toHaveLength(22)
+    expect(Object.keys(OPERATIONS)).toHaveLength(36)
   })
 
   test('evaluatePassword is the contract’s rule engine and accepts the generated policy type', () => {

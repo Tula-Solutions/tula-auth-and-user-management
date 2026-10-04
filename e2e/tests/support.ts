@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import AxeBuilder from '@axe-core/playwright'
 import { type APIRequestContext, expect, type Page } from '@playwright/test'
 
@@ -86,6 +87,7 @@ export interface TestSettings {
     }
   }
   signUp?: { password: 'required' | 'optional' }
+  mfa?: { policy: 'off' | 'optional' | 'required' }
 }
 
 /**
@@ -110,6 +112,67 @@ export const EMAIL_METHODS: TestSettings = {
       emailLink: { enabled: true },
     },
   },
+}
+
+/** What the fixture's API takes the time to be, in milliseconds. */
+export async function serverNow(request: APIRequestContext): Promise<number> {
+  const response = await request.get(`${API_URL}/__test/now`)
+  return ((await response.json()) as { now: number }).now
+}
+
+/**
+ * Move the fixture's clock forward, e.g. past the ten minutes a sign-in counts as recent.
+ * It never moves back, and nothing in the suite depends on it standing still.
+ */
+export async function advanceClock(request: APIRequestContext, ms: number): Promise<void> {
+  const response = await request.post(`${API_URL}/__test/advance-clock`, { data: { ms } })
+  expect(response.ok()).toBe(true)
+}
+
+const BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+const TOTP_PERIOD_MS = 30_000
+
+/** The RFC 6238 code (SHA-1, 6 digits, 30 seconds) for a Base32 secret at a time step. */
+function totpAt(secret: string, step: number): string {
+  let bits = ''
+  for (const character of secret.replace(/[\s=-]/g, '').toUpperCase()) {
+    bits += BASE32.indexOf(character).toString(2).padStart(5, '0')
+  }
+  const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((byte) => Number.parseInt(byte, 2)))
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(step))
+  const digest = createHmac('sha1', key).update(counter).digest()
+  const offset = (digest.at(-1) ?? 0) & 15
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, '0')
+}
+
+// The last time step a code was made for, per secret: the API accepts a step once.
+const usedSteps = new Map<string, number>()
+
+/**
+ * What an authenticator app holding `secret` would show, as the fixture's API tells the time:
+ * the code a test types where a person would read their phone.
+ *
+ * The API accepts each 30-second step once, and the step after the current one too (clock
+ * drift). So a second code for the same secret is made for the next step, and only a third
+ * within one step has to wait for the clock.
+ *
+ * @param request - Playwright's API client.
+ * @param secret - The setup key as the page shows it (spaces are ignored).
+ */
+export async function authenticatorCode(
+  request: APIRequestContext,
+  secret: string
+): Promise<string> {
+  const key = secret.replace(/\s/g, '')
+  let current = Math.floor((await serverNow(request)) / TOTP_PERIOD_MS)
+  const step = Math.max(current, (usedSteps.get(key) ?? -1) + 1)
+  while (step > current + 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1_000))
+    current = Math.floor((await serverNow(request)) / TOTP_PERIOD_MS)
+  }
+  usedSteps.set(key, step)
+  return totpAt(key, step)
 }
 
 /** How many emails an address has received. */

@@ -43,11 +43,42 @@ function got(expected: unknown, actual: unknown): string {
 }
 
 /**
+ * `{ "$set": [...] }`: an array holding exactly these members, in any order. For values that
+ * are sets on the wire, such as a token's `amr`, where order is not part of the contract.
+ */
+function matchSet(members: unknown, actual: unknown, path: string): Mismatch[] {
+  const at = path || 'body'
+  if (!Array.isArray(members)) {
+    return [{ path, message: `${at}: $set takes an array` }]
+  }
+  const remaining = Array.isArray(actual) ? [...actual] : null
+  const matched =
+    remaining !== null &&
+    remaining.length === members.length &&
+    members.every((member) => {
+      const index = remaining.findIndex((candidate) => match(member, candidate).length === 0)
+      if (index >= 0) {
+        remaining.splice(index, 1)
+      }
+      return index >= 0
+    })
+  return matched
+    ? []
+    : [
+        {
+          path,
+          message: `expected ${at} to hold exactly the ${members.length} given members in any order, got ${show(actual)}`,
+        },
+      ]
+}
+
+/**
  * Compare a response body with a step's expected body.
  *
  * Objects are matched as subsets (extra keys in `actual` are fine); arrays must have the same
  * length and match item by item; everything else is compared literally. The matchers `"$any"`,
- * `"$absent"`, `{ "$not": value }` and `{ "$matches": "regex" }` are described on `ExpectSchema`.
+ * `"$absent"`, `{ "$not": value }`, `{ "$matches": "regex" }` and `{ "$set": [...] }` (an array
+ * with exactly these members in any order) are described on `ExpectSchema`.
  *
  * Messages never quote a long or token-shaped string, an object or an array: they are read in
  * CI logs, and response bodies hold tokens.
@@ -74,9 +105,12 @@ export function match(expected: unknown, actual: unknown, path = ''): Mismatch[]
       ? []
       : [{ path, message: `expected ${at} to be absent, got ${show(actual)}` }]
   }
-  if (isRecord(expected) && ('$not' in expected || '$matches' in expected)) {
+  if (isRecord(expected) && ('$not' in expected || '$matches' in expected || '$set' in expected)) {
     if (Object.keys(expected).length !== 1) {
       return [{ path, message: `${at}: a matcher object takes exactly one key` }]
+    }
+    if ('$set' in expected) {
+      return matchSet(expected.$set, actual, path)
     }
     if ('$not' in expected) {
       // "Not the old token" must not pass because the field vanished.
@@ -138,4 +172,33 @@ export function pick(body: unknown, path: string): unknown {
     }
   }
   return current
+}
+
+/**
+ * Read the claims of a JWT without verifying it, as a client does to learn when its token
+ * expires or how the user signed in.
+ *
+ * @param token - A compact JWT (`header.payload.signature`).
+ * @returns The payload object, or `undefined` when `token` is not a JWT with a JSON object
+ *   payload.
+ *
+ * @example
+ * ```ts
+ * jwtClaims(body.session.accessToken) // { sub: '…', amr: ['pwd', 'otp', 'mfa'], … }
+ * ```
+ */
+export function jwtClaims(token: unknown): Record<string, unknown> | undefined {
+  const parts = typeof token === 'string' ? token.split('.') : []
+  if (parts.length !== 3 || !parts[1]) {
+    return undefined
+  }
+  try {
+    const binary = atob(parts[1].replaceAll('-', '+').replaceAll('_', '/'))
+    const payload: unknown = JSON.parse(
+      new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)))
+    )
+    return isRecord(payload) ? payload : undefined
+  } catch {
+    return undefined
+  }
 }

@@ -7,6 +7,7 @@ import {
   attempt,
   CODE_STEP,
   completed,
+  expectFocus,
   type FakeLinkStorage,
   type FakeTimers,
   failure,
@@ -80,7 +81,7 @@ describe('<SignIn> with an emailed code', () => {
     await begin(w, ['email_code'])
 
     const title = await screen.findByRole('heading', { name: 'Check your email' })
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     expect(screen.getByText(`Enter the 6-digit code we sent to ${DESTINATION}.`)).toBeTruthy()
     expect(screen.getByText(EMAIL)).toBeTruthy()
     expect(w.api.calls(ROUTE.signInPrepare)[0]?.body).toEqual({ strategy: 'email_code' })
@@ -132,7 +133,7 @@ describe('<SignIn> with an emailed code', () => {
     // Choosing it asks for the email: one click.
     await w.user.click(screen.getByRole('button', { name: 'Email me a code' }))
     const title = await screen.findByRole('heading', { name: 'Check your email' })
-    await waitFor(() => expect(document.activeElement).toBe(title))
+    await expectFocus(title)
     expect(screen.getByLabelText('Verification code')).toBeTruthy()
     expect(w.api.calls(ROUTE.signInPrepare)).toHaveLength(1)
     expect(alternatives()).toEqual(['Use your password'])
@@ -153,7 +154,7 @@ describe('<SignIn> with an emailed code', () => {
     w.api.on(ROUTE.signInPrepare, () => failure(429, 'rate_limited', {}, { 'retry-after': '60' }))
     await w.user.click(await screen.findByRole('button', { name: 'Email me a code' }))
     const title = await screen.findByRole('heading', { name: 'Email me a code' })
-    await waitFor(() => expect(document.activeElement).toBe(title))
+    await expectFocus(title)
     expect((await screen.findByRole('alert')).textContent).toMatch(/Try again in (1m 0s|59s)\./)
     const button = screen.getByRole('button', { name: 'Email me a code' })
     expect(button.getAttribute('aria-disabled')).toBe('true')
@@ -174,7 +175,7 @@ describe('<SignIn> with an emailed code', () => {
     expect(error.getAttribute('role')).toBe('alert')
     expect(field.getAttribute('aria-invalid')).toBe('true')
     await waitFor(() => expect(field.value).toBe(''))
-    expect(document.activeElement).toBe(field)
+    await expectFocus(field)
   })
 
   test('an incomplete code is caught before anything is sent', async () => {
@@ -252,7 +253,7 @@ describe('<SignIn> with an emailed link', () => {
 
     const title = await screen.findByRole('heading', { name: 'Check your email' })
     // "About to send" became "sent": the new title takes focus so the change is announced.
-    await waitFor(() => expect(document.activeElement).toBe(title))
+    await expectFocus(title)
     expect(w.api.calls(ROUTE.signInPrepare)[0]?.body).toEqual({
       strategy: 'email_link',
       redirectUrl: LINK_URL,
@@ -539,7 +540,7 @@ describe('<EmailLinkCallback>', () => {
       timers.fire()
     })
     const title = await screen.findByRole('heading', { name: 'Continue in your other tab' })
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     expect(screen.getByText(/Go back to the tab where you started signing in/)).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Sign in' }).getAttribute('href')).toBe('/sign-in')
 
@@ -555,7 +556,7 @@ describe('<EmailLinkCallback>', () => {
     w.api.on(ROUTE.signInLink, () => failure(409, 'verification.different_browser'))
     w.mount(<EmailLinkCallback signInUrl='/sign-in' />)
     const title = await screen.findByRole('heading', { name: 'Open this link where you started' })
-    expect(document.activeElement).toBe(title)
+    await expectFocus(title)
     expect(
       screen.getByText(/only works in the browser where you asked for it/).textContent
     ).toContain('enter the 6-digit code from the same email there')

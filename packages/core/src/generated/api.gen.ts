@@ -3,6 +3,9 @@
 
 /** Schemas of the client API (`/v1/client/*`), by their name in the OpenAPI document. */
 export interface Schemas {
+  BackupCodes: {
+    codes: string[]
+  }
   ChangePasswordRequest: {
     currentPassword: string
     newPassword: string
@@ -19,6 +22,9 @@ export interface Schemas {
       password: Schemas['SignUpPasswordMode']
     }
     password: Schemas['PasswordPolicy']
+    mfa?: {
+      policy: Schemas['MfaPolicy']
+    }
   }
   EmailLinkRequest: {
     token: string
@@ -29,7 +35,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -39,6 +45,16 @@ export interface Schemas {
   }
   ErrorParams: {
     [key: string]: string | number | boolean
+  }
+  FactorEnrolmentMethod: 'totp'
+  Factors: {
+    totp: {
+      enabled: boolean
+      confirmedAt: string | null
+    }
+    backupCodes: {
+      remaining: number
+    }
   }
   FieldError: {
     field: string
@@ -65,6 +81,8 @@ export interface Schemas {
     attemptSecret?: string
     linkBinding?: string
     session?: Schemas['SessionTokens']
+    backupCodes?: string[]
+    backupCodesRemaining?: number
   }
   FlowKind: 'sign_in' | 'sign_up' | 'password_reset'
   FlowStep: {
@@ -90,10 +108,14 @@ export interface Schemas {
     status: 'needs_second_factor'
     options: Schemas['SecondFactorMethod'][]
   } | {
+    status: 'needs_factor_enrolment'
+    methods: Schemas['FactorEnrolmentMethod'][]
+  } | {
     status: 'complete'
     userId: string
     sessionId: string
   }
+  MfaPolicy: 'off' | 'optional' | 'required'
   PasswordAttemptRequest: {
     password: string
   }
@@ -129,6 +151,13 @@ export interface Schemas {
     revoked: number
   }
   SecondFactorMethod: 'totp' | 'passkey' | 'backup_code' | 'sms_code'
+  SecondFactorRequest: {
+    method: 'totp'
+    code: string
+  } | {
+    method: 'backup_code'
+    code: string
+  }
   Session: {
     id: string
     client: Schemas['SessionClient']
@@ -159,6 +188,23 @@ export interface Schemas {
     firstName?: string
     lastName?: string
   }
+  StepUpRequest: {
+    method: 'password'
+    password: string
+  } | {
+    method: 'totp'
+    code: string
+  } | {
+    method: 'backup_code'
+    code: string
+  }
+  TotpConfirmRequest: {
+    code: string
+  }
+  TotpEnrolment: {
+    secret: string
+    uri: string
+  }
   User: {
     id: string
     email: string
@@ -180,10 +226,22 @@ export interface Operations {
   attemptSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorAttemptRequest']; response: Schemas['FlowAttempt'] }
   /** Change my password (`POST /v1/client/me/password`). */
   changeMyPassword: { params: Record<string, never>; body: Schemas['ChangePasswordRequest']; response: undefined }
+  /** Confirm the authenticator app and complete the attempt (`POST /v1/client/password-resets/{attemptId}/factor-enrolment/totp/confirm`). */
+  confirmPasswordResetTotpEnrolment: { params: { attemptId: string }; body: Schemas['TotpConfirmRequest']; response: Schemas['FlowAttempt'] }
+  /** Confirm the authenticator app and complete the attempt (`POST /v1/client/sign-ins/{attemptId}/factor-enrolment/totp/confirm`). */
+  confirmSignInTotpEnrolment: { params: { attemptId: string }; body: Schemas['TotpConfirmRequest']; response: Schemas['FlowAttempt'] }
+  /** Confirm the authenticator app and complete the attempt (`POST /v1/client/sign-ups/{attemptId}/factor-enrolment/totp/confirm`). */
+  confirmSignUpTotpEnrolment: { params: { attemptId: string }; body: Schemas['TotpConfirmRequest']; response: Schemas['FlowAttempt'] }
+  /** Confirm the authenticator app (`POST /v1/client/me/factors/totp/confirm`). */
+  confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
+  /** Turn two-step verification off (`DELETE /v1/client/me/factors/totp`). */
+  disableTotp: { params: Record<string, never>; body: undefined; response: undefined }
   /** Client configuration (`GET /v1/client/config`). */
   getClientConfig: { params: Record<string, never>; body: undefined; response: Schemas['ClientConfig'] }
   /** Get the signed-in user (`GET /v1/client/me`). */
   getMe: { params: Record<string, never>; body: undefined; response: Schemas['User'] }
+  /** Get my second factors (`GET /v1/client/me/factors`). */
+  getMyFactors: { params: Record<string, never>; body: undefined; response: Schemas['Factors'] }
   /** Password policy (`GET /v1/client/password-policy`). */
   getPasswordPolicy: { params: Record<string, never>; body: undefined; response: Schemas['PasswordPolicy'] }
   /** List my sessions (`GET /v1/client/sessions`). */
@@ -192,6 +250,8 @@ export interface Operations {
   prepareSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
   /** Refresh a session (`POST /v1/client/sessions/refresh`). */
   refreshSession: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: Schemas['SessionTokens'] }
+  /** Make new backup codes (`POST /v1/client/me/factors/backup-codes`). */
+  regenerateBackupCodes: { params: Record<string, never>; body: undefined; response: Schemas['BackupCodes'] }
   /** Resend the email code (`POST /v1/client/password-resets/{attemptId}/resend-code`). */
   resendPasswordResetCode: { params: { attemptId: string }; body: undefined; response: Schemas['FlowAttempt'] }
   /** Resend the email code (`POST /v1/client/sign-ins/{attemptId}/resend-code`). */
@@ -206,14 +266,28 @@ export interface Operations {
   signOut: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: undefined }
   /** Start a password reset (`POST /v1/client/password-resets`). */
   startPasswordReset: { params: Record<string, never>; body: Schemas['PasswordResetStartRequest']; response: Schemas['FlowAttempt'] }
+  /** Start enrolling an authenticator app inside an attempt (`POST /v1/client/password-resets/{attemptId}/factor-enrolment/totp`). */
+  startPasswordResetTotpEnrolment: { params: { attemptId: string }; body: undefined; response: Schemas['TotpEnrolment'] }
   /** Start a sign-in (`POST /v1/client/sign-ins`). */
   startSignIn: { params: Record<string, never>; body: Schemas['SignInStartRequest']; response: Schemas['FlowAttempt'] }
+  /** Start enrolling an authenticator app inside an attempt (`POST /v1/client/sign-ins/{attemptId}/factor-enrolment/totp`). */
+  startSignInTotpEnrolment: { params: { attemptId: string }; body: undefined; response: Schemas['TotpEnrolment'] }
   /** Start a sign-up (`POST /v1/client/sign-ups`). */
   startSignUp: { params: Record<string, never>; body: Schemas['SignUpRequest']; response: Schemas['FlowAttempt'] }
+  /** Start enrolling an authenticator app inside an attempt (`POST /v1/client/sign-ups/{attemptId}/factor-enrolment/totp`). */
+  startSignUpTotpEnrolment: { params: { attemptId: string }; body: undefined; response: Schemas['TotpEnrolment'] }
+  /** Start enrolling an authenticator app (`POST /v1/client/me/factors/totp`). */
+  startTotpEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['TotpEnrolment'] }
+  /** Prove it is still me (`POST /v1/client/sessions/step-up`). */
+  stepUpSession: { params: Record<string, never>; body: Schemas['StepUpRequest']; response: Schemas['SessionTokens'] }
   /** Submit the emailed code and a new password (`POST /v1/client/password-resets/{attemptId}/password`). */
   submitPasswordReset: { params: { attemptId: string }; body: Schemas['PasswordResetRequest']; response: Schemas['FlowAttempt'] }
+  /** Submit a second factor (`POST /v1/client/password-resets/{attemptId}/second-factor`). */
+  submitPasswordResetSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorRequest']; response: Schemas['FlowAttempt'] }
   /** Submit the password (`POST /v1/client/sign-ins/{attemptId}/password`). */
   submitSignInPassword: { params: { attemptId: string }; body: Schemas['PasswordAttemptRequest']; response: Schemas['FlowAttempt'] }
+  /** Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). */
+  submitSignInSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorRequest']; response: Schemas['FlowAttempt'] }
   /** Submit the emailed code (`POST /v1/client/sign-ins/{attemptId}/verify-email`). */
   verifySignInEmail: { params: { attemptId: string }; body: Schemas['VerifyEmailRequest']; response: Schemas['FlowAttempt'] }
   /** Accept an emailed sign-in link (`POST /v1/client/sign-ins/link`). */
@@ -236,12 +310,19 @@ export interface OperationRoute {
 export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } = {
   attemptSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/attempt', session: false },
   changeMyPassword: { method: 'POST', path: '/v1/client/me/password', session: true },
+  confirmPasswordResetTotpEnrolment: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/factor-enrolment/totp/confirm', session: false },
+  confirmSignInTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/factor-enrolment/totp/confirm', session: false },
+  confirmSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp/confirm', session: false },
+  confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
+  disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
   getClientConfig: { method: 'GET', path: '/v1/client/config', session: false },
   getMe: { method: 'GET', path: '/v1/client/me', session: true },
+  getMyFactors: { method: 'GET', path: '/v1/client/me/factors', session: true },
   getPasswordPolicy: { method: 'GET', path: '/v1/client/password-policy', session: false },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
+  regenerateBackupCodes: { method: 'POST', path: '/v1/client/me/factors/backup-codes', session: true },
   resendPasswordResetCode: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/resend-code', session: false },
   resendSignInCode: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/resend-code', session: false },
   resendSignUpCode: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/resend-code', session: false },
@@ -249,10 +330,17 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
   signOut: { method: 'POST', path: '/v1/client/sessions/sign-out', session: false },
   startPasswordReset: { method: 'POST', path: '/v1/client/password-resets', session: false },
+  startPasswordResetTotpEnrolment: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/factor-enrolment/totp', session: false },
   startSignIn: { method: 'POST', path: '/v1/client/sign-ins', session: false },
+  startSignInTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/factor-enrolment/totp', session: false },
   startSignUp: { method: 'POST', path: '/v1/client/sign-ups', session: false },
+  startSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp', session: false },
+  startTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp', session: true },
+  stepUpSession: { method: 'POST', path: '/v1/client/sessions/step-up', session: true },
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },
+  submitPasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor', session: false },
   submitSignInPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/password', session: false },
+  submitSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor', session: false },
   verifySignInEmail: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/verify-email', session: false },
   verifySignInLink: { method: 'POST', path: '/v1/client/sign-ins/link', session: false },
   verifySignUpEmail: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/verify-email', session: false },

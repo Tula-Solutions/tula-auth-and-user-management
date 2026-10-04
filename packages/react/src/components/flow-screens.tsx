@@ -1,8 +1,9 @@
-import type { FlowStep, TulaError } from '@tula/core'
+import type { FactorEnrolmentResult, FlowStep, TulaError } from '@tula/core'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useTulaContext } from '../context'
 import { useAuthState } from '../hooks/use-auth-state'
 import { useCountdown } from '../hooks/use-countdown'
+import type { FactorEnrolmentHookActions } from '../hooks/use-flow'
 import { formatText } from '../localization'
 import { go } from '../navigation'
 import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
@@ -108,6 +109,38 @@ export function useCompletion(
   return { signedIn: step?.status === 'complete' || alreadySignedIn, finish }
 }
 
+/**
+ * Complete a flow that ends by enrolling an authenticator: confirm, show the backup codes, and
+ * only then tell the app the flow has completed.
+ *
+ * Confirming signs the client in, and an app usually takes its sign-in page away at that
+ * moment. So the codes are shown by the provider's dialog, which outlives the page, and
+ * `finish` (the app's `onComplete`, or the navigation) waits for the user to say they saved
+ * them.
+ *
+ * @param flow - The flow hook's enrolment action.
+ * @param finish - From {@link useCompletion}.
+ * @returns The `confirm` an enrolment screen calls.
+ */
+export function useEnrolmentCompletion(
+  flow: Pick<FactorEnrolmentHookActions, 'confirmTotpEnrolment'>,
+  finish: (next: FlowStep | null) => FlowStep | null
+): (code: string) => Promise<FactorEnrolmentResult | null> {
+  const { prompts } = useTulaContext()
+  const { confirmTotpEnrolment } = flow
+  return useCallback(
+    async (code) => {
+      const result = await confirmTotpEnrolment({ code })
+      if (result) {
+        await prompts.backupCodes(result.backupCodes)
+        finish(result.step)
+      }
+      return result
+    },
+    [confirmTotpEnrolment, prompts, finish]
+  )
+}
+
 /** Shown in place of a form once the user is signed in (while the app navigates away). */
 export function SignedInNotice(props: { focusTitle: boolean }) {
   const { t } = useUi()
@@ -119,8 +152,9 @@ export function SignedInNotice(props: { focusTitle: boolean }) {
 }
 
 /**
- * A step this version cannot draw: a second factor (until its screens ship), a first-factor
- * list with nothing this version implements, or a status a newer server invented. It says so
+ * A step this version cannot draw: a second factor it does not know (a passkey, until its
+ * screen ships), a first-factor list with nothing this version implements, or a status a
+ * newer server invented. It says so
  * and offers to start again; it never renders a blank card and never guesses at an action.
  */
 export function UnsupportedScreen(props: { focusTitle: boolean; onRestart(): void }) {

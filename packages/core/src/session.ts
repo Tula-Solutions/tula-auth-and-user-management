@@ -179,6 +179,21 @@ export interface SessionManager {
   /** @param user - The freshly fetched user, to show in the state. */
   setUser(user: User): void
   /**
+   * Proves a factor again for the current session and installs the access token the API
+   * answers with. The refresh token (or cookie) is left as it is.
+   *
+   * @param proof - The method and its proof.
+   * @throws TulaError whatever the API refuses with, `response.invalid` for an answer that is
+   *   not session tokens, `auth.unauthenticated` when the session ended meanwhile.
+   */
+  stepUp(proof: Schemas['StepUpRequest']): Promise<void>
+  /**
+   * Stops handing out the access token in memory without a refresh first: the next
+   * `getToken()` asks for a new one (and falls back to this one while it is valid if that
+   * cannot be made). For after a change on the server that only a new token reflects.
+   */
+  expire(): void
+  /**
    * Calls an operation that needs the user's access token, refreshing once if the API refuses
    * the token.
    */
@@ -291,6 +306,9 @@ function ignore(): void {
  *   flight: the only automatic retry in the client, safe because of the server's grace period.
  * - Whatever finishes after a sign-out or a new sign-in is discarded: every change of session
  *   bumps a generation, and a result from an older generation is never installed.
+ * - A step-up installs its access token only when nothing else touched the session while it
+ *   was in flight and no refresh is running. Otherwise the token is dropped and one refresh,
+ *   made after the proof was accepted, fetches a token that reflects it.
  *
  * @param options - Transport, storage, environment and names.
  * @returns The manager.
@@ -479,6 +497,12 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       // message is believed: the session it names may be the one being revoked (a client that
       // never loaded does not know which session its cookie holds).
       if (signingOut > 0 || endedSessions.has(data.sessionId)) {
+        return
+      }
+      // Tabs share one device clock, so of two tokens for one session the one that expires
+      // later was received later. An older one, announced late, must not replace it: it could
+      // undo a step-up, whose token says more than a refresh issued before the proof.
+      if (tokens?.sessionId === data.sessionId && data.expiresAt < tokens.expiresAt) {
         return
       }
       generation += 1
@@ -763,16 +787,22 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     })
   }
 
-  async function authorized<Id extends OperationId>(
+  /**
+   * Send an operation with the user's access token, refreshing once if the API refuses the
+   * token. `sent` is the session generation the answered request was sent under, for a caller
+   * that installs something from the answer.
+   */
+  async function send<Id extends OperationId>(
     id: Id,
     input: CallInput<Id>
-  ): Promise<Operations[Id]['response']> {
+  ): Promise<{ answer: Operations[Id]['response']; sent: number }> {
     const accessToken = await getToken()
     if (!accessToken) {
       throw unauthenticated()
     }
+    let sent = generation
     try {
-      return await transport.call(id, { ...input, accessToken })
+      return { answer: await transport.call(id, { ...input, accessToken }), sent }
     } catch (error) {
       if (!tokenWasRefused(error)) {
         throw error
@@ -789,7 +819,54 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       if (!next) {
         throw error
       }
-      return transport.call(id, { ...input, accessToken: next })
+      sent = generation
+      return { answer: await transport.call(id, { ...input, accessToken: next }), sent }
+    }
+  }
+
+  async function authorized<Id extends OperationId>(
+    id: Id,
+    input: CallInput<Id>
+  ): Promise<Operations[Id]['response']> {
+    return (await send(id, input)).answer
+  }
+
+  async function stepUp(proof: Schemas['StepUpRequest']): Promise<void> {
+    openChannel()
+    // A refresh already in flight would otherwise hand the proof a token about to be replaced.
+    await refreshing?.catch(ignore)
+    const { answer, sent } = await send('stepUpSession', { body: proof })
+    if (!isSessionTokens(answer)) {
+      throw clientError('response.invalid', options.messages())
+    }
+    // Signed out, or signed in as someone else, while the proof was in flight: the answer is
+    // about a session this client no longer has. A step-up never changes whose session it is.
+    if (state.status === 'signed-out' || tokens?.sessionId !== answer.sessionId) {
+      throw unauthenticated()
+    }
+    if (generation === sent && !refreshing) {
+      // Only the access token: a step-up does not rotate the refresh token, and one that a
+      // misbehaving server put in the answer must not replace the real one.
+      await settle(
+        commit({
+          sessionId: answer.sessionId,
+          accessToken: answer.accessToken,
+          accessTokenExpiresAt: answer.accessTokenExpiresAt,
+        })
+      )
+      return
+    }
+    // The session's token was replaced while the proof was in flight (a refresh here or in
+    // another tab), or a refresh is running now. That token may have been issued before the
+    // proof was accepted, and installing this one over it would be installing a result for an
+    // older generation (and, with a refresh in flight, would make that refresh discard the
+    // refresh token it is about to receive). So neither is trusted: one refresh, started now,
+    // is certainly issued after the proof and carries it.
+    await refreshing?.catch(ignore)
+    // Asked again after the wait: a client that was signed out meanwhile must not refresh (a
+    // browser would send its cookie, and could sign itself back in).
+    if (tokens?.sessionId !== answer.sessionId || !(await refresh(true))) {
+      throw unauthenticated()
     }
   }
 
@@ -816,5 +893,11 @@ export function createSessionManager(options: SessionOptions): SessionManager {
       }
     },
     authorized,
+    stepUp,
+    expire() {
+      if (tokens) {
+        tokens = { ...tokens, refreshAt: 0 }
+      }
+    },
   }
 }

@@ -1,11 +1,15 @@
 import type {
   EmailVerificationStrategy,
   EnvironmentSettings,
+  FactorEnrolmentMethod,
   FirstFactorStrategy,
   SecondFactorMethod,
   SignInMethod,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
+import type { Actor } from '~/lib/actor'
+import * as Mfa from '~/modules/mfa/service'
+import * as Settings from '~/modules/settings/service'
 
 /** One way to prove who you are first, and the setting that switches it on. */
 interface FirstFactor {
@@ -63,20 +67,43 @@ export function firstFactors(settings: EnvironmentSettings): FirstFactorStrategy
  * and new password are accepted. A non-empty answer moves the attempt to `needs_second_factor`
  * instead of `complete`: no session and no tokens until one of them is proven.
  *
- * No second factor exists yet, so the answer is always empty. Step 1.8 (TOTP and backup codes)
- * fills this in from the user's enrolled factors and the environment's MFA policy.
+ * A user with a **confirmed** authenticator is asked for `totp`, or `backup_code` while an
+ * unused one is left. A pending enrolment counts for nothing. The environment's MFA policy is
+ * not consulted: a factor a user has is asked for even where the policy is `off` (ADR 0025).
  *
- * @param _deps - Stores to read the user's enrolled factors from (unused until 1.8).
- * @param _tenant - The environment (unused until 1.8).
- * @param _userId - The user whose first factor was just accepted (unused until 1.8).
+ * @param deps - Factor store.
+ * @param tenant - The environment.
+ * @param userId - The user whose first factor was just accepted.
  * @returns The methods the user may choose from; empty when no second factor is required.
  */
 export async function requiredFor(
-  _deps: Pick<Deps, 'users'>,
-  _tenant: Pick<Tenant, 'environmentId'>,
-  _userId: string
+  deps: Pick<Deps, 'factors'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  userId: string
 ): Promise<SecondFactorMethod[]> {
-  return []
+  return Mfa.secondFactors(deps, tenant, userId)
+}
+
+/** The second factors a user can enrol inside an attempt, where the environment requires one. */
+export const ENROLMENT_METHODS: readonly FactorEnrolmentMethod[] = ['totp']
+
+/**
+ * Whether a user who has passed everything else must enrol a second factor before their
+ * attempt completes: the environment's policy is `required` and they have none.
+ *
+ * @param deps - Settings store and config.
+ * @param tenant - The environment.
+ * @param secondFactors - What {@link requiredFor} answered for the user.
+ * @returns `true` when the attempt must stop at `needs_factor_enrolment`.
+ */
+export async function enrolmentRequired(
+  deps: Pick<Deps, 'environmentSettings' | 'config'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  secondFactors: readonly SecondFactorMethod[]
+): Promise<boolean> {
+  return (
+    secondFactors.length === 0 && (await Settings.current(deps, tenant)).mfa.policy === 'required'
+  )
 }
 
 /** What a client submits to prove a second factor. */
@@ -86,6 +113,14 @@ export interface SecondFactorProof {
   response: unknown
 }
 
+/** A second factor that was proven. */
+export interface SecondFactorProven {
+  /** What it adds to the session's `amr`, e.g. `['otp']`. */
+  methods: string[]
+  /** For a backup code: how many unused ones the user has left. */
+  backupCodesRemaining?: number
+}
+
 /**
  * Checks one kind of second factor for a user.
  *
@@ -93,20 +128,30 @@ export interface SecondFactorProof {
  * @param tenant - The environment.
  * @param userId - The user the attempt belongs to.
  * @param response - What the client submitted.
- * @returns `true` only when the response proves the factor. Never throws for a wrong response.
+ * @param actor - The user with the request's origin, for a verifier that records something.
+ * @returns What was proven, `true` for a proof with nothing to add, or `false` when the
+ *   response does not prove the factor. Never throws for a wrong response.
  */
 export type SecondFactorVerifier = (
   deps: Deps,
   tenant: Tenant,
   userId: string,
-  response: unknown
-) => Promise<boolean>
+  response: unknown,
+  actor: Actor
+) => Promise<boolean | SecondFactorProven>
 
 /**
- * The verifier of each second-factor method. Empty today: step 1.8 registers `totp` and
- * `backup_code` here, 1.10 `passkey`. A method with no verifier can never be proven.
+ * The verifier of each second-factor method: `totp` and `backup_code` (ADR 0025). Step 1.10
+ * registers `passkey` here. A method with no verifier can never be proven.
  */
-export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondFactorVerifier>> = {}
+export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondFactorVerifier>> = {
+  totp: async (deps, tenant, userId, response) =>
+    (await Mfa.verifyTotp(deps, tenant, userId, response)) && { methods: ['otp'] },
+  backup_code: async (deps, tenant, userId, response, actor) => {
+    const remaining = await Mfa.verifyBackupCode(deps, tenant, userId, response, actor)
+    return remaining !== null && { methods: ['backup_code'], backupCodesRemaining: remaining }
+  },
+}
 
 /**
  * Check a second-factor proof with the verifier registered for its method.
@@ -118,14 +163,25 @@ export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondF
  * @param tenant - The environment.
  * @param userId - The user the attempt belongs to.
  * @param proof - The method and what the client submitted for it.
- * @returns Whether the proof is good. `false` for a method with no verifier.
+ * @param actor - The user with the request's origin.
+ * @returns What was proven, or `null` for a wrong proof or a method with no verifier.
  */
 export async function verify(
   deps: Deps,
   tenant: Tenant,
   userId: string,
-  proof: SecondFactorProof
-): Promise<boolean> {
-  const verifier = SECOND_FACTOR_VERIFIERS[proof.method]
-  return verifier ? verifier(deps, tenant, userId, proof.response) : false
+  proof: SecondFactorProof,
+  actor: Actor
+): Promise<SecondFactorProven | null> {
+  const outcome = await SECOND_FACTOR_VERIFIERS[proof.method]?.(
+    deps,
+    tenant,
+    userId,
+    proof.response,
+    actor
+  )
+  if (!outcome) {
+    return null
+  }
+  return outcome === true ? { methods: [] } : outcome
 }

@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import {
+  advanceClock,
+  authenticatorCode,
   EMAIL_METHODS,
   latestCode,
   latestLink,
@@ -170,4 +172,57 @@ test('sign-up where the password is optional', async ({ page, request }) => {
   await page.getByLabel('First name').fill('Ines')
   await page.getByLabel('Email address').fill('ines@northline.app')
   await shot(page, 'sign-up-optional-password')
+})
+
+test('two-step verification: enrolment, backup codes, the second factor and the step-up dialog', async ({
+  page,
+  request,
+}) => {
+  // The accounts live in the fixture's memory and are gone when it stops: the setup key and
+  // the backup codes in these pictures never worked anywhere else and work nowhere now.
+  await page.setViewportSize({ width: 1000, height: 900 })
+  const email = uniqueEmail('maya.mfa')
+  await signUp(page, request, { email, firstName: 'Maya' })
+  await page.goto('/account')
+  const section = page.locator('section', {
+    has: page.getByRole('heading', { name: 'Two-step verification' }),
+  })
+  await section.last().getByRole('button', { name: 'Turn on' }).click()
+  const key = page.getByRole('group', { name: 'Setup key' })
+  await expect(key).toBeVisible()
+  await expect(page.getByRole('img', { name: /QR code/ })).toBeVisible()
+  await page.getByRole('img', { name: /QR code/ }).scrollIntoViewIfNeeded()
+  await page.mouse.wheel(0, 200)
+  await shot(page, 'two-step-enrol')
+
+  const secret = (await key.locator('code').innerText()).replace(/\s/g, '')
+  await page.getByLabel('Authentication code').fill(await authenticatorCode(request, secret))
+  await section.last().getByRole('button', { name: 'Turn on' }).click()
+  await expect(page.getByRole('list', { name: 'Backup codes' })).toBeVisible()
+  await shot(page, 'backup-codes')
+  await page.getByLabel('I have saved these codes').check()
+  await page.getByRole('button', { name: 'Done' }).click()
+  await expect(section.last().getByText(/^On since/)).toBeVisible()
+
+  // An old sign-in: the next sensitive action asks for the second factor again.
+  await advanceClock(request, 11 * 60_000)
+  await page.reload()
+  await section.last().getByRole('button', { name: 'New backup codes' }).click()
+  await expect(page.getByRole('dialog', { name: 'Confirm it is you' })).toBeVisible()
+  await shot(page, 'step-up')
+  await page.keyboard.press('Escape')
+
+  await signOut(page)
+  await page.setViewportSize(DESKTOP)
+  await page.getByLabel('Email address').fill(email)
+  await page.getByRole('button', { name: 'Continue' }).click()
+  await page.getByLabel('Password', { exact: true }).fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page.getByRole('heading', { name: 'Two-step verification' })).toBeVisible()
+  await shot(page, 'second-factor')
+
+  await page.setViewportSize(PHONE)
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await page.getByRole('button', { name: 'Use a backup code' }).click()
+  await shot(page, 'mobile-second-factor-dark')
 })

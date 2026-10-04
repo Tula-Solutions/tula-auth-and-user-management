@@ -1,7 +1,12 @@
-import type { FlowStep, PasswordResetFlow } from '@tula/core'
-import { useCallback } from 'react'
+import type { FlowStep, PasswordResetFlow, SecondFactorProof } from '@tula/core'
+import { useCallback, useMemo } from 'react'
 import { useTulaContext } from '../context'
-import { type FlowState, useFlowController } from './use-flow'
+import {
+  enrolmentActions,
+  type FactorEnrolmentHookActions,
+  type FlowState,
+  useFlowController,
+} from './use-flow'
 
 /**
  * What {@link useResetPassword} returns: the flow's state and the actions of a password
@@ -13,7 +18,7 @@ import { type FlowState, useFlowController } from './use-flow'
  * const reset: UseResetPasswordResult = useResetPassword()
  * ```
  */
-export interface UseResetPasswordResult extends FlowState {
+export interface UseResetPasswordResult extends FlowState, FactorEnrolmentHookActions {
   /**
    * Start a reset: the server emails a 6-digit code. The answer is the same whether or not
    * the address has an account.
@@ -30,6 +35,13 @@ export interface UseResetPasswordResult extends FlowState {
   submit(input: { code: string; password: string }): Promise<FlowStep | null>
   /** Email a fresh code. The server allows one a minute (`rate_limited` with `retryAfterMs`). */
   resendCode(): Promise<FlowStep | null>
+  /**
+   * Prove a second factor (step `needs_second_factor`): the reset stored the new password,
+   * and the user's authenticator code or a backup code signs them in.
+   *
+   * @param input - The method and its code.
+   */
+  submitSecondFactor(input: SecondFactorProof): Promise<FlowStep | null>
 }
 
 /**
@@ -62,5 +74,11 @@ export function useResetPassword(): UseResetPasswordResult {
     [act]
   )
   const resendCode = useCallback(() => act((flow) => flow.resendCode()), [act])
-  return { ...state, start, submit, resendCode }
+  const submitSecondFactor = useCallback(
+    (input: SecondFactorProof) =>
+      act((flow) => flow.submitSecondFactor(input).then((result) => result.step)),
+    [act]
+  )
+  const enrolment = useMemo(() => enrolmentActions(act), [act])
+  return { ...state, ...enrolment, start, submit, resendCode, submitSecondFactor }
 }

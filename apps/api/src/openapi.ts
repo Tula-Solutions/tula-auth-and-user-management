@@ -76,7 +76,16 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         'Server-driven sign-up and sign-in. Each call returns the next step; clients render it.',
     },
     { name: 'Users', description: 'Manage users (admin) and the signed-in user’s own account.' },
-    { name: 'Sessions', description: 'Refresh, sign-out and the signed-in user’s devices.' },
+    {
+      name: 'Sessions',
+      description: 'Refresh, sign-out, step-up and the signed-in user’s devices.',
+    },
+    {
+      name: 'MFA',
+      description:
+        'Two-step verification: an authenticator app (TOTP) and backup codes for the signed-in ' +
+        'user, and the admin reset.',
+    },
     {
       name: 'Settings',
       description:

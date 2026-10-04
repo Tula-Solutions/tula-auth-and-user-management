@@ -28,14 +28,23 @@ export {
   EN_MESSAGES,
   type ErrorParams,
   formatMessage,
+  isStepUpRequired,
   isTulaError,
   type Messages,
+  stepUpMethods,
   TulaError,
   type TulaErrorCode,
   type TulaErrorInit,
   type TulaFieldError,
 } from './errors'
-export type { FlowSnapshot, PasswordResetFlow, SignInFlow, SignUpFlow } from './flows'
+export type {
+  FactorEnrolmentResult,
+  FlowSnapshot,
+  PasswordResetFlow,
+  SecondFactorResult,
+  SignInFlow,
+  SignUpFlow,
+} from './flows'
 export {
   ACCESS_TOKEN_EXPIRY_SKEW_MS,
   MAX_REFRESH_BACKOFF_MS,
@@ -45,14 +54,22 @@ export {
 export { memoryStorage, type TokenStorage } from './storage'
 export type {
   AuthState,
+  BackupCodes,
   ClientConfig,
   ClientKind,
+  FactorEnrolmentMethod,
+  Factors,
   FetchLike,
   FirstFactorStrategy,
   FlowKind,
   FlowStep,
+  MfaPolicy,
   PasswordPolicy,
   SecondFactorMethod,
+  SecondFactorProof,
   Session,
+  StepUpMethod,
+  StepUpProof,
+  TotpEnrolment,
   User,
 } from './types'

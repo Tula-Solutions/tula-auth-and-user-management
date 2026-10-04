@@ -6,6 +6,7 @@ import {
   type TestDatabase,
   type TestTenant,
 } from '@tula/db/testing'
+import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { describeSessionStore, type SessionSuiteTenant } from '~/adapters/session-store.suite'
 
@@ -42,6 +43,7 @@ function suiteTenant(tenant: TestTenant): SessionSuiteTenant {
 
 describeSessionStore('PostgresSessionStore', async () => ({
   store: new PostgresSessionStore(testDb.db),
+  log: new PostgresActivityLog(testDb.db),
   a: suiteTenant(a),
   b: suiteTenant(b),
 }))

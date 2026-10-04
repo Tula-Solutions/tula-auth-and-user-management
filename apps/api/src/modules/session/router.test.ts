@@ -1,8 +1,19 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, type SessionTokens } from '@tula/contract'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import {
+  type AccessTokenClaims,
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  type SessionTokens,
+} from '@tula/contract'
+import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
+import { sha256Hex } from '~/lib/crypto'
+import { base32Decode, totp } from '~/lib/totp'
 import { CLIENT_RATE_LIMIT } from '~/middleware/rate-limit'
+import * as Mfa from '~/modules/mfa/service'
+import * as Notices from '~/modules/notice/service'
+import * as Passwords from '~/modules/password/service'
 import { refreshCookieName } from '~/modules/session/cookies'
+import { STEP_UP_RATE_LIMIT } from '~/modules/session/router'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -397,5 +408,215 @@ describe('the refresh cookie and the origin of the request', () => {
     const res = await call('POST', '/refresh', { cookie: cookieFor(first), origin: OTHER })
     expect(res.status).toBe(401)
     expect(res.headers.get('access-control-allow-origin')).toBeNull()
+  })
+})
+
+describe('POST /v1/client/sessions/step-up', () => {
+  const PASSWORD = 'correct horse battery staple'
+  const scope = { ...tenant, apiKeyId: 'key_1' }
+  let userId: string
+
+  beforeEach(async () => {
+    userId = deps.ids.next()
+    await deps.users.create({
+      id: userId,
+      ...tenant,
+      email: 'maya@northline.app',
+      emailNormalized: 'maya@northline.app',
+      emailVerifiedAt: deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: await Passwords.hash(PASSWORD),
+    })
+  })
+  afterEach(() => Notices.settled())
+
+  const stepUp = (body: unknown, options: CallOptions = {}) =>
+    call('POST', '/step-up', { body, ...options })
+  const claimsOf = (token: string) => decodeJwt(token) as unknown as AccessTokenClaims
+  const session = (client: 'web' | 'ios' = 'web', authMethods = ['pwd']) =>
+    Sessions.create(deps, tenant, { userId, client, userAgent: 'Mozilla/5.0', authMethods })
+
+  /** Turn two-step verification on for the user; returns the authenticator's secret. */
+  async function enrol() {
+    const { secret } = await Mfa.startTotp(deps, scope, userId)
+    await Mfa.confirmTotp(deps, scope, { userId }, totp(base32Decode(secret), deps.clock.now()), {
+      type: 'user',
+      id: userId,
+      ipAddress: null,
+      userAgent: null,
+    })
+    deps.clock.advance('30s')
+    return secret
+  }
+
+  test('returns a fresh access token and nothing else: no refresh token, no cookie, not cacheable', async () => {
+    const tokens = await session('web')
+    deps.clock.advance('30s')
+    const res = await stepUp(
+      { method: 'password', password: PASSWORD },
+      // A browser sends its refresh cookie along; the step-up must not touch it.
+      { accessToken: tokens.accessToken, cookie: `${COOKIE}=${rt(tokens)}` }
+    )
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(setCookie(res)).toBe('')
+    const body = (await res.json()) as SessionTokens
+    expect(Object.keys(body).sort()).toEqual(['accessToken', 'accessTokenExpiresAt', 'sessionId'])
+    expect(body.sessionId).toBe(tokens.sessionId)
+    expect(claimsOf(body.accessToken)).toMatchObject({
+      sub: userId,
+      sid: tokens.sessionId,
+      auth_time: Math.floor(deps.clock.now().getTime() / 1000),
+      amr: ['pwd'],
+    })
+    // The refresh token was not rotated: it is unused and still refreshes.
+    const stored = await deps.sessions.findToken(tenant.environmentId, sha256Hex(rt(tokens)))
+    expect(stored?.token).toMatchObject({ usedAt: null, replacedById: null })
+    const refreshed = await call('POST', '/refresh', { cookie: `${COOKIE}=${rt(tokens)}` })
+    expect(refreshed.status).toBe(200)
+    expect(deps.activityLog.ofType('session.stepped_up')).toHaveLength(1)
+  })
+
+  test('without an access token, or with a bad one, it answers 401 and checks nothing', async () => {
+    const proof = { method: 'password', password: PASSWORD }
+    expect(await code(await stepUp(proof))).toBe('auth.unauthenticated')
+    const garbage = await stepUp(proof, { accessToken: 'not.a.token' })
+    expect(garbage.status).toBe(401)
+    expect(await code(garbage)).toBe('session.invalid_token')
+    // The refresh cookie alone is not a session for this route.
+    const tokens = await session('web')
+    const cookieOnly = await stepUp(proof, { cookie: `${COOKIE}=${rt(tokens)}` })
+    expect(await code(cookieOnly)).toBe('auth.unauthenticated')
+    expect((await stepUp(proof, { accessToken: tokens.accessToken, key: null })).status).toBe(401)
+    expect(deps.activityLog.ofType('session.stepped_up')).toEqual([])
+  })
+
+  test('a signed-out session cannot step up, even with a token that has not expired', async () => {
+    const tokens = await session('ios')
+    await call('POST', '/sign-out', { body: { refreshToken: rt(tokens) } })
+    const res = await stepUp(
+      { method: 'password', password: PASSWORD },
+      { accessToken: tokens.accessToken }
+    )
+    expect(res.status).toBe(401)
+    expect(await code(res)).toBe('session.revoked')
+  })
+
+  test.each<[string, unknown]>([
+    ['an empty body', {}],
+    ['no proof for the password', { method: 'password' }],
+    ['an over-long password', { method: 'password', password: 'x'.repeat(1025) }],
+    ['a five-digit code', { method: 'totp', code: '12345' }],
+    ['letters as a code', { method: 'totp', code: 'abcdef' }],
+    ['a password where a code belongs', { method: 'totp', password: PASSWORD }],
+    ['an empty backup code', { method: 'backup_code', code: '' }],
+    ['an over-long backup code', { method: 'backup_code', code: 'a'.repeat(65) }],
+    ['a method that is not a step-up method', { method: 'passkey', code: '123456' }],
+  ])('refuses %s as a validation error, counting nothing', async (_, body) => {
+    const tokens = await session('ios')
+    const res = await stepUp(body, { accessToken: tokens.accessToken })
+    expect(res.status).toBe(422)
+    expect(await code(res)).toBe('validation.failed')
+    expect(setCookie(res)).toBe('')
+    // The password lockout was not touched: a right proof still works at once.
+    expect(
+      (
+        await stepUp(
+          { method: 'password', password: PASSWORD },
+          { accessToken: tokens.accessToken }
+        )
+      ).status
+    ).toBe(200)
+  })
+
+  test('a wrong password is 401 auth.invalid_credentials and returns no token', async () => {
+    const tokens = await session('ios')
+    const res = await stepUp(
+      { method: 'password', password: 'not the password' },
+      { accessToken: tokens.accessToken }
+    )
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({
+      status: 401,
+      code: 'auth.invalid_credentials',
+      detail: expect.any(String),
+    })
+    expect(setCookie(res)).toBe('')
+  })
+
+  test('a user with a second factor is refused the password and accepted with a code', async () => {
+    const secret = await enrol()
+    const tokens = await session('ios')
+    const refused = await stepUp(
+      { method: 'password', password: PASSWORD },
+      { accessToken: tokens.accessToken }
+    )
+    expect(await refused.json()).toEqual({
+      status: 403,
+      code: 'auth.step_up_required',
+      detail: 'Confirm it is you to continue.',
+      params: { methods: 'totp,backup_code' },
+    })
+    const wrong = await stepUp(
+      { method: 'totp', code: '000000' },
+      { accessToken: tokens.accessToken }
+    )
+    expect(await wrong.json()).toMatchObject({ status: 422, code: 'mfa.invalid_code' })
+
+    const res = await stepUp(
+      { method: 'totp', code: totp(base32Decode(secret), deps.clock.now()) },
+      { accessToken: tokens.accessToken }
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as SessionTokens
+    expect(body).not.toHaveProperty('refreshToken')
+    expect(claimsOf(body.accessToken).amr).toEqual(['pwd', 'otp', 'mfa'])
+  })
+
+  test('is rate limited per IP, ahead of the token check', async () => {
+    const tokens = await session('ios')
+    for (let i = 0; i < STEP_UP_RATE_LIMIT; i++) {
+      expect((await stepUp({ method: 'password', password: PASSWORD })).status).toBe(401)
+    }
+    const res = await stepUp(
+      { method: 'password', password: PASSWORD },
+      { accessToken: tokens.accessToken }
+    )
+    expect(res.status).toBe(429)
+    expect(await code(res)).toBe('rate_limited')
+    expect(res.headers.get('retry-after')).not.toBeNull()
+    expect(deps.activityLog.ofType('session.stepped_up')).toEqual([])
+    deps.clock.advance('1m')
+    const fresh = await call('POST', '/refresh', { body: { refreshToken: rt(tokens) } })
+    const { accessToken } = (await fresh.json()) as SessionTokens
+    expect((await stepUp({ method: 'password', password: PASSWORD }, { accessToken })).status).toBe(
+      200
+    )
+  })
+
+  test('the audit entry carries where the request came from', async () => {
+    const tokens = await session('ios')
+    await app.request('/v1/client/sessions/step-up', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-tula-publishable-key': PK,
+        'user-agent': 'TulaSDK/1 iOS',
+        authorization: `Bearer ${tokens.accessToken}`,
+      },
+      body: JSON.stringify({ method: 'password', password: PASSWORD }),
+    })
+    expect(deps.activityLog.ofType('session.stepped_up')).toEqual([
+      expect.objectContaining({
+        actor: { type: 'user', id: userId },
+        target: { type: 'session', id: tokens.sessionId },
+        userAgent: 'TulaSDK/1 iOS',
+        data: { userId, methods: ['pwd'] },
+      }),
+    ])
   })
 })

@@ -4,7 +4,11 @@ import { deviceFamily } from '~/lib/device'
 import * as logger from '~/lib/logger'
 import { describeMailFailure } from '~/lib/safe-error'
 import * as Email from '~/modules/email/service'
-import type { PasswordChangedMessage, SecurityNoticeMessage } from '~/modules/email/templates'
+import type {
+  MfaChangedMessage,
+  PasswordChangedMessage,
+  SecurityNoticeMessage,
+} from '~/modules/email/templates'
 import * as Settings from '~/modules/settings/service'
 import type { UserRecord } from '~/ports/user-repository'
 
@@ -36,6 +40,7 @@ type SendDeps = Pick<Deps, 'mailer' | 'environmentSettings' | 'config' | 'rateLi
 const SWITCHES: Record<NoticeKind, keyof EnvironmentSettings['notifications']> = {
   password_changed: 'passwordChanged',
   new_sign_in: 'newSignIn',
+  mfa_changed: 'mfaChanged',
 }
 
 // Notices still on their way to the relay. Module state, not a dependency: a notice outlives
@@ -45,13 +50,25 @@ const pending = new Set<Promise<void>>()
 /**
  * Rate-limiter key of a user's allowance for one kind of notice.
  *
+ * A two-step verification notice has an allowance **per change** (turned on, turned off, reset
+ * by an administrator, new backup codes, a backup code used): they are different events, and
+ * one must not be able to use up another's. Otherwise three harmless ones (enrol, use a backup
+ * code, make new codes) would silence the one that matters most, "an administrator reset your
+ * two-step verification" or "it was turned off".
+ *
  * @param kind - The notice.
  * @param scope - The environment.
  * @param userId - The user. An id, never an address: limiter keys may live in Redis.
+ * @param change - For `mfa_changed`: which change the notice is about.
  * @returns The bucket key.
  */
-export function limitKey(kind: NoticeKind, scope: Scope, userId: string): string {
-  return `notice_${kind}:${scope.environmentId}:${userId}`
+export function limitKey(
+  kind: NoticeKind,
+  scope: Scope,
+  userId: string,
+  change?: MfaChangedMessage['change']
+): string {
+  return `notice_${kind}${change ? `.${change}` : ''}:${scope.environmentId}:${userId}`
 }
 
 /**
@@ -111,7 +128,12 @@ async function deliver(
   message: SecurityNoticeMessage
 ): Promise<void> {
   const decision = await deps.rateLimiter.hit(
-    limitKey(message.type, scope, user.id),
+    limitKey(
+      message.type,
+      scope,
+      user.id,
+      message.type === 'mfa_changed' ? message.change : undefined
+    ),
     NOTICES_PER_HOUR,
     NOTICE_WINDOW_MS
   )
@@ -154,6 +176,37 @@ export function passwordChanged(
   dispatch('password_changed', scope, user.id, async () => {
     if (await enabled(deps, scope, 'password_changed')) {
       await deliver(deps, scope, user, { type: 'password_changed', ...change })
+    }
+  })
+}
+
+/**
+ * Tell an account's owner that its two-step verification changed: turned on, turned off, reset
+ * by an administrator, backup codes replaced, or a backup code used to sign in (ADR 0025).
+ *
+ * Call it **after the change is stored**. It returns at once and never throws: the email is
+ * sent in the background, at most {@link NOTICES_PER_HOUR} an hour per user, and only when the
+ * environment has `notifications.mfaChanged` on. The email never carries a secret or a code.
+ *
+ * @param deps - Mailer, settings store, config and rate limiter.
+ * @param scope - The environment.
+ * @param user - The account.
+ * @param change - What happened, when, and (for a used backup code) how many are left.
+ *
+ * @example
+ * ```ts
+ * Notices.mfaChanged(deps, scope, user, { change: 'enabled', at: deps.clock.now() })
+ * ```
+ */
+export function mfaChanged(
+  deps: SendDeps,
+  scope: Scope,
+  user: Pick<UserRecord, 'id' | 'email'>,
+  change: Pick<MfaChangedMessage, 'change' | 'at' | 'remaining'>
+): void {
+  dispatch('mfa_changed', scope, user.id, async () => {
+    if (await enabled(deps, scope, 'mfa_changed')) {
+      await deliver(deps, scope, user, { type: 'mfa_changed', ...change })
     }
   })
 }

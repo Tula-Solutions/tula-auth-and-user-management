@@ -38,9 +38,11 @@ bun run conformance
 | `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
-audit entries, and leaves them there. A full run takes about three and a half minutes, most of
-it waiting: 61 seconds for an address's email cooldown (three times), 11 for the refresh grace
-period and 6 for a settings change to reach the second instance.
+audit entries, and leaves them there. A full run takes about five and a half minutes, most of
+it waiting: 61 seconds for an address's email cooldown (four times), 30 for an authenticator to
+move to its next code (twice), 11 for the refresh grace period and 6 for a settings change to
+reach the second instance. The runner computes authenticator codes from its own clock, so it
+must agree with the server's to within a 30-second step.
 
 The exit code is 0 when at least one scenario passed and none failed. A failing step prints the
 status, the error code and short plain values that differed. Tokens, long strings, objects and
@@ -108,7 +110,14 @@ included: use `attempt`).
   out are not checked. Values compare literally, except `"$any"` (present and not null),
   `"$absent"` (missing or null), `{ "$not": value }` and `{ "$matches": "regex" }` (both need
   the value to be present). `bodyExcludes` lists strings the raw response must not contain.
-- **Capture.** `capture: { "variable": "dot.path" }` stores a string from the response body.
+  `claims` checks what a JWT in the body says: each key is the dot path of a token, each value
+  is matched like `body` (a subset, with the same matchers) against the token's decoded payload:
+  `"claims": { "session.accessToken": { "amr": { "$set": ["pwd", "otp", "mfa"] }, "auth_time": "$any" } }`.
+  `{ "$set": [...] }` matches an array with exactly those members **in any order**: `amr` is a
+  set, and its order is not part of the contract.
+  The signature is not verified; an array, as everywhere, must match item by item.
+- **Capture.** `capture: { "variable": "dot.path" }` stores a string from the response body;
+  a path can index an array (`codes[0]`).
   `captureHeaders: { "variable": "ETag" }` stores a response header. `captureJson:
   { "variable": "dot.path" }` stores any value, objects included, as JSON text; a later body
   sends it back with `{ "$json": "{{variable}}" }` in place of the value.
@@ -123,6 +132,14 @@ included: use `attempt`).
   has nothing in its query. Against a live server the link is read from Mailpit (the one
   message is fetched, since a link is not in a subject). A runner for another language needs a
   way to read an email's text to run these steps.
+- **TOTP steps** (`totp: { secret, capture, captureWrong? }`) compute the 6-digit code an
+  authenticator app shows **now** for a Base32 secret the API returned (RFC 6238: HMAC-SHA-1,
+  30-second steps), e.g. `{ "name": "compute the code", "totp": { "secret": "{{secret}}",
+  "capture": "code", "captureWrong": "wrongCode" } }`. "Now" is the wall clock against a live
+  server and the test clock in process (the clock `wait` steps advance; a `Target` gives it as
+  `now`). `captureWrong` also stores a code that is not the right one for the current step or
+  the two either side. A server accepts a step's code once, the code that confirms an enrolment
+  included, so a second use of the same secret needs a `wait` of `30s` before its `totp` step.
 - **Wait steps** let time pass: a real sleep against a live server, a clock advance in process.
 - **`cleanup`** (optional, beside `steps`) lists steps that run after the scenario's steps
   **whether or not they passed**, with whatever was captured before the failure. A scenario
@@ -151,20 +168,32 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `14-email-code-sign-in` | With the email code enabled, a sign-in offers it whatever the address; asking for a code answers the same for an address with and without an account (and is rate limited the same); a wrong code is refused with the guesses left; a password-reset code is not a sign-in code; the right code signs in and proves the address; a user with no password gets the generic failure for any password (needs a secret key). |
 | `15-email-link-sign-in` | A link leads only to an allowed redirect URL, matched exactly, with its token in the fragment; without the asking client's binding it is refused and not used up; with it, it is accepted and returns no tokens; only the client holding the attempt's secret completes; a used link is dead; an address with no account looks the same (needs a secret key). |
 | `16-passwordless-sign-up` | A sign-up without a password is a validation error where one is required; where it is optional the account is created without one, signs in with an emailed code and never with a password; a sign-up that chooses a password works as before (needs a secret key). |
+| `17-mfa-enrolment-and-sign-in` | A user enrols an authenticator: the secret and `otpauth://` URI are returned once, an unconfirmed enrolment counts for nothing, a wrong code does not confirm it, the right one returns ten backup codes. The password alone then yields `needs_second_factor` and no tokens; the authenticator's code completes, and the access token's `amr` is `pwd`, `otp`, `mfa`. |
+| `18-mfa-lockout` | Six wrong second-factor codes are checked; after that every try is `rate_limited` with `Retry-After`, a correct backup code and a new sign-in attempt included: one count per user for both methods. |
+| `19-mfa-code-replay` | An authenticator code is accepted once: the code that confirmed the enrolment does not sign in, the next step's code does, and it is refused on a second attempt. |
+| `20-mfa-backup-codes` | A backup code completes a sign-in once (typed with spaces around it) and says how many are left; used again it is refused; a new set replaces the old codes. |
+| `21-mfa-password-reset` | A password reset stops at `needs_second_factor` with no tokens, completes with the authenticator's code, ends the old sessions and keeps the factor. |
+| `22-step-up` | A user without a factor steps up with the password (a fresh access token, no refresh token). With a factor, a token that does not say it was proven is refused on sensitive actions with `auth.step_up_required` and `params.methods`; the password alone does not step up, a backup code does, and the repeated action succeeds. |
+| `23-mfa-admin-reset` | An operator removes a user's second factor: the user's access and refresh tokens are refused at once, and the next sign-in completes with the password alone (needs a secret key). |
+| `24-mfa-required-policy` | Under `mfa.policy: required` a sign-in and a sign-up of a user without a factor stop at `needs_factor_enrolment`, enrol inside the attempt and complete with tokens and ten backup codes; the factor cannot be turned off (`mfa.required_by_policy`); the next sign-in asks for it (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
 (the app name, and a 14-character minimum password that every generated password still meets)
 and puts the original document back in its last steps; if it fails before that, the changed
 settings stay until you restore them with `PUT /v1/admin/settings`. Scenarios 14 to 16 enable
-the email methods (and, in 16, an optional sign-up password) and restore the original document
-in `cleanup` steps, which run even when a step fails. An environment that had
+the email methods (and, in 16, an optional sign-up password) and 24 requires two-step
+verification; each restores the original document in `cleanup` steps, which run even when a
+step fails. The other two-step scenarios (17 to 23) assume the default `mfa.policy`, `optional`. An environment that had
 never saved settings ends the run with a saved copy of its defaults (the same behaviour, but
 `PASSWORD_POLICY` and `CORS_ORIGINS` no longer apply to it). Browser cookie delivery is not covered yet; scenarios use a native client
 kind so tokens arrive in the response body. For the same reason the origin rule for browser
 attempts (`request.origin_not_allowed`) is covered by the API's own tests, not by a scenario:
-which origins a deployment allows is not something a scenario can assume. `needs_second_factor`
-cannot be reached over HTTP until a second factor exists (step 1.8). The email-link scenario
+which origins a deployment allows is not something a scenario can assume. That a session older
+than ten minutes is asked to step up is covered by the API's own tests, not by a scenario: a
+live run would have to wait those ten minutes. `22-step-up` shows the same refusal through a
+token that lacks the second factor. A backup code typed in another case or with a space for
+its dash is covered there too; a scenario can only add spaces around a captured value. The email-link scenario
 uses the redirect URL `https://app.conformance.example/auth/link`, which it adds to the
 allow-list itself; nothing is ever fetched from it. That an address with no account is sent a
 notice with no code and no link is covered by the API's own tests: the runner cannot assert

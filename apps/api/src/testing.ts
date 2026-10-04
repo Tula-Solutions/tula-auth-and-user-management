@@ -5,6 +5,7 @@ import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
 import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-settings'
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
+import { MemoryFactorStore } from '~/adapters/memory/factors'
 import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
 import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryJobLock } from '~/adapters/memory/job-lock'
@@ -34,6 +35,7 @@ export interface TestDeps extends Deps {
   verificationTokens: MemoryVerificationTokenStore
   sessions: MemorySessionStore
   users: MemoryUserRepository
+  factors: MemoryFactorStore
   flowAttempts: MemoryFlowAttemptStore
   activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
@@ -82,6 +84,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     verificationTokens: new MemoryVerificationTokenStore(),
     sessions: new MemorySessionStore(activityLog),
     users: new MemoryUserRepository(activityLog),
+    factors: new MemoryFactorStore(activityLog),
     flowAttempts: new MemoryFlowAttemptStore(),
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer: new MemoryMailer(),

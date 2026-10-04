@@ -336,14 +336,17 @@ describe('the attempt secret stays inside the flow', () => {
     expect(Object.keys(flow).sort()).toEqual(
       [
         'attemptFirstFactor',
+        'confirmTotpEnrolment',
         'discard',
         'expiresAt',
         'id',
         'kind',
         'prepareFirstFactor',
         'resendCode',
+        'startTotpEnrolment',
         'step',
         'submitPassword',
+        'submitSecondFactor',
         'toJSON',
         'verifyEmail',
         'waitForEmailLink',
@@ -551,5 +554,413 @@ describe('a flow sends one action at a time, and none once it is complete (revie
       )
     )
     expect((await retry).status).toBe('complete')
+  })
+})
+
+const NEEDS_SECOND: FlowStep = { status: 'needs_second_factor', options: ['totp', 'backup_code'] }
+const NEEDS_ENROLMENT: FlowStep = { status: 'needs_factor_enrolment', methods: ['totp'] }
+const TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'
+const TOTP_URI = `otpauth://totp/Tula:maya%40northline.app?secret=${TOTP_SECRET}&issuer=Tula`
+const BACKUP_CODES = ['2a3b4-c5d6e', '7f8g9-h2j3k', 'm4n5p-q6r7s']
+/** Everything a flow hands over once and must keep nowhere. */
+const HANDED_OVER = [TOTP_SECRET, TOTP_URI, ...BACKUP_CODES]
+
+/** A sign-in that has reached `needs_second_factor`. */
+async function atSecondFactor(context: ReturnType<typeof setup>) {
+  context.api.on('POST /v1/client/sign-ins', () =>
+    json(200, attempt('sign_in', NEEDS_SECOND, { attemptSecret: SECRET }))
+  )
+  return context.tula.signIn.start({ identifier: 'maya@northline.app' })
+}
+
+describe('second factor in a flow', () => {
+  const ROUTE = 'POST /v1/client/sign-ins/attempt_1/second-factor'
+
+  test('submitSecondFactor sends the method and code with the secret, completes the flow and signs in', async () => {
+    const context = setup()
+    const { api, tula } = context
+    const flow = await atSecondFactor(context)
+    expect(tula.state.status).toBe('loading')
+    api.on(ROUTE, () =>
+      json(
+        200,
+        attempt('sign_in', COMPLETE, { session: sessionTokens('mfa', { refreshToken: 'rt_mfa' }) })
+      )
+    )
+    const result = await flow.submitSecondFactor({ method: 'totp', code: '123456' })
+    expect(result).toEqual({ step: COMPLETE })
+    expect(api.calls(ROUTE)[0]?.body).toEqual({ method: 'totp', code: '123456' })
+    expect(api.calls(ROUTE)[0]?.headers.get('x-tula-attempt')).toBe(SECRET)
+    expect(flow.step).toEqual(COMPLETE)
+    expect(tula.state).toMatchObject({ status: 'signed-in', sessionId: 'session_1' })
+    expect(await tula.session.getToken()).toBe(accessToken('mfa'))
+  })
+
+  test('a backup code answers how many are left, to the caller only', async () => {
+    const context = setup()
+    const flow = await atSecondFactor(context)
+    context.api.on(ROUTE, () =>
+      json(
+        200,
+        attempt('sign_in', COMPLETE, {
+          session: sessionTokens('mfa', { refreshToken: 'rt_mfa' }),
+          backupCodesRemaining: 9,
+        })
+      )
+    )
+    expect(await flow.submitSecondFactor({ method: 'backup_code', code: '2a3b4-c5d6e' })).toEqual({
+      step: COMPLETE,
+      backupCodesRemaining: 9,
+    })
+    expect(context.api.calls(ROUTE)[0]?.body).toEqual({
+      method: 'backup_code',
+      code: '2a3b4-c5d6e',
+    })
+    expect(JSON.stringify(flow)).not.toContain('backupCodesRemaining')
+    expect(JSON.stringify(flow)).not.toContain('2a3b4')
+  })
+
+  test('a wrong code is mfa.invalid_code, leaves the step and signs nobody in; the next try works', async () => {
+    const context = setup()
+    const { api, tula, states } = context
+    const flow = await atSecondFactor(context)
+    api.on(ROUTE, () => failure(422, 'mfa.invalid_code'))
+    expect(await caught(flow.submitSecondFactor({ method: 'totp', code: '000000' }))).toMatchObject(
+      { code: 'mfa.invalid_code', status: 422, message: 'That code is incorrect.' }
+    )
+    expect(flow.step).toEqual(NEEDS_SECOND)
+    expect(tula.state.status).toBe('loading')
+    expect(states).toEqual([])
+
+    api.on(ROUTE, () =>
+      failure(429, 'rate_limited', { params: { retryAfter: 30 } }, { 'retry-after': '30' })
+    )
+    expect(await caught(flow.submitSecondFactor({ method: 'totp', code: '000000' }))).toMatchObject(
+      { code: 'rate_limited', retryAfterMs: 30_000 }
+    )
+
+    api.on(ROUTE, () => json(200, attempt('sign_in', COMPLETE, { session: sessionTokens('ok') })))
+    expect((await flow.submitSecondFactor({ method: 'totp', code: '123456' })).step).toEqual(
+      COMPLETE
+    )
+  })
+
+  test.each([['nine'], [-1], [1.5], [null]])(
+    'a completed answer whose backupCodesRemaining is %p is response.invalid and signs nobody in',
+    async (remaining) => {
+      const context = setup()
+      const flow = await atSecondFactor(context)
+      context.api.on(ROUTE, () =>
+        json(
+          200,
+          attempt('sign_in', COMPLETE, {
+            session: sessionTokens('mfa'),
+            backupCodesRemaining: remaining,
+          })
+        )
+      )
+      expect(
+        await caught(flow.submitSecondFactor({ method: 'backup_code', code: 'x' }))
+      ).toMatchObject({ code: 'response.invalid', status: 0 })
+      expect(flow.step).toEqual(NEEDS_SECOND)
+      expect(context.tula.state.status).toBe('loading')
+      expect(await context.tula.session.getToken().catch(() => 'no token')).not.toBe(
+        accessToken('mfa')
+      )
+    }
+  )
+
+  test('a 200 that is not an attempt is response.invalid', async () => {
+    const context = setup()
+    const flow = await atSecondFactor(context)
+    context.api.on(ROUTE, () => json(200, ['not', 'an', 'attempt']))
+    expect(await caught(flow.submitSecondFactor({ method: 'totp', code: '123456' }))).toMatchObject(
+      { code: 'response.invalid' }
+    )
+    expect(flow.step).toEqual(NEEDS_SECOND)
+  })
+
+  test('a second submit while one is in flight is flow.busy, and one after completion flow.invalid_step; neither sends a request', async () => {
+    const context = setup()
+    const flow = await atSecondFactor(context)
+    let release!: (response: Response) => void
+    context.api.on(
+      ROUTE,
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        })
+    )
+    const first = flow.submitSecondFactor({ method: 'totp', code: '123456' })
+    expect(await caught(flow.submitSecondFactor({ method: 'totp', code: '123456' }))).toMatchObject(
+      { code: 'flow.busy', status: 0 }
+    )
+    expect(await caught(flow.startTotpEnrolment())).toMatchObject({ code: 'flow.busy' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    release(json(200, attempt('sign_in', COMPLETE, { session: sessionTokens('ok') })))
+    await first
+    expect(await caught(flow.submitSecondFactor({ method: 'totp', code: '123456' }))).toMatchObject(
+      { code: 'flow.invalid_step', status: 0 }
+    )
+    expect(context.api.calls(ROUTE)).toHaveLength(1)
+  })
+
+  test('a password reset that stops at the second factor is completed the same way', async () => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/password-resets', () =>
+      json(
+        200,
+        attempt(
+          'password_reset',
+          {
+            status: 'needs_new_password',
+            destination: 'm***@northline.app',
+            strategies: ['email_code'],
+          },
+          { attemptSecret: SECRET }
+        )
+      )
+    )
+    api.on('POST /v1/client/password-resets/attempt_1/password', () =>
+      json(200, attempt('password_reset', NEEDS_SECOND))
+    )
+    const route = 'POST /v1/client/password-resets/attempt_1/second-factor'
+    api.on(route, () =>
+      json(
+        200,
+        attempt('password_reset', COMPLETE, {
+          session: sessionTokens('reset'),
+          backupCodesRemaining: 0,
+        })
+      )
+    )
+    const flow = await tula.resetPassword.start({ email: 'maya@northline.app' })
+    expect(await flow.submit({ code: '123456', password: 'a new long password' })).toEqual(
+      NEEDS_SECOND
+    )
+    expect(tula.state.status).toBe('loading')
+    expect(await flow.submitSecondFactor({ method: 'backup_code', code: 'abcde-fghij' })).toEqual({
+      step: COMPLETE,
+      backupCodesRemaining: 0,
+    })
+    expect(api.calls(route)[0]?.headers.get('x-tula-attempt')).toBe(SECRET)
+    expect(tula.state.status).toBe('signed-in')
+  })
+})
+
+describe('enrolling an authenticator inside a flow (policy: required)', () => {
+  type Context = ReturnType<typeof setup>
+  const KINDS = [
+    [
+      'sign_up',
+      'sign-ups',
+      ({ tula }: Context) => tula.signUp.start({ email: 'maya@northline.app', password: 'pw' }),
+    ],
+    [
+      'sign_in',
+      'sign-ins',
+      ({ tula }: Context) => tula.signIn.start({ identifier: 'maya@northline.app' }),
+    ],
+    [
+      'password_reset',
+      'password-resets',
+      ({ tula }: Context) => tula.resetPassword.start({ email: 'maya@northline.app' }),
+    ],
+  ] as const
+
+  test.each(KINDS)(
+    '%s: start hands over the secret and URI, confirm completes the flow and hands over the backup codes; nothing keeps them',
+    async (kind, path, start) => {
+      const context = setup()
+      const { api, tula, storage } = context
+      const set = spyOn(storage, 'set')
+      api.on(`POST /v1/client/${path}`, () =>
+        json(200, attempt(kind, NEEDS_ENROLMENT, { attemptSecret: SECRET }))
+      )
+      const startRoute = `POST /v1/client/${path}/attempt_1/factor-enrolment/totp`
+      const confirmRoute = `${startRoute}/confirm`
+      api.on(startRoute, () => json(200, { secret: TOTP_SECRET, uri: TOTP_URI, extra: 'ignored' }))
+      api.on(confirmRoute, () =>
+        json(
+          200,
+          attempt(kind, COMPLETE, {
+            session: sessionTokens('enrolled', { refreshToken: 'rt_enrolled' }),
+            backupCodes: BACKUP_CODES,
+          })
+        )
+      )
+      const flow = await start(context)
+      expect(flow.step).toEqual(NEEDS_ENROLMENT)
+
+      expect(await flow.startTotpEnrolment()).toEqual({ secret: TOTP_SECRET, uri: TOTP_URI })
+      expect(api.calls(startRoute)[0]?.headers.get('x-tula-attempt')).toBe(SECRET)
+      expect(api.calls(startRoute)[0]?.body).toBeUndefined()
+      // Starting does not move the flow, and may be repeated (it replaces the pending secret).
+      expect(flow.step).toEqual(NEEDS_ENROLMENT)
+      await flow.startTotpEnrolment()
+      expect(api.calls(startRoute)).toHaveLength(2)
+
+      const result = await flow.confirmTotpEnrolment({ code: '123456' })
+      expect(result).toEqual({ step: COMPLETE, backupCodes: BACKUP_CODES })
+      expect(api.calls(confirmRoute)[0]?.body).toEqual({ code: '123456' })
+      expect(api.calls(confirmRoute)[0]?.headers.get('x-tula-attempt')).toBe(SECRET)
+      expect(tula.state).toMatchObject({ status: 'signed-in', sessionId: 'session_1' })
+      expect(flow.step).toEqual(COMPLETE)
+
+      const visible =
+        JSON.stringify(flow) +
+        JSON.stringify(tula) +
+        JSON.stringify(tula.state) +
+        Bun.inspect(flow, { depth: 10 }) +
+        Bun.inspect(tula, { depth: 10 }) +
+        JSON.stringify(set.mock.calls)
+      for (const secret of HANDED_OVER) {
+        expect(visible).not.toContain(secret)
+      }
+      // Only the refresh token was stored.
+      expect(set.mock.calls.map((call) => call[1])).toEqual(['rt_enrolled'])
+      expect(await caught(flow.startTotpEnrolment())).toMatchObject({ code: 'flow.invalid_step' })
+    }
+  )
+
+  async function atEnrolment(context: Context) {
+    context.api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', NEEDS_ENROLMENT, { attemptSecret: SECRET }))
+    )
+    return context.tula.signIn.start({ identifier: 'maya@northline.app' })
+  }
+  const START = 'POST /v1/client/sign-ins/attempt_1/factor-enrolment/totp'
+  const CONFIRM = `${START}/confirm`
+
+  test.each([
+    ['no secret', { uri: TOTP_URI }],
+    ['an empty secret', { secret: '', uri: TOTP_URI }],
+    ['a URI that is not otpauth', { secret: TOTP_SECRET, uri: 'https://evil.example/qr' }],
+    ['a list', [TOTP_SECRET, TOTP_URI]],
+    ['a string', 'ok'],
+  ])('a start answered with %s is response.invalid', async (_name, body) => {
+    const context = setup()
+    const flow = await atEnrolment(context)
+    context.api.on(START, () => json(200, body))
+    const error = await caught(flow.startTotpEnrolment())
+    expect(error).toMatchObject({ code: 'response.invalid', status: 0 })
+    expect(JSON.stringify(error)).not.toContain(TOTP_SECRET)
+    expect(flow.step).toEqual(NEEDS_ENROLMENT)
+  })
+
+  test.each([
+    ['no codes', undefined],
+    ['an empty list', []],
+    ['codes that are not strings', [1, 2, 3]],
+    ['an empty code', ['2a3b4-c5d6e', '']],
+    ['a string', '2a3b4-c5d6e'],
+  ])(
+    'a confirm answered with %s is response.invalid: nobody is signed in and the flow stays where it was',
+    async (_name, backupCodes) => {
+      const context = setup()
+      const { api, tula, states, storage } = context
+      const set = spyOn(storage, 'set')
+      const flow = await atEnrolment(context)
+      api.on(CONFIRM, () =>
+        json(
+          200,
+          attempt('sign_in', COMPLETE, {
+            session: sessionTokens('enrolled', { refreshToken: 'rt_enrolled' }),
+            backupCodes,
+          })
+        )
+      )
+      expect(await caught(flow.confirmTotpEnrolment({ code: '123456' }))).toMatchObject({
+        code: 'response.invalid',
+        status: 0,
+      })
+      expect(flow.step).toEqual(NEEDS_ENROLMENT)
+      expect(tula.state.status).toBe('loading')
+      expect(states).toEqual([])
+      expect(set).not.toHaveBeenCalled()
+    }
+  )
+
+  test('a confirm answered with codes but no session is response.invalid', async () => {
+    const context = setup()
+    const flow = await atEnrolment(context)
+    context.api.on(CONFIRM, () =>
+      json(200, attempt('sign_in', COMPLETE, { backupCodes: BACKUP_CODES }))
+    )
+    const error = await caught(flow.confirmTotpEnrolment({ code: '123456' }))
+    expect(error).toMatchObject({ code: 'response.invalid' })
+    expect(JSON.stringify(error)).not.toContain(BACKUP_CODES[0])
+    expect(flow.step).toEqual(NEEDS_ENROLMENT)
+  })
+
+  test('a wrong code and an expired enrolment are the server’s errors; the flow can go on', async () => {
+    const context = setup()
+    const flow = await atEnrolment(context)
+    context.api.on(CONFIRM, () => failure(422, 'mfa.invalid_code'))
+    expect(await caught(flow.confirmTotpEnrolment({ code: '000000' }))).toMatchObject({
+      code: 'mfa.invalid_code',
+      status: 422,
+    })
+    context.api.on(CONFIRM, () => failure(410, 'mfa.enrolment_expired'))
+    expect(await caught(flow.confirmTotpEnrolment({ code: '123456' }))).toMatchObject({
+      code: 'mfa.enrolment_expired',
+      status: 410,
+      message: 'This setup has expired. Start again.',
+    })
+    expect(flow.step).toEqual(NEEDS_ENROLMENT)
+    context.api.on(START, () => failure(409, 'flow.invalid_step'))
+    expect(await caught(flow.startTotpEnrolment())).toMatchObject({
+      code: 'flow.invalid_step',
+      status: 409,
+    })
+  })
+
+  test('when the session cannot be saved on the device, the backup codes still reach the caller, with the failure beside them', async () => {
+    const context = setup()
+    const { api, tula, storage } = context
+    const flow = await atEnrolment(context)
+    spyOn(storage, 'set').mockRejectedValue(new Error('keychain locked'))
+    api.on(CONFIRM, () =>
+      json(
+        200,
+        attempt('sign_in', COMPLETE, {
+          session: sessionTokens('enrolled', { refreshToken: 'rt_enrolled' }),
+          backupCodes: BACKUP_CODES,
+        })
+      )
+    )
+    const result = await flow.confirmTotpEnrolment({ code: '123456' })
+    expect(result.backupCodes).toEqual(BACKUP_CODES)
+    expect(result.step).toEqual(COMPLETE)
+    expect(result.failure).toMatchObject({ code: 'storage.failed', status: 0 })
+    expect(JSON.stringify(result.failure)).not.toContain(BACKUP_CODES[0])
+    // Signed in all the same, in memory.
+    expect(tula.state.status).toBe('signed-in')
+    expect(await tula.session.getToken()).toBe(accessToken('enrolled'))
+  })
+
+  test('a failure that is not the SDK’s own is not swallowed', async () => {
+    const context = setup()
+    const flow = await atEnrolment(context)
+    context.api.on(CONFIRM, () =>
+      json(
+        200,
+        attempt('sign_in', COMPLETE, {
+          session: sessionTokens('enrolled'),
+          backupCodes: BACKUP_CODES,
+        })
+      )
+    )
+    context.tula.onChange(() => {
+      throw new Error('listener bug')
+    })
+    const reported = spyOn(globalThis, 'reportError').mockImplementation(() => undefined)
+    // A listener's bug is reported, not thrown: the codes arrive without a `failure`.
+    expect(await flow.confirmTotpEnrolment({ code: '123456' })).toEqual({
+      step: COMPLETE,
+      backupCodes: BACKUP_CODES,
+    })
+    expect(reported).toHaveBeenCalledTimes(1)
+    reported.mockRestore()
   })
 })

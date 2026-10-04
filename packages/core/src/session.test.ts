@@ -1557,3 +1557,367 @@ describe('the cross-tab lock outlasts a refresh that is tried twice (F7)', () =>
     }
   )
 })
+
+describe('step-up: a fresh access token for the same session', () => {
+  const STEP_UP = 'POST /v1/client/sessions/step-up'
+  const PROOF = { method: 'totp', code: '123456' } as const
+  const bearer = (label: string) => `Bearer ${accessToken(label)}`
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+  /** The refresh tokens the refresh requests presented, in order. */
+  const presented = (w: World) =>
+    w.api.calls(REFRESH).map((request) => (request.body as { refreshToken?: string }).refreshToken)
+
+  /** Holds the answer of the step-up request until the test releases it. */
+  function heldStepUp(w: World) {
+    const held = deferred<Response>()
+    w.api.on(STEP_UP, () => held.promise)
+    return held
+  }
+
+  test('installs the access token it is answered with: no refresh, no change of state, the refresh token untouched', async () => {
+    const w = world()
+    const { tula, states, storage } = await signedIn(w)
+    // A refresh token in the answer (the API sends none) must not replace the real one.
+    w.api.on(STEP_UP, () => json(200, sessionTokens('proven', { refreshToken: 'rt_evil' })))
+    const set = spyOn(storage, 'set')
+    expect(await tula.session.stepUp(PROOF)).toBeUndefined()
+    expect(w.api.calls(STEP_UP)[0]?.body).toEqual(PROOF)
+    expect(w.api.calls(STEP_UP)[0]?.headers.get('authorization')).toBe(bearer('access_1'))
+    expect(await tula.session.getToken()).toBe(accessToken('proven'))
+    expect(w.refreshes()).toBe(1)
+    expect(states).toHaveLength(1)
+    expect(tula.state).toEqual({ status: 'signed-in', sessionId: 'session_1', user: TEST_USER })
+    expect(set).not.toHaveBeenCalled()
+    expect(await storage.get(STORAGE_KEY)).toBe('rt_1')
+    // The next refresh presents the token the session had before the step-up.
+    await tula.session.refresh()
+    expect(presented(w)).toEqual(['rt_0', 'rt_1'])
+  })
+
+  test('the installed token has its own lifetime: it is refreshed when it nears its expiry', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.clock.advance(40_000)
+    w.api.on(STEP_UP, () => json(200, sessionTokens('proven')))
+    await tula.session.stepUp(PROOF)
+    // The token it replaced would be past its skew by now; this one was issued at the step-up.
+    w.clock.advance(45_000)
+    expect(await tula.session.getToken()).toBe(accessToken('proven'))
+    w.clock.advance(10_000)
+    expect(await tula.session.getToken()).toBe(accessToken('access_2'))
+  })
+
+  test.each([
+    ['a wrong password', 401, 'auth.invalid_credentials', { method: 'password', password: 'x' }],
+    ['a wrong code', 422, 'mfa.invalid_code', PROOF],
+    ['a method this user may not use', 403, 'auth.step_up_required', PROOF],
+    ['too many wrong proofs', 429, 'rate_limited', PROOF],
+  ] as const)(
+    '%s is the server’s error: one request, nothing installed, still signed in',
+    async (_name, status, code, proof) => {
+      const w = world()
+      const { tula, states } = await signedIn(w)
+      w.api.on(STEP_UP, () => failure(status, code, { params: { methods: 'totp,backup_code' } }))
+      const error = await caught(tula.session.stepUp(proof))
+      expect(error).toMatchObject({ code, status })
+      // Neither the password nor the code is in the error.
+      expect(JSON.stringify(error) + error.stack).not.toContain('123456')
+      expect(w.api.calls(STEP_UP)).toHaveLength(1)
+      expect(w.refreshes()).toBe(1)
+      expect(await tula.session.getToken()).toBe(accessToken('access_1'))
+      expect(states).toHaveLength(1)
+    }
+  )
+
+  test.each([
+    ['a page that is not the API', { html: '<html>' }],
+    ['no access token', { sessionId: 'session_1', accessTokenExpiresAt: '2030-01-01T00:01:00Z' }],
+    ['no session id', { accessToken: accessToken('proven') }],
+  ])('a 200 with %s is response.invalid and installs nothing', async (_name, body) => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(STEP_UP, () => json(200, body))
+    expect(await caught(tula.session.stepUp(PROOF))).toMatchObject({
+      code: 'response.invalid',
+      status: 0,
+    })
+    expect(await tula.session.getToken()).toBe(accessToken('access_1'))
+  })
+
+  test('an answer for another session is never installed: a step-up cannot change whose session this is', async () => {
+    const w = world()
+    const { tula, states } = await signedIn(w)
+    w.api.on(STEP_UP, () => json(200, sessionTokens('other', { sessionId: 'session_2' })))
+    expect(await caught(tula.session.stepUp(PROOF))).toMatchObject({
+      code: 'auth.unauthenticated',
+    })
+    expect(await tula.session.getToken()).toBe(accessToken('access_1'))
+    expect(tula.state).toMatchObject({ sessionId: 'session_1' })
+    expect(states).toHaveLength(1)
+  })
+
+  test('a 401 on the step-up itself gets one refresh and one retry, and the retry’s answer is installed', async () => {
+    const w = world()
+    const { tula, storage } = await signedIn(w)
+    w.api.on(STEP_UP, (request) =>
+      request.headers.get('authorization') === bearer('access_2')
+        ? json(200, sessionTokens('proven'))
+        : failure(401, 'session.expired')
+    )
+    await tula.session.stepUp(PROOF)
+    expect(w.api.calls(STEP_UP)).toHaveLength(2)
+    expect(w.refreshes()).toBe(2)
+    expect(await tula.session.getToken()).toBe(accessToken('proven'))
+    expect(await storage.get(STORAGE_KEY)).toBe('rt_2')
+  })
+
+  test('it waits for a refresh already in flight, and proves with the token that refresh brought', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const held = deferred<Response>()
+    w.api.on(REFRESH, () => held.promise)
+    w.api.on(STEP_UP, () => json(200, sessionTokens('proven')))
+    const refreshing = tula.session.refresh()
+    const proving = tula.session.stepUp(PROOF)
+    await tick()
+    expect(w.api.calls(STEP_UP)).toHaveLength(0)
+    held.resolve(json(200, sessionTokens('access_2', { refreshToken: 'rt_2' })))
+    await refreshing
+    await proving
+    expect(w.api.calls(STEP_UP)[0]?.headers.get('authorization')).toBe(bearer('access_2'))
+    expect(await tula.session.getToken()).toBe(accessToken('proven'))
+  })
+
+  test('racing a refresh that lands first: the step-up’s token is for an older generation and is not installed; one more refresh fetches a token issued after the proof', async () => {
+    const w = world()
+    const { tula, states, storage } = await signedIn(w)
+    const held = heldStepUp(w)
+    const proving = tula.session.stepUp(PROOF)
+    await tick()
+    // A refresh starts and finishes while the proof is in flight.
+    expect(await tula.session.refresh()).toBe(accessToken('access_2'))
+    held.resolve(json(200, sessionTokens('proven')))
+    await proving
+    // Not the step-up's token, and not the refresh that may have been issued before the proof.
+    expect(await tula.session.getToken()).toBe(accessToken('access_3'))
+    expect(w.refreshes()).toBe(3)
+    expect(presented(w)).toEqual(['rt_0', 'rt_1', 'rt_2'])
+    expect(await storage.get(STORAGE_KEY)).toBe('rt_3')
+    expect(states).toHaveLength(1)
+  })
+
+  test('racing a refresh that is still in flight when the proof is accepted: the refresh keeps its rotated token, and one more refresh follows', async () => {
+    const w = world()
+    const { tula, storage } = await signedIn(w)
+    const proof = heldStepUp(w)
+    const proving = tula.session.stepUp(PROOF)
+    await tick()
+    const refresh = deferred<Response>()
+    w.api.on(REFRESH, () => refresh.promise)
+    const refreshing = tula.session.refresh()
+    await tick()
+    proof.resolve(json(200, sessionTokens('proven')))
+    await tick()
+    // The step-up has its answer but must not install it over a refresh that is rotating the
+    // refresh token: that refresh would then discard the token it is about to receive, and
+    // the next one would present a spent token (reuse: the whole session revoked).
+    w.api.on(REFRESH, (request) => {
+      const sent = (request.body as { refreshToken?: string }).refreshToken
+      return json(200, sessionTokens('after_proof', { refreshToken: `after_${sent}` }))
+    })
+    refresh.resolve(json(200, sessionTokens('access_2', { refreshToken: 'rt_2' })))
+    expect(await refreshing).toBe(accessToken('access_2'))
+    await proving
+    expect(presented(w)).toEqual(['rt_0', 'rt_1', 'rt_2'])
+    expect(await storage.get(STORAGE_KEY)).toBe('after_rt_2')
+    expect(await tula.session.getToken()).toBe(accessToken('after_proof'))
+  })
+
+  test('if that one more refresh cannot be made, the step-up says so and the session is kept', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const held = heldStepUp(w)
+    const proving = tula.session.stepUp(PROOF)
+    await tick()
+    await tula.session.refresh()
+    w.api.on(REFRESH, () => failure(503, 'service.unavailable'))
+    held.resolve(json(200, sessionTokens('proven')))
+    expect(await caught(proving)).toMatchObject({ code: 'service.unavailable', status: 503 })
+    expect(tula.state.status).toBe('signed-in')
+    expect(await tula.session.getToken()).toBe(accessToken('access_2'))
+  })
+
+  test('racing a sign-out: the answer that arrives afterwards is discarded, nothing is refreshed, the client stays signed out', async () => {
+    const w = world()
+    const { tula, states } = await signedIn(w)
+    const held = heldStepUp(w)
+    const proving = tula.session.stepUp(PROOF)
+    await tick()
+    await tula.session.signOut()
+    held.resolve(json(200, sessionTokens('proven')))
+    expect(await caught(proving)).toMatchObject({ code: 'auth.unauthenticated' })
+    expect(tula.state).toEqual({ status: 'signed-out' })
+    expect(await tula.session.getToken()).toBeNull()
+    expect(w.refreshes()).toBe(1)
+    expect(states.map((state) => state.status)).toEqual(['signed-in', 'signed-out'])
+  })
+
+  test('racing a sign-out and a refresh at once: the wait for the refresh does not end in a refresh of its own', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const proof = heldStepUp(w)
+    const proving = tula.session.stepUp(PROOF)
+    await tick()
+    const refresh = deferred<Response>()
+    w.api.on(REFRESH, () => refresh.promise)
+    const refreshing = tula.session.refresh()
+    await tick()
+    proof.resolve(json(200, sessionTokens('proven')))
+    await tick()
+    const signingOut = tula.session.signOut()
+    refresh.resolve(json(200, sessionTokens('late', { refreshToken: 'rt_late' })))
+    expect(await refreshing).toBeNull()
+    await signingOut
+    expect(await caught(proving)).toMatchObject({ code: 'auth.unauthenticated' })
+    expect(tula.state).toEqual({ status: 'signed-out' })
+    expect(w.refreshes()).toBe(2)
+  })
+
+  test('racing a new sign-in: the step-up of the session that was replaced is not installed over it', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const held = heldStepUp(w)
+    const proving = tula.session.stepUp(PROOF)
+    await tick()
+    w.api.on('POST /v1/client/sign-ins', () =>
+      json(200, {
+        id: 'attempt_1',
+        kind: 'sign_in',
+        expiresAt: '2030-01-01T00:10:00.000Z',
+        step: { status: 'needs_password' },
+        attemptSecret: 'tula_at_secret',
+      })
+    )
+    w.api.on('POST /v1/client/sign-ins/attempt_1/password', () =>
+      json(200, {
+        id: 'attempt_1',
+        kind: 'sign_in',
+        expiresAt: '2030-01-01T00:10:00.000Z',
+        step: { status: 'complete', userId: 'user_2', sessionId: 'session_2' },
+        session: sessionTokens('second', { sessionId: 'session_2', refreshToken: 'rt_second' }),
+      })
+    )
+    const flow = await tula.signIn.start({ identifier: 'other@northline.app' })
+    await flow.submitPassword({ password: 'pw' })
+    held.resolve(json(200, sessionTokens('proven')))
+    expect(await caught(proving)).toMatchObject({ code: 'auth.unauthenticated' })
+    expect(tula.state).toMatchObject({ status: 'signed-in', sessionId: 'session_2' })
+    expect(await tula.session.getToken()).toBe(accessToken('second'))
+    expect(w.refreshes()).toBe(1)
+  })
+
+  describe('in a browser with other tabs', () => {
+    async function twoTabs(mode: 'immediate' | 'manual' = 'immediate') {
+      const w = world()
+      const locks = fakeLocks()
+      const hub = fakeChannelHub(mode)
+      const a = tab(w, 'web', { locks, hub })
+      const b = tab(w, 'web', { locks, hub })
+      await a.tula.load()
+      hub.flush()
+      await b.tula.load()
+      hub.flush()
+      await tick()
+      return { w, hub, a, b }
+    }
+
+    test('the stepped-up token is shared: the other tab uses it without a request of its own', async () => {
+      const { w, a, b } = await twoTabs()
+      const before = w.refreshes()
+      w.api.on(STEP_UP, () => json(200, sessionTokens('proven')))
+      await a.tula.session.stepUp(PROOF)
+      expect(await a.tula.session.getToken()).toBe(accessToken('proven'))
+      expect(await b.tula.session.getToken()).toBe(accessToken('proven'))
+      expect(w.refreshes()).toBe(before)
+      // The message carries the access token only: a web client has no refresh token to leak.
+      expect(JSON.stringify(a.states) + JSON.stringify(b.states)).not.toContain('proven')
+    })
+
+    test('another tab’s session message arriving mid step-up: the answer is not installed over it; a refresh under the lock follows', async () => {
+      const { w, a, b } = await twoTabs()
+      const held = heldStepUp(w)
+      const proving = a.tula.session.stepUp(PROOF)
+      await tick()
+      // The other tab refreshes and announces its token while this tab's proof is in flight.
+      const theirs = await b.tula.session.refresh()
+      expect(await a.tula.session.getToken()).toBe(theirs)
+      const before = w.refreshes()
+      held.resolve(json(200, sessionTokens('proven')))
+      await proving
+      expect(w.refreshes()).toBe(before + 1)
+      const mine = await a.tula.session.getToken()
+      expect(mine).toBe(accessToken(`access_${before + 1}`))
+      // And that refresh's token reaches the other tab too.
+      expect(await b.tula.session.getToken()).toBe(mine)
+      expect(a.states.map((state) => state.status)).toEqual(['signed-in'])
+    })
+
+    test('another tab signing out mid step-up: this tab is signed out, the answer is discarded and no refresh brings the session back', async () => {
+      const { w, a, b } = await twoTabs()
+      const held = heldStepUp(w)
+      const proving = a.tula.session.stepUp(PROOF)
+      await tick()
+      await b.tula.session.signOut()
+      expect(a.tula.state).toEqual({ status: 'signed-out' })
+      const before = w.refreshes()
+      held.resolve(json(200, sessionTokens('proven')))
+      expect(await caught(proving)).toMatchObject({ code: 'auth.unauthenticated' })
+      expect(a.tula.state).toEqual({ status: 'signed-out' })
+      expect(await a.tula.session.getToken()).toBeNull()
+      expect(w.refreshes()).toBe(before)
+      // The stale answer was not announced either: the other tab stays signed out.
+      expect(b.tula.state).toEqual({ status: 'signed-out' })
+    })
+
+    test('a browser signed out while the step-up waits for a refresh sends no refresh of its own: its cookie must not sign it back in', async () => {
+      const w = world()
+      const { tula, states } = tab(w, 'web', { locks: fakeLocks(), hub: fakeChannelHub() })
+      await tula.load()
+      const proof = heldStepUp(w)
+      const proving = tula.session.stepUp(PROOF)
+      await tick()
+      const refresh = deferred<Response>()
+      w.api.on(REFRESH, () => refresh.promise)
+      const refreshing = tula.session.refresh()
+      await tick()
+      proof.resolve(json(200, sessionTokens('proven')))
+      await tick()
+      const signingOut = tula.session.signOut()
+      refresh.resolve(json(200, sessionTokens('late')))
+      expect(await refreshing).toBeNull()
+      await signingOut
+      expect(await caught(proving)).toMatchObject({ code: 'auth.unauthenticated' })
+      expect(w.refreshes()).toBe(2)
+      expect(tula.state).toEqual({ status: 'signed-out' })
+      expect(states.map((state) => state.status)).toEqual(['signed-in', 'signed-out'])
+    })
+
+    test('an older token announced late (a refresh from before the proof) does not replace the step-up’s token', async () => {
+      const { w, hub, a, b } = await twoTabs('manual')
+      w.api.on(STEP_UP, () => json(200, sessionTokens('proven')))
+      const stale = await b.tula.session.refresh()
+      w.clock.advance(1_000)
+      await a.tula.session.stepUp(PROOF)
+      expect(await a.tula.session.getToken()).toBe(accessToken('proven'))
+      // The other tab's announcement of its earlier refresh arrives only now.
+      hub.flush()
+      await tick()
+      expect(stale).not.toBe(accessToken('proven'))
+      expect(await a.tula.session.getToken()).toBe(accessToken('proven'))
+      // And the step-up's own announcement, newer, is taken by the other tab.
+      expect(await b.tula.session.getToken()).toBe(accessToken('proven'))
+      expect(a.tula.state.status).toBe('signed-in')
+      expect(b.tula.state.status).toBe('signed-in')
+    })
+  })
+})

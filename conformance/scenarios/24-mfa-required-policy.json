@@ -1,0 +1,630 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "required second factor",
+  "description": "Where the environment requires two-step verification, a user without a factor gets no session until they have enrolled one inside the attempt: a sign-in and a sign-up both stop at needs_factor_enrolment, return the secret, and complete with tokens and ten backup codes once a code confirms it. The factor cannot be turned off while the policy requires it, and the next sign-in asks for it. The settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "newcomer": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "mfa": {
+              "policy": "$any"
+            }
+          }
+        }
+      },
+      "capture": {
+        "originalPolicy": "settings.mfa.policy"
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urls": "settings.urls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications"
+      }
+    },
+    {
+      "name": "require two-step verification",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urls}}"
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "policy": "required"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "mfa": {
+              "policy": "required"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the client config says so",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "mfa": {
+            "policy": "required"
+          }
+        }
+      }
+    },
+    {
+      "name": "start a sign-in for a user without a factor",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_password"
+          }
+        }
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the password yields needs_factor_enrolment and no tokens",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_factor_enrolment",
+            "methods": ["totp"]
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "start the enrolment inside the attempt: the secret and its URI",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/factor-enrolment/totp",
+        "attempt": "{{signInSecret}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "secret": {
+            "$matches": "^[A-Z2-7]{32}$"
+          },
+          "uri": {
+            "$matches": "^otpauth://totp/"
+          }
+        }
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "compute the code the authenticator shows",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "a wrong code does not confirm it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/factor-enrolment/totp/confirm",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "code": "{{wrongCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "mfa.invalid_code",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the right code completes the sign-in, with tokens and ten backup codes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/factor-enrolment/totp/confirm",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          },
+          "backupCodes": [
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            }
+          ]
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": { "$set": ["pwd", "otp", "mfa"] },
+            "auth_time": "$any"
+          }
+        }
+      },
+      "capture": {
+        "enrolledToken": "session.accessToken",
+        "backupCode": "backupCodes[0]"
+      }
+    },
+    {
+      "name": "the factor cannot be turned off while the policy requires it",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{enrolledToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "mfa.required_by_policy"
+        }
+      }
+    },
+    {
+      "name": "it is still on",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/factors",
+        "accessToken": "{{enrolledToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totp": {
+            "enabled": true,
+            "confirmedAt": "$any"
+          },
+          "backupCodes": {
+            "remaining": 10
+          }
+        }
+      }
+    },
+    {
+      "name": "start a sign-up under the policy",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{newcomer}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "newcomersignUpId": "id",
+        "newcomersignUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the newcomer's emailed code",
+      "emailCode": {
+        "to": "{{newcomer}}",
+        "capture": "newcomerSignUpCode"
+      }
+    },
+    {
+      "name": "verifying the address yields needs_factor_enrolment and no tokens",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{newcomersignUpId}}/verify-email",
+        "attempt": "{{newcomersignUpSecret}}",
+        "body": {
+          "code": "{{newcomerSignUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_factor_enrolment",
+            "methods": ["totp"]
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "start the enrolment inside the sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{newcomersignUpId}}/factor-enrolment/totp",
+        "attempt": "{{newcomersignUpSecret}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "secret": {
+            "$matches": "^[A-Z2-7]{32}$"
+          }
+        }
+      },
+      "capture": {
+        "newcomerSecret": "secret"
+      }
+    },
+    {
+      "name": "compute the newcomer's code",
+      "totp": {
+        "secret": "{{newcomerSecret}}",
+        "capture": "newcomerCode"
+      }
+    },
+    {
+      "name": "the code completes the sign-up, with tokens and ten backup codes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{newcomersignUpId}}/factor-enrolment/totp/confirm",
+        "attempt": "{{newcomersignUpSecret}}",
+        "body": {
+          "code": "{{newcomerCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          },
+          "backupCodes": [
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            }
+          ]
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": { "$set": ["email", "otp", "mfa"] },
+            "auth_time": "$any"
+          }
+        }
+      }
+    },
+    {
+      "name": "start the first user's next sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_password"
+          }
+        }
+      },
+      "capture": {
+        "signIn2Id": "id",
+        "signIn2Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "it asks for the factor now, not for an enrolment",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn2Id}}/password",
+        "attempt": "{{signIn2Secret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_second_factor",
+            "options": ["totp", "backup_code"]
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a backup code from the enrolment completes it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn2Id}}/second-factor",
+        "attempt": "{{signIn2Secret}}",
+        "body": {
+          "method": "backup_code",
+          "code": "{{backupCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          },
+          "backupCodesRemaining": 9
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "mfa": {
+              "policy": "{{originalPolicy}}"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

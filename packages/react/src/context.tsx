@@ -1,6 +1,15 @@
-import { createTulaClient, type TulaClient } from '@tula/core'
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef } from 'react'
+import { createTulaClient, type StepUpMethod, type TulaClient } from '@tula/core'
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import type { Appearance } from './appearance'
+import { type Prompt, PromptHost } from './components/prompts'
 import {
   type LocalizationOverrides,
   resolveLocalization,
@@ -18,6 +27,28 @@ export interface TulaContextValue {
   localization: TulaLocalization
   /** The app's URLs and its `navigate` function. */
   navigation: NavigationOptions
+  /** Dialogs the provider shows above the app. */
+  prompts: Prompts
+}
+
+/** The provider's dialogs: each returns a promise that settles when the user is done. */
+export interface Prompts {
+  /**
+   * Ask the user to prove who they are (the step-up dialog).
+   *
+   * @param methods - What the server said this user can step up with.
+   * @returns `true` once the session was stepped up; `false` when the user gave up, could not,
+   *   or another prompt was already open.
+   */
+  stepUp(methods: readonly StepUpMethod[]): Promise<boolean>
+  /**
+   * Show backup codes, once, until the user says they saved them. The codes are held only
+   * while the dialog is open.
+   *
+   * @param codes - The codes.
+   * @returns Once the user has confirmed.
+   */
+  backupCodes(codes: readonly string[]): Promise<void>
 }
 
 const TulaContext = createContext<TulaContextValue | null>(null)
@@ -173,11 +204,55 @@ export function TulaProvider(props: TulaProviderProps) {
     }
   }, [client])
 
+  // What is being asked of the user above the app, if anything. The ref mirrors the state so
+  // that a request made while one is open can be answered without waiting for a render.
+  const [prompt, setPrompt] = useState<Prompt | null>(null)
+  const open = useRef<Prompt | null>(null)
+  const prompts = useMemo<Prompts>(() => {
+    const show = (next: Prompt) => {
+      open.current = next
+      setPrompt(next)
+    }
+    return {
+      stepUp: (methods) =>
+        new Promise<boolean>((resolve) => {
+          if (open.current) {
+            resolve(false)
+          } else {
+            show({ kind: 'step-up', methods, resolve })
+          }
+        }),
+      backupCodes: (codes) =>
+        new Promise<void>((resolve) => {
+          const current = open.current
+          // Codes are shown once and cannot wait: they take the place of a step-up dialog.
+          if (current?.kind === 'step-up') {
+            current.resolve(false)
+          }
+          show({
+            kind: 'backup-codes',
+            codes,
+            resolve: () => {
+              if (current?.kind === 'backup-codes') {
+                current.resolve()
+              }
+              resolve()
+            },
+          })
+        }),
+    }
+  }, [])
+  const closePrompt = () => {
+    open.current = null
+    setPrompt(null)
+  }
+
   const value = useMemo<TulaContextValue>(
     () => ({
       client,
       appearance,
       localization,
+      prompts,
       navigation: {
         navigate,
         signInUrl,
@@ -193,6 +268,7 @@ export function TulaProvider(props: TulaProviderProps) {
       client,
       appearance,
       localization,
+      prompts,
       navigate,
       signInUrl,
       signUpUrl,
@@ -204,7 +280,12 @@ export function TulaProvider(props: TulaProviderProps) {
     ]
   )
 
-  return <TulaContext.Provider value={value}>{children}</TulaContext.Provider>
+  return (
+    <TulaContext.Provider value={value}>
+      {children}
+      <PromptHost prompt={prompt} onClose={closePrompt} />
+    </TulaContext.Provider>
+  )
 }
 
 /**

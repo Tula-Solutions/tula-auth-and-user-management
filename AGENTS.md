@@ -119,6 +119,13 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 
 ### React SDK (see ADR 0022)
 
+- **Dialogs that must outlive a page belong to the provider.** The step-up dialog and the
+  backup codes of an enrolment made inside a flow are drawn by `<TulaProvider>`
+  (`components/prompts.tsx`), reached through `useTulaContext().prompts` and `useStepUp()`:
+  an app unmounts `<SignIn>` the moment the client is signed in. An authenticator's setup
+  key, its QR code and backup codes are held in state only while their screen is open. The
+  QR encoder (`src/qr`) is the package's own and is loaded with `import()`; never add a QR
+  dependency or import it statically.
 - **Components render the server's step and nothing else.** A screen per `step.status`; a new
   sign-in method is a new screen and an entry in `FIRST_FACTOR_FORMS`
   (`packages/react/src/components/sign-in.tsx`). The default branch of every step `switch` is
@@ -212,8 +219,9 @@ Anything about how sign-in behaves that differs between tenants lives in the env
 settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/adr/0018-environment-settings.md)):
 app name and support address, password policy, enabled sign-in methods (`password`,
 `emailCode`, `emailLink`), whether a sign-up needs a password (`signUp.password`), allowed
-origins and redirect URLs, audit retention, and which security notices are emailed
-(`notifications`). **Read it through `~/modules/settings/service`**
+origins and redirect URLs, audit retention, which security notices are emailed
+(`notifications`), and whether two-step verification is `off`, `optional` or `required`
+(`mfa.policy`). **Read it through `~/modules/settings/service`**
 (`Settings.current(deps, tenant)`), never from `deps.config`: `PASSWORD_POLICY` and
 `CORS_ORIGINS` are only the defaults of an environment that has saved nothing.
 
@@ -243,17 +251,24 @@ origins and redirect URLs, audit retention, and which security notices are email
 
 The API never tells a client which screen to draw; it returns the next **flow step** from
 `@tula/contract` (`needs_password`, `needs_first_factor`, `needs_email_verification`,
-`needs_new_password`, `needs_second_factor`, `complete`). See
-[ADR 0019](docs/adr/0019-flow-engine-v2.md).
+`needs_new_password`, `needs_second_factor`, `needs_factor_enrolment`, `complete`). See
+[ADR 0019](docs/adr/0019-flow-engine-v2.md) and [ADR 0025](docs/adr/0025-mfa.md).
 
 - **Transitions are one pure function**, `nextStatus(kind, status, event, context)` in
   `modules/flow/transitions.ts`. Its table test enumerates every kind × step × event; a new
   step or event must be classified there.
 - **A sign-in method is registered in one place**: `FIRST_FACTORS` in
   `modules/factor/service.ts` maps the environment's settings to the strategies a sign-in
-  offers (`password`, `email_code`, `email_link`); a second factor registers a verifier in `SECOND_FACTOR_VERIFIERS` and is submitted
-  through `Flows.submitSecondFactor`. Adding a method means adding an entry and the route that
-  proves it, not editing the transition function or any SDK.
+  offers (`password`, `email_code`, `email_link`); a second factor registers a verifier in
+  `SECOND_FACTOR_VERIFIERS` (`totp`, `backup_code`) and is submitted through
+  `Flows.submitSecondFactor` (`…/:attemptId/second-factor`). Adding a method means adding an
+  entry and the route that proves it, not editing the transition function or any SDK.
+- **Second factors live in `modules/mfa`** ([ADR 0025](docs/adr/0025-mfa.md)): enrolment under
+  `/v1/client/me/factors`, the verifiers, step-up and the admin reset. `Factors.requiredFor`
+  asks it which factors a user has; where the environment's `mfa.policy` is `required` and the
+  user has none, an attempt stops at `needs_factor_enrolment` and enrols inside the attempt
+  (`…/:attemptId/factor-enrolment/totp`, `…/confirm`). An attempt's state records what it has
+  proven (`amr`), which becomes the session's `authMethods`.
 - **Every flow step starts with the service's `load`**, which checks the attempt's secret and,
   for a browser attempt, the request's origin. Never read an attempt from the store directly
   in a step. The one exception is `Flows.verifyEmailLink` (`POST /v1/client/sign-ins/link`):
@@ -303,9 +318,9 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - **Rows that expire are deleted by the retention job** (`modules/retention`,
   [ADR 0017](docs/adr/0017-retention.md)): expired flow attempts, verification tokens an hour
   past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
-  cascade). A new table of short-lived rows gets a batched purge method on its store, in both
-  adapters and the shared suite, and a line in that job. Audit entries and outbox events are
-  never deleted by it.
+  cascade), authenticator enrolments that were never confirmed. A new table of short-lived
+  rows gets a batched purge method on its store, in both adapters and the shared suite, and a
+  line in that job. Audit entries and outbox events are never deleted by it.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 
@@ -341,7 +356,32 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0021](docs/adr/0021-core-sdk.md); the React components, theming and browser tests:
   [ADR 0022](docs/adr/0022-react-sdk.md); security notice emails and what "a new device" means:
   [ADR 0023](docs/adr/0023-security-notices.md); signing in by email (codes, same-browser
-  links, passwordless sign-up): [ADR 0024](docs/adr/0024-email-sign-in.md).
+  links, passwordless sign-up): [ADR 0024](docs/adr/0024-email-sign-in.md); two-step
+  verification (TOTP, backup codes, step-up, the MFA policy): [ADR 0025](docs/adr/0025-mfa.md).
+- **TOTP secrets are sealed, backup codes are keyed hashes.** A TOTP secret is stored only
+  sealed with `~/lib/secret-box` (purpose `totp-secrets`, bound to environment, user and factor
+  id) and returned once, at enrolment. Backup codes are stored only as
+  `~/lib/keyed-hash` HMACs bound to the user, returned once, and spent with a guarded update.
+  Neither, nor a code or an `otpauth://` URI, ever reaches a log, an audit entry, an email or
+  an error. Check codes only through `Mfa.verifyTotp` / `Mfa.verifyBackupCode`: they enforce
+  "confirmed factors only" and the replay rule (a TOTP time step is accepted once, as a
+  compare-and-set on `last_used_step`). A pending enrolment never counts as a factor.
+- **Every route that checks a TOTP or backup code counts the guess** under the one per-user key
+  `Mfa.secondFactorLockKey` (`CREDENTIAL_LOCKOUT`), before the check, and clears it on success.
+- **Sensitive account changes need a recent authentication.** Put `requireRecentAuth()`
+  (`~/middleware/recent-auth`) after `sessionAuth()` on any route that changes how an account
+  is protected (MFA changes; a password change by a user who has a second factor; passkey
+  changes and account deletion when they arrive). It reads `auth_time` and `amr` from the
+  verified access token and answers `auth.step_up_required` with `params.methods`. A user with
+  a second factor steps up with it, never with the password alone
+  (`POST /v1/client/sessions/step-up`).
+- **A session records how it was authenticated.** `Sessions.create` takes `authMethods`; the
+  access token carries `auth_time` and `amr` from the session row (never "now": refresh must
+  not make an old sign-in look recent). Only `Sessions.recordAuthentication` moves them.
+  `amr` is a set: never compare it as an ordered array (scenarios use `{ "$set": [...] }`).
+- **Nothing removes a second factor except its owner (after a step-up) or an admin reset.** A
+  password reset stops at `needs_second_factor`; there is no emailed MFA bypass; the policy
+  `off` still asks enrolled users for their factor.
 - **Every flow call after the start presents the attempt's secret** (`x-tula-attempt`). The
   secret is 256 bits, returned once by the start, stored only as SHA-256 and never logged or
   audited. Missing, wrong or another attempt's: the same `flow.not_found` as an unknown attempt,
@@ -402,17 +442,20 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
   subject or HTML. A user agent never reaches an email at all: only the family
   `deviceFamily` (`~/lib/device`) derives from it, which is built from fixed names.
-- **A change to a password, and a sign-in from a new device, are announced to the account's
-  owner** through `~/modules/notice/service` (ADR 0023). A new code path that stores a password
-  goes through `Users.replacePassword`, and one that creates a session for a sign-in goes
-  through the flow engine's `finish`, so it is announced too. Notices are started after the
-  change is committed and are never awaited: they must not fail or delay what they describe.
-  They have their own per-user limit (`NOTICES_PER_HOUR`), and a limiter that cannot count
-  means no notice, never a refused sign-in. A notice carries no code, token or link, and its
-  subject never starts with digits. Tests wait for them with `Notices.settled()` and read a
-  code from the newest email whose subject leads with one, not from the newest email.
-- Treat every change under `modules/{flow,session,password,jwks,verification}`, `middleware/cors.ts`
-  or `lib/crypto.ts` as security-sensitive: it needs tests for the failure paths, not just the happy path.
+- **A change to a password or to two-step verification, and a sign-in from a new device, are
+  announced to the account's owner** through `~/modules/notice/service` (ADR 0023, ADR 0025).
+  A new code path that stores a password goes through `Users.replacePassword`, and one that
+  creates a session for a sign-in goes through the flow engine's `finish`, so it is announced
+  too. Notices are started after the change is committed and are never awaited: they must not
+  fail or delay what they describe. They have their own per-user limit (`NOTICES_PER_HOUR`;
+  each kind of two-step verification change has its own allowance, so that harmless ones
+  cannot silence "it was reset"), and a limiter that cannot count means no notice, never a
+  refused sign-in. A notice carries no code, token or link, and its subject never starts with
+  digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
+  whose subject leads with one, not from the newest email.
+- Treat every change under `modules/{flow,session,password,jwks,verification,mfa,factor}`,
+  `middleware/{cors,recent-auth}.ts`, `lib/crypto.ts` or `lib/totp.ts` as security-sensitive:
+  it needs tests for the failure paths, not just the happy path.
 
 ## Testing
 
@@ -499,8 +542,10 @@ apps/api/src/
 │                     # device (the family a user agent belongs to), safe-error
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/
-├── middleware/       # publishable-key, secret-key, session-auth, rate-limit, cors, request-log
-└── modules/          # flow, password, session, jwks, verification, user, audit, project, status,
+├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
+│                     # request-log
+└── modules/          # flow, password, session, jwks, verification, user, mfa (TOTP, backup
+                      # codes, step-up), audit, project, status,
                       # settings, factor (first-factor registry and second-factor hooks:
                       # service only), email (layout + copy: service only, no router),
                       # retention (a background job: service only, no router),

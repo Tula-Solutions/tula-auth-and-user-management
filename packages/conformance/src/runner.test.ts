@@ -8,6 +8,7 @@ import {
   type Target,
 } from './runner'
 import { type Scenario, ScenarioSchema } from './scenario'
+import { totp } from './totp'
 
 interface Seen {
   method: string
@@ -912,5 +913,143 @@ describe('headers and whole values', () => {
     )
     expect(result.steps.at(-1)?.problems).toEqual(['$json does not hold valid JSON'])
     expect(requests).toEqual([])
+  })
+
+  test('a totp step computes the code for the target clock, and one that is wrong', async () => {
+    // The RFC 6238 test secret ("12345678901234567890") and its SHA-1 vector at T=59.
+    const secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
+    let now = 59_000
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      now: () => now,
+      wait: async (ms) => {
+        now += ms
+      },
+    })
+    const submit = (name: string) => ({
+      name,
+      request: {
+        method: 'POST',
+        path: '/v1/client/sign-ins/a1/second-factor',
+        body: { code: '{{code}}', bad: '{{wrongCode}}' },
+      },
+      expect: { status: 200 },
+    })
+    const compute = (name: string) => ({
+      name,
+      totp: { secret: '{{secret}}', capture: 'code', captureWrong: 'wrongCode' },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          compute('now'),
+          submit('first'),
+          { name: 'next step', wait: '30s' },
+          { name: 'code only', totp: { secret: '{{secret}}', capture: 'code' } },
+          submit('second'),
+        ],
+        { variables: { secret } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    const sent = requests.map((seen) => seen.body as { code: string; bad: string })
+    expect(sent.map((body) => body.code)).toEqual(['287082', '359152'])
+    const wrong = sent[0]?.bad
+    expect(wrong).toMatch(/^\d{6}$/)
+    expect(['755224', '287082', '359152', '969429']).not.toContain(wrong)
+    // Without `captureWrong` the earlier wrong code is left as it was.
+    expect(sent[1]?.bad).toBe(wrong)
+  })
+
+  test('a totp step uses the wall clock when the target has no clock of its own', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const before = Date.now()
+    const result = await runScenario(
+      scenario(
+        [
+          { name: 'compute', totp: { secret: '{{secret}}', capture: 'code' } },
+          {
+            name: 'submit',
+            request: { method: 'POST', path: '/x', body: { code: '{{code}}' } },
+            expect: { status: 200 },
+          },
+        ],
+        { variables: { secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    const bytes = new TextEncoder().encode('12345678901234567890')
+    // The step can roll over while the test runs.
+    expect([
+      { code: await totp(bytes, before) },
+      { code: await totp(bytes, Date.now()) },
+    ]).toContainEqual(requests[0]?.body as { code: string })
+  })
+
+  test('a totp secret that is not Base32 fails the step without being printed', async () => {
+    const { target } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario([{ name: 'compute', totp: { secret: '{{secret}}', capture: 'code' } }], {
+        variables: { secret: 'not-base32-0189!' },
+      }),
+      target
+    )
+    expect(result.status).toBe('failed')
+    expect(result.steps.at(-1)?.problems).toEqual(['not a Base32 secret'])
+  })
+
+  test('claims of a JWT in the body are matched as a subset of its payload', async () => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+    const accessToken = [
+      encode({ alg: 'EdDSA' }),
+      encode({ sub: 'u1', amr: ['pwd', 'otp', 'mfa'], auth_time: 1_700_000_000 }),
+      'c2ln',
+    ].join('.')
+    const { target } = fakeTarget(() => ({
+      status: 200,
+      body: { session: { accessToken, refreshToken: 'tula_rt_opaque' } },
+    }))
+    const step = (claims: unknown) => ({
+      name: 'sign in',
+      request: { method: 'POST', path: '/x' },
+      expect: { status: 200, claims },
+    })
+    const passed = await runScenario(
+      scenario(
+        [
+          step({
+            'session.accessToken': {
+              sub: '{{user}}',
+              amr: ['pwd', 'otp', 'mfa'],
+              auth_time: '$any',
+            },
+          }),
+        ],
+        { variables: { user: 'u1' } }
+      ),
+      target
+    )
+    expect(passed.status).toBe('passed')
+
+    const failed = await runScenario(
+      scenario([step({ 'session.accessToken': { amr: ['pwd'], azp: '$any' } })]),
+      target
+    )
+    expect(failed.steps.at(-1)?.problems).toEqual([
+      'expected claims(session.accessToken).amr to be an array of 1, got an array of 3',
+      'expected claims(session.accessToken).azp to be present',
+    ])
+
+    const notAJwt = await runScenario(
+      scenario([step({ 'session.refreshToken': { sub: '$any' }, 'session.none': {} })]),
+      target
+    )
+    const problems = notAJwt.steps.at(-1)?.problems ?? []
+    expect(problems).toEqual([
+      'expected a JWT at session.refreshToken',
+      'expected a JWT at session.none',
+    ])
+    expect(problems.join(' ')).not.toContain('tula_rt_opaque')
   })
 })

@@ -69,6 +69,38 @@ Completion (`onComplete`, or the after-URL) is reported from the action's result
 effect: an app that wraps `<SignIn>` in `<SignedOut>` unmounts it the moment the client is
 signed in, before an effect for the completed step could run.
 
+### Two-step verification ([ADR 0025](0025-mfa.md))
+
+- `needs_second_factor` and `needs_factor_enrolment` are two more screens of `<SignIn>` (also
+  after a reset) and `<SignUp>`: the authenticator code with "Use a backup code", and the
+  enrolment (QR code, the setup key as selectable text in groups of four, the code). An option
+  this version does not know (`passkey`) is left out; with none left the step is "not
+  supported", as before.
+- **The provider owns two dialogs** (`components/prompts.tsx`, native `<dialog>` opened with
+  `showModal`): the step-up dialog and the backup codes shown after an enrolment inside a
+  flow. They live in the provider and not in the component that asked, because confirming an
+  enrolment signs the client in, an app that wraps `<SignIn>` in `<SignedOut>` unmounts it at
+  that moment, and the codes are shown once. `onComplete` (or the after-URL) waits until the
+  user ticks "I have saved these codes"; Escape does not dismiss that dialog.
+- **Step-up is a hook, `useStepUp()`**: `withStepUp(action)` runs the action and, only when
+  the API answers `auth.step_up_required`, opens the dialog with the methods the server named,
+  sends the proof and runs the action once more. A cancelled dialog rethrows the original
+  error. No component knows which actions are sensitive; `<UserProfile>` wraps its MFA calls
+  and the password change in it.
+- `<UserProfile>` gains a "Two-step verification" section (turn on, backup codes with copy,
+  download and the explicit confirmation, new codes, turn off; hidden where the environment's
+  policy is `off` and nothing is enrolled, and without "Turn off" where it is `required`).
+- **The QR code is drawn by the package's own encoder** (`src/qr`: byte mode, level M,
+  versions 1 to 40, Reed-Solomon, all eight masks), as inline SVG with `role="img"`, an
+  accessible name and the setup key as its text alternative, always dark on white with the
+  four-module quiet zone. A dependency was not an option (runtime dependencies are `@tula/core`
+  and the contract only). Its tests decode every version, and the SVG a component renders,
+  with a real decoder (`jsqr`, a dev dependency). It is loaded with `import('../qr')` when an
+  enrolment is first drawn, so it is a separate chunk (2.1 kB gzip).
+- The secret and the codes live in component (or provider) state only while their screen is
+  shown; tests and the browser suite assert that nothing of them is left in the DOM, web
+  storage or the address afterwards.
+
 ### Navigation and redirects
 
 Components never import a router. The provider takes `navigate` (default
@@ -141,8 +173,10 @@ every component in a process with no DOM. `@tula/nextjs` (1.12) adds the server 
 
 Peer: React 18.2+ or 19. Runtime: `@tula/core`, and `@tula/contract` for its Zod-free
 `/theme` entry point (a direct dependency because it is imported directly; it adds nothing to
-an install, core already depends on it). 13.3 kB gzip (21.2 kB with core, React excluded) plus
-4.1 kB gzip of CSS; a test holds a budget and checks no schema library is bundled.
+an install, core already depends on it). With two-step verification: 32.7 kB gzip with core
+(React excluded) in the entry, 2.1 kB for the lazily loaded QR encoder, plus about 5 kB gzip
+of CSS; a test holds the budgets (35 kB, 3 kB and 6 kB) and checks no schema library is
+bundled. The build splits chunks (`splitting: true`) so the encoder stays out of the entry.
 
 ### Tests
 
