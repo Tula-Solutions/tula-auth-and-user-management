@@ -14,6 +14,18 @@ Decisions 1 and 2). Everything below is built and exercised as a dry run only. T
 The list lives in `scripts/publish-manifest.ts` (`PUBLISHABLE_PACKAGES`), dependencies first.
 Every other workspace package is private for good.
 
+### `@tula/contract` under a strict Content-Security-Policy
+
+`@tula/contract`'s main entry point uses Zod, and Zod finds out whether it may compile its
+parsers with `new Function` by trying. On a page whose policy has no `'unsafe-eval'` the
+attempt is refused and reported as a violation (nothing breaks: Zod then uses its
+interpreter). An application under such a policy should switch the attempt off **before**
+the contract is imported: `import { config } from 'zod'; config({ jitless: true })` in a
+module that the entry point imports first (the dashboard's `src/lib/zod-csp.ts`), or, for a
+bundle that carries its own copy of Zod, `globalThis.__zod_globalConfig = { jitless: true }`
+in a script that runs before it. The Zod-free entry points (`/error-codes`, `/headers`,
+`/password-rules`, `/theme`, `/issuer`) need nothing.
+
 ## How a package is built and checked
 
 ```bash

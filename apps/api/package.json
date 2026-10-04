@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@hono/standard-validator": "^0.4.0",
-    "@scalar/hono-api-reference": "^0.12.6",
+    "@scalar/api-reference": "1.72.1",
     "@simplewebauthn/server": "^14.0.3",
     "@tula/contract": "workspace:*",
     "@tula/db": "workspace:*",

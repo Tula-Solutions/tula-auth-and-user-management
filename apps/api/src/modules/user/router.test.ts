@@ -341,3 +341,182 @@ describe('client: changing a password with two-step verification on', () => {
     expect((await client('POST', '/me/password', tokens.accessToken, body)).status).toBe(204)
   })
 })
+
+describe('admin: GET /v1/admin/users/:userId/authentication', () => {
+  const scope = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+  const actor = { type: 'user', ipAddress: null, userAgent: null } as const
+  const CREDENTIAL_ID = 'CANARY-credential-id'
+  const PUBLIC_KEY = 'CANARY-public-key'
+  const USER_HANDLE = 'CANARY-user-handle'
+  const SUBJECT = 'CANARY-provider-subject'
+
+  /** Turn two-step verification on; returns the secret and the backup codes, to look for. */
+  async function enrol(userId: string) {
+    const { secret, uri } = await Mfa.startTotp(deps, scope, userId)
+    const { codes } = await Mfa.confirmTotp(
+      deps,
+      scope,
+      { userId },
+      totp(base32Decode(secret), deps.clock.now()),
+      { ...actor, id: userId }
+    )
+    return { secret, uri, codes }
+  }
+
+  async function addPasskey(userId: string, backedUp: boolean, name: string) {
+    const outcome = await deps.passkeys.create(
+      {
+        id: deps.ids.next(),
+        ...scope,
+        userId,
+        credentialId: `${CREDENTIAL_ID}-${name}`,
+        publicKey: new TextEncoder().encode(PUBLIC_KEY),
+        signCount: 0,
+        transports: ['internal'],
+        aaguid: '00000000-0000-0000-0000-000000000000',
+        backupEligible: backedUp,
+        backedUp,
+        userHandle: USER_HANDLE,
+        name,
+        lastUsedAt: null,
+        createdAt: deps.clock.now(),
+      },
+      10
+    )
+    expect(outcome).toBe('created')
+  }
+
+  async function link(userId: string, provider: 'google' | 'github') {
+    const outcome = await deps.users.linkIdentity({
+      id: deps.ids.next(),
+      ...scope,
+      userId,
+      provider,
+      subject: SUBJECT,
+      createdAt: deps.clock.now(),
+    })
+    expect(outcome).toBe('linked')
+  }
+
+  test('says how a user with everything signs in, and nothing secret', async () => {
+    const user = await createUser('maya@northline.app', { emailVerified: true })
+    const linkedAt = deps.clock.now().toISOString()
+    await link(user.id, 'google')
+    const { secret, uri, codes } = await enrol(user.id)
+    const confirmedAt = deps.clock.now().toISOString()
+    await addPasskey(user.id, true, 'Laptop')
+    await addPasskey(user.id, false, 'Security key')
+
+    const res = await admin('GET', `/${user.id}/authentication`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const text = await res.text()
+    const body = JSON.parse(text)
+    expect(body).toEqual({
+      hasPassword: true,
+      emailVerified: true,
+      identities: [{ provider: 'google', linkedAt }],
+      factors: [{ type: 'totp', confirmedAt }],
+      backupCodesRemaining: codes.length,
+      passkeys: [
+        {
+          id: expect.any(String),
+          name: 'Laptop',
+          synced: true,
+          createdAt: expect.any(String),
+          lastUsedAt: null,
+        },
+        {
+          id: expect.any(String),
+          name: 'Security key',
+          synced: false,
+          createdAt: expect.any(String),
+          lastUsedAt: null,
+        },
+      ],
+      canSignInWithoutPasskeys: true,
+    })
+
+    const publicKey = new TextEncoder().encode(PUBLIC_KEY)
+    const sealed = (await deps.factors.findTotp(scope.environmentId, user.id))?.secret ?? ''
+    expect(sealed.length).toBeGreaterThan(0)
+    expect(codes.length).toBeGreaterThan(0)
+    for (const canary of [
+      secret,
+      uri,
+      'otpauth',
+      sealed,
+      ...codes,
+      CREDENTIAL_ID,
+      PUBLIC_KEY,
+      Buffer.from(publicKey).toString('base64'),
+      Buffer.from(publicKey).toString('base64url'),
+      Buffer.from(publicKey).toString('hex'),
+      USER_HANDLE,
+      SUBJECT,
+      'argon2',
+    ]) {
+      expect(text).not.toContain(canary)
+    }
+    for (const key of ['secret', 'credentialId', 'publicKey', 'userHandle', 'subject', 'codes']) {
+      expect(text).not.toContain(`"${key}"`)
+    }
+  })
+
+  test('a user with no password and nothing else has empty lists', async () => {
+    const res = await admin('POST', '', { email: 'nopass@northline.app' })
+    const user = await json<User>(res)
+    const got = await admin('GET', `/${user.id}/authentication`)
+    expect(got.status).toBe(200)
+    expect(await json<unknown>(got)).toEqual({
+      hasPassword: false,
+      emailVerified: false,
+      identities: [],
+      factors: [],
+      backupCodesRemaining: 0,
+      passkeys: [],
+      canSignInWithoutPasskeys: false,
+    })
+  })
+
+  test('a pending enrolment is not a factor', async () => {
+    const user = await createUser()
+    const { secret } = await Mfa.startTotp(deps, scope, user.id)
+    const res = await admin('GET', `/${user.id}/authentication`)
+    const text = await res.text()
+    expect(JSON.parse(text)).toMatchObject({ factors: [], backupCodesRemaining: 0 })
+    expect(text).not.toContain(secret)
+  })
+
+  test('a passkey alone is not a way in once passkeys are removed', async () => {
+    const created = await admin('POST', '', { email: 'keyonly@northline.app' })
+    const user = await json<User>(created)
+    await addPasskey(user.id, true, 'Phone')
+    const body = await json<{ passkeys: unknown[]; canSignInWithoutPasskeys: boolean }>(
+      await admin('GET', `/${user.id}/authentication`)
+    )
+    expect(body.passkeys).toHaveLength(1)
+    expect(body.canSignInWithoutPasskeys).toBe(false)
+  })
+
+  test('a user of another environment answers the same 404 as an unknown one', async () => {
+    const user = await createUser()
+    const other = await admin('GET', `/${user.id}/authentication`, undefined, PROD_SK)
+    const unknown = await admin(
+      'GET',
+      '/00000000-0000-7000-8000-00000000dead/authentication',
+      undefined,
+      PROD_SK
+    )
+    expect(other.status).toBe(404)
+    expect(unknown.status).toBe(404)
+    expect(await other.text()).toBe(await unknown.text())
+  })
+
+  test('needs a secret key and a well-formed id', async () => {
+    const user = await createUser()
+    expect((await admin('GET', `/${user.id}/authentication`, undefined, null)).status).toBe(401)
+    expect((await admin('GET', `/${user.id}/authentication`, undefined, PK)).status).toBe(401)
+    expect((await admin('GET', '/not-a-uuid/authentication')).status).toBe(422)
+  })
+})

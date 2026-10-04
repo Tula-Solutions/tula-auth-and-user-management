@@ -482,6 +482,35 @@ export function describeActivityLog(
         expect(await list({ actorId: other.userId, action: 'user.banned' })).toEqual(other.ids)
       })
 
+      test('filters by time (from inclusive, to exclusive) and by the kind of actor', async () => {
+        const { userId, ids } = await history(ctx.a, 4)
+        const list = async (criteria: object) =>
+          (
+            await ctx.log.listAudit(ctx.a.environmentId, {
+              targetId: userId,
+              page: 1,
+              size: 100,
+              ...criteria,
+            })
+          ).entries.map((entry) => entry.id)
+        expect(await list({ from: later(1_000) })).toEqual([ids[3], ids[2], ids[1]] as string[])
+        expect(await list({ to: later(2_000) })).toEqual([ids[1], ids[0]] as string[])
+        expect(await list({ from: later(1_000), to: later(3_000) })).toEqual([
+          ids[2],
+          ids[1],
+        ] as string[])
+        expect(await list({ from: later(10_000) })).toEqual([])
+        const paged = await ctx.log.listAudit(ctx.a.environmentId, {
+          targetId: userId,
+          from: later(1_000),
+          page: 1,
+          size: 1,
+        })
+        expect(paged.totalCount).toBe(3)
+        expect(await list({ actorType: 'admin' })).toEqual([...ids].reverse())
+        expect(await list({ actorType: 'instance_admin' })).toEqual([])
+      })
+
       test('one environment never sees another’s entries', async () => {
         const { userId, ids } = await history(ctx.a, 2)
         const fromB = await ctx.log.listAudit(ctx.b.environmentId, {

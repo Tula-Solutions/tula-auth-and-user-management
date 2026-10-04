@@ -3,6 +3,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
 import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { FixedClock } from '~/adapters/memory/clock'
+import { MemoryControlPlane } from '~/adapters/memory/control-plane'
 import { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
 import { MemoryEnvironmentLock } from '~/adapters/memory/environment-lock'
 import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-settings'
@@ -53,6 +54,7 @@ export interface TestDeps extends Deps {
   breachChecker: MemoryBreachChecker
   jobLock: MemoryJobLock
   environmentLock: MemoryEnvironmentLock
+  controlPlane: MemoryControlPlane
 }
 
 /** Master key for test secret boxes. Never use outside tests. */
@@ -67,6 +69,9 @@ export const TEST_CONFIG: AppConfig = {
   passwordPolicy: PASSWORD_POLICY_PRESETS.recommended,
   oauthMock: false,
   instanceAdminTokenHash: null,
+  dashboardDir: null,
+  apiDocs: true,
+  instanceAuditRetentionDays: 365,
 }
 
 /**
@@ -86,11 +91,13 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   // One log shared by every store, as the Postgres stores share the two activity tables.
   const activityLog = overrides.activityLog ?? new MemoryActivityLog()
   const users = new MemoryUserRepository(activityLog)
+  // Shared with the control plane, so an environment created through it resolves everywhere.
+  const environments = overrides.environments ?? new MemoryEnvironmentRepository()
   return {
     config: TEST_CONFIG,
     ids: new SequentialIds(),
     apiKeys: new MemoryApiKeyRepository(activityLog),
-    environments: new MemoryEnvironmentRepository(),
+    controlPlane: new MemoryControlPlane(environments),
     environmentSettings: new MemoryEnvironmentSettingsStore(activityLog),
     signingKeys: new MemorySigningKeyStore(activityLog),
     verificationTokens: new MemoryVerificationTokenStore(),
@@ -115,6 +122,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     ...overrides,
     clock,
     activityLog,
+    environments,
   }
 }
 
@@ -158,4 +166,68 @@ export function seedApiKey(
     ...overrides,
     keyHash: sha256Hex(key),
   })
+}
+
+/** An instance admin token for tests: 32 characters that pass the boot check. */
+export const TEST_ADMIN_TOKEN = 'k3Zr8vQ1nP5xW7bT2mY9cF4hJ6dL0sAg'
+
+/**
+ * Test deps of a deployment that sets `TULA_ADMIN_TOKEN` (the instance routes and the dashboard
+ * session exist).
+ *
+ * @param overrides - Adapters or config to replace.
+ * @returns The deps.
+ */
+export function createInstanceTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
+  return createTestDeps({
+    ...overrides,
+    config: {
+      ...TEST_CONFIG,
+      ...overrides.config,
+      instanceAdminTokenHash: sha256Hex(TEST_ADMIN_TOKEN),
+    },
+  })
+}
+
+/** What `app.request` needs: `createApp(deps)` satisfies it. */
+interface Requestable {
+  request(path: string, init?: RequestInit): Response | Promise<Response>
+}
+
+/**
+ * The headers of a call the dashboard makes: the custom header, the API's own origin and, when
+ * given, the session cookie and the environment.
+ *
+ * @param cookie - The `Cookie` header from {@link dashboardSignIn}.
+ * @param environmentId - The environment an admin call is for.
+ * @returns The headers.
+ */
+export function dashboardHeaders(cookie?: string, environmentId?: string): Record<string, string> {
+  return {
+    'x-tula-dashboard': '1',
+    origin: new URL(TEST_CONFIG.publicUrl).origin,
+    'content-type': 'application/json',
+    ...(cookie ? { cookie } : {}),
+    ...(environmentId ? { 'x-tula-environment': environmentId } : {}),
+  }
+}
+
+/**
+ * Sign in to the dashboard with {@link TEST_ADMIN_TOKEN}.
+ *
+ * @param app - An app built on {@link createInstanceTestDeps}.
+ * @returns The `Cookie` header to send on later calls.
+ * @throws Error when the sign-in does not answer 200 with a cookie.
+ */
+export async function dashboardSignIn(app: Requestable): Promise<string> {
+  const res = await app.request('/v1/instance/session', {
+    method: 'POST',
+    headers: dashboardHeaders(),
+    body: JSON.stringify({ token: TEST_ADMIN_TOKEN }),
+  })
+  const [first] = res.headers.getSetCookie()
+  if (res.status !== 200 || !first) {
+    throw new Error(`dashboard sign-in failed with ${res.status}`)
+  }
+  return first.split(';')[0] ?? ''
 }

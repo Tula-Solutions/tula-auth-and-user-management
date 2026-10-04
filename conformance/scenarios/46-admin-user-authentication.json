@@ -1,0 +1,290 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "admin user authentication",
+  "description": "An operator reads how a user signs in: only a secret key can, a user of no such id is not found, a confirmed authenticator shows up with the number of backup codes left and no secret, and after a reset it is gone.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "a publishable key cannot read how anyone signs in",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}/authentication"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "an unknown user is not found",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/00000000-0000-7000-8000-0000000000ff/authentication",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "resource.not_found"
+        }
+      }
+    },
+    {
+      "name": "a password and a verified address, and nothing else",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}/authentication",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-store"
+        },
+        "body": {
+          "hasPassword": true,
+          "emailVerified": true,
+          "identities": [],
+          "factors": [],
+          "backupCodesRemaining": 0,
+          "passkeys": [],
+          "canSignInWithoutPasskeys": true
+        }
+      }
+    },
+    {
+      "name": "start an authenticator enrolment",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{accessToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "secret": {
+            "$matches": "^[A-Z2-7]{32}$"
+          },
+          "uri": {
+            "$matches": "^otpauth://totp/"
+          }
+        }
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "an enrolment that was only started is not a factor",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}/authentication",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-store"
+        },
+        "body": {
+          "factors": [],
+          "backupCodesRemaining": 0
+        }
+      }
+    },
+    {
+      "name": "compute the code the authenticator shows",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "enrolCode"
+      }
+    },
+    {
+      "name": "confirm it: two-step verification is on, with ten backup codes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "code": "{{enrolCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "codes": [
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            },
+            {
+              "$matches": "^[2-9a-hjkmnp-z]{5}-[2-9a-hjkmnp-z]{5}$"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "backupCode": "codes[0]"
+      }
+    },
+    {
+      "name": "the confirmed authenticator and its ten backup codes, and no secret",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}/authentication",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-store"
+        },
+        "body": {
+          "hasPassword": true,
+          "factors": [
+            {
+              "type": "totp",
+              "confirmedAt": "$any",
+              "secret": "$absent",
+              "uri": "$absent"
+            }
+          ],
+          "backupCodesRemaining": 10,
+          "secret": "$absent",
+          "uri": "$absent",
+          "codes": "$absent",
+          "backupCodes": "$absent",
+          "canSignInWithoutPasskeys": true
+        }
+      }
+    },
+    {
+      "name": "the operator resets two-step verification",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{userId}}/factors",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204,
+        "headers": {
+          "x-tula-can-still-sign-in": "true"
+        }
+      }
+    },
+    {
+      "name": "nothing of it is left",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}/authentication",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-store"
+        },
+        "body": {
+          "hasPassword": true,
+          "factors": [],
+          "backupCodesRemaining": 0,
+          "passkeys": []
+        }
+      }
+    }
+  ]
+}

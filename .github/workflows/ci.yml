@@ -109,6 +109,21 @@ jobs:
           done
           echo "the API instances did not both become ready" >&2
           exit 1
+      - name: The image serves the dashboard under its Content-Security-Policy
+        run: |
+          set -euo pipefail
+          headers=$(curl -fsS -o /dev/null -D - http://localhost:3003/dashboard/)
+          echo "$headers" | grep -i '^content-security-policy:' | grep -F "script-src 'self'" > /dev/null
+          if echo "$headers" | grep -i '^content-security-policy:' | grep -q 'unsafe-'; then
+            echo "the dashboard's Content-Security-Policy allows something unsafe" >&2
+            exit 1
+          fi
+          # The page is the app (a script of this origin), and a missing asset is a 404, not HTML.
+          curl -fsS http://localhost:3003/dashboard/ | grep -q '/dashboard/assets/'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3003/dashboard/assets/missing.js)" = 404
+          # Only the static files: no React and no dashboard sources in the image.
+          docker compose --profile app run --rm -T api sh -c \
+            '! test -e /usr/src/app/node_modules/react && ! test -e /usr/src/app/apps/dashboard/src'
       - name: Create an environment and its keys
         run: |
           # Without pipefail a failed command before `| tail` would be swallowed, and an empty

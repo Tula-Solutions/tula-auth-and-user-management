@@ -53,7 +53,8 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/db/migrations/**` (once merged to `develop`) | Applied migrations are immutable; add a new one. |
 | `**/*.gen.ts`, `**/routeTree.gen.ts` | Code generators own these. `packages/core/src/generated/api.gen.ts`: `bun run core:generate`; `packages/admin/src/generated/api.gen.ts`: `bun run admin:generate` (both from `openapi.json`, by `packages/core/scripts/openapi-types.ts`). |
 | The `tokens:start` … `tokens:end` block of `packages/react/src/styles.css` | Generated from `@tula/contract/theme` by `bun run --filter @tula/react generate`. Change a token in the contract, then regenerate. |
-| `apps/dashboard/src/components/ui/**` | shadcn primitives — wrap or extend, don't modify. |
+| `apps/dashboard/src/api/generated/api.gen.ts`, `apps/dashboard/src/routeTree.gen.ts`, `apps/dashboard/src/styles/tokens.gen.css` | Orval's hooks, TanStack Router's route tree and the theme tokens: `bun run dashboard:generate` (after `contract:generate`, after adding a route file, after changing a theme token). |
+| `apps/dashboard/src/components/ui/**` | shadcn primitives, written by its CLI (`bunx shadcn@latest add <name>` in `apps/dashboard`) — wrap or extend, don't modify. They import `cn` from the bare specifier `cn`, as the registry ships them; `tsconfig.json` and `vite.config.ts` map it to `src/lib/utils.ts`. |
 | `bun.lock` | Manage via `bun add` / `bun remove`. |
 | `.env*` (except `.env.example`) | Local secrets; never read, print or commit them. |
 
@@ -81,7 +82,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | Path | What |
 | --- | --- |
 | `apps/api` | `@tula/api` — the Bun + Hono auth server (data plane). |
-| `apps/dashboard` | Local admin UI (Phase 1; payhub-portal stack). |
+| `apps/dashboard` | `@tula/dashboard` — the operator's dashboard: a Vite + React single-page app the API serves at `/dashboard` ([ADR 0032](docs/adr/0032-dashboard.md), [docs/dashboard.md](docs/dashboard.md), `apps/dashboard/README.md`). Private, never published. |
 | `packages/contract` | `@tula/contract` — Zod schemas, flow protocol, error codes, token claims, password policy, OpenAPI snapshot. Imported by the API and every TS SDK. |
 | `packages/db` | `@tula/db` — Drizzle schema, committed migrations, RLS policies, tenant helpers, seed. |
 | `packages/tsconfig` | Shared tsconfig bases. |
@@ -232,6 +233,52 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   moved on a step change and on failure, state as text and not only colour, keyboard operation
   of everything. axe runs on every screen in the browser tests with no rule disabled.
 
+### Dashboard app (`apps/dashboard`, see ADR 0032)
+
+- **Every API call goes through an Orval-generated hook and `dashboardFetch`**
+  (`src/api/mutator.ts`): `x-tula-dashboard: 1`, the cookie, never `Authorization`, the
+  selected environment on admin calls, and one error type (`ApiError`). A 401
+  `auth.unauthenticated` ends the session; the shell returns to sign-in and back to the same
+  address. Only `/v1/admin/*` and `/v1/instance/*` get hooks.
+- **The address is the selection** (`/w/<id>/p/<id>/e/<id>/…`, filters and pages as search
+  parameters); the Zustand scope store mirrors it through `syncScope` in each route's
+  `beforeLoad`, which also drops cached admin answers when the environment changes (admin
+  queries are keyed by path, the environment travels in a header).
+- **A switch remounts.** The router keeps a route's component when only a path parameter
+  changes, so everything under the environment route is keyed by the environment id
+  (`EnvironmentGate`), the workspace screen by the workspace id, the user screen by the user
+  id, and a list item that holds form state includes the environment id in its key
+  (`ProviderCard`). The settings editor's document and draft belong to the environment they
+  were loaded for and a save is refused for any other. The shell is never remounted: a dialog
+  it owns is bound to the workspace or project it was opened in. A new screen with a draft,
+  a typed secret or a confirmation dialog gets a test in `src/environment-switch.test.tsx`.
+- **A failed sign-out is not a sign-out.** The app leaves for the sign-in page only once the
+  API has cleared the cookie; otherwise it stays and says the session is still active.
+- **It runs under the API's strict Content-Security-Policy, and the browser tests fail on any
+  violation.** No inline script or style, no `eval`, no library that injects a `<style>`:
+  dialogs are the platform's `<dialog>` (`components/modal.tsx`; Radix's dialog and select
+  inject styles), toasts are the app's own live region, selects are shadcn's `native-select`,
+  and Zod runs in its interpreter (`src/lib/zod-csp.ts`, imported first by `main.tsx`: Zod
+  otherwise probes `new Function`). Never loosen `DASHBOARD_CSP` for a library.
+- **No secret outlives its form.** The admin token, a created API key, a typed password and a
+  provider secret are component state only while their form or dialog is open: never
+  `localStorage`, `sessionStorage`, the address or a log. A mutation that carries one uses
+  `gcTime: 0` and is `reset()` when the form lets go (the query client keeps a mutation's
+  variables), and the router's scroll restoration stays off (it writes to `sessionStorage`).
+  `src/app.test.tsx` and the browser tests walk the app and assert storage, the address, the
+  document and the query caches are clean.
+- **One save model for settings** (`features/settings/settings-editor.tsx`): load with the
+  revision, replace with `If-Match`, 412 is "changed elsewhere" with a reload and never a
+  retry, a weaker policy (`settingsWeakenings`) or managed settings ask first. A settings
+  screen is a `SettingsFrame`.
+- **Destructive actions name what they act on** and, in a production environment, ask for it
+  to be typed (`ConfirmDialog`'s `requireText`). Server text is rendered as text; a link is
+  an app route or a validated `https:` URL.
+- **Accessibility as in the React SDK**: labelled fields with associated, announced errors
+  (`Field`), focus on the heading after a navigation (`PageHeader`), dialogs that trap and
+  restore focus, state in words as well as colour, tables that stack under 640 px. Colours
+  come from `@tula/contract/theme` through `tokens.gen.css`.
+
 ### Next.js SDK (see ADR 0029)
 
 - **The browser talks to the app's origin, never to the API's host.** The route handler
@@ -329,15 +376,72 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
   Flow routes also read `x-tula-client` (how tokens are delivered; fixed when the attempt
   starts) and, on every call after the start, `x-tula-attempt` (the attempt's secret;
   `FLOW_ATTEMPT_HEADER` in `@tula/contract`).
-- `/v1/admin/*` — server-to-server and the dashboard with a **secret key**
-  (`Authorization: Bearer tula_sk_<env>_…`).
+- `/v1/admin/*` — server-to-server with a **secret key**
+  (`Authorization: Bearer tula_sk_<env>_…`), or the dashboard with its **session** plus
+  `x-tula-environment: <environment id>`. `secretKey()` accepts both; never add a second
+  way in to an admin route.
 - `/v1/instance/*` — about the deployment as a whole, with the **instance admin token**
-  (`Authorization: Bearer <TULA_ADMIN_TOKEN>`, `instanceAdmin()` in
+  (`Authorization: Bearer <TULA_ADMIN_TOKEN>`) or a dashboard session (`instanceAdmin()` in
   `~/middleware/instance-admin`; [ADR 0031](docs/adr/0031-instance-admin-and-cli.md)). Without
-  `TULA_ADMIN_TOKEN` the group does not exist (404). Today: `GET /v1/instance/diagnostics`.
+  `TULA_ADMIN_TOKEN` the group does not exist (404). Diagnostics, the dashboard's session,
+  workspaces, projects, environments and the instance audit log
+  ([ADR 0032](docs/adr/0032-dashboard.md)).
+- `/dashboard` — the dashboard's build output as static files, only where a build is present
+  (`DASHBOARD_DIR`, or `apps/dashboard/dist`).
 - `/v1/environments/:id/.well-known/jwks.json` (the token `iss` + `/.well-known/jwks.json`; see
-  `environmentIssuer` in `@tula/contract`), `/v1/status`, `/v1/ready`, `/v1/openapi.json`,
-  `/v1/docs` — public.
+  `environmentIssuer` in `@tula/contract`), `/v1/status`, `/v1/ready`, `/v1/openapi.json` —
+  public. `/v1/docs` (the API reference) too, where `API_DOCS` is on: by default the `local`
+  and `dev` tiers only.
+
+### The dashboard's session and the control plane (see ADR 0032)
+
+- **The browser never keeps `TULA_ADMIN_TOKEN`.** `POST /v1/instance/session` exchanges it
+  once for a stateless signed cookie (`~/lib/dashboard-session`: HMAC over the payload and the
+  admin token's digest, key from `TULA_MASTER_KEY`; 8 hours, never extended). Rotating the
+  token or the master key ends every session; one session cannot be revoked alone.
+- **Cookies only through `~/middleware/dashboard-session`**: `HttpOnly`, `SameSite=Strict`,
+  `Secure` and `__Secure-` over https, set twice (`Path=/v1/instance` and `Path=/v1/admin`),
+  never `/` or `/v1`.
+- **A dashboard request is one that carries `x-tula-dashboard`.** It is authenticated by the
+  cookie or not at all, under the three CSRF rules (`requireDashboardOrigin` plus the header:
+  the API's own origin or `CORS_ORIGINS`, an `Origin` on anything but a read, not
+  `Sec-Fetch-Site: cross-site`), checked before the cookie is read. It never carries
+  `Authorization`: the two credentials are refused together. Without the header a cookie
+  means nothing. The origin rule is exact in **every** tier: never apply the `local` tier's
+  "any loopback origin" rule (`allowedOrigin`) to a cookie-authenticated request, because
+  cookies are not scoped by port. `vite dev` works through its proxy
+  (`apps/dashboard/src/lib/dev-proxy.ts`).
+- **The actor is `instance_admin`** with the session's id (`adminActor(c)` on admin routes,
+  `instanceActor(c)` on instance routes; a `null` id for the bearer token itself).
+- **What has no environment is recorded in the instance audit log** (`deps.controlPlane`,
+  `tula.instance_audit_logs`): every control-plane write takes its `InstanceActivity`
+  (`ControlPlane.entry`) and stores both or neither. Never a name, a token or an email in one.
+- **A new instance operation takes the instance token** (`openapi.security.instance`); the
+  admin client's generator fails otherwise. Only the three session operations are a browser's
+  alone, by name (`BROWSER_ONLY_INSTANCE_OPERATIONS`).
+- **The sign-in answers one way and is counted by itself.** `POST /v1/instance/session` reads
+  its body in the handler: wrong, missing, malformed and unreadable are the same 401
+  `auth.invalid_key`. It has its own per-IP bucket (`dashboardSignInRateLimit`), apart from the
+  bearer token's. Failed sign-ins are recorded through `ControlPlane.recordFailedSignIn`: one
+  entry a minute per address with a count, tallied in the rate limiter under a keyed hash of
+  the address. Never write one entry per failure to an append-only table from a route anyone
+  can call.
+- **The instance audit log has a retention period** (`INSTANCE_AUDIT_RETENTION_DAYS`, default
+  365; `ControlPlane.deleteAuditBefore` from the retention job). An environment's audit log
+  is never deleted.
+- **Every HTML response has a Content-Security-Policy that allows no script from another
+  origin, and `nosniff`.** The API reference (`/v1/docs`, `~/lib/api-docs`) is served only
+  where `API_DOCS` is on (default: `local` and `dev`), from the installed, exactly pinned
+  `@scalar/api-reference` package, under `API_DOCS_CSP`: never a CDN, an inline script or
+  `unsafe-eval`. `lib/api-docs.test.ts` walks the route table and fails for an HTML response
+  without such a policy; a new page must pass it.
+- **Work after a commit must not fail the answer.** `Jwks.ensureKeys` for a new environment
+  runs after the transaction: a failure is logged and the creation is still answered 201
+  (the keys are made on first use and at boot). A 500 there makes the caller create a second
+  project.
+- **Static files**: every path is decided by `resolveDashboardFile` (resolve, prefix check,
+  real path, prefix check again). Never serve a file by any other route, and never loosen
+  `DASHBOARD_CSP` to allow inline script, `eval` or another origin.
 
 ### Per-environment settings
 
@@ -561,7 +665,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   header that carries a stateful session's claims): [ADR 0029](docs/adr/0029-nextjs-sdk.md);
   settings as code, the admin client and the "managed by" record:
   [ADR 0030](docs/adr/0030-config-and-apply.md); the instance admin token, diagnostics and the
-  CLI: [ADR 0031](docs/adr/0031-instance-admin-and-cli.md).
+  CLI: [ADR 0031](docs/adr/0031-instance-admin-and-cli.md); the dashboard's session, its CSRF
+  rules, the control plane and how the app is served: [ADR 0032](docs/adr/0032-dashboard.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
   takes the `Origin` header and accepts it only when the environment allows it **and** it
   belongs to `passkeys.rpId`; nothing in a body chooses the origin or the relying party. Call
@@ -727,8 +832,9 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance}`,
-  `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin}.ts`, `lib/crypto.ts`, `lib/totp.ts` or `lib/webauthn.ts` as
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane}`,
+  `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
+  `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
   it needs tests for the failure paths, not just the happy path.
 
@@ -779,6 +885,14 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   `next start`, against the same fixture; the build is part of `bun run e2e`, never of
   `verify`. Its server is started with `exec` so that Playwright stops it: a Next.js server
   left running keeps the keys of a fixture that is gone.
+- **The dashboard is tested as the image serves it.** The `dashboard` Playwright project
+  (`e2e/tests/dashboard/`) drives the built app served by the API's own static handler at
+  `/dashboard`, under its real Content-Security-Policy, against the real API in process; the
+  fixture generates an admin token per run (`/__test/admin-token`, behind `e2e/guard.ts`).
+  Every test fails on a policy violation, a console error or an uncaught exception
+  (`support.ts`). Its component tests (`bun test`, happy-dom) render the whole app against
+  `src/testing/fake-api.ts`. The API image builds the app in its own `dashboard` stage and
+  copies only `dist`: the `install` stage still gets no manifest of a browser package.
 - Component tests (`packages/react`) run in happy-dom through a preload
   (`src/testing/setup.ts`) with Testing Library, against `@tula/core`'s own fake API
   (`src/testing/harness.tsx`).
@@ -832,7 +946,8 @@ apps/api/src/
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/, oauth/
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
-│                     # request-log, instance-admin (TULA_ADMIN_TOKEN, for /v1/instance/*)
+│                     # request-log, instance-admin (TULA_ADMIN_TOKEN, for /v1/instance/*),
+│                     # dashboard-session (the dashboard's cookie and its CSRF rules)
 └── modules/          # flow, password, session, jwks, verification, user, mfa (TOTP, backup
                       # codes, step-up), passkey (WebAuthn), audit, project, status,
                       # settings, factor (first-factor registry and second-factor hooks:
@@ -840,7 +955,9 @@ apps/api/src/
                       # retention (a background job: service only, no router),
                       # notice (security notice emails: service only, no router),
                       # oauth (provider credentials, account linking, the provider callback,
-                      # the dev-only mock provider's consent page)
+                      # the dev-only mock provider's consent page),
+                      # instance (diagnostics), control-plane (the dashboard's session,
+                      # workspaces, projects, environments, the instance audit log)
 ```
 
 ## Common commands
@@ -872,6 +989,9 @@ bun run tula -- doctor      # check a deployment (TULA_API_URL, TULA_ADMIN_TOKEN
 bun run --filter create-tula templates:sync
                             # copy examples/* into create-tula's templates (after changing an example)
                             # the CLI from source: needs TULA_API_URL and TULA_SECRET_KEY (docs/config.md)
+bun run dashboard:generate  # regenerate the dashboard's hooks, route tree and theme tokens
+bun run dashboard:dev       # the dashboard on http://localhost:5175/dashboard/, proxying /v1 to the API
+bun run dashboard:build     # apps/dashboard/dist, which `bun run dev` then serves at /dashboard
 bun run packages:check      # build, pack, publint + attw every publishable package (part of verify)
 bun run release:dry-run     # the same, then report what a release would publish (publishes nothing)
 bun run playground          # @tula/core test bench on http://localhost:5173 (examples/core-playground)
@@ -881,8 +1001,8 @@ bun run --filter @tula/example-react-vite dev
 bun run --filter @tula/react generate
                             # rewrite the stylesheet's token block from @tula/contract/theme
 bun run e2e:install         # once: download Chromium for Playwright
-bun run e2e                 # browser tests: both example apps against the real API in process, with axe
-bun run e2e:screenshots     # regenerate the screenshots in examples/{react-vite,nextjs-app-router}/docs
+bun run e2e                 # browser tests: both example apps and the dashboard against the real API in process, with axe
+bun run e2e:screenshots     # regenerate the screenshots in examples/{react-vite,nextjs-app-router}/docs and apps/dashboard/docs
 bun run db:generate         # generate a migration from schema changes (then read the SQL)
 bun run db:check            # fail if src/schema changed without a migration
 bun run db:migrate          # apply migrations as the schema owner (DATABASE_MIGRATION_URL)

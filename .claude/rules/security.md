@@ -198,3 +198,35 @@ Before finishing any change here, confirm each item holds and has a test:
 41. **Backend verification:** `POST /v1/admin/sessions/verify` needs a secret key of the
     session's own environment, never answers a refresh token with claims, and never writes
     the token to a log or an audit entry.
+42. **Dashboard session (ADR 0032):** minted and verified only by `~/lib/dashboard-session`;
+    cookies only through `~/middleware/dashboard-session`. Test a tampered payload and
+    signature, expiry at exactly eight hours with no extension, a correctly signed payload
+    that claims more, a session from before an admin-token rotation and a master-key change,
+    and the cookie's exact attributes over http and https (two paths, never `/v1`). Sign-in:
+    a wrong, missing, malformed and unreadable token (empty body, not JSON) are the same
+    `auth.invalid_key`, counted before the check in the sign-in's own bucket, refused when
+    the limiter cannot count, and recorded with nothing of what was presented. Failures are
+    recorded through `ControlPlane.recordFailedSignIn` (one entry a minute per address, with
+    a count; the tally is keyed by a keyed hash of the address): never one row per failure
+    in an append-only table that anyone can reach.
+43. **Dashboard CSRF:** for every route a cookie can authenticate, test each leg alone: a
+    foreign `Origin`, `Sec-Fetch-Site: cross-site` with an allowed `Origin`, no
+    `x-tula-dashboard` header (the cookie is ignored), and an unsafe method with no `Origin`.
+    Each must change nothing and set no cookie. An origin from an environment's settings is
+    never enough: only `PUBLIC_URL` and `CORS_ORIGINS`, exactly, in every tier. The `local`
+    tier's loopback rule is never applied to a cookie (cookies are not scoped by port): test
+    another localhost port.
+44. **One credential per request:** the dashboard header or `x-tula-environment` with an
+    `Authorization` header is a 400; the admin token is refused on `/v1/admin/*` and a secret
+    key on `/v1/instance/*`; the environment of a dashboard request comes from the
+    environment's own row, and an unknown or malformed id is the same 404, after the session
+    was checked.
+45. **HTML responses:** every route that answers HTML carries a Content-Security-Policy with
+    no script source other than `'self'` (or none) and `nosniff`; `lib/api-docs.test.ts` walks
+    the route table. The API reference is served only where `API_DOCS` is on, from the
+    installed package, never a CDN, and never with inline script or `unsafe-eval`. A change
+    to it is checked in a browser (`e2e/tests/dashboard/api-docs.spec.ts`: no violation, no
+    request to another host).
+46. **Static files:** a new way to serve a file goes through `resolveDashboardFile`. Test
+    `..`, encoded separators, a backslash, an absolute path, a NUL, a dot file and a link that
+    leaves the directory; and that a missing asset is a 404, not the app.

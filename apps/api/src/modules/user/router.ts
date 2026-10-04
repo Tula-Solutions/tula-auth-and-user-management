@@ -15,6 +15,7 @@ import {
   CreateUserRequestSchema,
   CurrentUserSchema,
   SetPasswordRequestSchema,
+  UserAuthenticationSchema,
   UserIdParamSchema,
   UserListQuerySchema,
   UserListSchema,
@@ -116,6 +117,46 @@ router.get(
     c.json(
       UserSchema.parse(await Users.get(c.get('deps'), c.get('tenant'), c.req.valid('param').userId))
     )
+)
+
+router.get(
+  '/admin/users/:userId/authentication',
+  describeRoute({
+    operationId: 'getUserAuthentication',
+    tags: ['Users'],
+    summary: 'Get how a user signs in',
+    description:
+      'The sign-in methods the account has: whether it has a password and a verified ' +
+      'address, the provider accounts connected to it, its confirmed second factors with ' +
+      'the number of unused backup codes, and its passkeys. Never a secret: no authenticator ' +
+      'secret, backup code, credential id, public key or provider account id.\n\n' +
+      '`canSignInWithoutPasskeys` says whether a method the environment accepts would remain ' +
+      'if the passkeys were removed, which is what `DELETE /v1/admin/users/{userId}/factors` ' +
+      'does: `false` means that reset would leave the user no way in.',
+    security: openapi.security.admin,
+    responses: {
+      200: {
+        description: 'The user’s sign-in methods.',
+        content: json(UserAuthenticationSchema),
+      },
+      404: openapi.responses[404],
+      422: openapi.responses[422],
+      ...adminErrors,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', UserIdParamSchema, validationHook),
+  async (c) => {
+    // What an account is protected by is not something a cache between here and the caller
+    // should hold on to.
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      UserAuthenticationSchema.parse(
+        await Users.authentication(c.get('deps'), c.get('tenant'), c.req.valid('param').userId)
+      )
+    )
+  }
 )
 
 router.delete(

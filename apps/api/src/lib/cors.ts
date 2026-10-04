@@ -30,3 +30,23 @@ export function allowedOrigin(
   }
   return null
 }
+
+/**
+ * Whether an origin is one of the deployment's own: the API's (`PUBLIC_URL`, which serves the
+ * dashboard) or on `CORS_ORIGINS`. The rule of the operator routes (`/v1/admin/*`,
+ * `/v1/instance/*`), for the CORS answer and for the dashboard's cookie alike (ADR 0032).
+ *
+ * Exact in every tier. The `local` tier's "any loopback origin" rule of {@link allowedOrigin}
+ * is deliberately absent: cookies are not scoped by port, so any other web app on the
+ * developer's machine could otherwise use a signed-in dashboard session.
+ *
+ * @param origin - The request's `Origin` header.
+ * @param config - The deployment's public URL and its list of origins.
+ * @returns Whether the origin is the deployment's.
+ */
+export function isDeploymentOrigin(
+  origin: string,
+  config: Pick<AppConfig, 'publicUrl' | 'corsOrigins'>
+): boolean {
+  return origin === new URL(config.publicUrl).origin || config.corsOrigins.includes(origin)
+}

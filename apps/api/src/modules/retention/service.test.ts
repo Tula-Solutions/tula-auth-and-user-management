@@ -6,7 +6,7 @@ import * as logger from '~/lib/logger'
 import * as Flows from '~/modules/flow/service'
 import * as Retention from '~/modules/retention/service'
 import * as Sessions from '~/modules/session/service'
-import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const DAY = 86_400_000
 const HOUR = 3_600_000
@@ -143,6 +143,7 @@ describe('purge', () => {
       sessions: 0,
       pendingFactors: 0,
       passkeyChallenges: 0,
+      instanceAuditLogs: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -221,6 +222,7 @@ describe('purge', () => {
       sessions: 0,
       pendingFactors: 2,
       passkeyChallenges: 0,
+      instanceAuditLogs: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -264,6 +266,7 @@ describe('purge', () => {
           sessions: 0,
           pendingFactors: 1,
           passkeyChallenges: 0,
+          instanceAuditLogs: 0,
         },
       ],
     ])
@@ -417,6 +420,62 @@ describe('purge', () => {
     expect(totalCount).toBe(recorded)
   })
 
+  test('removes instance audit entries past the deployment’s retention period, and none sooner', async () => {
+    const record = (type: 'instance.signed_in' | 'instance.sign_in_failed') =>
+      deps.controlPlane.record({
+        id: deps.ids.next(),
+        type,
+        actor: { type: 'instance_admin', id: null },
+        target: null,
+        ipAddress: null,
+        userAgent: null,
+        data: {},
+        occurredAt: deps.clock.now(),
+      })
+    await record('instance.sign_in_failed')
+    deps.clock.advance(100 * DAY)
+    await record('instance.signed_in')
+    // The default period is a year.
+    expect(deps.config.instanceAuditRetentionDays).toBe(365)
+    deps.clock.advance(264 * DAY)
+    expect((await Retention.purge(deps)).instanceAuditLogs).toBe(0)
+    expect(deps.controlPlane.entries).toHaveLength(2)
+    deps.clock.advance(2 * DAY)
+    expect((await Retention.purge(deps)).instanceAuditLogs).toBe(1)
+    expect(deps.controlPlane.entries.map((entry) => entry.type)).toEqual(['instance.signed_in'])
+  })
+
+  test('a deployment can keep instance audit entries for another period', async () => {
+    const short = createTestDeps({ config: { ...TEST_CONFIG, instanceAuditRetentionDays: 30 } })
+    await short.controlPlane.record({
+      id: short.ids.next(),
+      type: 'instance.signed_out',
+      actor: { type: 'instance_admin', id: null },
+      target: null,
+      ipAddress: null,
+      userAgent: null,
+      data: {},
+      occurredAt: short.clock.now(),
+    })
+    short.clock.advance(31 * DAY)
+    expect((await Retention.purge(short)).instanceAuditLogs).toBe(1)
+  })
+
+  test('a failing instance audit purge is logged and does not stop the environments’ purge', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    deps.controlPlane.deleteAuditBefore = async () => {
+      throw new Error('connection refused')
+    }
+    try {
+      const report = await Retention.purge(deps)
+      expect(report.instanceAuditLogs).toBe(0)
+      expect(report.failed).toBe(1)
+      expect(report.environments).toBeGreaterThan(0)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   test('one failing environment is logged and skipped; the others are still purged', async () => {
     const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
     spies.push(warn)
@@ -443,6 +502,7 @@ describe('purge', () => {
       sessions: 1,
       pendingFactors: 0,
       passkeyChallenges: 0,
+      instanceAuditLogs: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -540,6 +600,7 @@ describe('run', () => {
           sessions: 0,
           pendingFactors: 0,
           passkeyChallenges: 0,
+          instanceAuditLogs: 0,
         },
       ],
     ])
@@ -567,6 +628,7 @@ describe('run', () => {
         sessions: 0,
         pendingFactors: 0,
         passkeyChallenges: 0,
+        instanceAuditLogs: 0,
       },
     ])
   })

@@ -1,8 +1,8 @@
-import { CAN_STILL_SIGN_IN_HEADER } from '@tula/contract'
+import { CAN_STILL_SIGN_IN_HEADER, DASHBOARD_HEADER, ENVIRONMENT_HEADER } from '@tula/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Deps, Tenant, TenantVariables } from '~/dependencies'
-import { allowedOrigin } from '~/lib/cors'
+import { allowedOrigin, isDeploymentOrigin } from '~/lib/cors'
 import * as logger from '~/lib/logger'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
 import { CLIENT_HEADER, FLOW_ATTEMPT_HEADER, SESSION_PROFILE_HEADER } from '~/modules/flow/schema'
@@ -20,6 +20,10 @@ export const CORS_REQUEST_HEADERS = [
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
   SESSION_PROFILE_HEADER,
+  // The dashboard's two headers (ADR 0032). Listing them lets a deployment origin send them
+  // after a preflight; for any other origin the preflight carries no allow headers at all.
+  DASHBOARD_HEADER,
+  ENVIRONMENT_HEADER,
 ] as const
 
 /**
@@ -147,9 +151,11 @@ export async function requestMayUseSessionCookie<E extends AppEnv & { Variables:
 }
 
 /**
- * Routes whose credential is an operator's (a secret key, the instance admin token): only the
- * deployment's own `CORS_ORIGINS` may call them from a browser, never an origin a tenant put
- * in its environment's settings.
+ * Routes whose credential is an operator's (a secret key, the instance admin token, the
+ * dashboard's cookie): only the deployment's own origins (`isDeploymentOrigin`: `PUBLIC_URL`
+ * and `CORS_ORIGINS`, exactly) may call them from a browser. Never an origin a tenant put in
+ * its environment's settings, and never the `local` tier's "any loopback origin": the
+ * preflight would otherwise say yes to a page the cookie check then refuses.
  */
 function isAdminPath(path: string): boolean {
   return path.startsWith('/v1/admin/') || path.startsWith('/v1/instance/')
@@ -159,14 +165,15 @@ function isAdminPath(path: string): boolean {
  * CORS, decided per request (ADR 0018).
  *
  * - **Preflight** (`OPTIONS`): allowed when the origin is on the deployment's list
- *   (`CORS_ORIGINS`) or allowed by any environment; for `/v1/admin/*` and `/v1/instance/*`, by the
- *   deployment's list only. Always answered here with 204.
+ *   (`CORS_ORIGINS`) or allowed by any environment; for `/v1/admin/*` and `/v1/instance/*`, when
+ *   it is one of the deployment's own origins, matched exactly in every tier (no loopback rule).
+ *   Always answered here with 204.
  * - **Any other request** runs first. Its response then gets `Access-Control-Allow-Origin`
  *   (with credentials) only when the origin is allowed for the environment its publishable key
  *   resolved to. A response made before a key was resolved (an invalid key, the per-IP limit,
  *   an unknown path, the public routes) holds nothing of any tenant and is readable by an origin
  *   any environment allows, so a browser can show the error code. Admin and instance responses
- *   follow the deployment's list: secret keys do not belong in browsers, and the instance token
+ *   follow the deployment's own origins: secret keys do not belong in browsers, and the instance token
  *   is the operator's (the dashboard is served from a deployment origin).
  * - Origins are echoed on an exact match and never as `*`; `Vary: Origin` is always set, so a
  *   cache cannot serve one origin's answer to another.
@@ -183,7 +190,7 @@ export function cors(deps: OriginDeps) {
       const allowed =
         origin !== '' &&
         (admin
-          ? allowedOrigin(origin, deps.config) !== null
+          ? isDeploymentOrigin(origin, deps.config)
           : await anyEnvironmentAllowsOrigin(deps, origin))
       c.header('Vary', 'Origin')
       if (allowed) {
@@ -206,7 +213,7 @@ export function cors(deps: OriginDeps) {
     let allowed = false
     try {
       allowed = admin
-        ? allowedOrigin(origin, deps.config) !== null
+        ? isDeploymentOrigin(origin, deps.config)
         : tenant
           ? await environmentAllowsOrigin(deps, tenant, origin)
           : await anyEnvironmentAllowsOrigin(deps, origin)

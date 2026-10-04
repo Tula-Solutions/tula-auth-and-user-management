@@ -7,15 +7,18 @@
       "outputs": ["dist/**", "out/**"]
     },
     "typecheck": {
+      "dependsOn": ["generate:check"],
       "outputs": []
     },
     "generate:check": {
       "outputs": []
     },
     "test": {
+      "dependsOn": ["generate:check"],
       "outputs": []
     },
     "test:coverage": {
+      "dependsOn": ["generate:check"],
       "outputs": []
     },
     "dev": {

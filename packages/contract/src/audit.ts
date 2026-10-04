@@ -49,9 +49,34 @@ export const ActivityTypeSchema = z.enum(ACTIVITY_TYPES).meta({ ref: 'ActivityTy
 
 /**
  * Who can perform a recorded action: a signed-in `user`, an `admin` (a secret key; the id is the
- * key's), the `system` itself, or an AI `agent` acting through the MCP server.
+ * key's), the `system` itself, an AI `agent` acting through the MCP server, or the
+ * `instance_admin`: the operator of the deployment, through the dashboard (the id is the
+ * dashboard session's) or with the instance admin token itself (no id).
  */
-export const AUDIT_ACTOR_TYPES = ['user', 'admin', 'system', 'agent'] as const
+export const AUDIT_ACTOR_TYPES = ['user', 'admin', 'system', 'agent', 'instance_admin'] as const
+
+/**
+ * What the instance audit log records: what the operator of a deployment did outside any one
+ * environment (ADR 0032). Signing in to the dashboard (and failing to), signing out, and every
+ * change to workspaces, projects and environments.
+ */
+export const INSTANCE_ACTIVITY_TYPES = [
+  'instance.signed_in',
+  'instance.sign_in_failed',
+  'instance.signed_out',
+  'workspace.created',
+  'project.created',
+  'project.renamed',
+  'environment.created',
+] as const
+
+/** One of {@link INSTANCE_ACTIVITY_TYPES}. */
+export const InstanceActivityTypeSchema = z
+  .enum(INSTANCE_ACTIVITY_TYPES)
+  .meta({ ref: 'InstanceActivityType' })
+
+/** What an instance audit entry can be about. */
+export const INSTANCE_AUDIT_TARGET_TYPES = ['workspace', 'project', 'environment'] as const
 
 /** What a recorded action can be about. */
 export const AUDIT_TARGET_TYPES = [
@@ -93,6 +118,10 @@ export const AuditLogListSchema = z
   .object({ meta: PaginationMetaSchema, data: z.array(AuditLogSchema) })
   .meta({ ref: 'AuditLogList' })
 
+/** A recorded instance action type. */
+export type InstanceActivityType = z.infer<typeof InstanceActivityTypeSchema>
+/** What an instance action was about. */
+export type InstanceAuditTargetType = (typeof INSTANCE_AUDIT_TARGET_TYPES)[number]
 /** A recorded action type. */
 export type ActivityType = z.infer<typeof ActivityTypeSchema>
 /** Who performed an action. */

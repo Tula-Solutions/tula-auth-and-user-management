@@ -1,0 +1,18 @@
+[test]
+# A DOM for component tests: registers happy-dom's globals before any test file loads.
+preload = ["./src/testing/setup.ts"]
+# Above the 10 s that a `findBy*` or `waitFor` waits (src/testing/setup.ts): a missing element
+# then fails with the query's own message, not with Bun's "timed out".
+timeout = 30000
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.8, functions = 0.8 }
+# Generated code (Orval's hooks, the route tree) and shadcn's primitives are not this
+# package's to test; the contract measures its own coverage.
+coveragePathIgnorePatterns = [
+  "../../packages/**",
+  "src/api/generated/**",
+  "src/routeTree.gen.ts",
+  "src/components/ui/**",
+  "src/testing/**",
+  "scripts/**",
+]

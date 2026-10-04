@@ -41,6 +41,12 @@ export interface AuditCriteria {
   actorId?: string
   /** Only actions on this user, session or key. */
   targetId?: string
+  /** Only entries by this kind of actor, e.g. `instance_admin` for what the dashboard did. */
+  actorType?: AuditActorType
+  /** Entries at or after this instant. */
+  from?: Date
+  /** Entries before this instant. */
+  to?: Date
   /** 1-based page. */
   page: number
   /** Page size. */

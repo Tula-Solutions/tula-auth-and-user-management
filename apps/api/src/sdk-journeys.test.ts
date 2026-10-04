@@ -47,6 +47,18 @@ const covered = new Map<string, string[]>()
  * cannot be reached through a client SDK at all.
  */
 const SERVER_ONLY: Record<string, string> = {
+  'admin user authentication':
+    'how a user signs in is read on the admin API with a secret key or a dashboard session, ' +
+    'neither of which a client SDK holds; a signed-in user sees their own methods through ' +
+    '`/v1/client/me/factors`, `/me/passkeys` and `/me/identities`, whose journeys cover them.',
+  'admin user sessions':
+    'listing and ending a user’s sessions is done on the admin API with a secret key or a ' +
+    'dashboard session, neither of which a client SDK holds; what the client observes (its ' +
+    'access token refused as `session.revoked`) is the journey of "sign out everywhere".',
+  'dashboard credential rules':
+    'the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment ' +
+    'header, the origin checks) concern the operator’s browser and a server’s secret key; ' +
+    '`@tula/core` talks to `/v1/client/*` only and sends neither header.',
   'settings managed by a config file':
     'the marker is set and read on the admin API with a secret key, which a client SDK never ' +
     'holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ ' +

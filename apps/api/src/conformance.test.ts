@@ -130,6 +130,9 @@ describe('conformance scenarios, in process', () => {
       'stateful session',
       'step-up window per profile',
       'settings managed by a config file',
+      'admin user sessions',
+      'dashboard credential rules',
+      'admin user authentication',
     ])
   })
 

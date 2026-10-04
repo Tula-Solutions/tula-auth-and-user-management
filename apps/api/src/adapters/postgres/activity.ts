@@ -1,5 +1,5 @@
 import { auditLogs, type Database, events, type Transaction, withTenant } from '@tula/db'
-import { and, count, desc, eq } from 'drizzle-orm'
+import { and, count, desc, eq, gte, lt } from 'drizzle-orm'
 import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
 
 /**
@@ -69,7 +69,10 @@ export class PostgresActivityLog implements ActivityLog {
       eq(auditLogs.environmentId, environmentId),
       criteria.action ? eq(auditLogs.action, criteria.action) : undefined,
       criteria.actorId ? eq(auditLogs.actorId, criteria.actorId) : undefined,
-      criteria.targetId ? eq(auditLogs.targetId, criteria.targetId) : undefined
+      criteria.targetId ? eq(auditLogs.targetId, criteria.targetId) : undefined,
+      criteria.actorType ? eq(auditLogs.actorType, criteria.actorType) : undefined,
+      criteria.from ? gte(auditLogs.occurredAt, criteria.from) : undefined,
+      criteria.to ? lt(auditLogs.occurredAt, criteria.to) : undefined
     )
     return withTenant(this.db, environmentId, async (tx) => {
       const [total] = await tx.select({ value: count() }).from(auditLogs).where(where)

@@ -18,7 +18,9 @@ paths:
   policies match nothing — a missing `withTenant` shows up as "no rows", not a leak.
 - Runtime connects as `tula_api` (in role `tula_app`); migrations run as the owner. Migration
   history lives in `drizzle.__drizzle_migrations`, unreachable by the runtime role.
-- The runtime grant matrix (migration 0003) is least-privilege: control plane has no DELETE,
+- The runtime grant matrix (migration 0003) is least-privilege: control plane has no DELETE
+  (except `instance_audit_logs`, which the retention job purges after
+  `INSTANCE_AUDIT_RETENTION_DAYS`: migration 0016, DELETE but never UPDATE),
   `audit_logs` is append-only, `events` has no DELETE. Admin deletes run under the owner
   (`DATABASE_MIGRATION_URL`), never the request path. The retention job (ADR 0017) deletes
   expired tenant rows as the runtime role, per environment inside `withTenant`, through batched

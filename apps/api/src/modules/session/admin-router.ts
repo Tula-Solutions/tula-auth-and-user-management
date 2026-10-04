@@ -13,7 +13,9 @@ import * as openapi from '~/openapi'
 import {
   AccessTokenClaimsSchema,
   RevokedSessionsSchema,
+  SessionListSchema,
   UserIdParamSchema,
+  UserSessionParamSchema,
   VerifySessionRequestSchema,
 } from './schema'
 
@@ -117,6 +119,86 @@ router.delete(
       adminActor(c)
     )
     return c.json(RevokedSessionsSchema.parse({ revoked }))
+  }
+)
+
+router.get(
+  '/users/:userId/sessions',
+  describeRoute({
+    operationId: 'listUserSessions',
+    tags: ['Sessions'],
+    summary: 'List a user’s sessions',
+    description:
+      'The active sessions of a user (their devices), most recently active first: client ' +
+      'kind, user agent, IP address and times. Never token material. `current` is always ' +
+      '`false`: the caller is not one of the user’s devices. An unknown user answers 404.',
+    security: openapi.security.admin,
+    responses: {
+      200: {
+        description: 'The user’s active sessions.',
+        content: { 'application/json': { schema: resolver(SessionListSchema) } },
+      },
+      401: openapi.responses[401],
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      422: openapi.responses[422],
+      429: openapi.responses[429],
+      500: openapi.responses[500],
+      503: openapi.responses[503],
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', UserIdParamSchema, validationHook),
+  async (c) => {
+    const deps = c.get('deps')
+    const tenant = c.get('tenant')
+    const { userId } = c.req.valid('param')
+    // 404 for a user this environment does not have, rather than an empty list.
+    await Users.get(deps, tenant, userId)
+    const data = await Sessions.list(deps, tenant, { userId, currentSessionId: '' })
+    // Devices, user agents and IP addresses of one user: no cache may keep the answer.
+    c.header('Cache-Control', 'no-store')
+    return c.json(SessionListSchema.parse({ data }))
+  }
+)
+
+router.delete(
+  '/users/:userId/sessions/:sessionId',
+  describeRoute({
+    operationId: 'revokeUserSession',
+    tags: ['Sessions'],
+    summary: 'End one of a user’s sessions',
+    description:
+      'Ends one session of a user (reason `revoked_by_admin`), recorded in the audit log. ' +
+      'Idempotent. A session that does not exist, belongs to another user or to another ' +
+      'environment answers the same 404, so session ids cannot be probed.',
+    security: openapi.security.admin,
+    responses: {
+      204: { description: 'The session has ended.' },
+      401: openapi.responses[401],
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      422: openapi.responses[422],
+      429: openapi.responses[429],
+      500: openapi.responses[500],
+      503: openapi.responses[503],
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', UserSessionParamSchema, validationHook),
+  async (c) => {
+    const { userId, sessionId } = c.req.valid('param')
+    // Through the session service, so the session's id is denylisted and its unexpired
+    // access token stops working at once.
+    await Sessions.revoke(c.get('deps'), c.get('tenant'), {
+      userId,
+      sessionId,
+      reason: 'revoked_by_admin',
+      actor: adminActor(c),
+    })
+    return c.body(null, 204)
   }
 )
 

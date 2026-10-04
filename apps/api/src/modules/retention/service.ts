@@ -37,6 +37,8 @@ export const RETENTION_BATCH_SIZE = 500
  */
 export const RETENTION_MAX_BATCHES = 200
 
+const DAY_MS = 86_400_000
+
 /** How many rows one run deleted, by table. Refresh tokens go with their sessions, uncounted. */
 export interface RetentionCounts {
   flowAttempts: number
@@ -46,13 +48,15 @@ export interface RetentionCounts {
   pendingFactors: number
   /** WebAuthn challenges of signed-in sessions that expired unused. */
   passkeyChallenges: number
+  /** Instance audit entries older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`. */
+  instanceAuditLogs: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
 export interface RetentionReport extends RetentionCounts {
   /** Environments visited. */
   environments: number
-  /** Environments where a delete failed; they are retried on the next run. */
+  /** Purges that failed (an environment's, or the instance audit log's); retried next run. */
   failed: number
 }
 
@@ -64,6 +68,8 @@ type RetentionDeps = Pick<
   | 'sessions'
   | 'factors'
   | 'passkeys'
+  | 'controlPlane'
+  | 'config'
   | 'clock'
 >
 
@@ -90,7 +96,10 @@ async function drain(deleteBatch: (limit: number) => Promise<number>): Promise<n
  * - authenticator enrolments that were never confirmed and lapsed more than
  *   {@link EXPIRED_VERIFICATION_TOKEN_RETENTION} ago (a sealed secret nobody will use).
  *
- * Audit entries are never deleted here, and neither are outbox events: nothing delivers events
+ * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
+ * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
+ *
+ * An environment's audit entries are never deleted here, and neither are outbox events: nothing delivers events
  * yet (Phase 2), so none is safe to drop (ADR 0017).
  *
  * A failure in one environment is logged and skipped, so it cannot keep the environments after
@@ -112,6 +121,19 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     sessions: 0,
     pendingFactors: 0,
     passkeyChallenges: 0,
+    instanceAuditLogs: 0,
+  }
+  // The instance audit log belongs to no environment. It is the one audit log with an end:
+  // anyone who can reach the sign-in can add to it, so it is kept for a period the
+  // deployment sets, not for ever. An environment's audit log is never deleted here.
+  try {
+    const auditBefore = new Date(now.getTime() - deps.config.instanceAuditRetentionDays * DAY_MS)
+    report.instanceAuditLogs = await drain((limit) =>
+      deps.controlPlane.deleteAuditBefore(auditBefore, limit)
+    )
+  } catch (error) {
+    report.failed += 1
+    logger.warn('retention failed for the instance audit log', { err: errorReason(error) })
   }
   for (const { id } of await deps.environments.listAll()) {
     report.environments += 1
@@ -166,7 +188,8 @@ export async function run(
     report.verificationTokens +
     report.sessions +
     report.pendingFactors +
-    report.passkeyChallenges
+    report.passkeyChallenges +
+    report.instanceAuditLogs
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

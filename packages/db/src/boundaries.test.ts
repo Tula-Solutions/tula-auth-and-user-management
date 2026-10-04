@@ -183,6 +183,28 @@ describe('runtime role privileges are least-privilege (F3)', () => {
     expect(rows).toEqual([])
   })
 
+  test('the instance audit log can be purged by the runtime role but never rewritten; an environment’s log can be neither', async () => {
+    const rows = await queryRows<{ table: string; privilege: string; held: boolean }>(
+      testDb.db,
+      sql`
+        select t.name as table, p.name as privilege,
+               has_table_privilege('tula_app', 'tula.' || t.name, p.name) as held
+        from (values ('instance_audit_logs'), ('audit_logs')) as t(name),
+             (values ('DELETE'), ('UPDATE'), ('TRUNCATE')) as p(name)
+        order by t.name, p.name
+      `
+    )
+    expect(rows).toEqual([
+      { table: 'audit_logs', privilege: 'DELETE', held: false },
+      { table: 'audit_logs', privilege: 'TRUNCATE', held: false },
+      { table: 'audit_logs', privilege: 'UPDATE', held: false },
+      // The retention job's purge (migration 0016): the one audit log with an end.
+      { table: 'instance_audit_logs', privilege: 'DELETE', held: true },
+      { table: 'instance_audit_logs', privilege: 'TRUNCATE', held: false },
+      { table: 'instance_audit_logs', privilege: 'UPDATE', held: false },
+    ])
+  })
+
   test('tenant data can still be deleted through RLS (e.g. revoking sessions)', async () => {
     const deleted = await withTenant(testDb.db, b.environmentId, (tx) =>
       tx.delete(schema.sessions).where(eq(schema.sessions.id, sessionB)).returning()

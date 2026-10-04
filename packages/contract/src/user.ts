@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PasskeySchema } from './passkey'
 
 /** Largest page a list endpoint returns. */
 export const MAX_PAGE_SIZE = 100
@@ -49,6 +50,37 @@ export const CurrentUserSchema = UserSchema.extend({
   hasPassword: z.boolean(),
 }).meta({ ref: 'CurrentUser' })
 
+/**
+ * How a user signs in, as `GET /v1/admin/users/{userId}/authentication` returns it to a server
+ * or the dashboard: which methods the account has, and when each was added.
+ *
+ * Never a credential or anything that identifies one elsewhere: no password hash, no
+ * authenticator secret or `otpauth` URI, no backup code, no passkey credential id, public key
+ * or user handle, and no provider's own id for the account.
+ *
+ * - `identities`: the provider accounts connected to the user, oldest first.
+ * - `factors`: **confirmed** second factors only; an enrolment that was started and never
+ *   confirmed is not listed. `type` is `totp` today; a plain string so that a later factor does
+ *   not break a client.
+ * - `backupCodesRemaining`: how many unused backup codes are left (0 without a factor).
+ * - `passkeys`: the same view the user has of them ({@link PasskeySchema}).
+ * - `canSignInWithoutPasskeys`: whether a method the environment accepts would remain if every
+ *   passkey were removed, which is what resetting two-step verification does: a password where
+ *   passwords are on, a verified address where the emailed code is on, or an account of an
+ *   enabled provider. `false` means a reset would leave the user no way in.
+ */
+export const UserAuthenticationSchema = z
+  .object({
+    hasPassword: z.boolean(),
+    emailVerified: z.boolean(),
+    identities: z.array(z.object({ provider: z.string(), linkedAt: z.iso.datetime() })),
+    factors: z.array(z.object({ type: z.string(), confirmedAt: z.iso.datetime() })),
+    backupCodesRemaining: z.number().int().min(0),
+    passkeys: z.array(PasskeySchema),
+    canSignInWithoutPasskeys: z.boolean(),
+  })
+  .meta({ ref: 'UserAuthentication' })
+
 /** One page of users. */
 export const UserListSchema = z
   .object({ meta: PaginationMetaSchema, data: z.array(UserSchema) })
@@ -95,6 +127,8 @@ export type PaginationMeta = z.infer<typeof PaginationMetaSchema>
 export type User = z.infer<typeof UserSchema>
 /** The signed-in user. */
 export type CurrentUser = z.infer<typeof CurrentUserSchema>
+/** How a user signs in. */
+export type UserAuthentication = z.infer<typeof UserAuthenticationSchema>
 /** A page of users. */
 export type UserList = z.infer<typeof UserListSchema>
 /** User sort key. */

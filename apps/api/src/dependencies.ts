@@ -6,6 +6,7 @@ import type { ActivityLog } from '~/ports/activity-log'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { BreachChecker } from '~/ports/breach-checker'
 import type { Clock } from '~/ports/clock'
+import type { ControlPlane } from '~/ports/control-plane'
 import type { Diagnostics } from '~/ports/diagnostics'
 import type { EnvironmentLock } from '~/ports/environment-lock'
 import type { EnvironmentRepository } from '~/ports/environment-repository'
@@ -55,6 +56,22 @@ export interface AppConfig {
    * sets none, and the instance routes then do not exist. The token itself is not kept.
    */
   instanceAdminTokenHash: string | null
+  /**
+   * The real path of the dashboard's build output (`DASHBOARD_DIR`, or `apps/dashboard/dist`),
+   * served at `/dashboard`; `null` when there is none, and `/dashboard` is then an unknown path.
+   */
+  dashboardDir: string | null
+  /**
+   * Whether the API reference page is served at `/v1/docs` (`API_DOCS`: on by default in the
+   * `local` and `dev` tiers only). Off, the page and its scripts are unknown paths.
+   */
+  apiDocs: boolean
+  /**
+   * Days an instance audit entry is kept before the retention job deletes it
+   * (`INSTANCE_AUDIT_RETENTION_DAYS`, default 365). Environments' audit logs have no such
+   * period: they are never deleted (ADR 0017).
+   */
+  instanceAuditRetentionDays: number
 }
 
 /**
@@ -107,19 +124,34 @@ export interface Deps {
   probes: readonly HealthProbe[]
   /** The probes behind `GET /v1/instance/diagnostics`. */
   diagnostics: Diagnostics
+  /** Workspaces, projects, environment creation and the instance audit log (ADR 0032). */
+  controlPlane: ControlPlane
 }
 
-/** The project and environment a request's API key resolved to. */
+/**
+ * The project and environment a request resolved to: by its API key, or by a dashboard session
+ * together with the `x-tula-environment` header.
+ */
 export interface Tenant {
   projectId: string
   environmentId: string
+  /** The key's id; empty when no key authorized the request (a dashboard session, a flow). */
   apiKeyId: string
+}
+
+/** A verified dashboard session (ADR 0032). */
+export interface DashboardSession {
+  /** The session's random id: the `instance_admin` actor's id in the audit logs. */
+  id: string
+  expiresAt: Date
 }
 
 /** Context variables available on every request. */
 export interface Variables {
   deps: Deps
   requestId: string
+  /** Set when the request was authorized by a dashboard session. */
+  dashboard?: DashboardSession
 }
 
 /** Added by `publishableKey()` / `secretKey()`. */

@@ -5,7 +5,8 @@ Redis. This guide covers trying it locally with Docker Compose, and what to chan
 deployment.
 
 Phase 0 status: email and password sign-up and sign-in, sessions, user administration and the
-audit log. No dashboard yet; administration is through the HTTP API (`/v1/docs` lists it).
+audit log. Administration is through the dashboard at `/dashboard` ([dashboard.md](dashboard.md))
+or the HTTP API (`/v1/docs` lists it).
 
 ## Try it locally
 
@@ -107,7 +108,9 @@ The API reads its settings from the environment and refuses to start if one is i
 | `BREACH_CHECK` | | `offline` | `hibp` checks new passwords against Have I Been Pwned (only a 5-character hash prefix leaves the server). |
 | `PASSWORD_POLICY` | | `recommended` | `recommended`, `strict` or `legacy`. The **default** password policy: it applies to an environment until that environment saves its own settings (below). |
 | `CORS_ORIGINS` | | none | Comma-separated browser origins. Allowed for `/v1/admin/*`, and the **default** allowed origins of an environment until it saves its own settings (below). |
-| `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. |
+| `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. **Behind a proxy it must be set**: without it every client has the proxy's address, so they all share one rate-limit bucket (one visitor's guesses lock everyone out, the dashboard's sign-in included) and one audit sample. Without a proxy it must stay `false`, or a client picks its own bucket with a header. |
+| `API_DOCS` | | `on` in `local` and `dev`, `off` in `staging` and `prod` | `on` or `off`: whether the API reference page is served at `/v1/docs`. The page is on the same origin as the dashboard; it loads no script from another host (the reference's bundle is served by the API from its own installed package) and has its own Content-Security-Policy, and a deployment that does not need it should leave it off. `/v1/openapi.json` is served either way. |
+| `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log is never deleted. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
 | `REDIS_URL` | in `staging` and `prod` | none | Redis (or Valkey) shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
@@ -413,7 +416,7 @@ tula doctor
 
 - Without `TULA_ADMIN_TOKEN` in the API's environment the route does not exist (404), and
   `tula doctor` runs only the checks it can make from your machine.
-- The token is the most powerful credential of the deployment (the dashboard will sign in
+- The token is the most powerful credential of the deployment (the dashboard signs in
   with it too): keep it in a secret manager, never in a file that is committed, and send it
   only over https. The API refuses to start with one shorter than 32 characters, that repeats
   a block, that counts up or down (`abcdefgh`), or that looks like a placeholder. That check
@@ -423,6 +426,51 @@ tula doctor
   check failed is in the API's log, next to `diagnostic check failed`.
 - The route is rate limited (30 requests a minute per IP) and refuses when the rate limiter's
   store is down; `tula doctor` then reports Redis as the problem.
+
+## The dashboard
+
+The API serves the dashboard at `/dashboard` when its build output is present: the directory
+named by `DASHBOARD_DIR`, or `apps/dashboard/dist` next to the API. Without one, `/dashboard`
+is an unknown path and everything else works as before. The image ships the build, so a
+deployment from the image has it at `https://<your API>/dashboard/`; what it can do is in
+[dashboard.md](dashboard.md).
+
+You sign in with the **instance admin token** (`TULA_ADMIN_TOKEN`, as for `tula doctor`); a
+deployment that sets none has no dashboard sign-in. The token is sent once and exchanged for a
+session cookie; the browser does not keep it.
+
+- The session lasts **8 hours** from sign-in and is not extended. It is signed, not stored, so
+  it works on every instance without Redis, and one session cannot be ended by itself:
+  signing out clears it in that browser only. **To end every session, rotate the token**
+  (change `TULA_ADMIN_TOKEN`, restart every instance). Changing `TULA_MASTER_KEY` ends them
+  too.
+- The cookie is `HttpOnly`, `SameSite=Strict` and, over https, `Secure`. It is sent to
+  `/v1/instance` and `/v1/admin` only.
+- Requests made with it are accepted from the API's own origin (`PUBLIC_URL`) and from
+  `CORS_ORIGINS`, never from an origin an environment allows in its settings, and, unlike
+  the rest of the API in the `local` tier, never from "any localhost port". If the dashboard
+  answers `request.origin_not_allowed`, the address in your browser is not the `PUBLIC_URL`
+  the API was started with (a proxy in front of it must present the same origin).
+- Everything done in the dashboard is in the audit log with the actor `instance_admin` and
+  the id of the sign-in: inside an environment in that environment's log
+  (`GET /v1/admin/audit-logs?actorType=instance_admin`), and what has no environment
+  (sign-ins, failed sign-ins, new projects and environments) in the instance audit log
+  (`GET /v1/instance/audit-logs`).
+- Sign-in attempts are limited to 10 a minute per IP (their own allowance, apart from the
+  CLI's instance calls) and refused while the rate limiter's store is down. "Per IP" needs
+  `TRUST_PROXY=true` behind a proxy: without it every operator and every guesser share the
+  proxy's address and one allowance.
+- Failed sign-ins are recorded at most once a minute per address, with the number of
+  failures in the minute before that were not recorded one by one
+  (`suppressedInPreviousMinute`). The instance audit log is kept for
+  `INSTANCE_AUDIT_RETENTION_DAYS` (default 365).
+- The API reference at `/v1/docs` shares the dashboard's origin. It is off by default in
+  `staging` and `prod` (`API_DOCS=on` serves it), loads nothing from another host and has
+  its own Content-Security-Policy.
+- The pages are served with a strict Content-Security-Policy (this origin only, no inline
+  script, not frameable). A proxy must not weaken or replace it.
+
+See [ADR 0032](adr/0032-dashboard.md).
 
 ## Running it for real
 

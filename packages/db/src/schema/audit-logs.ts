@@ -3,8 +3,11 @@ import { primaryKey } from '../mixins'
 import { tenantColumns, tenantConstraints } from '../tenant-columns'
 import { tula } from './pg-schema'
 
-/** Who performed an audited action. `agent` tags MCP/AI actions (business plan §4.5). */
-export const AUDIT_ACTOR_TYPES = ['user', 'admin', 'system', 'agent'] as const
+/**
+ * Who performed an audited action. `agent` tags MCP/AI actions (business plan §4.5);
+ * `instance_admin` is the deployment's operator, through the dashboard (ADR 0032).
+ */
+export const AUDIT_ACTOR_TYPES = ['user', 'admin', 'system', 'agent', 'instance_admin'] as const
 
 /** Append-only record of sensitive and administrative actions. */
 export const auditLogs = tula.table(
