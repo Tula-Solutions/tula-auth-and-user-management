@@ -5,6 +5,7 @@ paths:
   - "examples/react-vite/**"
   - "e2e/**"
   - "packages/nextjs/**"
+  - "examples/nextjs-app-router/**"
   - "packages/expo/**"
 ---
 
@@ -156,3 +157,46 @@ paths:
   The QR code comes from `src/qr` (no dependency), loaded with `import('../qr')` so it stays a
   separate chunk (a test holds both budgets), drawn dark on white with a four-module quiet
   zone, and decoded by `jsqr` in tests.
+
+## Next.js SDK (`packages/nextjs`, ADR 0029)
+
+- Four entry points, each built as one file (`splitting: false`): `.` (`'use client'`),
+  `./server` (`import 'server-only'`), `./middleware` and `./handlers`. Peers: `next` 15 and
+  16, `react` 19. In Next.js 16 the interceptor file is `proxy.ts` (Node.js runtime); in 15 it
+  is `middleware.ts` (Edge runtime), so `src/middleware.ts` and everything it imports use web
+  platform APIs only. `package.test.ts` builds the package and holds all of this.
+- `src/index.ts`, `src/provider.tsx` and `src/paths.ts` are the browser's half: they import
+  nothing from `config.ts`, `upstream.ts`, `session.ts` or `verify.ts`, and never name the
+  secret key. Configuration is read in server code only, on first use (never at module load:
+  `next build` runs without it).
+- The route handler forwards `/v1/client/*` only, with allow-listed headers, the app's own
+  publishable key, the browser's `Origin` unchanged (never an invented one) and, only when
+  `trustedProxyHops` or `clientIp` says how it is known, the visitor's address as the one
+  `X-Forwarded-For` entry (default: none; no forwarding header of the request is ever
+  copied). It refuses, before forwarding, a cross-site request, a foreign `Origin` and an
+  unsafe method with no `Origin`. It never follows or passes on a redirect, caps the request
+  body while streaming it (413) and a buffered JSON answer (502), and never logs a request or
+  a response. An answer that issues a session cookie removes the token cookies and the other
+  way round (`changes` in `handlers.ts`: one entry per cookie).
+- Cookies are written only through `setCookieLine` / `clearCookieLine`; a value is checked
+  with `isCookieValue` first. Over https only the `__Host-` names are read.
+- `verifyAccessToken` is the only way a token becomes a session, in the middleware and in
+  `auth()`. A new claim check goes there and gets a failure-path test in `middleware.test.ts`
+  (run for both the middleware and `auth()`).
+- `x-tula-auth` is the only header that carries claims, and only for stateful sessions: sealed
+  with `sealClaims`, opened with `openClaims`, stripped from every incoming request by
+  `resolveSession`. Tests cover a forged header with and without the middleware.
+- The middleware refreshes at most once per request, shares a refresh among requests with the
+  same token in one process, clears cookies only when the API says the session is over
+  (`endsSession` in `upstream.ts`: `session.*`, `auth.user_banned`; **not**
+  `auth.unauthenticated` or `auth.invalid_key`, which are about the request) and leaves them
+  on any other failure, reporting a refusal of the request once through `config.warn`.
+  Warnings carry no token, key or cookie. `real-api.test.ts` runs the package against the real API in process: change
+  the refresh path and its parallel-refresh and past-the-grace-window tests must still hold.
+- A destination read from the address bar goes through `safeRedirectPath`; `signInUrl` is
+  checked with it when the middleware is created.
+- The provider wraps the client it creates: `serverState` for the first paint, and a
+  `session.signOut()` that refreshes the router after the request has reached the server. Do
+  not call `router.refresh()` for a sign-out before then: the cookies are still there.
+- Browser tests: `e2e/tests/nextjs/` (project `nextjs`). A new page of the example gets an axe
+  check in both colour schemes there.

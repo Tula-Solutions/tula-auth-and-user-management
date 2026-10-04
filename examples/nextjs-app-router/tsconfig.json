@@ -1,0 +1,10 @@
+{
+  "extends": "@tula/tsconfig/react.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowJs": false,
+    "incremental": false,
+    "plugins": [{ "name": "next" }]
+  },
+  "include": ["app/**/*", "proxy.ts", "next.config.ts", "types.d.ts"]
+}

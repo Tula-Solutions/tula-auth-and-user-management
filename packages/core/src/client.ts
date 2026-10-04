@@ -145,6 +145,13 @@ export interface TulaClient {
    */
   readonly state: AuthState
   /**
+   * What a server rendered for this client, when a framework integration knows it
+   * (`@tula/nextjs` sets it from the request's session). `@tula/react` uses it as the state
+   * during server rendering and hydration instead of `loading`. `createTulaClient` never sets
+   * it.
+   */
+  readonly serverState?: AuthState
+  /**
    * Listen for changes of {@link AuthState}. A token refresh alone is not a change.
    *
    * @param listener - Called with the new state.

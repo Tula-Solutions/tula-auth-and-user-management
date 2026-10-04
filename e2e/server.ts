@@ -41,8 +41,19 @@ if (process.env.E2E !== '1') {
 /** Fixed ports: the API's allowed origins and the app's API URL are decided by them. */
 export const API_PORT = 4318
 export const APP_PORT = 4317
+/**
+ * The Next.js example (`examples/nextjs-app-router`), started by Playwright next to this
+ * fixture (`next start`). It reaches this API server to server; its pages never do.
+ */
+export const NEXT_PORT = 4319
 /** A fixed, fake key for the memory environment. It opens nothing outside this process. */
 export const PUBLISHABLE_KEY = 'tula_pk_dev_e2e000000000000000000000000000000'
+/**
+ * A fixed, fake secret key for the memory environment: the Next.js example's server verifies
+ * `stateful` sessions with it, and the tests revoke sessions with it. Like the publishable
+ * key, it opens nothing outside this process.
+ */
+export const SECRET_KEY = 'tula_sk_dev_e2e000000000000000000000000000000'
 
 /**
  * The wall clock: browsers keep real time, so tokens and cookies must expire by it. A test can
@@ -97,6 +108,7 @@ deps.environments.add({
   createdAt: clock.now(),
 })
 await seedApiKey(deps, PUBLISHABLE_KEY)
+await seedApiKey(deps, SECRET_KEY)
 await Jwks.ensureAllEnvironments(deps)
 const app = createApp(deps)
 
@@ -121,7 +133,7 @@ const FIXTURE_SETTINGS = {
   ...DEFAULT_ENVIRONMENT_SETTINGS,
   urls: {
     ...DEFAULT_ENVIRONMENT_SETTINGS.urls,
-    allowedOrigins: [`http://localhost:${APP_PORT}`],
+    allowedOrigins: [`http://localhost:${APP_PORT}`, `http://localhost:${NEXT_PORT}`],
   },
   passkeys: { rpId: 'localhost' },
 }

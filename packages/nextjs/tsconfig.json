@@ -1,0 +1,9 @@
+{
+  "extends": "@tula/tsconfig/react.json",
+  "compilerOptions": {
+    "types": ["bun-types"],
+    // The integration tests drive the real API in process, whose sources use this alias.
+    "paths": { "~/*": ["../../apps/api/src/*"] }
+  },
+  "include": ["src/**/*"]
+}

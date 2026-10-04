@@ -205,8 +205,10 @@ explicit `maxAgeSeconds` keeps it.
 - Stateful costs one indexed Postgres read per request and at most one write per
   `accessTokenTtl`. It is opt-in.
 - The cookie is host-only. A backend on another host than the API cannot see it; such a
-  deployment proxies the API under the application's host, or stays on `hybrid`. A
-  configurable cookie `Domain` is deferred to the Next.js step (1.12), which has to decide it.
+  deployment proxies the API under the application's host, or stays on `hybrid`. The Next.js
+  step decided it ([ADR 0029](0029-nextjs-sdk.md)): no cookie `Domain`; `@tula/nextjs`'s route
+  handler serves the client API on the application's own origin and keeps the cookie
+  first-party there.
 - Profile changes reach other instances with the settings cache (5 seconds with Redis, 30
   without). Nothing here depends on taking effect everywhere at once.
 - A stateful session's idle timeout is not shown to the browser: the cookie outlives it and the
@@ -219,5 +221,5 @@ explicit `maxAgeSeconds` keeps it.
 - The other session types of the business plan (`stateless`, `long-lived`, `kiosk`).
 - JWT templates and custom claims: a hook surface that needs its own design (Phase 2, with
   webhooks).
-- A cookie `Domain` for stateful sessions, and a stateful session for native clients.
+- A stateful session for native clients. (A cookie `Domain` was decided against in ADR 0029.)
 - Showing a profile's limits in `GET /v1/client/config` (nothing needs them yet).

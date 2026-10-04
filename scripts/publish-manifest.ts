@@ -3,6 +3,7 @@ export const PUBLISHABLE_PACKAGES = [
   'packages/contract',
   'packages/core',
   'packages/react',
+  'packages/nextjs',
 ] as const
 
 /** The fields of a package.json this tooling reads. */
