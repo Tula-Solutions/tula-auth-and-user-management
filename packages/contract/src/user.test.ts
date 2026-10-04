@@ -3,6 +3,7 @@ import {
   ChangePasswordRequestSchema,
   CreateUserRequestSchema,
   CurrentUserSchema,
+  UserAuthenticationSchema,
   UserListSchema,
   UserSchema,
   UserSortSchema,
@@ -89,6 +90,56 @@ describe('user requests', () => {
     expect(
       ChangePasswordRequestSchema.safeParse({ currentPassword: 'x', newPassword: 'y'.repeat(1025) })
         .success
+    ).toBe(false)
+  })
+})
+
+describe('UserAuthentication', () => {
+  const authentication = {
+    hasPassword: true,
+    emailVerified: true,
+    identities: [{ provider: 'google', linkedAt: '2026-01-01T00:00:00.000Z' }],
+    factors: [{ type: 'totp', confirmedAt: '2026-01-02T00:00:00.000Z' }],
+    backupCodesRemaining: 8,
+    passkeys: [
+      {
+        id: 'pk_1',
+        name: 'Laptop',
+        synced: true,
+        createdAt: '2026-01-03T00:00:00.000Z',
+        lastUsedAt: null,
+      },
+    ],
+    canSignInWithoutPasskeys: true,
+  }
+
+  test('strips secrets and identifiers a caller might pass through by mistake', () => {
+    const parsed = UserAuthenticationSchema.parse({
+      ...authentication,
+      passwordHash: '$argon2id$secret',
+      identities: [{ ...authentication.identities[0], id: 'i_1', subject: 'provider-subject' }],
+      factors: [{ ...authentication.factors[0], secret: 'sealed', uri: 'otpauth://totp/x' }],
+      passkeys: [
+        {
+          ...authentication.passkeys[0],
+          credentialId: 'credential',
+          publicKey: 'key',
+          userHandle: 'handle',
+        },
+      ],
+    })
+    expect(parsed).toEqual(authentication as never)
+  })
+
+  test('a factor is listed only with the time it was confirmed', () => {
+    expect(
+      UserAuthenticationSchema.safeParse({
+        ...authentication,
+        factors: [{ type: 'totp', confirmedAt: null }],
+      }).success
+    ).toBe(false)
+    expect(
+      UserAuthenticationSchema.safeParse({ ...authentication, backupCodesRemaining: -1 }).success
     ).toBe(false)
   })
 })

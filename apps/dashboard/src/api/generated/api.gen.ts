@@ -808,6 +808,41 @@ export interface CreateUserRequest {
   emailVerified?: boolean;
 }
 
+export interface Passkey {
+  id: string;
+  name: string;
+  synced: boolean;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export type UserAuthenticationIdentitiesItem = {
+  provider: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  linkedAt: string;
+};
+
+export type UserAuthenticationFactorsItem = {
+  type: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  confirmedAt: string;
+};
+
+export interface UserAuthentication {
+  hasPassword: boolean;
+  emailVerified: boolean;
+  identities: UserAuthenticationIdentitiesItem[];
+  factors: UserAuthenticationFactorsItem[];
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  backupCodesRemaining: number;
+  passkeys: Passkey[];
+  canSignInWithoutPasskeys: boolean;
+}
+
 export interface SetPasswordRequest {
   /** @maxLength 1024 */
   password: string;
@@ -1304,15 +1339,6 @@ export interface IdentityLinkStart {
   binding: string;
 }
 
-export interface Passkey {
-  id: string;
-  name: string;
-  synced: boolean;
-  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
-  createdAt: string;
-  lastUsedAt: string | null;
-}
-
 export interface PasskeyList {
   passkeys: Passkey[];
 }
@@ -1693,6 +1719,12 @@ export type GetUser400 = {
 };
 
 export type DeleteUser400 = {
+  success: false;
+  error: unknown[];
+  data: unknown;
+};
+
+export type GetUserAuthentication400 = {
   success: false;
   error: unknown[];
   data: unknown;
@@ -3138,6 +3170,110 @@ export const useDeleteUser = <TError = DeleteUser400 | ErrorEnvelope,
       > => {
       return useMutation(getDeleteUserMutationOptions(options), queryClient);
     }
+
+export const getGetUserAuthenticationUrl = (userId: string,) => {
+
+
+
+
+  return `/v1/admin/users/${userId}/authentication`
+}
+
+/**
+ * The sign-in methods the account has: whether it has a password and a verified address, the provider accounts connected to it, its confirmed second factors with the number of unused backup codes, and its passkeys. Never a secret: no authenticator secret, backup code, credential id, public key or provider account id.
+ *
+ * `canSignInWithoutPasskeys` says whether a method the environment accepts would remain if the passkeys were removed, which is what `DELETE /v1/admin/users/{userId}/factors` does: `false` means that reset would leave the user no way in.
+ * @summary Get how a user signs in
+ */
+export const getUserAuthentication = async (userId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<UserAuthentication> => {
+
+  return dashboardFetch<UserAuthentication>(getGetUserAuthenticationUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUserAuthenticationQueryKey = (userId: string,) => {
+    return [
+    `/v1/admin/users/${userId}/authentication`
+    ] as const;
+    }
+
+
+export const getGetUserAuthenticationQueryOptions = <TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUserAuthenticationQueryKey(userId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUserAuthentication>>> = ({ signal }) => getUserAuthentication(userId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetUserAuthenticationQueryResult = NonNullable<Awaited<ReturnType<typeof getUserAuthentication>>>
+export type GetUserAuthenticationQueryError = GetUserAuthentication400 | ErrorEnvelope
+
+
+export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(
+ userId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getUserAuthentication>>,
+          TError,
+          Awaited<ReturnType<typeof getUserAuthentication>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(
+ userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getUserAuthentication>>,
+          TError,
+          Awaited<ReturnType<typeof getUserAuthentication>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(
+ userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get how a user signs in
+ */
+
+export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(
+ userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetUserAuthenticationQueryOptions(userId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getBanUserUrl = (userId: string,) => {
 

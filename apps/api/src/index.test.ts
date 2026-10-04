@@ -229,6 +229,7 @@ describe('documentation routes', () => {
       '/v1/client/password-resets/{attemptId}/factor-enrolment/totp/confirm',
       '/v1/admin/users',
       '/v1/admin/users/{userId}',
+      '/v1/admin/users/{userId}/authentication',
       '/v1/admin/users/{userId}/ban',
       '/v1/admin/users/{userId}/unban',
       '/v1/admin/users/{userId}/password',

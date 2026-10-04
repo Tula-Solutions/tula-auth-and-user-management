@@ -3,7 +3,9 @@ import {
   type CreateUserRequest,
   type CurrentUser,
   DEFAULT_PAGE_SIZE,
+  type OAuthProvider,
   type User,
+  type UserAuthentication,
   type UserList,
   type UserSort,
 } from '@tula/contract'
@@ -19,9 +21,13 @@ import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
+import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
+import * as OAuth from '~/modules/oauth/service'
+import * as Passkeys from '~/modules/passkey/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
+import * as Settings from '~/modules/settings/service'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import type { UserRecord } from '~/ports/user-repository'
 
@@ -119,6 +125,57 @@ export async function me(
   const user = await requireUser(deps, scope, userId)
   const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
   return { ...toUser(user), hasPassword: Boolean(found?.passwordHash) }
+}
+
+/**
+ * How a user signs in: the methods the account has, for a server or the dashboard.
+ *
+ * Put together from what each module already says about a user (`Mfa.status`,
+ * `Passkeys.list`, the user's identities), so nothing here reads a secret: the answer has no
+ * password hash, authenticator secret, backup code, credential id, public key or provider
+ * subject to leak. A pending authenticator enrolment is not a factor.
+ *
+ * `canSignInWithoutPasskeys` is the answer {@link Mfa.reset} would give for this user now: an
+ * admin sees before resetting whether it would lock the account out.
+ *
+ * @param deps - Users, factors, passkeys, settings and the provider store.
+ * @param scope - The environment.
+ * @param userId - The user.
+ * @returns The user's sign-in methods.
+ * @throws NotFoundError when they do not exist in this environment.
+ */
+export async function authentication(
+  deps: Pick<
+    Deps,
+    'users' | 'factors' | 'passkeys' | 'environmentSettings' | 'config' | 'oauthProviders'
+  >,
+  scope: Pick<Tenant, 'environmentId'>,
+  userId: string
+): Promise<UserAuthentication> {
+  const user = await requireUser(deps, scope, userId)
+  const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+  const hasPassword = Boolean(found?.passwordHash)
+  const emailVerified = user.emailVerifiedAt !== null
+  const identities = await OAuth.identities(deps, scope, userId)
+  const { totp, backupCodes } = await Mfa.status(deps, scope, userId)
+  return {
+    hasPassword,
+    emailVerified,
+    identities: identities.map(({ provider, createdAt }) => ({ provider, linkedAt: createdAt })),
+    factors: totp.confirmedAt === null ? [] : [{ type: 'totp', confirmedAt: totp.confirmedAt }],
+    backupCodesRemaining: backupCodes.remaining,
+    passkeys: await Passkeys.list(deps, scope, userId),
+    canSignInWithoutPasskeys: OAuth.canStillSignIn(
+      await Settings.current(deps, scope),
+      await OAuth.enabledProviders(deps, scope),
+      {
+        hasPassword,
+        emailVerified,
+        providers: identities.map((identity) => identity.provider as OAuthProvider),
+        passkeys: 0,
+      }
+    ),
+  }
 }
 
 /**

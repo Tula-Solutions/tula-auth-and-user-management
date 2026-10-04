@@ -104,6 +104,22 @@ export interface FakeState {
   audit: Record<string, unknown>[]
   /** What the factor reset says about the user afterwards. */
   canStillSignIn: boolean
+  /** How every user signs in, as `GET …/authentication` answers. */
+  authentication: {
+    hasPassword: boolean
+    emailVerified: boolean
+    identities: { provider: string; linkedAt: string }[]
+    factors: { type: string; confirmedAt: string }[]
+    backupCodesRemaining: number
+    passkeys: {
+      id: string
+      name: string
+      synced: boolean
+      createdAt: string
+      lastUsedAt: string | null
+    }[]
+    canSignInWithoutPasskeys: boolean
+  }
 }
 
 function initialState(): FakeState {
@@ -167,6 +183,15 @@ function initialState(): FakeState {
       },
     ],
     canStillSignIn: true,
+    authentication: {
+      hasPassword: true,
+      emailVerified: true,
+      identities: [],
+      factors: [],
+      backupCodesRemaining: 0,
+      passkeys: [],
+      canSignInWithoutPasskeys: true,
+    },
   }
 }
 
@@ -390,6 +415,14 @@ export function installFakeApi() {
           status: 204,
           headers: { 'x-tula-can-still-sign-in': String(state.canStillSignIn) },
         }),
+    ],
+    [
+      'GET',
+      /^\/v1\/admin\/users\/([^/]+)\/authentication$/,
+      (_call, match) =>
+        state.users.some((user) => user.id === match[1])
+          ? state.authentication
+          : failure(404, 'resource.not_found', 'The requested resource does not exist.'),
     ],
     ['GET', /^\/v1\/admin\/users\/([^/]+)\/sessions$/, () => page(state.sessions)],
     [

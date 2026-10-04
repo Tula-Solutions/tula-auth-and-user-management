@@ -7,6 +7,7 @@ export {
   CreateUserRequestSchema,
   CurrentUserSchema,
   SetPasswordRequestSchema,
+  UserAuthenticationSchema,
   UserListSchema,
   UserSchema,
 } from '@tula/contract'

@@ -45,7 +45,7 @@ deletes a workspace, project or environment yet.
 | Screen | What you can do |
 | --- | --- |
 | Users | Search by email or name; create a user; open one. |
-| A user | Profile and state; active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
+| A user | Profile and state; how they sign in (password, verified address, linked accounts, two-step verification and backup codes left, passkeys: never a secret); active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
 | Sign-in methods | Switch password, emailed code, emailed link and passkeys on or off; set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub and Apple. |
 | Password policy | A preset or custom rules. |
 | Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. |
@@ -66,8 +66,9 @@ deletes a workspace, project or environment yet.
 - **Setting a password** ends every session of that user and emails them a notice. An admin
   never sees an existing password. Policy errors are listed in the dialog.
 - **Resetting two-step verification** removes the user's authenticator, backup codes and
-  passkeys. The dashboard then says whether the user can still sign in with what is left; if
-  not, set a password for them.
+  passkeys. When that would leave the user no way to sign in, the confirmation says so before
+  you reset; afterwards the dashboard says whether the user can still sign in with what is
+  left. If not, set a password for them.
 - **Rotating signing keys** signs nobody out. A key published moments ago cannot be activated
   yet, so a second rotation within ten minutes is refused.
 - **At least one sign-in method must stay on.** Switching off the last one (counting enabled

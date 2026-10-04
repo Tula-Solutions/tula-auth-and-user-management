@@ -13,6 +13,8 @@ import {
 import { useScope } from './state/scope'
 import { useSession } from './state/session'
 
+const NOW_ISO = '2026-10-04T12:00:00.000Z'
+
 let world: World | undefined
 
 function start(path: string, options: Parameters<typeof renderApp>[1] = {}): World {
@@ -653,6 +655,126 @@ describe('users', () => {
     await user.click(within(dialog()).getByRole('button', { name: 'Set password' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
     expectNothingKept(world as World, ['granite-Lantern-hums-93'])
+  })
+
+  function signInSection(): HTMLElement {
+    const section = screen
+      .getByRole('heading', { name: 'How this user signs in' })
+      .closest('section')
+    if (!section) {
+      throw new Error('the heading sits in its section')
+    }
+    return section
+  }
+
+  test('how the user signs in: password, address, linked accounts, two-step verification, passkeys', async () => {
+    const api = installFakeApi()
+    api.state.authentication = {
+      hasPassword: true,
+      emailVerified: true,
+      identities: [{ provider: 'google', linkedAt: '2026-03-01T09:00:00.000Z' }],
+      factors: [{ type: 'totp', confirmedAt: '2026-04-02T09:00:00.000Z' }],
+      backupCodesRemaining: 7,
+      passkeys: [
+        {
+          id: 'pk-1',
+          name: 'Laptop',
+          synced: true,
+          createdAt: '2026-05-03T09:00:00.000Z',
+          lastUsedAt: '2026-06-04T09:00:00.000Z',
+        },
+        {
+          id: 'pk-2',
+          name: '<b>Key</b>',
+          synced: false,
+          createdAt: '2026-05-05T09:00:00.000Z',
+          lastUsedAt: null,
+        },
+      ],
+      canSignInWithoutPasskeys: true,
+    }
+    start(`${DEV_PATH}/users/${IDS.user}`, { api })
+    await screen.findByText('Has a password')
+    const text = signInSection().textContent ?? ''
+    expect(text).toContain('Verified')
+    expect(text).toMatch(/Google, linked .*2026/)
+    expect(text).toMatch(/Authenticator app since .*2026/)
+    expect(text).toContain('7 backup codes left')
+    expect(text).toMatch(/Laptop.*synced/)
+    // A passkey's name is the user's own text: drawn as text, and its state said in words.
+    expect(text).toMatch(/<b>Key<\/b>.*never used.*this device only/)
+    expect(signInSection().querySelector('b')).toBeNull()
+  })
+
+  test('a user with no password: what they sign in with instead', async () => {
+    const api = installFakeApi()
+    api.state.authentication = {
+      ...api.state.authentication,
+      hasPassword: false,
+      emailVerified: false,
+      identities: [{ provider: 'github', linkedAt: '2026-03-01T09:00:00.000Z' }],
+    }
+    start(`${DEV_PATH}/users/${IDS.user}`, { api })
+    await screen.findByText('No password; signs in with GitHub.')
+    const text = signInSection().textContent ?? ''
+    expect(text).toContain('Not verified')
+    expect(text).toContain('Off')
+    expect(text).toContain('No passkeys')
+    expect(text).not.toContain('backup code')
+  })
+
+  test('a user with nothing to sign in with is said so', async () => {
+    const api = installFakeApi()
+    api.state.authentication = { ...api.state.authentication, hasPassword: false }
+    start(`${DEV_PATH}/users/${IDS.user}`, { api })
+    await screen.findByText(/No password, linked account or passkey/)
+    expect(signInSection().textContent).toContain('No linked accounts')
+  })
+
+  test('sign-in methods that cannot be loaded: an error with a retry, and the rest of the screen stays', async () => {
+    const api = installFakeApi()
+    let fail = true
+    api.override('GET', /\/authentication$/, () =>
+      fail ? failure(503, 'service.unavailable', 'Try again shortly.') : api.state.authentication
+    )
+    const { user } = start(`${DEV_PATH}/users/${IDS.user}`, { api })
+    await screen.findByRole('heading', { name: 'How this user signs in' })
+    const alert = await within(signInSection()).findByRole('alert')
+    expect(alert.textContent).toContain('Try again shortly.')
+    expect(screen.getByRole('button', { name: 'Ban user' })).toBeDefined()
+    fail = false
+    await user.click(within(signInSection()).getByRole('button', { name: 'Try again' }))
+    await screen.findByText('Has a password')
+  })
+
+  test('the reset warns before confirming when it would leave the user no way in', async () => {
+    const api = installFakeApi()
+    api.state.authentication = {
+      ...api.state.authentication,
+      hasPassword: false,
+      passkeys: [{ id: 'pk-1', name: 'Phone', synced: true, createdAt: NOW_ISO, lastUsedAt: null }],
+      canSignInWithoutPasskeys: false,
+    }
+    api.state.canStillSignIn = false
+    const { user } = start(`${DEV_PATH}/users/${IDS.user}`, { api })
+    await screen.findByText('No password; signs in with a passkey.')
+    await user.click(screen.getByRole('button', { name: 'Reset two-step verification' }))
+    expect(dialog().textContent).toMatch(/Warning: .*no way left to sign in/)
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Reset two-step verification' }))
+    // The answer's header is still what the screen reports afterwards.
+    const after = await screen.findByText(/now has no way left to sign in/)
+    expect(after.getAttribute('role')).toBe('alert')
+  })
+
+  test('the reset does not warn a user who keeps a way in, or before the methods are known', async () => {
+    const api = installFakeApi()
+    api.override('GET', /\/authentication$/, () =>
+      failure(503, 'service.unavailable', 'Try again shortly.')
+    )
+    const { user } = start(`${DEV_PATH}/users/${IDS.user}`, { api })
+    await user.click(await screen.findByRole('button', { name: 'Reset two-step verification' }))
+    expect(dialog().textContent).not.toContain('Warning')
   })
 
   test('resetting two-step verification warns when the user is left with no way in', async () => {

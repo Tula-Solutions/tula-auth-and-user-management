@@ -1,4 +1,5 @@
-import { uniqueEmail } from '../support'
+import type { Page } from '@playwright/test'
+import { authenticatorCode, consentAtProvider, uniqueEmail, useProviders } from '../support'
 import {
   APP_URL,
   dialog,
@@ -120,6 +121,103 @@ test('set a password (policy errors shown), reset two-step verification, delete'
   await page.getByRole('button', { name: 'Search', exact: true }).click()
   await expect(page.getByText('No user matches that search')).toBeVisible()
   await expectScreenAccessible(page, 'users list, no match')
+})
+
+/** The "How this user signs in" section of the open user. */
+function signInMethods(page: Page) {
+  return page.locator('section', {
+    has: page.getByRole('heading', { name: 'How this user signs in' }),
+  })
+}
+
+test('how a user signs in: a password with an authenticator app', async ({ page, browser }) => {
+  const email = uniqueEmail('dash-totp')
+  const userContext = await browser.newContext()
+  const userPage = await userContext.newPage()
+  await signUpInExampleApp(userPage, email)
+  // Turn two-step verification on in the example app's profile, as the user would.
+  await userPage.goto(`${APP_URL}/account`)
+  const twoStep = userPage.getByRole('region', { name: 'Account' }).locator('section', {
+    has: userPage.getByRole('heading', { name: 'Two-step verification' }),
+  })
+  await twoStep.getByRole('button', { name: 'Turn on' }).click()
+  const key = userPage.getByRole('group', { name: 'Setup key' }).locator('code')
+  await expect(key).toBeVisible()
+  const secret = (await key.innerText()).replace(/\s/g, '')
+  await userPage
+    .getByLabel('Authentication code')
+    .fill(await authenticatorCode(userPage.request, secret))
+  await twoStep.getByRole('button', { name: 'Turn on' }).click()
+  const shown = userPage.getByRole('list', { name: 'Backup codes' }).getByRole('listitem')
+  await expect(shown).toHaveCount(10)
+  const codes = await shown.allInnerTexts()
+  await userPage.getByLabel('I have saved these codes').check()
+  await userPage.getByRole('button', { name: 'Done' }).click()
+  await expect(twoStep.getByText(/^On since/)).toBeVisible()
+  await userContext.close()
+
+  await openUser(page, email)
+  const methods = signInMethods(page)
+  await expect(methods).toContainText('Has a password')
+  await expect(methods).toContainText('Verified')
+  await expect(methods).toContainText('No linked accounts')
+  await expect(methods).toContainText(/Authenticator app since /)
+  await expect(methods).toContainText(`${codes.length} backup codes left`)
+  await expect(methods).toContainText('No passkeys')
+  await expectScreenAccessible(page, 'user detail, password and authenticator app')
+  // The dashboard is told that the factor exists, never what it is.
+  await expectNoSecretKept(page, [secret, ...codes])
+
+  // This user keeps their password: the reset says nothing about being locked out.
+  await page.getByRole('button', { name: 'Reset two-step verification' }).click()
+  await expect(dialog(page)).not.toContainText('Warning')
+  await dialog(page).getByRole('button', { name: 'Reset two-step verification' }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'can still sign in' })).toBeVisible()
+  await expect(methods).toContainText('Off')
+  await expect(methods).not.toContainText('backup code')
+})
+
+test('how a user signs in: no password, a linked provider account; the reset warns first', async ({
+  page,
+  browser,
+}) => {
+  const email = uniqueEmail('dash-oauth')
+  await useProviders(page.request, ['google'])
+  try {
+    const userContext = await browser.newContext()
+    const userPage = await userContext.newPage()
+    await userPage.goto(`${APP_URL}/sign-in`)
+    await userPage.getByRole('button', { name: 'Continue with Google' }).click()
+    await consentAtProvider(userPage, { email })
+    await expect(userPage.getByRole('heading', { name: /^Hello/ })).toBeVisible()
+    await userContext.close()
+
+    await openUser(page, email)
+    const methods = signInMethods(page)
+    await expect(methods).toContainText('No password; signs in with Google.')
+    await expect(methods).toContainText(/Google, linked /)
+    await expect(methods).toContainText('Off')
+    await expectScreenAccessible(page, 'user detail, no password and a linked account')
+
+    // While Google is on, the linked account is a way in: no warning.
+    await page.getByRole('button', { name: 'Reset two-step verification' }).click()
+    await expect(dialog(page)).not.toContainText('Warning')
+    await page.keyboard.press('Escape')
+    await expect(dialog(page)).toBeHidden()
+  } finally {
+    await useProviders(page.request)
+  }
+
+  // With the provider switched off nothing the account has is accepted here any more (the
+  // fixture has no emailed code): the dialog says so before anything is reset.
+  await page.reload()
+  await expect(signInMethods(page)).toContainText('No password; signs in with Google.')
+  await page.getByRole('button', { name: 'Reset two-step verification' }).click()
+  await expect(dialog(page)).toContainText(/Warning: .*no way left to sign in/)
+  await expectScreenAccessible(page, 'reset two-step verification, warned of a lock-out')
+  await dialog(page).getByRole('button', { name: 'Reset two-step verification' }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'no way left to sign in' })).toBeVisible()
+  await expectScreenAccessible(page, 'user detail after a reset that left no way in')
 })
 
 test('create a user from the dashboard; a refused address is shown on its field', async ({

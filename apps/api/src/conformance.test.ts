@@ -132,6 +132,7 @@ describe('conformance scenarios, in process', () => {
       'settings managed by a config file',
       'admin user sessions',
       'dashboard credential rules',
+      'admin user authentication',
     ])
   })
 

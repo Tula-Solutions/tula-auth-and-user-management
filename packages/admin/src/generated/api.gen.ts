@@ -270,6 +270,13 @@ export interface Schemas {
     page: number
     perPage: number
   }
+  Passkey: {
+    id: string
+    name: string
+    synced: boolean
+    createdAt: string
+    lastUsedAt: string | null
+  }
   PasswordPolicy: {
     preset: 'recommended' | 'strict' | 'legacy' | 'custom'
     minLength: number
@@ -374,6 +381,21 @@ export interface Schemas {
     lastSignInAt: string | null
     createdAt: string
   }
+  UserAuthentication: {
+    hasPassword: boolean
+    emailVerified: boolean
+    identities: {
+      provider: string
+      linkedAt: string
+    }[]
+    factors: {
+      type: string
+      confirmedAt: string
+    }[]
+    backupCodesRemaining: number
+    passkeys: Schemas['Passkey'][]
+    canSignInWithoutPasskeys: boolean
+  }
   UserList: {
     meta: Schemas['PaginationMeta']
     data: Schemas['User'][]
@@ -410,6 +432,8 @@ export interface Operations {
   getEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['EnvironmentSettingsState'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
   getUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
+  /** Get how a user signs in (`GET /v1/admin/users/{userId}/authentication`). */
+  getUserAuthentication: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['UserAuthentication'] }
   /** List API keys (`GET /v1/admin/api-keys`). */
   listApiKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ApiKeyList'] }
   /** List the audit log (`GET /v1/admin/audit-logs`). */
@@ -463,6 +487,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   deleteUser: { method: 'DELETE', path: '/v1/admin/users/{userId}' },
   getEnvironmentSettings: { method: 'GET', path: '/v1/admin/settings' },
   getUser: { method: 'GET', path: '/v1/admin/users/{userId}' },
+  getUserAuthentication: { method: 'GET', path: '/v1/admin/users/{userId}/authentication' },
   listApiKeys: { method: 'GET', path: '/v1/admin/api-keys' },
   listAuditLogs: { method: 'GET', path: '/v1/admin/audit-logs' },
   listEnvironments: { method: 'GET', path: '/v1/admin/environments' },

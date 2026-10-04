@@ -9,6 +9,7 @@ import {
   useBanUser,
   useDeleteUser,
   useGetUser,
+  useGetUserAuthentication,
   useListAuditLogs,
   useListUserSessions,
   useResetUserFactors,
@@ -27,6 +28,7 @@ import { EmptyState, QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
 import { useEnvironment } from '~/features/shell/environment-context'
 import { formatDateTime, fullName } from '~/lib/format'
+import { SignInMethods } from './sign-in-methods'
 import { type EnvironmentScope, UserStatus } from './users-screen'
 
 /** What the reset of two-step verification left the user with. */
@@ -92,7 +94,12 @@ function SetPasswordDialog({
       { userId: user.id, data: { password } },
       {
         onSuccess: async () => {
-          await queryClient.invalidateQueries({ queryKey: [`/v1/admin/users/${user.id}/sessions`] })
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: [`/v1/admin/users/${user.id}/sessions`] }),
+            queryClient.invalidateQueries({
+              queryKey: [`/v1/admin/users/${user.id}/authentication`],
+            }),
+          ])
           notify('Password set')
           close()
         },
@@ -218,6 +225,7 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
   const environment = useEnvironment()
   const user = useGetUser(userId)
   const sessions = useListUserSessions(userId)
+  const authentication = useGetUserAuthentication(userId)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [settingPassword, setSettingPassword] = useState(false)
   const [resetOutcome, setResetOutcome] = useState<ResetOutcome | null>(null)
@@ -240,6 +248,7 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: [`/v1/admin/users/${userId}`] }),
       queryClient.invalidateQueries({ queryKey: [`/v1/admin/users/${userId}/sessions`] }),
+      queryClient.invalidateQueries({ queryKey: [`/v1/admin/users/${userId}/authentication`] }),
       queryClient.invalidateQueries({ queryKey: ['/v1/admin/audit-logs'] }),
       queryClient.invalidateQueries({ queryKey: ['/v1/admin/users'] }),
     ])
@@ -312,7 +321,7 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
             Confirmation['kind'],
             {
               title: string
-              body: string
+              body: ReactNode
               label: string
               pending: boolean
               error: unknown
@@ -336,7 +345,22 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
             },
             'reset-factors': {
               title: `Reset two-step verification for ${account.email}?`,
-              body: 'Their authenticator app, backup codes and passkeys are all taken off the account, and they are told by email. Use this when someone has lost their second factor.',
+              body: (
+                <>
+                  Their authenticator app, backup codes and passkeys are all taken off the account,
+                  and they are told by email. Use this when someone has lost their second factor.
+                  {/* Said before the reset, from what the account has now; the answer's header
+                      is still what the screen reports afterwards. Unknown (loading, failed) is
+                      not a warning: the header covers it. */}
+                  {authentication.data?.canSignInWithoutPasskeys === false ? (
+                    <span className='mt-3 block rounded-lg border border-destructive bg-destructive-surface p-3 text-foreground'>
+                      Warning: this user has no password, linked account or emailed code they can
+                      use here. After the reset they will have no way left to sign in until you set
+                      a password for them or switch on a method they can use.
+                    </span>
+                  ) : null}
+                </>
+              ),
               label: 'Reset two-step verification',
               pending: resetFactors.isPending,
               error: resetFactors.error,
@@ -399,6 +423,8 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
                   </Detail>
                 </dl>
               </Section>
+
+              <SignInMethods query={authentication} />
 
               <Section
                 title='Sessions'

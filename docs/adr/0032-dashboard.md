@@ -190,8 +190,14 @@ the audit log.
 
 Added: `GET /v1/admin/users/:userId/sessions` (a user's active sessions, no token material,
 `current` always false) and `DELETE /v1/admin/users/:userId/sessions/:sessionId` (end one,
-reason `revoked_by_admin`, through the session service so the id is denylisted); and the
-audit log's `actorType`, `from` and `to`.
+reason `revoked_by_admin`, through the session service so the id is denylisted); the
+audit log's `actorType`, `from` and `to`; and `GET /v1/admin/users/:userId/authentication`
+(how a user signs in: `hasPassword`, `emailVerified`, linked providers, confirmed factors,
+backup codes left, passkeys, all read through the modules that own them and never a secret,
+a credential id or a provider's account id; `no-store`). Its `canSignInWithoutPasskeys` is
+the answer the factor reset would give now, so the dashboard warns **before** a reset that
+would lock the user out; the reset's `x-tula-can-still-sign-in` header is still what it
+reports afterwards.
 
 Not added: an "email a password reset" action for an admin. What exists is
 `PUT /v1/admin/users/:userId/password` (ADR 0010); the user's own "Forgot password" is the

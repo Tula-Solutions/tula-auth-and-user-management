@@ -47,6 +47,10 @@ const covered = new Map<string, string[]>()
  * cannot be reached through a client SDK at all.
  */
 const SERVER_ONLY: Record<string, string> = {
+  'admin user authentication':
+    'how a user signs in is read on the admin API with a secret key or a dashboard session, ' +
+    'neither of which a client SDK holds; a signed-in user sees their own methods through ' +
+    '`/v1/client/me/factors`, `/me/passkeys` and `/me/identities`, whose journeys cover them.',
   'admin user sessions':
     'listing and ending a user’s sessions is done on the admin API with a secret key or a ' +
     'dashboard session, neither of which a client SDK holds; what the client observes (its ' +
