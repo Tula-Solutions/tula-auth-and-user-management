@@ -657,7 +657,10 @@ export async function verifyBackupCode(
   return remaining
 }
 
-/** Step-up codes one user may be emailed in an hour, on top of the per-address send limits. */
+/**
+ * Step-up codes one user may be emailed in an hour. Counted per user, apart from the
+ * per-address limits of the codes that can be asked for without signing in.
+ */
 export const STEP_UP_EMAILS_PER_HOUR = 5
 
 /**
@@ -774,8 +777,12 @@ type StepUpDeps = ChangeDeps &
  * purpose's for this), stored as a keyed hash that also covers the asking session's id: a code
  * asked for by one session steps up no other. It carries no link.
  *
- * Sends are limited per address (the verification cooldown and hourly limit, shared with the
- * other code emails) and per user ({@link STEP_UP_EMAILS_PER_HOUR}).
+ * Sends are limited per user and under keys no other email uses: one a minute
+ * (`step_up_email_cooldown:<environment>:<user>`) and {@link STEP_UP_EMAILS_PER_HOUR} an hour
+ * (`step_up_email:<environment>:<user>`). They are deliberately **not** the per-address limits
+ * of the sign-in, reset and verification codes: those can be asked for without signing in, so
+ * sharing them would let anyone who knows the address keep this user's step-up refused. Nor do
+ * step-up sends use up that address budget.
  *
  * @param deps - Factor store, users, verification tokens, mailer, rate limiter, ids and clock.
  * @param scope - The project and environment.
@@ -784,6 +791,7 @@ type StepUpDeps = ChangeDeps &
  * @returns The masked destination and when the code expires. Never the code.
  * @throws AuthError `auth.step_up_required` when this user may not step up by email.
  * @throws RateLimitError when a code was sent too recently or too often.
+ * @throws ServiceUnavailableError when the rate limiter cannot answer (nothing is sent).
  * @throws InternalError when the email could not be sent (the earlier code keeps working).
  */
 export async function prepareStepUp(
@@ -814,15 +822,12 @@ export async function prepareStepUp(
     destination: user.email,
     userId: user.id,
     binding: self.sessionId,
-    onAllowed: async () => {
-      const decision = await deps.rateLimiter.hit(
-        `step_up_email:${scope.environmentId}:${user.id}`,
-        STEP_UP_EMAILS_PER_HOUR,
-        durationToMs('1h')
-      )
-      if (!decision.allowed) {
-        throw new RateLimitError(decision.retryAfterMs)
-      }
+    // Its own limits, per user: the address's are shared with codes a stranger can ask for
+    // (sign-in, reset), who could otherwise keep this user's step-up refused.
+    sendLimits: {
+      name: 'step_up_email',
+      subject: `${scope.environmentId}:${user.id}`,
+      perHour: STEP_UP_EMAILS_PER_HOUR,
     },
   })
   return {

@@ -133,18 +133,25 @@ function PasswordStepUp(props: {
  * it appears (the user chose it, or it is the only way they have), then takes the code.
  *
  * The send is asked for once per appearance: a ref outlives StrictMode's second run of the
- * effect, so two runs send one email. A cooldown refusal at that first send means a code is
- * already in the user's inbox (an earlier dialog asked), so the field is shown all the same.
+ * effect, so two runs send one email. A form that appears again while the dialog still holds
+ * the receipt of its own earlier send (the user looked at the password form and came back)
+ * sends nothing: that code can still be typed.
+ *
+ * The code field is shown only once a send of this dialog succeeded. A refused send, the
+ * one-a-minute limit included, says so with the server's wait counted down and offers "Send
+ * code" again: the dialog never claims a code it did not send is in the user's inbox.
  */
 function EmailCodeStepUp(props: {
   isPending: boolean
   error: TulaError | null
+  /** What this dialog's last successful send answered, kept by the dialog. */
+  receipt: StepUpPrepared | null
+  onReceipt(receipt: StepUpPrepared): void
   submit(proof: StepUpProof): Promise<boolean>
 }) {
   const { t } = useUi()
   const { client } = useTulaContext()
-  const { isPending } = props
-  const [receipt, setReceipt] = useState<StepUpPrepared | null>(null)
+  const { isPending, receipt, onReceipt } = props
   const [sendError, setSendError] = useState<TulaError | null>(null)
   const [sending, setSending] = useState(false)
   const [resent, setResent] = useState(false)
@@ -181,7 +188,7 @@ function EmailCodeStepUp(props: {
     setSending(false)
     setSendError(failure)
     if (answer) {
-      setReceipt(answer)
+      onReceipt(answer)
       setResent(again)
     }
   }
@@ -191,12 +198,14 @@ function EmailCodeStepUp(props: {
   useEffect(() => {
     if (!asked.current) {
       asked.current = true
-      void send(false)
+      if (receipt === null) {
+        void send(false)
+      }
     }
   }, [])
 
-  // A code may already be on its way when the first send is refused for being too soon.
-  const hasCode = receipt !== null || sendError?.code === 'rate_limited'
+  // Only a send of this dialog that succeeded: a refusal says nothing about the user's inbox.
+  const hasCode = receipt !== null
   useEffect(() => {
     // The field arrives after the dialog opened (the email had to be sent first): put the
     // focus on it, as the dialog does for a field that is there from the start.
@@ -223,7 +232,7 @@ function EmailCodeStepUp(props: {
   const retry = (seconds: number) =>
     seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
 
-  if (!hasCode) {
+  if (receipt === null) {
     return (
       <Form onSubmit={() => void send(false)} failure={sendError} blocked={sending || sendWait > 0}>
         {sending ? <p className='tula-text'>{t.stepUp.emailSending}</p> : null}
@@ -244,7 +253,7 @@ function EmailCodeStepUp(props: {
     : wrong && props.error
       ? [hint ? `${props.error.message} ${hint}` : props.error.message]
       : []
-  // The cooldown that showed the field is not a failure to announce: the resend button says it.
+  // A resend refused for being too soon is not a failure to announce: the resend button says it.
   const formMessage =
     wrong || (action === 'send' && sendError?.code === 'rate_limited')
       ? null
@@ -257,9 +266,7 @@ function EmailCodeStepUp(props: {
         blocked={isPending || verifyWait > 0}
       >
         <p className='tula-text'>
-          {receipt
-            ? formatText(t.stepUp.emailSubtitle, { destination: receipt.destination })
-            : t.stepUp.emailSubtitleSent}
+          {formatText(t.stepUp.emailSubtitle, { destination: receipt.destination })}
         </p>
         <FormError message={formMessage} detail={retry(verifyWait)} />
         <CodeField
@@ -303,6 +310,10 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
   const canPassword = second.length === 0 && methods.includes('password')
   const canEmail = second.length === 0 && methods.includes('email_code')
   const [byEmail, setByEmail] = useState(!canPassword)
+  // The receipt of the code this dialog sent. Held here, not in the form, so that looking at
+  // the password form and coming back neither sends a second email nor forgets the first.
+  const [receipt, setReceipt] = useState<{ sessionId: string; value: StepUpPrepared } | null>(null)
+  const sessionId = state.status === 'signed-in' ? state.sessionId : null
   const body = useRef<HTMLDivElement>(null)
   const switched = useRef(false)
   useEffect(() => {
@@ -353,7 +364,14 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
         />
       ) : canEmail && (byEmail || !canPassword) ? (
         <div ref={body}>
-          <EmailCodeStepUp isPending={isPending} error={error} submit={submit} />
+          <EmailCodeStepUp
+            isPending={isPending}
+            error={error}
+            // A receipt belongs to the session that asked for it.
+            receipt={receipt?.sessionId === sessionId ? receipt.value : null}
+            onReceipt={(value) => setReceipt(sessionId === null ? null : { sessionId, value })}
+            submit={submit}
+          />
           {canPassword ? (
             <div className='tula-actions'>
               <Button kind='link' onClick={() => choose(false)}>

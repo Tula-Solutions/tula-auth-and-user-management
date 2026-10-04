@@ -10,7 +10,12 @@ import { createTestDatabase, createTestTenant, queryRows } from '@tula/db/testin
 import { sql } from 'drizzle-orm'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import type { Tenant } from '~/dependencies'
-import { NotFoundError, RateLimitError, ServiceException } from '~/exceptions'
+import {
+  NotFoundError,
+  RateLimitError,
+  ServiceException,
+  ServiceUnavailableError,
+} from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import { base32Decode, base32Encode, totp, totpStep } from '~/lib/totp'
@@ -2224,12 +2229,113 @@ describe('step-up by emailed code', () => {
       })
     )
     await prepare(user.id, session.sessionId)
-    expect(hits).toContain(
-      `step_up_email:${tenant.environmentId}:${user.id}|${Mfa.STEP_UP_EMAILS_PER_HOUR}|3600000`
-    )
+    expect(hits).toEqual([
+      `step_up_email_cooldown:${tenant.environmentId}:${user.id}|1|60000`,
+      `step_up_email:${tenant.environmentId}:${user.id}|${Mfa.STEP_UP_EMAILS_PER_HOUR}|3600000`,
+    ])
     expect(Mfa.STEP_UP_EMAILS_PER_HOUR).toBe(5)
     // Limiter keys hold ids and hashes, never an address.
     expect(hits.join('\n')).not.toContain('northline')
+  })
+
+  // Review finding F7: step-up sends shared the per-address cooldown and hourly cap with the
+  // sign-in, reset and verification codes, which anyone who knows the address can ask for
+  // without signing in. That let a stranger keep a user's step-up refused.
+  describe('send limits of its own', () => {
+    const signInCode = () =>
+      Verification.issue(deps, tenant, {
+        purpose: 'sign_in',
+        destination: EMAIL,
+        flowAttemptId: deps.ids.next(),
+      })
+
+    test('codes anyone can ask for at the address do not hold back a step-up code', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      for (let sent = 0; sent < Verification.SENDS_PER_HOUR; sent += 1) {
+        await signInCode()
+        deps.clock.advance('61s')
+      }
+      // The address is out of sends for the hour, and one more starts its cooldown again.
+      expect(await rejection(signInCode())).toBeInstanceOf(RateLimitError)
+      const before = deps.mailer.outbox.length
+
+      const prepared = await prepare(user.id, session.sessionId)
+      expect(prepared.method).toBe('email_code')
+      expect(deps.mailer.outbox).toHaveLength(before + 1)
+      await stepUp(user.id, session.sessionId, { method: 'email_code', code: latestCode() })
+    })
+
+    test('a sign-in code asked for a moment earlier does not hold back a step-up code', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      await signInCode()
+      // Within the address's one-minute cooldown.
+      expect(await rejection(signInCode())).toBeInstanceOf(RateLimitError)
+      await prepare(user.id, session.sessionId)
+      expect(deps.mailer.outbox).toHaveLength(2)
+    })
+
+    test('step-up codes do not use up the sends of a sign-in code', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      for (let sent = 0; sent < Mfa.STEP_UP_EMAILS_PER_HOUR; sent += 1) {
+        await prepare(user.id, session.sessionId)
+        deps.clock.advance('61s')
+      }
+      await prepare(user.id, session.sessionId).catch(() => undefined)
+      const before = deps.mailer.outbox.length
+      // Neither the address's hourly cap nor its cooldown was touched.
+      await signInCode()
+      expect(deps.mailer.outbox).toHaveLength(before + 1)
+    })
+
+    test('its own cooldown refuses a second code within a minute, with when to retry', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      await prepare(user.id, session.sessionId)
+      deps.clock.advance('20s')
+      const err = await rejection(prepare(user.id, session.sessionId))
+      expect(err).toBeInstanceOf(RateLimitError)
+      expect(err.toJSON()).toMatchObject({ code: 'rate_limited', params: { retryAfter: 40 } })
+      expect(deps.mailer.outbox).toHaveLength(1)
+      deps.clock.advance('41s')
+      await prepare(user.id, session.sessionId)
+      expect(deps.mailer.outbox).toHaveLength(2)
+    })
+
+    test('its own hourly cap refuses the sixth code, from any of the user’s sessions', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      const other = await newSession(user.id, ['email'])
+      for (let sent = 0; sent < Mfa.STEP_UP_EMAILS_PER_HOUR; sent += 1) {
+        await prepare(user.id, sent % 2 === 0 ? session.sessionId : other.sessionId)
+        deps.clock.advance('61s')
+      }
+      const err = await rejection(prepare(user.id, other.sessionId))
+      expect(err).toBeInstanceOf(RateLimitError)
+      expect((err as RateLimitError).retryAfter).toBeGreaterThan(60)
+      expect(deps.mailer.outbox).toHaveLength(Mfa.STEP_UP_EMAILS_PER_HOUR)
+    })
+
+    test('another user’s step-up codes are counted apart', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      const second = await seedUser({ email: 'second@northline.app', password: false })
+      const secondSession = await newSession(second.id, ['email'])
+      await prepare(user.id, session.sessionId)
+      await prepare(second.id, secondSession.sessionId)
+      expect(deps.mailer.outbox).toHaveLength(2)
+    })
+
+    test('a limiter that cannot answer sends nothing', async () => {
+      const user = await seedUser({ password: false })
+      const session = await newSession(user.id, ['email'])
+      spies.push(spyOn(deps.rateLimiter, 'hit').mockRejectedValue(new ServiceUnavailableError()))
+      const err = await rejection(prepare(user.id, session.sessionId))
+      expect(err.code).toBe('service.unavailable')
+      expect(deps.mailer.outbox).toHaveLength(0)
+    })
   })
 
   test('wrong codes are counted against the step-up lockout before the check', async () => {

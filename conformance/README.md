@@ -176,6 +176,10 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `22-step-up` | A user without a factor steps up with the password (a fresh access token, no refresh token). With a factor, a token that does not say it was proven is refused on sensitive actions with `auth.step_up_required` and `params.methods`; the password alone does not step up, a backup code does, and the repeated action succeeds. |
 | `23-mfa-admin-reset` | An operator removes a user's second factor: the user's access and refresh tokens are refused at once, and the next sign-in completes with the password alone (needs a secret key). |
 | `24-mfa-required-policy` | Under `mfa.policy: required` a sign-in and a sign-up of a user without a factor stop at `needs_factor_enrolment`, enrol inside the attempt and complete with tokens and ten backup codes; the factor cannot be turned off (`mfa.required_by_policy`); the next sign-in asks for it (needs a secret key). |
+| `25-oauth-sign-up-and-sign-in` | A sign-in through an OAuth provider: the start answers the provider's URL and a binding; the callback's state works once and hands the page a single-use, 60-second ticket in the fragment, never a token; the ticket is exchanged only with the starting browser's binding. A verified provider address creates an account and signs the same user in afterwards; an unverified one is refused (needs a secret key and the mock provider). |
+| `26-oauth-account-linking` | Which account a provider identity signs in to: connected automatically only when both the provider's and the account's address are verified (`oauth.account_exists` otherwise); a signed-in user connects one from their profile unless it belongs to someone else; disconnecting the last way to sign in is refused (needs a secret key and the mock provider). |
+| `27-oauth-second-factor` | A provider is a first factor: for a user with an authenticator the ticket exchange answers `needs_second_factor`, no tokens and a fresh attempt secret; the session exists only once the second factor is proven, and its `amr` names both (needs a secret key and the mock provider). |
+| `28-step-up-email-code` | A user with no password and no second factor steps up with a 6-digit code emailed on request: the receipt never holds the code; asking again within a minute is `rate_limited`; a wrong code and a method the user does not have are refused; the right code returns a fresh access token (no refresh token) whose `amr` gains `email`, and works once. With a second factor, asking for a code and presenting one both answer `auth.step_up_required` naming the factor (needs a secret key and the mock provider). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
@@ -201,7 +205,7 @@ what an email does not contain.
 
 ### OAuth scenarios need the mock provider
 
-Scenarios 25 to 27 sign in through an OAuth provider. They use the server's **mock provider**:
+Scenarios 25 to 28 sign in through an OAuth provider (28 to get a user with no password). They use the server's **mock provider**:
 start the server with `OAUTH_MOCK_PROVIDER=true` (accepted only with `ENVIRONMENT=local`). An
 `oauth` step plays the user at the provider: it posts the consent form to the path of the
 `authorizationUrl` a start answered (`email`, `subject`, `unverified`, `deny`), calls the

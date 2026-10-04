@@ -359,6 +359,43 @@ test('a user with no password steps up with an emailed code, and their profile s
   expect(page.url()).not.toContain(code)
 })
 
+test('a step-up code asked for again too soon is not claimed to be sent: the dialog says when it can be', async ({
+  page,
+  request,
+}) => {
+  const email = uniqueEmail('oauth-step-up-soon')
+  await continueWithGoogle(page, { email })
+  await expect(page.getByRole('heading', { name: /^Hello/ })).toBeVisible()
+  await page.goto('/account')
+  await advanceClock(request, 11 * 60_000)
+  const turnOn = page
+    .getByRole('region', { name: 'Account' })
+    .locator('section', { has: page.getByRole('heading', { name: 'Two-step verification' }) })
+    .getByRole('button', { name: 'Turn on' })
+  await turnOn.click()
+  const dialog = page.getByRole('dialog', { name: 'Confirm it is you' })
+  await expect(dialog.getByText(/Enter the 6-digit code we sent to .\*\*\*@/)).toBeVisible()
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(dialog).toHaveCount(0)
+
+  // A new dialog within the minute: its send is refused, so it has sent nothing and says so.
+  await turnOn.click()
+  await expect(dialog.getByText(/Try again in \d+s\./)).toBeVisible()
+  await expect(dialog.getByLabel('Verification code')).toHaveCount(0)
+  await expect(dialog).not.toContainText(/we sent|we emailed/i)
+  await expect(dialog.getByRole('button', { name: 'Send code' })).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  )
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expectAccessible(page, `step-up dialog: code refused for now (${colorScheme})`)
+  }
+  const outbox = await request.get(`${API_URL}/__test/outbox?to=${encodeURIComponent(email)}`)
+  const { data } = (await outbox.json()) as { data: { subject: string }[] }
+  expect(data.filter(({ subject }) => /^\d{6} is your /.test(subject))).toHaveLength(1)
+})
+
 test('a user with a password is offered the emailed code as the other way, and nothing is sent until they ask', async ({
   page,
   request,

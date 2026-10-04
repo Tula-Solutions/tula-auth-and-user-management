@@ -239,11 +239,9 @@ export interface TulaLocalization {
     backupSubtitle: string
     /** `{destination}` (masked). Above the code field once the email was sent. */
     emailSubtitle: string
-    /** Above the code field when a code was sent earlier and its destination is not known. */
-    emailSubtitleSent: string
     /** While the email is being sent. */
     emailSending: string
-    /** The button that sends the email again after a failure. */
+    /** The button that sends the email after a send that failed or was refused for now. */
     emailSend: string
     /** Offered next to the password: switch to a code by email. */
     emailInstead: string
@@ -546,7 +544,6 @@ export const EN_LOCALIZATION: TulaLocalization = {
     totpSubtitle: 'Enter the 6-digit code from your authenticator app to continue.',
     backupSubtitle: 'Enter one of your backup codes to continue. Each code works once.',
     emailSubtitle: 'Enter the 6-digit code we sent to {destination}.',
-    emailSubtitleSent: 'Enter the 6-digit code we emailed you.',
     emailSending: 'Sending you a code…',
     emailSend: 'Send code',
     emailInstead: 'Email me a code instead',

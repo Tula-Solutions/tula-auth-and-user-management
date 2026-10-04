@@ -108,12 +108,25 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '
  * `.localhost` (RFC 6761). Compared on the parsed host, so `localhost.example.com` and
  * `127.0.0.1.example.com` are not loopback. `0.0.0.0` and LAN addresses are not either.
  *
- * @param url - An absolute URL.
+ * @param url - An absolute URL. Anything that does not parse as one is not loopback.
  * @returns `true` when its host is loopback.
  */
 export function isLoopbackUrl(url: string): boolean {
-  const host = new URL(url).hostname.toLowerCase()
-  return LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost')
+  const host = parsedUrl(url)?.hostname.toLowerCase()
+  return host !== undefined && (LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost'))
+}
+
+/**
+ * Parse a variable for a cross-field rule. Those rules run even when the field's own rule has
+ * already refused the value, so a value that is not a URL must not throw here: the field's
+ * issue is what the operator should read.
+ */
+function parsedUrl(value: string): URL | null {
+  try {
+    return new URL(value)
+  } catch {
+    return null
+  }
 }
 
 const schema = fields.superRefine((env, ctx) => {
@@ -139,7 +152,7 @@ const schema = fields.superRefine((env, ctx) => {
   if (!LIVE_TIERS.has(env.ENVIRONMENT)) {
     return
   }
-  const smtpHost = new URL(env.SMTP_URL).hostname.toLowerCase()
+  const smtpHost = parsedUrl(env.SMTP_URL)?.hostname.toLowerCase()
   // `mailpit` is the catch-all inbox of the Compose stack: mail sent there reaches nobody.
   if (smtpHost === '127.0.0.1' || smtpHost === 'localhost' || smtpHost === 'mailpit') {
     ctx.addIssue({
@@ -172,7 +185,8 @@ const schema = fields.superRefine((env, ctx) => {
       message: `is required in ${env.ENVIRONMENT}: rate limits, lockout and revoked sessions must be shared between instances`,
     })
   }
-  if (new URL(env.PUBLIC_URL).protocol !== 'https:') {
+  const publicUrl = parsedUrl(env.PUBLIC_URL)
+  if (publicUrl && publicUrl.protocol !== 'https:') {
     // Session cookies are `Secure`; a plain-http issuer would also leak tokens in transit.
     ctx.addIssue({
       code: 'custom',

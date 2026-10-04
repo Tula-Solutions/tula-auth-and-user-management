@@ -842,14 +842,47 @@ describe('the step-up dialog: a code by email', () => {
 
     await w.user.click(within(dialog).getByRole('button', { name: 'Use your password instead' }))
     await expectFocus(await within(dialog).findByLabelText('Password'))
-    // Going back and forth does not send another email by itself within the cooldown.
-    w.api.on(SEND, () => failure(429, 'rate_limited', {}, { 'retry-after': '50' }))
+    // Going back and forth sends no second email: the code this dialog sent can still be typed.
     await w.user.click(within(dialog).getByRole('button', { name: 'Email me a code instead' }))
-    // The code already sent can still be typed.
-    expect(await within(dialog).findByLabelText(/Verification code/)).toBeTruthy()
-    expect(within(dialog).getByText('Enter the 6-digit code we emailed you.')).toBeTruthy()
+    await expectFocus(await within(dialog).findByLabelText(/Verification code/))
+    expect(
+      within(dialog).getByText('Enter the 6-digit code we sent to m***@northline.app.')
+    ).toBeTruthy()
+    expect(w.api.calls(SEND)).toHaveLength(1)
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
+  })
+
+  // Review finding F7: a first send refused as too soon was taken to mean "a code is already
+  // in your inbox". This dialog sent none, and the refusal can be caused by someone else.
+  test('a first send that is refused for now claims no code: the wait is counted down, then "Send code" sends', async () => {
+    const { w } = needsStepUp('email_code')
+    w.api.on(SEND, () =>
+      failure(429, 'rate_limited', { params: { retryAfter: 1 } }, { 'retry-after': '1' })
+    )
+    w.mount(<UserProfile />)
+    const dialog = await turnOn(w)
+    expect(await within(dialog).findByText(/Try again in \ds\./)).toBeTruthy()
+    expect(within(dialog).getByRole('alert').textContent).not.toBe('')
+    expect(dialog.textContent).not.toMatch(/we sent|we emailed|code is on its way/i)
+    expect(within(dialog).queryByLabelText(/Verification code/)).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /Resend code/ })).toBeNull()
+    const send = within(dialog).getByRole('button', { name: 'Send code' })
+    expect(send.getAttribute('aria-disabled')).toBe('true')
+    await w.user.click(send)
+    expect(w.api.calls(SEND)).toHaveLength(1)
+
+    // Once the server's wait is over the same button sends, and only then is a code asked for.
+    w.api.on(SEND, () => json(200, RECEIPT))
+    await waitFor(() => expect(send.getAttribute('aria-disabled')).not.toBe('true'), {
+      timeout: 3_000,
+    })
+    await w.user.click(within(dialog).getByRole('button', { name: 'Send code' }))
+    await expectFocus(await within(dialog).findByLabelText(/Verification code/))
+    expect(
+      within(dialog).getByText('Enter the 6-digit code we sent to m***@northline.app.')
+    ).toBeTruthy()
+    expect(w.api.calls(SEND)).toHaveLength(2)
   })
 
   test('resending: a new code is announced; sooner than the server allows, the button counts down', async () => {

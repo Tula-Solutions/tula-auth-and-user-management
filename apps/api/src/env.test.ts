@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { EnvError, loadEnv, parseEnv } from '~/env'
+import { EnvError, isLoopbackUrl, loadEnv, parseEnv } from '~/env'
 
 const MASTER_KEY = 'a'.repeat(64)
 const base = {
@@ -200,6 +200,41 @@ describe('OAUTH_MOCK_PROVIDER', () => {
     )
     // Without the mock the same PUBLIC_URL boots.
     expect(parseEnv({ ...base, PUBLIC_URL: url }).OAUTH_MOCK_PROVIDER).toBe(false)
+  })
+
+  // Review finding F8: the loopback check parsed PUBLIC_URL itself and threw a raw TypeError
+  // for a value that is not a URL, instead of letting boot fail with a validation message.
+  test.each(['not a url', '', 'localhost:3003', '//localhost'])(
+    'a PUBLIC_URL that is not a URL (%p) is a validation error, not a crash',
+    (url) => {
+      expect(isLoopbackUrl(url)).toBe(false)
+      let thrown: unknown
+      try {
+        parseEnv({ ...base, OAUTH_MOCK_PROVIDER: 'true', PUBLIC_URL: url })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(Error)
+      expect(thrown).not.toBeInstanceOf(TypeError)
+      expect((thrown as Error).message).toMatch(/PUBLIC_URL/)
+    }
+  )
+})
+
+// Same finding (F8), the live tiers: their cross-field rules parsed SMTP_URL and PUBLIC_URL too.
+describe('a live tier with a URL that does not parse', () => {
+  test.each([
+    ['PUBLIC_URL', 'not a url'],
+    ['SMTP_URL', 'nope'],
+  ])('%s is a validation error, not a crash', (name, value) => {
+    let thrown: unknown
+    try {
+      parseEnv({ ...live, [name]: value })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(EnvError)
+    expect((thrown as Error).message).toMatch(new RegExp(name))
   })
 })
 

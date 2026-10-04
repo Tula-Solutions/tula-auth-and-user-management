@@ -13,3 +13,8 @@ An OAuth sign-in is no longer lost when the ticket exchange gets no answer.
   do the same), and `isRetryableOAuthError(error)`.
 - `@tula/react`: `useOAuthCallback()` returns `canRetry` and `retry()`, and `<OAuthCallback>`
   shows a "Try again" button after such a failure. New localization string `oauth.tryAgain`.
+- `@tula/react`: the step-up dialog no longer says a code was emailed when its first send was
+  refused (`rate_limited`): it shows the error with the wait counted down and "Send code", and
+  the code field only after a send succeeded. Going to the password form and back keeps the
+  code already sent instead of asking for another. The localization string
+  `stepUp.emailSubtitleSent` is gone.
