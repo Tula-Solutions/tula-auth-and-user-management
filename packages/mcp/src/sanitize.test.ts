@@ -287,19 +287,21 @@ describe('the work is bounded', () => {
   // does not depend on the window to be fast.
   //
   // Measured as a ratio, not against the clock: a runner under coverage is forty times slower
-  // than a laptop, and that says nothing about the pattern. Four times the input costs four
-  // times the work when the pattern is linear and sixteen when it is quadratic.
+  // than a laptop, and that says nothing about the pattern. Thirty-two times the input costs
+  // thirty-two times the work when the pattern is linear and a thousand when it is quadratic;
+  // the limit sits a factor of ten from both, because a runner's ratio is itself noisy (a
+  // linear pattern has measured seven times its own on one).
   test.each(PATHOLOGICAL)(
     '%s costs time in proportion to its length, not its square',
     (_name, input) => {
       const large = input.slice(0, 400_000)
-      const small = large.slice(0, Math.floor(large.length / 4))
+      const small = large.slice(0, Math.floor(large.length / 32))
       // A floor of a millisecond: below it the timer's own noise is the measurement.
       const base = Math.max(
         quickest(() => cleanText(small, 1_000_000)),
         1
       )
-      expect(quickest(() => cleanText(large, 1_000_000))).toBeLessThan(base * 10)
+      expect(quickest(() => cleanText(large, 1_000_000))).toBeLessThan(base * 320)
     }
   )
 
