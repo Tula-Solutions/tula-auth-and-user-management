@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   durationToMs,
@@ -358,6 +358,50 @@ describe('the concurrent-session rule: end_oldest', () => {
     const results = await Promise.allSettled([create(), create(), create(), create()])
     expect(results.every((result) => result.status === 'fulfilled')).toBe(true)
     expect(await live()).toHaveLength(2)
+  })
+
+  test('a sign-in that keeps losing the race ends the sessions it put on the denylist before it gives up', async () => {
+    const oldest = await create()
+    deps.clock.advance('1m')
+    const kept = await create()
+    // Every pass loses: another sign-in of the same user always got in first.
+    const racing = spyOn(deps.sessions, 'create').mockResolvedValue({ created: false })
+    try {
+      expect(await code(create({ ipAddress: '203.0.113.9' }))).toBe('service.unavailable')
+      expect(racing).toHaveBeenCalledTimes(4)
+    } finally {
+      racing.mockRestore()
+    }
+
+    // Denylisted and still usable would be refused for 15 minutes and then alive again.
+    expect(await deps.revokedSessions.has(oldest.sessionId, deps.clock.now())).toBe(true)
+    expect(await stored(oldest.sessionId)).toMatchObject({ revokeReason: 'session_limit' })
+    expect(await code(Sessions.refresh(deps, tenant, rt(oldest)))).toBe('session.revoked')
+    const { entries } = await deps.activityLog.listAudit(tenant.environmentId, {
+      targetId: oldest.sessionId,
+      page: 1,
+      size: 10,
+    })
+    const ended = entries.filter((candidate) => candidate.type === 'session.revoked')
+    expect(ended).toHaveLength(1)
+    expect(ended[0]?.data).toEqual({ userId: USER, reason: 'session_limit' })
+    expect(ended[0]?.actor.type).toBe('system')
+    // Only what this sign-in named: the newer session is neither denylisted nor ended.
+    expect(await deps.revokedSessions.has(kept.sessionId, deps.clock.now())).toBe(false)
+    expect((await stored(kept.sessionId))?.revokedAt).toBeNull()
+  })
+
+  test('a sign-in refused at the limit denylists and ends nothing', async () => {
+    configure({ maxPerUser: 2, onLimit: 'refuse_newest' })
+    const first = await create()
+    const racing = spyOn(deps.sessions, 'create').mockResolvedValue({ created: false })
+    try {
+      expect(await code(create())).toBe('session.limit_reached')
+    } finally {
+      racing.mockRestore()
+    }
+    expect(await deps.revokedSessions.has(first.sessionId, deps.clock.now())).toBe(false)
+    expect((await stored(first.sessionId))?.revokedAt).toBeNull()
   })
 
   test('lowering the limit takes effect at the next sign-in', async () => {

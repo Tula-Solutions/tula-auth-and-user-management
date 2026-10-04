@@ -97,7 +97,7 @@ const profileFields = {
   /**
    * `hybrid`: how long an access token is valid ({@link MIN_ACCESS_TOKEN_TTL} to
    * {@link MAX_ACCESS_TOKEN_TTL}). `stateful`: how often a session's activity is written down;
-   * the idle timeout is measured to this precision.
+   * the idle timeout is measured to this precision. Never longer than `idleTimeout`.
    */
   accessTokenTtl: bounded(MIN_ACCESS_TOKEN_TTL, MAX_ACCESS_TOKEN_TTL).default('60s'),
   /**
@@ -156,12 +156,32 @@ function idleFits(profile: { idleTimeout: Duration; absoluteTimeout: Duration | 
   )
 }
 
+const accessWithinIdle = {
+  message: 'must not be longer than idleTimeout',
+  path: ['accessTokenTtl'],
+}
+
+/**
+ * Whether activity is noticed at least once per idle timeout.
+ *
+ * A `stateful` session's activity is written down once per `accessTokenTtl`, and a `hybrid`
+ * session is only active when it refreshes, which a client does once per `accessTokenTtl`. A
+ * profile whose `accessTokenTtl` is longer than its `idleTimeout` would therefore time an
+ * active user out (`stateful`), or leave an access token valid after its session went idle
+ * (`hybrid`).
+ */
+function accessFits(profile: { accessTokenTtl: Duration; idleTimeout: Duration }): boolean {
+  // As in `idleFits`: a malformed value (NaN) is reported once, by its own field.
+  return !(ms(profile.accessTokenTtl) > ms(profile.idleTimeout))
+}
+
 /**
  * A named session profile: how a session is held and how long it lives.
  *
  * Every field has a default, and the defaults are what every session got before profiles
  * existed: `hybrid`, 60-second access tokens, 7 days idle, 30 days absolute, a 10-second
- * refresh grace window. Unknown keys are refused.
+ * refresh grace window. Unknown keys are refused, and so is an `accessTokenTtl` longer than
+ * the `idleTimeout` or an `idleTimeout` longer than the `absoluteTimeout`.
  *
  * The limits are read **as currently configured** whenever a session is used: tightening a
  * profile's timeouts ends an over-age session at its next refresh (or request, for `stateful`).
@@ -170,12 +190,19 @@ function idleFits(profile: { idleTimeout: Duration; absoluteTimeout: Duration | 
 export const SessionProfileSchema = z
   .strictObject({ ...profileFields, refresh: z.strictObject(refreshFields).prefault({}) })
   .refine(idleFits, idleWithinAbsolute)
+  .refine(accessFits, accessWithinIdle)
   .meta({ ref: 'SessionProfile' })
 
 /** Session profile. */
 export type SessionProfile = z.infer<typeof SessionProfileSchema>
 
 // The same profile, but unknown keys are dropped instead of refused: for stored documents.
+//
+// `accessFits` is deliberately not applied here. Documents were stored before that rule
+// existed, and a stored document this schema refuses cannot be read at all: one odd profile
+// would fail every request of its environment. Such a profile is read as stored, and the
+// session service does not depend on the rule (`Sessions.authenticate` writes activity
+// whenever less idle time is left than its write interval).
 const StoredProfile = z
   .object({ ...profileFields, refresh: z.object(refreshFields).prefault({}) })
   .refine(idleFits, idleWithinAbsolute)

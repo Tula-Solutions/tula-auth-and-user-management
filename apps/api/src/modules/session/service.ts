@@ -400,6 +400,8 @@ interface Pending {
  * put on the revoked-session list before the store is asked to end it, as every revocation is.
  * When another sign-in of the same user got in between, the store writes nothing and the list
  * is read again: the sessions already denylisted are still the oldest, so they are named again.
+ * When every pass loses, the sessions this call denylisted are ended before it gives up, so a
+ * session is never left denylisted but not revoked.
  */
 async function createWithinLimit(
   deps: Pick<Deps, 'sessions' | 'revokedSessions' | 'ids' | 'clock'>,
@@ -409,6 +411,11 @@ async function createWithinLimit(
 ): Promise<void> {
   const { session, root, activity, origin, now } = pending
   const max = rule.maxPerUser ?? Number.POSITIVE_INFINITY
+  const ended = (id: string) =>
+    // The system ends them: the rule did, on behalf of nobody in particular. The origin of
+    // the sign-in that took the place is kept.
+    revoked(deps, scope, { id, userId: session.userId }, 'session_limit', systemActor(origin))
+  const denylisted = new Set<string>()
   for (let pass = 0; pass < LIMIT_ATTEMPTS; pass++) {
     const active = await deps.sessions.listActiveByUser(scope.environmentId, session.userId, now)
     const excess = active.length - max + 1
@@ -420,14 +427,14 @@ async function createWithinLimit(
       .slice(0, Math.max(excess, 0))
       .map((oldest) => oldest.id)
     await denylist(deps, end, now)
+    for (const id of end) {
+      denylisted.add(id)
+    }
     const result = await deps.sessions.create(session, root, activity, {
       max,
       end,
       at: now,
-      // The system ends them: the rule did, on behalf of nobody in particular. The origin of
-      // the sign-in that took the place is kept.
-      activity: (id) =>
-        revoked(deps, scope, { id, userId: session.userId }, 'session_limit', systemActor(origin)),
+      activity: ended,
     })
     if (result.created) {
       return
@@ -435,6 +442,14 @@ async function createWithinLimit(
     if (rule.onLimit === 'refuse_newest') {
       throw new AuthError('session.limit_reached')
     }
+  }
+  // Giving up must not leave a session on the denylist that the store never ended: it would
+  // be refused for as long as the entry lasts and then be alive again. Ending them is what
+  // the rule asks for in any case: each was among the oldest of a user at the limit, and the
+  // store only refuses when the user is still full without them. One that the sign-in which
+  // won the race already ended is left as it is (the store's revoke writes nothing then).
+  for (const id of denylisted) {
+    await deps.sessions.revoke(scope.environmentId, id, 'session_limit', now, ended(id))
   }
   throw new ServiceUnavailableError({
     internalMessage: 'sign-ins of one user kept racing at the session limit',
@@ -681,8 +696,10 @@ async function replayOrRevoke(
  * between. The limits are those of the session's profile as configured now.
  *
  * Activity is written down at most once per `accessTokenTtl` of the profile (so the idle
- * timeout has that precision, as it has for a `hybrid` session), and that write is also when a
- * ban is caught, as a refresh catches it for a `hybrid` session.
+ * timeout has that precision, as it has for a `hybrid` session), and always when less idle
+ * time is left than that interval: a request never leaves a session to expire before the next
+ * write could happen. That write is also when a ban is caught, as a refresh catches it for a
+ * `hybrid` session.
  *
  * @param deps - Session store, settings, users, denylist, clock and ids.
  * @param scope - The environment the request resolved to.
@@ -708,7 +725,12 @@ export async function authenticate(
   const { session } = found
   const { profile } = await profileOf(deps, scope, session)
   rejectEnded(session, profile, now)
-  if (now.getTime() - session.lastActiveAt.getTime() < durationToMs(profile.accessTokenTtl)) {
+  const interval = durationToMs(profile.accessTokenTtl)
+  const idleLeft = limitsNow(profile, session).idleExpiresAt.getTime() - now.getTime()
+  // Skipping the write is only safe while the session would survive until the next one. The
+  // contract refuses a profile whose interval is longer than its idle timeout, but a document
+  // stored before that rule can hold one, and an active user must never be timed out as idle.
+  if (now.getTime() - session.lastActiveAt.getTime() < interval && idleLeft >= interval) {
     return claimsOf(deps, scope, session, profile, now)
   }
   await rejectBanned(deps, scope, session, now, origin)

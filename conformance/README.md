@@ -38,10 +38,12 @@ bun run conformance
 | `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
-audit entries, and leaves them there. A full run takes about seven minutes, most of
+audit entries, and leaves them there. A full run takes about ten minutes, most of
 it waiting: 61 seconds for an address's email cooldown (four times), 30 for an authenticator to
-move to its next code (twice), 11 for the refresh grace period and 6 for a settings change to
-reach the second instance. The runner computes authenticator codes from its own clock, so it
+move to its next code (twice), 11 for the refresh grace period, 6 for a settings change to
+reach the second instance (three times), 95 for a session to reach its profile's absolute
+timeout (`38-session-profile-timeouts`), 61 for a profile's step-up window to pass
+(`42-step-up-window-per-profile`), and the OAuth scenarios' waits below. The runner computes authenticator codes from its own clock, so it
 must agree with the server's to within a 30-second step.
 
 The exit code is 0 when at least one scenario passed and none failed. A failing step prints the

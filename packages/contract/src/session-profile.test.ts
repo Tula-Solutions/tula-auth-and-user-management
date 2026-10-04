@@ -83,6 +83,14 @@ describe('session profile bounds', () => {
     ['an unknown type', { type: 'kiosk' }],
     ['an unknown key', { maxConcurrent: 1 }],
     ['a malformed duration', { idleTimeout: 'soon' }],
+    [
+      'an access token that outlives the idle timeout',
+      { accessTokenTtl: '15m', idleTimeout: '2m' },
+    ],
+    [
+      'a stateful profile that writes activity less often than it times out',
+      { type: 'stateful', accessTokenTtl: '15m', idleTimeout: '2m' },
+    ],
   ])('refuses %s', (_name, profile) => {
     expect(withProfiles({ web: profile }).success).toBe(false)
     expect(
@@ -100,6 +108,32 @@ describe('session profile bounds', () => {
     ['stateful', { type: 'stateful' }],
   ])('accepts %s', (_name, profile) => {
     expect(withProfiles({ web: profile }).success).toBe(true)
+  })
+
+  test('an access token longer than the idle timeout is reported on accessTokenTtl', () => {
+    const parsed = withProfiles({ admin: { accessTokenTtl: '5m', idleTimeout: '2m' } })
+    expect(parsed.success).toBe(false)
+    expect(parsed.error?.issues.map((issue) => [issue.path.join('.'), issue.message])).toEqual([
+      ['sessions.profiles.admin.accessTokenTtl', 'must not be longer than idleTimeout'],
+    ])
+    expect(withProfiles({ admin: { accessTokenTtl: '2m', idleTimeout: '2m' } }).success).toBe(true)
+  })
+
+  test('a stored document whose access token outlives its idle timeout is still read as stored', () => {
+    // Accepted before the rule existed. Refusing it on read would fail every request of that
+    // environment; the session service keeps such a profile's sessions alive instead.
+    const read = parseStoredEnvironmentSettings({
+      app: { name: 'Acme' },
+      sessions: {
+        profiles: { web: { type: 'stateful', accessTokenTtl: '15m', idleTimeout: '2m' } },
+      },
+    })
+    expect(read.app.name).toBe('Acme')
+    expect(read.sessions.profiles.web).toMatchObject({
+      type: 'stateful',
+      accessTokenTtl: '15m',
+      idleTimeout: '2m',
+    })
   })
 
   test('the grace floor is 10s: no smaller value than what an SDK refresh needs, except none', () => {

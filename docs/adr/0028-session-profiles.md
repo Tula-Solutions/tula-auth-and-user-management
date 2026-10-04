@@ -32,7 +32,14 @@ many sessions a user may have, and a way to ask for re-authentication sooner on 
   | `refresh.reuseGracePeriod` | 10 s to 60 s, or `null` (none) | 10 s |
   | `stepUpAfter` | 1 min to 24 h, or `null` (ten minutes) | `null` |
 
-  `mobile` must be `hybrid`.
+  `mobile` must be `hybrid`. `accessTokenTtl` must not be longer than `idleTimeout` (a field
+  error on `accessTokenTtl`): activity is noticed once per `accessTokenTtl`, so a longer one
+  would time an active `stateful` user out and let a `hybrid` access token outlive its idle
+  session. This rule is **input only**. A stored document is not refused for it on read (it
+  could have been saved before the rule, and a document that cannot be read fails every
+  request of its environment); instead `Sessions.authenticate` writes activity whenever less
+  idle time is left than the write interval, so even such a profile never signs out a user
+  who keeps making requests.
 - **The grace window has a floor of 10 seconds, or is absent.** `@tula/core` gives one refresh
   8 seconds (`REFRESH_TIMEOUT_MS`) and retries once with the same token inside 10 seconds. A
   window between "none" and 10 seconds would turn a slow network into `session.reuse_detected`
@@ -61,6 +68,11 @@ many sessions a user may have, and a way to ask for re-authentication sooner on 
 - A settings change that lets sessions live longer or be had more freely (a longer timeout,
   token lifetime, grace window or step-up window on an existing profile, a profile opened to
   clients or removed, a raised or removed session limit) is recorded with `weakened: true`.
+  So is a **new** profile that clients may select and that is looser in any limit than the
+  built-in `web` profile of the same document (a longer idle or absolute timeout, token
+  lifetime or grace window, a later step-up or none of its own): naming it gets a client a
+  session the built-in would not have given. A new profile that is no looser than `web`, or
+  that clients cannot select, is not.
 
 ### The `stateful` type
 
@@ -79,7 +91,8 @@ many sessions a user may have, and a way to ask for re-authentication sooner on 
   affects new sessions only. A session token is refused where a refresh token is expected and
   the other way round.
 - **Activity** is written at most once per `accessTokenTtl` of the profile (the idle timeout
-  has that precision, as it has for `hybrid`), and that write is also when a ban is caught.
+  has that precision, as it has for `hybrid`), and always when less idle time is left than
+  that interval. That write is also when a ban is caught.
 - **Browsers only.** A native client has no cookie jar the API can rely on: a client that is
   not `web` asking for a stateful profile gets `mobile`, and `@tula/core` refuses a token-less
   session for any other client kind.
@@ -145,7 +158,21 @@ open, as with any cookie session.
   ones to end on the denylist **first**, then asks the store to end exactly those; the store
   never picks a victim itself, so a session is never revoked in the database without being
   denylisted. When another sign-in got in between, the store writes nothing and the service
-  reads again (four passes, then `service.unavailable`).
+  reads again (four passes, then `service.unavailable`). Before it gives up, the service ends
+  every session it put on the denylist (reason `session_limit`, audited), so none is left
+  denylisted but not revoked: refused until the entry lapses and then alive again. That ends
+  nothing wrongly. Each was among the oldest of a user at the limit, and the store refuses
+  only when the user is full **without** them, so the rule ends them whoever wins; one the
+  winning sign-in already ended is left untouched.
+- **"Live" is judged by the stored expiry, not by the profile as configured now.** The count
+  and the list it is taken from read `idle_expires_at` and `absolute_expires_at` as written at
+  the session's last activity. A session that a since-tightened profile already treats as
+  expired therefore holds a place until it is next used (and refused), until its stored
+  expiry passes, or until `end_oldest` ends it as one of the oldest. Counting by today's
+  limits would need the profile of every row inside the store's transaction, and the store
+  does not read settings; the cost is a sign-in refused (`refuse_newest`) or an older live
+  session ended (`end_oldest`) a little earlier than strictly needed, never a user over the
+  limit.
 - **`refuse_newest`** answers `session.limit_reached` (403) with no session and no cookie. It
   is answered only after every factor was proven, so it tells nothing to someone who could not
   sign in anyway; the attempt is spent. A user can be kept out by their own stale sessions:
@@ -184,8 +211,8 @@ explicit `maxAgeSeconds` keeps it.
   without). Nothing here depends on taking effect everywhere at once.
 - A stateful session's idle timeout is not shown to the browser: the cookie outlives it and the
   next request is simply refused.
-- `session.limit_reached` with `end_oldest` exhausted (four lost races) leaves the named
-  sessions denylisted for 15 minutes without being revoked; their next refresh succeeds.
+- A sign-in that loses the `end_oldest` race four times answers `service.unavailable` after
+  ending the sessions it named: the user is left with room, and the retry signs in.
 
 ## Deferred
 

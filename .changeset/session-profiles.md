@@ -8,7 +8,8 @@ Session profiles, the stateful session type and session rules (ADR 0028).
 - `@tula/contract`: `sessions` in the environment settings (`SessionSettings`): named
   `profiles` (`web` and `mobile` always; `SessionProfile` now has `type`, `accessTokenTtl`,
   `idleTimeout`, `absoluteTimeout`, `refresh.reuseGracePeriod`, `stepUpAfter`,
-  `clientSelectable`, with documented bounds), `maxPerUser` and `onLimit`. Helpers
+  `clientSelectable`, with documented bounds; `accessTokenTtl` may not be longer than
+  `idleTimeout`), `maxPerUser` and `onLimit`. Helpers
   `resolveSessionProfile`, `profileOfSession`, `builtInSessionProfile`, `stepUpWindowSeconds`.
   New: the `x-tula-session-profile` header (`SESSION_PROFILE_HEADER`), the error code
   `session.limit_reached`, the access-token claim `sp`, `VerifySessionRequest`

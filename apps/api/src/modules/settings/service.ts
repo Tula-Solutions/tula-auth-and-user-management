@@ -206,27 +206,38 @@ function span(duration: string | null, none: number): number {
   return duration === null ? none : durationToMs(duration)
 }
 
-/** Whether a profile lets a session live longer, or be chosen more freely, than it did. */
-function profileWeakened(was: SessionProfile, is: SessionProfile): boolean {
+/**
+ * Whether `is` lets a session live longer than `than` does: a longer idle or absolute timeout,
+ * access-token lifetime or refresh grace window, or a step-up asked for later (none of its own
+ * is the default window).
+ */
+function looser(is: SessionProfile, than: SessionProfile): boolean {
   const never = Number.POSITIVE_INFINITY
   const stepUp = durationToMs(DEFAULT_STEP_UP_AFTER)
   return (
-    span(is.idleTimeout, never) > span(was.idleTimeout, never) ||
-    span(is.absoluteTimeout, never) > span(was.absoluteTimeout, never) ||
-    span(is.accessTokenTtl, never) > span(was.accessTokenTtl, never) ||
-    span(is.refresh.reuseGracePeriod, 0) > span(was.refresh.reuseGracePeriod, 0) ||
-    span(is.stepUpAfter, stepUp) > span(was.stepUpAfter, stepUp) ||
-    (is.clientSelectable && !was.clientSelectable)
+    span(is.idleTimeout, never) > span(than.idleTimeout, never) ||
+    span(is.absoluteTimeout, never) > span(than.absoluteTimeout, never) ||
+    span(is.accessTokenTtl, never) > span(than.accessTokenTtl, never) ||
+    span(is.refresh.reuseGracePeriod, 0) > span(than.refresh.reuseGracePeriod, 0) ||
+    span(is.stepUpAfter, stepUp) > span(than.stepUpAfter, stepUp)
   )
 }
 
 /**
- * Whether the `sessions` section got weaker: the concurrent-session limit was raised or
- * removed, or a profile that existed now lets its sessions live longer (idle or absolute
- * timeout, access-token lifetime, refresh grace window), asks for a step-up later, or became
- * selectable by clients. A profile that was removed is compared with the built-in `web`
- * profile its sessions fall back to. A new profile weakens nothing that existed; changing
- * `onLimit` or a profile's `type` is not a weakening either way.
+ * Whether the `sessions` section got weaker:
+ *
+ * - the concurrent-session limit was raised or removed;
+ * - a profile that existed now lets its sessions live longer (see `looser`) or became
+ *   selectable by clients;
+ * - a profile that was removed: it is compared with the built-in `web` profile its sessions
+ *   fall back to;
+ * - a **new** profile that clients may select and that is looser in any limit than the
+ *   built-in `web` profile of the same document. A client that names it gets a session the
+ *   built-in would not have given, which is exactly how sessions come to "be had more
+ *   freely". One that is no looser than `web`, or that clients cannot select (nothing can
+ *   get it), weakens nothing.
+ *
+ * Changing `onLimit` or a profile's `type` is not a weakening either way.
  */
 function sessionsWeakened(before: SessionSettings, after: SessionSettings): boolean {
   if (
@@ -235,10 +246,19 @@ function sessionsWeakened(before: SessionSettings, after: SessionSettings): bool
   ) {
     return true
   }
-  return Object.entries(before.profiles).some(([name, was]) =>
-    profileWeakened(
-      was,
-      Object.hasOwn(after.profiles, name) ? (after.profiles[name] ?? was) : after.profiles.web
+  const existing = Object.entries(before.profiles).some(([name, was]) => {
+    const is = Object.hasOwn(after.profiles, name) ? (after.profiles[name] ?? was) : null
+    return is
+      ? looser(is, was) || (is.clientSelectable && !was.clientSelectable)
+      : looser(after.profiles.web, was)
+  })
+  return (
+    existing ||
+    Object.entries(after.profiles).some(
+      ([name, is]) =>
+        !Object.hasOwn(before.profiles, name) &&
+        is.clientSelectable &&
+        looser(is, after.profiles.web)
     )
   )
 }

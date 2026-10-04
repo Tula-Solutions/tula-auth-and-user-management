@@ -736,4 +736,41 @@ describe('weakened: sessions', () => {
   ])('%s', (_name, after, expected) => {
     expect(Settings.weakened(base, after)).toBe(expected)
   })
+
+  // A profile clients may ask for by name is a way to get a session the built-in would not
+  // give. `web` here: 7 days idle, 30 days absolute, 60 s tokens, 10 s grace, step-up after 5m.
+  const NO_LOOSER = { idleTimeout: '30m', absoluteTimeout: '8h', stepUpAfter: '5m' }
+  const added = (kiosk: Record<string, unknown>) =>
+    change({
+      profiles: {
+        web: { stepUpAfter: '5m' },
+        admin: { idleTimeout: '30m', absoluteTimeout: '8h' },
+        kiosk: { ...NO_LOOSER, ...kiosk },
+      },
+    })
+
+  test.each<[string, Record<string, unknown>, boolean]>([
+    ['no looser than web in anything', { clientSelectable: true }, false],
+    ['exactly web’s limits', { idleTimeout: '7d', absoluteTimeout: '30d' }, false],
+    ['a longer idle timeout than web', { idleTimeout: '8d', absoluteTimeout: '30d' }, true],
+    ['a longer absolute timeout than web', { absoluteTimeout: '365d' }, true],
+    ['no absolute timeout', { absoluteTimeout: null }, true],
+    ['a longer access token than web', { accessTokenTtl: '5m' }, true],
+    ['a longer refresh grace than web', { refresh: { reuseGracePeriod: '30s' } }, true],
+    ['a longer step-up window than web', { stepUpAfter: '1h' }, true],
+    ['no step-up window of its own (the default, longer than web’s)', { stepUpAfter: null }, true],
+  ])('a new profile clients may select, with %s', (_name, kiosk, expected) => {
+    expect(Settings.weakened(base, added({ ...kiosk, clientSelectable: true }))).toBe(expected)
+  })
+
+  test('a new profile clients cannot select weakens nothing, however long its sessions', () => {
+    const after = added({ idleTimeout: '365d', absoluteTimeout: null, accessTokenTtl: '15m' })
+    expect(Settings.weakened(base, after)).toBe(false)
+  })
+
+  test('opening an existing profile to clients is a weakening even when it is no looser than web', () => {
+    const before = added({})
+    expect(Settings.weakened(before, added({ clientSelectable: true }))).toBe(true)
+    expect(Settings.weakened(added({ clientSelectable: true }), before)).toBe(false)
+  })
 })

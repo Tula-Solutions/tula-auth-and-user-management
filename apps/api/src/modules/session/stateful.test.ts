@@ -297,6 +297,56 @@ describe('a request authenticated by the session cookie', () => {
     expect(await code(await client('GET', '/me', { cookie }))).toBe('session.expired')
   })
 
+  describe('under a stored profile that writes activity less often than it times out', () => {
+    // Refused on input now, but a document stored before that rule (or edited by hand) can
+    // hold it: activity every 15 minutes at most, idle after 2.
+    beforeEach(() => {
+      const settings = EnvironmentSettingsSchema.parse({
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        urls: { allowedOrigins: [APP], allowedRedirectUrls: [] },
+      })
+      settings.sessions.profiles.web = {
+        ...settings.sessions.profiles.web,
+        type: 'stateful',
+        accessTokenTtl: '15m',
+        idleTimeout: '2m',
+      }
+      revision += 1
+      deps.environmentSettings.seed(tenant.environmentId, { revision, settings })
+    })
+
+    test('a user who keeps making requests is never signed out by the idle timeout', async () => {
+      const { cookie } = await signedIn()
+      for (let request = 0; request < 10; request++) {
+        deps.clock.advance('30s')
+        expect((await client('GET', '/me', { cookie })).status).toBe(200)
+      }
+    })
+
+    test('a user who stops is signed out when the idle timeout has passed, not later', async () => {
+      const { cookie } = await signedIn()
+      deps.clock.advance('30s')
+      expect((await client('GET', '/me', { cookie })).status).toBe(200)
+      deps.clock.advance('119s')
+      expect((await client('GET', '/me', { cookie })).status).toBe(200)
+      deps.clock.advance('121s')
+      expect(await code(await client('GET', '/me', { cookie }))).toBe('session.expired')
+    })
+  })
+
+  test('the device list is never stored by a cache, for a cookie caller and a Bearer caller', async () => {
+    const { cookie, user } = await signedIn()
+    const byCookie = await client('GET', '/sessions', { cookie })
+    expect(byCookie.status).toBe(200)
+    expect(byCookie.headers.get('cache-control')).toBe('no-store')
+
+    configure({ profiles: {} })
+    const hybrid = await Sessions.create(deps, tenant, { userId: user.id, client: 'web' })
+    const byBearer = await client('GET', '/sessions', { bearer: hybrid.accessToken })
+    expect(byBearer.status).toBe(200)
+    expect(byBearer.headers.get('cache-control')).toBe('no-store')
+  })
+
   test('lists the device, marks it current, and can sign the others out', async () => {
     const { cookie, sessionId, user } = await signedIn()
     const other = await Sessions.create(deps, tenant, { userId: user.id, client: 'web' })

@@ -203,6 +203,9 @@ router.get(
       userId: sub,
       currentSessionId: sid,
     })
+    // Devices, user agents and IP addresses of one user, which a cookie can now authenticate:
+    // no cache may keep the answer and serve it to the next person at that browser.
+    c.header('Cache-Control', 'no-store')
     return c.json(SessionListSchema.parse({ data }))
   }
 )
