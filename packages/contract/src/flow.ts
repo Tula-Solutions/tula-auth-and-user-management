@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PasskeyAssertionCredentialSchema, PasskeyRequestOptionsSchema } from './passkey'
 
 /** Second-factor methods a flow can ask for. */
 export const SecondFactorMethodSchema = z
@@ -24,8 +25,8 @@ export const FirstFactorStrategySchema = z
   .meta({ ref: 'FirstFactorStrategy' })
 
 /**
- * Second factors a user can enrol. `totp` is an authenticator app (RFC 6238). Passkeys join
- * with step 1.10.
+ * Second factors a user can enrol inside an attempt. `totp` is an authenticator app (RFC 6238).
+ * A passkey is registered from a signed-in profile (`/v1/client/me/passkeys`), never here.
  */
 export const FactorEnrolmentMethodSchema = z.enum(['totp']).meta({ ref: 'FactorEnrolmentMethod' })
 
@@ -256,6 +257,7 @@ const MAX_BACKUP_CODE_INPUT_LENGTH = 64
  * - `totp`: the 6-digit code the authenticator app shows now.
  * - `backup_code`: one of the user's unused backup codes. Case, spaces and dashes are ignored.
  *   Each works once.
+ * - `passkey`: an assertion for the options of `…/second-factor/passkey/options` (ADR 0027).
  */
 export const SecondFactorRequestSchema = z
   .discriminatedUnion('method', [
@@ -264,8 +266,17 @@ export const SecondFactorRequestSchema = z
       method: z.literal('backup_code'),
       code: z.string().min(1).max(MAX_BACKUP_CODE_INPUT_LENGTH),
     }),
+    z.object({ method: z.literal('passkey'), credential: PasskeyAssertionCredentialSchema }),
   ])
   .meta({ ref: 'SecondFactorRequest' })
+
+/**
+ * A started passkey sign-in (`POST /v1/client/sign-ins/passkey`): an attempt of its own, with
+ * its secret, and the options to ask the authenticator with. The same for every caller.
+ */
+export const PasskeySignInStartSchema = z
+  .object({ attempt: FlowAttemptSchema, options: PasskeyRequestOptionsSchema })
+  .meta({ ref: 'PasskeySignInStart' })
 
 /** Start a password reset for an email address. */
 export const PasswordResetStartRequestSchema = z
@@ -277,6 +288,8 @@ export const PasswordResetRequestSchema = z
   .object({ code: z.string().regex(/^\d{6}$/), password: z.string().max(1024) })
   .meta({ ref: 'PasswordResetRequest' })
 
+/** A started passkey sign-in. */
+export type PasskeySignInStart = z.infer<typeof PasskeySignInStartSchema>
 /** First-factor strategy. */
 export type FirstFactorStrategy = z.infer<typeof FirstFactorStrategySchema>
 /** Second-factor method. */

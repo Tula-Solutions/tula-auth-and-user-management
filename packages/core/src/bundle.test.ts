@@ -11,9 +11,12 @@ import { join } from 'node:path'
  * room: enough for fixes, and still far below what a dependency dragging a library in costs,
  * which is what this test exists to catch. OAuth (ADR 0026) added about 1.5 kB (six routes, the
  * tab-scoped binding store, the callback handler and eleven error messages), to 12.5 kB, and
- * the budget moved from 12 kB to 13 kB.
+ * the budget moved from 12 kB to 13 kB. Passkeys (ADR 0027) added about 2.3 kB with no
+ * dependency (ten routes, the WebAuthn JSON conversions for browsers without
+ * `parseCreationOptionsFromJSON` and `toJSON`, the response guards, the autofill loop and
+ * eight error messages), to 14.9 kB, and the budget moved from 13 kB to 15.5 kB.
  */
-const GZIP_BUDGET_BYTES = 13_000
+const GZIP_BUDGET_BYTES = 15_500
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({
@@ -41,8 +44,10 @@ describe('what @tula/core costs a browser bundle', () => {
 
   test('uses no Node or Bun API', async () => {
     const code = await bundle('bundle-entry.ts')
-    for (const marker of ['node:', 'Buffer', 'process.env', 'require(', 'Bun.']) {
+    for (const marker of ['node:', 'process.env', 'require(', 'Bun.']) {
       expect(code).not.toContain(marker)
     }
+    // Node's `Buffer`, not the web platform's `ArrayBuffer` (which the passkey conversions use).
+    expect(code).not.toMatch(/(?<![A-Za-z_$])Buffer\b/)
   })
 })

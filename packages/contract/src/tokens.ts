@@ -20,12 +20,27 @@ export const SECRET_KEY_PREFIX = 'tula_sk_'
  *   password reset's code).
  * - `otp`: a code from an authenticator app (TOTP).
  * - `backup_code`: a single-use backup code.
- * - `mfa`: two different kinds of factor were proven for this session (always beside the two).
+ * - `hwk` / `swk`: a passkey, proven with user verification (ADR 0027). `hwk` for a credential
+ *   bound to one device, `swk` for one its authenticator reports as eligible for backup (a
+ *   synced passkey). Always beside `user`.
+ * - `user`: the authenticator tested that the user was present and verified them.
+ * - `mfa`: more than one kind of factor was proven for this session: a password or email and
+ *   then a second factor, or a passkey, which is possession and a verified user in one step.
  *
- * `pwd`, `otp` and `mfa` are RFC 8176 values; `email` and `backup_code` are Tula's own. Later
- * servers may add values (a passkey, a social provider): treat unknown ones as opaque.
+ * `pwd`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
+ * are Tula's own. Later servers may add values (a social provider): treat unknown ones as
+ * opaque.
  */
-export const AUTHENTICATION_METHODS = ['pwd', 'email', 'otp', 'backup_code', 'mfa'] as const
+export const AUTHENTICATION_METHODS = [
+  'pwd',
+  'email',
+  'otp',
+  'backup_code',
+  'mfa',
+  'hwk',
+  'swk',
+  'user',
+] as const
 
 /** One of {@link AUTHENTICATION_METHODS}. */
 export type AuthenticationMethod = (typeof AUTHENTICATION_METHODS)[number]

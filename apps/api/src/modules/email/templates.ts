@@ -67,9 +67,17 @@ export interface MfaChangedMessage {
   type: 'mfa_changed'
   /**
    * What happened: it was turned on, turned off by someone signed in, reset by an
-   * administrator, the backup codes were replaced, or a backup code was used to sign in.
+   * administrator, the backup codes were replaced, a backup code was used to sign in, or a
+   * passkey was added or removed (ADR 0027).
    */
-  change: 'enabled' | 'disabled' | 'admin_reset' | 'backup_codes_regenerated' | 'backup_code_used'
+  change:
+    | 'enabled'
+    | 'disabled'
+    | 'admin_reset'
+    | 'backup_codes_regenerated'
+    | 'backup_code_used'
+    | 'passkey_added'
+    | 'passkey_removed'
   /** When it happened. */
   at: Date
   /** For `backup_code_used`: how many unused backup codes are left. */
@@ -228,7 +236,7 @@ const MFA_COPY: Record<MfaChangedMessage['change'], [subject: string, lead: stri
   ],
   admin_reset: [
     'Two-step verification was reset for your {app} account',
-    'An administrator of {app} reset two-step verification for your account. Your authenticator app and backup codes no longer work, and every device was signed out.',
+    'An administrator of {app} reset two-step verification for your account. Your authenticator app, backup codes and passkeys no longer work, and every device was signed out.',
   ],
   backup_codes_regenerated: [
     'New backup codes were created for your {app} account',
@@ -237,6 +245,14 @@ const MFA_COPY: Record<MfaChangedMessage['change'], [subject: string, lead: stri
   backup_code_used: [
     'A backup code was used to sign in to your {app} account',
     'A backup code was used instead of your authenticator app to sign in to your {app} account. That code cannot be used again.',
+  ],
+  passkey_added: [
+    'A passkey was added to your {app} account',
+    'A passkey was added to your {app} account by someone signed in to it. It can be used to sign in without a password.',
+  ],
+  passkey_removed: [
+    'A passkey was removed from your {app} account',
+    'A passkey was removed from your {app} account by someone signed in to it. It can no longer be used to sign in.',
   ],
 }
 

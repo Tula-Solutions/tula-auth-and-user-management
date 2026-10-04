@@ -257,6 +257,82 @@ const Mfa = z.object({
   policy: MfaPolicySchema.default('optional'),
 })
 
+const RP_ID = new RegExp(`^(?:localhost|${LABEL}(?:\\.${LABEL})+)$`)
+
+/**
+ * Whether a string can be a WebAuthn relying-party id: `localhost`, or a lowercase domain name
+ * of at least two labels whose last label is not all digits (so never an IP address, which
+ * WebAuthn does not allow). No scheme, port or path.
+ *
+ * @param value - The candidate.
+ * @returns `true` when it has that shape.
+ *
+ * @example
+ * ```ts
+ * isRelyingPartyId('northline.app') // true
+ * isRelyingPartyId('https://northline.app') // false
+ * ```
+ */
+export function isRelyingPartyId(value: string): boolean {
+  return value.length <= 253 && RP_ID.test(value) && !/(?:^|\.)[0-9]+$/.test(value)
+}
+
+/**
+ * Whether a page on `origin` may use passkeys of the relying party `rpId`: its host is the id
+ * itself or a subdomain of it. The same rule a browser applies before it lets a page name an
+ * `rpId`.
+ *
+ * @param origin - A web origin as sent in `Origin`, e.g. `https://app.northline.app`.
+ * @param rpId - The environment's relying-party id.
+ * @returns `true` when the origin's host equals the id or ends with `.` + the id.
+ *
+ * @example
+ * ```ts
+ * originMatchesRelyingParty('https://app.northline.app', 'northline.app') // true
+ * originMatchesRelyingParty('https://northline.app.evil.test', 'northline.app') // false
+ * ```
+ */
+export function originMatchesRelyingParty(origin: string, rpId: string): boolean {
+  let host: string
+  try {
+    host = new URL(origin).hostname
+  } catch {
+    return false
+  }
+  return host === rpId || host.endsWith(`.${rpId}`)
+}
+
+const Passkeys = z.object({
+  /**
+   * The WebAuthn relying-party id every passkey of this environment is bound to: the app's
+   * registrable domain (`northline.app`, which also covers `app.northline.app`), or
+   * `localhost`. `null` (the default) means passkeys cannot be switched on.
+   *
+   * **Changing it orphans every existing passkey**: an authenticator only offers a credential
+   * to the id it was made for.
+   */
+  rpId: z
+    .string()
+    .refine(isRelyingPartyId, {
+      message: 'must be a domain such as example.com, or localhost (no scheme, port or path)',
+    })
+    .nullable()
+    .default(null),
+})
+
+// A passkey is bound to a relying-party id; without one nothing could be registered or used.
+const passkeyNeedsRpId = {
+  message: 'passkey needs passkeys.rpId to be set',
+  path: ['signIn', 'methods', 'passkey', 'enabled'],
+}
+
+function passkeyHasRpId(settings: {
+  signIn: { methods: { passkey: { enabled: boolean } } }
+  passkeys: { rpId: string | null }
+}): boolean {
+  return !settings.signIn.methods.passkey.enabled || settings.passkeys.rpId !== null
+}
+
 const password = PasswordPolicySchema.default(PASSWORD_POLICY_PRESETS.recommended)
 const version = z.literal(1).default(1)
 
@@ -267,6 +343,7 @@ const SignIn = z
         password: PasswordMethod.strict().prefault({}),
         emailCode: OptionalMethod.strict().prefault({}),
         emailLink: OptionalMethod.strict().prefault({}),
+        passkey: OptionalMethod.strict().prefault({}),
       })
       .refine(linkHasCode, linkNeedsCode)
       .prefault({}),
@@ -292,8 +369,8 @@ const minLengthFloor = {
  * - `password`: the password policy (see `PasswordPolicy`). `minLength` cannot be set below
  *   {@link MIN_PASSWORD_MIN_LENGTH}.
  * - `signIn.methods`: which first factors are offered: `password` (on by default), `emailCode`
- *   (a 6-digit code by email) and `emailLink` (a link in that email, which needs `emailCode`
- *   too). At least one must stay enabled, unless an OAuth provider is (the server checks:
+ *   (a 6-digit code by email), `emailLink` (a link in that email, which needs `emailCode`
+ *   too) and `passkey` (WebAuthn, which needs `passkeys.rpId`). At least one must stay enabled, unless an OAuth provider is (the server checks:
  *   providers are configured apart from this document, ADR 0026).
  * - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
  *   may leave it out (`optional`, which needs `emailCode`).
@@ -303,6 +380,7 @@ const minLengthFloor = {
  *   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
  * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
  *   `required`.
+ * - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({
@@ -315,11 +393,13 @@ export const EnvironmentSettingsSchema = z
     audit: Audit.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: Mfa.strict().prefault({}),
+    passkeys: Passkeys.strict().prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
   .refine((settings) => settings.password.minLength >= MIN_PASSWORD_MIN_LENGTH, minLengthFloor)
   .refine(passwordlessHasCode, passwordlessNeedsCode)
+  .refine(passkeyHasRpId, passkeyNeedsRpId)
   .meta({ ref: 'EnvironmentSettings' })
 
 /** An environment's settings. */
@@ -358,6 +438,7 @@ export const EnvironmentSettingsInputSchema = z
     audit: Audit.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: Mfa.strict().prefault({}),
+    passkeys: Passkeys.strict().prefault({}),
   })
   .refine(
     (settings) =>
@@ -365,6 +446,7 @@ export const EnvironmentSettingsInputSchema = z
     minLengthFloor
   )
   .refine(passwordlessHasCode, passwordlessNeedsCode)
+  .refine(passkeyHasRpId, passkeyNeedsRpId)
   .meta({ ref: 'EnvironmentSettingsInput' })
 
 /** A settings document as sent to `PUT /v1/admin/settings`. */
@@ -386,6 +468,7 @@ const Stored = z.object({
           password: PasswordMethod.prefault({}),
           emailCode: OptionalMethod.prefault({}),
           emailLink: OptionalMethod.prefault({}),
+          passkey: OptionalMethod.prefault({}),
         })
         .prefault({}),
     })
@@ -395,6 +478,7 @@ const Stored = z.object({
   audit: Audit.prefault({}),
   notifications: Notifications.prefault({}),
   mfa: Mfa.prefault({}),
+  passkeys: Passkeys.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */
@@ -505,7 +589,7 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
  *   email already shows it. It is `null` when none is set.
  * - `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`), for
  *   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
- * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`). It
+ * - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`). It
  *   is an array of plain strings, not an enum, so a client built against this version keeps
  *   working when a server offers a method it does not know; it should ignore those.
  * - `signUp.password` says whether the sign-up form must ask for a password. Optional in the

@@ -142,6 +142,7 @@ describe('purge', () => {
       verificationTokens: 0,
       sessions: 0,
       pendingFactors: 0,
+      passkeyChallenges: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -219,6 +220,7 @@ describe('purge', () => {
       verificationTokens: 0,
       sessions: 0,
       pendingFactors: 2,
+      passkeyChallenges: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -261,6 +263,7 @@ describe('purge', () => {
           verificationTokens: 0,
           sessions: 0,
           pendingFactors: 1,
+          passkeyChallenges: 0,
         },
       ],
     ])
@@ -279,6 +282,7 @@ describe('purge', () => {
             password: { enabled: true },
             emailCode: { enabled: true },
             emailLink: { enabled: true },
+            passkey: { enabled: false },
           },
         },
       },
@@ -438,6 +442,7 @@ describe('purge', () => {
       verificationTokens: 0,
       sessions: 1,
       pendingFactors: 0,
+      passkeyChallenges: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -534,6 +539,7 @@ describe('run', () => {
           verificationTokens: 0,
           sessions: 0,
           pendingFactors: 0,
+          passkeyChallenges: 0,
         },
       ],
     ])
@@ -560,6 +566,7 @@ describe('run', () => {
         verificationTokens: 0,
         sessions: 0,
         pendingFactors: 0,
+        passkeyChallenges: 0,
       },
     ])
   })

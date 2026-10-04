@@ -4,6 +4,8 @@ paths:
   - "apps/api/src/modules/mfa/**"
   - "apps/api/src/modules/factor/**"
   - "apps/api/src/modules/oauth/**"
+  - "apps/api/src/modules/passkey/**"
+  - "apps/api/src/lib/webauthn.ts"
   - "apps/api/src/adapters/oauth/**"
   - "apps/api/src/lib/totp.ts"
   - "apps/api/src/modules/session/**"
@@ -133,3 +135,29 @@ Before finishing any change here, confirm each item holds and has a test:
     `env.ts` refuses it elsewhere, and with a `PUBLIC_URL` that is not loopback; the container
     logs a warning at boot while it is on; the routes are not mounted otherwise; and the consent
     page redirects only to this API's callback. Keep all of them, each with its test.
+31. **Passkey responses (ADR 0027):** verified only through `~/lib/webauthn` and
+    `Passkeys.assert`. Test, for registration and for every place an assertion is accepted
+    (sign-in, second factor, step-up): client data for another origin, another allowed origin
+    than the request's, an RP ID hash for another relying party, no user verification, another
+    user's credential, another environment's, a wrong or missing user handle. Every failed
+    sign-in is `auth.invalid_credentials`, creates no session and sets no cookie.
+32. **Passkey challenges:** single use and five minutes. Test a replayed response (on its own
+    attempt and on a new one), a right response after a wrong one for the same challenge, an
+    expired challenge, two concurrent requests with one response (one session), a challenge of
+    another session and of another purpose (`registration` vs `step_up`).
+33. **Passkey origin and method:** `Passkeys.relyingParty` on every step, before anything is
+    counted or used: no `Origin`, a disallowed one, an allowed one outside `passkeys.rpId` and
+    a look-alike host are `request.origin_not_allowed`; passkeys switched off mid-attempt is
+    `auth.method_disabled` and uses nothing up (the same response completes once it is back on).
+34. **Signature counter:** growing is accepted, equal or lower is refused and recorded
+    (`user.passkey_counter_regressed`, never the credential id), zero both sides is fine, and
+    the stored counter does not move on a refusal.
+35. **Passkey and MFA:** a sign-in by passkey never answers `needs_second_factor` or
+    `needs_factor_enrolment` (test with TOTP enrolled and with `mfa.policy: required`), and its
+    `amr` has `mfa`. After a password, `passkey` is among the options only for a user with an
+    authenticator app or under a `required` policy; with passkeys off it never is.
+36. **Passkey management:** register, rename and remove need `requireRecentAuth()`; the limit
+    is enforced in the insert's transaction; the last way to sign in cannot be removed (test
+    with every other method off, and that a remaining one allows it); the admin reset removes
+    them and ends every session; no response, audit entry, email or log line holds a public
+    key or a credential id.

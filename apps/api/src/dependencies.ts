@@ -18,6 +18,7 @@ import type { Lockout } from '~/ports/lockout'
 import type { Mailer } from '~/ports/mailer'
 import type { OAuthProviders } from '~/ports/oauth-provider'
 import type { OAuthProviderStore } from '~/ports/oauth-provider-store'
+import type { PasskeyStore } from '~/ports/passkey-store'
 import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
 import type { SessionStore } from '~/ports/session-store'
@@ -68,6 +69,8 @@ export interface Deps {
   users: UserRepository
   /** Second factors (authenticator apps) and backup codes. */
   factors: FactorStore
+  /** Passkeys (WebAuthn credentials) and the challenges of signed-in sessions. */
+  passkeys: PasskeyStore
   flowAttempts: FlowAttemptStore
   /** Each environment's own OAuth credentials (sealed). */
   oauthProviders: OAuthProviderStore

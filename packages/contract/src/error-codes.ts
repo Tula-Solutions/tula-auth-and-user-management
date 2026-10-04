@@ -181,6 +181,25 @@ export const ERROR_DEFINITIONS = {
     message: 'This is your only way to sign in. Add a password or connect another account first.',
   },
 
+  // Passkeys (ADR 0027). A failed passkey sign-in is always `auth.invalid_credentials`.
+  'passkey.registration_failed': {
+    status: 422,
+    message: 'That passkey could not be saved. Try again.',
+  },
+  'passkey.already_registered': {
+    status: 409,
+    message: 'This passkey is already saved to an account.',
+  },
+  'passkey.limit_reached': {
+    status: 409,
+    message: 'You have reached the number of passkeys an account can have. Remove one first.',
+  },
+  // Removing the passkey would leave the user with no way to sign in.
+  'passkey.last_sign_in_method': {
+    status: 409,
+    message: 'This is your only way to sign in. Add a password or connect an account first.',
+  },
+
   'session.invalid_token': { status: 401, message: 'Your session is invalid. Sign in again.' },
   'session.expired': { status: 401, message: 'Your session has expired. Sign in again.' },
   'session.revoked': { status: 401, message: 'Your session was signed out. Sign in again.' },

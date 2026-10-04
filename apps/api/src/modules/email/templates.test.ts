@@ -190,7 +190,7 @@ describe('render', () => {
     [
       'admin_reset',
       'Two-step verification was reset for your Acme account',
-      'An administrator of Acme reset two-step verification for your account. Your authenticator app and backup codes no longer work, and every device was signed out.',
+      'An administrator of Acme reset two-step verification for your account. Your authenticator app, backup codes and passkeys no longer work, and every device was signed out.',
     ],
     [
       'backup_codes_regenerated',

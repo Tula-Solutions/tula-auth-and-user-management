@@ -275,12 +275,14 @@ describe('canStillSignIn', () => {
         password: { enabled: password },
         emailCode: { enabled: emailCode },
         emailLink: { enabled: false },
+        passkey: { enabled: false },
       },
     },
   })
   const means = (overrides: Partial<SignInMeans> = {}): SignInMeans => ({
     hasPassword: false,
     emailVerified: false,
+    passkeys: 0,
     providers: [],
     ...overrides,
   })
@@ -336,6 +338,19 @@ describe('canStillSignIn', () => {
       expect(OAuth.canStillSignIn(environment, providers, remaining)).toBe(expected)
     }
   )
+
+  test('a passkey counts only where the environment has passkeys on', () => {
+    const on: EnvironmentSettings = {
+      ...settings(false, false),
+      signIn: {
+        methods: { ...settings(false, false).signIn.methods, passkey: { enabled: true } },
+      },
+      passkeys: { rpId: 'northline.app' },
+    }
+    expect(OAuth.canStillSignIn(on, [], means({ passkeys: 1 }))).toBe(true)
+    expect(OAuth.canStillSignIn(on, [], means({ passkeys: 0 }))).toBe(false)
+    expect(OAuth.canStillSignIn(settings(false, false), [], means({ passkeys: 2 }))).toBe(false)
+  })
 })
 
 describe('linking and unlinking from a profile: edge cases', () => {

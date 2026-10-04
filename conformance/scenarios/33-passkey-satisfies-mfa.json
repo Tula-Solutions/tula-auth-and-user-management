@@ -1,0 +1,719 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a passkey satisfies two-step verification",
+  "description": "A passkey with user verification is something the user has, unlocked by something they are or know. A sign-in by passkey therefore never stops at needs_second_factor: not for a user with an authenticator app, and not where the environment requires a second factor. The same passkey can also be the second factor after a password. A synced passkey is recorded as swk.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address: the account exists and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "passwordMethod": "settings.signIn.methods.password",
+        "emailCodeMethod": "settings.signIn.methods.emailCode",
+        "emailLinkMethod": "settings.signIn.methods.emailLink",
+        "signUpSettings": "settings.signUp",
+        "redirects": "settings.urls.allowedRedirectUrls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa"
+      }
+    },
+    {
+      "name": "switch passkeys on, with a relying-party id and an origin that belongs to it",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["https://app.passkeys.example"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "passkeys.example"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "passkeys": {
+              "rpId": "passkeys.example"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "ask for the options to create a passkey",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "passkeys.example",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          },
+          "authenticatorSelection": {
+            "residentKey": "required",
+            "requireResidentKey": true,
+            "userVerification": "required"
+          },
+          "attestation": "none"
+        }
+      },
+      "captureJson": {
+        "creationOptions": ""
+      }
+    },
+    {
+      "name": "the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "phone",
+        "create": "{{creationOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "registration",
+        "synced": true
+      }
+    },
+    {
+      "name": "finish: the passkey is stored, and the answer holds no key material",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{registration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "name": "Passkey",
+          "synced": true,
+          "createdAt": "$any",
+          "lastUsedAt": null,
+          "publicKey": "$absent",
+          "credentialId": "$absent"
+        }
+      },
+      "capture": {
+        "passkeyId": "id"
+      }
+    },
+    {
+      "name": "start an authenticator enrolment",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{accessToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "compute the code",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "enrolCode"
+      }
+    },
+    {
+      "name": "confirm it: two-step verification is on",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "code": "{{enrolCode}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "start a password sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "pwId": "id",
+        "pwSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "submit the password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{pwId}}/password",
+        "attempt": "{{pwSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_second_factor",
+            "options": ["totp", "backup_code", "passkey"]
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "signInId": "attempt.id",
+        "signInSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "signInOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{signInOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "signInAssertion",
+        "synced": true
+      }
+    },
+    {
+      "name": "the passkey alone completes: the second factor is not asked",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/passkey",
+        "attempt": "{{signInSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{signInAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": {
+              "$set": ["swk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the options for the passkey as a second factor name the user\u2019s own credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{pwId}}/second-factor/passkey/options",
+        "attempt": "{{pwSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "challenge": "$any",
+          "timeout": 300000,
+          "rpId": "passkeys.example",
+          "userVerification": "required",
+          "allowCredentials": [
+            {
+              "type": "public-key",
+              "id": "$any",
+              "transports": ["internal"]
+            }
+          ]
+        }
+      },
+      "captureJson": {
+        "pwOptions": ""
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{pwOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "pwAssertion",
+        "synced": true
+      }
+    },
+    {
+      "name": "after the password, the passkey is the second factor",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{pwId}}/second-factor",
+        "attempt": "{{pwSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "method": "passkey",
+          "credential": {
+            "$json": "{{pwAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": {
+              "$set": ["pwd", "swk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "read the revision the settings are at",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "passwordMethod": "settings.signIn.methods.password",
+        "emailCodeMethod": "settings.signIn.methods.emailCode",
+        "emailLinkMethod": "settings.signIn.methods.emailLink",
+        "signUpSettings": "settings.signUp",
+        "redirects": "settings.urls.allowedRedirectUrls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa"
+      }
+    },
+    {
+      "name": "require two-step verification",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["https://app.passkeys.example"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "policy": "required"
+          },
+          "passkeys": {
+            "rpId": "passkeys.example"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "passkeys": {
+              "rpId": "passkeys.example"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "requiredId": "attempt.id",
+        "requiredSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "requiredOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{requiredOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "requiredAssertion",
+        "synced": true
+      }
+    },
+    {
+      "name": "under a required policy the passkey still completes on its own",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{requiredId}}/passkey",
+        "attempt": "{{requiredSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{requiredAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": {
+              "$set": ["swk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

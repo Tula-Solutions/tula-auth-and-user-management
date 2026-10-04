@@ -9,6 +9,7 @@ import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as Mfa from '~/modules/mfa/service'
+import { PasskeyRequestOptionsSchema } from '~/modules/passkey/schema'
 import * as Sessions from '~/modules/session/service'
 import * as openapi from '~/openapi'
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './cookies'
@@ -285,7 +286,7 @@ router.post(
           c.get('tenant'),
           { userId: sub, sessionId: sid },
           c.req.valid('json'),
-          requestOrigin(c)
+          { ...requestOrigin(c), origin: c.req.header('origin') ?? null }
         )
       )
     )
@@ -329,6 +330,53 @@ router.post(
           c.get('tenant'),
           { userId: sub, sessionId: sid },
           { method: 'email_code' }
+        )
+      )
+    )
+  }
+)
+
+router.post(
+  '/sessions/step-up/passkey',
+  describeRoute({
+    operationId: 'getStepUpPasskeyOptions',
+    tags: ['Sessions'],
+    summary: 'Get the options to step up with a passkey',
+    description:
+      'The options for `navigator.credentials.get()`, naming the signed-in user’s own ' +
+      'passkeys. Submit the assertion to `POST /v1/client/sessions/step-up` with ' +
+      '`method: "passkey"`. The challenge works once, for five minutes and only for the ' +
+      'session that asked; asking again replaces it. A user with no passkey gets ' +
+      '`auth.step_up_required` (403) with `params.methods`. The request’s `Origin` must be ' +
+      'one the environment allows and belong to its `passkeys.rpId`.',
+    security: openapi.security.session,
+    responses: {
+      200: { description: 'The request options.', content: json(PasskeyRequestOptionsSchema) },
+      401: openapi.responses[401],
+      403: openapi.responses[403],
+      429: openapi.responses[429],
+      500: openapi.responses[500],
+      503: openapi.responses[503],
+    },
+  }),
+  rateLimit({
+    name: 'session_step_up_passkey',
+    limit: STEP_UP_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+  }),
+  publishableKey(),
+  sessionAuth(),
+  async (c) => {
+    const { sub, sid } = c.get('session')
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      PasskeyRequestOptionsSchema.parse(
+        await Mfa.prepareStepUpPasskey(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: sub, sessionId: sid },
+          c.req.header('origin')
         )
       )
     )

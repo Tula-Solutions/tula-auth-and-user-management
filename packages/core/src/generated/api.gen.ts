@@ -47,7 +47,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -157,6 +157,94 @@ export interface Schemas {
     provider: Schemas['OAuthProvider']
     redirectUrl: string
   }
+  Passkey: {
+    id: string
+    name: string
+    synced: boolean
+    createdAt: string
+    lastUsedAt: string | null
+  }
+  PasskeyAssertionCredential: {
+    id: string
+    rawId: string
+    type: 'public-key'
+    response: {
+      clientDataJSON: string
+      authenticatorData: string
+      signature: string
+      userHandle?: string | null
+      [key: string]: unknown
+    }
+    [key: string]: unknown
+  }
+  PasskeyCreationOptions: {
+    rp: {
+      id: string
+      name: string
+    }
+    user: {
+      id: string
+      name: string
+      displayName: string
+    }
+    challenge: string
+    pubKeyCredParams: {
+      type: 'public-key'
+      alg: number
+    }[]
+    timeout: number
+    excludeCredentials: {
+      type: 'public-key'
+      id: string
+      transports?: string[]
+    }[]
+    authenticatorSelection: {
+      residentKey: 'required'
+      requireResidentKey: true
+      userVerification: 'required'
+    }
+    attestation: 'none'
+  }
+  PasskeyList: {
+    passkeys: Schemas['Passkey'][]
+  }
+  PasskeyRegisterRequest: {
+    credential: Schemas['PasskeyRegistrationCredential']
+    name?: string
+  }
+  PasskeyRegistrationCredential: {
+    id: string
+    rawId: string
+    type: 'public-key'
+    response: {
+      clientDataJSON: string
+      attestationObject: string
+      transports?: string[]
+      [key: string]: unknown
+    }
+    [key: string]: unknown
+  }
+  PasskeyRenameRequest: {
+    name: string
+  }
+  PasskeyRequestOptions: {
+    challenge: string
+    timeout: number
+    rpId: string
+    userVerification: 'required'
+    allowCredentials?: {
+      type: 'public-key'
+      id: string
+      transports?: string[]
+    }[]
+  }
+  PasskeySignInRequest: {
+    credential: Schemas['PasskeyAssertionCredential']
+  }
+  PasskeySignInStart: {
+    attempt: Schemas['FlowAttempt']
+    options: Schemas['PasskeyRequestOptions']
+  }
   PasswordAttemptRequest: {
     password: string
   }
@@ -198,6 +286,9 @@ export interface Schemas {
   } | {
     method: 'backup_code'
     code: string
+  } | {
+    method: 'passkey'
+    credential: Schemas['PasskeyAssertionCredential']
   }
   Session: {
     id: string
@@ -246,6 +337,9 @@ export interface Schemas {
   } | {
     method: 'email_code'
     code: string
+  } | {
+    method: 'passkey'
+    credential: Schemas['PasskeyAssertionCredential']
   }
   TotpConfirmRequest: {
     code: string
@@ -281,6 +375,8 @@ export interface Operations {
   exchangeIdentityLinkTicket: { params: Record<string, never>; body: Schemas['OAuthExchangeRequest']; response: Schemas['Identity'] }
   /** Exchange an OAuth ticket for the next step (`POST /v1/client/sign-ins/oauth/exchange`). */
   exchangeOAuthTicket: { params: Record<string, never>; body: Schemas['OAuthExchangeRequest']; response: Schemas['FlowAttempt'] }
+  /** Finish registering a passkey (`POST /v1/client/me/passkeys`). */
+  finishPasskeyRegistration: { params: Record<string, never>; body: Schemas['PasskeyRegisterRequest']; response: Schemas['Passkey'] }
   /** Client configuration (`GET /v1/client/config`). */
   getClientConfig: { params: Record<string, never>; body: undefined; response: Schemas['ClientConfig'] }
   /** Get the signed-in user (`GET /v1/client/me`). */
@@ -289,8 +385,16 @@ export interface Operations {
   getMyFactors: { params: Record<string, never>; body: undefined; response: Schemas['Factors'] }
   /** Password policy (`GET /v1/client/password-policy`). */
   getPasswordPolicy: { params: Record<string, never>; body: undefined; response: Schemas['PasswordPolicy'] }
+  /** Get the options for a passkey second factor (`POST /v1/client/password-resets/{attemptId}/second-factor/passkey/options`). */
+  getPasswordResetSecondFactorPasskeyOptions: { params: { attemptId: string }; body: undefined; response: Schemas['PasskeyRequestOptions'] }
+  /** Get the options for a passkey second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor/passkey/options`). */
+  getSignInSecondFactorPasskeyOptions: { params: { attemptId: string }; body: undefined; response: Schemas['PasskeyRequestOptions'] }
+  /** Get the options to step up with a passkey (`POST /v1/client/sessions/step-up/passkey`). */
+  getStepUpPasskeyOptions: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyRequestOptions'] }
   /** List my connected accounts (`GET /v1/client/me/identities`). */
   listMyIdentities: { params: Record<string, never>; body: undefined; response: Schemas['IdentityList'] }
+  /** List my passkeys (`GET /v1/client/me/passkeys`). */
+  listMyPasskeys: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyList'] }
   /** List my sessions (`GET /v1/client/sessions`). */
   listSessions: { params: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
   /** Email a sign-in code or link (`POST /v1/client/sign-ins/{attemptId}/first-factor/prepare`). */
@@ -299,6 +403,10 @@ export interface Operations {
   refreshSession: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: Schemas['SessionTokens'] }
   /** Make new backup codes (`POST /v1/client/me/factors/backup-codes`). */
   regenerateBackupCodes: { params: Record<string, never>; body: undefined; response: Schemas['BackupCodes'] }
+  /** Remove a passkey (`DELETE /v1/client/me/passkeys/{passkeyId}`). */
+  removePasskey: { params: { passkeyId: string }; body: undefined; response: undefined }
+  /** Rename a passkey (`PATCH /v1/client/me/passkeys/{passkeyId}`). */
+  renamePasskey: { params: { passkeyId: string }; body: Schemas['PasskeyRenameRequest']; response: Schemas['Passkey'] }
   /** Resend the email code (`POST /v1/client/password-resets/{attemptId}/resend-code`). */
   resendPasswordResetCode: { params: { attemptId: string }; body: undefined; response: Schemas['FlowAttempt'] }
   /** Resend the email code (`POST /v1/client/sign-ins/{attemptId}/resend-code`). */
@@ -317,6 +425,10 @@ export interface Operations {
   startIdentityLink: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['IdentityLinkStart'] }
   /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). */
   startOAuthSignIn: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['OAuthStart'] }
+  /** Start registering a passkey (`POST /v1/client/me/passkeys/options`). */
+  startPasskeyRegistration: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyCreationOptions'] }
+  /** Start signing in with a passkey (`POST /v1/client/sign-ins/passkey`). */
+  startPasskeySignIn: { params: Record<string, never>; body: undefined; response: Schemas['PasskeySignInStart'] }
   /** Start a password reset (`POST /v1/client/password-resets`). */
   startPasswordReset: { params: Record<string, never>; body: Schemas['PasswordResetStartRequest']; response: Schemas['FlowAttempt'] }
   /** Start enrolling an authenticator app inside an attempt (`POST /v1/client/password-resets/{attemptId}/factor-enrolment/totp`). */
@@ -337,6 +449,8 @@ export interface Operations {
   submitPasswordReset: { params: { attemptId: string }; body: Schemas['PasswordResetRequest']; response: Schemas['FlowAttempt'] }
   /** Submit a second factor (`POST /v1/client/password-resets/{attemptId}/second-factor`). */
   submitPasswordResetSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorRequest']; response: Schemas['FlowAttempt'] }
+  /** Sign in with a passkey (`POST /v1/client/sign-ins/{attemptId}/passkey`). */
+  submitSignInPasskey: { params: { attemptId: string }; body: Schemas['PasskeySignInRequest']; response: Schemas['FlowAttempt'] }
   /** Submit the password (`POST /v1/client/sign-ins/{attemptId}/password`). */
   submitSignInPassword: { params: { attemptId: string }; body: Schemas['PasswordAttemptRequest']; response: Schemas['FlowAttempt'] }
   /** Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). */
@@ -371,15 +485,22 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
   exchangeIdentityLinkTicket: { method: 'POST', path: '/v1/client/me/identities/oauth/exchange', session: true },
   exchangeOAuthTicket: { method: 'POST', path: '/v1/client/sign-ins/oauth/exchange', session: false },
+  finishPasskeyRegistration: { method: 'POST', path: '/v1/client/me/passkeys', session: true },
   getClientConfig: { method: 'GET', path: '/v1/client/config', session: false },
   getMe: { method: 'GET', path: '/v1/client/me', session: true },
   getMyFactors: { method: 'GET', path: '/v1/client/me/factors', session: true },
   getPasswordPolicy: { method: 'GET', path: '/v1/client/password-policy', session: false },
+  getPasswordResetSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/passkey/options', session: false },
+  getSignInSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/passkey/options', session: false },
+  getStepUpPasskeyOptions: { method: 'POST', path: '/v1/client/sessions/step-up/passkey', session: true },
   listMyIdentities: { method: 'GET', path: '/v1/client/me/identities', session: true },
+  listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
   regenerateBackupCodes: { method: 'POST', path: '/v1/client/me/factors/backup-codes', session: true },
+  removePasskey: { method: 'DELETE', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
+  renamePasskey: { method: 'PATCH', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
   resendPasswordResetCode: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/resend-code', session: false },
   resendSignInCode: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/resend-code', session: false },
   resendSignUpCode: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/resend-code', session: false },
@@ -389,6 +510,8 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   signOut: { method: 'POST', path: '/v1/client/sessions/sign-out', session: false },
   startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
   startOAuthSignIn: { method: 'POST', path: '/v1/client/sign-ins/oauth', session: false },
+  startPasskeyRegistration: { method: 'POST', path: '/v1/client/me/passkeys/options', session: true },
+  startPasskeySignIn: { method: 'POST', path: '/v1/client/sign-ins/passkey', session: false },
   startPasswordReset: { method: 'POST', path: '/v1/client/password-resets', session: false },
   startPasswordResetTotpEnrolment: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/factor-enrolment/totp', session: false },
   startSignIn: { method: 'POST', path: '/v1/client/sign-ins', session: false },
@@ -399,6 +522,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   stepUpSession: { method: 'POST', path: '/v1/client/sessions/step-up', session: true },
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },
   submitPasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor', session: false },
+  submitSignInPasskey: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/passkey', session: false },
   submitSignInPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/password', session: false },
   submitSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor', session: false },
   verifySignInEmail: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/verify-email', session: false },

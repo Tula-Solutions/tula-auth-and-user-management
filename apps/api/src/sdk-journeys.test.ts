@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
-import { loadScenarios } from '@tula/conformance'
+import { loadScenarios, VirtualAuthenticator } from '@tula/conformance'
+import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
 import {
   type AuthState,
   type ClientKind,
@@ -46,6 +47,20 @@ const SERVER_ONLY: Record<string, string> = {
     'a property of the deployment (two API processes sharing Postgres and Redis). A client talks ' +
     'to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host ' +
     'CI job cover it.',
+  'passkey assertion replay':
+    'the SDK asks the authenticator for a fresh assertion on every call and never holds one to ' +
+    'present twice; replaying a response, or presenting one for another attempt’s challenge, ' +
+    'takes a client that sends hand-made requests.',
+  'passkey origin and relying party':
+    'the origin inside a WebAuthn response is written by the browser, and the `Origin` header by ' +
+    'the browser too; the SDK can set neither, so a response made on another site cannot be ' +
+    'produced through it.',
+  'passkey signature counter':
+    'the signature counter is the authenticator’s; the SDK passes its response on untouched and ' +
+    'has no way to make one report a lower counter.',
+  'passkeys switched off mid-attempt':
+    '`signIn.withPasskey()` starts and submits in one call, so no settings change can be placed ' +
+    'between the two through the SDK; the journey below covers the method being off at the start.',
 }
 
 /** Register a test as the SDK's coverage of one or more conformance scenarios. */
@@ -2084,6 +2099,215 @@ describe('SDK journeys: OAuth', () => {
       expect(
         stepUpMethods(await caught(tula.session.stepUp({ method: 'email_code', code })))
       ).toEqual(['totp', 'backup_code'])
+    }
+  )
+})
+
+describe('passkeys through the SDK', () => {
+  const settings = (overrides: Partial<EnvironmentSettings> = {}): EnvironmentSettings => ({
+    ...DEFAULT_ENVIRONMENT_SETTINGS,
+    signIn: {
+      methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, passkey: { enabled: true } },
+    },
+    urls: { allowedOrigins: [APP_ORIGIN], allowedRedirectUrls: [] },
+    passkeys: { rpId: 'localhost' },
+    ...overrides,
+  })
+  let revision = 0
+  const configure = (s: Server, overrides: Partial<EnvironmentSettings> = {}) => {
+    revision += 1
+    s.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision,
+      settings: settings(overrides),
+    })
+  }
+
+  type Globals = { navigator: object; PublicKeyCredential?: unknown }
+  const globals = globalThis as unknown as Globals
+
+  /** Give this process a browser's WebAuthn, backed by a software authenticator. */
+  function plugIn(authenticator: VirtualAuthenticator, behaviour: { cancel?: boolean } = {}) {
+    const ceremony = (run: (options: unknown) => Promise<unknown>) => async (input: unknown) => {
+      if (behaviour.cancel) {
+        throw Object.assign(new Error('dismissed'), { name: 'NotAllowedError' })
+      }
+      const response = await run((input as { publicKey: unknown }).publicKey)
+      return { toJSON: () => response }
+    }
+    Object.defineProperty(globals.navigator, 'credentials', {
+      configurable: true,
+      value: {
+        create: ceremony((options) => authenticator.create(options, { origin: APP_ORIGIN })),
+        get: ceremony((options) => authenticator.get(options, { origin: APP_ORIGIN })),
+      },
+    })
+    // The browser's own JSON helpers: the options reach the authenticator as the API sent them.
+    globals.PublicKeyCredential = {
+      parseCreationOptionsFromJSON: (options: unknown) => options,
+      parseRequestOptionsFromJSON: (options: unknown) => options,
+    }
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(globals.navigator, 'credentials')
+    Reflect.deleteProperty(globals, 'PublicKeyCredential')
+  })
+
+  journey(
+    'passkey registration and sign-in',
+    'a signed-in user adds a passkey, and another browser signs in with it and nothing else',
+    async () => {
+      const s = await server()
+      configure(s)
+      const { tula, email } = await signUp(s, 'web')
+      // Before the page has WebAuthn the SDK says so, without a request.
+      expect(tula.signIn.canUsePasskey()).toBe(false)
+      expect((await caught(tula.user.passkeys.add())).code).toBe('passkey.unsupported')
+      const authenticator = new VirtualAuthenticator()
+      plugIn(authenticator)
+      expect(tula.signIn.canUsePasskey()).toBe(true)
+      const passkey = await tula.user.passkeys.add({ name: 'MacBook' })
+      expect(passkey).toMatchObject({ name: 'MacBook', synced: false, lastUsedAt: null })
+      expect(await tula.user.passkeys.list()).toEqual([passkey])
+      const renamed = await tula.user.passkeys.rename({ passkeyId: passkey.id, name: 'Work' })
+      expect(renamed.name).toBe('Work')
+      // The config a sign-in screen is drawn from lists the method.
+      expect((await tula.config.get({ force: true })).signIn.methods).toContain('passkey')
+
+      const visitor = s.client('web')
+      const flow = await visitor.tula.signIn.withPasskey()
+      expect(flow.step.status).toBe('complete')
+      expect(visitor.tula.state).toMatchObject({ status: 'signed-in' })
+      expect((await visitor.tula.user.get()).email).toBe(email)
+      const claims = decodeJwt((await visitor.tula.session.getToken()) as string)
+      expect(new Set(claims.amr as string[])).toEqual(new Set(['hwk', 'user', 'mfa']))
+      // A browser client: the refresh token went into the cookie, never the body.
+      expect(visitor.cookies.size).toBe(1)
+      expect((await visitor.tula.user.passkeys.list())[0]?.lastUsedAt).not.toBeNull()
+
+      // A dismissed dialog signs nobody in and sends nothing to be judged.
+      plugIn(authenticator, { cancel: true })
+      const dismissed = s.client('web')
+      const before = s.exchanges.length
+      expect((await caught(dismissed.tula.signIn.withPasskey())).code).toBe('passkey.cancelled')
+      expect(dismissed.tula.state.status).not.toBe('signed-in')
+      expect(
+        s.exchanges.slice(before).filter((exchange) => exchange.path.endsWith('/passkey'))
+      ).toHaveLength(1)
+
+      // An authenticator with no passkey of this app: the API's one generic answer.
+      const stranger = new VirtualAuthenticator()
+      await stranger.create(
+        {
+          rp: { id: 'localhost' },
+          user: { id: 'c3RyYW5nZXI' },
+          challenge: 'YQ',
+          pubKeyCredParams: [{ alg: -7 }],
+        },
+        { origin: APP_ORIGIN }
+      )
+      plugIn(stranger)
+      const refused = await caught(s.client('web').tula.signIn.withPasskey())
+      expect(refused).toMatchObject({ code: 'auth.invalid_credentials', status: 401 })
+
+      // Switched off: the method answers so at the start.
+      configure(s, { signIn: DEFAULT_ENVIRONMENT_SETTINGS.signIn })
+      plugIn(authenticator)
+      expect((await caught(s.client('web').tula.signIn.withPasskey())).code).toBe(
+        'auth.method_disabled'
+      )
+    }
+  )
+
+  journey(
+    'a passkey satisfies two-step verification',
+    'with an authenticator app enrolled, the passkey signs in on its own and also serves as the second factor',
+    async () => {
+      const s = await server()
+      configure(s)
+      const { tula, email } = await signUp(s, 'web')
+      const authenticator = new VirtualAuthenticator()
+      plugIn(authenticator)
+      await tula.user.passkeys.add()
+      const { secret } = await tula.mfa.startTotp()
+      await tula.mfa.confirmTotp({ code: await totp(base32Decode(secret), s.deps.clock.now()) })
+
+      // The passkey alone: complete, no second step.
+      const direct = s.client('web')
+      expect((await direct.tula.signIn.withPasskey()).step.status).toBe('complete')
+
+      // The password, then the passkey as the second factor.
+      const { flow, step, tula: second } = await signIn(s, email, 'web')
+      expect(step).toEqual({
+        status: 'needs_second_factor',
+        options: ['totp', 'backup_code', 'passkey'],
+      })
+      expect(second.state.status).not.toBe('signed-in')
+      const done = await flow.submitSecondFactorWithPasskey()
+      expect(done.step.status).toBe('complete')
+      const claims = decodeJwt((await second.session.getToken()) as string)
+      expect(new Set(claims.amr as string[])).toEqual(new Set(['pwd', 'hwk', 'user', 'mfa']))
+
+      // Where a second factor is required, the passkey still completes on its own.
+      configure(s, { mfa: { policy: 'required' } })
+      const required = s.client('web')
+      expect((await required.tula.signIn.withPasskey()).step.status).toBe('complete')
+    }
+  )
+
+  journey(
+    ['step-up with a passkey', 'the last way to sign in cannot be removed'],
+    'a stale session steps up with its passkey, and the last way in cannot be removed',
+    async () => {
+      const s = await server()
+      configure(s)
+      const { tula } = await signUp(s, 'web')
+      const authenticator = new VirtualAuthenticator()
+      plugIn(authenticator)
+      const first = await tula.user.passkeys.add({ name: 'First' })
+      const laptop = new VirtualAuthenticator()
+      plugIn(laptop)
+      const second = await tula.user.passkeys.add({ name: 'Second' })
+
+      s.advance(11 * 60_000)
+      const stale = await caught(tula.user.passkeys.rename({ passkeyId: first.id, name: 'x' }))
+      expect(isStepUpRequired(stale)).toBe(true)
+      expect(stepUpMethods(stale)).toEqual(['passkey', 'password', 'email_code'])
+      // A dismissed dialog steps up nothing.
+      plugIn(laptop, { cancel: true })
+      expect((await caught(tula.session.stepUpWithPasskey())).code).toBe('passkey.cancelled')
+      expect(
+        isStepUpRequired(
+          await caught(tula.user.passkeys.rename({ passkeyId: first.id, name: 'x' }))
+        )
+      ).toBe(true)
+      plugIn(laptop)
+      await tula.session.stepUpWithPasskey()
+      const claims = decodeJwt((await tula.session.getToken()) as string)
+      expect(claims.amr).toEqual(expect.arrayContaining(['hwk', 'user', 'mfa']))
+
+      // Only the passkeys let this user in now.
+      configure(s, {
+        signIn: {
+          methods: {
+            password: { enabled: false },
+            emailCode: { enabled: false },
+            emailLink: { enabled: false },
+            passkey: { enabled: true },
+          },
+        },
+      })
+      await tula.user.passkeys.remove({ passkeyId: first.id })
+      const last = await caught(tula.user.passkeys.remove({ passkeyId: second.id }))
+      expect(last).toMatchObject({ code: 'passkey.last_sign_in_method', status: 409 })
+      expect(await tula.user.passkeys.list()).toHaveLength(1)
+      // The removed passkey no longer signs in; the remaining one does.
+      plugIn(authenticator)
+      expect((await caught(s.client('web').tula.signIn.withPasskey())).code).toBe(
+        'auth.invalid_credentials'
+      )
+      plugIn(laptop)
+      expect((await s.client('web').tula.signIn.withPasskey()).step.status).toBe('complete')
     }
   )
 })

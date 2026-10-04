@@ -5,6 +5,7 @@ import {
   FLOW_ATTEMPT_HEADER,
 } from '@tula/contract'
 import { jwtClaims, match, pick } from './match'
+import { VirtualAuthenticator } from './passkey'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
 import { expandJson, fill } from './template'
 import { base32Decode, totp, wrongTotp } from './totp'
@@ -221,6 +222,10 @@ async function runStep(
     await runOAuth(target, step, variables)
     return
   }
+  if ('passkey' in step) {
+    await runPasskey(step, variables)
+    return
+  }
   if ('totp' in step) {
     const secret = base32Decode(fill(step.totp.secret, variables))
     const now = target.now ? target.now() : Date.now()
@@ -291,6 +296,44 @@ async function runStep(
       }
       variables[name] = JSON.stringify(value)
     }
+  }
+}
+
+// The software authenticators of each scenario run, by name. Keyed by the run's variables
+// object, which lives exactly as long as the run.
+const AUTHENTICATORS = new WeakMap<object, Map<string, VirtualAuthenticator>>()
+
+/** Run one WebAuthn ceremony on a named software authenticator and store its response. */
+async function runPasskey(
+  step: Extract<Step, { passkey: unknown }>,
+  variables: Record<string, string>
+): Promise<void> {
+  const { passkey } = step
+  const named = AUTHENTICATORS.get(variables) ?? new Map<string, VirtualAuthenticator>()
+  AUTHENTICATORS.set(variables, named)
+  const authenticator = named.get(passkey.authenticator) ?? new VirtualAuthenticator()
+  named.set(passkey.authenticator, authenticator)
+  const input = {
+    origin: fill(passkey.origin, variables),
+    userVerified: passkey.userVerified,
+    counter: passkey.counter,
+    synced: passkey.synced,
+  }
+  let options: unknown
+  try {
+    options = JSON.parse(fill(passkey.create ?? passkey.get ?? '', variables))
+  } catch {
+    // The text is a captured response value: never quote it.
+    throw new StepFailure(['the passkey options are not valid JSON'])
+  }
+  try {
+    const response =
+      passkey.create === undefined
+        ? await authenticator.get(options, input)
+        : await authenticator.create(options, input)
+    variables[passkey.capture] = JSON.stringify(response)
+  } catch (error) {
+    throw new StepFailure([error instanceof Error ? error.message : 'the authenticator failed'])
   }
 }
 

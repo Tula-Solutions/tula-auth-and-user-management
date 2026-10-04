@@ -75,6 +75,8 @@ export interface SignInMeans {
   emailVerified: boolean
   /** The providers of the identities the user would still have. */
   providers: OAuthProvider[]
+  /** How many passkeys the user would still have. */
+  passkeys: number
 }
 
 /** What disconnecting an identity did. */

@@ -97,9 +97,16 @@ function renderObject(node: SchemaNode, indent: string): string {
     const optional = required.has(name) ? '' : '?'
     return `${comment}${inner}${propertyKey(name)}${optional}: ${renderType(property, inner)}`
   })
-  if (node.additionalProperties && node.additionalProperties !== true) {
-    lines.push(`${inner}[key: string]: ${renderType(node.additionalProperties, inner)}`)
-  } else if (node.additionalProperties === true) {
+  // `{}` is the schema that accepts anything: what a Zod loose object emits.
+  const open =
+    node.additionalProperties === true ||
+    (typeof node.additionalProperties === 'object' &&
+      Object.keys(node.additionalProperties).length === 0)
+  if (node.additionalProperties && !open) {
+    lines.push(
+      `${inner}[key: string]: ${renderType(node.additionalProperties as SchemaNode, inner)}`
+    )
+  } else if (open) {
     lines.push(`${inner}[key: string]: unknown`)
   }
   return lines.length === 0 ? 'Record<string, never>' : `{\n${lines.join('\n')}\n${indent}}`

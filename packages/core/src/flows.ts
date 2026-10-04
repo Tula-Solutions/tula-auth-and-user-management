@@ -8,6 +8,12 @@ import type { Environment } from './environment'
 import { clientError, formatMessage, isTulaError, type Messages, TulaError } from './errors'
 import type { Schemas } from './generated/api.gen'
 import { isCodes, isTotpEnrolment } from './mfa'
+import {
+  isPasskeySignInStart,
+  isRequestOptions,
+  type PasskeyAuthenticator,
+  type PasskeyRequest,
+} from './passkey'
 import { isSessionTokens, type SessionManager } from './session'
 import type { Transport } from './transport'
 import type { FlowKind, FlowStep, SecondFactorProof, TotpEnrolment } from './types'
@@ -112,6 +118,20 @@ interface SecondFactorActions {
    *   `rate_limited` (with `retryAfterMs`) after repeated wrong codes.
    */
   submitSecondFactor(input: SecondFactorProof): Promise<SecondFactorResult>
+  /**
+   * Prove a passkey as the second factor (step `needs_second_factor` whose `options` include
+   * `passkey`): asks the API for the options, runs the browser's passkey dialog and submits
+   * what it returns. Completes the flow.
+   *
+   * @param request - A signal that ends the dialog.
+   * @returns The next step.
+   * @throws TulaError `passkey.unsupported`, `passkey.cancelled` or `passkey.failed` from the
+   *   browser (nothing was submitted; the flow stays on its step), `mfa.invalid_code` for an
+   *   assertion the API refuses, and `rate_limited` after repeated wrong proofs.
+   */
+  submitSecondFactorWithPasskey(
+    request?: Pick<PasskeyRequest, 'signal'>
+  ): Promise<SecondFactorResult>
 }
 
 /**
@@ -314,6 +334,8 @@ export interface FlowContext {
   links: LinkStore
   /** Names the API and environment (the link channel's name). */
   scope: string
+  /** The browser's WebAuthn ceremonies, or `undefined` where there are none. */
+  passkeys: () => PasskeyAuthenticator | undefined
 }
 
 /** What identifies an attempt to the API: its id in the path, its secret in a header. */
@@ -507,17 +529,42 @@ function secondFactorAction(
   context: FlowContext,
   attempt: Attempt,
   operation: 'submitSignInSecondFactor' | 'submitPasswordResetSecondFactor'
-): SecondFactorActions['submitSecondFactor'] {
-  return ({ method, code }) =>
-    attempt.exclusive(async (bound) => {
-      const next = await context.transport.call(operation, { ...bound, body: { method, code } })
-      const remaining: unknown = isRecord(next) ? next.backupCodesRemaining : undefined
-      if (remaining !== undefined && !(Number.isInteger(remaining) && Number(remaining) >= 0)) {
-        throw clientError('response.invalid', context.messages())
-      }
-      const step = await attempt.accept(next)
-      return remaining === undefined ? { step } : { step, backupCodesRemaining: Number(remaining) }
-    })
+): SecondFactorActions {
+  const submit = async (bound: Binding, proof: SecondFactorProof): Promise<SecondFactorResult> => {
+    // Only what the method takes is sent: nothing else a caller's object may hold.
+    const body: SecondFactorProof =
+      proof.method === 'passkey'
+        ? { method: 'passkey', credential: proof.credential }
+        : { method: proof.method, code: proof.code }
+    const next = await context.transport.call(operation, { ...bound, body })
+    const remaining: unknown = isRecord(next) ? next.backupCodesRemaining : undefined
+    if (remaining !== undefined && !(Number.isInteger(remaining) && Number(remaining) >= 0)) {
+      throw clientError('response.invalid', context.messages())
+    }
+    const step = await attempt.accept(next)
+    return remaining === undefined ? { step } : { step, backupCodesRemaining: Number(remaining) }
+  }
+  return {
+    submitSecondFactor: (proof) => attempt.exclusive((bound) => submit(bound, proof)),
+    submitSecondFactorWithPasskey: (request = {}) =>
+      attempt.exclusive(async (bound) => {
+        const authenticator = context.passkeys()
+        if (!authenticator) {
+          throw clientError('passkey.unsupported', context.messages())
+        }
+        const options = await context.transport.call(
+          operation === 'submitSignInSecondFactor'
+            ? 'getSignInSecondFactorPasskeyOptions'
+            : 'getPasswordResetSecondFactorPasskeyOptions',
+          bound
+        )
+        if (!isRequestOptions(options)) {
+          throw clientError('response.invalid', context.messages())
+        }
+        const credential = await authenticator.get(options, { signal: request.signal })
+        return submit(bound, { method: 'passkey', credential })
+      }),
+  }
 }
 
 /**
@@ -561,10 +608,19 @@ export async function signUpFlow(context: FlowContext, started: FlowAttempt): Pr
  * @param started - The attempt as the start call returned it.
  * @returns The flow object.
  */
-export async function signInFlow(context: FlowContext, started: FlowAttempt): Promise<SignInFlow> {
+export async function signInFlow(
+  context: FlowContext,
+  started: FlowAttempt,
+  first?: (bound: Binding) => Promise<FlowAttempt>
+): Promise<SignInFlow> {
   const { transport } = context
   const attempt = createAttempt(context, started)
   await attempt.accept(started)
+  if (first) {
+    // A sign-in whose first step is sent with the start (a passkey): the flow the caller gets
+    // is already past it.
+    await attempt.step(first)
+  }
   const waiting = emailLinkWait(context, attempt)
   return flowObject<'sign_in', Omit<SignInFlow, keyof FlowSnapshot | 'toJSON'>>(attempt, {
     submitPassword: ({ password }) =>
@@ -574,7 +630,7 @@ export async function signInFlow(context: FlowContext, started: FlowAttempt): Pr
     verifyEmail: ({ code }) =>
       attempt.step((bound) => transport.call('verifySignInEmail', { ...bound, body: { code } })),
     resendCode: () => attempt.step((bound) => transport.call('resendSignInCode', bound)),
-    submitSecondFactor: secondFactorAction(context, attempt, 'submitSignInSecondFactor'),
+    ...secondFactorAction(context, attempt, 'submitSignInSecondFactor'),
     ...enrolmentActions(context, attempt, 'sign_in'),
     async prepareFirstFactor(input) {
       if (input.strategy === 'email_link' && !context.links.available()) {
@@ -799,8 +855,88 @@ export async function passwordResetFlow(
           transport.call('submitPasswordReset', { ...bound, body: { code, password } })
         ),
       resendCode: () => attempt.step((bound) => transport.call('resendPasswordResetCode', bound)),
-      submitSecondFactor: secondFactorAction(context, attempt, 'submitPasswordResetSecondFactor'),
+      ...secondFactorAction(context, attempt, 'submitPasswordResetSecondFactor'),
       ...enrolmentActions(context, attempt, 'password_reset'),
     }
   )
+}
+
+/**
+ * How long one autofill request waits before it is started again with a fresh challenge: under
+ * the five minutes a challenge is honoured for.
+ */
+export const PASSKEY_AUTOFILL_ROUND_MS = 240_000
+
+/**
+ * Ask the authenticator once. For an autofill request the wait is bounded by one timer, which
+ * ends the round before its challenge lapses.
+ *
+ * @returns The assertion, or `null` when an autofill round ran out and should be started again.
+ */
+async function askForPasskey(
+  context: FlowContext,
+  authenticator: PasskeyAuthenticator,
+  options: Parameters<PasskeyAuthenticator['get']>[0],
+  request: PasskeyRequest
+) {
+  if (!request.autofill) {
+    return authenticator.get(options, { signal: request.signal })
+  }
+  const round = new AbortController()
+  let lapsed = false
+  const stop = () => round.abort()
+  request.signal?.addEventListener('abort', stop)
+  const cancel = context.environment.setTimer(() => {
+    lapsed = true
+    round.abort()
+  }, PASSKEY_AUTOFILL_ROUND_MS)
+  try {
+    if (request.signal?.aborted) {
+      round.abort()
+    }
+    return await authenticator.get(options, { signal: round.signal, autofill: true })
+  } catch (error) {
+    if (lapsed && !request.signal?.aborted) {
+      return null
+    }
+    throw error
+  } finally {
+    cancel()
+    request.signal?.removeEventListener('abort', stop)
+  }
+}
+
+/**
+ * Sign in with a passkey: start an attempt, run the browser's ceremony, submit the assertion.
+ *
+ * With `autofill`, the request waits in the browser's autofill for as long as the caller's
+ * signal allows: each round is ended before its challenge lapses and started again with a new
+ * attempt, and nothing is left running once the call settles.
+ *
+ * @param context - Transport, session, runtime and the browser's ceremonies.
+ * @param request - A signal, and whether to ask through autofill.
+ * @returns The sign-in flow, past its first factor.
+ * @throws TulaError `passkey.unsupported`, `passkey.cancelled`, `passkey.failed`, and whatever
+ *   the API answers (`auth.invalid_credentials`, `auth.method_disabled`, …).
+ */
+export async function passkeySignIn(
+  context: FlowContext,
+  request: PasskeyRequest = {}
+): Promise<SignInFlow> {
+  const authenticator = context.passkeys()
+  if (!authenticator) {
+    throw clientError('passkey.unsupported', context.messages())
+  }
+  for (;;) {
+    const started = await context.transport.call('startPasskeySignIn', {})
+    if (!isPasskeySignInStart(started)) {
+      throw clientError('response.invalid', context.messages())
+    }
+    const credential = await askForPasskey(context, authenticator, started.options, request)
+    if (credential !== null) {
+      return signInFlow(context, started.attempt, (bound) =>
+        context.transport.call('submitSignInPasskey', { ...bound, body: { credential } })
+      )
+    }
+  }
 }

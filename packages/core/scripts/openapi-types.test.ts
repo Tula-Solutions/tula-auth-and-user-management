@@ -39,6 +39,11 @@ describe('renderType', () => {
       { type: 'object', additionalProperties: true },
       '{\n  [key: string]: unknown\n}',
     ],
+    [
+      'an open object written as the empty schema (a Zod loose object)',
+      { type: 'object', properties: { id: { type: 'string' } }, additionalProperties: {} },
+      '{\n  id?: string\n  [key: string]: unknown\n}',
+    ],
   ] as [string, SchemaNode, string][])('%s', (_name, node, expected) => {
     expect(renderType(node)).toBe(expected)
   })

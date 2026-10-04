@@ -603,7 +603,8 @@ export async function link(
  * - a password, where the environment has the password method on;
  * - a verified email address, where the environment has the email code on (the emailed link
  *   needs the code, so it adds nothing);
- * - another connected provider account, where the environment has that provider enabled.
+ * - another connected provider account, where the environment has that provider enabled;
+ * - a passkey, where the environment has passkeys on (ADR 0027).
  *
  * A method the environment has switched off does not count: it would not let the user in.
  * (A password reset could still give such a user a first password where passwords are on; that
@@ -616,7 +617,9 @@ export async function link(
  *
  * @example
  * ```ts
- * canStillSignIn(settings, ['google'], { hasPassword: false, emailVerified: true, providers: [] })
+ * canStillSignIn(settings, ['google'], {
+ *   hasPassword: false, emailVerified: true, providers: [], passkeys: 0,
+ * })
  * ```
  */
 export function canStillSignIn(
@@ -628,7 +631,8 @@ export function canStillSignIn(
   return (
     (remaining.hasPassword && methods.password.enabled) ||
     (remaining.emailVerified && methods.emailCode.enabled) ||
-    remaining.providers.some((provider) => providers.includes(provider))
+    remaining.providers.some((provider) => providers.includes(provider)) ||
+    (remaining.passkeys > 0 && methods.passkey.enabled)
   )
 }
 

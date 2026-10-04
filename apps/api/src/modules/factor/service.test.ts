@@ -85,6 +85,7 @@ describe('firstFactors', () => {
           password: { enabled: password },
           emailCode: { enabled: emailCode },
           emailLink: { enabled: emailLink },
+          passkey: { enabled: false },
         },
       },
     })
@@ -187,12 +188,16 @@ describe('enrolmentRequired', () => {
 })
 
 describe('the second-factor registry', () => {
-  test('an authenticator and backup codes have a verifier; nothing else does', () => {
-    expect(Object.keys(Factors.SECOND_FACTOR_VERIFIERS).sort()).toEqual(['backup_code', 'totp'])
+  test('an authenticator, backup codes and passkeys have a verifier; nothing else does', () => {
+    expect(Object.keys(Factors.SECOND_FACTOR_VERIFIERS).sort()).toEqual([
+      'backup_code',
+      'passkey',
+      'totp',
+    ])
     for (const method of SecondFactorMethodSchema.options) {
       expect([method, typeof Factors.SECOND_FACTOR_VERIFIERS[method]]).toEqual([
         method,
-        method === 'totp' || method === 'backup_code' ? 'function' : 'undefined',
+        method === 'sms_code' ? 'undefined' : 'function',
       ])
     }
   })
@@ -256,8 +261,10 @@ describe('verify', () => {
 
   test('a method with no verifier can never be proven, whatever is submitted', async () => {
     const { secret, codes } = await enrol()
+    // `passkey` has a verifier, but a proof for it is built only by the flow engine from the
+    // attempt's challenge: a code, or anything else a client sends, proves nothing.
     for (const method of ['passkey', 'sms_code'] as const) {
-      for (const response of [codeFor(secret), codes[0], '123456', true]) {
+      for (const response of [codeFor(secret), codes[0], '123456', true, null, {}]) {
         expect(await verify(method, response)).toBeNull()
       }
     }

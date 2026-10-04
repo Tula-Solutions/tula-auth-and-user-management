@@ -4,12 +4,15 @@ import type {
   FactorEnrolmentMethod,
   FirstFactorStrategy,
   OAuthProvider,
+  PasskeyAssertionCredential,
   SecondFactorMethod,
   SignInMethod,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import type { Actor } from '~/lib/actor'
+import type { Expected } from '~/lib/webauthn'
 import * as Mfa from '~/modules/mfa/service'
+import * as Passkeys from '~/modules/passkey/service'
 import * as Settings from '~/modules/settings/service'
 
 /** One way to prove who you are first, and the setting that switches it on. */
@@ -25,16 +28,18 @@ interface FirstFactor {
 /**
  * Every first factor the server can offer, in the order a sign-in lists them.
  *
- * **The one place a sign-in method is registered.** Adding a method (OAuth, passkeys: steps 1.9
- * and 1.10) means adding an entry here and the route that proves it; the transition function
- * does not change. The email strategies (ADR 0024) are proven through
+ * **The one place a sign-in method is registered.** Adding a method means adding an entry here
+ * and the route that proves it; the transition function does not change. The email strategies (ADR 0024) are proven through
  * `sign-ins/:attemptId/first-factor/*`; an OAuth provider (ADR 0026) through an attempt of its
- * own (`sign-ins/oauth`, the provider's callback, `sign-ins/oauth/exchange`).
+ * own (`sign-ins/oauth`, the provider's callback, `sign-ins/oauth/exchange`); a passkey
+ * (ADR 0027) through an attempt of its own too (`sign-ins/passkey`, `sign-ins/:id/passkey`),
+ * since it needs no identifier.
  */
 const FIRST_FACTORS: readonly FirstFactor[] = [
   { strategy: 'password', enabled: (settings) => settings.signIn.methods.password.enabled },
   { strategy: 'email_code', enabled: (settings) => settings.signIn.methods.emailCode.enabled },
   { strategy: 'email_link', enabled: (settings) => settings.signIn.methods.emailLink.enabled },
+  { strategy: 'passkey', enabled: (settings) => Passkeys.available(settings) },
   { strategy: 'oauth_google', enabled: (_settings, providers) => providers.includes('google') },
   { strategy: 'oauth_github', enabled: (_settings, providers) => providers.includes('github') },
   { strategy: 'oauth_apple', enabled: (_settings, providers) => providers.includes('apple') },
@@ -82,16 +87,18 @@ export function firstFactors(
  * instead of `complete`: no session and no tokens until one of them is proven.
  *
  * A user with a **confirmed** authenticator is asked for `totp`, or `backup_code` while an
- * unused one is left. A pending enrolment counts for nothing. The environment's MFA policy is
- * not consulted: a factor a user has is asked for even where the policy is `off` (ADR 0025).
+ * unused one is left. A pending enrolment counts for nothing. The environment's MFA policy does
+ * not switch that off: a factor a user has is asked for even where the policy is `off`
+ * (ADR 0025). A user with a passkey may prove it instead, where they have an authenticator or
+ * the policy is `required` (ADR 0027); a sign-in **by** passkey never asks any of this.
  *
- * @param deps - Factor store.
+ * @param deps - Factor store, passkey store and settings.
  * @param tenant - The environment.
  * @param userId - The user whose first factor was just accepted.
  * @returns The methods the user may choose from; empty when no second factor is required.
  */
 export async function requiredFor(
-  deps: Pick<Deps, 'factors'>,
+  deps: Mfa.SecondFactorDeps,
   tenant: Pick<Tenant, 'environmentId'>,
   userId: string
 ): Promise<SecondFactorMethod[]> {
@@ -155,8 +162,17 @@ export type SecondFactorVerifier = (
 ) => Promise<boolean | SecondFactorProven>
 
 /**
- * The verifier of each second-factor method: `totp` and `backup_code` (ADR 0025). Step 1.10
- * registers `passkey` here. A method with no verifier can never be proven.
+ * What the flow engine hands the `passkey` verifier: the browser's assertion, and the challenge
+ * it took from the attempt together with the origin and relying party to expect.
+ */
+export interface PasskeyProof {
+  credential: PasskeyAssertionCredential
+  expected: Expected
+}
+
+/**
+ * The verifier of each second-factor method: `totp` and `backup_code` (ADR 0025), and `passkey`
+ * (ADR 0027). A method with no verifier can never be proven.
  */
 export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondFactorVerifier>> = {
   totp: async (deps, tenant, userId, response) =>
@@ -164,6 +180,23 @@ export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondF
   backup_code: async (deps, tenant, userId, response, actor) => {
     const remaining = await Mfa.verifyBackupCode(deps, tenant, userId, response, actor)
     return remaining !== null && { methods: ['backup_code'], backupCodesRemaining: remaining }
+  },
+  passkey: async (deps, tenant, userId, response, actor) => {
+    // Only the flow engine builds a proof (it takes the challenge from the attempt): anything
+    // else submitted under this method proves nothing.
+    const { credential, expected } = (response ?? {}) as Partial<PasskeyProof>
+    if (typeof response !== 'object' || !credential || !expected) {
+      return false
+    }
+    const { challenge, ...rp } = expected
+    const asserted = await Passkeys.assert(deps, tenant, {
+      credential,
+      challenge,
+      rp,
+      userId,
+      actor,
+    })
+    return asserted !== null && { methods: asserted.methods }
   },
 }
 

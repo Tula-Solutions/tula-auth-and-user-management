@@ -526,7 +526,9 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         expect(
           await ctx.users.unlinkIdentity(ctx.a.environmentId, maya.id, google.id, refuse)
         ).toBe('last_method')
-        expect(seen).toEqual([{ hasPassword: false, emailVerified: false, providers: ['github'] }])
+        expect(seen).toEqual([
+          { hasPassword: false, emailVerified: false, providers: ['github'], passkeys: 0 },
+        ])
         expect(await ctx.users.listIdentities(ctx.a.environmentId, maya.id)).toHaveLength(2)
         expect(
           await ctx.users.unlinkIdentity(ctx.a.environmentId, maya.id, google.id, anyway)
@@ -549,7 +551,12 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           remaining = means
           return true
         })
-        expect(remaining).toEqual({ hasPassword: true, emailVerified: true, providers: [] })
+        expect(remaining).toEqual({
+          hasPassword: true,
+          emailVerified: true,
+          providers: [],
+          passkeys: 0,
+        })
       })
 
       test('unlinking an unknown identity, another user’s, or across environments is not found', async () => {

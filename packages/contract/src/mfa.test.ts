@@ -105,8 +105,14 @@ describe('TotpConfirmRequest', () => {
 
 describe('StepUpRequest', () => {
   test('the methods are the password, an authenticator code, a backup code and an emailed code', () => {
-    // Additive: `email_code` came after the first three, whose order is kept.
-    expect(StepUpMethodSchema.options).toEqual(['password', 'totp', 'backup_code', 'email_code'])
+    // Additive: `email_code` and `passkey` came after the first three, whose order is kept.
+    expect(StepUpMethodSchema.options).toEqual([
+      'password',
+      'totp',
+      'backup_code',
+      'email_code',
+      'passkey',
+    ])
   })
 
   test.each<[string, unknown]>([
@@ -136,7 +142,7 @@ describe('StepUpRequest', () => {
     ['a password where a code belongs', { method: 'totp', password: 'x' }],
     ['an empty backup code', { method: 'backup_code', code: '' }],
     ['a backup code over 64 characters', { method: 'backup_code', code: 'a'.repeat(65) }],
-    ['a passkey', { method: 'passkey', code: '123456' }],
+    ['a passkey with a code and no assertion', { method: 'passkey', code: '123456' }],
     ['an SMS code', { method: 'sms_code', code: '123456' }],
     ['a five-digit emailed code', { method: 'email_code', code: '12345' }],
     ['an emailed code with a letter', { method: 'email_code', code: '12345a' }],

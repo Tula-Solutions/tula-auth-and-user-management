@@ -22,6 +22,7 @@ import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
 import { databaseProbe } from '~/adapters/postgres/health'
 import { PostgresJobLock } from '~/adapters/postgres/job-lock'
 import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
+import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
@@ -134,6 +135,7 @@ export function createContainer(env: Env): Container {
     sessions: new PostgresSessionStore(database.db),
     users: new PostgresUserRepository(database.db),
     factors: new PostgresFactorStore(database.db),
+    passkeys: new PostgresPasskeyStore(database.db),
     flowAttempts: new PostgresFlowAttemptStore(database.db),
     oauthProviders: new PostgresOAuthProviderStore(database.db),
     oauth: oauthMock

@@ -47,6 +47,7 @@ export type {
 } from './flows'
 export type { Identity, OAuthCallbackOutcome, OAuthProvider } from './oauth'
 export { isRetryableOAuthError } from './oauth'
+export type { PasskeyRequest } from './passkey'
 export {
   ACCESS_TOKEN_EXPIRY_SKEW_MS,
   MAX_REFRESH_BACKOFF_MS,
@@ -66,6 +67,7 @@ export type {
   FlowKind,
   FlowStep,
   MfaPolicy,
+  Passkey,
   PasswordPolicy,
   SecondFactorMethod,
   SecondFactorProof,

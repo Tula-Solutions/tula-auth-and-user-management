@@ -183,6 +183,18 @@ export type Factors = Schemas['Factors']
 export type TotpEnrolment = Schemas['TotpEnrolment']
 
 /**
+ * A passkey of the signed-in user: its name, whether the authenticator reports it as synced
+ * to the user's other devices, when it was added and when it was last used. Never key material.
+ *
+ * @example
+ * ```ts
+ * const [passkey]: Passkey[] = await tula.user.passkeys.list()
+ * label.textContent = passkey.synced ? `${passkey.name} (synced)` : passkey.name
+ * ```
+ */
+export type Passkey = Schemas['Passkey']
+
+/**
  * A fresh set of backup codes, returned once. The client keeps no copy: show them to the user
  * and let them go.
  *

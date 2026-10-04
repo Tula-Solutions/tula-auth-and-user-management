@@ -1,0 +1,911 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "passkey signature counter",
+  "description": "An authenticator that keeps a signature counter must report a higher one every time. One that does not is a sign of a copied credential: the assertion is refused with the generic failure and recorded. An authenticator that keeps no counter (zero every time, as synced passkeys do) is fine.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address: the account exists and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "passwordMethod": "settings.signIn.methods.password",
+        "emailCodeMethod": "settings.signIn.methods.emailCode",
+        "emailLinkMethod": "settings.signIn.methods.emailLink",
+        "signUpSettings": "settings.signUp",
+        "redirects": "settings.urls.allowedRedirectUrls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa"
+      }
+    },
+    {
+      "name": "switch passkeys on, with a relying-party id and an origin that belongs to it",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["https://app.passkeys.example"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "passkeys.example"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "passkeys": {
+              "rpId": "passkeys.example"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "ask for the options to create a passkey",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "passkeys.example",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          },
+          "authenticatorSelection": {
+            "residentKey": "required",
+            "requireResidentKey": true,
+            "userVerification": "required"
+          },
+          "attestation": "none"
+        }
+      },
+      "captureJson": {
+        "creationOptions": ""
+      }
+    },
+    {
+      "name": "the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "phone",
+        "create": "{{creationOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "registration"
+      }
+    },
+    {
+      "name": "finish: the passkey is stored, and the answer holds no key material",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{registration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "name": "Passkey",
+          "synced": false,
+          "createdAt": "$any",
+          "lastUsedAt": null,
+          "publicKey": "$absent",
+          "credentialId": "$absent"
+        }
+      },
+      "capture": {
+        "passkeyId": "id"
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "zeroAId": "attempt.id",
+        "zeroASecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "zeroAOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{zeroAOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "zeroAAssertion"
+      }
+    },
+    {
+      "name": "no counter: accepted",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{zeroAId}}/passkey",
+        "attempt": "{{zeroASecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{zeroAAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "zeroBId": "attempt.id",
+        "zeroBSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "zeroBOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{zeroBOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "zeroBAssertion"
+      }
+    },
+    {
+      "name": "no counter again: accepted",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{zeroBId}}/passkey",
+        "attempt": "{{zeroBSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{zeroBAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "fiveId": "attempt.id",
+        "fiveSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "fiveOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{fiveOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "fiveAssertion",
+        "counter": 5
+      }
+    },
+    {
+      "name": "the authenticator starts counting: 5 is accepted",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{fiveId}}/passkey",
+        "attempt": "{{fiveSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{fiveAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "sameId": "attempt.id",
+        "sameSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "sameOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{sameOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "sameAssertion",
+        "counter": 5
+      }
+    },
+    {
+      "name": "the same counter again is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{sameId}}/passkey",
+        "attempt": "{{sameSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{sameAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "lowerId": "attempt.id",
+        "lowerSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "lowerOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{lowerOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "lowerAssertion",
+        "counter": 3
+      }
+    },
+    {
+      "name": "a lower counter is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{lowerId}}/passkey",
+        "attempt": "{{lowerSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{lowerAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "zeroId": "attempt.id",
+        "zeroSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "zeroOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{zeroOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "zeroAssertion",
+        "counter": 0
+      }
+    },
+    {
+      "name": "a counter back at zero is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{zeroId}}/passkey",
+        "attempt": "{{zeroSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{zeroAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "each refusal is in the audit log, without the credential",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=user.passkey_counter_regressed&targetId={{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 3
+          },
+          "data": [
+            {
+              "action": "user.passkey_counter_regressed",
+              "target": {
+                "type": "user",
+                "id": "{{userId}}"
+              },
+              "metadata": {
+                "passkeyId": "{{passkeyId}}"
+              }
+            },
+            {
+              "action": "user.passkey_counter_regressed"
+            },
+            {
+              "action": "user.passkey_counter_regressed"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "start a passkey sign-in: no identifier, and options that name no credential",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            },
+            "attemptSecret": {
+              "$matches": "^tula_at_"
+            }
+          },
+          "options": {
+            "challenge": {
+              "$matches": "^[A-Za-z0-9_-]{43}$"
+            },
+            "timeout": 300000,
+            "rpId": "passkeys.example",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "sixId": "attempt.id",
+        "sixSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "sixOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{sixOptions}}",
+        "origin": "https://app.passkeys.example",
+        "capture": "sixAssertion",
+        "counter": 6
+      }
+    },
+    {
+      "name": "the stored counter did not move: 6 is accepted",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{sixId}}/passkey",
+        "attempt": "{{sixSecret}}",
+        "headers": {
+          "Origin": "https://app.passkeys.example"
+        },
+        "body": {
+          "credential": {
+            "$json": "{{sixAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "auth_time": "$any",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

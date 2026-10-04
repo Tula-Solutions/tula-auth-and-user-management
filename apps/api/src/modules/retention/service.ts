@@ -44,6 +44,8 @@ export interface RetentionCounts {
   sessions: number
   /** Authenticator enrolments that were started and never confirmed. */
   pendingFactors: number
+  /** WebAuthn challenges of signed-in sessions that expired unused. */
+  passkeyChallenges: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -56,7 +58,13 @@ export interface RetentionReport extends RetentionCounts {
 
 type RetentionDeps = Pick<
   Deps,
-  'environments' | 'flowAttempts' | 'verificationTokens' | 'sessions' | 'factors' | 'clock'
+  | 'environments'
+  | 'flowAttempts'
+  | 'verificationTokens'
+  | 'sessions'
+  | 'factors'
+  | 'passkeys'
+  | 'clock'
 >
 
 /** Repeat one batched delete until a batch comes back short, or the ceiling is reached. */
@@ -103,6 +111,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     verificationTokens: 0,
     sessions: 0,
     pendingFactors: 0,
+    passkeyChallenges: 0,
   }
   for (const { id } of await deps.environments.listAll()) {
     report.environments += 1
@@ -118,6 +127,10 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       // finds the row and answers `mfa.enrolment_expired` rather than racing the purge.
       report.pendingFactors += await drain((limit) =>
         deps.factors.deleteExpiredPending(id, tokensBefore, limit)
+      )
+      // A WebAuthn challenge is dead the moment it expires: nothing reads one afterwards.
+      report.passkeyChallenges += await drain((limit) =>
+        deps.passkeys.deleteExpiredChallenges(id, now, limit)
       )
     } catch (error) {
       report.failed += 1
@@ -149,7 +162,11 @@ export async function run(
   }
   const report = outcome.value
   const removed =
-    report.flowAttempts + report.verificationTokens + report.sessions + report.pendingFactors
+    report.flowAttempts +
+    report.verificationTokens +
+    report.sessions +
+    report.pendingFactors +
+    report.passkeyChallenges
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

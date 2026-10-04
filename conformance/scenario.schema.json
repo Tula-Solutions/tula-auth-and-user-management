@@ -304,6 +304,52 @@
                 "type": "string",
                 "minLength": 1
               },
+              "passkey": {
+                "type": "object",
+                "properties": {
+                  "authenticator": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "create": {
+                    "type": "string"
+                  },
+                  "get": {
+                    "type": "string"
+                  },
+                  "origin": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "userVerified": {
+                    "type": "boolean"
+                  },
+                  "counter": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "synced": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["authenticator", "origin", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "passkey"],
+            "additionalProperties": false,
+            "ref": "ConformancePasskeyStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "wait": {
                 "type": "string",
                 "ref": "Duration"
@@ -572,6 +618,52 @@
             "required": ["name", "oauth"],
             "additionalProperties": false,
             "ref": "ConformanceOAuthStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "passkey": {
+                "type": "object",
+                "properties": {
+                  "authenticator": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "create": {
+                    "type": "string"
+                  },
+                  "get": {
+                    "type": "string"
+                  },
+                  "origin": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "userVerified": {
+                    "type": "boolean"
+                  },
+                  "counter": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "synced": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["authenticator", "origin", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "passkey"],
+            "additionalProperties": false,
+            "ref": "ConformancePasskeyStep"
           },
           {
             "type": "object",

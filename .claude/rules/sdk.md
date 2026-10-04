@@ -68,7 +68,16 @@ paths:
   `refresh.reuseGracePeriod` in `packages/contract/src/session-profile.ts`; a test holds it.
 - One error class: every failed call throws `TulaError` with a contract code or one of the
   client's own (`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`,
-  `flow.busy`, `link.cross_origin`), all `status: 0`.
+  `flow.busy`, `link.cross_origin`, `passkey.unsupported`, `passkey.cancelled`,
+  `passkey.already_on_device`, `passkey.failed`), all `status: 0`.
+- **Passkeys (ADR 0027) use no WebAuthn dependency.** `packages/core/src/passkey.ts` calls
+  `navigator.credentials` through `Environment.passkeys`, with the browser's JSON helpers where
+  they exist and its own base64url conversion otherwise. A ceremony's failure is one of the
+  four `passkey.*` client codes and never carries the browser's message or the credential;
+  nothing of a ceremony (challenge, response) is kept. What the authenticator returns is
+  checked before it is sent, and a 200 from a passkey route before anything is built from it.
+  An autofill request (`withPasskey({ autofill: true })`) takes the caller's signal, restarts
+  with a fresh attempt before its challenge lapses, and leaves no timer behind.
 - Types come from `src/generated/api.gen.ts` (run `bun run core:generate` after
   `contract:generate`); run-time imports from the contract use its Zod-free entry points only.
   No `Buffer`, `process` or `node:` import: `typecheck:portable` must pass.

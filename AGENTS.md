@@ -222,7 +222,7 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
 Anything about how sign-in behaves that differs between tenants lives in the environment's
 settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/adr/0018-environment-settings.md)):
 app name and support address, password policy, enabled sign-in methods (`password`,
-`emailCode`, `emailLink`), whether a sign-up needs a password (`signUp.password`), allowed
+`emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether a sign-up needs a password (`signUp.password`), allowed
 origins and redirect URLs, audit retention, which security notices are emailed
 (`notifications`), and whether two-step verification is `off`, `optional` or `required`
 (`mfa.policy`). **Read it through `~/modules/settings/service`**
@@ -290,8 +290,8 @@ The API never tells a client which screen to draw; it returns the next **flow st
   step or event must be classified there.
 - **A sign-in method is registered in one place**: `FIRST_FACTORS` in
   `modules/factor/service.ts` maps the environment's settings to the strategies a sign-in
-  offers (`password`, `email_code`, `email_link`); a second factor registers a verifier in
-  `SECOND_FACTOR_VERIFIERS` (`totp`, `backup_code`) and is submitted through
+  offers (`password`, `email_code`, `email_link`, `passkey`, the OAuth providers); a second
+  factor registers a verifier in `SECOND_FACTOR_VERIFIERS` (`totp`, `backup_code`, `passkey`) and is submitted through
   `Flows.submitSecondFactor` (`…/:attemptId/second-factor`). Adding a method means adding an
   entry and the route that proves it, not editing the transition function or any SDK.
 - **Second factors live in `modules/mfa`** ([ADR 0025](docs/adr/0025-mfa.md)): enrolment under
@@ -300,6 +300,12 @@ The API never tells a client which screen to draw; it returns the next **flow st
   user has none, an attempt stops at `needs_factor_enrolment` and enrols inside the attempt
   (`…/:attemptId/factor-enrolment/totp`, `…/confirm`). An attempt's state records what it has
   proven (`amr`), which becomes the session's `authMethods`.
+- **Passkeys live in `modules/passkey`** ([ADR 0027](docs/adr/0027-passkeys.md)): the signed-in
+  user's routes under `/v1/client/me/passkeys`, and `Passkeys.assert`, the one place an
+  assertion is accepted. A sign-in by passkey is an attempt of its own with no identifier
+  (`sign-ins/passkey`, `sign-ins/:id/passkey`) and **never stops at a second factor**; after a
+  password the passkey is a second factor only where one is in force anyway (the user has an
+  authenticator app, or `mfa.policy` is `required`).
 - **Every flow step starts with the service's `load`**, which checks the attempt's secret and,
   for a browser attempt, the request's origin. Never read an attempt from the store directly
   in a step. The one exception is `Flows.verifyEmailLink` (`POST /v1/client/sign-ins/link`):
@@ -349,7 +355,8 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
 - **Rows that expire are deleted by the retention job** (`modules/retention`,
   [ADR 0017](docs/adr/0017-retention.md)): expired flow attempts, verification tokens an hour
   past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
-  cascade), authenticator enrolments that were never confirmed. A new table of short-lived
+  cascade), authenticator enrolments that were never confirmed, expired WebAuthn challenges.
+  A new table of short-lived
   rows gets a batched purge method on its store, in both adapters and the shared suite, and a
   line in that job. Audit entries and outbox events are never deleted by it.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
@@ -389,7 +396,27 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   [ADR 0023](docs/adr/0023-security-notices.md); signing in by email (codes, same-browser
   links, passwordless sign-up): [ADR 0024](docs/adr/0024-email-sign-in.md); two-step
   verification (TOTP, backup codes, step-up, the MFA policy): [ADR 0025](docs/adr/0025-mfa.md);
-  OAuth sign-in and account linking: [ADR 0026](docs/adr/0026-oauth.md).
+  OAuth sign-in and account linking: [ADR 0026](docs/adr/0026-oauth.md); passkeys:
+  [ADR 0027](docs/adr/0027-passkeys.md).
+- **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
+  takes the `Origin` header and accepts it only when the environment allows it **and** it
+  belongs to `passkeys.rpId`; nothing in a body chooses the origin or the relying party. Call
+  it on every passkey step, before anything is counted, spent or stored (it is also the
+  "passkeys still on" check). Responses are checked only through `~/lib/webauthn`
+  (user verification always required; every failure the same `null`) and assertions only
+  through `Passkeys.assert`, which enforces the owner, the user handle, the signature counter
+  (a counter that does not grow is refused and audited; zero both sides is fine) and records
+  the use with a compare-and-set.
+- **A WebAuthn challenge is 32 random bytes, used once, for five minutes, and is taken before
+  the response is judged.** A sign-in's lives on its attempt and is taken with a
+  compare-and-set on its value; a registration's and a step-up's live in `passkey_challenges`,
+  bound to the session that asked. Never accept a challenge from a client beyond matching it.
+- **A failed passkey sign-in is always `auth.invalid_credentials`,** whatever the reason, and
+  its options are the same for every caller (no `allowCredentials`). There is no lockout for it
+  (no identifier, nothing guessable): the per-IP and per-environment limits bound it.
+- **Removing the last way to sign in is refused in the store's transaction**
+  (`OAuth.canStillSignIn`, which counts a password, an emailed code, providers and passkeys):
+  for an identity and for a passkey alike.
 - **TOTP secrets are sealed, backup codes are keyed hashes.** A TOTP secret is stored only
   sealed with `~/lib/secret-box` (purpose `totp-secrets`, bound to environment, user and factor
   id) and returned once, at enrolment. Backup codes are stored only as
@@ -510,9 +537,10 @@ and commit `packages/contract/openapi.json` — CI fails on drift.
   refused sign-in. A notice carries no code, token or link, and its subject never starts with
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
-- Treat every change under `modules/{flow,session,password,jwks,verification,mfa,factor,oauth}`,
-  `adapters/oauth/`,
-  `middleware/{cors,recent-auth}.ts`, `lib/crypto.ts` or `lib/totp.ts` as security-sensitive:
+- Treat every change under
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey}`, `adapters/oauth/`,
+  `middleware/{cors,recent-auth}.ts`, `lib/crypto.ts`, `lib/totp.ts` or `lib/webauthn.ts` as
+  security-sensitive:
   it needs tests for the failure paths, not just the happy path.
 
 ## Testing
@@ -609,7 +637,7 @@ apps/api/src/
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
 │                     # request-log
 └── modules/          # flow, password, session, jwks, verification, user, mfa (TOTP, backup
-                      # codes, step-up), audit, project, status,
+                      # codes, step-up), passkey (WebAuthn), audit, project, status,
                       # settings, factor (first-factor registry and second-factor hooks:
                       # service only), email (layout + copy: service only, no router),
                       # retention (a background job: service only, no router),

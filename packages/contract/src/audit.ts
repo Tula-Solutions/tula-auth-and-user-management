@@ -26,6 +26,10 @@ export const ACTIVITY_TYPES = [
   // `provider` says which, `method` how (`auto`, `profile`).
   'user.identity_linked',
   'user.identity_unlinked',
+  'user.passkey_added',
+  'user.passkey_renamed',
+  'user.passkey_removed',
+  'user.passkey_counter_regressed',
   'session.created',
   'session.revoked',
   'session.reuse_detected',

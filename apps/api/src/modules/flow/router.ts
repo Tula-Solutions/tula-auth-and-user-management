@@ -26,6 +26,9 @@ import {
   OAuthExchangeRequestSchema,
   OAuthStartRequestSchema,
   OAuthStartSchema,
+  PasskeyRequestOptionsSchema,
+  PasskeySignInRequestSchema,
+  PasskeySignInStartSchema,
   PasswordAttemptRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetStartRequestSchema,
@@ -114,6 +117,7 @@ async function clientContext(
     userAgent: c.req.header('user-agent') ?? null,
     ipAddress: clientIp(c, c.get('deps').config.trustProxy),
     originAllowed: await originMayUseCookies(c),
+    origin: c.req.header('origin') ?? null,
   }
 }
 
@@ -389,6 +393,95 @@ router.post(
       )
     )
   }
+)
+
+router.post(
+  '/sign-ins/passkey',
+  describeRoute({
+    operationId: 'startPasskeySignIn',
+    tags: ['Flows'],
+    summary: 'Start signing in with a passkey',
+    description:
+      'A sign-in with no identifier: the answer is an attempt of its own on ' +
+      '`needs_first_factor` (`strategies: ["passkey"]`) and the options for ' +
+      '`navigator.credentials.get()`. The options carry no `allowCredentials` (the credential ' +
+      'is discoverable), so the answer is the same for every caller and says nothing about ' +
+      'any account. The challenge works once and for five minutes. Passkeys must be on for ' +
+      'the environment (`auth.method_disabled` otherwise), and the request’s `Origin` must be ' +
+      'one the environment allows and belong to its `passkeys.rpId` ' +
+      '(`request.origin_not_allowed`).' +
+      START,
+    security: openapi.security.client,
+    responses: {
+      200: {
+        description: 'The attempt and the request options.',
+        content: { 'application/json': { schema: resolver(PasskeySignInStartSchema) } },
+      },
+      400: openapi.responses[400],
+      403: openapi.responses[403],
+      ...errors,
+    },
+  }),
+  limited('sign_in_passkey_start'),
+  publishableKey(),
+  validator('header', ClientHeaderSchema, validationHook),
+  async (c) => {
+    const context = await clientContext(c, c.req.valid('header')[CLIENT_HEADER])
+    const { client: _client, ...started } = await Flows.startPasskeySignIn(
+      c.get('deps'),
+      c.get('tenant'),
+      context
+    )
+    c.header('Cache-Control', 'no-store')
+    return c.json(PasskeySignInStartSchema.parse(started))
+  }
+)
+
+router.post(
+  '/sign-ins/:attemptId/passkey',
+  describeRoute({
+    operationId: 'submitSignInPasskey',
+    tags: ['Flows'],
+    summary: 'Sign in with a passkey',
+    description:
+      'Submits the assertion `navigator.credentials.get()` returned for the options of ' +
+      '`POST /v1/client/sign-ins/passkey` and completes the sign-in. **A passkey satisfies ' +
+      'two-step verification on its own**: this step never answers `needs_second_factor`. ' +
+      'Every failure (unknown credential, wrong signature, another origin, a used or expired ' +
+      'challenge, no user verification, a signature counter that went backwards) is the same ' +
+      '`auth.invalid_credentials`, and the challenge is used up by the first assertion ' +
+      'presented: start again for another try.' +
+      BOUND +
+      DELIVERY,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The completed attempt, or `needs_email_verification`.'),
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('sign_in_passkey'),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
+  validator('json', PasskeySignInRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.submitPasskey(
+        c.get('deps'),
+        c.get('tenant'),
+        {
+          id: c.req.valid('param').attemptId,
+          secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+        },
+        c.req.valid('json').credential,
+        await clientContext(c)
+      )
+    )
 )
 
 router.post(
@@ -688,7 +781,7 @@ for (const [kind, path, tag] of [
     validator('header', AttemptHeaderSchema, validationHook),
     validator('json', SecondFactorRequestSchema, validationHook),
     async (c) => {
-      const { method, code } = c.req.valid('json')
+      const proof = c.req.valid('json')
       return respond(
         c,
         await Flows.submitSecondFactor(
@@ -699,8 +792,59 @@ for (const [kind, path, tag] of [
             id: c.req.valid('param').attemptId,
             secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
           },
-          { method, response: code },
+          {
+            method: proof.method,
+            response: proof.method === 'passkey' ? proof.credential : proof.code,
+          },
           await clientContext(c)
+        )
+      )
+    }
+  )
+
+  router.post(
+    `${path}/:attemptId/second-factor/passkey/options`,
+    describeRoute({
+      operationId: `get${tag}SecondFactorPasskeyOptions`,
+      tags: ['Flows'],
+      summary: 'Get the options for a passkey second factor',
+      description:
+        'For an attempt waiting on `needs_second_factor` whose `options` include `passkey`: ' +
+        'the options for `navigator.credentials.get()`, naming the user’s own passkeys. The ' +
+        'challenge works once and for five minutes; asking again replaces it. Submit the ' +
+        'assertion to `…/second-factor` with `method: "passkey"`. The request’s `Origin` must ' +
+        'be one the environment allows and belong to its `passkeys.rpId`.' +
+        BOUND,
+      security: openapi.security.client,
+      responses: {
+        200: {
+          description: 'The request options.',
+          content: { 'application/json': { schema: resolver(PasskeyRequestOptionsSchema) } },
+        },
+        403: openapi.responses[403],
+        404: openapi.responses[404],
+        409: openapi.responses[409],
+        ...errors,
+      },
+    }),
+    limited(`${kind}_second_factor_passkey_options`),
+    publishableKey(),
+    validator('param', AttemptIdParamSchema, validationHook),
+    validator('header', AttemptHeaderSchema, validationHook),
+    async (c) => {
+      c.header('Cache-Control', 'no-store')
+      return c.json(
+        PasskeyRequestOptionsSchema.parse(
+          await Flows.secondFactorPasskeyOptions(
+            c.get('deps'),
+            c.get('tenant'),
+            kind,
+            {
+              id: c.req.valid('param').attemptId,
+              secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+            },
+            await clientContext(c)
+          )
         )
       )
     }

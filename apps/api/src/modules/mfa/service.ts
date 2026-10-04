@@ -3,7 +3,9 @@ import {
   BACKUP_CODE_COUNT,
   type BackupCodes,
   durationToMs,
+  type EnvironmentSettings,
   type Factors,
+  type PasskeyRequestOptions,
   type SessionTokens,
   STEP_UP_MAX_AGE_SECONDS,
   type StepUpEmailCode,
@@ -18,6 +20,7 @@ import * as logger from '~/lib/logger'
 import { base32Encode, generateSecret, matchStep, otpauthUri } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
+import * as Passkeys from '~/modules/passkey/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
@@ -156,8 +159,10 @@ export async function status(
 }
 
 /**
- * The second factors a user can be asked for: `totp` when an authenticator is confirmed, and
- * `backup_code` while an unused one is left. Empty for a user with no confirmed factor.
+ * The second factors a user can be asked for: `totp` when an authenticator is confirmed,
+ * `backup_code` while an unused one is left, and `passkey` for a user who has one **and** is
+ * held to a second factor anyway (they have an authenticator, or the environment's policy is
+ * `required`). Empty for a user with none of that.
  *
  * Independent of the environment's MFA policy on purpose: with the policy `off` a factor a user
  * already has is still asked for. Dropping it silently would be a security regression for that
@@ -166,18 +171,47 @@ export async function status(
  * @param deps - Factor store.
  * @param scope - The environment.
  * @param userId - The user.
- * @returns The methods, `totp` first.
+ * @returns The methods, `totp` first, `passkey` last.
  */
 export async function secondFactors(
-  deps: Pick<Deps, 'factors'>,
+  deps: SecondFactorDeps,
   scope: Pick<Scope, 'environmentId'>,
   userId: string
-): Promise<('totp' | 'backup_code')[]> {
-  if (!isConfirmed(await deps.factors.findTotp(scope.environmentId, userId))) {
-    return []
+): Promise<('totp' | 'backup_code' | 'passkey')[]> {
+  const totp = isConfirmed(await deps.factors.findTotp(scope.environmentId, userId))
+  const settings = await Settings.current(deps, scope)
+  // A passkey is asked for after a password only where a second factor is in force anyway:
+  // the user has an authenticator app, or the environment requires a second factor. Otherwise
+  // adding a passkey for convenience would turn every password sign-in into one that needs
+  // the device, with no backup codes behind it (ADR 0027).
+  const passkey =
+    (totp || settings.mfa.policy === 'required') &&
+    (await hasPasskey(deps, scope, userId, settings))
+  if (!totp) {
+    return passkey ? ['passkey'] : []
   }
   const remaining = await deps.factors.countBackupCodes(scope.environmentId, userId)
-  return remaining > 0 ? ['totp', 'backup_code'] : ['totp']
+  return [
+    'totp',
+    ...(remaining > 0 ? (['backup_code'] as const) : []),
+    ...(passkey ? (['passkey'] as const) : []),
+  ]
+}
+
+/** What reading a user's second factors needs. */
+export type SecondFactorDeps = Pick<Deps, 'factors' | 'passkeys' | 'environmentSettings' | 'config'>
+
+/** Whether a user has a passkey they could use now: passkeys are on and they have one. */
+async function hasPasskey(
+  deps: Pick<Deps, 'passkeys'>,
+  scope: Pick<Scope, 'environmentId'>,
+  userId: string,
+  settings: EnvironmentSettings
+): Promise<boolean> {
+  return (
+    Passkeys.available(settings) &&
+    (await deps.passkeys.listForUser(scope.environmentId, userId)).length > 0
+  )
 }
 
 type EnrolDeps = Pick<
@@ -546,7 +580,7 @@ export async function regenerateBackupCodes(
  * @throws NotFoundError when the user does not exist in this environment.
  */
 export async function reset(
-  deps: ChangeDeps & Pick<Deps, 'sessions' | 'revokedSessions'>,
+  deps: ChangeDeps & Pick<Deps, 'sessions' | 'revokedSessions' | 'passkeys'>,
   scope: Scope,
   userId: string,
   actor: Actor
@@ -569,10 +603,22 @@ export async function reset(
       data: { method: 'admin_reset' },
     })
   )
+  // Passkeys go with it: the reset is the "this account's authenticators are gone" tool, and
+  // a lost or stolen device is as likely to hold the passkey as the authenticator app.
+  const passkeys = await deps.passkeys.removeForUser(
+    scope.environmentId,
+    userId,
+    Audit.entry(deps, scope, {
+      type: 'user.passkey_removed',
+      actor,
+      target: { type: 'user', id: userId },
+      data: { method: 'admin_reset' },
+    })
+  )
   // Once more: a sign-in that completed with the factor between the two steps is ended too.
   await Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor)
   await forgetGuesses(deps, scope, userId)
-  if (removed) {
+  if (removed || passkeys > 0) {
     Notices.mfaChanged(deps, scope, user, { change: 'admin_reset', at: deps.clock.now() })
   }
 }
@@ -676,8 +722,9 @@ function stepUpLockKey(environmentId: string, userId: string): string {
 
 /**
  * What a user can step up with: a second factor when they have one (nothing weaker is then
- * enough), otherwise their password when they have one and a code emailed to their verified
- * address (`email_code`), otherwise nothing.
+ * enough; a passkey is one of them for such a user), otherwise a passkey when they have one,
+ * their password when they have one and a code emailed to their verified address
+ * (`email_code`), otherwise nothing.
  *
  * `email_code` is never offered next to a second factor. For a user without one it adds no
  * way in that their mailbox does not already give (a password reset, an emailed sign-in), and
@@ -690,23 +737,37 @@ function stepUpLockKey(environmentId: string, userId: string): string {
  * @returns The methods `POST /v1/client/sessions/step-up` accepts from this user.
  */
 export async function stepUpMethods(
-  deps: Pick<Deps, 'factors' | 'users'>,
+  deps: SecondFactorDeps & Pick<Deps, 'users'>,
   scope: Pick<Scope, 'environmentId'>,
   userId: string
 ): Promise<StepUpMethod[]> {
+  return (await stepUpState(deps, scope, userId)).methods
+}
+
+/** What a user can step up with, and whether a second factor is what they must use. */
+async function stepUpState(
+  deps: SecondFactorDeps & Pick<Deps, 'users'>,
+  scope: Pick<Scope, 'environmentId'>,
+  userId: string
+): Promise<{ methods: StepUpMethod[]; hasSecondFactor: boolean }> {
   const second = await secondFactors(deps, scope, userId)
   if (second.length > 0) {
-    return second
+    return { methods: second, hasSecondFactor: true }
   }
   const user = await deps.users.findById(scope.environmentId, userId)
   if (!user) {
-    return []
+    return { methods: [], hasSecondFactor: false }
   }
   const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
-  return [
-    ...(found?.passwordHash ? (['password'] as const) : []),
-    ...(user.emailVerifiedAt ? (['email_code'] as const) : []),
-  ]
+  const passkey = await hasPasskey(deps, scope, userId, await Settings.current(deps, scope))
+  return {
+    methods: [
+      ...(passkey ? (['passkey'] as const) : []),
+      ...(found?.passwordHash ? (['password'] as const) : []),
+      ...(user.emailVerifiedAt ? (['email_code'] as const) : []),
+    ],
+    hasSecondFactor: false,
+  }
 }
 
 /** The error that asks a client to step up, with what the user can use. */
@@ -743,14 +804,13 @@ export interface RecentAuthenticationOptions {
  *   list of what the user can step up with.
  */
 export async function requireRecentAuthentication(
-  deps: Pick<Deps, 'factors' | 'users' | 'clock'>,
+  deps: SecondFactorDeps & Pick<Deps, 'users' | 'clock'>,
   scope: Pick<Scope, 'environmentId'>,
   claims: Pick<AccessTokenClaims, 'sub' | 'auth_time' | 'amr'>,
   options: RecentAuthenticationOptions = {}
 ): Promise<void> {
   const maxAge = options.maxAgeSeconds ?? STEP_UP_MAX_AGE_SECONDS
-  const methods = await stepUpMethods(deps, scope, claims.sub)
-  const hasSecondFactor = methods.includes('totp')
+  const { methods, hasSecondFactor } = await stepUpState(deps, scope, claims.sub)
   if (options.onlyWithSecondFactor && !hasSecondFactor) {
     return
   }
@@ -765,7 +825,13 @@ export async function requireRecentAuthentication(
 type StepUpDeps = ChangeDeps &
   Pick<
     Deps,
-    'keyedHash' | 'secretBox' | 'sessions' | 'signingKeys' | 'environments' | 'verificationTokens'
+    | 'keyedHash'
+    | 'secretBox'
+    | 'sessions'
+    | 'signingKeys'
+    | 'environments'
+    | 'verificationTokens'
+    | 'passkeys'
   >
 
 /**
@@ -798,6 +864,7 @@ export async function prepareStepUp(
   deps: Pick<
     Deps,
     | 'factors'
+    | 'passkeys'
     | 'users'
     | 'clock'
     | 'ids'
@@ -838,6 +905,35 @@ export async function prepareStepUp(
 }
 
 /**
+ * Start a step-up by passkey: the options for `navigator.credentials.get()`, naming the user's
+ * own passkeys. The challenge is stored for the asking session only (five minutes, one use;
+ * asking again replaces it).
+ *
+ * @param deps - Factor store, passkey store, users, settings, ids and clock.
+ * @param scope - The project and environment.
+ * @param self - The signed-in user and their session, from the access token.
+ * @param origin - The request's `Origin`.
+ * @returns `PublicKeyCredentialRequestOptionsJSON`.
+ * @throws AuthError `auth.method_disabled`, `request.origin_not_allowed`, or
+ *   `auth.step_up_required` (with what the user can use) for a user who has no passkey.
+ */
+export async function prepareStepUpPasskey(
+  deps: SecondFactorDeps & Pick<Deps, 'users' | 'ids' | 'clock'>,
+  scope: Scope,
+  self: { userId: string; sessionId: string },
+  origin: string | null | undefined
+): Promise<PasskeyRequestOptions> {
+  const rp = await Passkeys.relyingParty(deps, scope, origin)
+  const allowed = await stepUpMethods(deps, scope, self.userId)
+  if (!allowed.includes('passkey')) {
+    throw stepUpRequired(allowed)
+  }
+  const owned = await deps.passkeys.listForUser(scope.environmentId, self.userId)
+  const challenge = await Passkeys.issueChallenge(deps, scope, self, 'step_up')
+  return Passkeys.requestOptions(rp, challenge, owned)
+}
+
+/**
  * Prove a factor again for the signed-in user's current session (a step-up), and return an
  * access token that says so (`auth_time` now, the method added to `amr`).
  *
@@ -846,6 +942,10 @@ export async function prepareStepUp(
  *   enough for everything the second factor protects.
  * - A user **without** one uses their `password`, or an `email_code` this session asked for
  *   with {@link prepareStepUp} (recorded as `email` in `amr`, like the email first factor).
+ * - A user with a **passkey** may always use it (`passkey`, after
+ *   {@link prepareStepUpPasskey}): it is recorded as `hwk` or `swk`, `user` and `mfa`, since
+ *   it is possession and a verified user in one step. A wrong assertion is the generic
+ *   `auth.invalid_credentials`.
  * - A user with neither a password nor a verified address has no step-up:
  *   `auth.step_up_required` with no methods (they sign in again).
  *
@@ -859,7 +959,8 @@ export async function prepareStepUp(
  * @param scope - The project and environment.
  * @param self - The signed-in user and their session, from the access token.
  * @param proof - The method and its proof.
- * @param origin - Where the request came from, for the audit log.
+ * @param origin - Where the request came from, for the audit log; and, for a passkey, the
+ *   request's `Origin` header, which the assertion is verified against.
  * @returns The session id and a fresh access token. The refresh token is untouched.
  * @throws AuthError `auth.step_up_required` (a method this user may not use),
  *   `auth.invalid_credentials` (wrong password), `mfa.invalid_code`, `session.revoked`, or for
@@ -872,7 +973,7 @@ export async function stepUp(
   scope: Scope,
   self: { userId: string; sessionId: string },
   proof: StepUpRequest,
-  origin: Partial<Origin> = {}
+  origin: Partial<Origin> & { origin?: string | null } = {}
 ): Promise<SessionTokens> {
   const { userId } = self
   const actor: Actor = { type: 'user', id: userId, ...cleanOrigin(origin) }
@@ -917,6 +1018,25 @@ export async function stepUp(
     return Sessions.recordAuthentication(deps, scope, self, ['pwd'], actor)
   }
   const lockKey = await countGuess(deps, scope, userId)
+  if (proof.method === 'passkey') {
+    // The relying party first: passkeys switched off, or a foreign origin, uses up nothing.
+    const rp = await Passkeys.relyingParty(deps, scope, origin.origin)
+    const challenge = await Passkeys.takeChallenge(deps, scope, self, 'step_up')
+    const asserted = challenge
+      ? await Passkeys.assert(deps, scope, {
+          credential: proof.credential,
+          challenge,
+          rp,
+          userId,
+          actor,
+        })
+      : null
+    if (!asserted) {
+      throw new AuthError('auth.invalid_credentials')
+    }
+    await deps.lockout.clear(lockKey)
+    return Sessions.recordAuthentication(deps, scope, self, [...asserted.methods, 'mfa'], actor)
+  }
   const proven =
     proof.method === 'totp'
       ? await verifyTotp(deps, scope, userId, proof.code)
