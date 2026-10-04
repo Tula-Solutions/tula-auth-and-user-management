@@ -22,6 +22,9 @@ const USER = '00000000-0000-7000-8000-0000000000a1'
 const actor: Actor = { type: 'user', id: USER, ipAddress: '203.0.113.7', userAgent: 'tests/1.0' }
 let deps: TestDeps
 
+/** The verifiers as the module registered them, before any test put another in their place. */
+const REAL_VERIFIERS = { ...Factors.SECOND_FACTOR_VERIFIERS }
+
 beforeEach(async () => {
   deps = createTestDeps()
   await deps.users.create({
@@ -286,8 +289,9 @@ describe('verify', () => {
   describe('with a verifier of another shape registered', () => {
     const registry: Record<string, Factors.SecondFactorVerifier | undefined> =
       Factors.SECOND_FACTOR_VERIFIERS
+    // Put back, never deleted: `passkey` has a real verifier, and the registry outlives this file.
     afterEach(() => {
-      delete registry.passkey
+      registry.passkey = REAL_VERIFIERS.passkey
     })
 
     test('asks the verifier registered for the method, and only that one, with everything it needs', async () => {
@@ -305,5 +309,12 @@ describe('verify', () => {
         [true, tenant, USER, 'forged', actor],
       ])
     })
+  })
+
+  // The registry is one object for the whole process, and Bun runs every test file in one
+  // process, in directory order (which differs between file systems). A verifier left out of it
+  // here fails every passkey second factor in whichever files happen to run afterwards.
+  test('the registry is left as it was found: the real verifiers, the passkey one included', () => {
+    expect({ ...Factors.SECOND_FACTOR_VERIFIERS }).toEqual(REAL_VERIFIERS)
   })
 })
