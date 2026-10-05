@@ -72,6 +72,18 @@ isolated Compose project (`docker compose -p tula-verify`, its own ports, a fres
   failed before the fix, 33 passed after (1 skipped: the screenshots). Regression tests:
   `packages/nextjs/src/middleware.test.ts`, "where a Request built from a Request keeps only
   its URL". Next.js 16 was not affected.
+- **The dashboard's 30-second test timeout never applied.** `apps/dashboard/bunfig.toml` set
+  `timeout = 30000` under `[test]`, and the standards described it as the one package allowed
+  a longer timeout. Bun 1.4.2 does not read that key: in a scratch directory a six-second test
+  under it failed with "timed out after 5000ms", and passed with `bun test --timeout 30000`.
+  So the package's tests always ran on the five-second default, and CI failed three tests of
+  `src/environment-switch.test.tsx` at 5000 ms. The 30 seconds are now `--timeout 30000` in the
+  package's `test` and `test:coverage` scripts and the key is gone; a harness test
+  (`.claude/hooks/hooks.test.ts`) fails for any `bunfig.toml` that sets one and for a
+  dashboard script without the flag. Seen afterwards: `bun run test:coverage` there, 142
+  passed, and a `findByText` for text that is never rendered failed after 10 s with Testing
+  Library's "Unable to find an element", where a bare `bun test` still says "timed out after
+  5000ms". No other package had the key.
 
 ### Found, not fixed
 

@@ -8,8 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit -p .",
-    "test": "bun test",
-    "test:coverage": "bun test --coverage",
+    "test": "bun test --timeout 30000",
+    "test:coverage": "bun test --timeout 30000 --coverage",
     "generate": "bun run scripts/generate.ts",
     "generate:check": "bun run scripts/generate.ts --check"
   },

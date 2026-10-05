@@ -128,6 +128,35 @@ describe('workspace packages', () => {
     }
     expect(await Bun.file(bunfigPath).text()).toMatch(/coverageThreshold\s*=/)
   })
+
+  // Bun 1.4.2 does not read a per-test timeout from bunfig.toml: with `[test] timeout = 30000`
+  // a six-second test still fails with "timed out after 5000ms", and passes with
+  // `bun test --timeout 30000`. The key reads as if it worked, which is how apps/dashboard ran
+  // on the default for months. A timeout belongs on the command line of the package's scripts.
+  const bunfigs = [...new Bun.Glob('**/bunfig.toml').scanSync({ cwd: root, dot: true })].filter(
+    (path) => !path.split('/').includes('node_modules')
+  )
+
+  test('the bunfig.toml files are found', () => {
+    expect(bunfigs).toContain('apps/dashboard/bunfig.toml')
+  })
+
+  test.each(bunfigs)('%s sets no [test] timeout, which Bun ignores', async (path) => {
+    const config = Bun.TOML.parse(await Bun.file(join(root, path)).text()) as {
+      test?: { timeout?: unknown }
+    }
+    expect(config.test?.timeout).toBeUndefined()
+  })
+
+  // The one package whose tests may run longer than Bun's five seconds (AGENTS.md, "Testing"):
+  // its `waitFor` waits ten, and a query that gives up must fail with its own message.
+  test.each(['test', 'test:coverage'])(
+    'apps/dashboard passes its 30 s timeout on the command line of `%s`',
+    async (script) => {
+      const pkg = await Bun.file(join(root, 'apps/dashboard/package.json')).json()
+      expect(pkg.scripts[script]).toMatch(/^bun test (.* )?--timeout 30000( |$)/)
+    }
+  )
 })
 
 describe('protect-files.sh edge paths (F14)', () => {
