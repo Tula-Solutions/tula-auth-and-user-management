@@ -386,7 +386,8 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   Never build a `Request` from another `Request` in this package: the Edge runtime of
   Next.js 15 keeps only the URL of the one it is given, so a copied `POST` reaches the API as
   a bare `GET` (`middleware.test.ts` runs the refresh and the stateful check under such a
-  `Request`).
+  `Request`). `package.test.ts` lists every `new Request(` of the sources with its first
+  argument: a new one is added there on purpose, after checking it is a string or a `URL`.
 - **The middleware imports no Node API** (it runs in the Edge runtime on Next.js 15), and the
   client entry (`src/index.ts`, `src/provider.tsx`) imports nothing that reads the server
   configuration: `package.test.ts` builds the package and checks both, and that the client
