@@ -1,9 +1,8 @@
 [test]
 # A DOM for component tests: registers happy-dom's globals before any test file loads.
 preload = ["./src/testing/setup.ts"]
-# Above the 10 s that a `findBy*` or `waitFor` waits (src/testing/setup.ts): a missing element
-# then fails with the query's own message, not with Bun's "timed out".
-timeout = 30000
+# No `timeout` here: Bun does not read a per-test timeout from bunfig.toml. The package's 30 s
+# is `--timeout 30000` in the `test` and `test:coverage` scripts of package.json (README, "Tests").
 coverageSkipTestFiles = true
 coverageThreshold = { lines = 0.8, functions = 0.8 }
 # Generated code (Orval's hooks, the route tree) and shadcn's primitives are not this

@@ -969,10 +969,15 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   hook) that starts more than two processes also gets an explicit per-test timeout sized to
   them, with a comment: each `bun` start can take a second on a slow runner, and Bun's default
   is five. Never raise the timeout of a test that spawns nothing, with one exception:
-  `apps/dashboard/bunfig.toml` sets 30 seconds for the whole package, because its component
-  tests render the whole app in happy-dom and wait up to 10 seconds in `findBy*` / `waitFor`
-  (`src/testing/setup.ts`); on a slow runner Bun's default would end a test before the query
-  could fail with its own message. Do not copy that setting to another package.
+  `apps/dashboard` runs its tests with 30 seconds for the whole package (`--timeout 30000` in
+  its `test` and `test:coverage` scripts), because its component tests render the whole app in
+  happy-dom and wait up to 10 seconds in `findBy*` / `waitFor` (`src/testing/setup.ts`); on a
+  slow runner Bun's default would end a test before the query could fail with its own message.
+  Do not copy that setting to another package. The setting is a flag and not a `bunfig.toml`
+  key because Bun ignores `timeout` under `[test]` (seen on 1.4.2: the tests ran on the
+  five-second default); `bun run test:harness` fails for a `bunfig.toml` that sets one and for
+  a dashboard script without the flag. Run that package's tests through its scripts: a bare
+  `bun test` in `apps/dashboard` has the default.
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
 - Route tests call `createApp(createTestDeps()).request(...)`.

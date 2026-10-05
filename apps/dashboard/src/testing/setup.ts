@@ -17,8 +17,9 @@ const { cleanup, configure } = await import('@testing-library/react')
 // the machine gets to it. Testing Library's default of one second is a guess at how long that
 // work takes, and a loaded CI runner, on the first render of the whole app in the process,
 // takes longer. The bound only decides how long a test that is really broken takes to say so;
-// it stays below the per-test timeout in bunfig.toml so that the failure is the query's own
-// message and not "timed out".
+// it stays below the per-test timeout (`--timeout 30000` in the package's test scripts; Bun
+// reads none from bunfig.toml) so that the failure is the query's own message and not
+// "timed out".
 configure({ asyncUtilTimeout: 10_000 })
 
 afterEach(() => {
