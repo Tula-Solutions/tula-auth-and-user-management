@@ -1,6 +1,6 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { timingSafeEqual } from '~/lib/crypto'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   FactorConfirmation,
   FactorRecord,
@@ -72,7 +72,7 @@ export class MemoryFactorStore implements FactorStore {
     factor.expiresAt = null
     factor.lastUsedStep = confirmation.step
     this.#setCodes(environmentId, factor.userId, confirmation.backupCodes)
-    this.#activityLog.record(confirmation.activity ? [confirmation.activity] : [])
+    this.#activityLog.record(recordedOf([confirmation.activity]))
     return true
   }
 
@@ -96,9 +96,10 @@ export class MemoryFactorStore implements FactorStore {
   async removeForUser(
     environmentId: string,
     userId: string,
-    activity?: Activity,
+    recorded: Recorded,
     onlyFactorId?: string
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     const factor = this.#factor(environmentId, userId)
     if (onlyFactorId !== undefined && factor?.id !== onlyFactorId) {
       return false
@@ -119,8 +120,9 @@ export class MemoryFactorStore implements FactorStore {
     _scope: { projectId: string },
     codes: readonly NewBackupCode[],
     _at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     if (!this.#factor(environmentId, userId)?.confirmedAt) {
       return false
     }
@@ -135,8 +137,9 @@ export class MemoryFactorStore implements FactorStore {
     userId: string,
     codeHash: string,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<number | null> {
+    const activity = activityOf(recorded)
     const code = this.#codes.find(
       (candidate) =>
         candidate.environmentId === environmentId &&

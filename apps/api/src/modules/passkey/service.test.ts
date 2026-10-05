@@ -7,6 +7,7 @@ import {
 } from '@tula/contract'
 import { AuthError, NotFoundError } from '~/exceptions'
 import * as WebAuthn from '~/lib/webauthn'
+import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passkeys from '~/modules/passkey/service'
 import type { PasskeyRecord } from '~/ports/passkey-store'
@@ -39,19 +40,22 @@ function configure(overrides: Partial<EnvironmentSettings> = {}) {
 }
 
 async function addUser(id = USER, email = 'maya@northline.app') {
-  await deps.users.create({
-    id,
-    ...tenant,
-    email,
-    emailNormalized: email,
-    emailVerifiedAt: deps.clock.now(),
-    firstName: 'Maya',
-    lastName: 'Okafor',
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: null,
-  })
+  await deps.users.create(
+    {
+      id,
+      ...tenant,
+      email,
+      emailNormalized: email,
+      emailVerifiedAt: deps.clock.now(),
+      firstName: 'Maya',
+      lastName: 'Okafor',
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: null,
+    },
+    Audit.none('fixture')
+  )
 }
 
 async function codeOf(run: Promise<unknown>): Promise<string> {

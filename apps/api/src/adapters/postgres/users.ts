@@ -16,7 +16,7 @@ import {
 } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   IdentityRecord,
   LinkGuard,
@@ -126,7 +126,8 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async create(user: NewUser, activity?: Activity): Promise<boolean> {
+  async create(user: NewUser, recorded: Recorded): Promise<boolean> {
+    const activity = activityOf(recorded)
     const { identityId, credentialId, passwordHash, oauthIdentity, ...record } = user
     const scope = { projectId: user.projectId, environmentId: user.environmentId }
     const stamps = { createdAt: user.createdAt, updatedAt: user.createdAt }
@@ -226,9 +227,10 @@ export class PostgresUserRepository implements UserRepository {
 
   async linkIdentity(
     identity: NewIdentity,
-    activity?: Activity,
+    recorded: Recorded,
     guard?: LinkGuard
   ): Promise<LinkOutcome> {
+    const activity = activityOf(recorded)
     const { environmentId, userId } = identity
     try {
       return await withTenant(this.db, environmentId, async (tx) => {
@@ -275,8 +277,9 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     identityId: string,
     allowed: (remaining: SignInMeans) => boolean,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<UnlinkOutcome> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       // Locked, so two removals for one user run one after the other: the second sees what the
       // first left.
@@ -337,8 +340,9 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     passwordHash: string,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<PasswordOutcome | null> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       // The row lock keeps the user from being deleted between this read and the write below,
       // which needs their project for a new credential row.
@@ -417,9 +421,11 @@ export class PostgresUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     at: Date,
-    activity?: Activity,
-    removePassword?: { activity?: Activity }
+    recorded: Recorded,
+    removePassword?: { activity: Recorded }
   ): Promise<{ passwordRemoved: boolean }> {
+    const activity = activityOf(recorded)
+    const removal = removePassword && activityOf(removePassword.activity)
     return withTenant(this.db, environmentId, async (tx) => {
       // The guarded UPDATE is the arbiter: of two concurrent verifications one changes the row,
       // and only that one may remove the password.
@@ -452,7 +458,7 @@ export class PostgresUserRepository implements UserRepository {
       const passwordRemoved = removed.length > 0
       await recordActivity(tx, [
         ...(activity ? [activity] : []),
-        ...(passwordRemoved && removePassword?.activity ? [removePassword.activity] : []),
+        ...(passwordRemoved && removal ? [removal] : []),
       ])
       return { passwordRemoved }
     })
@@ -504,8 +510,9 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     bannedAt: Date | null,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
     const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
     return withTenant(this.db, environmentId, async (tx) => {
       // Guarded so only a real change writes: banning an already-banned user keeps the original
@@ -525,7 +532,8 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string, activity?: Activity): Promise<boolean> {
+  async delete(environmentId: string, userId: string, recorded: Recorded): Promise<boolean> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       const rows = await tx
         .delete(users)

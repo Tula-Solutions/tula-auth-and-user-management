@@ -3,6 +3,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { describePasskeyStore } from '~/adapters/passkey-store.suite'
+import * as Audit from '~/modules/audit/service'
 
 const PROJECT = '00000000-0000-7000-8000-00000000a001'
 const ENVIRONMENT = '00000000-0000-7000-8000-00000000e001'
@@ -15,20 +16,23 @@ describePasskeyStore('MemoryPasskeyStore', async () => {
     environmentId,
     user: async () => {
       const id = Bun.randomUUIDv7()
-      await users.create({
-        id,
-        projectId: PROJECT,
-        environmentId,
-        email: `${id}@northline.app`,
-        emailNormalized: `${id}@northline.app`,
-        emailVerifiedAt: null,
-        firstName: null,
-        lastName: null,
-        createdAt: new Date(0),
-        identityId: Bun.randomUUIDv7(),
-        credentialId: Bun.randomUUIDv7(),
-        passwordHash: null,
-      })
+      await users.create(
+        {
+          id,
+          projectId: PROJECT,
+          environmentId,
+          email: `${id}@northline.app`,
+          emailNormalized: `${id}@northline.app`,
+          emailVerifiedAt: null,
+          firstName: null,
+          lastName: null,
+          createdAt: new Date(0),
+          identityId: Bun.randomUUIDv7(),
+          credentialId: Bun.randomUUIDv7(),
+          passwordHash: null,
+        },
+        Audit.none('fixture')
+      )
       return id
     },
   })
@@ -62,13 +66,19 @@ test('a store built without users treats a removal as leaving nothing but passke
   const store = new MemoryPasskeyStore()
   const userId = Bun.randomUUIDv7()
   const passkey = record(userId)
-  await store.create(passkey, 10)
+  await store.create(passkey, 10, Audit.none('fixture'))
   let seen: unknown
   expect(
-    await store.remove(ENVIRONMENT, userId, passkey.id, (remaining) => {
-      seen = remaining
-      return true
-    })
+    await store.remove(
+      ENVIRONMENT,
+      userId,
+      passkey.id,
+      (remaining) => {
+        seen = remaining
+        return true
+      },
+      Audit.none('fixture')
+    )
   ).toBe('removed')
   expect(seen).toEqual({ hasPassword: false, emailVerified: false, providers: [], passkeys: 0 })
 })
@@ -77,7 +87,7 @@ test('a record read from the store is a copy: changing it changes nothing stored
   const store = new MemoryPasskeyStore()
   const userId = Bun.randomUUIDv7()
   const passkey = record(userId)
-  await store.create(passkey, 10)
+  await store.create(passkey, 10, Audit.none('fixture'))
   const [read] = await store.listForUser(ENVIRONMENT, userId)
   if (read) {
     read.publicKey[0] = 99
@@ -91,20 +101,23 @@ test('the users repository counts passkeys once the store is attached to it', as
   const log = new MemoryActivityLog()
   const users = new MemoryUserRepository(log)
   const userId = Bun.randomUUIDv7()
-  await users.create({
-    id: userId,
-    projectId: PROJECT,
-    environmentId: ENVIRONMENT,
-    email: 'maya@northline.app',
-    emailNormalized: 'maya@northline.app',
-    emailVerifiedAt: new Date(0),
-    firstName: null,
-    lastName: null,
-    createdAt: new Date(0),
-    identityId: Bun.randomUUIDv7(),
-    credentialId: Bun.randomUUIDv7(),
-    passwordHash: null,
-  })
+  await users.create(
+    {
+      id: userId,
+      projectId: PROJECT,
+      environmentId: ENVIRONMENT,
+      email: 'maya@northline.app',
+      emailNormalized: 'maya@northline.app',
+      emailVerifiedAt: new Date(0),
+      firstName: null,
+      lastName: null,
+      createdAt: new Date(0),
+      identityId: Bun.randomUUIDv7(),
+      credentialId: Bun.randomUUIDv7(),
+      passwordHash: null,
+    },
+    Audit.none('fixture')
+  )
   expect(users.signInMeans(ENVIRONMENT, userId)).toEqual({
     hasPassword: false,
     emailVerified: true,
@@ -112,7 +125,7 @@ test('the users repository counts passkeys once the store is attached to it', as
     passkeys: 0,
   })
   const store = new MemoryPasskeyStore(log, users)
-  await store.create(record(userId), 10)
+  await store.create(record(userId), 10, Audit.none('fixture'))
   expect(users.signInMeans(ENVIRONMENT, userId)?.passkeys).toBe(1)
   expect(users.signInMeans(ENVIRONMENT, Bun.randomUUIDv7())).toBeNull()
 })

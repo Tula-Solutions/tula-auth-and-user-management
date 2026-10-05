@@ -25,6 +25,55 @@ export interface Activity {
 }
 
 /**
+ * Why a write is deliberately left out of the audit log. A closed list: a new reason is a
+ * decision, made here and in ADR 0012, not at a call site.
+ *
+ * - `fixture`: the row stands for something that happened elsewhere (a test's or a
+ *   development fixture's seed data). Never passed by the server's own code: a harness test
+ *   (`ports/activity-log.test.ts`) refuses `Audit.none(` anywhere under `apps/api/src`
+ *   outside tests and test support.
+ */
+export type UnrecordedReason = 'fixture'
+
+/**
+ * The value a caller passes **instead of** an {@link Activity} to say, visibly, that a write
+ * is not recorded. Built only by `Audit.none(reason)`.
+ */
+export interface Unrecorded {
+  readonly unrecorded: UnrecordedReason
+}
+
+/**
+ * What every store method that changes who can do what takes with its write: the
+ * {@link Activity} that records it, or an explicit {@link Unrecorded}. It is never optional, so
+ * a call that forgets the audit entry does not compile.
+ *
+ * The writes ADR 0012 lists as never recorded take neither: they are methods of their own
+ * (`upgradePasswordHash`, the signing-key store's `insert`).
+ */
+export type Recorded = Activity | Unrecorded
+
+/**
+ * The activity a store has to write for a call, if any.
+ *
+ * @param recorded - What the caller passed.
+ * @returns The activity, or `undefined` for an explicit {@link Unrecorded}.
+ */
+export function activityOf(recorded: Recorded): Activity | undefined {
+  return 'unrecorded' in recorded ? undefined : recorded
+}
+
+/**
+ * The activities a store has to write for several changes of one call.
+ *
+ * @param recorded - What the caller passed for each change.
+ * @returns The activities among them, in order.
+ */
+export function recordedOf(recorded: readonly Recorded[]): Activity[] {
+  return recorded.flatMap((one) => activityOf(one) ?? [])
+}
+
+/**
  * An audit log entry as read back. Looser than {@link Activity}: the log may hold actions and
  * targets recorded by another version of the server.
  */

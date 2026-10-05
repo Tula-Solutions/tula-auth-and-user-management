@@ -1,6 +1,6 @@
 import type { OAuthProvider } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded } from '~/ports/activity-log'
 import type { OAuthProviderRecord, OAuthProviderStore } from '~/ports/oauth-provider-store'
 
 /** In-memory OAuth provider credentials for tests. Mirrors the Postgres store's unique key. */
@@ -26,7 +26,8 @@ export class MemoryOAuthProviderStore implements OAuthProviderStore {
     return record ? structuredClone(record) : null
   }
 
-  async upsert(record: OAuthProviderRecord, activity?: Activity): Promise<OAuthProviderRecord> {
+  async upsert(record: OAuthProviderRecord, recorded: Recorded): Promise<OAuthProviderRecord> {
+    const activity = activityOf(recorded)
     const key = `${record.environmentId}:${record.provider}`
     const existing = this.#records.get(key)
     const stored = structuredClone({
@@ -42,8 +43,9 @@ export class MemoryOAuthProviderStore implements OAuthProviderStore {
   async delete(
     environmentId: string,
     provider: OAuthProvider,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     const deleted = this.#records.delete(`${environmentId}:${provider}`)
     this.#activityLog.record(deleted && activity ? [activity] : [])
     return deleted

@@ -583,6 +583,12 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   `adapters/oauth/` (`arctic` + `jose`). An adapter returns a profile and nothing else: no
   provider token leaves it or is stored. Unit tests use `FakeOAuthProvider`
   (`createTestDeps().oauth.google.profile = …`).
+- **A provider's code is bound to the attempt.** Google and GitHub send PKCE (the S256
+  challenge of the attempt's `codeVerifier` on the authorization URL, the verifier on the
+  token request); Google and Apple check the attempt's `nonce` in the ID token. Apple
+  documents no PKCE and is sent none. The callback refuses an attempt with no verifier before
+  it reaches an adapter, and the mock provider checks the verifier for every provider. A new
+  provider sends PKCE unless its documentation rules it out, and the ADR says which.
 - **The mock provider** (`OAUTH_MOCK_PROVIDER=true`) serves every provider from the API
   itself, with a consent page at `/v1/dev/oauth/authorize`. It needs `ENVIRONMENT=local`
   **and** a loopback `PUBLIC_URL` (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`): `env.ts`
@@ -915,6 +921,14 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   records the **keys** that changed (`data.changed`), never their values. The only unrecorded
   writes are a password-hash upgrade after sign-in and an environment's first signing keys
   (ADR 0012).
+- **The activity is a required parameter, in the ports and in both adapters** (`Recorded` in
+  `~/ports/activity-log`): a call that leaves it out does not compile. Never make one
+  optional, give one a default or accept `undefined`. A write that is never recorded is a
+  method of its own that takes none (`upgradePasswordHash`, the signing-key store's
+  `insert`), added together with a line in ADR 0012. `Audit.none('fixture')` is the explicit
+  "not recorded" for seed data in tests and in `e2e/server.ts`; its reasons are a closed
+  list, and `ports/activity-log.test.ts` fails if the server's own code calls it. That file
+  also holds the `@ts-expect-error` line of every such method: a new one gets a line there.
 - Operator-supplied text that reaches an email (the app name) is untrusted input: it goes
   through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
   subject or HTML. A user agent never reaches an email at all: only the family

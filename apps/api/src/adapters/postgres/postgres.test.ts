@@ -11,6 +11,7 @@ import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { databaseProbe } from '~/adapters/postgres/health'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
+import * as Audit from '~/modules/audit/service'
 import { RETIRED_KEY_RETENTION_MS } from '~/ports/signing-key-store'
 
 // PGlite is real Postgres (WASM) with every migration applied, connected as the runtime role, so
@@ -74,7 +75,7 @@ describe('PostgresApiKeyRepository', () => {
 
   test('inserts and finds a key by hash without returning the hash', async () => {
     const input = newKey(a, now)
-    const stored = await repo().insert(input)
+    const stored = await repo().insert(input, Audit.none('fixture'))
     const { keyHash: _hash, ...expected } = input
     expect(stored).toEqual({ ...expected, lastUsedAt: null, revokedAt: null })
     expect(await repo().findByHash(input.keyHash)).toEqual(stored)
@@ -83,15 +84,20 @@ describe('PostgresApiKeyRepository', () => {
 
   test('rejects a duplicate hash', async () => {
     const input = newKey(a, now)
-    await repo().insert(input)
-    await expect(repo().insert({ ...input, id: Bun.randomUUIDv7() })).rejects.toThrow()
+    await repo().insert(input, Audit.none('fixture'))
+    await expect(
+      repo().insert({ ...input, id: Bun.randomUUIDv7() }, Audit.none('fixture'))
+    ).rejects.toThrow()
   })
 
   test('lists only the given environment, newest first', async () => {
     const tenant = await createTestTenant(testDb.db)
-    const older = await repo().insert(newKey(tenant, now))
-    const newer = await repo().insert(newKey(tenant, new Date(now.getTime() + 1000)))
-    await repo().insert(newKey(b, new Date(now.getTime() + 2000)))
+    const older = await repo().insert(newKey(tenant, now), Audit.none('fixture'))
+    const newer = await repo().insert(
+      newKey(tenant, new Date(now.getTime() + 1000)),
+      Audit.none('fixture')
+    )
+    await repo().insert(newKey(b, new Date(now.getTime() + 2000)), Audit.none('fixture'))
     expect((await repo().listByEnvironment(tenant.environmentId)).map((key) => key.id)).toEqual([
       newer.id,
       older.id,
@@ -99,31 +105,41 @@ describe('PostgresApiKeyRepository', () => {
   })
 
   test('revokes only inside the given environment, keeping the first revocation time', async () => {
-    const key = await repo().insert(newKey(a, now))
-    expect(await repo().revoke(b.environmentId, key.id, now)).toBeNull()
+    const key = await repo().insert(newKey(a, now), Audit.none('fixture'))
+    expect(await repo().revoke(b.environmentId, key.id, now, Audit.none('fixture'))).toBeNull()
     expect((await repo().findByHash(newKey(a, now).keyHash))?.revokedAt ?? null).toBeNull()
 
-    const first = await repo().revoke(a.environmentId, key.id, now)
+    const first = await repo().revoke(a.environmentId, key.id, now, Audit.none('fixture'))
     expect(first?.revokedAt).toEqual(now)
-    const again = await repo().revoke(a.environmentId, key.id, new Date(now.getTime() + 5000))
+    const again = await repo().revoke(
+      a.environmentId,
+      key.id,
+      new Date(now.getTime() + 5000),
+      Audit.none('fixture')
+    )
     expect(again?.revokedAt).toEqual(now)
-    expect(await repo().revoke(a.environmentId, Bun.randomUUIDv7(), now)).toBeNull()
+    expect(
+      await repo().revoke(a.environmentId, Bun.randomUUIDv7(), now, Audit.none('fixture'))
+    ).toBeNull()
   })
 })
 
 describe('PostgresApiKeyRepository.touch', () => {
   test('records the last use time', async () => {
     const repo = new PostgresApiKeyRepository(testDb.db)
-    const key = await repo.insert({
-      id: Bun.randomUUIDv7(),
-      kind: 'publishable',
-      name: 'touched',
-      projectId: a.projectId,
-      environmentId: a.environmentId,
-      lastFour: 'abcd',
-      createdAt: now,
-      keyHash: 'e'.repeat(64),
-    })
+    const key = await repo.insert(
+      {
+        id: Bun.randomUUIDv7(),
+        kind: 'publishable',
+        name: 'touched',
+        projectId: a.projectId,
+        environmentId: a.environmentId,
+        lastFour: 'abcd',
+        createdAt: now,
+        keyHash: 'e'.repeat(64),
+      },
+      Audit.none('fixture')
+    )
     const used = new Date(now.getTime() + 60_000)
     await repo.touch(key.id, used)
     expect((await repo.findByHash('e'.repeat(64)))?.lastUsedAt).toEqual(used)
@@ -228,7 +244,7 @@ describe('PostgresSigningKeyStore writes', () => {
     await store().insert(tenant.environmentId, [active, next])
     const at = new Date(now.getTime() + 60_000)
     const plan = { retireId: active.id, activateId: next.id, next: newKey(tenant, 'next', at) }
-    expect(await store().rotate(tenant.environmentId, plan, at)).toBe(true)
+    expect(await store().rotate(tenant.environmentId, plan, at, Audit.none('fixture'))).toBe(true)
     const after = await store().list(tenant.environmentId)
     expect(after.map((key) => [key.id, key.status])).toEqual([
       [plan.next.id, 'next'],
@@ -240,7 +256,7 @@ describe('PostgresSigningKeyStore writes', () => {
 
     // Replaying the same plan (a concurrent rotation that lost) changes nothing.
     const stale = { ...plan, next: newKey(tenant, 'next', at) }
-    expect(await store().rotate(tenant.environmentId, stale, at)).toBe(false)
+    expect(await store().rotate(tenant.environmentId, stale, at, Audit.none('fixture'))).toBe(false)
     expect((await store().list(tenant.environmentId)).length).toBe(3)
   })
 
@@ -255,7 +271,9 @@ describe('PostgresSigningKeyStore writes', () => {
     )
     // The next slot is empty, so only the status guards stop this replay.
     const stale = { retireId: retired.id, activateId: active.id, next: newKey(tenant, 'next') }
-    expect(await store().rotate(tenant.environmentId, stale, now)).toBe(false)
+    expect(await store().rotate(tenant.environmentId, stale, now, Audit.none('fixture'))).toBe(
+      false
+    )
     const after = await store().list(tenant.environmentId)
     expect(after.find((key) => key.id === retired.id)?.retiredAt).toEqual(retiredAt)
     expect(after.map((key) => key.status).sort()).toEqual(['active', 'retired'])
@@ -268,7 +286,7 @@ describe('PostgresSigningKeyStore writes', () => {
     const next = newKey(theirs, 'next')
     await store().insert(theirs.environmentId, [active, next])
     const plan = { retireId: active.id, activateId: next.id, next: newKey(mine, 'next') }
-    expect(await store().rotate(mine.environmentId, plan, now)).toBe(false)
+    expect(await store().rotate(mine.environmentId, plan, now, Audit.none('fixture'))).toBe(false)
     expect((await store().list(theirs.environmentId)).map((key) => key.status).sort()).toEqual([
       'active',
       'next',

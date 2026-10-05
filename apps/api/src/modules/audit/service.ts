@@ -8,7 +8,7 @@ import {
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type Actor, cleanOrigin } from '~/lib/actor'
-import type { Activity, AuditEntry } from '~/ports/activity-log'
+import type { Activity, AuditEntry, Unrecorded, UnrecordedReason } from '~/ports/activity-log'
 
 /** What happened, to build an {@link Activity} from. */
 export interface EntryInput {
@@ -54,6 +54,26 @@ export function entry(
     data: input.data ?? {},
     occurredAt: deps.clock.now(),
   }
+}
+
+/**
+ * Say, where a store method wants an activity, that this write is deliberately not recorded.
+ *
+ * Every store method that changes who can do what requires an activity; this is the one way
+ * to pass none, and it shows at the call site with its reason. The reasons are a closed list
+ * (`UnrecordedReason`, ADR 0012), and the server's own code has none: a harness test fails if
+ * this is called outside tests and test support.
+ *
+ * @param reason - Why the write is not recorded.
+ * @returns The value to pass in place of the activity.
+ *
+ * @example
+ * ```ts
+ * await deps.users.create(user, Audit.none('fixture'))
+ * ```
+ */
+export function none(reason: UnrecordedReason): Unrecorded {
+  return { unrecorded: reason }
 }
 
 function toAuditLog(record: AuditEntry): AuditLog {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { ActivityType, AuditTargetType } from '@tula/contract'
 import { sha256Hex } from '~/lib/crypto'
+import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
 import type { SessionStore } from '~/ports/session-store'
@@ -98,7 +99,7 @@ export function describeActivityLog(
 
     async function seedUser(tenant: ActivitySuiteTenant): Promise<string> {
       const user = newUser(tenant)
-      await ctx.users.create(user)
+      await ctx.users.create(user, Audit.none('fixture'))
       return user.id
     }
 
@@ -126,7 +127,7 @@ export function describeActivityLog(
           expiresAt: later(86_400_000),
           createdAt: now,
         },
-        record
+        record ?? Audit.none('fixture')
       )
       return id
     }
@@ -171,7 +172,13 @@ export function describeActivityLog(
     test('a write without an activity records nothing', async () => {
       const userId = await seedUser(ctx.a)
       const sessionId = await seedSession(ctx.a, userId)
-      await ctx.sessions.revoke(ctx.a.environmentId, sessionId, 'sign_out', later(1))
+      await ctx.sessions.revoke(
+        ctx.a.environmentId,
+        sessionId,
+        'sign_out',
+        later(1),
+        Audit.none('fixture')
+      )
       expect(await recorded(ctx.a, userId)).toEqual([])
       expect(await recorded(ctx.a, sessionId)).toEqual([])
     })
@@ -206,7 +213,13 @@ export function describeActivityLog(
       const kept = await seedSession(ctx.a, userId)
       const ended = [await seedSession(ctx.a, userId), await seedSession(ctx.a, userId)]
       const already = await seedSession(ctx.a, userId)
-      await ctx.sessions.revoke(ctx.a.environmentId, already, 'sign_out', now)
+      await ctx.sessions.revoke(
+        ctx.a.environmentId,
+        already,
+        'sign_out',
+        now,
+        Audit.none('fixture')
+      )
 
       const revoked = await ctx.sessions.revokeByUser(
         ctx.a.environmentId,
@@ -240,7 +253,7 @@ export function describeActivityLog(
 
     test('a first password is recorded as created; a replacement is not', async () => {
       const user = { ...newUser(ctx.a), passwordHash: null }
-      await ctx.users.create(user)
+      await ctx.users.create(user, Audit.none('fixture'))
       const target = { type: 'user' as const, id: user.id }
       const change = () =>
         ctx.users.setPasswordHash(

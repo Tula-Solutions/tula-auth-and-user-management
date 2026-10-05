@@ -1,6 +1,6 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { MemoryUserRepository } from '~/adapters/memory/users'
-import type { Activity } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   PasskeyChallengePurpose,
   PasskeyChallengeRecord,
@@ -53,8 +53,9 @@ export class MemoryPasskeyStore implements PasskeyStore {
   async create(
     passkey: PasskeyRecord,
     limit: number,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<PasskeyCreateOutcome> {
+    const activity = activityOf(recorded)
     if (this.#of(passkey.environmentId, passkey.userId).length >= limit) {
       return 'limit'
     }
@@ -115,8 +116,9 @@ export class MemoryPasskeyStore implements PasskeyStore {
     id: string,
     name: string,
     _at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     const passkey = this.#passkeys.get(id)
     if (!passkey || passkey.environmentId !== environmentId || passkey.userId !== userId) {
       return false
@@ -131,8 +133,9 @@ export class MemoryPasskeyStore implements PasskeyStore {
     userId: string,
     id: string,
     allowed: (remaining: SignInMeans) => boolean,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<PasskeyRemoveOutcome> {
+    const activity = activityOf(recorded)
     const owned = this.#of(environmentId, userId)
     if (!owned.some((passkey) => passkey.id === id)) {
       return 'not_found'
@@ -150,7 +153,8 @@ export class MemoryPasskeyStore implements PasskeyStore {
     return 'removed'
   }
 
-  async removeForUser(environmentId: string, userId: string, activity?: Activity): Promise<number> {
+  async removeForUser(environmentId: string, userId: string, recorded: Recorded): Promise<number> {
+    const activity = activityOf(recorded)
     const owned = this.#of(environmentId, userId)
     for (const passkey of owned) {
       this.#passkeys.delete(passkey.id)

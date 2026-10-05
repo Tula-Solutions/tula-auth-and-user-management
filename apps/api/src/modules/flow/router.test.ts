@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS, FLOW_ATTEMPT_HEADER, type FlowAttempt } from '@tula/contract'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
+import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/router'
 import { ENVIRONMENT_RATE_LIMITS } from '~/modules/flow/service'
@@ -246,24 +247,27 @@ describe('sign-in over HTTP', () => {
   })
 
   test('an unverified user is sent a code and completes through the sign-in routes', async () => {
-    await deps.users.create({
-      id: '00000000-0000-7000-8000-0000000000a1',
-      projectId: TEST_TENANT.projectId,
-      environmentId: TEST_TENANT.environmentId,
-      email: EMAIL,
-      emailNormalized: EMAIL,
-      emailVerifiedAt: null,
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: 'i1',
-      credentialId: 'c1',
-      passwordHash: await Bun.password.hash(PASSWORD, {
-        algorithm: 'argon2id',
-        memoryCost: 65_536,
-        timeCost: 2,
-      }),
-    })
+    await deps.users.create(
+      {
+        id: '00000000-0000-7000-8000-0000000000a1',
+        projectId: TEST_TENANT.projectId,
+        environmentId: TEST_TENANT.environmentId,
+        email: EMAIL,
+        emailNormalized: EMAIL,
+        emailVerifiedAt: null,
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: 'i1',
+        credentialId: 'c1',
+        passwordHash: await Bun.password.hash(PASSWORD, {
+          algorithm: 'argon2id',
+          memoryCost: 65_536,
+          timeCost: 2,
+        }),
+      },
+      Audit.none('fixture')
+    )
     const attempt = await json<FlowAttempt>(
       await post('/sign-ins', { identifier: EMAIL }, { client: 'android' })
     )

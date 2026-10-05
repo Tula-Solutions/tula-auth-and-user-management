@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
 import { createSecretBox } from '~/lib/secret-box'
+import * as Audit from '~/modules/audit/service'
 import * as Instance from '~/modules/instance/service'
 import * as Jwks from '~/modules/jwks/service'
 import * as OAuth from '~/modules/oauth/service'
@@ -144,14 +145,17 @@ describe('Instance.diagnostics', () => {
 
     // The signing keys still open (re-sealed below is not needed: only the provider row is swapped).
     const [record] = await deps.oauthProviders.list(TEST_TENANT.environmentId)
-    await deps.oauthProviders.upsert({
-      ...(record as NonNullable<typeof record>),
-      secret: await createSecretBox('cd'.repeat(32)).seal(
-        OAuth.OAUTH_SECRET_PURPOSE,
-        new TextEncoder().encode('{}'),
-        `${TEST_TENANT.environmentId}:github`
-      ),
-    })
+    await deps.oauthProviders.upsert(
+      {
+        ...(record as NonNullable<typeof record>),
+        secret: await createSecretBox('cd'.repeat(32)).seal(
+          OAuth.OAUTH_SECRET_PURPOSE,
+          new TextEncoder().encode('{}'),
+          `${TEST_TENANT.environmentId}:github`
+        ),
+      },
+      Audit.none('fixture')
+    )
     const broken = await Instance.diagnostics(deps)
     expect(byId(broken.checks, 'master_key').status).toBe('fail')
     expectNoCanary(broken)

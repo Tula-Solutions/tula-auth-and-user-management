@@ -7,6 +7,7 @@ import {
 import type { Tenant } from '~/dependencies'
 import type { Actor } from '~/lib/actor'
 import { base32Decode, totp } from '~/lib/totp'
+import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
@@ -27,20 +28,23 @@ const REAL_VERIFIERS = { ...Factors.SECOND_FACTOR_VERIFIERS }
 
 beforeEach(async () => {
   deps = createTestDeps()
-  await deps.users.create({
-    id: USER,
-    projectId: tenant.projectId,
-    environmentId: tenant.environmentId,
-    email: 'maya@northline.app',
-    emailNormalized: 'maya@northline.app',
-    emailVerifiedAt: deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: null,
-  })
+  await deps.users.create(
+    {
+      id: USER,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: 'maya@northline.app',
+      emailNormalized: 'maya@northline.app',
+      emailVerifiedAt: deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: null,
+    },
+    Audit.none('fixture')
+  )
 })
 
 afterEach(() => Notices.settled())
@@ -132,7 +136,14 @@ describe('requiredFor', () => {
   test('a confirmed authenticator is asked for, with a backup code while one is left', async () => {
     await enrol()
     expect(await Factors.requiredFor(deps, tenant, USER)).toEqual(['totp', 'backup_code'])
-    await deps.factors.replaceBackupCodes(tenant.environmentId, USER, tenant, [], deps.clock.now())
+    await deps.factors.replaceBackupCodes(
+      tenant.environmentId,
+      USER,
+      tenant,
+      [],
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     expect(await Factors.requiredFor(deps, tenant, USER)).toEqual(['totp'])
   })
 

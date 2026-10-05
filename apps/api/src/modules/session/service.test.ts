@@ -11,6 +11,7 @@ import { ServiceException } from '~/exceptions'
 import { MAX_USER_AGENT_LENGTH } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import { verifyAccessToken } from '~/middleware/session-auth'
+import * as Audit from '~/modules/audit/service'
 import * as Sessions from '~/modules/session/service'
 import { authenticatedAt, mergeAuthMethods } from '~/ports/session-store'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
@@ -282,25 +283,34 @@ describe('refresh', () => {
   })
 
   test('a banned user cannot refresh, and the attempt ends their session', async () => {
-    await deps.users.create({
-      id: USER,
-      projectId: tenant.projectId,
-      environmentId: tenant.environmentId,
-      email: 'maya@northline.app',
-      emailNormalized: 'maya@northline.app',
-      emailVerifiedAt: deps.clock.now(),
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: 'i1',
-      credentialId: 'c1',
-      passwordHash: 'hash',
-    })
+    await deps.users.create(
+      {
+        id: USER,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: 'i1',
+        credentialId: 'c1',
+        passwordHash: 'hash',
+      },
+      Audit.none('fixture')
+    )
     const first = await create()
     expect((await refresh(rt(first))).sessionId).toBe(first.sessionId)
 
     const second = await create()
-    await deps.users.setBanned(tenant.environmentId, USER, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      USER,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     const err = await rejection(refresh(rt(second)))
     expect(err.status).toBe(403)
     expect(err.code).toBe('auth.user_banned')
@@ -631,22 +641,31 @@ describe('activity', () => {
   })
 
   test('a banned user’s refresh records the revocation as the system’s', async () => {
-    await deps.users.create({
-      id: USER,
-      projectId: tenant.projectId,
-      environmentId: tenant.environmentId,
-      email: 'maya@northline.app',
-      emailNormalized: 'maya@northline.app',
-      emailVerifiedAt: null,
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: deps.ids.next(),
-      credentialId: deps.ids.next(),
-      passwordHash: 'hash',
-    })
+    await deps.users.create(
+      {
+        id: USER,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: null,
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: 'hash',
+      },
+      Audit.none('fixture')
+    )
     const tokens = await create()
-    await deps.users.setBanned(tenant.environmentId, USER, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      USER,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     expect((await rejection(refresh(rt(tokens)))).code).toBe('auth.user_banned')
     expect(deps.activityLog.ofType('session.revoked')).toMatchObject([
       {

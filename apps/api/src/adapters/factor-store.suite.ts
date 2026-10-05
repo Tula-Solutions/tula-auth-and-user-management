@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { ActivityType } from '@tula/contract'
+import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { FactorStore, NewBackupCode, NewFactor } from '~/ports/factor-store'
 
@@ -102,6 +103,7 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
       const backup = codes(3)
       expect(
         await ctx.store.confirmTotp(tenant.environmentId, factor.id, {
+          activity: Audit.none('fixture'),
           step: 100,
           at: later(1_000),
           backupCodes: backup,
@@ -137,6 +139,7 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
         // The earlier enrolment can no longer be confirmed.
         expect(
           await ctx.store.confirmTotp(ctx.a.environmentId, first.id, {
+            activity: Audit.none('fixture'),
             step: 1,
             at: later(6_000),
             backupCodes: codes(1),
@@ -249,7 +252,8 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
             ctx.a.environmentId,
             userId,
             backup[0]?.codeHash as string,
-            later(3_000)
+            later(3_000),
+            Audit.none('fixture')
           )
         ).toBe(2)
         expect(await recorded(ctx.a, userId)).toEqual([])
@@ -258,6 +262,7 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
       test('an unknown factor id confirms nothing', async () => {
         expect(
           await ctx.store.confirmTotp(ctx.a.environmentId, Bun.randomUUIDv7(), {
+            activity: Audit.none('fixture'),
             step: 1,
             at: now,
             backupCodes: [],
@@ -291,7 +296,8 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
             ctx.a.environmentId,
             userId,
             set[0]?.codeHash as string,
-            later(2_000)
+            later(2_000),
+            Audit.none('fixture')
           )
           expect(spent === null).toBe(index !== winner)
         }
@@ -367,7 +373,8 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
             ctx.a.environmentId,
             userId,
             backup[0]?.codeHash as string,
-            later(5_000)
+            later(5_000),
+            Audit.none('fixture')
           )
         ).toBeNull()
         expect(await recorded(ctx.a, userId)).toEqual(['user.mfa_disabled'])
@@ -403,7 +410,9 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
 
       test('removes a confirmed factor without an activity, recording nothing', async () => {
         const { userId } = await confirmed(ctx.a)
-        expect(await ctx.store.removeForUser(ctx.a.environmentId, userId)).toBe(true)
+        expect(
+          await ctx.store.removeForUser(ctx.a.environmentId, userId, Audit.none('fixture'))
+        ).toBe(true)
         expect(await recorded(ctx.a, userId)).toEqual([])
       })
 
@@ -428,7 +437,7 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
 
       test('after a removal the user can enrol again', async () => {
         const { userId } = await confirmed(ctx.a)
-        await ctx.store.removeForUser(ctx.a.environmentId, userId)
+        await ctx.store.removeForUser(ctx.a.environmentId, userId, Audit.none('fixture'))
         expect(await ctx.store.startTotp(pending(ctx.a, userId))).toBe(true)
       })
     })
@@ -451,7 +460,13 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
         ).toBe(true)
         expect(await ctx.store.countBackupCodes(ctx.a.environmentId, userId)).toBe(10)
         const consume = (codeHash: string) =>
-          ctx.store.consumeBackupCode(ctx.a.environmentId, userId, codeHash, later(6_000))
+          ctx.store.consumeBackupCode(
+            ctx.a.environmentId,
+            userId,
+            codeHash,
+            later(6_000),
+            Audit.none('fixture')
+          )
         for (const old of backup) {
           expect(await consume(old.codeHash)).toBeNull()
         }
@@ -465,7 +480,8 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
           ctx.a.environmentId,
           userId,
           backup[0]?.codeHash as string,
-          later(2_000)
+          later(2_000),
+          Audit.none('fixture')
         )
         expect(
           await ctx.store.replaceBackupCodes(
@@ -473,7 +489,8 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
             userId,
             scope(ctx.a),
             codes(4),
-            later(5_000)
+            later(5_000),
+            Audit.none('fixture')
           )
         ).toBe(true)
         expect(await ctx.store.countBackupCodes(ctx.a.environmentId, userId)).toBe(4)
@@ -556,7 +573,13 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
         expect(await recorded(ctx.a, other.userId)).toEqual([])
         expect(await ctx.store.countBackupCodes(ctx.a.environmentId, other.userId)).toBe(3)
         expect(
-          await ctx.store.consumeBackupCode(ctx.a.environmentId, owner.userId, hash, now)
+          await ctx.store.consumeBackupCode(
+            ctx.a.environmentId,
+            owner.userId,
+            hash,
+            now,
+            Audit.none('fixture')
+          )
         ).toBe(2)
       })
 
@@ -685,7 +708,13 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
         expect(await recorded(tenant, enrolling.userId)).toEqual([])
       }
       expect(
-        await ctx.store.consumeBackupCode(ctx.a.environmentId, userId, hash, later(3_000))
+        await ctx.store.consumeBackupCode(
+          ctx.a.environmentId,
+          userId,
+          hash,
+          later(3_000),
+          Audit.none('fixture')
+        )
       ).toBe(2)
     })
   })

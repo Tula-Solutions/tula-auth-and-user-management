@@ -9,6 +9,7 @@ import {
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { verifyAccessToken } from '~/middleware/session-auth'
+import * as Audit from '~/modules/audit/service'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -591,22 +592,31 @@ describe('a stateful session', () => {
   })
 
   test('a banned user’s session ends when its activity is next written', async () => {
-    await deps.users.create({
-      id: USER,
-      projectId: tenant.projectId,
-      environmentId: tenant.environmentId,
-      email: 'ada@northline.app',
-      emailNormalized: 'ada@northline.app',
-      emailVerifiedAt: deps.clock.now(),
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: 'i1',
-      credentialId: 'c1',
-      passwordHash: 'hash',
-    })
+    await deps.users.create(
+      {
+        id: USER,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'ada@northline.app',
+        emailNormalized: 'ada@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: 'i1',
+        credentialId: 'c1',
+        passwordHash: 'hash',
+      },
+      Audit.none('fixture')
+    )
     const tokens = await create()
-    await deps.users.setBanned(tenant.environmentId, USER, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      USER,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     deps.clock.advance('2m')
     expect(await code(Sessions.authenticate(deps, tenant, st(tokens)))).toBe('auth.user_banned')
     expect((await stored(tokens.sessionId))?.revokeReason).toBe('user_banned')

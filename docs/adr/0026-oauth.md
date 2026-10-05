@@ -32,17 +32,38 @@ else. Adapters are stateless; credentials are passed per call.
 - **Google**: OIDC with PKCE. The ID token is verified against Google's JWKS (cached by `jose`,
   refetched on an unknown `kid`): `RS256` only, issuer, audience = client id, expiry, and the
   `nonce` the attempt put in the request. `email_verified` comes from the token.
-- **GitHub**: plain OAuth 2.0, no ID token. After the exchange the adapter reads `/user` and
-  `/user/emails`: **subject = the numeric user id** (a login can be renamed and re-registered),
-  email = the **primary** address with its own `verified` flag. `arctic`'s GitHub client sends
-  no PKCE challenge and GitHub has no nonce; the code is bound by the single-use `state` and
-  the client secret.
+- **GitHub**: plain OAuth 2.0 with PKCE, no ID token. After the exchange the adapter reads
+  `/user` and `/user/emails`: **subject = the numeric user id** (a login can be renamed and
+  re-registered), email = the **primary** address with its own `verified` flag. GitHub has no
+  nonce, so PKCE is what binds its code to the attempt, beside the single-use `state` and the
+  client secret: the authorization URL carries `code_challenge` (S256 of the attempt's
+  verifier) and the token request `code_verifier`. `arctic` 3.7.0's `GitHub` class has no
+  parameter for either, so the adapter uses `arctic`'s generic `OAuth2Client`
+  (`createAuthorizationURLWithPKCE`, `validateAuthorizationCode` with a verifier) against
+  GitHub's two endpoints: the same requests, plus the challenge and the verifier, and still
+  nothing hand-written. The generic client does not know that GitHub answers a refused code
+  with status 200 and an `error` member, so the adapter tells that apart itself. An exchange
+  with an empty verifier is refused before any request (GitHub would accept it for a code
+  that was asked for without a challenge), and the callback refuses an attempt that holds no
+  verifier before it reaches the adapter. **Verified against the mock provider and unit
+  fixtures (the requests the adapter builds), not against github.com**: that GitHub rejects a
+  wrong or missing verifier is its documented behaviour ("Authorizing OAuth apps":
+  `code_challenge`, `code_challenge_method` = `S256` only, `code_verifier` required once a
+  challenge was sent), which no test here observes.
 - **Apple**: OIDC with `response_mode=form_post` (the callback arrives as a cross-site `POST`),
   a client secret that is an ES256 JWT signed with the developer's key (team id, key id,
   Services ID; valid five minutes, minted per exchange), the ID token verified like Google's.
   The name arrives only on the first authorization, in the **unsigned** posted `user` field: a
   display name is read from it and nothing else. Private relay addresses are ordinary
-  addresses; `email_verified` may be the string `"true"`.
+  addresses; `email_verified` may be the string `"true"`. **No PKCE**, deliberately:
+  `arctic` 3.7.0's `Apple` class sends none, Apple's documentation of the authorization and
+  token requests names no `code_challenge` or `code_verifier`, and its discovery document
+  (`appleid.apple.com/.well-known/openid-configuration`) lists no
+  `code_challenge_methods_supported`. Sending parameters a provider does not document proves
+  nothing and may break at any time, and there are no Apple credentials here to try it with.
+  Apple's code is bound to the attempt by the `nonce` in the signed ID token (a code that
+  belongs to another sign-in yields a token with another nonce, refused), by the single-use
+  `state` and by the client-secret JWT.
 - `arctic` calls the global `fetch` and takes no injected one. The adapters therefore use the
   global `fetch` throughout, looked up at call time, and their tests stub it (`spyOn`) with
   locally generated keys: no test touches the network.
@@ -220,8 +241,9 @@ production code. The adapters' verifiers are covered by unit tests with local ke
   the callback URL registered (`docs/providers/`), and the app's landing URL on the allow-list.
 - **Real Google, GitHub and Apple were not exercised**: there are no credentials. Everything
   up to the provider's endpoints is covered against the mock and with stubbed HTTP.
-- GitHub has neither PKCE (in `arctic`) nor a nonce; its code is protected by `state` and the
-  client secret only.
+- GitHub sign-in sends PKCE, and that was checked against the mock provider and stubbed
+  HTTP only: nothing here has seen github.com refuse a wrong verifier. Apple sign-in has no
+  PKCE (Apple documents none); its code is bound by the ID token's nonce.
 - A user who signs up through a provider has no password; removing that provider leaves them
   to a password reset. A provider's changed email never changes the Tula address.
 - A sign-in start reads the environment's providers (one indexed read, not cached).
