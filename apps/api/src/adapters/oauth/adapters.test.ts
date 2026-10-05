@@ -430,19 +430,68 @@ describe('GitHub', () => {
       ...overrides,
     })
 
-  test('the authorization URL asks for the profile and the email addresses', () => {
+  // Phase 1 review, deferred item: GitHub's authorization code was bound to the attempt by
+  // `state` alone. A code stolen on its way back could be redeemed by whoever held it.
+  test('the authorization URL carries state, the S256 challenge and the scopes, never the verifier', () => {
     const url = new URL(
       createGitHubProvider().authorizationUrl(credentials, {
-        state: 's',
-        codeVerifier: 'v',
+        state: 'the-state',
+        codeVerifier: 'the-verifier',
         nonce: NONCE,
         redirectUri: REDIRECT_URI,
       })
     )
     expect(url.origin + url.pathname).toBe('https://github.com/login/oauth/authorize')
-    expect(url.searchParams.get('scope')).toBe('read:user user:email')
-    expect(url.searchParams.get('state')).toBe('s')
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      response_type: 'code',
+      client_id: 'Iv1.github',
+      redirect_uri: REDIRECT_URI,
+      state: 'the-state',
+      code_challenge_method: 'S256',
+      code_challenge: s256('the-verifier'),
+      scope: 'read:user user:email',
+    })
+    expect(url.toString()).not.toContain('the-verifier')
     expect(url.toString()).not.toContain('github-secret')
+  })
+
+  test('the token request carries the verifier of the challenge, and the secret only as Basic credentials', async () => {
+    const calls = github()
+    await createGitHubProvider().exchange(credentials, exchangeInput)
+    const token = calls.find((call) => call.url === 'https://github.com/login/oauth/access_token')
+    const body = new URLSearchParams(token?.body)
+    expect(Object.fromEntries(body)).toEqual({
+      grant_type: 'authorization_code',
+      code: 'the-code',
+      redirect_uri: REDIRECT_URI,
+      code_verifier: 'the-verifier',
+    })
+    // What GitHub compares: the challenge of this verifier is the one the URL carried.
+    const url = new URL(
+      createGitHubProvider().authorizationUrl(credentials, {
+        state: 's',
+        codeVerifier: exchangeInput.codeVerifier,
+        nonce: NONCE,
+        redirectUri: REDIRECT_URI,
+      })
+    )
+    expect(s256(body.get('code_verifier') as string)).toBe(
+      url.searchParams.get('code_challenge') as string
+    )
+    expect(new Headers(token?.init?.headers).get('authorization')).toBe(
+      `Basic ${Buffer.from('Iv1.github:github-secret').toString('base64')}`
+    )
+    expect(token?.body).not.toContain('github-secret')
+  })
+
+  test('an exchange with no verifier is refused before anything is sent', async () => {
+    const calls = github()
+    expect(
+      await failureOf(
+        createGitHubProvider().exchange(credentials, { ...exchangeInput, codeVerifier: '' })
+      )
+    ).toBe('invalid_grant')
+    expect(calls).toHaveLength(0)
   })
 
   test('the subject is the numeric id and the email the primary one with its own verified flag', async () => {
@@ -608,6 +657,42 @@ describe('the mock provider', () => {
           mock.exchange({ ...credentials, ...creds }, { ...exchangeInput, code, ...input })
         )
       ).toBe(failure)
+    }
+  )
+
+  // The conformance scenarios and SDK journeys sign in with GitHub through this adapter: the
+  // verifier is checked for every provider it stands in for, not only Google.
+  test.each(['google', 'github', 'apple'] as const)(
+    'standing in for %s: the URL carries the S256 challenge and only its verifier redeems the code',
+    async (name) => {
+      const standIn = createMockProvider(name, {
+        secretBox,
+        clock,
+        publicUrl: 'http://localhost:3003',
+      })
+      const url = new URL(
+        standIn.authorizationUrl(credentials, {
+          state: 's',
+          codeVerifier: 'the-verifier',
+          nonce: NONCE,
+          redirectUri: REDIRECT_URI,
+        })
+      )
+      expect(url.searchParams.get('code_challenge_method')).toBe('S256')
+      const codeChallenge = url.searchParams.get('code_challenge') as string
+      expect(codeChallenge).toBe(s256('the-verifier'))
+      const code = () =>
+        issueMockCode(secretBox, clock, { ...grant, provider: name, codeChallenge })
+      expect(await standIn.exchange(credentials, { ...exchangeInput, code: await code() })).toEqual(
+        grant.profile
+      )
+      for (const codeVerifier of ['another-verifier', '']) {
+        expect(
+          await failureOf(
+            standIn.exchange(credentials, { ...exchangeInput, code: await code(), codeVerifier })
+          )
+        ).toBe('invalid_grant')
+      }
     }
   )
 

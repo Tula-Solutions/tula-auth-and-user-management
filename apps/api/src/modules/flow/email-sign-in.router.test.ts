@@ -8,6 +8,7 @@ import {
 } from '@tula/contract'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
+import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/router'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
@@ -52,20 +53,23 @@ async function build(config = TEST_CONFIG, document = settings()) {
   })
   deps.environmentSettings.seed(TEST_TENANT.environmentId, { revision: 1, settings: document })
   await seedApiKey(deps, PK)
-  await deps.users.create({
-    id: deps.ids.next(),
-    projectId: TEST_TENANT.projectId,
-    environmentId: TEST_TENANT.environmentId,
-    email: EMAIL,
-    emailNormalized: EMAIL,
-    emailVerifiedAt: deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: await Passwords.hash(PASSWORD),
-  })
+  await deps.users.create(
+    {
+      id: deps.ids.next(),
+      projectId: TEST_TENANT.projectId,
+      environmentId: TEST_TENANT.environmentId,
+      email: EMAIL,
+      emailNormalized: EMAIL,
+      emailVerifiedAt: deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: await Passwords.hash(PASSWORD),
+    },
+    Audit.none('fixture')
+  )
   app = createApp(deps)
 }
 

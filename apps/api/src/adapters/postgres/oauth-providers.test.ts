@@ -9,6 +9,7 @@ import {
 import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
+import * as Audit from '~/modules/audit/service'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
 let testDb: TestDatabase
@@ -44,18 +45,21 @@ describeOAuthProviderStore('PostgresOAuthProviderStore', async () => {
 test('row-level security hides another environment’s credentials even from a direct query', async () => {
   const { a, b } = await tenants()
   const store = new PostgresOAuthProviderStore(testDb.db)
-  await store.upsert({
-    id: Bun.randomUUIDv7(),
-    projectId: a.projectId,
-    environmentId: a.environmentId,
-    provider: 'google',
-    clientId: 'client',
-    secret: 'v1.sealed.secret',
-    config: {},
-    enabled: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  })
+  await store.upsert(
+    {
+      id: Bun.randomUUIDv7(),
+      projectId: a.projectId,
+      environmentId: a.environmentId,
+      provider: 'google',
+      clientId: 'client',
+      secret: 'v1.sealed.secret',
+      config: {},
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    Audit.none('fixture')
+  )
   const seenFromB = await withTenant(testDb.db, b.environmentId, (tx) =>
     tx.select({ id: oauthProviders.id }).from(oauthProviders)
   )

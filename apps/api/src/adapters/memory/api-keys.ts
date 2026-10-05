@@ -1,5 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded } from '~/ports/activity-log'
 import type { ApiKeyRecord, ApiKeyRepository, NewApiKey } from '~/ports/api-key-repository'
 
 interface Stored extends ApiKeyRecord {
@@ -30,7 +30,8 @@ export class MemoryApiKeyRepository implements ApiKeyRepository {
   }
 
   /** @inheritdoc */
-  async insert(key: NewApiKey, activity?: Activity): Promise<ApiKeyRecord> {
+  async insert(key: NewApiKey, recorded: Recorded): Promise<ApiKeyRecord> {
+    const activity = activityOf(recorded)
     if (this.#keys.some((existing) => existing.keyHash === key.keyHash)) {
       throw new Error('api_keys_key_hash_key: duplicate key hash')
     }
@@ -67,8 +68,9 @@ export class MemoryApiKeyRepository implements ApiKeyRepository {
     environmentId: string,
     id: string,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<ApiKeyRecord | null> {
+    const activity = activityOf(recorded)
     const key = this.#keys.find(
       (candidate) => candidate.id === id && candidate.environmentId === environmentId
     )

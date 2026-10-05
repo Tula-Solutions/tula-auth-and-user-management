@@ -7,6 +7,7 @@ import {
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
+import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/service'
 import * as Notices from '~/modules/notice/service'
@@ -116,22 +117,31 @@ async function seedUser(
 ) {
   const id = deps.ids.next()
   const email = options.email ?? EMAIL
-  await deps.users.create({
-    id,
-    projectId: target.projectId,
-    environmentId: target.environmentId,
-    email,
-    emailNormalized: email.toLowerCase(),
-    emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: options.password === false ? null : await Passwords.hash(PASSWORD),
-  })
+  await deps.users.create(
+    {
+      id,
+      projectId: target.projectId,
+      environmentId: target.environmentId,
+      email,
+      emailNormalized: email.toLowerCase(),
+      emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: options.password === false ? null : await Passwords.hash(PASSWORD),
+    },
+    Audit.none('fixture')
+  )
   if (options.banned) {
-    await deps.users.setBanned(target.environmentId, id, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      target.environmentId,
+      id,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
   }
   return id
 }

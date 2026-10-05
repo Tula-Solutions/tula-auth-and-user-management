@@ -11,6 +11,7 @@ import { eq, sql } from 'drizzle-orm'
 import { describeFactorStore, type FactorSuiteTenant } from '~/adapters/factor-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
+import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type { NewBackupCode, NewFactor } from '~/ports/factor-store'
 
@@ -100,6 +101,7 @@ describe('PostgresFactorStore', () => {
     const backup = codes(3)
     expect(
       await store().confirmTotp(a.environmentId, factor.id, {
+        activity: Audit.none('fixture'),
         step: 100,
         at: later(1_000),
         backupCodes: backup,
@@ -216,7 +218,8 @@ describe('PostgresFactorStore', () => {
           a.environmentId,
           userId,
           backup[0]?.codeHash as string,
-          later(3_000)
+          later(3_000),
+          Audit.none('fixture')
         )
       ).toBe(2)
     })

@@ -4,6 +4,7 @@ import { sha256Hex } from '~/lib/crypto'
 import { bearerToken } from '~/middleware/api-key'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'
 import { secretKey } from '~/middleware/secret-key'
+import * as Audit from '~/modules/audit/service'
 import { createTestDeps, seedApiKey } from '~/testing'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
@@ -51,7 +52,7 @@ describe('publishableKey', () => {
 
   test('rejects a revoked key', async () => {
     const { app, deps, pk } = await setup()
-    await deps.apiKeys.revoke(TENANT.environmentId, pk.id, deps.clock.now())
+    await deps.apiKeys.revoke(TENANT.environmentId, pk.id, deps.clock.now(), Audit.none('fixture'))
     await expectInvalidKey(
       await app.request('/test/client', { headers: { [PUBLISHABLE_KEY_HEADER]: PK } })
     )
@@ -89,7 +90,7 @@ describe('last used tracking', () => {
 
   test('failed resolutions do not record usage', async () => {
     const { app, deps, pk } = await setup()
-    await deps.apiKeys.revoke(TENANT.environmentId, pk.id, deps.clock.now())
+    await deps.apiKeys.revoke(TENANT.environmentId, pk.id, deps.clock.now(), Audit.none('fixture'))
     await app.request('/test/client', { headers: { [PUBLISHABLE_KEY_HEADER]: PK } })
     expect((await deps.apiKeys.findByHash(sha256Hex(PK)))?.lastUsedAt).toBeNull()
   })

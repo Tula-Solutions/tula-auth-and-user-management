@@ -5,6 +5,7 @@ import { mockOAuthProviders } from '../apps/api/src/adapters/oauth/mock'
 import { createApp, MAX_BODY_BYTES } from '../apps/api/src/index'
 import { sha256Hex } from '../apps/api/src/lib/crypto'
 import { findDashboardDir } from '../apps/api/src/lib/dashboard-files'
+import * as Audit from '../apps/api/src/modules/audit/service'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
 import * as OAuth from '../apps/api/src/modules/oauth/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
@@ -208,20 +209,23 @@ async function replaceSettings(request: Request): Promise<Response> {
 async function createUnverifiedUser(body: unknown): Promise<Response> {
   const email = String((body as { email?: unknown }).email ?? '')
   const now = clock.now()
-  const created = await deps.users.create({
-    id: deps.ids.next(),
-    projectId: TEST_TENANT.projectId,
-    environmentId: TEST_TENANT.environmentId,
-    email,
-    emailNormalized: email.toLowerCase(),
-    emailVerifiedAt: null,
-    firstName: null,
-    lastName: null,
-    createdAt: now,
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: null,
-  })
+  const created = await deps.users.create(
+    {
+      id: deps.ids.next(),
+      projectId: TEST_TENANT.projectId,
+      environmentId: TEST_TENANT.environmentId,
+      email,
+      emailNormalized: email.toLowerCase(),
+      emailVerifiedAt: null,
+      firstName: null,
+      lastName: null,
+      createdAt: now,
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: null,
+    },
+    Audit.none('fixture')
+  )
   return json({ ok: created }, created ? 200 : 409)
 }
 
@@ -266,7 +270,7 @@ async function enableProviders(body: unknown): Promise<Response> {
         actor
       )
     } else if (await deps.oauthProviders.find(tenant.environmentId, provider)) {
-      await deps.oauthProviders.delete(tenant.environmentId, provider)
+      await deps.oauthProviders.delete(tenant.environmentId, provider, Audit.none('fixture'))
     }
   }
   return json({ ok: true })

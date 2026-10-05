@@ -1,7 +1,7 @@
 import { backupCodes, type Database, type Transaction, userFactors, withTenant } from '@tula/db'
 import { and, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   FactorConfirmation,
   FactorRecord,
@@ -135,7 +135,7 @@ export class PostgresFactorStore implements FactorStore {
         confirmation.backupCodes,
         at
       )
-      await recordActivity(tx, confirmation.activity ? [confirmation.activity] : [])
+      await recordActivity(tx, recordedOf([confirmation.activity]))
       return true
     })
   }
@@ -163,9 +163,10 @@ export class PostgresFactorStore implements FactorStore {
   async removeForUser(
     environmentId: string,
     userId: string,
-    activity?: Activity,
+    recorded: Recorded,
     onlyFactorId?: string
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       // The id guard is part of the DELETE, so the row cannot change between a check and it.
       const rows = await tx
@@ -195,8 +196,9 @@ export class PostgresFactorStore implements FactorStore {
     scope: { projectId: string },
     codes: readonly NewBackupCode[],
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       // Locked, so the factor cannot be removed between this check and the insert.
       const [factor] = await tx
@@ -219,8 +221,9 @@ export class PostgresFactorStore implements FactorStore {
     userId: string,
     codeHash: string,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<number | null> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       const spent = await tx
         .update(backupCodes)

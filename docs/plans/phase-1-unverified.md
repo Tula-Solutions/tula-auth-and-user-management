@@ -11,6 +11,8 @@ itself ran is in the [exit-criteria evidence](phase-1.md#exit-criteria--evidence
 | What | What it was tested against instead | Where it was noted |
 | --- | --- | --- |
 | **Real Google, GitHub and Apple sign-in** | The API's mock provider (`OAUTH_MOCK_PROVIDER`), including in the scaffolded-project run of 1.17. No real credentials exist here. The adapters' token and profile handling, Apple's form-post callback and client-secret signing were never run against the providers. | #25, 1.17 |
+| **That Apple's authorization server offers no PKCE** | Not a test against Apple. Taken from `arctic` 3.7.0's Apple client, which sends none, and from Apple's discovery document (`appleid.apple.com/.well-known/openid-configuration`) as fetched on 2026-10-04, which lists no `code_challenge_methods_supported`. Apple sign-in therefore sends no PKCE and relies on the `nonce` in the signed ID token, the single-use `state` and the client-secret JWT to bind a code to its attempt. | Phase 1 deferred items |
+| **GitHub accepting and enforcing PKCE** (`code_challenge`, `code_verifier`) | Unit tests of the two requests the adapter builds, and the mock provider, which refuses another verifier. That github.com rejects a wrong or missing verifier is from its documentation. What it does with a verifier sent for a code that was asked for without a challenge (an attempt started before the upgrade and finished after it) is not known: at worst that sign-in fails once ([ADR 0026](../adr/0026-oauth.md)). | Phase 1 deferred items |
 | The provider consoles' steps in [providers/](../providers/google.md) and [methods/oauth.md](../methods/oauth.md) | Written from the providers' documentation; never clicked through. The redirect URI and the scopes are what the code sends. | 1.17 |
 | Apple's private relay addresses and "name only on first authorization" | Unit tests on fixtures. | #25 |
 | **A physical passkey authenticator** (Touch ID, Windows Hello, a security key, a phone) and a platform passkey manager's sync | Chromium's virtual authenticator through the DevTools protocol, in the browser tests and in the 1.17 run. | #26, 1.17 |
@@ -159,8 +161,4 @@ that costs.
   knows an address can keep it locked out of both.
 - **The `verify` ceiling is one bucket per environment**, shared by all of its users.
 - **The `local` tier accepts any loopback origin and any loopback redirect URL.**
-- **GitHub sign-in has no PKCE.** The library's GitHub client does not send it, so a stolen
-  authorization code is not bound to the attempt, unlike with Google.
 - **Revoking a user's other sessions needs no recent authentication.**
-- **The audit entry is an optional parameter of the store methods.** "Every change is
-  recorded" is held by tests and review, not by the compiler. Deferred to Phase 2.

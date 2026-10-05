@@ -3,6 +3,7 @@ import { DEFAULT_ENVIRONMENT_SETTINGS, durationToMs } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'
+import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/service'
 import * as Retention from '~/modules/retention/service'
 import * as Sessions from '~/modules/session/service'
@@ -118,7 +119,8 @@ async function session(
       parentId: null,
       expiresAt: from(7 * DAY),
       createdAt: deps.clock.now(),
-    }
+    },
+    Audit.none('fixture')
   )
   return { id, tokenId }
 }
@@ -200,6 +202,7 @@ describe('purge', () => {
     const factorId = await pending(tenant, confirmed, from(10 * 60_000))
     expect(
       await deps.factors.confirmTotp(tenant.environmentId, factorId, {
+        activity: Audit.none('fixture'),
         step: 1,
         at: from(1),
         backupCodes: [{ id: deps.ids.next(), codeHash: 'hash-1' }],
@@ -351,7 +354,13 @@ describe('purge', () => {
       idleExpiresAt: from(400 * DAY),
       absoluteExpiresAt: null,
     })
-    await deps.sessions.revoke(tenant.environmentId, revoked.id, 'sign_out', deps.clock.now())
+    await deps.sessions.revoke(
+      tenant.environmentId,
+      revoked.id,
+      'sign_out',
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     deps.clock.advance(30 * DAY - 1)
     expect((await Retention.purge(deps)).sessions).toBe(0)
     deps.clock.advance(1)

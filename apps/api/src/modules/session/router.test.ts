@@ -9,6 +9,7 @@ import { createApp } from '~/index'
 import { sha256Hex } from '~/lib/crypto'
 import { base32Decode, totp } from '~/lib/totp'
 import { CLIENT_RATE_LIMIT } from '~/middleware/rate-limit'
+import * as Audit from '~/modules/audit/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
@@ -418,19 +419,22 @@ describe('POST /v1/client/sessions/step-up', () => {
 
   beforeEach(async () => {
     userId = deps.ids.next()
-    await deps.users.create({
-      id: userId,
-      ...tenant,
-      email: 'maya@northline.app',
-      emailNormalized: 'maya@northline.app',
-      emailVerifiedAt: deps.clock.now(),
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: deps.ids.next(),
-      credentialId: deps.ids.next(),
-      passwordHash: await Passwords.hash(PASSWORD),
-    })
+    await deps.users.create(
+      {
+        id: userId,
+        ...tenant,
+        email: 'maya@northline.app',
+        emailNormalized: 'maya@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: await Passwords.hash(PASSWORD),
+      },
+      Audit.none('fixture')
+    )
   })
   afterEach(() => Notices.settled())
 

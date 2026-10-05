@@ -1,5 +1,5 @@
 import type { OAuthProvider, UserSort } from '@tula/contract'
-import type { Activity } from '~/ports/activity-log'
+import type { Recorded } from '~/ports/activity-log'
 
 /** An end user of a customer's app, scoped to one environment. */
 export interface UserRecord {
@@ -160,7 +160,7 @@ export interface UserRepository {
    *   lock in the same transaction, so a deletion or an email change cannot race it.
    * @returns What happened. Never throws for a conflict.
    */
-  linkIdentity(identity: NewIdentity, activity?: Activity, guard?: LinkGuard): Promise<LinkOutcome>
+  linkIdentity(identity: NewIdentity, activity: Recorded, guard?: LinkGuard): Promise<LinkOutcome>
 
   /**
    * Disconnect a provider account from a user, unless that would leave them no way to sign in.
@@ -181,7 +181,7 @@ export interface UserRepository {
     userId: string,
     identityId: string,
     allowed: (remaining: SignInMeans) => boolean,
-    activity?: Activity
+    activity: Recorded
   ): Promise<UnlinkOutcome>
 
   /**
@@ -193,7 +193,7 @@ export interface UserRepository {
    * @returns `false` when the email, or the provider account, is already taken in that
    *   environment (nothing is written).
    */
-  create(user: NewUser, activity?: Activity): Promise<boolean>
+  create(user: NewUser, activity: Recorded): Promise<boolean>
 
   /**
    * Store a user's password hash: replace the one they have, or create the credential when
@@ -215,7 +215,7 @@ export interface UserRepository {
     userId: string,
     passwordHash: string,
     at: Date,
-    activity?: Activity
+    activity: Recorded
   ): Promise<PasswordOutcome | null>
 
   /**
@@ -261,8 +261,8 @@ export interface UserRepository {
     environmentId: string,
     userId: string,
     at: Date,
-    activity?: Activity,
-    removePassword?: { activity?: Activity }
+    activity: Recorded,
+    removePassword?: { activity: Recorded }
   ): Promise<{ passwordRemoved: boolean }>
 
   /**
@@ -297,7 +297,7 @@ export interface UserRepository {
     userId: string,
     bannedAt: Date | null,
     at: Date,
-    activity?: Activity
+    activity: Recorded
   ): Promise<UserRecord | null>
 
   /**
@@ -308,5 +308,5 @@ export interface UserRepository {
    * @param activity - Recorded in the same transaction, only if the user was deleted.
    * @returns `false` when they do not exist.
    */
-  delete(environmentId: string, userId: string, activity?: Activity): Promise<boolean>
+  delete(environmentId: string, userId: string, activity: Recorded): Promise<boolean>
 }

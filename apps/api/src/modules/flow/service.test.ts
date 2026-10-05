@@ -4,6 +4,7 @@ import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import { verifyAccessToken } from '~/middleware/session-auth'
+import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/service'
 import * as Passwords from '~/modules/password/service'
@@ -115,20 +116,23 @@ async function registered(email = EMAIL, password = PASSWORD) {
 /** Seed a user directly, e.g. one created by an admin with an unverified email. */
 async function seedUser(options: { verified?: boolean; passwordHash?: string } = {}) {
   const id = deps.ids.next()
-  await deps.users.create({
-    id,
-    projectId: tenant.projectId,
-    environmentId: tenant.environmentId,
-    email: EMAIL,
-    emailNormalized: NORMALIZED,
-    emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: options.passwordHash ?? (await Passwords.hash(PASSWORD)),
-  })
+  await deps.users.create(
+    {
+      id,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: EMAIL,
+      emailNormalized: NORMALIZED,
+      emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: options.passwordHash ?? (await Passwords.hash(PASSWORD)),
+    },
+    Audit.none('fixture')
+  )
   return id
 }
 
@@ -473,7 +477,13 @@ describe('submitPassword', () => {
 
   test('a banned user learns it only with the right password', async () => {
     const { userId } = await registered()
-    await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      userId,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     const wrongPassword = await rejection(password(await startSignIn(), 'not the password'))
     expect(wrongPassword.code).toBe('auth.invalid_credentials')
     const banned = await rejection(password(await startSignIn()))
@@ -625,7 +635,13 @@ describe('submitPassword', () => {
     const userId = await seedUser({ verified: false })
     const attempt = await startSignIn()
     await password(attempt)
-    await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      userId,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     const err = await rejection(
       Flows.verifyEmail(deps, tenant, 'sign_in', ref(attempt), sentCode(), web)
     )
@@ -926,7 +942,13 @@ describe('hash upgrade after sign-in', () => {
     const find = deps.users.findByEmailWithPassword.bind(deps.users)
     deps.users.findByEmailWithPassword = async (environmentId, email) => {
       const found = await find(environmentId, email)
-      await deps.users.setPasswordHash(environmentId, userId, changed, deps.clock.now())
+      await deps.users.setPasswordHash(
+        environmentId,
+        userId,
+        changed,
+        deps.clock.now(),
+        Audit.none('fixture')
+      )
       return found
     }
     await password(attempt)
@@ -1129,7 +1151,13 @@ describe('password reset', () => {
 
   test('a banned user learns of the ban only after the right code, and keeps their password', async () => {
     const { userId } = await registered()
-    await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      userId,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     const { attempt } = await startReset()
     expect(deps.mailer.last().subject).toContain('is your Tula password reset code')
     const code = sentCode()
@@ -1355,20 +1383,23 @@ describe('a sign-in method the environment has switched off', () => {
   })
 
   test('the answer is the same for an address with an account and one without', async () => {
-    await deps.users.create({
-      id: '00000000-0000-7000-8000-0000000000a1',
-      projectId: tenant.projectId,
-      environmentId: tenant.environmentId,
-      email: EMAIL,
-      emailNormalized: NORMALIZED,
-      emailVerifiedAt: deps.clock.now(),
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: '00000000-0000-7000-8000-0000000000b1',
-      credentialId: '00000000-0000-7000-8000-0000000000c1',
-      passwordHash: 'x',
-    })
+    await deps.users.create(
+      {
+        id: '00000000-0000-7000-8000-0000000000a1',
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: EMAIL,
+        emailNormalized: NORMALIZED,
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: '00000000-0000-7000-8000-0000000000b1',
+        credentialId: '00000000-0000-7000-8000-0000000000c1',
+        passwordHash: 'x',
+      },
+      Audit.none('fixture')
+    )
     const known = await rejection(Flows.signIn(deps, tenant, { identifier: EMAIL }, web))
     const unknown = await rejection(
       Flows.signIn(deps, tenant, { identifier: 'nobody@northline.app' }, web)
@@ -1794,20 +1825,23 @@ describe('first-factor choice', () => {
   test('the strategies depend on the settings only: every identifier gets the same answer and none is looked up', async () => {
     await registered()
     // A user with no password at all, who could only use another method.
-    await deps.users.create({
-      id: deps.ids.next(),
-      projectId: tenant.projectId,
-      environmentId: tenant.environmentId,
-      email: 'passkey-only@northline.app',
-      emailNormalized: 'passkey-only@northline.app',
-      emailVerifiedAt: deps.clock.now(),
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: deps.ids.next(),
-      credentialId: deps.ids.next(),
-      passwordHash: null,
-    })
+    await deps.users.create(
+      {
+        id: deps.ids.next(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: 'passkey-only@northline.app',
+        emailNormalized: 'passkey-only@northline.app',
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: null,
+      },
+      Audit.none('fixture')
+    )
     offer('password', 'passkey')
     const lookups = [
       spyOn(deps.users, 'findByEmail'),
@@ -1890,20 +1924,23 @@ describe('a user without a password', () => {
 
   async function passwordless() {
     const id = deps.ids.next()
-    await deps.users.create({
-      id,
-      projectId: tenant.projectId,
-      environmentId: tenant.environmentId,
-      email: EMAIL,
-      emailNormalized: NORMALIZED,
-      emailVerifiedAt: deps.clock.now(),
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: deps.ids.next(),
-      credentialId: deps.ids.next(),
-      passwordHash: null,
-    })
+    await deps.users.create(
+      {
+        id,
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        email: EMAIL,
+        emailNormalized: NORMALIZED,
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: null,
+      },
+      Audit.none('fixture')
+    )
     return id
   }
 
@@ -2160,16 +2197,28 @@ describe('second factor', () => {
     const userId = await user()
     const banned = await startSignIn()
     await password(banned)
-    await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      userId,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     // The ban is told only to someone who proved the factor.
     expect((await rejection(second(banned, '000000'))).code).toBe('mfa.invalid_code')
     expect((await rejection(second(banned))).code).toBe('auth.user_banned')
     expect(await liveSessions(userId)).toEqual([])
 
-    await deps.users.setBanned(tenant.environmentId, userId, null, deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      userId,
+      null,
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     const deleted = await startSignIn()
     await password(deleted)
-    await deps.users.delete(tenant.environmentId, userId)
+    await deps.users.delete(tenant.environmentId, userId, Audit.none('fixture'))
     expect((await rejection(second(deleted))).code).toBe('mfa.invalid_code')
   })
 
@@ -2338,7 +2387,7 @@ describe('an attempt that changes underneath a request', () => {
     const attempt = await startSignIn()
     await password(attempt)
     const code = sentCode()
-    await deps.users.delete(tenant.environmentId, userId)
+    await deps.users.delete(tenant.environmentId, userId, Audit.none('fixture'))
     const err = await rejection(Flows.verifyEmail(deps, tenant, 'sign_in', ref(attempt), code, web))
     expect(err.toJSON()).toMatchObject({ status: 409, code: 'flow.invalid_step' })
     expect(deps.activityLog.ofType('session.created')).toEqual([])

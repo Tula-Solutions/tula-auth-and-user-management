@@ -16,6 +16,7 @@ import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'
 import { verifyAccessToken } from '~/middleware/session-auth'
+import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
@@ -121,20 +122,23 @@ async function rejection(promise: Promise<unknown>): Promise<ServiceException> {
 async function seedUser(options: { verified?: boolean; password?: boolean; email?: string } = {}) {
   const id = deps.ids.next()
   const email = options.email ?? EMAIL
-  await deps.users.create({
-    id,
-    projectId: tenant.projectId,
-    environmentId: tenant.environmentId,
-    email,
-    emailNormalized: email,
-    emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: options.password === false ? null : PASSWORD_HASH,
-  })
+  await deps.users.create(
+    {
+      id,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email,
+      emailNormalized: email,
+      emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: options.password === false ? null : PASSWORD_HASH,
+    },
+    Audit.none('fixture')
+  )
   return id
 }
 
@@ -441,7 +445,8 @@ describe('a user with a real second factor', () => {
       userId,
       tenant,
       [],
-      deps.clock.now()
+      deps.clock.now(),
+      Audit.none('fixture')
     )
     const attempt = await startSignIn()
     const waiting = await password(attempt)
@@ -1008,7 +1013,13 @@ describe('enrolment inside an attempt, where the environment requires a second f
   test('a user banned while enrolling is not signed in and gets no factor', async () => {
     const { attempt, userId } = await LAST_PROOF.sign_in()
     const enrolment = await startEnrolment(attempt)
-    await deps.users.setBanned(tenant.environmentId, userId, deps.clock.now(), deps.clock.now())
+    await deps.users.setBanned(
+      tenant.environmentId,
+      userId,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     const err = await rejection(confirmEnrolment(attempt, codeFor(enrolment.secret)))
     expect(err.toJSON()).toMatchObject({ status: 403, code: 'auth.user_banned' })
     expect(await liveSessions(userId)).toEqual([])
@@ -1019,7 +1030,7 @@ describe('enrolment inside an attempt, where the environment requires a second f
   test('a user deleted while enrolling cannot start or confirm', async () => {
     const { attempt, userId } = await LAST_PROOF.sign_in()
     const enrolment = await startEnrolment(attempt)
-    await deps.users.delete(tenant.environmentId, userId)
+    await deps.users.delete(tenant.environmentId, userId, Audit.none('fixture'))
     expect(
       (await rejection(confirmEnrolment(attempt, codeFor(enrolment.secret)))).toJSON()
     ).toMatchObject({ status: 409, code: 'flow.invalid_step' })

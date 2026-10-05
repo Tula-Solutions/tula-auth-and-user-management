@@ -1,6 +1,6 @@
 import type { OAuthProvider } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import type { Activity } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   IdentityRecord,
   LinkGuard,
@@ -93,7 +93,8 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async create(user: NewUser, activity?: Activity): Promise<boolean> {
+  async create(user: NewUser, recorded: Recorded): Promise<boolean> {
+    const activity = activityOf(recorded)
     // Checked and written without an `await` in between, so concurrent creations behave like
     // the database's unique constraint: exactly one wins.
     const { oauthIdentity } = user
@@ -145,9 +146,10 @@ export class MemoryUserRepository implements UserRepository {
 
   async linkIdentity(
     identity: NewIdentity,
-    activity?: Activity,
+    recorded: Recorded,
     guard?: LinkGuard
   ): Promise<LinkOutcome> {
+    const activity = activityOf(recorded)
     // Checked and written without an `await` in between, like the database's unique keys.
     const user = this.#user(identity.environmentId, identity.userId)
     if (
@@ -177,8 +179,9 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     identityId: string,
     allowed: (remaining: SignInMeans) => boolean,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<UnlinkOutcome> {
+    const activity = activityOf(recorded)
     const user = this.#user(environmentId, userId)
     const identities = this.#identitiesOf(environmentId, userId)
     if (!user || !identities.some((identity) => identity.id === identityId)) {
@@ -205,8 +208,9 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     passwordHash: string,
     _at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<PasswordOutcome | null> {
+    const activity = activityOf(recorded)
     if (!this.#user(environmentId, userId)) {
       return null
     }
@@ -237,9 +241,11 @@ export class MemoryUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     at: Date,
-    activity?: Activity,
-    removePassword?: { activity?: Activity }
+    recorded: Recorded,
+    removePassword?: { activity: Recorded }
   ): Promise<{ passwordRemoved: boolean }> {
+    const activity = activityOf(recorded)
+    const removal = removePassword && activityOf(removePassword.activity)
     const user = this.#user(environmentId, userId)
     if (!user || user.emailVerifiedAt !== null) {
       return { passwordRemoved: false }
@@ -249,7 +255,7 @@ export class MemoryUserRepository implements UserRepository {
     const passwordRemoved = removePassword !== undefined && this.#passwords.delete(userId)
     this.#activityLog.record([
       ...(activity ? [activity] : []),
-      ...(passwordRemoved && removePassword?.activity ? [removePassword.activity] : []),
+      ...(passwordRemoved && removal ? [removal] : []),
     ])
     return { passwordRemoved }
   }
@@ -305,8 +311,9 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     bannedAt: Date | null,
     _at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
     const user = this.#user(environmentId, userId)
     if (!user) {
       return null
@@ -320,7 +327,8 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string, activity?: Activity): Promise<boolean> {
+  async delete(environmentId: string, userId: string, recorded: Recorded): Promise<boolean> {
+    const activity = activityOf(recorded)
     if (!this.#user(environmentId, userId)) {
       return false
     }

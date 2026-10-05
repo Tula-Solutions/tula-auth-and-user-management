@@ -601,6 +601,12 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   `adapters/oauth/` (`arctic` + `jose`). An adapter returns a profile and nothing else: no
   provider token leaves it or is stored. Unit tests use `FakeOAuthProvider`
   (`createTestDeps().oauth.google.profile = …`).
+- **A provider's code is bound to the attempt.** Google and GitHub send PKCE (the S256
+  challenge of the attempt's `codeVerifier` on the authorization URL, the verifier on the
+  token request); Google and Apple check the attempt's `nonce` in the ID token. Apple
+  documents no PKCE and is sent none. The callback refuses an attempt with no verifier before
+  it reaches an adapter, and the mock provider checks the verifier for every provider. A new
+  provider sends PKCE unless its documentation rules it out, and the ADR says which.
 - **The mock provider** (`OAUTH_MOCK_PROVIDER=true`) serves every provider from the API
   itself, with a consent page at `/v1/dev/oauth/authorize`. It needs `ENVIRONMENT=local`
   **and** a loopback `PUBLIC_URL` (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`): `env.ts`
@@ -933,6 +939,18 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   records the **keys** that changed (`data.changed`), never their values. The only unrecorded
   writes are a password-hash upgrade after sign-in and an environment's first signing keys
   (ADR 0012).
+- **The activity is a required parameter, in the ports and in both adapters** (`Recorded` in
+  `~/ports/activity-log`): a call that leaves it out does not compile. Never make one
+  optional, give one a default or accept `undefined`. A write that is never recorded is a
+  method of its own that takes none (`upgradePasswordHash`, the signing-key store's
+  `insert`), added together with a line in ADR 0012. `Audit.none('fixture')` is the explicit
+  "not recorded" for seed data in tests and in `e2e/server.ts`; its reasons are a closed
+  list. Its value is branded with a symbol `ports/activity-log.ts` does not export: never
+  export that key, never build the value anywhere but `unrecordedFor`, never call that from
+  anywhere but `Audit.none`, and tell the value apart only with `isUnrecorded`.
+  `ports/activity-log.test.ts` fails if a server file reaches either function by any import
+  form (keep its bypass fixtures, and add one for a new form). That file also holds the
+  `@ts-expect-error` line of every such method: a new one gets a line there.
 - Operator-supplied text that reaches an email (the app name) is untrusted input: it goes
   through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
   subject or HTML. A user agent never reaches an email at all: only the family
@@ -1034,6 +1052,19 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   and nothing else is; every method page has the same sections, error codes the contract
   defines, and no hand-typed TypeScript sample. A new environment variable, a renamed heading
   or a new method page changes those files in the same change.
+- **A cached task is invalidated by every file it reaches** (`.claude/hooks/turbo-inputs.test.ts`,
+  in `test:harness`). Turborepo keys a task on the files of its own package, so a package that
+  imports or reads a file of another (the CLI's, MCP's, admin's and Next.js SDK's tests import
+  `apps/api/src` by relative path) was served a cached "passed" when only that file changed:
+  a green `verify` on a branch whose `@tula/cli` tests no longer compiled. Two things make an
+  outside file part of the key. A file of a workspace package the importer **declares as a
+  dependency** is covered because `typecheck`, `test`, `test:coverage` and `generate:check`
+  depend on `transit` (`dependsOn: ["^transit"]`, no script): never remove it from them.
+  Anything else (a root file, `conformance/`, a package that cannot be a dependency) is named
+  in the package's own `turbo.json` as `"$TURBO_DEFAULT$"` plus `"$TURBO_ROOT$/<path>"`, for
+  those tasks and for `transit`. A file that builds such a path from separate `'..'`
+  arguments is listed in that test's `CLIMBERS` with what it reads. When a result looks too
+  good, `TURBO_FORCE=true bun run verify` runs everything without the cache.
 - **Every bug fix and every addressed review finding gets a regression test that fails first.**
 
 ## Definition of done (the feedback loop)

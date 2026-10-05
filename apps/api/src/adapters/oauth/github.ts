@@ -1,4 +1,4 @@
-import { GitHub } from 'arctic'
+import { CodeChallengeMethod, OAuth2Client } from 'arctic'
 import {
   type OAuthAuthorizationRequest,
   type OAuthCodeExchange,
@@ -19,9 +19,37 @@ import {
 export const GITHUB_SCOPES = ['read:user', 'user:email']
 
 const GITHUB_API = 'https://api.github.com'
+const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize'
+const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token'
 
-function client(credentials: OAuthCredentials, redirectUri: string): GitHub {
-  return new GitHub(credentials.clientId, credentials.clientSecret ?? '', redirectUri)
+/**
+ * `arctic`'s generic client, not its `GitHub` one: that class (3.7.0) has no parameter for a
+ * PKCE verifier on either call. The generic client sends the same requests (the client id and
+ * secret as Basic credentials) plus the challenge and the verifier.
+ */
+function client(credentials: OAuthCredentials, redirectUri: string): OAuth2Client {
+  return new OAuth2Client(credentials.clientId, credentials.clientSecret ?? '', redirectUri)
+}
+
+/**
+ * Exchange the code, with the verifier, for GitHub's access token.
+ *
+ * GitHub answers a refused code with status 200 and an `error` member, which the generic
+ * client takes for a token response: it is told apart here.
+ */
+async function accessTokenOf(
+  credentials: OAuthCredentials,
+  exchange: OAuthCodeExchange
+): Promise<string> {
+  const tokens = await client(credentials, exchange.redirectUri).validateAuthorizationCode(
+    GITHUB_TOKEN_URL,
+    exchange.code,
+    exchange.codeVerifier
+  )
+  if ('error' in tokens.data) {
+    throw new OAuthProviderError('invalid_grant')
+  }
+  return tokens.accessToken()
 }
 
 /**
@@ -87,8 +115,12 @@ function primaryEmail(emails: unknown): Pick<OAuthProfile, 'email' | 'emailVerif
  * - **Email: the primary address** of `/user/emails`, with its own `verified` flag. The public
  *   profile email is ignored (it is optional and says nothing about verification).
  *
- * GitHub has no nonce and `arctic`'s client sends no PKCE challenge for it; the code is bound to
- * the attempt by the single-use `state` alone, and to this app by the client secret.
+ * GitHub has no nonce. The code is bound to the attempt by **PKCE** (RFC 7636): the
+ * authorization URL carries the S256 challenge of the attempt's verifier and the token request
+ * the verifier itself, so a code that leaks on its way back is worth nothing without what only
+ * the attempt holds. It is bound by the single-use `state` too, and to this app by the client
+ * secret. An exchange with no verifier is refused before anything is sent: GitHub would accept
+ * it for a code that was asked for without a challenge.
  *
  * Every outbound call has a deadline (`options.timeoutMs`, ten seconds by default); a provider
  * that does not answer in time is `unavailable`.
@@ -101,7 +133,13 @@ export function createGitHubProvider(options: ProviderOptions = {}): OAuthProvid
   return {
     authorizationUrl(credentials: OAuthCredentials, request: OAuthAuthorizationRequest): string {
       return client(credentials, request.redirectUri)
-        .createAuthorizationURL(request.state, GITHUB_SCOPES)
+        .createAuthorizationURLWithPKCE(
+          GITHUB_AUTHORIZE_URL,
+          request.state,
+          CodeChallengeMethod.S256,
+          request.codeVerifier,
+          GITHUB_SCOPES
+        )
         .toString()
     },
 
@@ -109,13 +147,12 @@ export function createGitHubProvider(options: ProviderOptions = {}): OAuthProvid
       credentials: OAuthCredentials,
       exchange: OAuthCodeExchange
     ): Promise<OAuthProfile> {
+      if (exchange.codeVerifier === '') {
+        throw new OAuthProviderError('invalid_grant')
+      }
       let accessToken: string
       try {
-        const tokens = await withDeadline(
-          client(credentials, exchange.redirectUri).validateAuthorizationCode(exchange.code),
-          timeoutMs
-        )
-        accessToken = tokens.accessToken()
+        accessToken = await withDeadline(accessTokenOf(credentials, exchange), timeoutMs)
       } catch (error) {
         throw exchangeFailure(error)
       }

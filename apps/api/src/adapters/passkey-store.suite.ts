@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { ActivityType } from '@tula/contract'
+import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { PasskeyChallengeRecord, PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'
 import type { SignInMeans } from '~/ports/user-repository'
@@ -112,7 +113,7 @@ export function describePasskeyStore(
       test('a stored passkey reads back exactly, by user and by credential id', async () => {
         const userId = await ctx.a.user()
         const record = passkey(ctx.a, userId, { signCount: 2 ** 33, backupEligible: true })
-        expect(await ctx.store.create(record, 10)).toBe('created')
+        expect(await ctx.store.create(record, 10, Audit.none('fixture'))).toBe('created')
         expect(await ctx.store.listForUser(ctx.a.environmentId, userId)).toEqual([record])
         const found = await ctx.store.findByCredentialId(ctx.a.environmentId, record.credentialId)
         expect(found).toEqual(record)
@@ -124,9 +125,9 @@ export function describePasskeyStore(
         const other = await ctx.a.user()
         const second = passkey(ctx.a, userId, { createdAt: later(2_000), name: 'second' })
         const first = passkey(ctx.a, userId, { createdAt: later(1_000), name: 'first' })
-        await ctx.store.create(second, 10)
-        await ctx.store.create(first, 10)
-        await ctx.store.create(passkey(ctx.a, other), 10)
+        await ctx.store.create(second, 10, Audit.none('fixture'))
+        await ctx.store.create(first, 10, Audit.none('fixture'))
+        await ctx.store.create(passkey(ctx.a, other), 10, Audit.none('fixture'))
         expect(
           (await ctx.store.listForUser(ctx.a.environmentId, userId)).map((row) => row.name)
         ).toEqual(['first', 'second'])
@@ -137,7 +138,7 @@ export function describePasskeyStore(
         const other = await ctx.a.user()
         const record = passkey(ctx.a, userId)
         const entry = activity(ctx.a, 'user.passkey_added', other)
-        expect(await ctx.store.create(record, 10)).toBe('created')
+        expect(await ctx.store.create(record, 10, Audit.none('fixture'))).toBe('created')
         expect(
           await ctx.store.create(
             passkey(ctx.a, other, { credentialId: record.credentialId }),
@@ -150,7 +151,8 @@ export function describePasskeyStore(
         expect(
           await ctx.store.create(
             passkey(ctx.b, elsewhere, { credentialId: record.credentialId }),
-            10
+            10,
+            Audit.none('fixture')
           )
         ).toBe('created')
         // And each environment finds only its own.
@@ -161,7 +163,9 @@ export function describePasskeyStore(
 
       test('the limit is enforced with the insert, and records nothing when it refuses', async () => {
         const userId = await ctx.a.user()
-        expect(await ctx.store.create(passkey(ctx.a, userId), 2)).toBe('created')
+        expect(await ctx.store.create(passkey(ctx.a, userId), 2, Audit.none('fixture'))).toBe(
+          'created'
+        )
         expect(
           await ctx.store.create(
             passkey(ctx.a, userId),
@@ -183,18 +187,33 @@ export function describePasskeyStore(
       test('another environment sees none of it', async () => {
         const userId = await ctx.a.user()
         const record = passkey(ctx.a, userId)
-        await ctx.store.create(record, 10)
+        await ctx.store.create(record, 10, Audit.none('fixture'))
         expect(await ctx.store.listForUser(ctx.b.environmentId, userId)).toEqual([])
         expect(
           await ctx.store.findByCredentialId(ctx.b.environmentId, record.credentialId)
         ).toBeNull()
         expect(
-          await ctx.store.rename(ctx.b.environmentId, userId, record.id, 'stolen', later(1))
+          await ctx.store.rename(
+            ctx.b.environmentId,
+            userId,
+            record.id,
+            'stolen',
+            later(1),
+            Audit.none('fixture')
+          )
         ).toBe(false)
-        expect(await ctx.store.remove(ctx.b.environmentId, userId, record.id, anyway)).toBe(
-          'not_found'
-        )
-        expect(await ctx.store.removeForUser(ctx.b.environmentId, userId)).toBe(0)
+        expect(
+          await ctx.store.remove(
+            ctx.b.environmentId,
+            userId,
+            record.id,
+            anyway,
+            Audit.none('fixture')
+          )
+        ).toBe('not_found')
+        expect(
+          await ctx.store.removeForUser(ctx.b.environmentId, userId, Audit.none('fixture'))
+        ).toBe(0)
         expect(
           await ctx.store.recordUse(ctx.b.environmentId, record.id, {
             expectedSignCount: 0,
@@ -210,7 +229,7 @@ export function describePasskeyStore(
       test('a use is recorded once per expected counter', async () => {
         const userId = await ctx.a.user()
         const record = passkey(ctx.a, userId, { signCount: 4 })
-        await ctx.store.create(record, 10)
+        await ctx.store.create(record, 10, Audit.none('fixture'))
         const use = {
           expectedSignCount: 4,
           signCount: 5,
@@ -237,7 +256,7 @@ export function describePasskeyStore(
       test('an authenticator without a counter can be used again and again', async () => {
         const userId = await ctx.a.user()
         const record = passkey(ctx.a, userId)
-        await ctx.store.create(record, 10)
+        await ctx.store.create(record, 10, Audit.none('fixture'))
         for (const at of [later(1_000), later(2_000)]) {
           expect(
             await ctx.store.recordUse(ctx.a.environmentId, record.id, {
@@ -255,7 +274,7 @@ export function describePasskeyStore(
         const userId = await ctx.a.user()
         const other = await ctx.a.user()
         const record = passkey(ctx.a, userId)
-        await ctx.store.create(record, 10)
+        await ctx.store.create(record, 10, Audit.none('fixture'))
         expect(
           await ctx.store.rename(
             ctx.a.environmentId,
@@ -285,14 +304,20 @@ export function describePasskeyStore(
         const userId = await ctx.a.user()
         const first = passkey(ctx.a, userId)
         const second = passkey(ctx.a, userId, { createdAt: later(1) })
-        await ctx.store.create(first, 10)
-        await ctx.store.create(second, 10)
+        await ctx.store.create(first, 10, Audit.none('fixture'))
+        await ctx.store.create(second, 10, Audit.none('fixture'))
         const seen: SignInMeans[] = []
         expect(
-          await ctx.store.remove(ctx.a.environmentId, userId, first.id, (remaining) => {
-            seen.push(remaining)
-            return false
-          })
+          await ctx.store.remove(
+            ctx.a.environmentId,
+            userId,
+            first.id,
+            (remaining) => {
+              seen.push(remaining)
+              return false
+            },
+            Audit.none('fixture')
+          )
         ).toBe('last_method')
         expect(seen).toEqual([
           { hasPassword: false, emailVerified: false, providers: [], passkeys: 1 },
@@ -316,7 +341,9 @@ export function describePasskeyStore(
           [other, second.id],
           [userId, Bun.randomUUIDv7()],
         ] as const) {
-          expect(await ctx.store.remove(ctx.a.environmentId, owner, id, anyway)).toBe('not_found')
+          expect(
+            await ctx.store.remove(ctx.a.environmentId, owner, id, anyway, Audit.none('fixture'))
+          ).toBe('not_found')
         }
       })
 
@@ -324,12 +351,12 @@ export function describePasskeyStore(
         const userId = await ctx.a.user()
         const first = passkey(ctx.a, userId)
         const second = passkey(ctx.a, userId, { createdAt: later(1) })
-        await ctx.store.create(first, 10)
-        await ctx.store.create(second, 10)
+        await ctx.store.create(first, 10, Audit.none('fixture'))
+        await ctx.store.create(second, 10, Audit.none('fixture'))
         const needsOne = (remaining: SignInMeans) => remaining.passkeys > 0
         const outcomes = await Promise.all([
-          ctx.store.remove(ctx.a.environmentId, userId, first.id, needsOne),
-          ctx.store.remove(ctx.a.environmentId, userId, second.id, needsOne),
+          ctx.store.remove(ctx.a.environmentId, userId, first.id, needsOne, Audit.none('fixture')),
+          ctx.store.remove(ctx.a.environmentId, userId, second.id, needsOne, Audit.none('fixture')),
         ])
         expect(outcomes.sort()).toEqual(['last_method', 'removed'])
         expect(await ctx.store.listForUser(ctx.a.environmentId, userId)).toHaveLength(1)
@@ -338,10 +365,10 @@ export function describePasskeyStore(
       test('removing everything of a user removes passkeys and challenges, and records it once', async () => {
         const userId = await ctx.a.user()
         const kept = await ctx.a.user()
-        await ctx.store.create(passkey(ctx.a, userId), 10)
-        await ctx.store.create(passkey(ctx.a, userId), 10)
+        await ctx.store.create(passkey(ctx.a, userId), 10, Audit.none('fixture'))
+        await ctx.store.create(passkey(ctx.a, userId), 10, Audit.none('fixture'))
         const keptPasskey = passkey(ctx.a, kept)
-        await ctx.store.create(keptPasskey, 10)
+        await ctx.store.create(keptPasskey, 10, Audit.none('fixture'))
         const pending = challenge(ctx.a, userId)
         await ctx.store.putChallenge(pending)
         expect(
@@ -371,7 +398,7 @@ export function describePasskeyStore(
       test('a counter regression is recorded for a passkey that exists, and changes nothing', async () => {
         const userId = await ctx.a.user()
         const record = passkey(ctx.a, userId, { signCount: 9 })
-        await ctx.store.create(record, 10)
+        await ctx.store.create(record, 10, Audit.none('fixture'))
         await ctx.store.reportRegression(
           ctx.a.environmentId,
           record.id,

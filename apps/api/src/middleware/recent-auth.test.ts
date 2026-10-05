@@ -5,6 +5,7 @@ import { base32Decode, totp } from '~/lib/totp'
 import { PUBLISHABLE_KEY_HEADER, publishableKey } from '~/middleware/publishable-key'
 import { requireRecentAuth } from '~/middleware/recent-auth'
 import { sessionAuth } from '~/middleware/session-auth'
+import * as Audit from '~/modules/audit/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Sessions from '~/modules/session/service'
@@ -30,21 +31,24 @@ beforeEach(async () => {
   })
   await seedApiKey(deps, PK)
   userId = deps.ids.next()
-  await deps.users.create({
-    id: userId,
-    projectId: tenant.projectId,
-    environmentId: tenant.environmentId,
-    email: 'maya@northline.app',
-    emailNormalized: 'maya@northline.app',
-    emailVerifiedAt: deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    // A password hash that is never verified here: only its presence matters.
-    passwordHash: '$argon2id$placeholder',
-  })
+  await deps.users.create(
+    {
+      id: userId,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: 'maya@northline.app',
+      emailNormalized: 'maya@northline.app',
+      emailVerifiedAt: deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      // A password hash that is never verified here: only its presence matters.
+      passwordHash: '$argon2id$placeholder',
+    },
+    Audit.none('fixture')
+  )
   app = createApp(deps)
   const ok = (c: { json: (body: unknown) => Response }) => c.json({ ok: true })
   app.get('/test/default', publishableKey(), sessionAuth(), requireRecentAuth(), ok)

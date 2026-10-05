@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { createApp } from '~/index'
+import * as Audit from '~/modules/audit/service'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_TENANT } from '~/testing'
 
@@ -28,20 +29,23 @@ async function setup() {
   })
   await seedApiKey(deps, PK)
   const userId = deps.ids.next()
-  await deps.users.create({
-    id: userId,
-    projectId: TEST_TENANT.projectId,
-    environmentId: TEST_TENANT.environmentId,
-    email: 'maya@northline.app',
-    emailNormalized: 'maya@northline.app',
-    emailVerifiedAt: deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: null,
-  })
+  await deps.users.create(
+    {
+      id: userId,
+      projectId: TEST_TENANT.projectId,
+      environmentId: TEST_TENANT.environmentId,
+      email: 'maya@northline.app',
+      emailNormalized: 'maya@northline.app',
+      emailVerifiedAt: deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: null,
+    },
+    Audit.none('fixture')
+  )
   const session = await Sessions.create(deps, TEST_TENANT, {
     userId,
     client: 'ios',

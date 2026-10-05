@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { User, UserList } from '@tula/contract'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
+import * as Audit from '~/modules/audit/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
@@ -381,20 +382,24 @@ describe('admin: GET /v1/admin/users/:userId/authentication', () => {
         lastUsedAt: null,
         createdAt: deps.clock.now(),
       },
-      10
+      10,
+      Audit.none('fixture')
     )
     expect(outcome).toBe('created')
   }
 
   async function link(userId: string, provider: 'google' | 'github') {
-    const outcome = await deps.users.linkIdentity({
-      id: deps.ids.next(),
-      ...scope,
-      userId,
-      provider,
-      subject: SUBJECT,
-      createdAt: deps.clock.now(),
-    })
+    const outcome = await deps.users.linkIdentity(
+      {
+        id: deps.ids.next(),
+        ...scope,
+        userId,
+        provider,
+        subject: SUBJECT,
+        createdAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
     expect(outcome).toBe('linked')
   }
 

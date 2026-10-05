@@ -28,6 +28,7 @@ import type { Actor } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import { createSecretBox } from '~/lib/secret-box'
+import * as Audit from '~/modules/audit/service'
 import type { ApiKeyKind, ApiKeyRecord } from '~/ports/api-key-repository'
 
 /** `Deps` with the concrete memory adapters exposed, so tests can seed and advance them. */
@@ -155,17 +156,20 @@ export function seedApiKey(
   overrides: Partial<Omit<ApiKeyRecord, 'lastUsedAt' | 'revokedAt'>> = {}
 ): Promise<ApiKeyRecord> {
   const kind: ApiKeyKind = key.startsWith('tula_sk_') ? 'secret' : 'publishable'
-  return deps.apiKeys.insert({
-    id: deps.ids.next(),
-    kind,
-    name: `Test ${kind} key`,
-    projectId: TEST_TENANT.projectId,
-    environmentId: TEST_TENANT.environmentId,
-    lastFour: key.slice(-4),
-    createdAt: deps.clock.now(),
-    ...overrides,
-    keyHash: sha256Hex(key),
-  })
+  return deps.apiKeys.insert(
+    {
+      id: deps.ids.next(),
+      kind,
+      name: `Test ${kind} key`,
+      projectId: TEST_TENANT.projectId,
+      environmentId: TEST_TENANT.environmentId,
+      lastFour: key.slice(-4),
+      createdAt: deps.clock.now(),
+      ...overrides,
+      keyHash: sha256Hex(key),
+    },
+    Audit.none('fixture')
+  )
 }
 
 /** An instance admin token for tests: 32 characters that pass the boot check. */

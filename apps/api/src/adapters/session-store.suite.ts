@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
 
@@ -80,7 +81,7 @@ export function describeSessionStore(
       const userId = overrides.userId ?? (await tenant.user())
       const s = session(tenant, userId, overrides)
       const root = token(s.id)
-      await ctx.store.create(s, root)
+      await ctx.store.create(s, root, Audit.none('fixture'))
       return { session: s, root, userId }
     }
 
@@ -176,15 +177,25 @@ export function describeSessionStore(
 
     test('methods proven again are not listed twice, and the order is the canonical one', async () => {
       const { session: s } = await seed(ctx.a, { authMethods: ['pwd', 'otp', 'mfa'] })
-      const first = await ctx.store.recordAuthentication(ctx.a.environmentId, s.id, {
-        at: later(1_000),
-        methods: ['otp', 'mfa'],
-      })
+      const first = await ctx.store.recordAuthentication(
+        ctx.a.environmentId,
+        s.id,
+        {
+          at: later(1_000),
+          methods: ['otp', 'mfa'],
+        },
+        Audit.none('fixture')
+      )
       expect(first?.authMethods).toEqual(['pwd', 'otp', 'mfa'])
-      const second = await ctx.store.recordAuthentication(ctx.a.environmentId, s.id, {
-        at: later(2_000),
-        methods: ['backup_code', 'mfa', 'backup_code'],
-      })
+      const second = await ctx.store.recordAuthentication(
+        ctx.a.environmentId,
+        s.id,
+        {
+          at: later(2_000),
+          methods: ['backup_code', 'mfa', 'backup_code'],
+        },
+        Audit.none('fixture')
+      )
       expect(second).toMatchObject({
         factorVerifiedAt: later(2_000),
         authMethods: ['pwd', 'otp', 'backup_code', 'mfa'],
@@ -197,7 +208,12 @@ export function describeSessionStore(
       const { session: s } = await seed(ctx.a, { authMethods: ['pwd'] })
       await Promise.all(
         [['otp'], ['mfa'], ['backup_code']].map((methods) =>
-          ctx.store.recordAuthentication(ctx.a.environmentId, s.id, { at: later(1_000), methods })
+          ctx.store.recordAuthentication(
+            ctx.a.environmentId,
+            s.id,
+            { at: later(1_000), methods },
+            Audit.none('fixture')
+          )
         )
       )
       const stored = await ctx.store.findById(ctx.a.environmentId, s.id)
@@ -206,7 +222,13 @@ export function describeSessionStore(
 
     test('an ended or foreign session records no authentication and no activity', async () => {
       const revoked = await seed(ctx.a, { authMethods: ['pwd'] })
-      await ctx.store.revoke(ctx.a.environmentId, revoked.session.id, 'sign_out', later(1_000))
+      await ctx.store.revoke(
+        ctx.a.environmentId,
+        revoked.session.id,
+        'sign_out',
+        later(1_000),
+        Audit.none('fixture')
+      )
       const idle = await seed(ctx.a, { authMethods: ['pwd'], idleExpiresAt: later(10_000) })
       const absolute = await seed(ctx.a, { authMethods: ['pwd'], absoluteExpiresAt: later(10_000) })
       const live = await seed(ctx.a, { authMethods: ['pwd'] })
@@ -320,7 +342,15 @@ export function describeSessionStore(
 
     test('a revoked session cannot be rotated', async () => {
       const { session: s, root } = await seed(ctx.a)
-      expect(await ctx.store.revoke(ctx.a.environmentId, s.id, 'sign_out', later(1_000))).toBe(true)
+      expect(
+        await ctx.store.revoke(
+          ctx.a.environmentId,
+          s.id,
+          'sign_out',
+          later(1_000),
+          Audit.none('fixture')
+        )
+      ).toBe(true)
       const child = token(s.id, { parentId: root.id })
       expect(
         await ctx.store.rotate(ctx.a.environmentId, {
@@ -337,17 +367,35 @@ export function describeSessionStore(
     test('revoke records the reason once', async () => {
       const { session: s } = await seed(ctx.a)
       expect(
-        await ctx.store.revoke(ctx.a.environmentId, s.id, 'reuse_detected', later(5_000))
+        await ctx.store.revoke(
+          ctx.a.environmentId,
+          s.id,
+          'reuse_detected',
+          later(5_000),
+          Audit.none('fixture')
+        )
       ).toBe(true)
-      expect(await ctx.store.revoke(ctx.a.environmentId, s.id, 'sign_out', later(6_000))).toBe(
-        false
-      )
+      expect(
+        await ctx.store.revoke(
+          ctx.a.environmentId,
+          s.id,
+          'sign_out',
+          later(6_000),
+          Audit.none('fixture')
+        )
+      ).toBe(false)
       expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toMatchObject({
         revokedAt: later(5_000),
         revokeReason: 'reuse_detected',
       })
       expect(
-        await ctx.store.revoke(ctx.a.environmentId, Bun.randomUUIDv7(), 'sign_out', later(1))
+        await ctx.store.revoke(
+          ctx.a.environmentId,
+          Bun.randomUUIDv7(),
+          'sign_out',
+          later(1),
+          Audit.none('fixture')
+        )
       ).toBe(false)
     })
 
@@ -356,7 +404,13 @@ export function describeSessionStore(
       const old = await seed(ctx.a, { userId, lastActiveAt: later(1_000) })
       const recent = await seed(ctx.a, { userId, lastActiveAt: later(5_000) })
       const revoked = await seed(ctx.a, { userId })
-      await ctx.store.revoke(ctx.a.environmentId, revoked.session.id, 'sign_out', later(1))
+      await ctx.store.revoke(
+        ctx.a.environmentId,
+        revoked.session.id,
+        'sign_out',
+        later(1),
+        Audit.none('fixture')
+      )
       await seed(ctx.a, { userId, idleExpiresAt: later(10_000) })
       await seed(ctx.a, { userId, absoluteExpiresAt: later(10_000) })
       await seed(ctx.a)
@@ -372,7 +426,13 @@ export function describeSessionStore(
     test('lists the devices of a user’s earlier sessions, ended ones included, each once', async () => {
       const userId = await ctx.a.user()
       const first = await seed(ctx.a, { userId, userAgent: 'first', createdAt: later(1_000) })
-      await ctx.store.revoke(ctx.a.environmentId, first.session.id, 'sign_out', later(1_500))
+      await ctx.store.revoke(
+        ctx.a.environmentId,
+        first.session.id,
+        'sign_out',
+        later(1_500),
+        Audit.none('fixture')
+      )
       await seed(ctx.a, { userId, userAgent: 'second', createdAt: later(2_000), client: 'ios' })
       await seed(ctx.a, { userId, userAgent: 'first', createdAt: later(3_000) })
       await seed(ctx.a, { userId, userAgent: null, createdAt: later(4_000), idleExpiresAt: now })
@@ -427,7 +487,7 @@ export function describeSessionStore(
         userId,
         'revoked_by_user',
         later(1_000),
-        { exceptSessionId: keep.session.id }
+        { activity: () => Audit.none('fixture'), exceptSessionId: keep.session.id }
       )
       expect(revoked.sort()).toEqual([first.session.id, second.session.id].sort())
       expect((await ctx.store.findById(ctx.a.environmentId, keep.session.id))?.revokedAt).toBeNull()
@@ -436,7 +496,13 @@ export function describeSessionStore(
       ).toBeNull()
       // Already-revoked sessions are not reported again; without an exception the rest go too.
       expect(
-        await ctx.store.revokeByUser(ctx.a.environmentId, userId, 'password_changed', later(2_000))
+        await ctx.store.revokeByUser(
+          ctx.a.environmentId,
+          userId,
+          'password_changed',
+          later(2_000),
+          { activity: () => Audit.none('fixture') }
+        )
       ).toEqual([keep.session.id])
       expect(await ctx.store.findById(ctx.a.environmentId, first.session.id)).toMatchObject({
         revokeReason: 'revoked_by_user',
@@ -463,12 +529,19 @@ export function describeSessionStore(
           idleExpiresAt: ended,
         })
       ).toBe(true)
-      await ctx.store.revoke(ctx.a.environmentId, revokedLongAgo.session.id, 'sign_out', ended)
+      await ctx.store.revoke(
+        ctx.a.environmentId,
+        revokedLongAgo.session.id,
+        'sign_out',
+        ended,
+        Audit.none('fixture')
+      )
       await ctx.store.revoke(
         ctx.a.environmentId,
         revokedSince.session.id,
         'sign_out',
-        later(-39 * DAY)
+        later(-39 * DAY),
+        Audit.none('fixture')
       )
 
       const found = (tenant: SessionSuiteTenant, id: string) =>
@@ -526,7 +599,7 @@ export function describeSessionStore(
       overrides: Partial<NewSession> = {}
     ) {
       const s = session(tenant, userId, { createdAt: later(1000), ...overrides })
-      const result = await ctx.store.create(s, token(s.id), undefined, {
+      const result = await ctx.store.create(s, token(s.id), Audit.none('fixture'), {
         max,
         end,
         at: later(1000),
@@ -543,7 +616,10 @@ export function describeSessionStore(
     test('creating without a limit reports the session as created', async () => {
       const userId = await ctx.a.user()
       const s = session(ctx.a, userId)
-      expect(await ctx.store.create(s, token(s.id))).toEqual({ created: true, ended: [] })
+      expect(await ctx.store.create(s, token(s.id), Audit.none('fixture'))).toEqual({
+        created: true,
+        ended: [],
+      })
     })
 
     test('a session under the limit is created', async () => {
@@ -592,7 +668,13 @@ export function describeSessionStore(
     test('only sessions that can still be used count towards the limit', async () => {
       const userId = await ctx.a.user()
       const { session: revoked } = await seed(ctx.a, { userId })
-      await ctx.store.revoke(ctx.a.environmentId, revoked.id, 'sign_out', later(1))
+      await ctx.store.revoke(
+        ctx.a.environmentId,
+        revoked.id,
+        'sign_out',
+        later(1),
+        Audit.none('fixture')
+      )
       await seed(ctx.a, { userId, idleExpiresAt: later(500) })
       await seed(ctx.a, { userId, absoluteExpiresAt: later(500), idleExpiresAt: later(500) })
       const { result } = await createLimited(ctx.a, userId, 1)
@@ -632,7 +714,13 @@ export function describeSessionStore(
 
     test('a revoked, expired, unknown or foreign session cannot be touched', async () => {
       const { session: revoked } = await seed(ctx.a)
-      await ctx.store.revoke(ctx.a.environmentId, revoked.id, 'sign_out', later(1))
+      await ctx.store.revoke(
+        ctx.a.environmentId,
+        revoked.id,
+        'sign_out',
+        later(1),
+        Audit.none('fixture')
+      )
       const { session: expired } = await seed(ctx.a, { idleExpiresAt: later(500) })
       const { session: live } = await seed(ctx.a)
       const env = ctx.a.environmentId
@@ -661,8 +749,14 @@ export function describeSessionStore(
           10
         )
       ).toEqual([])
-      expect(await ctx.store.revoke(foreign, s.id, 'sign_out', later(1))).toBe(false)
-      expect(await ctx.store.revokeByUser(foreign, userId, 'sign_out', later(1))).toEqual([])
+      expect(
+        await ctx.store.revoke(foreign, s.id, 'sign_out', later(1), Audit.none('fixture'))
+      ).toBe(false)
+      expect(
+        await ctx.store.revokeByUser(foreign, userId, 'sign_out', later(1), {
+          activity: () => Audit.none('fixture'),
+        })
+      ).toEqual([])
       expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.revokedAt).toBeNull()
     })
   })

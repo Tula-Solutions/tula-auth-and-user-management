@@ -5,6 +5,7 @@ import { FixedClock } from '~/adapters/memory/clock'
 import { FakeRedis } from '~/adapters/redis/fake'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
 import * as logger from '~/lib/logger'
+import * as Audit from '~/modules/audit/service'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 
 const key: Jwk = { kty: 'OKP', crv: 'Ed25519', x: 'x', kid: 'k1', alg: 'EdDSA', use: 'sig' }
@@ -85,7 +86,7 @@ describe('cacheSigningKeys', () => {
     await cached.verificationKeys('e2', clock.now())
     expect(calls).toEqual(['e1', 'e2', 'e1'])
     const plan = { retireId: 'a', activateId: 'b', next: {} as never }
-    expect(await cached.rotate('e2', plan, clock.now())).toBe(true)
+    expect(await cached.rotate('e2', plan, clock.now(), Audit.none('fixture'))).toBe(true)
     await cached.verificationKeys('e2', clock.now())
     expect(calls).toEqual(['e1', 'e2', 'e1', 'e2'])
   })
@@ -129,7 +130,7 @@ describe('cacheSigningKeys across instances', () => {
     expect(calls).toHaveLength(1)
 
     current = [{ ...key, kid: 'k2' }]
-    expect(await a.rotate('e1', plan, clock.now())).toBe(true)
+    expect(await a.rotate('e1', plan, clock.now(), Audit.none('fixture'))).toBe(true)
 
     // Until its next check the other instance still serves what it has.
     clock.advance(CHECK - 1)
@@ -197,7 +198,7 @@ describe('cacheSigningKeys across instances', () => {
       checkEveryMs: CHECK,
     })
     expect(await cached.insert('e1', [])).toBe(false)
-    expect(await cached.rotate('e1', plan, clock.now())).toBe(false)
+    expect(await cached.rotate('e1', plan, clock.now(), Audit.none('fixture'))).toBe(false)
     expect(redis.keys()).toEqual([])
   })
 
@@ -206,7 +207,7 @@ describe('cacheSigningKeys across instances', () => {
     const { clock, redis, calls, a, b } = instances(async () => current)
     const before = await b.verificationKeys('e1', clock.now())
     current = [{ ...key, kid: 'k2' }]
-    await a.rotate('e1', plan, clock.now())
+    await a.rotate('e1', plan, clock.now(), Audit.none('fixture'))
     redis.fail()
     clock.advance(CHECK)
     expect(await b.verificationKeys('e1', clock.now())).toBe(before)
@@ -236,7 +237,7 @@ describe('cacheSigningKeys across instances', () => {
     const warn = spyOn(logger, 'warn').mockImplementation(() => {})
     const { clock, redis, a } = instances()
     redis.fail()
-    expect(await a.rotate('e1', plan, clock.now())).toBe(true)
+    expect(await a.rotate('e1', plan, clock.now(), Audit.none('fixture'))).toBe(true)
     expect(warn.mock.calls).toEqual([
       [
         'could not announce new signing keys; other instances catch up at cache expiry',
@@ -265,7 +266,7 @@ describe('cacheSigningKeys across instances', () => {
     const { clock, calls, a, b } = instances(async () => current)
     await b.verificationKeys('e1', clock.now())
     current = [{ ...key, kid: 'k2' }]
-    await a.rotate('e1', plan, clock.now())
+    await a.rotate('e1', plan, clock.now(), Audit.none('fixture'))
     clock.advance(CHECK)
     const stale = b.verificationKeys('e1', clock.now())
     // A later check, started before the first one finished refetching.

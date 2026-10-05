@@ -29,3 +29,9 @@ Tula asks for the scopes `read:user` and `user:email`. It identifies the account
 user whose primary address is not verified at GitHub is refused (`oauth.email_unverified`); one
 who hides every address gets `oauth.email_missing`. GitHub's access token is used for those two
 reads and then dropped: Tula stores no provider token.
+
+Tula sends PKCE with every GitHub sign-in: `code_challenge` and `code_challenge_method=S256`
+on the authorization request, `code_verifier` on the token request. Nothing has to be switched
+on in the OAuth app for it. Like the rest of this page it is not verified against github.com:
+the requests are checked in unit tests and the flow against the mock provider, which refuses a
+code presented with any other verifier.

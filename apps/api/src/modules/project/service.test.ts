@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import type { Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
+import * as Audit from '~/modules/audit/service'
 import * as Project from '~/modules/project/service'
 import { createTestDeps, seedApiKey, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -112,7 +113,7 @@ describe('total key cap', () => {
       const key = await seedApiKey(deps, `tula_pk_dev_${index.toString().padStart(30, '0')}`, {
         createdAt,
       })
-      await deps.apiKeys.revoke(dev.environmentId, key.id, createdAt)
+      await deps.apiKeys.revoke(dev.environmentId, key.id, createdAt, Audit.none('fixture'))
     }
     const over = Project.createApiKey(deps, dev, { kind: 'secret', name: 'one more' }, TEST_ACTOR)
     await expect(over).rejects.toBeInstanceOf(ConflictError)
