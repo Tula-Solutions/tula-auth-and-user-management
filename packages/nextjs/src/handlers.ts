@@ -210,15 +210,12 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
 
   let upstream: Response
   try {
-    upstream = await callApi(
-      config,
-      new Request(`${config.apiUrl}${path}${url.search}`, {
-        method: request.method,
-        headers,
-        // The body is streamed through, not read: it may hold a password.
-        ...(body && { body: body.stream, duplex: 'half' }),
-      } as RequestInit)
-    )
+    upstream = await callApi(config, `${config.apiUrl}${path}${url.search}`, {
+      method: request.method,
+      headers,
+      // The body is streamed through, not read: it may hold a password.
+      ...(body && { body: body.stream, duplex: 'half' }),
+    } as RequestInit)
   } catch {
     if (body?.exceeded()) {
       return tooLarge()

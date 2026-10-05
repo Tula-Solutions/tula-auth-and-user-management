@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { NextRequest } from 'next/server'
 import { authenticate, requestFromHeaders } from './helpers'
 import { tulaMiddleware } from './middleware'
@@ -785,5 +785,85 @@ describe('the scheme auth() reads cookies under, with no URL to go by', () => {
     expect(
       (await auth(api, { host: 'x', cookie: `__Host-tula_at=${token}` }, https)).isSignedIn
     ).toBe(true)
+  })
+})
+
+// Next.js 15 runs `middleware.ts` in its Edge runtime, whose `Request` is not the platform's:
+// built from another `Request`, it keeps that one's URL and nothing else
+// (`next/dist/server/web/sandbox/context.js`: `super(url, init)`). A call to the API that is
+// copied that way arrives as a `GET` with no headers and no body.
+describe('where a Request built from a Request keeps only its URL (the Edge runtime of Next.js 15)', () => {
+  const Native = globalThis.Request
+
+  /** The sandbox's constructor, as Next.js 15.5 ships it. */
+  class EdgeRequest extends Native {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      super(typeof input !== 'string' && 'url' in input ? input.url : String(input), init)
+    }
+  }
+
+  beforeEach(() => {
+    globalThis.Request = EdgeRequest as typeof Request
+  })
+
+  afterEach(() => {
+    globalThis.Request = Native
+  })
+
+  test('the refresh still reaches the API as a POST with its cookie, key and origin, and the cookies rotate', async () => {
+    const api = createFakeApi([signer])
+    const fresh = await signer.sign()
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json(
+        {
+          sessionId: 'sess_1',
+          accessToken: fresh,
+          accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        {
+          headers: {
+            'set-cookie': `tula_rt_${ENV}=r2; Max-Age=600; Path=/v1/client/sessions; HttpOnly`,
+          },
+        }
+      )
+    )
+    const response = await protect(api)(get('/dashboard', { cookie: 'tula_rt=r1' }))
+    expect(
+      api.requests.map((request) => `${request.method} ${new URL(request.url).pathname}`)
+    ).toContain('POST /v1/client/sessions/refresh')
+    const sent = api.requests.find((request) => request.method === 'POST') as Request
+    expect(sent.headers.get('origin')).toBe(APP)
+    expect(sent.headers.get('x-tula-publishable-key')).toBe(KEY)
+    expect(sent.headers.get('cookie')).toBe(`__Secure-tula_rt_${ENV}=r1; tula_rt_${ENV}=r1`)
+    expect(sent.redirect).toBe('manual')
+    expect(await sent.text()).toBe('{}')
+
+    expect(isNext(response)).toBe(true)
+    expect(response.headers.getSetCookie()).toContain(
+      'tula_rt=r2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600'
+    )
+    expect((await authAfter(api, response)).userId).toBe('user_1')
+  })
+
+  test('a stateful session is still verified with the secret key and the cookie’s value', async () => {
+    const api = createFakeApi([signer], { secretKey: SECRET })
+    api.on('POST /v1/admin/sessions/verify', () =>
+      Response.json({
+        iss: `${API}/v1/environments/${ENV}`,
+        sub: 'user_7',
+        aud: ENV,
+        sid: 'sess_7',
+        exp: Math.floor(Date.now() / 1000) + 60,
+        iat: Math.floor(Date.now() / 1000),
+        amr: ['pwd'],
+      })
+    )
+    const response = await protect(api)(get('/dashboard', { cookie: 'tula_session=sess-token' }))
+    const sent = api.requests[0] as Request
+    expect(sent.method).toBe('POST')
+    expect(sent.headers.get('authorization')).toBe(`Bearer ${SECRET}`)
+    expect(await sent.json()).toEqual({ token: 'sess-token' })
+    expect(isNext(response)).toBe(true)
+    expect((await authAfter(api, response)).userId).toBe('user_7')
   })
 })

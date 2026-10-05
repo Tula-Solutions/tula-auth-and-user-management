@@ -373,6 +373,11 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   order: the configured app URL (`TULA_APP_URL`, the recommended way), `X-Forwarded-Proto`,
   and otherwise https exactly when the request carries one of the SDK's `__Host-` cookies
   (`requestFromHeaders`). Never read both names for one request.
+- **A call to the API is built once, from its URL and parts** (`callApi(config, url, init)`).
+  Never build a `Request` from another `Request` in this package: the Edge runtime of
+  Next.js 15 keeps only the URL of the one it is given, so a copied `POST` reaches the API as
+  a bare `GET` (`middleware.test.ts` runs the refresh and the stateful check under such a
+  `Request`).
 - **The middleware imports no Node API** (it runs in the Edge runtime on Next.js 15), and the
   client entry (`src/index.ts`, `src/provider.tsx`) imports nothing that reads the server
   configuration: `package.test.ts` builds the package and checks both, and that the client

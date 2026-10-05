@@ -138,24 +138,31 @@ const MIN_REFRESH_RETRY_TIMEOUT_MS = 1_000
 /**
  * Send a request to the API: never following a redirect, never waiting for ever.
  *
+ * It takes the URL and the request's parts, not a `Request`, and builds the one `Request` that
+ * is sent. A `Request` must never be built from another here: the Edge runtime of Next.js 15,
+ * where the middleware runs, keeps only the URL of the one it is given, so a copied `POST`
+ * with its headers and body would reach the API as a bare `GET`.
+ *
  * @param config - The configuration.
- * @param request - The request to send.
+ * @param url - The API URL to call.
+ * @param init - The method, headers and body. Its `redirect` and `signal` are replaced.
  * @param timeoutMs - How long to wait for the answer. Defaults to the configured timeout.
  * @returns The API's response.
  * @throws Whatever `fetch` throws when the API cannot be reached or the timeout passes.
  *
  * @example
  * ```ts
- * const response = await callApi(config, new Request(`${config.apiUrl}/v1/client/me`, { headers }))
+ * const response = await callApi(config, `${config.apiUrl}/v1/client/me`, { headers })
  * ```
  */
 export function callApi(
   config: TulaConfig,
-  request: Request,
+  url: string,
+  init: RequestInit,
   timeoutMs = config.timeoutMs
 ): Promise<Response> {
   return config.fetch(
-    new Request(request, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) })
+    new Request(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) })
   )
 }
 
@@ -341,11 +348,8 @@ async function requestRefresh(
   const send = (timeoutMs: number) =>
     callApi(
       config,
-      new Request(`${config.apiUrl}/v1/client/sessions/refresh`, {
-        method: 'POST',
-        headers,
-        body: '{}',
-      }),
+      `${config.apiUrl}/v1/client/sessions/refresh`,
+      { method: 'POST', headers, body: '{}' },
       timeoutMs
     )
   const timeoutMs = Math.min(config.timeoutMs, REFRESH_TIMEOUT_MS)

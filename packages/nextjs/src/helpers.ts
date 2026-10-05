@@ -156,10 +156,7 @@ export async function fetchCurrentUser(
   }
   headers.set('accept', 'application/json')
   try {
-    const response = await callApi(
-      config,
-      new Request(`${config.apiUrl}/v1/client/me`, { headers })
-    )
+    const response = await callApi(config, `${config.apiUrl}/v1/client/me`, { headers })
     if (response.status !== 200) {
       return null
     }

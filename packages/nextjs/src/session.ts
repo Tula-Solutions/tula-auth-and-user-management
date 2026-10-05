@@ -179,14 +179,11 @@ export async function verifyStatefulSession(
   headers.set('authorization', `Bearer ${config.secretKey}`)
   headers.set('content-type', 'application/json')
   try {
-    const response = await callApi(
-      config,
-      new Request(`${config.apiUrl}/v1/admin/sessions/verify`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ token: sessionToken }),
-      })
-    )
+    const response = await callApi(config, `${config.apiUrl}/v1/admin/sessions/verify`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token: sessionToken }),
+    })
     if (response.status === 401) {
       return { status: 'refused' }
     }
