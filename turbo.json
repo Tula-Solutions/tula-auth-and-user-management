@@ -6,19 +6,23 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "out/**"]
     },
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
     "typecheck": {
-      "dependsOn": ["generate:check"],
+      "dependsOn": ["transit", "generate:check"],
       "outputs": []
     },
     "generate:check": {
+      "dependsOn": ["transit"],
       "outputs": []
     },
     "test": {
-      "dependsOn": ["generate:check"],
+      "dependsOn": ["transit", "generate:check"],
       "outputs": []
     },
     "test:coverage": {
-      "dependsOn": ["generate:check"],
+      "dependsOn": ["transit", "generate:check"],
       "outputs": []
     },
     "dev": {

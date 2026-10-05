@@ -8,6 +8,7 @@ import type { AdminFetch } from '@tula/admin'
 import { READ_TOOL_NAMES, SCAFFOLD_TOOL_NAMES, TOOL_NAMES } from '@tula/mcp'
 import { createApp } from '../../../apps/api/src/index'
 import { base32Decode, totp } from '../../../apps/api/src/lib/totp'
+import * as Audit from '../../../apps/api/src/modules/audit/service'
 import * as Mfa from '../../../apps/api/src/modules/mfa/service'
 import * as Notices from '../../../apps/api/src/modules/notice/service'
 import * as Sessions from '../../../apps/api/src/modules/session/service'
@@ -208,7 +209,8 @@ async function seed() {
       lastUsedAt: null,
       createdAt: deps.clock.now(),
     },
-    10
+    10,
+    Audit.none('fixture')
   )
   const session = await Sessions.create(deps, tenant, {
     userId: user.id,
