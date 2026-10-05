@@ -233,8 +233,12 @@ paths:
   (the helpers with the stand-in of `requestFromHeaders`): the app URL, then a forwarded
   `https`, then "https iff a `__Host-` cookie of ours is present", which outranks a forwarded
   `http` because Next.js fills `x-forwarded-proto` in itself when no proxy sent it. One cookie
-  name per request. A test of this uses the headers Next.js produces: `x-forwarded-proto` is
-  always there. `appOrigin` (same-origin check, the refresh's `Origin`) never follows a
+  name per request. Where the cookie rule chose the names (`cookies.superseded`), whatever
+  sets or clears one of the app's cookies also sends `supersededCookieLines(cookies)`, which
+  expires the plain-named ones (and the interceptor drops them from the request it passes
+  on): left behind they are read again once the `__Host-` ones are gone. Never do that where
+  the app URL or a forwarded `https` chose. A test of this uses the headers Next.js produces:
+  `x-forwarded-proto` is always there. `appOrigin` (same-origin check, the refresh's `Origin`) never follows a
   cookie; the handler's refusal of an https `Origin` for a host it takes to be http is
   reported once through `config.warn` with fixed text (no host, no `Origin`, no cookie).
 - The provider wraps the client it creates: `serverState` for the first paint, and a

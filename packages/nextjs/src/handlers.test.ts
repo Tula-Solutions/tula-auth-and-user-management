@@ -576,7 +576,119 @@ describe('cookies', () => {
     expect(cookies).toContain(
       '__Host-tula_rt=refresh2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600; Secure'
     )
-    expect(cookies.some((line) => line.startsWith('tula_'))).toBe(false)
+    // Nothing is written under a plain name; the ones that may be there are only expired.
+    expect(cookies.filter((line) => line.startsWith('tula_')).sort()).toEqual([
+      'tula_at=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'tula_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    ])
+  })
+
+  // Where the `__Host-` names were chosen because such a cookie arrived (no app URL, no
+  // forwarded https), plain-named cookies may be this app's own from before: `localhost`
+  // shares cookies across ports, and another https app there can leave a `__Host-tula_*`.
+  // Left alone they are read again once the `__Host-` ones are gone: a session the visitor
+  // signed out of, or the previous user's.
+  describe('where a __Host- cookie chose the names, the plain-named cookies do not survive a change', () => {
+    const PLAIN_EXPIRED = [
+      'tula_at=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+      'tula_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    ]
+    const HOST_EXPIRED = [
+      '__Host-tula_at=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure',
+      '__Host-tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure',
+      '__Host-tula_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure',
+    ]
+    const earlier = 'tula_rt=oldrefresh; tula_at=old.access.token; __Host-tula_rt=stray'
+    const signedIn = () =>
+      Response.json(
+        {
+          id: 'a1',
+          step: { status: 'complete' },
+          session: {
+            sessionId: 's2',
+            accessToken: 'aaa.bbb.ccc',
+            accessTokenExpiresAt: expiresAt(),
+          },
+        },
+        { headers: { 'set-cookie': `tula_rt_${ENV}=refresh2; Max-Age=600` } }
+      )
+    const signedOut = () => new Response(null, { status: 204 })
+
+    test('a sign-in sets the __Host- cookies and expires the plain ones', async () => {
+      const { handlers } = setup(signedIn)
+      const response = await handlers.POST(
+        post('/v1/client/sign-ins/a1/password', {
+          headers: { 'x-forwarded-proto': 'http', cookie: earlier },
+        })
+      )
+      const cookies = cookiesOf(response)
+      expect(cookies).toContain(
+        '__Host-tula_rt=refresh2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600; Secure'
+      )
+      expect(cookies.some((line) => line.startsWith('__Host-tula_at=aaa.bbb.ccc; '))).toBe(true)
+      expect(cookies.filter((line) => line.startsWith('tula_')).sort()).toEqual(PLAIN_EXPIRED)
+      // No name is both set and cleared.
+      const names = cookies.map((line) => line.slice(0, line.indexOf('=')))
+      expect(new Set(names).size).toBe(names.length)
+    })
+
+    test('a sign-out expires both sets: the earlier session cannot come back', async () => {
+      const { handlers } = setup(signedOut)
+      const response = await handlers.POST(
+        post('/v1/client/sessions/sign-out', {
+          headers: { 'x-forwarded-proto': 'http', cookie: earlier },
+        })
+      )
+      expect(response.status).toBe(204)
+      expect(cookiesOf(response).sort()).toEqual([...HOST_EXPIRED, ...PLAIN_EXPIRED].sort())
+    })
+
+    test('an answer that changes no cookie expires nothing', async () => {
+      const { handlers } = setup()
+      const response = await handlers.POST(
+        post('/v1/client/sign-ins', {
+          headers: { 'x-forwarded-proto': 'http', cookie: earlier },
+        })
+      )
+      expect(cookiesOf(response)).toEqual([])
+    })
+
+    // There the plain names cannot be this app's: an https app never wrote them, and what is
+    // under them may be a sibling subdomain's to plant. They are neither read nor touched.
+    test.each([
+      ['a configured app URL', { appUrl: 'https://app.example.com' }, {}],
+      [
+        'a forwarded https',
+        {},
+        { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'app.example.com' },
+      ],
+    ])('with %s nothing extra is cleared', async (_name, options, forwarded) => {
+      for (const [path, respond] of [
+        ['/v1/client/sign-ins/a1/password', signedIn],
+        ['/v1/client/sessions/sign-out', signedOut],
+      ] as const) {
+        const { handlers } = setup(respond, options)
+        const response = await handlers.POST(
+          post(path, {
+            headers: { origin: 'https://app.example.com', cookie: earlier, ...forwarded },
+          })
+        )
+        expect(response.status).toBeLessThan(300)
+        const cookies = cookiesOf(response)
+        expect(cookies.length).toBeGreaterThan(0)
+        expect(cookies.filter((line) => !line.startsWith('__Host-'))).toEqual([])
+      }
+    })
+
+    test('with an app URL on http the plain names are used and no __Host- name is touched', async () => {
+      const { handlers } = setup(signedOut, { appUrl: APP })
+      const response = await handlers.POST(
+        post('/v1/client/sessions/sign-out', { headers: { cookie: earlier } })
+      )
+      expect(cookiesOf(response).sort()).toEqual(PLAIN_EXPIRED)
+    })
   })
 
   test('over https an unprefixed cookie is never read: a sibling subdomain could have set it', async () => {

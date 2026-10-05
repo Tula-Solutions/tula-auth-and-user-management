@@ -20,4 +20,10 @@ back and forth between a protected page and the sign-in page without end.
   (`onWarning`, or `console.warn`): set `TULA_APP_URL`, or have the proxy send
   `X-Forwarded-Proto: https`.
 
+- Where the `__Host-` names are in use only because such a cookie arrived, an answer that
+  sets or clears one of the app's cookies (a sign-in, a refresh, a sign-out, a refused
+  refresh) now also expires `tula_at`, `tula_rt` and `tula_session`. On `localhost`, where
+  cookies are shared across ports, an earlier sign-in over http could otherwise come back
+  after a sign-out. With an app URL or a forwarded `https` nothing changes.
+
 Setting `TULA_APP_URL` remains the recommended way.

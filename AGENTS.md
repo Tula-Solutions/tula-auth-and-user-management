@@ -359,6 +359,9 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   `SameSite=Lax`, `Path=/`, no `Domain`, `Secure` and `__Host-` over https. Write them only
   with `setCookieLine` / `clearCookieLine` (`packages/nextjs/src/cookies.ts`), never copy an
   attribute from the API's cookie, and read only the name for the request's own scheme.
+  Where that scheme was taken from a `__Host-` cookie on the request (no app URL, no forwarded
+  `https`), every answer that sets or clears a cookie also expires the plain-named ones
+  (`supersededCookieLines`): a session signed out of must not come back under the other name.
 - **A session is verified, never assumed.** `verifyAccessToken` (`EdDSA` only, `kid`, `iss`,
   `aud`, `exp`, `sub`, `sid`) runs in the middleware and again in `auth()`. The one header
   that carries claims (`x-tula-auth`, stateful sessions) is honoured only with this app's HMAC

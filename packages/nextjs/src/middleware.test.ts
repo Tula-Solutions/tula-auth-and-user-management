@@ -831,6 +831,92 @@ describe('the scheme cookies are read under where no app URL is configured', () 
   })
 })
 
+// `localhost` shares cookies across ports: an app signed in over http there keeps plain-named
+// cookies, and another https app can leave a `__Host-tula_*` one. The `__Host-` names are then
+// read; when the interceptor changes them, the plain ones must go too, or they are read again
+// (by `auth()` in the same request, and by everything on the next one).
+describe('where a __Host- cookie chose the names, the interceptor expires the plain-named cookies with any change', () => {
+  const PLAIN_EXPIRED = [
+    'tula_at=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    'tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    'tula_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+  ]
+  const headers = (cookie: string, proto: 'http' | 'https' = 'http') => ({
+    'x-forwarded-proto': proto,
+    cookie,
+  })
+
+  test('a refused refresh signs the request out for auth() too, and expires both sets', async () => {
+    const api = createFakeApi([signer])
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json({ status: 401, code: 'session.revoked', detail: 'x' }, { status: 401 })
+    )
+    const earlier = `theme=dark; tula_rt=old; tula_at=${await signer.sign()}; __Host-tula_rt=stray`
+    const response = await protect(api)(get('/', headers(earlier)))
+    expect(isNext(response)).toBe(true)
+    expect(response.headers.getSetCookie().sort()).toEqual(
+      [
+        '__Host-tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure',
+        ...PLAIN_EXPIRED,
+      ].sort()
+    )
+    // The page is not handed the earlier session under the plain names.
+    expect(overridden(response).get('cookie')).toBe('theme=dark')
+    expect((await authAfter(api, response)).isSignedIn).toBe(false)
+  })
+
+  test('a refresh writes the __Host- cookies and expires the plain ones', async () => {
+    const api = createFakeApi([signer])
+    const fresh = await signer.sign()
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json(
+        {
+          sessionId: 'sess_1',
+          accessToken: fresh,
+          accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        { headers: { 'set-cookie': `tula_rt_${ENV}=r2; Max-Age=600` } }
+      )
+    )
+    const response = await protect(api)(
+      get('/dashboard', headers('tula_rt=old; tula_at=old.access.token; __Host-tula_rt=r1'))
+    )
+    expect(isNext(response)).toBe(true)
+    const cookies = response.headers.getSetCookie()
+    expect(cookies).toContain(
+      '__Host-tula_rt=r2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600; Secure'
+    )
+    expect(cookies.filter((line) => line.startsWith('tula_')).sort()).toEqual(PLAIN_EXPIRED)
+    expect(overridden(response).get('cookie')).toBe(`__Host-tula_rt=r2; __Host-tula_at=${fresh}`)
+  })
+
+  test('a request that changes nothing expires nothing', async () => {
+    const api = createFakeApi([signer])
+    const response = await protect(api)(
+      get('/dashboard', headers(`tula_rt=old; __Host-tula_at=${await signer.sign()}`))
+    )
+    expect(isNext(response)).toBe(true)
+    expect(response.headers.getSetCookie()).toEqual([])
+  })
+
+  test.each([
+    ['a configured app URL', { appUrl: 'https://localhost:3000' }, 'http'],
+    ['a forwarded https', {}, 'https'],
+  ] as const)('with %s nothing extra is cleared', async (_name, options, proto) => {
+    const api = createFakeApi([signer])
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json({ status: 401, code: 'session.revoked', detail: 'x' }, { status: 401 })
+    )
+    const response = await protect(
+      api,
+      options
+    )(get('/', headers('tula_rt=planted; tula_at=planted; __Host-tula_rt=r1', proto)))
+    expect(response.headers.getSetCookie()).toEqual([
+      '__Host-tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure',
+    ])
+  })
+})
+
 // Next.js 15 runs `middleware.ts` in its Edge runtime, whose `Request` is not the platform's:
 // built from another `Request`, it keeps that one's URL and nothing else
 // (`next/dist/server/web/sandbox/context.js`: `super(url, init)`). A call to the API that is

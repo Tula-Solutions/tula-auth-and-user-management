@@ -2,6 +2,7 @@ import { CLIENT_HEADER, PUBLISHABLE_KEY_HEADER } from '@tula/contract/headers'
 import { appOrigin, type TulaConfig } from './config'
 import {
   type CookieNames,
+  clearCookieLine,
   cookieNames,
   isCookieValue,
   parseCookieHeader,
@@ -18,6 +19,13 @@ export interface RequestCookies {
   /** Whether the app is served over https for this request. */
   secure: boolean
   names: CookieNames
+  /**
+   * The plain names, when the `__Host-` names were chosen only because a `__Host-` cookie
+   * arrived (no app URL, no forwarded `https`); `null` otherwise. Cookies under them are never
+   * read for this request, and go whenever one of the app's cookies changes
+   * ({@link supersededCookieLines}).
+   */
+  superseded: CookieNames | null
   /** Every cookie of the request, by name. */
   all: Map<string, string>
   access: string | undefined
@@ -29,7 +37,8 @@ export interface RequestCookies {
 const HOST_PREFIXED: ReadonlySet<string> = new Set(Object.values(cookieNames(true)))
 
 /**
- * Whether the app is served over https for this request, as far as its cookies go.
+ * What says the app is served over https for this request, as far as its cookies go, or
+ * `null` when nothing does.
  *
  * In order: the configured app URL; a forwarded `https`; one of this package's `__Host-`
  * cookies on the request; and otherwise what {@link appOrigin} says (a forwarded `http`, or
@@ -45,23 +54,23 @@ const HOST_PREFIXED: ReadonlySet<string> = new Set(Object.values(cookieNames(tru
  * This decides cookie names and the `Secure` attribute only. The app's origin (the handler's
  * same-origin check, the `Origin` a refresh carries) never follows a cookie.
  */
-function servedOverHttps(
+function httpsEvidence(
   request: Request,
   config: Pick<TulaConfig, 'appOrigin'>,
   cookies: Map<string, string>
-): boolean {
+): 'origin' | 'cookie' | null {
   if (appOrigin(request, config).startsWith('https://')) {
-    return true
+    return 'origin'
   }
   if (config.appOrigin) {
-    return false
+    return null
   }
   for (const name of cookies.keys()) {
     if (HOST_PREFIXED.has(name)) {
-      return true
+      return 'cookie'
     }
   }
-  return false
+  return null
 }
 
 /**
@@ -75,7 +84,8 @@ function servedOverHttps(
  * `X-Forwarded-Proto` says so or when the request carries one of this package's `__Host-`
  * cookies (which a browser stores and sends over https only), even if the forwarded scheme
  * says `http`: Next.js writes that header itself when no proxy did. The interceptor, the
- * route handler and the server helpers all read cookies through here, so they agree.
+ * route handler and the server helpers all read cookies through here, so they agree. Where
+ * the cookie decided, the plain names are reported as `superseded`.
  *
  * @param request - The incoming request.
  * @param config - The configuration.
@@ -91,16 +101,50 @@ export function readRequestCookies(
   config: Pick<TulaConfig, 'appOrigin'>
 ): RequestCookies {
   const all = parseCookieHeader(request.headers.get('cookie'))
-  const secure = servedOverHttps(request, config, all)
+  const evidence = httpsEvidence(request, config, all)
+  const secure = evidence !== null
   const names = cookieNames(secure)
   return {
     secure,
     names,
+    superseded: evidence === 'cookie' ? cookieNames(false) : null,
     all,
     access: all.get(names.access) || undefined,
     refresh: all.get(names.refresh) || undefined,
     session: all.get(names.session) || undefined,
   }
+}
+
+/**
+ * The `Set-Cookie` lines that expire the plain-named cookies of a request whose `__Host-`
+ * names were chosen by the cookie rule. Send them with every answer that sets or clears one
+ * of the app's cookies.
+ *
+ * A browser holds one session. Where a `__Host-` cookie alone said https, the host may also
+ * hold this app's own cookies under the plain names: `localhost` shares cookies across ports,
+ * so an app run over http there is signed in under `tula_rt`, and another https app can leave
+ * a `__Host-tula_rt` beside it. While that one is there the plain ones are not read; once it
+ * is cleared (a sign-out, a refused refresh) they would be read again, and a session the
+ * visitor had signed out of, or an earlier user's, would be back. So they do not outlive a
+ * change.
+ *
+ * Empty when the scheme came from the app URL or a forwarded `https`: there the plain names
+ * were never this app's, and what is under them is not its to expire.
+ *
+ * @param cookies - The request's cookies, from {@link readRequestCookies}.
+ * @returns The lines, or none.
+ *
+ * @example
+ * ```ts
+ * const cookies = readRequestCookies(request, config)
+ * for (const line of supersededCookieLines(cookies)) {
+ *   headers.append('set-cookie', line)
+ * }
+ * ```
+ */
+export function supersededCookieLines(cookies: Pick<RequestCookies, 'superseded'>): string[] {
+  // Without `Secure`: these are the cookies an http response wrote.
+  return Object.values(cookies.superseded ?? {}).map((name) => clearCookieLine(name, false))
 }
 
 /**

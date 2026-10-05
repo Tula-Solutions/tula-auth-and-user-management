@@ -6,7 +6,13 @@ import {
 } from '@tula/contract/headers'
 import { appOrigin, resolveConfig, type TulaConfig, type TulaServerOptions } from './config'
 import { clearCookieLine, isCookieValue, readUpstreamCookie, setCookieLine } from './cookies'
-import { apiHeaders, callApi, issuedSession, readRequestCookies } from './upstream'
+import {
+  apiHeaders,
+  callApi,
+  issuedSession,
+  readRequestCookies,
+  supersededCookieLines,
+} from './upstream'
 
 // The route handler: the app's own origin answering for the API's client routes.
 //
@@ -347,6 +353,14 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
         : setCookieLine(name, change.value, { secure, maxAge: change.maxAge })
     )
   }
+  if (changes.size > 0) {
+    // Where a `__Host-` cookie alone chose the names, this app's earlier cookies may sit under
+    // the plain ones. They go with any change, or they would be read again once the `__Host-`
+    // ones are cleared: the session the visitor just signed out of, or the previous user's.
+    for (const line of supersededCookieLines(cookies)) {
+      out.append('set-cookie', line)
+    }
+  }
 
   if (text === null) {
     return new Response(upstream.body, { status: upstream.status, headers: out })
@@ -363,7 +377,9 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
  * pages, keep the API's refresh and session cookies as first-party cookies of the app, and
  * put the access token in an `HttpOnly` cookie so that the middleware and `auth()` can tell
  * who is signed in. A sign-in replaces whatever session the browser held: the cookies of the
- * other kind (token cookies against a `stateful` session's cookie) are removed with it.
+ * other kind (token cookies against a `stateful` session's cookie) are removed with it, and
+ * so are plain-named cookies where the `__Host-` names are in use only because a `__Host-`
+ * cookie arrived (no app URL, no forwarded `https`).
  *
  * The API sees this server's address for every visitor, and they share one per-IP rate limit,
  * unless both hold: this handler knows the visitor's address (`trustedProxyHops`, or

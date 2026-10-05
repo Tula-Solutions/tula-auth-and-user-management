@@ -1,6 +1,12 @@
 import type { TulaConfig } from './config'
 import { clearCookieLine, formatCookieHeader, isCookieValue, setCookieLine } from './cookies'
-import { apiHeaders, callApi, readRequestCookies, refreshSession } from './upstream'
+import {
+  apiHeaders,
+  callApi,
+  readRequestCookies,
+  refreshSession,
+  supersededCookieLines,
+} from './upstream'
 import { hasTimeLeft, isSessionOf, type SessionClaims, verifyAccessToken } from './verify'
 
 // What a request's cookies amount to. The middleware runs this once per request and may
@@ -264,6 +270,8 @@ export interface ResolvedSession {
  *   signed out, the cookies stay for the next one.
  * - A `stateful` session is verified by the API when a secret key is configured, and its
  *   claims travel in {@link AUTH_HEADER}.
+ * - Where the `__Host-` names are read only because a `__Host-` cookie arrived, any change
+ *   above also removes the plain-named cookies, from the browser and from the request.
  *
  * @param request - The request to the app.
  * @param config - The configuration.
@@ -286,6 +294,15 @@ export async function resolveSession(
   const setCookies: string[] = []
   const jar = new Map(cookies.all)
   const finish = (session: VerifiedSession | null): ResolvedSession => {
+    if (setCookies.length > 0 && cookies.superseded) {
+      // The plain-named cookies go with any change (see `supersededCookieLines`), from the
+      // browser and from the rest of this request: with the `__Host-` ones cleared, `auth()`
+      // would otherwise read them and disagree with the interceptor.
+      for (const name of Object.values(cookies.superseded)) {
+        jar.delete(name)
+      }
+      setCookies.push(...supersededCookieLines(cookies))
+    }
     const cookie = formatCookieHeader(jar)
     if (cookie === null) {
       requestHeaders.delete('cookie')

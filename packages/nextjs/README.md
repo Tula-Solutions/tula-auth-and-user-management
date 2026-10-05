@@ -160,6 +160,9 @@ export default async function Dashboard() {
   one of this package's `__Host-` cookies is read under the `__Host-` names even when the
   forwarded scheme says `http`, because a browser stores and sends such a cookie over https
   only. It keeps `auth()` and the interceptor in agreement; it does not replace the setting.
+  Where that rule chose the names, an answer that sets or clears a cookie also expires the
+  plain-named ones, so a sign-in made over http on the same host (`localhost`, another port)
+  does not come back after a sign-out.
 - **A failed sign-out is not a sign-out.** The handler clears the cookies only when the API
   answered the sign-out; `<UserButton>` and `<UserProfile>` then stay on the page and say the
   session may still be active, with "Try again".

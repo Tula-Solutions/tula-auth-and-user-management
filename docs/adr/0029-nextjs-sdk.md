@@ -231,8 +231,25 @@ Accepted residual: a `__Host-` cookie of this package left on a host by another 
 of it (in practice `localhost`, across ports, in a browser that sends `Secure` cookies to
 `http://localhost`) makes an app there with no app URL use the `__Host-` names. All three
 places then use them, and the browser that sent one stores the ones written back, so the
-app works; setting `TULA_APP_URL` removes the guess. The change is covered by unit tests
-with Next.js's real header sets; the https arrangement it came from has not been run again.
+app works; setting `TULA_APP_URL` removes the guess.
+
+What was not acceptable in that state: the app's own earlier cookies, under the plain names,
+stayed in the browser. A visitor signed in over http, then a stray `__Host-tula_rt` arrived,
+a new sign-in wrote the `__Host-` cookies, a sign-out cleared only those, and the next
+request, with no `__Host-` cookie left, read the plain names again: the earlier session was
+back after the visitor had signed out. So **where the cookie rule chose the names, any
+answer that sets or clears one of the app's cookies also expires all three plain-named
+ones** (`supersededCookieLines`): in the route handler, and in the interceptor, which also
+takes them out of the cookies the rest of the request sees, so that `auth()` cannot read
+what the interceptor just turned away from. One browser holds one session. This is not done
+where the scheme came from the app URL or a forwarded `https`: an https app never wrote the
+plain names, and a cookie under them there is somebody else's (a sibling subdomain's, at
+worst) and is neither read nor touched. The cost on `localhost` is that a stray `__Host-`
+cookie whose refresh is refused signs the http session out as well; the visitor signs in
+again and holds one set of cookies.
+
+Both changes are covered by unit tests with Next.js's real header sets; the https
+arrangement they came from has not been run again.
 
 **Clocks.** Expiry is judged by the Next.js server's clock against an `exp` written by the
 API's. The two must agree to within the five-second tolerance (NTP); an API whose clock runs
