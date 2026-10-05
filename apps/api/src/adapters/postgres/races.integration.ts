@@ -10,6 +10,7 @@ import {
 } from '~/adapters/postgres/integration-support'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
+import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type { NewFactor } from '~/ports/factor-store'
 import type { NewRefreshToken, NewSession } from '~/ports/session-store'
@@ -33,11 +34,10 @@ const database = openIntegrationDatabase()
 const ROUNDS = 40
 
 /**
- * The audit argument of a write that only sets a round up (a user, a session to count). The
- * stores take it as optional today; once it is required, this one line becomes the "nothing to
- * record, it is a fixture" value and no call site changes.
+ * The audit argument of a write that only sets a round up (a user, a session to count):
+ * nothing to record, it is a fixture.
  */
-const FIXTURE = undefined
+const FIXTURE = Audit.none('fixture')
 
 const now = new Date('2026-01-01T00:00:00.000Z')
 const later = (ms: number) => new Date(now.getTime() + ms)
@@ -374,6 +374,7 @@ describe('two instances start an authenticator enrolment for one user', () => {
             step: 100,
             at: later(1_000),
             backupCodes: [{ id: Bun.randomUUIDv7(), codeHash: `hash-${Bun.randomUUIDv7()}` }],
+            activity: FIXTURE,
           }),
         () => stores.second().startTotp(again)
       )
