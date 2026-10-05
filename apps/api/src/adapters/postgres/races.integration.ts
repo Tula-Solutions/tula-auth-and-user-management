@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { ActivityType } from '@tula/contract'
+import { type Transaction, userFactors, users as usersTable } from '@tula/db'
+import { eq } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import {
@@ -17,9 +19,13 @@ import type { NewUser } from '~/ports/user-repository'
  * Three races between two API instances, each on its own pool of a real Postgres: what the
  * stores promise when two transactions meet, which one session (PGlite) cannot show.
  *
- * Every race is run many times, with the instance that starts first alternating, because one
- * round only shows one interleaving. Each test names the outcomes the store documents, asserts
- * every round is one of them, and checks the audit entries against the outcome it got.
+ * Two calls started together usually do not meet: the first has committed before the second
+ * has a connection. So every round makes them meet (`overlapping`): a third session holds the
+ * lock both need, each call is started and **seen waiting on it**, and only then is the lock
+ * let go. A round in which either call did not wait fails. Postgres serves a row's waiters in
+ * the order they arrived, so the call started first runs first; the rounds alternate which one
+ * that is, and each test asserts the outcome the store documents **for that order**, with its
+ * audit entries.
  *
  * Uses the database of `docker compose up -d`; everything is created under a tenant of its own.
  */
@@ -76,15 +82,62 @@ async function recorded(targetId: string): Promise<{ type: string; data: unknown
   return entries.map(({ type, data }) => ({ type, data }))
 }
 
-/** Start two calls together, the one named by `round`'s parity first. */
-function together<A, B>(round: number, a: () => Promise<A>, b: () => Promise<B>): Promise<[A, B]> {
-  if (round % 2 === 0) {
-    const first = a()
-    return Promise.all([first, b()])
+/** Which of a round's two calls was started, and so ran, first. */
+type Order = 'a-first' | 'b-first'
+
+/**
+ * Run two calls so that they overlap for certain, and say which ran first.
+ *
+ * `lock` takes, in a third session, the lock both calls need. The call named by the round's
+ * parity is started and seen waiting; then the other, and both are seen waiting; then the lock
+ * is released. Nothing here sleeps or hopes: a call that got through without waiting (it no
+ * longer takes the lock, or the two were not really in flight together) fails the round.
+ *
+ * @param round - Even: `a` is started first. Odd: `b`.
+ * @param lock - Takes the contended lock in the holding transaction.
+ * @param a - The first instance's call.
+ * @param b - The second instance's call.
+ * @returns Both results and the order.
+ */
+async function overlapping<A, B>(
+  round: number,
+  lock: (tx: Transaction) => Promise<unknown>,
+  a: () => Promise<A>,
+  b: () => Promise<B>
+): Promise<{ results: [A, B]; order: Order }> {
+  const order: Order = round % 2 === 0 ? 'a-first' : 'b-first'
+  const calls: { a?: Promise<A>; b?: Promise<B> } = {}
+  const start = (which: 'a' | 'b') => {
+    let call: Promise<unknown>
+    if (which === 'a') {
+      calls.a = a()
+      call = calls.a
+    } else {
+      calls.b = b()
+      call = calls.b
+    }
+    // Its failure is reported by the `Promise.all` below; until then it is not unhandled.
+    call.catch(() => undefined)
   }
-  const second = b()
-  return Promise.all([a(), second])
+  try {
+    await database.holding(async ({ tx, waiting }) => {
+      await lock(tx)
+      start(order === 'a-first' ? 'a' : 'b')
+      await waiting(1)
+      start(order === 'a-first' ? 'b' : 'a')
+      await waiting(2)
+    })
+  } catch (error) {
+    // The lock is gone: let what was started finish before the round fails.
+    await Promise.allSettled([calls.a, calls.b])
+    throw error
+  }
+  return { results: await Promise.all([calls.a as Promise<A>, calls.b as Promise<B>]), order }
 }
+
+/** Hold a user's row as a writer does: whoever reads it to lock it or changes it waits. */
+const userRow = (userId: string) => (tx: Transaction) =>
+  tx.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.id, userId)).for('update')
 
 describe('an emailed sign-in verifies an address while a password is being set', () => {
   const users = {
@@ -115,8 +168,12 @@ describe('an emailed sign-in verifies an address while a password is being set',
     const user = unverified(existing)
     expect(await users.first().create(user, FIXTURE)).toBe(true)
     const target = { type: 'user', id: user.id } as const
-    const [verification, outcome] = await together(
+    const {
+      results: [verification, outcome],
+      order,
+    } = await overlapping(
       round,
+      userRow(user.id),
       () =>
         users
           .first()
@@ -141,59 +198,78 @@ describe('an emailed sign-in verifies an address while a password is being set',
     const found = await users
       .first()
       .findByEmailWithPassword(tenant.environmentId, user.emailNormalized)
-    return { user, verification, outcome, found, entries: await recorded(user.id) }
+    return {
+      verification,
+      outcome,
+      found,
+      entries: await recorded(user.id),
+      verifiedFirst: order === 'a-first',
+    }
   }
 
-  // Both calls lock the user's row, so they take turns. Whichever is second sees the other's
-  // commit. The address is verified either way; the password that survives is the one set
-  // AFTER the verification, never one that was there before or was set underneath it.
+  // Both calls lock the user's row, so they take turns, and the one that is second sees the
+  // other's commit. The address is verified either way; the password that survives is the one
+  // set AFTER the verification, never one that was there before or was set underneath it.
   test('an account with a password ends verified, with the new password only if it was set after the verification', async () => {
     const seen = { passwordSetLast: 0, verificationLast: 0 }
     for (let round = 0; round < ROUNDS; round += 1) {
-      const { verification, outcome, found, entries } = await race(round, '$argon2id$old')
+      const { verification, outcome, found, entries, verifiedFirst } = await race(
+        round,
+        '$argon2id$old'
+      )
       expect(found?.user.emailVerifiedAt).toEqual(later(1_000))
       // A password existed whichever came first (the old one, or the one just set over it).
       expect(verification).toEqual({ passwordRemoved: true })
-      expect(['created', 'replaced']).toContain(outcome as string)
-      if (outcome === 'created') {
+      if (verifiedFirst) {
         // The verification removed the old password, then the new one was stored.
         seen.passwordSetLast += 1
+        expect(outcome).toBe('created')
         expect(found?.passwordHash).toBe('$argon2id$new')
       } else {
         // The new password replaced the old one, then the verification removed it.
         seen.verificationLast += 1
+        expect(outcome).toBe('replaced')
         expect(found?.passwordHash).toBeNull()
       }
-      // Never the password from before the verification.
-      expect(found?.passwordHash).not.toBe('$argon2id$old')
       expect(entries).toHaveLength(3)
       expect(entries).toContainEqual({ type: 'user.email_verified', data: {} })
       expect(entries).toContainEqual({ type: 'user.password_changed', data: { removed: true } })
       expect(entries).toContainEqual({
         type: 'user.password_changed',
-        data: outcome === 'created' ? { method: 'set', created: true } : { method: 'set' },
+        data: verifiedFirst ? { method: 'set', created: true } : { method: 'set' },
       })
     }
-    expect(seen.passwordSetLast + seen.verificationLast).toBe(ROUNDS)
+    expect(seen).toEqual({ passwordSetLast: ROUNDS / 2, verificationLast: ROUNDS / 2 })
   })
 
   test('an account without a password ends verified, with a password only if it was set after the verification', async () => {
+    const seen = { passwordSetLast: 0, verificationLast: 0 }
     for (let round = 0; round < ROUNDS; round += 1) {
-      const { verification, outcome, found, entries } = await race(round, null)
+      const { verification, outcome, found, entries, verifiedFirst } = await race(round, null)
       expect(found?.user.emailVerifiedAt).toEqual(later(1_000))
       // Nothing to replace in either order.
       expect(outcome).toBe('created')
-      expect(found?.passwordHash).toBe(verification.passwordRemoved ? null : '$argon2id$new')
-      expect(entries).toHaveLength(verification.passwordRemoved ? 3 : 2)
+      if (verifiedFirst) {
+        // Nothing to remove yet; the password stored afterwards stays.
+        seen.passwordSetLast += 1
+        expect(verification).toEqual({ passwordRemoved: false })
+        expect(found?.passwordHash).toBe('$argon2id$new')
+        expect(entries).toHaveLength(2)
+      } else {
+        // The password was there when the address was verified, so it went.
+        seen.verificationLast += 1
+        expect(verification).toEqual({ passwordRemoved: true })
+        expect(found?.passwordHash).toBeNull()
+        expect(entries).toHaveLength(3)
+        expect(entries).toContainEqual({ type: 'user.password_changed', data: { removed: true } })
+      }
       expect(entries).toContainEqual({ type: 'user.email_verified', data: {} })
       expect(entries).toContainEqual({
         type: 'user.password_changed',
         data: { method: 'set', created: true },
       })
-      expect(
-        entries.filter(({ data }) => (data as { removed?: boolean }).removed === true)
-      ).toHaveLength(verification.passwordRemoved ? 1 : 0)
     }
+    expect(seen).toEqual({ passwordSetLast: ROUNDS / 2, verificationLast: ROUNDS / 2 })
   })
 
   test('of two verifications on two instances exactly one removes the password and records it', async () => {
@@ -209,8 +285,17 @@ describe('an emailed sign-in verifies an address while a password is being set',
           activity('user.email_verified', target, {}),
           { activity: activity('user.password_changed', target, { removed: true }) }
         )
-      const results = await together(round, verify(users.first()), verify(users.second()))
-      expect(results.map((result) => result.passwordRemoved).sort()).toEqual([false, true])
+      const { results, order } = await overlapping(
+        round,
+        userRow(user.id),
+        verify(users.first()),
+        verify(users.second())
+      )
+      // The one that ran first verified the address and removed the password; the other found
+      // the address verified and touched nothing.
+      expect(results.map((result) => result.passwordRemoved)).toEqual(
+        order === 'a-first' ? [true, false] : [false, true]
+      )
       expect((await recorded(user.id)).map((entry) => entry.type).sort()).toEqual([
         'user.email_verified',
         'user.password_changed',
@@ -240,22 +325,32 @@ describe('two instances start an authenticator enrolment for one user', () => {
   }
 
   test('both starts succeed and one whole pending factor is left: neither is told a factor is on', async () => {
+    const keptOf = { first: 0, second: 0 }
     for (let round = 0; round < ROUNDS; round += 1) {
       const userId = await tenant.user()
       const [one, two] = [pending(userId), pending(userId)]
-      expect(
-        await together(
-          round,
-          () => stores.first().startTotp(one),
-          () => stores.second().startTotp(two)
-        )
-      ).toEqual([true, true])
+      const { results } = await overlapping(
+        round,
+        // No row exists yet for the two to wait on, so the holder takes the key they will
+        // collide on: a start of its own that never commits. Both wait to learn whether it
+        // stands; when it is rolled back both are let go at once, onto the same key.
+        (tx) => tx.insert(userFactors).values({ ...pending(userId), updatedAt: now }),
+        () => stores.first().startTotp(one),
+        () => stores.second().startTotp(two)
+      )
+      expect(results).toEqual([true, true])
       const kept = await stores.first().findTotp(tenant.environmentId, userId)
       expect(kept?.confirmedAt).toBeNull()
       expect([one.id, two.id]).toContain(kept?.id as string)
       // The id and the secret are one start's, never one's id with the other's secret.
       expect(kept?.secret).toBe(`sealed-${kept?.id}`)
+      keptOf[kept?.id === one.id ? 'first' : 'second'] += 1
     }
+    // Let go at the same moment, either start may reach the key first and be replaced by the
+    // other: both endings are right, and both must have happened for this to have been a race.
+    expect(keptOf.first).toBeGreaterThan(0)
+    expect(keptOf.second).toBeGreaterThan(0)
+    expect(keptOf.first + keptOf.second).toBe(ROUNDS)
   })
 
   test('a start that meets a confirmation either precedes it or is refused: a confirmed factor is never replaced', async () => {
@@ -263,8 +358,17 @@ describe('two instances start an authenticator enrolment for one user', () => {
       const userId = await tenant.user()
       const [original, again] = [pending(userId), pending(userId)]
       expect(await stores.first().startTotp(original)).toBe(true)
-      const [confirmed, restarted] = await together(
+      const {
+        results: [confirmed, restarted],
+        order,
+      } = await overlapping(
         round,
+        (tx) =>
+          tx
+            .select({ id: userFactors.id })
+            .from(userFactors)
+            .where(eq(userFactors.id, original.id))
+            .for('update'),
         () =>
           stores.first().confirmTotp(tenant.environmentId, original.id, {
             step: 100,
@@ -275,8 +379,9 @@ describe('two instances start an authenticator enrolment for one user', () => {
       )
       const kept = await stores.first().findTotp(tenant.environmentId, userId)
       const codes = await stores.first().countBackupCodes(tenant.environmentId, userId)
+      expect(confirmed).toBe(order === 'a-first')
       if (confirmed) {
-        // The confirmation won: the second start must have been told a factor is on.
+        // The confirmation ran first: the second start must have been told a factor is on.
         expect(restarted).toBe(false)
         expect(kept).toMatchObject({ id: original.id, secret: original.secret })
         expect(kept?.confirmedAt).toEqual(later(1_000))
@@ -351,12 +456,18 @@ describe('two instances sign one user in at the concurrent-session limit', () =>
       const userId = await tenant.user()
       await seed(userId, now)
       const [one, two] = [session(userId, later(1_000)), session(userId, later(1_000))]
-      const results = await together(
+      const { results, order } = await overlapping(
         round,
+        userRow(userId),
         () => stores.first().create(one, token(one.id), FIXTURE, limit(2, [])),
         () => stores.second().create(two, token(two.id), FIXTURE, limit(2, []))
       )
-      expect(results.filter((result) => result.created)).toHaveLength(1)
+      // The sign-in that ran first took the place; the other counted its session and stopped.
+      expect(results).toEqual(
+        order === 'a-first'
+          ? [{ created: true, ended: [] }, { created: false }]
+          : [{ created: false }, { created: true, ended: [] }]
+      )
       expect(await live(userId)).toHaveLength(2)
     }
   })
@@ -369,15 +480,19 @@ describe('two instances sign one user in at the concurrent-session limit', () =>
       const oldest = await seed(userId, now)
       const kept = await seed(userId, later(10))
       const [one, two] = [session(userId, later(1_000)), session(userId, later(1_000))]
-      const [first, second] = await together(
+      const {
+        results: [first, second],
+        order,
+      } = await overlapping(
         round,
+        userRow(userId),
         () => stores.first().create(one, token(one.id), FIXTURE, limit(2, [oldest.id])),
         () => stores.second().create(two, token(two.id), FIXTURE, limit(2, [oldest.id]))
       )
-      const [won, lost] = first.created ? [first, second] : [second, first]
+      const [won, lost] = order === 'a-first' ? [first, second] : [second, first]
       expect(won).toEqual({ created: true, ended: [oldest.id] })
       expect(lost).toEqual({ created: false })
-      const winner = first.created ? one : two
+      const winner = order === 'a-first' ? one : two
       expect((await live(userId)).map((row) => row.id).sort()).toEqual([kept.id, winner.id].sort())
       expect(await recorded(oldest.id)).toEqual([
         { type: 'session.revoked', data: { reason: 'session_limit' } },
