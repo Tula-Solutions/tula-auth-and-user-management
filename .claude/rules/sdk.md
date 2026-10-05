@@ -228,9 +228,15 @@ paths:
 - A destination read from the address bar goes through `safeRedirectPath`; `signInUrl` is
   checked with it when the middleware is created. It validates what it returns (the parser
   normalises `/.//host` to `//host`), not only what it was given.
-- The server helpers build their request with `requestFromHeaders`: the app URL, then
-  `X-Forwarded-Proto`, then "https iff a `__Host-` cookie of ours is present". One cookie
-  name per request.
+- Which cookie names a request is read under is decided only in `readRequestCookies`
+  (`upstream.ts`), which the interceptor, the handler and the server helpers all go through
+  (the helpers with the stand-in of `requestFromHeaders`): the app URL, then a forwarded
+  `https`, then "https iff a `__Host-` cookie of ours is present", which outranks a forwarded
+  `http` because Next.js fills `x-forwarded-proto` in itself when no proxy sent it. One cookie
+  name per request. A test of this uses the headers Next.js produces: `x-forwarded-proto` is
+  always there. `appOrigin` (same-origin check, the refresh's `Origin`) never follows a
+  cookie; the handler's refusal of an https `Origin` for a host it takes to be http is
+  reported once through `config.warn` with fixed text (no host, no `Origin`, no cookie).
 - The provider wraps the client it creates: `serverState` for the first paint, and a
   `session.signOut()` that refreshes the router after the request has reached the server. Do
   not call `router.refresh()` for a sign-out before then: the cookies are still there.

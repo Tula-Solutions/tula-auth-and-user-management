@@ -176,14 +176,63 @@ and with what is left of the 10 seconds, exactly as `@tula/core` does in the bro
 answer of any status is never repeated. A test holds the timeout below
 `MIN_REUSE_GRACE_PERIOD` and equal to the client's.
 
-**The scheme the server helpers read cookies under.** `auth()` and `currentUser()` get the
-request's headers and no URL. Which cookie names they read (`__Host-` or plain) is decided,
-in order, by: the configured app URL (`TULA_APP_URL`, the recommended way: nothing is
-guessed); the proxy's `X-Forwarded-Proto`; and otherwise the presence of one of this
-package's `__Host-` cookies on the request, which a browser stores over https only. The last
-rule exists because the middleware and the handler see the real `https:` URL and write the
-`__Host-` names; reading the plain ones in a Server Component would show every visitor as
-signed out. One name per cookie is read for a request, never both.
+**The scheme cookies are read under.** Which cookie names a request is read under (`__Host-`
+or plain) is decided in one function, `readRequestCookies`, for the interceptor, the route
+handler and the server helpers (`auth()` and `currentUser()` get the request's headers and no
+URL, and pass a stand-in). In order:
+
+1. the configured app URL (`TULA_APP_URL`, the recommended way: nothing is guessed). It wins
+   over everything below, in both directions;
+2. a forwarded `https` (`X-Forwarded-Proto`);
+3. https exactly when the request carries one of this package's `__Host-` cookies, **even if
+   `X-Forwarded-Proto` says `http`**;
+4. otherwise a forwarded `http`, or the request's own URL.
+
+Rule 3 used to sit below any forwarded scheme and applied only when the header was absent. A
+live run behind a proxy that ends TLS and sends no `X-Forwarded-Proto` showed that this never
+happens under a real Next.js server: it fills the header in from its own socket
+(`base-server.js`: `req.headers['x-forwarded-proto'] ??= isHttps ? 'https' : 'http'`; 15.5 and
+16.3), so `auth()` always saw `http` there. With `appUrl` given to the interceptor and the
+handler as an option and not in the environment, they wrote the `__Host-` names, `auth()` read
+the plain ones, and the protected page and the sign-in page sent the browser to each other
+without end. The unit tests had passed because they built a header set no Next.js server
+produces; they now use the ones it does.
+
+Why the cookie may outrank the header:
+
+- A browser stores a `__Host-` cookie only from an https response, with `Path=/` and no
+  `Domain`, and sends it to nothing but that exact host over a secure connection. Its presence
+  is better evidence of how the page was loaded than a header the framework derived from the
+  socket between it and the proxy.
+- Reading the `__Host-` names because one is present cannot be induced from outside: a
+  sibling subdomain can plant a plain `tula_at`, never a `__Host-` one. And once one is
+  present the plain names are not read at all, so the planted cookie is ignored as before.
+- A hand-built `Cookie` header over plain http changes only which names are read for the
+  sender's own request. Whatever token is found is verified against the environment's keys
+  all the same, and a `Secure` cookie written in answer goes to the sender alone.
+- A forwarded `https` still means https, and a configured app URL of `http:` still means the
+  plain names whatever cookies arrive.
+
+**The app's origin never follows a cookie.** `appOrigin` (the handler's same-origin check,
+and the `Origin` the server-side refresh presents to the API) stays: the app URL, else the
+forwarded scheme and host, else the request's URL. The two legitimately differ. The origin
+has to be known before any cookie exists (the first sign-in), it is what stands between a
+foreign page and the visitor's cookies, and a stale `__Host-` cookie on `localhost` (cookies
+are not scoped by port) must not make a development server refuse its own pages. So with no
+app URL and no forwarded `https` behind a TLS-terminating proxy the handler still refuses
+every write (`request.origin_not_allowed`): failing closed, and unable to sign anyone in.
+What changed is that it says so: the first refusal of an `Origin` that is the request's own
+host over https, where the server took the host to be on http, is reported once through
+`onWarning` with a fixed text naming `TULA_APP_URL` and `X-Forwarded-Proto` (no host, no
+`Origin` and no cookie in it, since all three are the sender's to choose). In that state no
+`__Host-` cookie can be written, so the three places agree that nobody is signed in.
+
+Accepted residual: a `__Host-` cookie of this package left on a host by another deployment
+of it (in practice `localhost`, across ports, in a browser that sends `Secure` cookies to
+`http://localhost`) makes an app there with no app URL use the `__Host-` names. All three
+places then use them, and the browser that sent one stores the ones written back, so the
+app works; setting `TULA_APP_URL` removes the guess. The change is covered by unit tests
+with Next.js's real header sets; the https arrangement it came from has not been run again.
 
 **Clocks.** Expiry is judged by the Next.js server's clock against an `exp` written by the
 API's. The two must agree to within the five-second tolerance (NTP); an API whose clock runs

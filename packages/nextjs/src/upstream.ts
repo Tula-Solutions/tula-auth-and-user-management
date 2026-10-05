@@ -25,11 +25,57 @@ export interface RequestCookies {
   session: string | undefined
 }
 
+/** The SDK's cookie names over https. */
+const HOST_PREFIXED: ReadonlySet<string> = new Set(Object.values(cookieNames(true)))
+
+/**
+ * Whether the app is served over https for this request, as far as its cookies go.
+ *
+ * In order: the configured app URL; a forwarded `https`; one of this package's `__Host-`
+ * cookies on the request; and otherwise what {@link appOrigin} says (a forwarded `http`, or
+ * the request's own URL).
+ *
+ * The cookie outranks a forwarded `http` because that header is not evidence where no proxy
+ * sent it: Next.js fills it in from its own socket, which is plain http behind anything that
+ * ends TLS. A browser stores a `__Host-` cookie only from an https response of this exact
+ * host and sends it nowhere else, so its presence says how the page was loaded; a sibling
+ * subdomain cannot plant one, and a hand-built `Cookie` header changes only the names read
+ * for the sender's own request, whose token is verified all the same.
+ *
+ * This decides cookie names and the `Secure` attribute only. The app's origin (the handler's
+ * same-origin check, the `Origin` a refresh carries) never follows a cookie.
+ */
+function servedOverHttps(
+  request: Request,
+  config: Pick<TulaConfig, 'appOrigin'>,
+  cookies: Map<string, string>
+): boolean {
+  if (appOrigin(request, config).startsWith('https://')) {
+    return true
+  }
+  if (config.appOrigin) {
+    return false
+  }
+  for (const name of cookies.keys()) {
+    if (HOST_PREFIXED.has(name)) {
+      return true
+    }
+  }
+  return false
+}
+
 /**
  * Read the app's cookies from a request.
  *
  * Only the names for the request's own scheme count: over https that is the `__Host-` name,
- * so an unprefixed cookie planted from a sibling subdomain is never taken for a session.
+ * so an unprefixed cookie planted from a sibling subdomain is never taken for a session. One
+ * name per cookie is read for a request, never both.
+ *
+ * The scheme is the configured app URL's. Without one it is https when the proxy's
+ * `X-Forwarded-Proto` says so or when the request carries one of this package's `__Host-`
+ * cookies (which a browser stores and sends over https only), even if the forwarded scheme
+ * says `http`: Next.js writes that header itself when no proxy did. The interceptor, the
+ * route handler and the server helpers all read cookies through here, so they agree.
  *
  * @param request - The incoming request.
  * @param config - The configuration.
@@ -44,9 +90,9 @@ export function readRequestCookies(
   request: Request,
   config: Pick<TulaConfig, 'appOrigin'>
 ): RequestCookies {
-  const secure = appOrigin(request, config).startsWith('https://')
-  const names = cookieNames(secure)
   const all = parseCookieHeader(request.headers.get('cookie'))
+  const secure = servedOverHttps(request, config, all)
+  const names = cookieNames(secure)
   return {
     secure,
     names,

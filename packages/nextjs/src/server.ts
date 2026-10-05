@@ -13,8 +13,10 @@ import { type Auth, authenticate, fetchCurrentUser, requestFromHeaders } from '.
  * `TULA_APP_URL` and `TULA_SECRET_KEY` (for `stateful` session profiles).
  *
  * Set `TULA_APP_URL` to the app's public origin: it then decides, here as in the middleware
- * and the route handler, whether the `__Host-` cookie names are read. Without it the proxy's
- * `X-Forwarded-Proto` decides, and without that the presence of a `__Host-` cookie.
+ * and the route handler, whether the `__Host-` cookie names are read. Without it they are
+ * read when `X-Forwarded-Proto` says `https` or when the request carries one of this
+ * package's `__Host-` cookies (Next.js writes `X-Forwarded-Proto: http` itself when no proxy
+ * sent the header, so `http` there decides nothing against such a cookie).
  */
 
 export type { User } from '@tula/core'

@@ -149,9 +149,17 @@ export default async function Dashboard() {
   waits at most 8 seconds whatever `timeoutSeconds` says, and one that got no answer at all is
   sent once more at once: both stay inside that window.
 - **Set `TULA_APP_URL`** to the app's public origin. It decides whether the `__Host-` cookie
-  names are used, the same way in the interceptor, the handler and `auth()`. Without it the
-  proxy's `X-Forwarded-Proto` decides, and without that `auth()` and `currentUser()` (which
-  see no URL) go by whether the request carries a `__Host-` cookie.
+  names are used and which `Origin` the handler accepts, the same way in the interceptor, the
+  handler and `auth()`. Set the variable, not only the `appUrl` option of the interceptor and
+  the handler: `auth()` and `currentUser()` read the environment. Without it the app's origin
+  is worked out from each request, and behind a proxy that ends TLS that needs the proxy to
+  send `X-Forwarded-Proto: https`: Next.js fills the header in with `http` when the proxy
+  sent none. In that case (no app URL, no forwarded `https`) the handler refuses every write
+  with `request.origin_not_allowed`, so nobody can sign in, and the server logs once why.
+  Cookie names alone have one more rule, the same in all three places: a request that carries
+  one of this package's `__Host-` cookies is read under the `__Host-` names even when the
+  forwarded scheme says `http`, because a browser stores and sends such a cookie over https
+  only. It keeps `auth()` and the interceptor in agreement; it does not replace the setting.
 - **A failed sign-out is not a sign-out.** The handler clears the cookies only when the API
   answered the sign-out; `<UserButton>` and `<UserProfile>` then stay on the page and say the
   session may still be active, with "Try again".

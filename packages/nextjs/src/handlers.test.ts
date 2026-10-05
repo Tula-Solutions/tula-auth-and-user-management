@@ -407,6 +407,79 @@ describe('requests from another site', () => {
     expect((upstream.requests[0] as Request).headers.get('origin')).toBe('https://app.example.com')
   })
 
+  // A proxy that ends TLS and sends no X-Forwarded-Proto: Next.js fills the header in with
+  // `http` from its own socket, the browser's Origin says https, and every write is refused.
+  // That is the handler failing closed; the server has to say why.
+  describe('an https Origin for the host this server takes to be http', () => {
+    function behindTls(origin: string, extra: Record<string, string> = {}) {
+      return new Request('http://127.0.0.1:3000/api/tula/v1/client/sign-ins', {
+        method: 'POST',
+        headers: {
+          origin,
+          host: 'app.example.com',
+          'x-forwarded-host': 'app.example.com',
+          'x-forwarded-proto': 'http',
+          'content-type': 'application/json',
+          cookie: 'tula_rt=refresh-secret',
+          ...extra,
+        },
+        body: '{}',
+      })
+    }
+
+    test('is refused, and the likely cause is named once', async () => {
+      const warnings: string[] = []
+      const { handlers, upstream } = setup(undefined, {
+        onWarning: (message: string) => warnings.push(message),
+      })
+      const response = await handlers.POST(behindTls('https://app.example.com'))
+      expect(response.status).toBe(403)
+      expect((await response.json()).code).toBe('request.origin_not_allowed')
+      expect(upstream.requests).toHaveLength(0)
+      expect(warnings).toHaveLength(1)
+      // Fixed text: the host of a request is the sender's to choose, and is not repeated.
+      expect(warnings[0]).not.toContain('app.example.com')
+      expect(warnings[0]).toContain('request.origin_not_allowed')
+      expect(warnings[0]).toContain('TULA_APP_URL')
+      expect(warnings[0]).toContain('X-Forwarded-Proto')
+      expect(warnings[0]).not.toContain('refresh-secret')
+      expect(warnings[0]).not.toContain(KEY)
+      expect(warnings[0]?.length).toBeLessThan(600)
+
+      await handlers.POST(behindTls('https://app.example.com'))
+      expect(warnings).toHaveLength(1)
+    })
+
+    test.each([
+      ['another site', 'https://evil.example', {}],
+      ['another port of the host', 'https://app.example.com:8443', {}],
+      [
+        'a request the browser marks cross-site',
+        'https://app.example.com',
+        { 'sec-fetch-site': 'cross-site' },
+      ],
+    ])('nothing is said for %s', async (_name, origin, extra) => {
+      const warnings: string[] = []
+      const { handlers } = setup(undefined, {
+        onWarning: (message: string) => warnings.push(message),
+      })
+      const response = await handlers.POST(behindTls(origin, extra))
+      expect(response.status).toBe(403)
+      expect(warnings).toEqual([])
+    })
+
+    test('nothing is said where the app URL is configured: the refusal is not a guess gone wrong', async () => {
+      const warnings: string[] = []
+      const { handlers } = setup(undefined, {
+        appUrl: 'http://app.example.com',
+        onWarning: (message: string) => warnings.push(message),
+      })
+      const response = await handlers.POST(behindTls('https://app.example.com'))
+      expect(response.status).toBe(403)
+      expect(warnings).toEqual([])
+    })
+  })
+
   test('a configured appUrl is the only origin accepted', async () => {
     const { handlers, upstream } = setup(undefined, { appUrl: 'https://app.example.com' })
     const refused = await handlers.POST(post('/v1/client/sign-ins'))
@@ -477,6 +550,33 @@ describe('cookies', () => {
       '__Host-tula_rt=refresh2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600; Secure'
     )
     expect(cookies.some((line) => line.startsWith('__Host-tula_at=aaa.bbb.ccc; '))).toBe(true)
+  })
+
+  // The names are chosen as the interceptor and `auth()` choose them (`readRequestCookies`):
+  // a browser that sent a `__Host-` cookie is on https, whatever the server's own socket says.
+  test('with no app URL a __Host- cookie of ours decides the names, although the forwarded scheme is http', async () => {
+    const { handlers, upstream } = setup(() =>
+      Response.json(
+        { sessionId: 's1', accessToken: 'aaa.bbb.ccc', accessTokenExpiresAt: expiresAt() },
+        { headers: { 'set-cookie': `tula_rt_${ENV}=refresh2; Max-Age=600` } }
+      )
+    )
+    const response = await handlers.POST(
+      post('/v1/client/sessions/refresh', {
+        headers: {
+          'x-forwarded-proto': 'http',
+          cookie: '__Host-tula_rt=refresh1; tula_rt=planted',
+        },
+      })
+    )
+    const sent = (upstream.requests[0] as Request).headers.get('cookie') ?? ''
+    expect(sent).toContain('refresh1')
+    expect(sent).not.toContain('planted')
+    const cookies = cookiesOf(response)
+    expect(cookies).toContain(
+      '__Host-tula_rt=refresh2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600; Secure'
+    )
+    expect(cookies.some((line) => line.startsWith('tula_'))).toBe(false)
   })
 
   test('over https an unprefixed cookie is never read: a sibling subdomain could have set it', async () => {

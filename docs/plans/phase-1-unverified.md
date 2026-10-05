@@ -84,23 +84,27 @@ isolated Compose project (`docker compose -p tula-verify`, its own ports, a fres
   passed, and a `findByText` for text that is never rendered failed after 10 s with Testing
   Library's "Unable to find an element", where a bare `bun test` still says "timed out after
   5000ms". No other package had the key.
-
-### Found, not fixed
-
-- **`appUrl` given only as an option leaves `auth()` signed out over https behind a proxy that
+- **`appUrl` given only as an option left `auth()` signed out over https behind a proxy that
   sends no `X-Forwarded-Proto`.** Next.js (15.5.27 and 16.3.8, `base-server.js`) adds
   `x-forwarded-proto` itself when the proxy sent none: `http`. So the third rule of
   `requestFromHeaders` (https when the request carries a `__Host-` cookie and there is no
-  forwarded scheme) never applies under a real Next.js server: the header is never absent.
+  forwarded scheme) never applied under a real Next.js server: the header is never absent.
   Seen on Next.js 15 with `appUrl` passed to `tulaMiddleware` and `createTulaHandlers` and no
   `TULA_APP_URL`: the middleware let `/dashboard` through, the page's `auth()` read the
   unprefixed cookie names and redirected to `/sign-in`, which sent the signed-in browser back,
-  without end. Setting `TULA_APP_URL`, or a proxy that sends `X-Forwarded-Proto`, avoids it
-  (both seen working). Deciding whether a `__Host-` cookie should outrank a forwarded `http`
-  is a change to how cookie names are chosen, so it was left for a decision.
-- With neither `TULA_APP_URL` nor `X-Forwarded-Proto`, the route handler refuses every write
-  with `request.origin_not_allowed` and nobody can sign in. That is the handler failing closed,
-  but nothing on the server says why.
+  without end. Decided and changed: with no app URL, one of the SDK's `__Host-` cookies on the
+  request means https even where the forwarded scheme says `http`, and the interceptor, the
+  handler and `auth()` choose cookie names in one function
+  ([ADR 0029](../adr/0029-nextjs-sdk.md), "The scheme cookies are read under"). The tests of
+  this now use the header sets Next.js produces. **Verified by unit tests only**: the https
+  arrangement that found it has not been run again with the change.
+- **With neither `TULA_APP_URL` nor `X-Forwarded-Proto`, the route handler refused every write
+  with `request.origin_not_allowed` and nothing on the server said why.** It still refuses
+  (that is the handler failing closed: the app's origin never follows a cookie), and now
+  reports the likely cause once through `onWarning`. Also unit tests only.
+
+### Found, not fixed
+
 - Next.js 15 started with `-H 127.0.0.1` answers the interceptor's redirect with an absolute
   `Location` on `localhost:<port>` (it builds the middleware's URL from its own host name).
   With the default bind or `-H localhost` the `Location` is relative. This is Next.js, not the
