@@ -9,3 +9,7 @@ POSTGRES_PASSWORD=
 TULA_API_DB_PASSWORD=
 API_PORT={{apiPort}}
 MAILPIT_UI_PORT={{mailpitPort}}
+# Local development only. Serves Google, GitHub and Apple from a built-in mock provider that
+# signs in as any address typed into its consent page: for trying the provider buttons before
+# you have real credentials. Never on an API anyone else can reach.
+# OAUTH_MOCK_PROVIDER=true

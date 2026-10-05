@@ -33,7 +33,8 @@ export interface UserButtonProps {
 
 function UserButtonParts(props: UserButtonProps) {
   const { el, t } = useUi()
-  const { client, navigation } = useTulaContext()
+  const context = useTulaContext()
+  const { navigation } = context
   const { user } = useUser()
   const [open, setOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -142,9 +143,9 @@ function UserButtonParts(props: UserButtonProps) {
   }
   const signOut = async () => {
     close(true)
-    // If the server cannot be told, the client is signed out all the same; go on.
-    await client.session.signOut().catch(() => undefined)
-    go(props.afterSignOutUrl ?? navigation.afterSignOutUrl, navigation.navigate)
+    // Navigates only once the server was told; a failure is said by the provider, which is
+    // still on the page when this button (drawn for a signed-in user) no longer is.
+    await context.signOut(props.afterSignOutUrl)
   }
   const closeProfile = () => {
     setProfileOpen(false)
@@ -238,6 +239,10 @@ function UserButtonParts(props: UserButtonProps) {
  * its first item; the arrow keys, Home and End move; Escape closes it and returns focus to the
  * button. "Manage account" opens `<UserProfile>` in a dialog unless the app has a profile page
  * (`userProfileUrl`) or handles it itself (`onManageAccount`).
+ *
+ * "Sign out" goes to the after-sign-out URL only once the server has been told. When it could
+ * not be, nothing navigates and the provider says, in a dialog with "Try again", that the
+ * session may still be active on this device.
  *
  * @param props - URLs, a callback and appearance; all optional.
  * @returns The component.

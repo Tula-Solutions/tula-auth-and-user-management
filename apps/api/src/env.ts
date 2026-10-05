@@ -192,6 +192,10 @@ const fields = z.object({
    * value fails the boot instead of being accepted. That check is a floor against accidents,
    * not a measure of randomness ({@link looksTyped}): generate the token with
    * `openssl rand -hex 32`. See ADR 0031.
+   *
+   * While it is set, `PUBLIC_URL` must be https or a loopback address, in every tier: the
+   * token is sent as a bearer credential and the dashboard's cookie is `Secure` only over
+   * https.
    */
   TULA_ADMIN_TOKEN: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -286,6 +290,22 @@ const schema = fields.superRefine((env, ctx) => {
     })
   }
   if (!LIVE_TIERS.has(env.ENVIRONMENT)) {
+    if (
+      env.TULA_ADMIN_TOKEN !== undefined &&
+      parsedUrl(env.PUBLIC_URL)?.protocol !== 'https:' &&
+      !isLoopbackUrl(env.PUBLIC_URL)
+    ) {
+      // Not a "live tiers" rule either. The admin token is the deployment's most powerful
+      // credential and the dashboard's cookie is `Secure` only over https: on a plain-http
+      // address other machines reach, both would cross the network in clear text, whatever
+      // the tier is called. (The live tiers require https outright, below.)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PUBLIC_URL'],
+        message:
+          'must use https, or be a loopback address (localhost, 127.0.0.1, [::1] or a *.localhost name), while TULA_ADMIN_TOKEN is set: the admin token and the dashboard session would otherwise cross the network unencrypted',
+      })
+    }
     return
   }
   const smtpHost = parsedUrl(env.SMTP_URL)?.hostname.toLowerCase()

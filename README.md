@@ -3,12 +3,39 @@
 Open-source, self-hostable authentication and user management: Clerk-level developer experience
 and prebuilt UI, first-class native mobile, and data you own.
 
-> **Status: Phase 0 is feature-complete.** Email and password sign-up, sign-in and password
-> reset, sessions,
-> user administration, the audit log and self-hosting work end to end and are covered by the
-> conformance suite. With Redis the API can run as several instances. Nothing is released yet
-> and there is no dashboard yet; the first SDK (`@tula/core`) is in the repository but
-> unpublished: not ready for production.
+> **Status: Phase 1 is built; nothing is published.** There is no package on npm and no image
+> in a registry: everything runs from a checkout of this repository. Sign-in with Google,
+> GitHub and Apple has only ever been run against a built-in mock provider, and passkeys only
+> against a virtual authenticator ([everything that was not verified against the real
+> thing](docs/plans/phase-1-unverified.md)). Not ready for production.
+
+## What works
+
+- **Sign-in methods**, each switched on per environment: [password](docs/methods/password.md)
+  (sign-up, reset, policy), [emailed code](docs/methods/email-code.md) and
+  [emailed link](docs/methods/email-link.md), [Google, GitHub and Apple](docs/methods/oauth.md),
+  [passkeys](docs/methods/passkeys.md), and
+  [two-step verification](docs/methods/two-step-verification.md) (authenticator app, backup
+  codes, step-up).
+- **[Sessions](docs/methods/sessions.md)**: rotating refresh tokens with reuse detection,
+  session profiles, cookie-only stateful sessions, device list, a concurrent-session limit.
+- **SDKs for the web**: a headless client, React components, and a Next.js App Router SDK.
+- **Operations**: per-environment settings, settings as code (`tula diff`, `tula apply`), a
+  dashboard, `tula doctor`, an audit log, a read-only MCP server, and `create-tula` to scaffold
+  a project.
+- **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
+  ([docs/self-host.md](docs/self-host.md)).
+- **A conformance suite** that the server passes in process, as two packaged instances, behind
+  one address, and through the client SDK.
+
+Not built yet: native SDKs and Expo, webhooks, SMS, more providers, organizations and roles
+(see [Roadmap](#roadmap)).
+
+## Try it
+
+[docs/quickstart.md](docs/quickstart.md) goes from this checkout to a scaffolded app with a
+signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. To work on Tula
+itself, see [Development](#development) below.
 
 ## What's here
 
@@ -19,15 +46,21 @@ as the public contract that every SDK, the dashboard, the CLI and the MCP server
 | Path | What |
 | --- | --- |
 | [`apps/api`](apps/api) | `@tula/api`, the auth server |
+| [`apps/dashboard`](apps/dashboard) | The operator's [dashboard](docs/dashboard.md), served by the API at `/dashboard` |
 | [`packages/contract`](packages/contract) | `@tula/contract`: schemas, flow protocol, error codes, token claims, password policy, [`openapi.json`](packages/contract/openapi.json) |
 | [`packages/core`](packages/core) | `@tula/core`: the [headless TypeScript client](packages/core/README.md) (flows, session, token refresh) |
+| [`packages/react`](packages/react) | `@tula/react`: [provider, hooks and prebuilt components](packages/react/README.md) |
+| [`packages/nextjs`](packages/nextjs) | `@tula/nextjs`: the [Next.js App Router SDK](packages/nextjs/README.md) |
+| [`packages/admin`](packages/admin), [`packages/config`](packages/config), [`packages/cli`](packages/cli) | The typed admin client, `tula.config.ts`, and the [`tula` CLI](docs/cli.md) |
+| [`packages/mcp`](packages/mcp) | `@tula/mcp`: the read-only [MCP server](docs/mcp.md) |
+| [`packages/create-tula`](packages/create-tula) | `create-tula`: scaffolds a project |
 | [`packages/db`](packages/db) | `@tula/db`: Drizzle schema, migrations, row-level security, tenant helpers |
 | [`packages/conformance`](packages/conformance) | `@tula/conformance`: runs the conformance scenarios, in process or against a live server |
 | [`conformance/`](conformance) | Language-neutral [scenarios](conformance/README.md) every server and SDK must pass |
-| [`examples/core-playground`](examples/core-playground) | A browser test bench for `@tula/core` |
-| [`docs/`](docs) | [Self-hosting](docs/self-host.md), [releasing](docs/releasing.md), [business plan](docs/business-plan.md), [architecture decisions](docs/adr), [designs](docs/design/Design.pdf) |
+| [`examples/`](examples) | A [Next.js app](examples/nextjs-app-router/README.md) and a [Vite + React app](examples/react-vite/README.md) built from the SDKs, an example `tula.config.ts`, and a browser test bench for `@tula/core` |
+| [`docs/`](docs/README.md) | The [documentation index](docs/README.md): quickstart, one page per method, the generated SDK reference, self-hosting, architecture decisions |
 
-## Quickstart (local)
+## Development
 
 Requires [Bun](https://bun.sh) 1.4+ and Docker.
 
@@ -106,8 +139,20 @@ Phase 0, the core of V1 (see the [business plan](docs/business-plan.md)):
 - [x] Conformance suite
 - [x] Self-host packaging ([docs/self-host.md](docs/self-host.md))
 
-Phases 1 to 3 add social sign-in, passkeys, MFA, the web and native SDKs, the dashboard,
-organizations and importers.
+Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
+
+- [x] Per-environment settings; Redis and several instances
+- [x] `@tula/core`, `@tula/react`, `@tula/nextjs`
+- [x] Emailed codes and same-browser links; sign-up without a password
+- [x] Two-step verification: authenticator app, backup codes, step-up
+- [x] Google, GitHub and Apple (tested against a mock provider only)
+- [x] Passkeys (tested against a virtual authenticator only)
+- [x] Session profiles, stateful sessions, the concurrent-session limit
+- [x] Settings as code, the CLI, `create-tula`, the dashboard, the MCP server
+- [ ] Published packages and image
+
+Phase 2 adds native SDKs and Expo, webhooks, SMS codes and more providers; Phase 3
+organizations, roles, invitations and importers.
 
 ## Contributing
 
@@ -116,6 +161,7 @@ AI. In short:
 
 - Branch from `develop` (`feat/…`, `fix/…`, `docs/…`) and open a PR into `develop`. `main` is
   release-only.
-- `bun run verify` must pass (Biome, typecheck, tests with coverage, schema and contract drift
-  checks). CI runs the same gate.
+- `bun run verify` must pass (Biome, typecheck, tests with coverage, schema, contract and
+  documentation drift checks). CI runs the same gate, the browser tests (`bun run e2e`) and the
+  packaged stack.
 - Conventional commits, enforced by a hook.

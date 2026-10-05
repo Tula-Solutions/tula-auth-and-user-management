@@ -237,13 +237,21 @@ export class MemoryUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     at: Date,
-    activity?: Activity
-  ): Promise<void> {
+    activity?: Activity,
+    removePassword?: { activity?: Activity }
+  ): Promise<{ passwordRemoved: boolean }> {
     const user = this.#user(environmentId, userId)
-    if (user && user.emailVerifiedAt === null) {
-      user.emailVerifiedAt = at
-      this.#activityLog.record(activity ? [activity] : [])
+    if (!user || user.emailVerifiedAt !== null) {
+      return { passwordRemoved: false }
     }
+    // Checked and written without an `await` in between, like the database's one transaction.
+    user.emailVerifiedAt = at
+    const passwordRemoved = removePassword !== undefined && this.#passwords.delete(userId)
+    this.#activityLog.record([
+      ...(activity ? [activity] : []),
+      ...(passwordRemoved && removePassword?.activity ? [removePassword.activity] : []),
+    ])
+    return { passwordRemoved }
   }
 
   /** @inheritdoc */

@@ -46,6 +46,31 @@ async function create(key = SK, body: unknown = { kind: 'secret', name: 'Backend
   return { res, body: (await res.json()) as { id: string; key: string; [k: string]: unknown } }
 }
 
+describe('an API key’s name', () => {
+  test.each([
+    ['a line break', 'Backend\nINFO forged log line'],
+    ['a carriage return', 'Backend\rx'],
+    ['an escape sequence', 'Backend\u001b[2J'],
+    ['a NUL', 'Back\u0000end'],
+    ['a delete character', 'Backend\u007f'],
+  ])('with %s is refused: it is shown in terminals and logs', async (_label, name) => {
+    const count = async () =>
+      ((await (await call('GET', '/v1/admin/api-keys', SK)).json()) as { data: unknown[] }).data
+        .length
+    const before = await count()
+    const { res, body } = await create(SK, { kind: 'secret', name })
+    expect(res.status).toBe(422)
+    expect(body).toMatchObject({ code: 'validation.failed', errors: [{ field: 'name' }] })
+    expect(await count()).toBe(before)
+  })
+
+  test('an ordinary name, with spaces and accents, is accepted and trimmed', async () => {
+    const { res, body } = await create(SK, { kind: 'secret', name: '  Café backend (EU)  ' })
+    expect(res.status).toBe(201)
+    expect(body.name).toBe('Café backend (EU)')
+  })
+})
+
 describe('authentication', () => {
   test.each([
     ['GET', '/v1/admin/environments'],

@@ -152,6 +152,12 @@ would go on answering for A. So when an answer issues a session cookie the handl
 **`redirect_url` is always a path.** The middleware writes one, and the page that reads it
 passes it through `safeRedirectPath`, which accepts a single leading `/` and refuses absolute
 URLs, `//host`, backslashes and control characters. `signInUrl` itself must be such a path.
+The rule is applied to the value that is **returned**, not only to the one that came in: the
+URL parser removes dot segments, so `/.//host`, `/a/..//host` and `/%2e//host` all normalise to
+`//host`, which a router reads as another origin. What comes back must itself start with one
+`/` followed by neither a slash nor a backslash (raw or percent-encoded) and must not change
+when parsed again. `@tula/react`'s `go()` is a second line: a destination with no scheme that
+names a host is refused there too.
 
 **Concurrent refreshes.** Requests arriving at one server with the same refresh token share
 one call. Across servers each makes its own, and the API's reuse grace window (ADR 0008; 10
@@ -160,6 +166,24 @@ the real API runs two instances in parallel and shows both succeed with the same
 bound: a request that still carries the old cookie **after** the window is a reuse and ends the
 session. A profile with `refresh.reuseGracePeriod: null` has no window and should not be used
 behind this middleware.
+
+**A refresh gives up inside the window.** The server-side refresh waits at most 8 seconds
+(`REFRESH_TIMEOUT_MS`, or `timeoutSeconds` when that is smaller), not the general 15: the
+smallest grace window a profile may set is 10 seconds, and a refresh whose answer was lost
+after the API rotated the token is forgiven only inside it. A refresh that got **no answer**
+(a timeout, a dropped connection) is sent once more at once, inside the same single flight
+and with what is left of the 10 seconds, exactly as `@tula/core` does in the browser; an HTTP
+answer of any status is never repeated. A test holds the timeout below
+`MIN_REUSE_GRACE_PERIOD` and equal to the client's.
+
+**The scheme the server helpers read cookies under.** `auth()` and `currentUser()` get the
+request's headers and no URL. Which cookie names they read (`__Host-` or plain) is decided,
+in order, by: the configured app URL (`TULA_APP_URL`, the recommended way: nothing is
+guessed); the proxy's `X-Forwarded-Proto`; and otherwise the presence of one of this
+package's `__Host-` cookies on the request, which a browser stores over https only. The last
+rule exists because the middleware and the handler see the real `https:` URL and write the
+`__Host-` names; reading the plain ones in a Server Component would show every visitor as
+signed out. One name per cookie is read for a request, never both.
 
 **Clocks.** Expiry is judged by the Next.js server's clock against an `exp` written by the
 API's. The two must agree to within the five-second tolerance (NTP); an API whose clock runs

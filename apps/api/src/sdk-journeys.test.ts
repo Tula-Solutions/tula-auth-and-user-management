@@ -53,8 +53,9 @@ const SERVER_ONLY: Record<string, string> = {
     '`/v1/client/me/factors`, `/me/passkeys` and `/me/identities`, whose journeys cover them.',
   'admin user sessions':
     'listing and ending a user’s sessions is done on the admin API with a secret key or a ' +
-    'dashboard session, neither of which a client SDK holds; what the client observes (its ' +
-    'access token refused as `session.revoked`) is the journey of "sign out everywhere".',
+    'dashboard session, neither of which a client SDK holds; what the client observes when an ' +
+    'admin ends its sessions (the access token refused at once, the client signed out) is the ' +
+    '"admin second factor reset" journey below.',
   'dashboard credential rules':
     'the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment ' +
     'header, the origin checks) concern the operator’s browser and a server’s secret key; ' +
@@ -2532,6 +2533,22 @@ describe('conformance scenarios and the SDK', () => {
     }
     for (const reason of Object.values(SERVER_ONLY)) {
       expect(reason.length).toBeGreaterThan(40)
+    }
+  })
+
+  test('a journey a server-only reason points to exists', () => {
+    // A reason may say where the client's side of the scenario is covered, by quoting the
+    // scenario a journey covers (or the journey's own title) in double quotes. A quoted name
+    // that no journey has would send a reader to a test that is not there.
+    const titles = new Set([...covered.values()].flat())
+    for (const [name, reason] of Object.entries(SERVER_ONLY)) {
+      for (const [, quoted] of reason.matchAll(/"([^"]+)"/g)) {
+        if (!covered.has(quoted as string) && !titles.has(quoted as string)) {
+          throw new Error(
+            `the server-only reason of "${name}" names a journey "${quoted}" that does not exist`
+          )
+        }
+      }
     }
   })
 })

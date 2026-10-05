@@ -256,21 +256,10 @@ describe('the work is bounded', () => {
     ['PEM headers split by newlines that never close', '---\n--BEGIN A'.repeat(50_000)],
   ]
 
-  /** The fastest of three runs: a pause of the garbage collector is not the code's time. */
-  function fastest(work: () => void): number {
+  /** The fastest of up to three runs: a pause of the garbage collector is not the code's time. */
+  function fastest(work: () => void, enough = 100): number {
     let best = Number.POSITIVE_INFINITY
-    for (let run = 0; run < 3 && best >= 100; run += 1) {
-      const started = performance.now()
-      work()
-      best = Math.min(best, performance.now() - started)
-    }
-    return best
-  }
-
-  /** The fastest of five runs, all of them taken: for comparing two sizes with each other. */
-  function quickest(work: () => void): number {
-    let best = Number.POSITIVE_INFINITY
-    for (let run = 0; run < 5; run += 1) {
+    for (let run = 0; run < 3 && best >= enough; run += 1) {
       const started = performance.now()
       work()
       best = Math.min(best, performance.now() - started)
@@ -286,22 +275,18 @@ describe('the work is bounded', () => {
   // With a cap so large that the window does not cut: each pattern is linear by itself, and
   // does not depend on the window to be fast.
   //
-  // Measured as a ratio, not against the clock: a runner under coverage is forty times slower
-  // than a laptop, and that says nothing about the pattern. Thirty-two times the input costs
-  // thirty-two times the work when the pattern is linear and a thousand when it is quadratic;
-  // the limit sits a factor of ten from both, because a runner's ratio is itself noisy (a
-  // linear pattern has measured seven times its own on one).
+  // A generous ceiling on a large input, on purpose. A runner under coverage is forty times
+  // slower than a laptop, and its cost per character steps up with the input's size (measured:
+  // twelve times between 12,000 and 120,000 characters, then flat), so neither a tight ceiling
+  // nor a ratio between two sizes holds there. On 400,000 characters a linear pattern has
+  // taken half a second on the slowest runner seen and a quadratic one takes three seconds on
+  // a fast laptop: the limit sits between, and a quadratic pattern on a runner runs into the
+  // test's own timeout long before. The window above is what bounds the work in production.
   test.each(PATHOLOGICAL)(
     '%s costs time in proportion to its length, not its square',
     (_name, input) => {
       const large = input.slice(0, 400_000)
-      const small = large.slice(0, Math.floor(large.length / 32))
-      // A floor of a millisecond: below it the timer's own noise is the measurement.
-      const base = Math.max(
-        quickest(() => cleanText(small, 1_000_000)),
-        1
-      )
-      expect(quickest(() => cleanText(large, 1_000_000))).toBeLessThan(base * 320)
+      expect(fastest(() => cleanText(large, 1_000_000), 1500)).toBeLessThan(1500)
     }
   )
 

@@ -24,6 +24,8 @@ e2e/playwright-report/
 .claude/settings.local.json
 .claude/.state/
 .claude/worktrees/
+# a preview configuration the desktop app writes
+.claude/launch.json
 
 # Next.js (examples/nextjs-app-router)
 .next/

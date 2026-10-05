@@ -37,6 +37,9 @@ function hasControlCharacter(value: string): boolean {
   return false
 }
 
+/** A path that starts with one `/` and then neither a slash nor a backslash, raw or encoded. */
+const SINGLE_SLASH = /^\/(?![/\\]|%5c|%2f)/i
+
 /**
  * Turn an untrusted "where to go next" value into a path on this origin, or a fallback.
  *
@@ -44,6 +47,10 @@ function hasControlCharacter(value: string): boolean {
  * starts with a single `/` is accepted: an absolute URL, a protocol-relative one (`//host`), a
  * backslash trick (`/\host`) or anything with a control character gets the fallback. This is
  * what keeps a sign-in link from being used to send people to another site.
+ *
+ * The rule is applied to the value that is **returned**, not only to the one that came in: the
+ * URL parser removes dot segments, so `/.//host`, `/a/..//host` and `/%2e//host` all normalise
+ * to `//host`, which a browser and a router read as another origin.
  *
  * @param value - The untrusted value, e.g. a `redirect_url` search parameter.
  * @param fallback - Where to go when the value is refused. Defaults to `/`.
@@ -54,24 +61,35 @@ function hasControlCharacter(value: string): boolean {
  * safeRedirectPath('/dashboard?tab=1') // '/dashboard?tab=1'
  * safeRedirectPath('https://evil.example') // '/'
  * safeRedirectPath('//evil.example', '/home') // '/home'
+ * safeRedirectPath('/.//evil.example') // '/'
  * ```
  */
 export function safeRedirectPath(value: unknown, fallback = '/'): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 2048) {
     return fallback
   }
-  // A single leading slash, then no slash or backslash: browsers read `//` and `/\` as a host.
-  if (!/^\/(?![/\\])/.test(value) || value.includes('\\') || hasControlCharacter(value)) {
+  if (!SINGLE_SLASH.test(value) || value.includes('\\') || hasControlCharacter(value)) {
     return fallback
   }
+  const path = normalizedPath(value)
+  // What is returned is what a router is given, so it is what must be a path: the parser
+  // turns `/.//host` into `//host`. Parsing it once more must also change nothing.
+  if (path === null || !SINGLE_SLASH.test(path) || normalizedPath(path) !== path) {
+    return fallback
+  }
+  return path
+}
+
+/** The path, query and fragment a value resolves to on the probe origin; `null` when it leaves it. */
+function normalizedPath(value: string): string | null {
   let url: URL
   try {
     url = new URL(value, PROBE_ORIGIN)
   } catch {
-    return fallback
+    return null
   }
   if (url.origin !== PROBE_ORIGIN) {
-    return fallback
+    return null
   }
   return `${url.pathname}${url.search}${url.hash}`
 }

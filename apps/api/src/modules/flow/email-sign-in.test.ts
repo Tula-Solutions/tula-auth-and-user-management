@@ -11,6 +11,7 @@ import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
+import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import { createTestDeps, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
@@ -403,6 +404,120 @@ describe('signing in with an emailed code', () => {
     })
   })
 
+  describe('a password set before the address was proven (pre-hijack)', () => {
+    const THEIR_PASSWORD = 'a password the owner never chose 42'
+    const admin = { type: 'admin', id: 'key_1', ipAddress: null, userAgent: null } as const
+
+    /** An account made for an address by someone who is not its owner, with a password. */
+    async function seedUnproven() {
+      return Users.create(
+        deps,
+        tenant,
+        { email: EMAIL, password: THEIR_PASSWORD, emailVerified: false },
+        admin
+      )
+    }
+
+    const passwordSignIn = async (password: string) =>
+      Flows.submitPassword(deps, tenant, ref(await start()), password, web)
+
+    test('the owner signing in by emailed code removes the password someone else chose', async () => {
+      const { id: userId } = await seedUnproven()
+      const attempt = await start()
+      await prepare(attempt)
+      const result = await submitCode(attempt, sentCode())
+      expect(result.attempt.step).toMatchObject({ status: 'complete', userId })
+
+      expect((await rejection(passwordSignIn(THEIR_PASSWORD))).code).toBe(
+        'auth.invalid_credentials'
+      )
+      expect(
+        (await deps.users.findByEmailWithPassword(tenant.environmentId, NORMALIZED))?.passwordHash
+      ).toBeNull()
+      // Recorded with the verification, with nothing of the password or the address in it.
+      const [entry] = deps.activityLog.ofType('user.password_changed')
+      expect(entry).toMatchObject({
+        actor: { type: 'user', id: userId },
+        target: { type: 'user', id: userId },
+        data: { method: 'email_verification', removed: true },
+      })
+      expect(JSON.stringify(entry)).not.toContain(NORMALIZED)
+      expect(JSON.stringify(entry)).not.toContain('argon2')
+      expect(deps.activityLog.ofType('user.email_verified')).toHaveLength(1)
+      // And the owner is told, in a notice with no code and no link.
+      await Notices.settled()
+      const notice = deps.mailer.outbox.find((mail) => /password was removed/i.test(mail.subject))
+      expect(notice?.to).toBe(EMAIL)
+      expect(notice?.text).not.toMatch(/https?:\/\//)
+      expect(notice?.subject).not.toMatch(/^\d/)
+    })
+
+    test('with `notifications.passwordChanged` off the removal is in the audit log only: no notice', async () => {
+      // Documented behaviour (ADR 0024, docs/methods): the removal notice follows the
+      // environment's password-notice switch like every other password notice.
+      revision += 1
+      deps.environmentSettings.seed(tenant.environmentId, {
+        revision,
+        settings: {
+          ...settings(),
+          notifications: {
+            ...DEFAULT_ENVIRONMENT_SETTINGS.notifications,
+            passwordChanged: false,
+          },
+        },
+      })
+      const { id: userId } = await seedUnproven()
+      const attempt = await start()
+      await prepare(attempt)
+      const result = await submitCode(attempt, sentCode())
+      expect(result.attempt.step).toMatchObject({ status: 'complete', userId })
+
+      expect(
+        (await deps.users.findByEmailWithPassword(tenant.environmentId, NORMALIZED))?.passwordHash
+      ).toBeNull()
+      const [entry] = deps.activityLog.ofType('user.password_changed')
+      expect(entry).toMatchObject({
+        target: { type: 'user', id: userId },
+        data: { method: 'email_verification', removed: true },
+      })
+      await Notices.settled()
+      expect(deps.mailer.outbox.some((mail) => /password/i.test(mail.subject))).toBe(false)
+    })
+
+    test('the owner signing in by emailed link removes it too', async () => {
+      await seedUnproven()
+      const { attempt, binding } = await askForLink()
+      const { token, attemptId } = sentLink()
+      await open({ token, attemptId, binding })
+      expect((await poll(attempt)).attempt.step.status).toBe('complete')
+      expect((await rejection(passwordSignIn(THEIR_PASSWORD))).code).toBe(
+        'auth.invalid_credentials'
+      )
+    })
+
+    test('a user whose address was already verified keeps their password after a code sign-in', async () => {
+      await seedUser()
+      const attempt = await start()
+      await prepare(attempt)
+      await submitCode(attempt, sentCode())
+      expect((await passwordSignIn(PASSWORD)).attempt.step.status).toBe('complete')
+      expect(deps.activityLog.ofType('user.password_changed')).toHaveLength(0)
+      await Notices.settled()
+      expect(deps.mailer.outbox.some((mail) => /password/i.test(mail.subject))).toBe(false)
+    })
+
+    test('verifying the address after a password sign-in keeps the password: the verifier knows it', async () => {
+      await seedUnproven()
+      const attempt = await start()
+      const waiting = await Flows.submitPassword(deps, tenant, ref(attempt), THEIR_PASSWORD, web)
+      expect(waiting.attempt.step.status).toBe('needs_email_verification')
+      const done = await Flows.verifyEmail(deps, tenant, 'sign_in', ref(attempt), sentCode(), web)
+      expect(done.attempt.step.status).toBe('complete')
+      expect((await passwordSignIn(THEIR_PASSWORD)).attempt.step.status).toBe('complete')
+      expect(deps.activityLog.ofType('user.password_changed')).toHaveLength(0)
+    })
+  })
+
   test('a sign-in by code is announced like any other sign-in', async () => {
     const userId = await seedUser()
     const announced = spyOn(Notices, 'newSignIn')
@@ -573,6 +688,7 @@ describe('signing in with an emailed code', () => {
       strategies: ['password', 'email_code', 'email_link'],
       secondFactors: ['totp'],
       amr: ['email'],
+      firstFactor: 'email_code',
     })
   })
 

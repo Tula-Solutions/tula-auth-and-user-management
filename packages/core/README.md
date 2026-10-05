@@ -77,7 +77,9 @@ if (tula.signIn.canUseEmailLink()) {
   })
   const step = await flow.waitForEmailLink({ signal })  // resolves when the link was opened in this browser
 }
-flow.discard()   // when the user leaves the screen: stops waiting, forgets the link's binding
+flow.discard()   // when the user leaves the screen: ends the attempt (later actions throw
+                 // flow.invalid_step, a late answer signs nobody in), stops waiting,
+                 // forgets the link's binding
 
 // On the page the link leads to, once:
 const { status } = await tula.signIn.handleEmailLink()

@@ -6,7 +6,12 @@ import {
   PaginationMetaSchema,
 } from '@tula/contract'
 import { z } from 'zod'
-import { EnvironmentKindSchema, EnvironmentSchema } from '~/modules/project/schema'
+import {
+  EnvironmentKindSchema,
+  EnvironmentSchema,
+  MAX_NAME_LENGTH,
+  NameSchema,
+} from '~/modules/project/schema'
 
 /**
  * The body of a dashboard sign-in: the instance admin token, once.
@@ -25,20 +30,7 @@ export const DashboardSessionSchema = z
   .object({ expiresAt: z.iso.datetime() })
   .meta({ ref: 'DashboardSession' })
 
-/** Longest name of a workspace or a project. */
-export const MAX_NAME_LENGTH = 100
-
-/**
- * A workspace's or project's name: one line of text an operator typed. Trimmed; no control
- * characters, so it cannot break a log line or a terminal.
- */
-const NameSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(MAX_NAME_LENGTH)
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point.
-  .regex(/^[^\u0000-\u001f\u007f]*$/, 'Must not contain control characters.')
+export { MAX_NAME_LENGTH }
 
 const page = {
   page: z.coerce.number().int().min(1).max(1_000_000).default(1),

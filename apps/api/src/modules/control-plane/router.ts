@@ -122,7 +122,7 @@ router.post(
     }
     const id = deps.ids.next()
     // Recorded before the cookie is set: no session without its entry.
-    await ControlPlane.recordSession(deps, 'instance.signed_in', { ...instanceActor(c), id })
+    await ControlPlane.recordSignIn(deps, { ...instanceActor(c), id })
     const session = await startDashboardSession(c, id)
     return c.json(DashboardSessionSchema.parse({ expiresAt: session.expiresAt.toISOString() }))
   }
@@ -139,10 +139,7 @@ router.get(
     security: openapi.security.dashboard,
     responses: {
       200: { description: 'The session.', content: json(DashboardSessionSchema) },
-      400: openapi.responses[400],
-      401: openapi.responses[401],
-      403: openapi.responses[403],
-      404: openapi.responses[404],
+      ...openapi.instanceResponses,
       429: openapi.responses[429],
       500: openapi.responses[500],
       503: openapi.responses[503],
@@ -165,13 +162,11 @@ router.delete(
     tags: ['Instance'],
     summary: 'Sign out of the dashboard',
     description:
-      'Removes the session cookies from the browser. Idempotent: it answers 204 with or without a session. A session is stateless, so a copy of the cookie made elsewhere stays valid until it expires (8 hours at most) or the admin token is rotated.',
+      'Removes the session cookies from the browser. Idempotent: it answers 204 with or without a session, and a session’s sign-out is recorded once however often it is repeated. A session is stateless, so a copy of the cookie made elsewhere stays valid until it expires (8 hours at most) or the admin token is rotated.',
     security: openapi.security.dashboard,
     responses: {
       204: { description: 'Signed out. The cookies are cleared.' },
-      400: openapi.responses[400],
-      403: openapi.responses[403],
-      404: openapi.responses[404],
+      ...openapi.instanceResponses,
       429: openapi.responses[429],
       500: openapi.responses[500],
       503: openapi.responses[503],
@@ -187,7 +182,7 @@ router.delete(
     const session = await readDashboardSession(c)
     if (session) {
       c.set('dashboard', session)
-      await ControlPlane.recordSession(c.get('deps'), 'instance.signed_out', instanceActor(c))
+      await ControlPlane.recordSignOut(c.get('deps'), instanceActor(c))
     }
     clearDashboardSession(c)
     return c.body(null, 204)
@@ -196,10 +191,7 @@ router.delete(
 
 /** What every instance route can answer besides its own result. */
 const common = {
-  400: openapi.responses[400],
-  401: openapi.responses[401],
-  403: openapi.responses[403],
-  404: openapi.responses[404],
+  ...openapi.instanceResponses,
   429: openapi.responses[429],
   500: openapi.responses[500],
   503: openapi.responses[503],

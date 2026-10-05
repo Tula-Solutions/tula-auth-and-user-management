@@ -103,10 +103,44 @@ export function apiHeaders(
 }
 
 /**
+ * The longest a session refresh waits for the API, whatever `timeoutSeconds` says.
+ *
+ * A refresh whose answer is lost may already have rotated the token. Presenting the same
+ * token again is forgiven only inside the profile's reuse grace window (10 seconds at the
+ * least, `MIN_REUSE_GRACE_PERIOD` in `@tula/contract`) and is treated as theft after it: the
+ * whole session is revoked. Giving up after 8 seconds leaves room for the one repeat below and
+ * for the browser's next request; with the general 15-second timeout every lost answer would
+ * have ended the session. The same number as `@tula/core`'s `REFRESH_TIMEOUT_MS`; a test holds
+ * both, and that it stays below the floor.
+ *
+ * @example
+ * ```ts
+ * REFRESH_TIMEOUT_MS // 8_000
+ * ```
+ */
+export const REFRESH_TIMEOUT_MS = 8_000
+
+/**
+ * How long, from the start of a refresh, its one repeat may still be running: the smallest
+ * reuse grace window a session profile may set.
+ *
+ * @example
+ * ```ts
+ * // The first try gives up after 8s; the repeat then has the remaining 2s.
+ * REFRESH_RETRY_WINDOW_MS // 10_000
+ * ```
+ */
+export const REFRESH_RETRY_WINDOW_MS = 10_000
+
+/** The least time the repeat of a refresh is given, however long the first try took. */
+const MIN_REFRESH_RETRY_TIMEOUT_MS = 1_000
+
+/**
  * Send a request to the API: never following a redirect, never waiting for ever.
  *
  * @param config - The configuration.
  * @param request - The request to send.
+ * @param timeoutMs - How long to wait for the answer. Defaults to the configured timeout.
  * @returns The API's response.
  * @throws Whatever `fetch` throws when the API cannot be reached or the timeout passes.
  *
@@ -115,9 +149,13 @@ export function apiHeaders(
  * const response = await callApi(config, new Request(`${config.apiUrl}/v1/client/me`, { headers }))
  * ```
  */
-export function callApi(config: TulaConfig, request: Request): Promise<Response> {
+export function callApi(
+  config: TulaConfig,
+  request: Request,
+  timeoutMs = config.timeoutMs
+): Promise<Response> {
   return config.fetch(
-    new Request(request, { redirect: 'manual', signal: AbortSignal.timeout(config.timeoutMs) })
+    new Request(request, { redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) })
   )
 }
 
@@ -247,6 +285,10 @@ const refreshing = new WeakMap<TulaConfig['fetch'], Map<string, Promise<RefreshO
  * alone, and a refusal of the request itself (its origin, its key) is reported once through
  * the configuration's `warn`.
  *
+ * The call waits at most {@link REFRESH_TIMEOUT_MS} (or the configured timeout, if smaller)
+ * and, when it got no answer at all, is sent once more at once, inside
+ * {@link REFRESH_RETRY_WINDOW_MS}; requests sharing the refresh share the repeat.
+ *
  * @param request - The request to the app that needs a session.
  * @param config - The configuration.
  * @param refreshToken - The refresh cookie's value.
@@ -296,16 +338,33 @@ async function requestRefresh(
   headers.set('origin', origin)
   headers.set(CLIENT_HEADER, 'web')
   headers.set('content-type', 'application/json')
-  let response: Response
-  try {
-    response = await callApi(
+  const send = (timeoutMs: number) =>
+    callApi(
       config,
       new Request(`${config.apiUrl}/v1/client/sessions/refresh`, {
         method: 'POST',
         headers,
         body: '{}',
-      })
+      }),
+      timeoutMs
     )
+  const timeoutMs = Math.min(config.timeoutMs, REFRESH_TIMEOUT_MS)
+  const sentAt = Date.now()
+  let response: Response
+  try {
+    try {
+      response = await send(timeoutMs)
+    } catch {
+      // The one repeat, as in `@tula/core`: no answer came (a timeout, a dropped connection),
+      // so the API may or may not have rotated the token. Presenting the same token again at
+      // once is answered with the same next token if it did, and is an ordinary refresh if it
+      // did not. Left to the browser's next request, which may come after the grace window,
+      // it would be reuse and end the session on every device. An HTTP answer of any status
+      // never gets here. The repeat has what is left of the window, inside the same single
+      // flight.
+      const left = REFRESH_RETRY_WINDOW_MS - (Date.now() - sentAt)
+      response = await send(Math.min(timeoutMs, Math.max(MIN_REFRESH_RETRY_TIMEOUT_MS, left)))
+    }
   } catch {
     return { status: 'unavailable' }
   }

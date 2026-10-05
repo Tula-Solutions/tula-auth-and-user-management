@@ -153,10 +153,11 @@ async function deliver(
 }
 
 /**
- * Tell an account's owner that its password was changed, reset, set by an administrator or
- * added, so that a takeover does not go unnoticed (ADR 0023).
+ * Tell an account's owner that its password was changed, reset, set by an administrator,
+ * added, or removed when they first proved the address by an emailed sign-in (`by:
+ * 'verification'`, ADR 0024), so that a takeover does not go unnoticed (ADR 0023).
  *
- * Call it **after the new password is stored**. It returns at once and never throws: the email
+ * Call it **after the change is stored**. It returns at once and never throws: the email
  * is sent in the background, at most {@link NOTICES_PER_HOUR} an hour per user, and only when the
  * environment has `notifications.passwordChanged` on. A relay, limiter or settings failure is
  * logged and changes nothing for the caller. Sending is not an audited action.

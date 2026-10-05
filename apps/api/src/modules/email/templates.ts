@@ -33,9 +33,11 @@ export interface PasswordChangedMessage {
   type: 'password_changed'
   /**
    * How it was changed: by the signed-in user (`self`), by a completed password reset (`reset`)
-   * or by an administrator (`admin`).
+   * or by an administrator (`admin`). `verification` is the one notice about a password that
+   * was **removed**: the owner proved the address for the first time by signing in with an
+   * emailed code or link, and the password the account was made with went with that (ADR 0024).
    */
-  by: 'self' | 'reset' | 'admin'
+  by: 'self' | 'reset' | 'admin' | 'verification'
   /** `true` when the account had no password before, so one was added rather than replaced. */
   added: boolean
   /** When the password was stored. */
@@ -200,6 +202,13 @@ function utc(at: Date): string {
 
 /** What a password notice says happened, by who did it and whether a password existed before. */
 function passwordChange({ by, added }: PasswordChangedMessage): string[] {
+  if (by === 'verification') {
+    return [
+      'You confirmed this email address by signing in to {app} with a code or link sent to it.',
+      'Your account had a password that was set before the address was confirmed, so it was removed: nobody who knew it can sign in with it.',
+      'To sign in with a password, choose a new one by resetting it from the sign-in screen.',
+    ]
+  }
   if (by === 'admin') {
     return [
       added
@@ -327,6 +336,17 @@ function securityCopy(message: SecurityNoticeMessage): Copy {
       closing: [
         'If this was you, you can ignore this email.',
         `If it wasn't you, ${RESET_NOW}. Resetting the password signs every device out.`,
+      ],
+    }
+  }
+  if (message.by === 'verification') {
+    return {
+      subject: 'The password was removed from your {app} account',
+      lead: [passwordChange(message).join(' ')],
+      details: [['When', utc(message.at)]],
+      closing: [
+        'If this was you, there is nothing more to do.',
+        `If you did not just sign in, ${RESET_NOW}.`,
       ],
     }
   }

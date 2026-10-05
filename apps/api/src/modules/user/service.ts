@@ -506,7 +506,9 @@ export async function resetPassword(
  *
  * The current password must be given, so a stolen access token alone cannot take the account
  * over; wrong guesses back off exponentially per user (`CREDENTIAL_LOCKOUT`), and a correct one
- * clears them. On success every *other* session ends and the
+ * clears them. They are counted under `Mfa.stepUpLockKey`, the key a password step-up counts
+ * under: whoever holds a session has one budget of guesses at the password, whichever route
+ * they try it on (ADR 0011). On success every *other* session ends and the
  * device making the change stays signed in. The user is emailed that their password was changed
  * (ADR 0023).
  *
@@ -545,8 +547,9 @@ export async function changePassword(
     throw new AuthError('password.not_set')
   }
   // Counted as a failure up front and cleared once the current password checks out, so only
-  // wrong guesses add up and parallel guesses can't slip through.
-  const lockKey = `password_change:${scope.environmentId}:${self.userId}`
+  // wrong guesses add up and parallel guesses can't slip through. Under the step-up's key: it
+  // is the same password guessed by the same session, so it gets one budget, not two.
+  const lockKey = Mfa.stepUpLockKey(scope.environmentId, self.userId)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)

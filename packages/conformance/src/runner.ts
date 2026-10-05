@@ -65,6 +65,19 @@ export interface Target {
    * @returns Milliseconds since the Unix epoch.
    */
   now?: () => number
+  /**
+   * How long to wait after a step changed the environment's settings, in milliseconds. Set it
+   * when the requests are spread over several instances behind one address: an instance may
+   * serve the settings it had cached for a few seconds after another instance changed them
+   * (ADR 0018), and a scenario's next step may land on that instance. Left out, nothing waits:
+   * one instance sees its own write at once.
+   */
+  settleMs?: number
+}
+
+/** Whether a request replaces the environment's settings, which instances cache (ADR 0018). */
+function changesSettings(request: ScenarioRequest): boolean {
+  return request.method !== 'GET' && request.path.split('?')[0] === '/v1/admin/settings'
 }
 
 /** How one step went. */
@@ -282,6 +295,9 @@ async function runStep(
       throw new StepFailure(
         step.times ? problems.map((problem) => `request ${attempt}: ${problem}`) : problems
       )
+    }
+    if (target.settleMs && response.ok && changesSettings(request)) {
+      await target.wait(target.settleMs)
     }
     for (const [name, path] of Object.entries(step.capture ?? {})) {
       const value = pick(body, path)

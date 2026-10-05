@@ -34,7 +34,10 @@ storage or a URL.
   fingerprint in the payload; in the MAC it does the same job and nothing derived from the
   token leaves the server.)
 - **Eight hours, absolute.** `exp = iat + 8 h`; nothing refreshes or extends it, and the
-  verifier refuses a payload that claims more, even correctly signed.
+  verifier refuses a payload that claims more, even correctly signed. An `iat` up to five
+  seconds ahead of the verifying instance's clock is accepted (`DASHBOARD_SESSION_LEEWAY_MS`):
+  the session is stateless, so the request after a sign-in may land on another instance, and
+  with no allowance one whose clock is a second behind would refuse it. `exp` has none.
 - **Accepted trade-off: no revocation of one session.** Signing out clears the cookie in that
   browser; a copy made elsewhere stays valid until it expires. It is bounded by the eight
   hours and by rotating the token, which is the response to a stolen session. A server-side
@@ -72,8 +75,14 @@ storage or a URL.
   total would need a timer or a flush job for a number the sign-in rate limit already caps.
   Read it as "at least this many more". The tally lives in the rate limiter, so instances
   share it, under a keyed hash of the address (`~/lib/keyed-hash`), never the address. A
-  limiter that cannot count means the entry is written. Successful sign-ins and sign-outs
-  are always recorded.
+  limiter that cannot count means the entry is written. Successful sign-ins are always
+  recorded.
+- **A sign-out is recorded once per session.** The cookie stays valid after a sign-out (no
+  revocation of one session), so the same value can be sent to `DELETE /v1/instance/session`
+  again and again; one entry per call would let whoever holds a session grow the append-only
+  log. `ControlPlane.recordSignOut` writes the first and tallies the rest in the rate limiter,
+  for the session's eight hours, under a keyed hash of the session id. A limiter that cannot
+  count means the entry is written, and never a failed sign-out.
 - `GET /v1/instance/session` answers `{ expiresAt }` or `auth.unauthenticated` (the app's
   start). `DELETE` clears both cookies; it is idempotent and needs no valid session.
 

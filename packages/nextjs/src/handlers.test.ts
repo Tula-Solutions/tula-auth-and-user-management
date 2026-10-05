@@ -593,6 +593,29 @@ describe('cookies', () => {
     ])
   })
 
+  test.each([
+    [
+      'answers 503',
+      () => Response.json({ status: 503, code: 'service.unavailable' }, { status: 503 }),
+    ],
+    ['answers 429', () => Response.json({ status: 429, code: 'rate_limited' }, { status: 429 })],
+    ['cannot be reached', () => Promise.reject(new TypeError('connection refused'))],
+  ])(
+    'a sign-out the API %s leaves every cookie: the session may still be alive',
+    async (_name, respond) => {
+      const { handlers } = setup(respond)
+      const response = await handlers.POST(
+        post('/v1/client/sessions/sign-out', {
+          headers: { cookie: 'tula_rt=r1; tula_at=a.b.c; tula_session=s1' },
+        })
+      )
+      // The browser's client throws on this answer, and the components then say that the
+      // session may still be active instead of going to the after-sign-out page.
+      expect(response.ok).toBe(false)
+      expect(cookiesOf(response)).toEqual([])
+    }
+  )
+
   test('a refused refresh that drops the API’s cookie drops the access token too', async () => {
     const { handlers } = setup(() =>
       Response.json(

@@ -11,6 +11,7 @@ import {
 import { runtimeEnvironment } from './environment'
 import { isTulaError, type TulaError } from './errors'
 import {
+  deferred,
   type FakeApi,
   type FakeChannelHub,
   type FakeLinkStorage,
@@ -529,12 +530,27 @@ describe('waiting for an emailed link', () => {
     expect(await waiting).toEqual(prepared('email_link'))
     expect(timers.pending()).toEqual([])
     expect(shared.storage.entries.size).toBe(0)
-    // A new wait can be started afterwards.
-    const again = flow.waitForEmailLink()
+    // The attempt was left for good: a later wait is refused and starts nothing.
+    expect((await caught(flow.waitForEmailLink())).code).toBe('flow.invalid_step')
+    expect(timers.pending()).toEqual([])
+  })
+
+  test('a round whose answer arrives after discard signs nobody in and ends the wait quietly', async () => {
+    const shared = browser()
+    const { flow, tula, timers } = await waitingFlow(shared)
+    const held = deferred<Response>()
+    shared.api.on(ATTEMPT_ROUTE, () => held.promise)
+    const waiting = flow.waitForEmailLink()
     await settle()
-    expect(timers.pending()).toEqual([EMAIL_LINK_POLL_INTERVAL_MS])
+    timers.fire()
+    await settle()
+    expect(shared.api.calls(ATTEMPT_ROUTE)).toHaveLength(1)
     flow.discard()
-    await again
+    expect(await waiting).toEqual(prepared('email_link'))
+    held.resolve(json(200, attempt(shared, COMPLETE, { session: sessionTokens('late') })))
+    await settle()
+    expect(tula.state.status).not.toBe('signed-in')
+    expect(timers.pending()).toEqual([])
   })
 
   test('a wait its caller stopped and asked for again at once keeps asking the server', async () => {
@@ -594,19 +610,14 @@ describe('waiting for an emailed link', () => {
     expect(timers.pending()).toEqual([])
   })
 
-  test('discarding a flow that never waited does not slow down a later wait', async () => {
+  test('a wait asked of a flow that was discarded before it ever waited starts nothing', async () => {
     const shared = browser()
     const { flow, timers } = await waitingFlow(shared)
     flow.discard()
-    const waiting = flow.waitForEmailLink()
+    expect((await caught(flow.waitForEmailLink())).code).toBe('flow.invalid_step')
     await settle()
-    expect(timers.pending()).toEqual([EMAIL_LINK_POLL_INTERVAL_MS])
-    timers.fire()
-    await settle()
-    // The first interval leads to the first question: no round is skipped.
-    expect(shared.api.calls(ATTEMPT_ROUTE)).toHaveLength(1)
-    flow.discard()
-    await waiting
+    expect(timers.pending()).toEqual([])
+    expect(shared.api.calls(ATTEMPT_ROUTE)).toHaveLength(0)
   })
 
   test('a second call joins the wait already running', async () => {

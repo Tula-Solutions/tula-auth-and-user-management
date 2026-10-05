@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { testRouteRefusal } from './guard'
 
 // Run with the harness tests (`bun run test:harness`, part of verify): the browser suite
@@ -51,4 +53,34 @@ describe('who may call the e2e fixture’s test routes', () => {
       expect(testRouteRefusal(request({ host: HOST, 'sec-fetch-site': site }), HOST)).not.toBeNull()
     }
   )
+})
+
+describe('the fixture’s test routes', () => {
+  // The fixture cannot be imported here (it refuses to start without E2E=1 and binds ports),
+  // so its source is read: a test route answered before the guard would be open to any page.
+  const source = readFileSync(join(import.meta.dir, 'server.ts'), 'utf8')
+  const guardAt = source.indexOf('testRouteRefusal(request,')
+  const routes = [...source.matchAll(/url\.pathname === '(\/__test\/[a-z-]+)'/g)]
+
+  test('every one is answered only after the guard has let the request through', () => {
+    expect(guardAt).toBeGreaterThan(-1)
+    expect(routes.length).toBeGreaterThan(0)
+    for (const route of routes) {
+      expect(`${route[1]}: ${(route.index ?? -1) > guardAt}`).toBe(`${route[1]}: true`)
+    }
+    // No test route is matched any other way (a prefix, a pattern) outside that function.
+    expect(source.match(/\/__test\/[a-z-]+'/g)?.length).toBe(routes.length)
+  })
+
+  test('the clock a scenario moved forward can be put back, behind the same guard', () => {
+    const names = routes.map((route) => route[1])
+    expect(names).toContain('/__test/advance-clock')
+    expect(names).toContain('/__test/reset-clock')
+    for (const path of ['/__test/advance-clock', '/__test/reset-clock']) {
+      const page = request({ host: HOST, origin: 'http://localhost:4319' }, path)
+      expect(testRouteRefusal(page, HOST)).not.toBeNull()
+      const rebound = request({ host: 'evil.example:4318' }, path)
+      expect(testRouteRefusal(rebound, HOST)).not.toBeNull()
+    }
+  })
 })

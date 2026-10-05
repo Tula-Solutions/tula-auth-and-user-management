@@ -73,7 +73,7 @@ describe('render', () => {
     expect(email.text).not.toContain('http')
   })
 
-  test.each<['self' | 'reset' | 'admin', boolean, string, string]>([
+  test.each<['self' | 'reset' | 'admin' | 'verification', boolean, string, string]>([
     [
       'self',
       false,
@@ -109,6 +109,12 @@ describe('render', () => {
       true,
       'A password was added to your Acme account',
       'A password was added to your Acme account by someone signed in to it.',
+    ],
+    [
+      'verification',
+      false,
+      'The password was removed from your Acme account',
+      'Your account had a password that was set before the address was confirmed, so it was removed',
     ],
   ])(
     'a password notice (%s, added: %p) says who did it and what to do',

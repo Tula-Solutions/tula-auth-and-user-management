@@ -37,16 +37,34 @@ export interface NavigationOptions {
   oauthCallbackUrl?: string
   /** Where to go once a sign-up completes. */
   afterSignUpUrl?: string
-  /** Where to go after signing out from `<UserButton>` or `<UserProfile>`. */
+  /**
+   * Where to go after signing out from `<UserButton>` or `<UserProfile>`: only once the server
+   * was told. A sign-out that did not reach it navigates nowhere and is said in a dialog.
+   */
   afterSignOutUrl?: string
   /** Where `<UserProfile>` lives. Without it `<UserButton>` opens the profile in a dialog. */
   userProfileUrl?: string
+}
+
+/** Whether a value names its own scheme (`https://…`), as opposed to being relative to the page. */
+function isAbsolute(url: string): boolean {
+  try {
+    new URL(url)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
  * Check a URL a developer passed before navigating to it: a relative URL (resolved against the
  * page) or an absolute `http(s)` one. Anything else (`javascript:`, `data:`, a malformed
  * value) is refused, so a prop that was built from untrusted input cannot run script.
+ *
+ * A relative destination means this origin. A value with no scheme that still names a host
+ * (`//host`, `/\host`, or a path such as `/.//host` that normalises to one) is refused: another
+ * site has to be written out with its scheme, which a value copied from the address bar by
+ * mistake does not survive.
  *
  * @param url - The URL as passed.
  * @param base - What a relative URL is resolved against; the page's address in a browser.
@@ -56,6 +74,7 @@ export interface NavigationOptions {
  * ```ts
  * safeUrl('/app', 'https://example.com/sign-in') // 'https://example.com/app'
  * safeUrl('javascript:alert(1)', 'https://example.com/') // null
+ * safeUrl('//other.example', 'https://example.com/') // null
  * ```
  */
 export function safeUrl(url: string | undefined, base: string): string | null {
@@ -64,7 +83,17 @@ export function safeUrl(url: string | undefined, base: string): string | null {
   }
   try {
     const resolved = new URL(url, base)
-    return resolved.protocol === 'https:' || resolved.protocol === 'http:' ? resolved.href : null
+    if (resolved.protocol !== 'https:' && resolved.protocol !== 'http:') {
+      return null
+    }
+    if (!isAbsolute(url)) {
+      // A router is handed the string as written and resolves it again: a path that starts
+      // with two slashes after normalisation is a host to it.
+      if (resolved.origin !== new URL(base).origin || resolved.pathname.startsWith('//')) {
+        return null
+      }
+    }
+    return resolved.href
   } catch {
     return null
   }

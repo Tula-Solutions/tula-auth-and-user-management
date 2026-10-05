@@ -22,6 +22,8 @@ import { base32Decode, totp } from '~/lib/totp'
 import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
+import * as Passwords from '~/modules/password/service'
+import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
@@ -1007,6 +1009,147 @@ describe('signing in with a passkey', () => {
   })
 })
 
+describe('a passkey sign-in by a user whose address is not verified', () => {
+  /** A user with an unverified address and a passkey; a password only when asked. */
+  async function unverifiedWithPasskey(options: { password?: boolean } = {}) {
+    const userId = deps.ids.next()
+    await deps.users.create({
+      id: userId,
+      projectId: TEST_TENANT.projectId,
+      environmentId: TEST_TENANT.environmentId,
+      email: EMAIL,
+      emailNormalized: EMAIL,
+      emailVerifiedAt: null,
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: options.password ? await Passwords.hash(PASSWORD) : null,
+    })
+    const session = await Sessions.create(deps, TEST_TENANT, {
+      userId,
+      client: 'ios',
+      userAgent: null,
+      ipAddress: null,
+      authMethods: ['pwd'],
+    })
+    const token = session.accessToken as string
+    const authenticator = new VirtualAuthenticator()
+    await register(token, authenticator)
+    await Notices.settled()
+    return { userId, authenticator, token }
+  }
+
+  /** A passkey sign-in that stops at `needs_email_verification`; returns the waiting attempt. */
+  async function parked(authenticator: VirtualAuthenticator): Promise<FlowAttempt> {
+    const waiting = await json<FlowAttempt>(await passkeySignIn(authenticator))
+    expect(waiting.step.status).toBe('needs_email_verification')
+    return waiting
+  }
+
+  test('with passwords off, the emailed code completes the sign-in', async () => {
+    const { authenticator, userId } = await unverifiedWithPasskey()
+    configure({ password: false })
+    const waiting = await parked(authenticator)
+    const res = await post(`/sign-ins/${waiting.id}/verify-email`, { code: codeInSubject() })
+    expect(res.status).toBe(200)
+    const done = await json<FlowAttempt>(res)
+    expect(done.step).toMatchObject({ status: 'complete', userId })
+    expect(new Set(claimsOf(done.session?.accessToken as string).amr)).toEqual(
+      new Set(['hwk', 'user', 'mfa', 'email'])
+    )
+    expect(
+      (await deps.users.findById(TEST_TENANT.environmentId, userId))?.emailVerifiedAt
+    ).not.toBeNull()
+  })
+
+  test('a user with an authenticator app is not asked for it again: the passkey was the second factor', async () => {
+    const { authenticator, token } = await unverifiedWithPasskey()
+    await enrolTotp(token)
+    const waiting = await parked(authenticator)
+    const done = await json<FlowAttempt>(
+      await post(`/sign-ins/${waiting.id}/verify-email`, { code: codeInSubject() })
+    )
+    expect(done.step.status).toBe('complete')
+    expect(done.session?.accessToken).toBeDefined()
+  })
+
+  test('where a second factor is required, nothing is enrolled after the code', async () => {
+    const { authenticator } = await unverifiedWithPasskey()
+    configure({ policy: 'required', password: false })
+    const waiting = await parked(authenticator)
+    const done = await json<FlowAttempt>(
+      await post(`/sign-ins/${waiting.id}/verify-email`, { code: codeInSubject() })
+    )
+    expect(done.step.status).toBe('complete')
+  })
+
+  test('with passwords off, the code can be sent again', async () => {
+    const { authenticator } = await unverifiedWithPasskey()
+    configure({ password: false })
+    const waiting = await parked(authenticator)
+    const first = codeInSubject()
+    deps.clock.advance('61s')
+    const res = await post(`/sign-ins/${waiting.id}/resend-code`)
+    expect(res.status).toBe(200)
+    expect((await json<FlowAttempt>(res)).step.status).toBe('needs_email_verification')
+    expect(codeInSubject()).not.toBe(first)
+    const done = await post(`/sign-ins/${waiting.id}/verify-email`, { code: codeInSubject() })
+    expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
+  })
+
+  test('passkeys switched off while the attempt waits: the code and the resend are refused, and nothing is used up', async () => {
+    const { authenticator, userId } = await unverifiedWithPasskey()
+    const waiting = await parked(authenticator)
+    const code = codeInSubject()
+    const before = await sessionCount(userId)
+    configure({ passkey: false })
+    const refused = await post(`/sign-ins/${waiting.id}/verify-email`, { code })
+    expect(await errorOf(refused)).toMatchObject({ status: 403, code: 'auth.method_disabled' })
+    expect(await codeOf(await post(`/sign-ins/${waiting.id}/resend-code`))).toBe(
+      'auth.method_disabled'
+    )
+    expect(await sessionCount(userId)).toBe(before)
+    // The code was not spent: it completes once passkeys are back on.
+    configure()
+    const done = await post(`/sign-ins/${waiting.id}/verify-email`, { code })
+    expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
+  })
+
+  test('the code is refused from an origin outside the relying party', async () => {
+    const { authenticator } = await unverifiedWithPasskey()
+    const waiting = await parked(authenticator)
+    const res = await post(
+      `/sign-ins/${waiting.id}/verify-email`,
+      { code: codeInSubject() },
+      { origin: OTHER_ALLOWED }
+    )
+    expect(await codeOf(res)).toBe('request.origin_not_allowed')
+  })
+
+  test('the waiting attempt is stored with the user’s address as its identifier', async () => {
+    const { authenticator, userId } = await unverifiedWithPasskey()
+    const waiting = await parked(authenticator)
+    expect(await deps.flowAttempts.findById(TEST_TENANT.environmentId, waiting.id)).toMatchObject({
+      identifier: EMAIL,
+      userId,
+      status: 'needs_email_verification',
+    })
+  })
+
+  test('the address verified this way removes a password the verifier never proved', async () => {
+    const { authenticator } = await unverifiedWithPasskey({ password: true })
+    const waiting = await parked(authenticator)
+    const done = await post(`/sign-ins/${waiting.id}/verify-email`, { code: codeInSubject() })
+    expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
+    expect(
+      (await deps.users.findByEmailWithPassword(TEST_TENANT.environmentId, EMAIL))?.passwordHash
+    ).toBeNull()
+    await Notices.settled()
+  })
+})
+
 describe('the environment’s ceilings and a passkey sign-in', () => {
   const tenant = {
     projectId: TEST_TENANT.projectId,
@@ -1253,6 +1396,43 @@ describe('a passkey as the second factor', () => {
       await post(`/password-resets/${reset.id}/second-factor`, { method: 'passkey', credential })
     )
     expect(done.step.status).toBe('complete')
+  })
+})
+
+describe('a passkey as the second factor, after the first factor was switched off', () => {
+  test('the options and the assertion are refused: the password that parked the attempt no longer counts', async () => {
+    const { session, authenticator } = await withPasskey()
+    await enrolTotp(session.accessToken)
+    const started = await json<FlowAttempt>(await post('/sign-ins', { identifier: EMAIL }))
+    const waiting = await json<FlowAttempt>(
+      await post(`/sign-ins/${started.id}/password`, { password: PASSWORD })
+    )
+    expect(waiting.step).toMatchObject({ status: 'needs_second_factor' })
+    const options = await json<PasskeyRequestOptions>(
+      await post(`/sign-ins/${started.id}/second-factor/passkey/options`)
+    )
+    const credential = await authenticator.get(options, { origin: ORIGIN })
+
+    configure({ password: false })
+    const counted = spyOn(deps.lockout, 'attempt')
+    expect(await codeOf(await post(`/sign-ins/${started.id}/second-factor/passkey/options`))).toBe(
+      'auth.method_disabled'
+    )
+    expect(
+      await codeOf(
+        await post(`/sign-ins/${started.id}/second-factor`, { method: 'passkey', credential })
+      )
+    ).toBe('auth.method_disabled')
+    expect(counted).not.toHaveBeenCalled()
+    counted.mockRestore()
+
+    // The challenge was not used up: the same assertion completes once passwords are back.
+    configure()
+    const done = await post(`/sign-ins/${started.id}/second-factor`, {
+      method: 'passkey',
+      credential,
+    })
+    expect((await json<FlowAttempt>(done)).step.status).toBe('complete')
   })
 })
 

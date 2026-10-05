@@ -109,7 +109,9 @@ credentials and its origin is the origin of the API URL the operator gave, and t
 `<origin>/v1/status`; anything else is reported `skipped` with a fixed explanation. A server
 cannot make the operator's machine request a port or a path of its choosing. It never
 connects to the database. Exit code 1 when a check fails, or warns under `--strict`. Text
-from the server is stripped of control characters before it reaches the terminal. The token
+from the server is stripped of control characters before it reaches the terminal, and of what
+a reader cannot see: format characters (bidi overrides and isolates, zero-width characters),
+private-use and unassigned code points and lone surrogates, by Unicode class. The token
 comes from `TULA_ADMIN_TOKEN` or `--admin-token-file`, never from the command line.
 
 ### `tula policy test`
@@ -136,7 +138,12 @@ them.
 
 - Keys go to a marked block of `.env.local` (mode 0600), which Bun, Vite and Next.js all
   read and the scaffold's `.gitignore` covers. The mode is enforced on every run, also one
-  that changes nothing (with a warning when it was wider). The block's end marker is looked
+  that changes nothing (with a warning when it was wider). The file is written through a
+  temporary file created exclusively under a random name, and a symbolic link at `.env.local`
+  is refused: nothing is written or re-moded through one. So is anything else there that is
+  not a regular file (a named pipe, a directory, a device): opening a pipe to change its mode
+  would wait for a writer for ever, so the kind is asked with `lstat` before anything is
+  opened. The block's end marker is looked
   for after its start marker, and a marker is a whole line: a line of the user's that
   mentions one never hides the block. Lines outside the block are never changed; a
   `TULA_SECRET_KEY` of the user's own is used as it is. A second run verifies the stored

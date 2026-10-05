@@ -79,6 +79,20 @@ paths:
   calls go out without `Authorization` and rely on the httpOnly cookie, a 401 signs the client
   and its other tabs out at once (no refresh, no retry), and nothing of the session is ever
   put in storage or a cross-tab message beyond its id. Never synthesize a token for it.
+- `flow.discard()` ends an attempt, on every kind of flow: the secret is forgotten (later
+  actions throw `flow.invalid_step` without a request) and an answer still in flight is
+  dropped in `accept` before anything is taken from it, so a late `complete` never reaches
+  `session.adopt`. A change to `createAttempt` keeps the test that holds a response, discards
+  and resolves it with `complete`. Accepted residual (ADR 0021): on `web` the browser has
+  already stored that answer's refresh cookie, so a reload would find the session unless a
+  later sign-in replaced the cookie.
+- **A sign-out the server was not told of can be sent again.** A non-`web` client has dropped
+  its refresh token by the time a failed `signOut()` rejects, so it keeps that token **in
+  memory only** (`undelivered`, a closure of the session manager; never storage, a cross-tab
+  message, an error, a log line or `toJSON`) and the next `signOut()` presents it. Nothing
+  else reads it: no refresh may present it, and the client stays signed out throughout. It is
+  forgotten when delivered, on a `session.*` answer to the sign-out and when a new session is
+  adopted; there is no timer (ADR 0021 says why). Keep the tests of all three.
 - One error class: every failed call throws `TulaError` with a contract code or one of the
   client's own (`network.failed`, `network.timeout`, `response.invalid`, `storage.failed`,
   `flow.busy`, `link.cross_origin`, `passkey.unsupported`, `passkey.cancelled`,
@@ -119,7 +133,17 @@ paths:
   `@tula/core` by code; never copy one into the table.
 - Nothing during render touches `window`, `document`, `Date.now()` or storage (`ssr-render.tsx`
   proves it in a process without a DOM). No `dangerouslySetInnerHTML`. No `console`.
-- Destinations are developer-supplied props only, passed through `go()` / `safeUrl()`.
+- Destinations are developer-supplied props only, passed through `go()` / `safeUrl()`. A
+  relative destination means this origin: a value with no scheme that names a host is refused.
+- Sign-out from a component goes through `useTulaContext().signOut`: no navigation unless the
+  server was told; otherwise the provider's `SignOutFailedDialog` says the session may still
+  be active and offers a retry. Never `client.session.signOut().catch(() => undefined)`.
+  The dialog belongs to the client whose sign-out failed: it is not drawn for another
+  `client` the provider is given later, so its retry never reaches a different client.
+- A provider dialog (`Modal` in `components/prompts.tsx`) gives the focus back to what had it
+  when it opened; when that is gone or was the document (the "Sign out" item after the client
+  signed out, a sign-in form after an enrolment) it goes to the first tabbable element of the
+  page (`firstTabbable`), and stays put only when the page has none.
 - Theme values reach the page only through `themeToCssVariables`, which validates them
   (`isValidThemeValue`). They are untrusted: never interpolate one into CSS or a style
   attribute yourself.
@@ -196,11 +220,17 @@ paths:
   same token in one process, clears cookies only when the API says the session is over
   (`endsSession` in `upstream.ts`: `session.*`, `auth.user_banned`; **not**
   `auth.unauthenticated` or `auth.invalid_key`, which are about the request) and leaves them
-  on any other failure, reporting a refusal of the request once through `config.warn`.
+  on any other failure, reporting a refusal of the request once through `config.warn`. The
+  refresh waits at most `REFRESH_TIMEOUT_MS` (below `MIN_REUSE_GRACE_PERIOD`; `upstream.test.ts`
+  holds it) and is repeated once, at once, only when it got no answer at all.
   Warnings carry no token, key or cookie. `real-api.test.ts` runs the package against the real API in process: change
   the refresh path and its parallel-refresh and past-the-grace-window tests must still hold.
 - A destination read from the address bar goes through `safeRedirectPath`; `signInUrl` is
-  checked with it when the middleware is created.
+  checked with it when the middleware is created. It validates what it returns (the parser
+  normalises `/.//host` to `//host`), not only what it was given.
+- The server helpers build their request with `requestFromHeaders`: the app URL, then
+  `X-Forwarded-Proto`, then "https iff a `__Host-` cookie of ours is present". One cookie
+  name per request.
 - The provider wraps the client it creates: `serverState` for the first paint, and a
   `session.signOut()` that refreshes the router after the request has reached the server. Do
   not call `router.refresh()` for a sign-out before then: the cookies are still there.
@@ -243,9 +273,14 @@ paths:
   idempotence test (a second run changes nothing). It writes only inside its marked block of
   `.env.local` (found by `findBlock`: whole-line markers, the end after the start), closes the
   file's mode on every run (`host.restrictFile`) and prints the secret key only with
-  `--show-keys`. `tula doctor` talks to the
+  `--show-keys`. The real host writes through a temporary file opened `wx` under a random
+  name and refuses a symbolic link at the file (`lstat`, then `O_NOFOLLOW`) instead of
+  writing or changing a mode through it, and anything else that is not a regular file (a
+  named pipe would make the open wait for ever: refused from the `lstat`, before any open,
+  and the open is `O_NONBLOCK` with the kind checked again on the handle). `tula doctor` talks to the
   API through `createInstanceClient` and never to a dependency; whatever the server sends is
-  passed through `printable()` before it is printed, and an answer the CLI cannot read is a
+  passed through `printable()` (controls to a space; `Cf`, `Co`, `Cn` and lone surrogates
+  removed, by class with the `u` flag, written as `\u{…}` escapes) before it is printed, and an answer the CLI cannot read is a
   failing check, never a crash. A URL in the server's answer is never requested unless its
   origin is the API URL's own and it carries no credentials, and then only `<origin>/v1/status`. `tula policy test` never sends the password: it reaches only
   `evaluatePassword`, and is redacted on the error stream (`output.redact(value, 'errors')`);

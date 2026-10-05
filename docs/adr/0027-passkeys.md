@@ -135,6 +135,16 @@ A passkey sign-in is an attempt of its own, like OAuth, because it has no identi
 `hwk`, `swk`, `user` and `mfa` are RFC 8176 values. `mfa` is what `requireRecentAuth` and
 `finish` read, so a passkey session is "strong" everywhere a TOTP session is.
 
+**The one step a passkey sign-in can wait on is `needs_email_verification`** (a user whose
+address is not verified). That step and its resend are held to the method the attempt proved,
+which here is the passkey: `Passkeys.relyingParty` on each (passkeys still on, the request's
+origin in the relying party), **not** the password's switch, so the attempt completes where
+passwords are off. Once the code is accepted the attempt completes: it has `mfa` in what it
+proved, so it is not sent on to a second factor or an enrolment either. The attempt, which
+started with no identifier, is stored with the user's address from that point. And because
+this verifier did not prove the account's password, an address verified for the first time
+this way loses that password (ADR 0024, "A password set before the address was proven").
+
 ### A passkey as the second factor, and `mfa.policy`
 
 After a password (or an emailed code, an OAuth provider, a password reset) a user's passkey is

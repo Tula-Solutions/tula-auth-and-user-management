@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
 import { sha256Hex } from '~/lib/crypto'
@@ -421,6 +421,54 @@ describe('GET /v1/instance/session', () => {
 })
 
 describe('DELETE /v1/instance/session', () => {
+  test('a cookie replayed to the sign-out is recorded once, not once per call', async () => {
+    const deps = createInstanceTestDeps()
+    const app = createApp(deps)
+    const cookie = await dashboardSignIn(app)
+    for (let i = 0; i < 5; i++) {
+      const res = await app.request(PATH, { method: 'DELETE', headers: dashboardHeaders(cookie) })
+      expect(res.status).toBe(204)
+      expect(res.headers.getSetCookie()).toHaveLength(2)
+    }
+    expect(deps.controlPlane.ofType('instance.signed_out')).toHaveLength(1)
+    // Another session's sign-out is its own entry.
+    deps.clock.advance('1s')
+    const other = await dashboardSignIn(app)
+    await app.request(PATH, { method: 'DELETE', headers: dashboardHeaders(other) })
+    expect(deps.controlPlane.ofType('instance.signed_out')).toHaveLength(2)
+  })
+
+  test('the tally of sign-outs is kept under a keyed hash, never the session id', async () => {
+    const deps = createInstanceTestDeps()
+    const app = createApp(deps)
+    const cookie = await dashboardSignIn(app)
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    await app.request(PATH, { method: 'DELETE', headers: dashboardHeaders(cookie) })
+    const [entry] = deps.controlPlane.ofType('instance.signed_out')
+    const keys = hit.mock.calls.map(([key]) => key).filter((key) => key.includes('signed_out'))
+    hit.mockRestore()
+    expect(keys).toHaveLength(1)
+    expect(keys[0]).not.toContain(entry?.actor.id as string)
+  })
+
+  test('a limiter that cannot count does not fail the sign-out: it is recorded and the cookies are cleared', async () => {
+    const deps = createInstanceTestDeps()
+    const app = createApp(deps)
+    const cookie = await dashboardSignIn(app)
+    const real = deps.rateLimiter.hit.bind(deps.rateLimiter)
+    const hit = spyOn(deps.rateLimiter, 'hit').mockImplementation(async (key, ...rest) => {
+      if (key.includes('signed_out')) {
+        throw new ServiceUnavailableError()
+      }
+      return real(key, ...rest)
+    })
+    const res = await app.request(PATH, { method: 'DELETE', headers: dashboardHeaders(cookie) })
+    hit.mockRestore()
+    expect(res.status).toBe(204)
+    expect(res.headers.getSetCookie()).toHaveLength(2)
+    expect(deps.controlPlane.ofType('instance.signed_out')).toHaveLength(1)
+  })
+
   test('clears both cookies and records the sign-out', async () => {
     const deps = createInstanceTestDeps()
     const app = createApp(deps)

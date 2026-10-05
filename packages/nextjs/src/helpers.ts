@@ -1,6 +1,7 @@
 import { CLIENT_HEADER } from '@tula/contract/headers'
 import type { User } from '@tula/core'
 import { configFor, type TulaServerOptions } from './config'
+import { cookieNames, parseCookieHeader } from './cookies'
 import { readSession } from './session'
 import { apiHeaders, callApi, readRequestCookies } from './upstream'
 import type { SessionClaims } from './verify'
@@ -41,6 +42,42 @@ export type Auth =
       claims: null
       getToken(): Promise<null>
     }
+
+/** The SDK's cookie names over https: a browser stores a `__Host-` cookie over https only. */
+const HOST_PREFIXED = new Set(Object.values(cookieNames(true)))
+
+/**
+ * The current request as the server helpers need it, built from its headers alone: a Server
+ * Component is given no URL, so the scheme the middleware and the route handler saw has to be
+ * worked out again.
+ *
+ * In order: the configured app URL (`TULA_APP_URL`, the recommended way: nothing is guessed);
+ * the proxy's `X-Forwarded-Proto` (both are read by `appOrigin`, which this only feeds); and
+ * otherwise https exactly when the request carries one of this package's `__Host-` cookies,
+ * because a browser accepts and stores those over https only. Without this last rule an app
+ * served over https with neither of the first two would read the unprefixed names here while
+ * the middleware wrote the `__Host-` ones: signed in for the middleware, signed out in every
+ * Server Component. One name per cookie is read for a request, never both.
+ *
+ * @param headers - The request's headers, cookies included.
+ * @returns A stand-in request whose URL carries only that scheme.
+ *
+ * @example
+ * ```ts
+ * const request = requestFromHeaders(new Headers(await headers()))
+ * const { isSignedIn } = await authenticate(request, {})
+ * ```
+ */
+export function requestFromHeaders(headers: Headers): Request {
+  let secure = false
+  for (const name of parseCookieHeader(headers.get('cookie')).keys()) {
+    if (HOST_PREFIXED.has(name)) {
+      secure = true
+      break
+    }
+  }
+  return new Request(`${secure ? 'https' : 'http'}://localhost/`, { headers })
+}
 
 const SIGNED_OUT: Auth = Object.freeze({
   isSignedIn: false,

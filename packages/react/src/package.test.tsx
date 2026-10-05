@@ -120,8 +120,11 @@ describe('what @tula/react costs a browser bundle', () => {
    * passkey routes; measured at 41.4 kB before any screen existed) and 3.1 kB the components'
    * (the sign-in button with its autofill request, the second-factor and step-up panel, the
    * profile section with rename and remove, and their strings). No dependency was added.
+   * The phase-1 review fixes took it just past that, to about 45.6 kB, and the budget to
+   * 46 kB: the provider's "sign-out did not finish" dialog with its retry and strings, the
+   * refusal of a destination that names a host without a scheme, and `discard()` on every flow.
    */
-  const GZIP_BUDGET_BYTES = 45_500
+  const GZIP_BUDGET_BYTES = 46_000
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

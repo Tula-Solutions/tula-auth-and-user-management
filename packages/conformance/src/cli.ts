@@ -10,6 +10,8 @@ import { exitCode, formatResult, runScenario, type Target } from './runner'
  * - `CONFORMANCE_PUBLISHABLE_KEY` (required)
  * - `CONFORMANCE_SECRET_KEY` (optional; admin scenarios are skipped without it)
  * - `CONFORMANCE_MAILPIT_URL` (default `http://localhost:8025`)
+ * - `CONFORMANCE_SETTLE_MS` (optional): for a run through one address in front of several
+ *   instances; how long to wait after each settings change (see `Target.settleMs`).
  * - `CONFORMANCE_SECOND_BASE_URL` (optional): a second instance of the same deployment. Steps
  *   marked `instance: "second"` go there; without it they go to the first.
  *
@@ -25,6 +27,14 @@ const secondBaseUrl = process.env.CONFORMANCE_SECOND_BASE_URL?.replace(/\/+$/, '
 
 const mailpit = process.env.CONFORMANCE_MAILPIT_URL ?? 'http://localhost:8025'
 
+const settleMs = Number(process.env.CONFORMANCE_SETTLE_MS ?? '0')
+if (!Number.isInteger(settleMs) || settleMs < 0 || settleMs > 60_000) {
+  process.stderr.write(
+    'conformance: CONFORMANCE_SETTLE_MS must be a whole number of milliseconds, at most 60000\n'
+  )
+  process.exit(2)
+}
+
 const target: Target = {
   baseUrl: (process.env.CONFORMANCE_BASE_URL ?? 'http://localhost:3003').replace(/\/+$/, ''),
   second: secondBaseUrl
@@ -36,6 +46,7 @@ const target: Target = {
   emailCode: mailpitCodes(mailpit),
   emailLink: mailpitLinks(mailpit),
   wait: (ms) => Bun.sleep(ms),
+  settleMs: settleMs > 0 ? settleMs : undefined,
   // Authenticator codes are computed for the wall clock, which is the server's clock too.
   now: () => Date.now(),
 }
@@ -49,7 +60,11 @@ for (const { scenario } of await loadScenarios()) {
 process.stdout.write(
   `\n${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped against ${target.baseUrl}${
     // Said explicitly, so a run that was meant to cover two instances can be checked for it.
-    target.second ? ` and ${target.second.baseUrl}` : ' (one instance)'
+    target.second
+      ? ` and ${target.second.baseUrl}`
+      : target.settleMs
+        ? ` (one address, ${target.settleMs} ms after each settings change)`
+        : ' (one instance)'
   }\n`
 )
 process.exit(exitCode(counts))

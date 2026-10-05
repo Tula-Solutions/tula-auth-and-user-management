@@ -417,9 +417,12 @@ export class PostgresUserRepository implements UserRepository {
     environmentId: string,
     userId: string,
     at: Date,
-    activity?: Activity
-  ): Promise<void> {
-    await withTenant(this.db, environmentId, async (tx) => {
+    activity?: Activity,
+    removePassword?: { activity?: Activity }
+  ): Promise<{ passwordRemoved: boolean }> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      // The guarded UPDATE is the arbiter: of two concurrent verifications one changes the row,
+      // and only that one may remove the password.
       const rows = await tx
         .update(users)
         .set({ emailVerifiedAt: at, updatedAt: at })
@@ -431,7 +434,27 @@ export class PostgresUserRepository implements UserRepository {
           )
         )
         .returning({ id: users.id })
-      await recordActivity(tx, rows.length === 1 && activity ? [activity] : [])
+      if (rows.length !== 1) {
+        return { passwordRemoved: false }
+      }
+      const removed = removePassword
+        ? await tx
+            .delete(credentials)
+            .where(
+              and(
+                eq(credentials.userId, userId),
+                eq(credentials.environmentId, environmentId),
+                eq(credentials.type, 'password')
+              )
+            )
+            .returning({ id: credentials.id })
+        : []
+      const passwordRemoved = removed.length > 0
+      await recordActivity(tx, [
+        ...(activity ? [activity] : []),
+        ...(passwordRemoved && removePassword?.activity ? [removePassword.activity] : []),
+      ])
+      return { passwordRemoved }
     })
   }
 

@@ -61,6 +61,15 @@ await tula.config.get({ force? })
   `flow.invalid_step`, the server's own code for it. Both have `status: 0`, which is how a
   locally raised error is told from the server's. The secret is dropped from the closure when
   the step becomes `complete`.
+- **`discard()` ends an attempt.** Every flow has it. It forgets the secret, so later actions
+  are refused with `flow.invalid_step` and no request, and the answer to an action that was on
+  its way is dropped before anything is taken from it: that action rejects with
+  `flow.invalid_step`, and a `complete` answer signs nobody in. A user who left a password
+  form for a passkey must not be signed in by the password's late answer. Accepted residual,
+  on `web` only: the browser has already stored the refresh cookie that answer set before the
+  client drops it. The client does not act on it, but it is an ordinary session, and a reload
+  would find it unless a later sign-in replaced the cookie. On a completed flow `discard()`
+  does nothing.
 - **Flows cannot be resumed after a reload.** The attempt's secret is kept in a closure, in
   memory only. Persisting it (even in `sessionStorage`) would put a credential where any script
   on the page can read it, to save a user retyping an email within a ten-minute attempt. It is
@@ -212,6 +221,19 @@ memory; silently continuing would turn into an unexplained sign-out at the next 
   in flight, clears storage, and tells the server. If the server cannot be told the call
   rejects (the session may live on, and a browser still has its cookie), but the client is
   signed out either way.
+- **A sign-out that was not delivered can be sent again.** A browser's second `signOut()`
+  sends its cookie again. Any other kind of client has by then dropped its refresh token, so a
+  second call would have nothing to send, ask nothing and resolve, and an application that
+  offers "Try again" would report a session ended that the server still holds. Such a client
+  therefore keeps the token of a sign-out the server did not confirm, in a closure of the
+  session manager and nowhere else (never storage, a cross-tab message, an error, a log line
+  or `toJSON`), and only `signOut()` reads it: no refresh presents it, so the client stays
+  signed out. It is forgotten when a sign-out is delivered, when the API answers the sign-out
+  with a `session.*` code (the session is over), and when a new session is adopted. It is
+  kept for the client's lifetime otherwise, deliberately without a timer: the token is as
+  live on the server whether the client remembers it or not, so forgetting it early protects
+  nothing and only removes the one way this device has to revoke it. It does not survive the
+  process: after a restart the session ends by revocation elsewhere or by expiry.
 - **Step-up installs a token without rotating anything** ([ADR 0025](0025-mfa.md)).
   `session.stepUp(proof)` asks the API to prove a factor again and gets back an access token
   for the **same** session and no refresh token. The token is installed under the generation

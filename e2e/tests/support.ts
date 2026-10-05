@@ -250,10 +250,20 @@ export async function serverNow(request: APIRequestContext): Promise<number> {
 
 /**
  * Move the fixture's clock forward, e.g. past the ten minutes a sign-in counts as recent.
- * It never moves back, and nothing in the suite depends on it standing still.
+ * It stays ahead until `resetClock`; nothing in the suite depends on it standing still.
  */
 export async function advanceClock(request: APIRequestContext, ms: number): Promise<void> {
   const response = await request.post(`${API_URL}/__test/advance-clock`, { data: { ms } })
+  expect(response.ok()).toBe(true)
+}
+
+/**
+ * Put the fixture's clock back to the real time, after scenarios that moved it forward.
+ * Sessions and codes made while it was ahead are dated in the future afterwards: call it
+ * once a spec is done with them (`afterAll`), not between the steps of a scenario.
+ */
+export async function resetClock(request: APIRequestContext): Promise<void> {
+  const response = await request.post(`${API_URL}/__test/reset-clock`)
   expect(response.ok()).toBe(true)
 }
 

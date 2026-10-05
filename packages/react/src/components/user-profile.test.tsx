@@ -7,6 +7,7 @@ import {
   expectFocus,
   failure,
   json,
+  openDialogs,
   ROUTE,
   sessionTokens,
   TEST_USER,
@@ -309,9 +310,35 @@ describe('<UserProfile>', () => {
     expect(screen.getByRole('button', { name: 'Update password' })).toBeTruthy()
   })
 
-  test('sign out: signed out even when the server cannot be told, then navigates', async () => {
+  test.each([
+    ['the server answers 503', () => failure(503, 'service.unavailable')],
+    ['the request gets no answer', () => Promise.reject(new TypeError('offline'))],
+  ])(
+    'sign out when %s: no navigation, an announced error, and trying again finishes it',
+    async (_name, refuse) => {
+      const w = signedInWorld([session('session_1', { current: true })])
+      let failing = true
+      w.api.on(ROUTE.signOut, () => (failing ? refuse() : new Response(null, { status: 204 })))
+      const navigate = mock()
+      w.mount(<UserProfile afterSignOutUrl='/bye' />, { navigate, afterSignOutUrl: '/' })
+      const buttons = await screen.findAllByRole('button', { name: 'Sign out' })
+      await w.user.click(buttons.at(-1) as HTMLElement)
+
+      // The server may still hold the session (and the browser its cookie): say so, go nowhere.
+      const dialog = await screen.findByRole('dialog')
+      expect(within(dialog).getByRole('alert').textContent).toContain('may still be signed in')
+      expect(navigate).not.toHaveBeenCalled()
+
+      failing = false
+      await w.user.click(within(dialog).getByRole('button', { name: 'Try again' }))
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith('/bye'))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      expect(w.api.calls(ROUTE.signOut)).toHaveLength(2)
+    }
+  )
+
+  test('sign out: the server is told, then the after-sign-out URL', async () => {
     const w = signedInWorld([session('session_1', { current: true })])
-    w.api.on(ROUTE.signOut, () => failure(503, 'service.unavailable'))
     const navigate = mock()
     const { container } = w.mount(<UserProfile afterSignOutUrl='/bye' />, {
       navigate,
@@ -322,6 +349,7 @@ describe('<UserProfile>', () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/bye'))
     expect(w.client.state.status).toBe('signed-out')
     expect(container.querySelector('[data-tula-element="card"]')).toBeNull()
+    expect(openDialogs()).toBe(0)
   })
 
   test('an unverified email says so', async () => {

@@ -212,6 +212,7 @@ export interface CreateApiKeyRequest {
   /**
      * @minLength 1
      * @maxLength 100
+     * @pattern ^[^\u0000-\u001f\u007f]*$
      */
   name: string;
 }
@@ -1652,36 +1653,6 @@ export interface InstanceAuditLogQuery {
   size?: number;
 }
 
-export type RevokeApiKey400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type VerifySession400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type RevokeUserSessions400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type ListUserSessions400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type RevokeUserSession400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
 export type ListUsersParams = {
 /**
  * @maxLength 200
@@ -1698,60 +1669,6 @@ page?: number;
  */
 size?: number;
 sort?: UserSort;
-};
-
-export type ListUsers400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type CreateUser400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type GetUser400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type DeleteUser400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type GetUserAuthentication400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type BanUser400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type UnbanUser400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type SetUserPassword400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type ResetUserFactors400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
 };
 
 export type ListAuditLogsParams = {
@@ -1795,18 +1712,6 @@ export const ListAuditLogsActorType = {
   agent: 'agent',
   instance_admin: 'instance_admin',
 } as const;
-
-export type ListAuditLogs400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
-
-export type DeleteOAuthProvider400 = {
-  success: false;
-  error: unknown[];
-  data: unknown;
-};
 
 export type ListWorkspacesParams = {
 /**
@@ -2231,7 +2136,7 @@ export const revokeApiKey = async (id: string, options?: Parameters<typeof dashb
 
 export const getRevokeApiKeyMutationKey = () => ['revokeApiKey'] as const;
 
-export const getRevokeApiKeyMutationOptions = <TError = RevokeApiKey400 | ErrorEnvelope,
+export const getRevokeApiKeyMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeApiKey>>, TError,RevokeApiKeyMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof revokeApiKey>>, TError,RevokeApiKeyMutationVariables, TContext> => {
 
@@ -2260,13 +2165,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RevokeApiKeyMutationResult = NonNullable<Awaited<ReturnType<typeof revokeApiKey>>>
 
-    export type RevokeApiKeyMutationError = RevokeApiKey400 | ErrorEnvelope
+    export type RevokeApiKeyMutationError = ErrorEnvelope
     export type RevokeApiKeyMutationVariables = {id: string}
 
     /**
  * @summary Revoke an API key
  */
-export const useRevokeApiKey = <TError = RevokeApiKey400 | ErrorEnvelope,
+export const useRevokeApiKey = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeApiKey>>, TError,RevokeApiKeyMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof revokeApiKey>>,
@@ -2497,7 +2402,7 @@ return dashboardFetch<AccessTokenClaims>(getVerifySessionUrl(),
 
 export const getVerifySessionMutationKey = () => ['verifySession'] as const;
 
-export const getVerifySessionMutationOptions = <TError = VerifySession400 | ErrorEnvelope,
+export const getVerifySessionMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifySession>>, TError,VerifySessionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof verifySession>>, TError,VerifySessionMutationVariables, TContext> => {
 
@@ -2526,13 +2431,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type VerifySessionMutationResult = NonNullable<Awaited<ReturnType<typeof verifySession>>>
     export type VerifySessionMutationBody = VerifySessionRequest
-    export type VerifySessionMutationError = VerifySession400 | ErrorEnvelope
+    export type VerifySessionMutationError = ErrorEnvelope
     export type VerifySessionMutationVariables = {data: VerifySessionRequest}
 
     /**
  * @summary Verify a session for a backend
  */
-export const useVerifySession = <TError = VerifySession400 | ErrorEnvelope,
+export const useVerifySession = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifySession>>, TError,VerifySessionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof verifySession>>,
@@ -2572,7 +2477,7 @@ export const revokeUserSessions = async (userId: string, options?: Parameters<ty
 
 export const getRevokeUserSessionsMutationKey = () => ['revokeUserSessions'] as const;
 
-export const getRevokeUserSessionsMutationOptions = <TError = RevokeUserSessions400 | ErrorEnvelope,
+export const getRevokeUserSessionsMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeUserSessions>>, TError,RevokeUserSessionsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof revokeUserSessions>>, TError,RevokeUserSessionsMutationVariables, TContext> => {
 
@@ -2601,13 +2506,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RevokeUserSessionsMutationResult = NonNullable<Awaited<ReturnType<typeof revokeUserSessions>>>
 
-    export type RevokeUserSessionsMutationError = RevokeUserSessions400 | ErrorEnvelope
+    export type RevokeUserSessionsMutationError = ErrorEnvelope
     export type RevokeUserSessionsMutationVariables = {userId: string}
 
     /**
  * @summary Sign a user out everywhere
  */
-export const useRevokeUserSessions = <TError = RevokeUserSessions400 | ErrorEnvelope,
+export const useRevokeUserSessions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeUserSessions>>, TError,RevokeUserSessionsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof revokeUserSessions>>,
@@ -2652,7 +2557,7 @@ export const getListUserSessionsQueryKey = (userId: string,) => {
     }
 
 
-export const getListUserSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ListUserSessions400 | ErrorEnvelope>(userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserSessions>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+export const getListUserSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ErrorEnvelope>(userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserSessions>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -2671,10 +2576,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListUserSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof listUserSessions>>>
-export type ListUserSessionsQueryError = ListUserSessions400 | ErrorEnvelope
+export type ListUserSessionsQueryError = ErrorEnvelope
 
 
-export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ListUserSessions400 | ErrorEnvelope>(
+export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ErrorEnvelope>(
  userId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserSessions>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listUserSessions>>,
@@ -2684,7 +2589,7 @@ export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSe
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ListUserSessions400 | ErrorEnvelope>(
+export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserSessions>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listUserSessions>>,
@@ -2694,7 +2599,7 @@ export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSe
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ListUserSessions400 | ErrorEnvelope>(
+export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserSessions>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -2702,7 +2607,7 @@ export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSe
  * @summary List a user’s sessions
  */
 
-export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ListUserSessions400 | ErrorEnvelope>(
+export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSessions>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserSessions>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -2751,7 +2656,7 @@ export const revokeUserSession = async (userId: string,
 
 export const getRevokeUserSessionMutationKey = () => ['revokeUserSession'] as const;
 
-export const getRevokeUserSessionMutationOptions = <TError = RevokeUserSession400 | ErrorEnvelope,
+export const getRevokeUserSessionMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeUserSession>>, TError,RevokeUserSessionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof revokeUserSession>>, TError,RevokeUserSessionMutationVariables, TContext> => {
 
@@ -2780,13 +2685,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RevokeUserSessionMutationResult = NonNullable<Awaited<ReturnType<typeof revokeUserSession>>>
 
-    export type RevokeUserSessionMutationError = RevokeUserSession400 | ErrorEnvelope
+    export type RevokeUserSessionMutationError = ErrorEnvelope
     export type RevokeUserSessionMutationVariables = {userId: string;sessionId: string}
 
     /**
  * @summary End one of a user’s sessions
  */
-export const useRevokeUserSession = <TError = RevokeUserSession400 | ErrorEnvelope,
+export const useRevokeUserSession = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeUserSession>>, TError,RevokeUserSessionMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof revokeUserSession>>,
@@ -2838,7 +2743,7 @@ export const getListUsersQueryKey = (params?: ListUsersParams,) => {
     }
 
 
-export const getListUsersQueryOptions = <TData = Awaited<ReturnType<typeof listUsers>>, TError = ListUsers400 | ErrorEnvelope>(params?: ListUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+export const getListUsersQueryOptions = <TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorEnvelope>(params?: ListUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -2857,10 +2762,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listUsers>>>
-export type ListUsersQueryError = ListUsers400 | ErrorEnvelope
+export type ListUsersQueryError = ErrorEnvelope
 
 
-export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ListUsers400 | ErrorEnvelope>(
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorEnvelope>(
  params: undefined |  ListUsersParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listUsers>>,
@@ -2870,7 +2775,7 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ListUsers400 | ErrorEnvelope>(
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorEnvelope>(
  params?: ListUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listUsers>>,
@@ -2880,7 +2785,7 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ListUsers400 | ErrorEnvelope>(
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorEnvelope>(
  params?: ListUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -2888,7 +2793,7 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
  * @summary List users
  */
 
-export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ListUsers400 | ErrorEnvelope>(
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorEnvelope>(
  params?: ListUsersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -2949,7 +2854,7 @@ return dashboardFetch<User>(getCreateUserUrl(),
 
 export const getCreateUserMutationKey = () => ['createUser'] as const;
 
-export const getCreateUserMutationOptions = <TError = CreateUser400 | ErrorEnvelope,
+export const getCreateUserMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUser>>, TError,CreateUserMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createUser>>, TError,CreateUserMutationVariables, TContext> => {
 
@@ -2978,13 +2883,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateUserMutationResult = NonNullable<Awaited<ReturnType<typeof createUser>>>
     export type CreateUserMutationBody = CreateUserRequest
-    export type CreateUserMutationError = CreateUser400 | ErrorEnvelope
+    export type CreateUserMutationError = ErrorEnvelope
     export type CreateUserMutationVariables = {data: CreateUserRequest}
 
     /**
  * @summary Create a user
  */
-export const useCreateUser = <TError = CreateUser400 | ErrorEnvelope,
+export const useCreateUser = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createUser>>, TError,CreateUserMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createUser>>,
@@ -3028,7 +2933,7 @@ export const getGetUserQueryKey = (userId: string,) => {
     }
 
 
-export const getGetUserQueryOptions = <TData = Awaited<ReturnType<typeof getUser>>, TError = GetUser400 | ErrorEnvelope>(userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUser>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+export const getGetUserQueryOptions = <TData = Awaited<ReturnType<typeof getUser>>, TError = ErrorEnvelope>(userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUser>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -3047,10 +2952,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetUserQueryResult = NonNullable<Awaited<ReturnType<typeof getUser>>>
-export type GetUserQueryError = GetUser400 | ErrorEnvelope
+export type GetUserQueryError = ErrorEnvelope
 
 
-export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError = GetUser400 | ErrorEnvelope>(
+export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError = ErrorEnvelope>(
  userId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUser>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getUser>>,
@@ -3060,7 +2965,7 @@ export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError =
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError = GetUser400 | ErrorEnvelope>(
+export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUser>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getUser>>,
@@ -3070,7 +2975,7 @@ export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError =
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError = GetUser400 | ErrorEnvelope>(
+export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUser>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -3078,7 +2983,7 @@ export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError =
  * @summary Get a user
  */
 
-export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError = GetUser400 | ErrorEnvelope>(
+export function useGetUser<TData = Awaited<ReturnType<typeof getUser>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUser>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -3125,7 +3030,7 @@ export const deleteUser = async (userId: string, options?: Parameters<typeof das
 
 export const getDeleteUserMutationKey = () => ['deleteUser'] as const;
 
-export const getDeleteUserMutationOptions = <TError = DeleteUser400 | ErrorEnvelope,
+export const getDeleteUserMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext> => {
 
@@ -3154,13 +3059,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteUserMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUser>>>
 
-    export type DeleteUserMutationError = DeleteUser400 | ErrorEnvelope
+    export type DeleteUserMutationError = ErrorEnvelope
     export type DeleteUserMutationVariables = {userId: string}
 
     /**
  * @summary Delete a user
  */
-export const useDeleteUser = <TError = DeleteUser400 | ErrorEnvelope,
+export const useDeleteUser = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteUser>>,
@@ -3207,7 +3112,7 @@ export const getGetUserAuthenticationQueryKey = (userId: string,) => {
     }
 
 
-export const getGetUserAuthenticationQueryOptions = <TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+export const getGetUserAuthenticationQueryOptions = <TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = ErrorEnvelope>(userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -3226,10 +3131,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetUserAuthenticationQueryResult = NonNullable<Awaited<ReturnType<typeof getUserAuthentication>>>
-export type GetUserAuthenticationQueryError = GetUserAuthentication400 | ErrorEnvelope
+export type GetUserAuthenticationQueryError = ErrorEnvelope
 
 
-export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(
+export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = ErrorEnvelope>(
  userId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getUserAuthentication>>,
@@ -3239,7 +3144,7 @@ export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUs
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(
+export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getUserAuthentication>>,
@@ -3249,7 +3154,7 @@ export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUs
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(
+export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -3257,7 +3162,7 @@ export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUs
  * @summary Get how a user signs in
  */
 
-export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = GetUserAuthentication400 | ErrorEnvelope>(
+export function useGetUserAuthentication<TData = Awaited<ReturnType<typeof getUserAuthentication>>, TError = ErrorEnvelope>(
  userId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getUserAuthentication>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -3304,7 +3209,7 @@ export const banUser = async (userId: string, options?: Parameters<typeof dashbo
 
 export const getBanUserMutationKey = () => ['banUser'] as const;
 
-export const getBanUserMutationOptions = <TError = BanUser400 | ErrorEnvelope,
+export const getBanUserMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof banUser>>, TError,BanUserMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof banUser>>, TError,BanUserMutationVariables, TContext> => {
 
@@ -3333,13 +3238,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type BanUserMutationResult = NonNullable<Awaited<ReturnType<typeof banUser>>>
 
-    export type BanUserMutationError = BanUser400 | ErrorEnvelope
+    export type BanUserMutationError = ErrorEnvelope
     export type BanUserMutationVariables = {userId: string}
 
     /**
  * @summary Ban a user
  */
-export const useBanUser = <TError = BanUser400 | ErrorEnvelope,
+export const useBanUser = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof banUser>>, TError,BanUserMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof banUser>>,
@@ -3379,7 +3284,7 @@ export const unbanUser = async (userId: string, options?: Parameters<typeof dash
 
 export const getUnbanUserMutationKey = () => ['unbanUser'] as const;
 
-export const getUnbanUserMutationOptions = <TError = UnbanUser400 | ErrorEnvelope,
+export const getUnbanUserMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unbanUser>>, TError,UnbanUserMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof unbanUser>>, TError,UnbanUserMutationVariables, TContext> => {
 
@@ -3408,13 +3313,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UnbanUserMutationResult = NonNullable<Awaited<ReturnType<typeof unbanUser>>>
 
-    export type UnbanUserMutationError = UnbanUser400 | ErrorEnvelope
+    export type UnbanUserMutationError = ErrorEnvelope
     export type UnbanUserMutationVariables = {userId: string}
 
     /**
  * @summary Unban a user
  */
-export const useUnbanUser = <TError = UnbanUser400 | ErrorEnvelope,
+export const useUnbanUser = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unbanUser>>, TError,UnbanUserMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof unbanUser>>,
@@ -3469,7 +3374,7 @@ return dashboardFetch<void>(getSetUserPasswordUrl(userId),
 
 export const getSetUserPasswordMutationKey = () => ['setUserPassword'] as const;
 
-export const getSetUserPasswordMutationOptions = <TError = SetUserPassword400 | ErrorEnvelope,
+export const getSetUserPasswordMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setUserPassword>>, TError,SetUserPasswordMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setUserPassword>>, TError,SetUserPasswordMutationVariables, TContext> => {
 
@@ -3498,13 +3403,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type SetUserPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof setUserPassword>>>
     export type SetUserPasswordMutationBody = SetPasswordRequest
-    export type SetUserPasswordMutationError = SetUserPassword400 | ErrorEnvelope
+    export type SetUserPasswordMutationError = ErrorEnvelope
     export type SetUserPasswordMutationVariables = {userId: string;data: SetPasswordRequest}
 
     /**
  * @summary Set a user’s password
  */
-export const useSetUserPassword = <TError = SetUserPassword400 | ErrorEnvelope,
+export const useSetUserPassword = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setUserPassword>>, TError,SetUserPasswordMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof setUserPassword>>,
@@ -3546,7 +3451,7 @@ export const resetUserFactors = async (userId: string, options?: Parameters<type
 
 export const getResetUserFactorsMutationKey = () => ['resetUserFactors'] as const;
 
-export const getResetUserFactorsMutationOptions = <TError = ResetUserFactors400 | ErrorEnvelope,
+export const getResetUserFactorsMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetUserFactors>>, TError,ResetUserFactorsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof resetUserFactors>>, TError,ResetUserFactorsMutationVariables, TContext> => {
 
@@ -3575,13 +3480,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type ResetUserFactorsMutationResult = NonNullable<Awaited<ReturnType<typeof resetUserFactors>>>
 
-    export type ResetUserFactorsMutationError = ResetUserFactors400 | ErrorEnvelope
+    export type ResetUserFactorsMutationError = ErrorEnvelope
     export type ResetUserFactorsMutationVariables = {userId: string}
 
     /**
  * @summary Reset a user’s two-step verification
  */
-export const useResetUserFactors = <TError = ResetUserFactors400 | ErrorEnvelope,
+export const useResetUserFactors = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetUserFactors>>, TError,ResetUserFactorsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof resetUserFactors>>,
@@ -3633,7 +3538,7 @@ export const getListAuditLogsQueryKey = (params?: ListAuditLogsParams,) => {
     }
 
 
-export const getListAuditLogsQueryOptions = <TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ListAuditLogs400 | ErrorEnvelope>(params?: ListAuditLogsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+export const getListAuditLogsQueryOptions = <TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ErrorEnvelope>(params?: ListAuditLogsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -3652,10 +3557,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListAuditLogsQueryResult = NonNullable<Awaited<ReturnType<typeof listAuditLogs>>>
-export type ListAuditLogsQueryError = ListAuditLogs400 | ErrorEnvelope
+export type ListAuditLogsQueryError = ErrorEnvelope
 
 
-export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ListAuditLogs400 | ErrorEnvelope>(
+export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ErrorEnvelope>(
  params: undefined |  ListAuditLogsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAuditLogs>>,
@@ -3665,7 +3570,7 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ListAuditLogs400 | ErrorEnvelope>(
+export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ErrorEnvelope>(
  params?: ListAuditLogsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listAuditLogs>>,
@@ -3675,7 +3580,7 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
       >, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ListAuditLogs400 | ErrorEnvelope>(
+export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ErrorEnvelope>(
  params?: ListAuditLogsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -3683,7 +3588,7 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
  * @summary List the audit log
  */
 
-export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ListAuditLogs400 | ErrorEnvelope>(
+export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs>>, TError = ErrorEnvelope>(
  params?: ListAuditLogsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listAuditLogs>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
@@ -4113,7 +4018,7 @@ export const deleteOAuthProvider = async (provider: OAuthProvider, options?: Par
 
 export const getDeleteOAuthProviderMutationKey = () => ['deleteOAuthProvider'] as const;
 
-export const getDeleteOAuthProviderMutationOptions = <TError = DeleteOAuthProvider400 | ErrorEnvelope,
+export const getDeleteOAuthProviderMutationOptions = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOAuthProvider>>, TError,DeleteOAuthProviderMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteOAuthProvider>>, TError,DeleteOAuthProviderMutationVariables, TContext> => {
 
@@ -4142,13 +4047,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteOAuthProviderMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOAuthProvider>>>
 
-    export type DeleteOAuthProviderMutationError = DeleteOAuthProvider400 | ErrorEnvelope
+    export type DeleteOAuthProviderMutationError = ErrorEnvelope
     export type DeleteOAuthProviderMutationVariables = {provider: OAuthProvider}
 
     /**
  * @summary Remove an OAuth provider’s credentials
  */
-export const useDeleteOAuthProvider = <TError = DeleteOAuthProvider400 | ErrorEnvelope,
+export const useDeleteOAuthProvider = <TError = ErrorEnvelope,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOAuthProvider>>, TError,DeleteOAuthProviderMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteOAuthProvider>>,
@@ -4465,7 +4370,7 @@ export const getDeleteDashboardSessionUrl = () => {
 }
 
 /**
- * Removes the session cookies from the browser. Idempotent: it answers 204 with or without a session. A session is stateless, so a copy of the cookie made elsewhere stays valid until it expires (8 hours at most) or the admin token is rotated.
+ * Removes the session cookies from the browser. Idempotent: it answers 204 with or without a session, and a session’s sign-out is recorded once however often it is repeated. A session is stateless, so a copy of the cookie made elsewhere stays valid until it expires (8 hours at most) or the admin token is rotated.
  * @summary Sign out of the dashboard
  */
 export const deleteDashboardSession = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {

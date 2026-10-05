@@ -30,6 +30,31 @@ export type Prompt =
     }
 
 /**
+ * The first element of the page the Tab key would stop at, for a dialog that closes with
+ * nothing to give the focus back to. Left on `<body>`, Chromium's next Tab does not reach the
+ * page's first control.
+ *
+ * @returns The element, or `undefined` when the page has none.
+ */
+function firstTabbable(): HTMLElement | undefined {
+  const candidates = document.querySelectorAll<HTMLElement>(
+    'a[href],button,input:not([type=hidden]),select,textarea,[tabindex]'
+  )
+  for (const candidate of candidates) {
+    if (
+      !(Number(candidate.getAttribute('tabindex')) < 0) &&
+      !candidate.matches(':disabled') &&
+      !candidate.closest('[hidden],[inert]') &&
+      // Not rendered (`display: none`, a closed dialog), where the browser can say.
+      candidate.checkVisibility?.() !== false
+    ) {
+      return candidate
+    }
+  }
+  return undefined
+}
+
+/**
  * A modal dialog (`<dialog>` opened with `showModal`, so focus is trapped, the page behind is
  * inert and Escape is announced by the browser). Its title labels it.
  */
@@ -54,9 +79,11 @@ function Modal(props: { title: string; onCancel?(): void; children: ReactNode })
       if (element?.open) {
         element.close()
       }
-      if (opener instanceof HTMLElement && opener.isConnected) {
-        opener.focus()
-      }
+      // The opener is often gone: the "Sign out" item once the client is signed out, the
+      // sign-in form once an enrolment completed (focus is then already on `<body>`).
+      const gone =
+        !(opener instanceof HTMLElement && opener.isConnected) || opener === document.body
+      ;(gone ? firstTabbable() : opener)?.focus()
     }
   }, [])
   const { onCancel } = props
@@ -474,6 +501,53 @@ export function PromptHost(props: { prompt: Prompt | null; onClose(): void }) {
         />
       )}
     </Root>
+  )
+}
+
+/**
+ * Says that a sign-out did not reach the server, and offers to try again.
+ *
+ * `@tula/core` forgets the session in this client before it tells the server, so by the time a
+ * sign-out fails the app already renders its signed-out side and the component that asked is
+ * usually gone. The server may still hold the session and the browser its cookie: the next
+ * page load would be signed in again. That is why this is the provider's, why it is an alert,
+ * and why nothing navigates until a sign-out went through.
+ *
+ * @param props.retry - Signs out again; resolves `true` when the server was told.
+ * @param props.onClose - The user closed it without trying again.
+ */
+export function SignOutFailedDialog(props: { retry(): Promise<boolean>; onClose(): void }) {
+  const { t } = useUi()
+  const { client } = useTulaContext()
+  const state = useAuthState(client)
+  const { retry, onClose } = props
+  const [isPending, setPending] = useState(false)
+  const [failures, setFailures] = useState(1)
+  const signedIn = state.status === 'signed-in'
+  useEffect(() => {
+    // Someone signed in underneath the dialog: the sign-out it speaks of is no longer theirs.
+    if (signedIn) {
+      onClose()
+    }
+  }, [signedIn, onClose])
+  const again = async () => {
+    setPending(true)
+    if (!(await retry())) {
+      setFailures((count) => count + 1)
+      setPending(false)
+    }
+  }
+  return (
+    <Modal title={t.signOutFailed.title} onCancel={onClose}>
+      {/* A new element for every failure, so that a second one is announced again. */}
+      <FormError key={failures} message={t.signOutFailed.message} />
+      <Button pending={isPending} onClick={() => void again()}>
+        {t.signOutFailed.retry}
+      </Button>
+      <Button kind='secondary' onClick={onClose}>
+        {t.signOutFailed.close}
+      </Button>
+    </Modal>
   )
 }
 

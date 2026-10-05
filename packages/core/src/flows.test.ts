@@ -4,6 +4,7 @@ import { isTulaError, type TulaError } from './errors'
 import { memoryStorage } from './storage'
 import {
   accessToken,
+  deferred,
   type FakeApi,
   failure,
   fakeApi,
@@ -963,5 +964,115 @@ describe('enrolling an authenticator inside a flow (policy: required)', () => {
     })
     expect(reported).toHaveBeenCalledTimes(1)
     reported.mockRestore()
+  })
+})
+
+describe('a discarded flow is over: its late answers sign nobody in', () => {
+  const NEW_PASSWORD: FlowStep = {
+    status: 'needs_new_password',
+    destination: 'm***@northline.app',
+    strategies: ['email_code'],
+  }
+  const done = (kind: string, label: string) =>
+    json(
+      200,
+      attempt(kind, COMPLETE, { session: sessionTokens(label, { refreshToken: `rt_${label}` }) })
+    )
+
+  const kinds = [
+    {
+      kind: 'sign_in',
+      start: 'POST /v1/client/sign-ins',
+      first: { status: 'needs_password' } as FlowStep,
+      action: 'POST /v1/client/sign-ins/attempt_1/password',
+      begin: (tula: ReturnType<typeof setup>['tula']) =>
+        tula.signIn.start({ identifier: 'maya@northline.app' }),
+      act: (flow: unknown) =>
+        (flow as { submitPassword(input: { password: string }): Promise<FlowStep> }).submitPassword(
+          { password: 'correct horse' }
+        ),
+    },
+    {
+      kind: 'sign_up',
+      start: 'POST /v1/client/sign-ups',
+      first: WAITING_EMAIL,
+      action: 'POST /v1/client/sign-ups/attempt_1/verify-email',
+      begin: (tula: ReturnType<typeof setup>['tula']) =>
+        tula.signUp.start({ email: 'maya@northline.app', password: 'correct horse battery' }),
+      act: (flow: unknown) =>
+        (flow as { verifyEmail(input: { code: string }): Promise<FlowStep> }).verifyEmail({
+          code: '123456',
+        }),
+    },
+    {
+      kind: 'password_reset',
+      start: 'POST /v1/client/password-resets',
+      first: NEW_PASSWORD,
+      action: 'POST /v1/client/password-resets/attempt_1/password',
+      begin: (tula: ReturnType<typeof setup>['tula']) =>
+        tula.resetPassword.start({ email: 'maya@northline.app' }),
+      act: (flow: unknown) =>
+        (flow as { submit(input: { code: string; password: string }): Promise<FlowStep> }).submit({
+          code: '123456',
+          password: 'correct horse battery',
+        }),
+    },
+  ]
+
+  test.each(kinds)(
+    '$kind: an answer that arrives after discard() is dropped, and the flow takes no further action',
+    async (row) => {
+      const { api, tula, states, storage } = setup()
+      api.on(row.start, () => json(200, attempt(row.kind, row.first, { attemptSecret: SECRET })))
+      const held = deferred<Response>()
+      api.on(row.action, () => held.promise)
+      const flow = await row.begin(tula)
+      const submitting = caught(row.act(flow))
+      await Promise.resolve()
+
+      // The user leaves the attempt (another method, "start again") while the answer is on its way.
+      flow.discard()
+      held.resolve(done(row.kind, 'late'))
+      const error = await submitting
+      expect(error.code).toBe('flow.invalid_step')
+      expect(error.status).toBe(0)
+
+      // Nobody was signed in through the attempt that was left, and nothing was stored.
+      expect(tula.state.status).not.toBe('signed-in')
+      expect(states.some((state) => state.status === 'signed-in')).toBe(false)
+      expect(await storage.get(`tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`)).toBeNull()
+      expect(flow.step).toEqual(row.first)
+
+      // The secret is forgotten: every later action is refused without a request.
+      const before = api.requests.length
+      expect((await caught(row.act(flow))).code).toBe('flow.invalid_step')
+      expect(api.requests).toHaveLength(before)
+      expect(JSON.stringify(api.requests.map((request) => request.body))).not.toContain('late')
+    }
+  )
+
+  test('discard() between an action’s wait for the session and its request sends nothing', async () => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', { status: 'needs_password' }, { attemptSecret: SECRET }))
+    )
+    const flow = await tula.signIn.start({ identifier: 'maya@northline.app' })
+    const submitting = caught(flow.submitPassword({ password: 'correct horse' }))
+    flow.discard()
+    expect((await submitting).code).toBe('flow.invalid_step')
+    expect(api.calls('POST /v1/client/sign-ins/attempt_1/password')).toHaveLength(0)
+  })
+
+  test('discard() on a completed flow changes nothing', async () => {
+    const { api, tula } = setup()
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, attempt('sign_in', { status: 'needs_password' }, { attemptSecret: SECRET }))
+    )
+    api.on('POST /v1/client/sign-ins/attempt_1/password', () => done('sign_in', 'kept'))
+    const flow = await tula.signIn.start({ identifier: 'maya@northline.app' })
+    await flow.submitPassword({ password: 'correct horse' })
+    flow.discard()
+    expect(tula.state.status).toBe('signed-in')
+    expect(flow.step).toEqual(COMPLETE)
   })
 })

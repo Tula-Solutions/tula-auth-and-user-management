@@ -65,6 +65,22 @@ sign-out, or another user signing in, while a request is pending never shows the
 user's devices; `<UserProfile>`'s password and device sections are keyed by the session id;
 and `@tula/core`'s `user.get()` installs the user only into the session that asked.
 
+A failed sign-out is not a sign-out. `@tula/core` forgets the session locally first and then
+throws when the server could not be told, because the server may still hold the session and
+the browser its cookie (behind `@tula/nextjs` the cookies are cleared only on an answered
+sign-out, so the next page load would be signed in again). `<UserButton>` and `<UserProfile>`
+therefore sign out through the provider (`useTulaContext().signOut`): it navigates to the
+after-sign-out URL only after a sign-out that went through, and otherwise shows a dialog of
+its own (`SignOutFailedDialog`, an alert, with "Try again" and "Close"). The dialog is the
+provider's because the client is signed out by then and the component that asked is usually
+no longer on the page. `@tula/core` was left as it is: keeping the local session on a failed
+call would break "a signed-out client stays signed out" and the other tabs' notification.
+`useAuth().signOut` keeps throwing to its caller and does not navigate.
+
+A relative destination means this origin. `safeUrl` refuses a value with no scheme that names
+a host (`//host`, `/\host`, a path that normalises to one): another site is written out with
+its scheme.
+
 Completion (`onComplete`, or the after-URL) is reported from the action's result, not from an
 effect: an app that wraps `<SignIn>` in `<SignedOut>` unmounts it the moment the client is
 signed in, before an effect for the completed step could run.
