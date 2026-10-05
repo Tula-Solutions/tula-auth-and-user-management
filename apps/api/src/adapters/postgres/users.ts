@@ -341,7 +341,11 @@ export class PostgresUserRepository implements UserRepository {
   ): Promise<PasswordOutcome | null> {
     return withTenant(this.db, environmentId, async (tx) => {
       // The row lock keeps the user from being deleted between this read and the write below,
-      // which needs their project for a new credential row.
+      // which needs their project for a new credential row. It also puts this write before or
+      // after a `markEmailVerified` of the same user, never underneath it: that one updates
+      // the row, so it waits for this transaction or this one for it. Without the lock a
+      // first password stored during the verification is invisible to its delete and stays
+      // (`races.integration.ts` fails for it).
       const [owner] = await tx
         .select({ projectId: users.projectId })
         .from(users)
