@@ -58,5 +58,6 @@ The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 | --- | --- |
 | [Architecture decisions](adr/) | One record per decision, with the reasoning the pages above link to. |
 | [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
+| [Phase 2 plan](plans/phase-2.md) | Draft: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it needs first. |
 | [Releasing](releasing.md) | How the packages are built, packed and checked. |
 | [Business plan](business-plan.md) | Product context. |
