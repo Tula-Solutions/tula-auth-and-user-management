@@ -75,6 +75,11 @@ function postedName(user: string | undefined): Pick<OAuthProfile, 'givenName' | 
  * A private relay address (`…@privaterelay.appleid.com`) is a real, deliverable address and is
  * treated like any other. `email_verified` may be the string `"true"`.
  *
+ * **No PKCE** (the attempt's verifier is not used here): `arctic`'s `Apple` client sends none,
+ * and Apple documents neither a `code_challenge` nor a `code_verifier`, nor lists a challenge
+ * method in its discovery document. The code is bound to the attempt by the `nonce` in the
+ * signed ID token, the single-use `state` and the client-secret JWT (ADR 0026).
+ *
  * Every outbound call has a deadline (`options.timeoutMs`, ten seconds by default); a provider
  * that does not answer in time is `unavailable`.
  *

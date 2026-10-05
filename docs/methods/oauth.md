@@ -92,6 +92,12 @@ reads the switch from its `.env`.
 - The ticket is honoured only in the tab that started, together with a binding kept in that
   tab's `sessionStorage` (`tula.oauth.<attempt id>`; not a token). This is what stops a
   sign-in being planted in someone else's browser.
+- The provider's authorization code is bound to the sign-in that asked for it. With Google
+  and GitHub that is PKCE (an S256 `code_challenge` on the way out, the `code_verifier` with
+  the token request; the verifier never leaves the server); with Google and Apple it is also
+  the `nonce` in the signed ID token. Apple documents no PKCE and gets none. GitHub's PKCE
+  was tested against the built-in mock provider and the requests the adapter builds, not
+  against github.com.
 - A provider sign-in is a **first** factor: a user with two-step verification is still asked
   for the second step.
 - A provider address that the provider does not assert as verified is refused.

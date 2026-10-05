@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/contract'
+import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import type { OAuthProfile } from '~/ports/oauth-provider'
@@ -50,10 +51,11 @@ describe('resolveAccount: the linking table', () => {
     const owner = newUser({
       oauthIdentity: { id: deps.ids.next(), provider: 'google', subject: 'sub-1' },
     })
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     // Someone else now has the address the provider reports: it changes nothing.
     await deps.users.create(
-      newUser({ email: 'other@northline.app', emailNormalized: 'other@northline.app' })
+      newUser({ email: 'other@northline.app', emailNormalized: 'other@northline.app' }),
+      Audit.none('fixture')
     )
     const byEmail = spyOn(deps.users, 'findByEmail')
     for (const answer of [
@@ -73,7 +75,7 @@ describe('resolveAccount: the linking table', () => {
   })
 
   test('row 2: a missing, malformed or unverified address is refused before any lookup by address', async () => {
-    await deps.users.create(newUser())
+    await deps.users.create(newUser(), Audit.none('fixture'))
     const byEmail = spyOn(deps.users, 'findByEmail')
     expect(await codeOf(resolve({ ...profile, email: null }))).toBe('oauth.email_missing')
     expect(await codeOf(resolve({ ...profile, email: 'not an address' }))).toBe(
@@ -121,7 +123,7 @@ describe('resolveAccount: the linking table', () => {
 
   test('row 4: a verified account with that address gets the identity, its password untouched', async () => {
     const owner = newUser()
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     const resolved = await resolve()
     expect(resolved).toMatchObject({ user: { id: owner.id }, created: false, linked: true })
     expect(
@@ -140,7 +142,7 @@ describe('resolveAccount: the linking table', () => {
 
   test('row 5: an account whose Tula address is unverified is never linked into', async () => {
     const squatter = newUser({ emailVerifiedAt: null })
-    await deps.users.create(squatter)
+    await deps.users.create(squatter, Audit.none('fixture'))
     expect(await codeOf(resolve())).toBe('oauth.account_exists')
     expect(await deps.users.listIdentities(tenant.environmentId, squatter.id)).toEqual([])
     expect(types()).toEqual([])
@@ -155,7 +157,7 @@ describe('resolveAccount: the linking table', () => {
       email: 'kelvin@northline.app',
       emailNormalized: 'kelvin@northline.app',
     })
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     const lookAlike = { subject: 'attacker', email: 'Kelvin@northline.app', emailVerified: true }
     expect(await codeOf(resolve(lookAlike))).toBe('oauth.email_missing')
     expect(await deps.users.listIdentities(tenant.environmentId, owner.id)).toEqual([])
@@ -172,8 +174,14 @@ describe('resolveAccount: the linking table', () => {
 
   test('a banned account is connected to nothing', async () => {
     const owner = newUser()
-    await deps.users.create(owner)
-    await deps.users.setBanned(tenant.environmentId, owner.id, deps.clock.now(), deps.clock.now())
+    await deps.users.create(owner, Audit.none('fixture'))
+    await deps.users.setBanned(
+      tenant.environmentId,
+      owner.id,
+      deps.clock.now(),
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
     expect(await codeOf(resolve())).toBe('auth.user_banned')
     expect(await deps.users.listIdentities(tenant.environmentId, owner.id)).toEqual([])
   })
@@ -182,7 +190,7 @@ describe('resolveAccount: the linking table', () => {
     const owner = newUser({
       oauthIdentity: { id: deps.ids.next(), provider: 'google', subject: 'their-own' },
     })
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     expect(await codeOf(resolve())).toBe('oauth.account_exists')
     expect(await deps.users.listIdentities(tenant.environmentId, owner.id)).toHaveLength(1)
   })
@@ -209,7 +217,7 @@ describe('resolveAccount: races', () => {
         },
         activity
       )
-      return create(user)
+      return create(user, Audit.none('fixture'))
     })
     const resolved = await resolve()
     expect(resolved).toMatchObject({ created: false, linked: false })
@@ -222,7 +230,7 @@ describe('resolveAccount: races', () => {
 
   test('an automatic link that loses to the same identity ends as a sign-in', async () => {
     const owner = newUser()
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     const link = deps.users.linkIdentity.bind(deps.users)
     const spy = spyOn(deps.users, 'linkIdentity').mockImplementationOnce(
       async (identity, activity, guard) => {
@@ -237,10 +245,10 @@ describe('resolveAccount: races', () => {
 
   test('an automatic link racing the user’s deletion links nothing to the deleted user', async () => {
     const owner = newUser()
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     const link = deps.users.linkIdentity.bind(deps.users)
     const spy = spyOn(deps.users, 'linkIdentity').mockImplementationOnce(async (...args) => {
-      await deps.users.delete(tenant.environmentId, owner.id)
+      await deps.users.delete(tenant.environmentId, owner.id, Audit.none('fixture'))
       return link(...args)
     })
     // The address is free again, so the second look creates a fresh account: never a 500, and
@@ -253,7 +261,7 @@ describe('resolveAccount: races', () => {
 
   test('an automatic link racing a change that unverifies the address is refused', async () => {
     const owner = newUser()
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     const spy = spyOn(deps.users, 'linkIdentity').mockResolvedValue('user_changed')
     expect(await codeOf(resolve())).toBe('flow.invalid_step')
     expect(spy).toHaveBeenCalledTimes(2)
@@ -364,7 +372,7 @@ describe('linking and unlinking from a profile: edge cases', () => {
 
   test('repeating a link of an identity the user already has answers that identity', async () => {
     const owner = newUser()
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     const first = await OAuth.link(deps, tenant, owner.id, 'google', profile, actor)
     const second = await OAuth.link(deps, tenant, owner.id, 'google', profile, actor)
     expect(second).toEqual(first)
@@ -373,7 +381,7 @@ describe('linking and unlinking from a profile: edge cases', () => {
 
   test('an unlink that loses a race to another removal is not found, or refused, never an error', async () => {
     const owner = newUser()
-    await deps.users.create(owner)
+    await deps.users.create(owner, Audit.none('fixture'))
     const identity = await OAuth.link(deps, tenant, owner.id, 'google', profile, actor)
     const spy = spyOn(deps.users, 'unlinkIdentity').mockResolvedValueOnce('not_found')
     expect(await codeOf(OAuth.unlink(deps, tenant, owner.id, identity.id, actor))).toBe(

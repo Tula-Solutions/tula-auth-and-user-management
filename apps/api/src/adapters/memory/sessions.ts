@@ -1,5 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import {
   type Authentication,
   beganBefore,
@@ -38,9 +38,10 @@ export class MemorySessionStore implements SessionStore {
   async create(
     session: NewSession,
     token: NewRefreshToken,
-    activity?: Activity,
+    recorded: Recorded,
     limit?: SessionLimit
   ): Promise<SessionCreation> {
+    const activity = activityOf(recorded)
     // No await between the check and the writes: the whole method is one turn of the event
     // loop, which is what serialises simultaneous sign-ins here.
     const mine = (id: string) => {
@@ -64,7 +65,7 @@ export class MemorySessionStore implements SessionStore {
       for (const ended of ending as SessionRecord[]) {
         ended.revokedAt = limit.at
         ended.revokeReason = 'session_limit'
-        this.#activityLog.record(limit.activity ? [limit.activity(ended.id)] : [])
+        this.#activityLog.record(recordedOf([limit.activity(ended.id)]))
       }
     }
     this.#sessions.set(session.id, {
@@ -184,8 +185,9 @@ export class MemorySessionStore implements SessionStore {
     id: string,
     reason: SessionRevokeReason,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     const session = this.#session(environmentId, id)
     if (!session || session.revokedAt !== null) {
       return false
@@ -201,8 +203,9 @@ export class MemorySessionStore implements SessionStore {
     environmentId: string,
     id: string,
     authentication: Authentication,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<SessionRecord | null> {
+    const activity = activityOf(recorded)
     const session = this.#session(environmentId, id)
     if (!session || !isActive(session, authentication.at)) {
       return null
@@ -219,7 +222,7 @@ export class MemorySessionStore implements SessionStore {
     userId: string,
     reason: SessionRevokeReason,
     at: Date,
-    options: RevokeByUserOptions = {}
+    options: RevokeByUserOptions
   ): Promise<string[]> {
     const { exceptSessionId, activity } = options
     const revoked: string[] = []
@@ -235,7 +238,7 @@ export class MemorySessionStore implements SessionStore {
         revoked.push(session.id)
       }
     }
-    this.#activityLog.record(activity ? revoked.map(activity) : [])
+    this.#activityLog.record(recordedOf(revoked.map(activity)))
     return revoked
   }
 

@@ -1,5 +1,5 @@
 import type { OAuthProvider } from '@tula/contract'
-import type { Activity } from '~/ports/activity-log'
+import type { Recorded } from '~/ports/activity-log'
 
 /** An environment's stored credentials for one provider. */
 export interface OAuthProviderRecord {
@@ -43,7 +43,7 @@ export interface OAuthProviderStore {
    * @param activity - Recorded in the same transaction.
    * @returns The row as stored.
    */
-  upsert(record: OAuthProviderRecord, activity?: Activity): Promise<OAuthProviderRecord>
+  upsert(record: OAuthProviderRecord, activity: Recorded): Promise<OAuthProviderRecord>
 
   /**
    * Remove a provider's credentials.
@@ -53,5 +53,5 @@ export interface OAuthProviderStore {
    * @param activity - Recorded in the same transaction, only if something was removed.
    * @returns `false` when it was not configured.
    */
-  delete(environmentId: string, provider: OAuthProvider, activity?: Activity): Promise<boolean>
+  delete(environmentId: string, provider: OAuthProvider, activity: Recorded): Promise<boolean>
 }

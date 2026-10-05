@@ -14,6 +14,7 @@ import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'
+import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import { OAUTH_INVALID_PAGE } from '~/modules/oauth/router'
 import { OAuthProviderError } from '~/ports/oauth-provider'
@@ -336,6 +337,32 @@ describe('the provider callback', () => {
     expect(await deps.users.findByEmail(TEST_TENANT.environmentId, EMAIL)).toBeNull()
     expect(actions()).not.toContain('session.created')
   })
+
+  // PKCE is what binds a provider's code to the attempt (for GitHub, the only thing beside
+  // `state`): an attempt that holds no verifier must never reach the provider with a code.
+  test.each(['google', 'github'] as const)(
+    '%s: a callback whose attempt has no verifier is refused, and the code is never exchanged',
+    async (provider) => {
+      await configure(provider)
+      const started = await start(provider)
+      const stored = await deps.flowAttempts.findById(TEST_TENANT.environmentId, started.attempt.id)
+      const state = stored?.state as { oauth: Record<string, unknown> }
+      const { codeVerifier, ...oauth } = state.oauth
+      expect(codeVerifier).toMatch(/^[\w-]{43}$/)
+      expect(
+        await deps.flowAttempts.transition(
+          TEST_TENANT.environmentId,
+          started.attempt.id,
+          'needs_first_factor',
+          { status: 'needs_first_factor', state: { ...state, oauth } },
+          deps.clock.now()
+        )
+      ).toBe(true)
+      const res = await callback(provider, { state: started.state, code: 'provider-code' })
+      expect(fragment(res)).toMatchObject({ ticket: null, error: 'oauth.provider_error' })
+      expect(deps.oauth[provider].exchanges).toHaveLength(0)
+    }
+  )
 
   test('the verifier and the nonce leave the attempt once the code is exchanged', async () => {
     const trip = await roundTrip()
@@ -1131,21 +1158,27 @@ describe('admin: provider credentials', () => {
     const github = await deps.oauthProviders.find(TEST_TENANT.environmentId, 'github')
     const error = spyOn(logger, 'error').mockImplementation(() => {})
     // Copied to another provider's row.
-    await deps.oauthProviders.upsert({
-      ...(github as OAuthProviderRecord),
-      secret: google?.secret ?? '',
-    })
+    await deps.oauthProviders.upsert(
+      {
+        ...(github as OAuthProviderRecord),
+        secret: google?.secret ?? '',
+      },
+      Audit.none('fixture')
+    )
     expect(
       await codeOf(
         await client('POST', '/sign-ins/oauth', { provider: 'github', redirectUrl: REDIRECT })
       )
     ).toBe('auth.method_disabled')
     // Copied to another environment's row.
-    await deps.oauthProviders.upsert({
-      ...(google as OAuthProviderRecord),
-      id: deps.ids.next(),
-      environmentId: TEST_TENANT.productionEnvironmentId,
-    })
+    await deps.oauthProviders.upsert(
+      {
+        ...(google as OAuthProviderRecord),
+        id: deps.ids.next(),
+        environmentId: TEST_TENANT.productionEnvironmentId,
+      },
+      Audit.none('fixture')
+    )
     const other = await client(
       'POST',
       '/sign-ins/oauth',

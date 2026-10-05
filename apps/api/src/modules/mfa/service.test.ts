@@ -20,6 +20,7 @@ import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import { base32Decode, base32Encode, totp, totpStep } from '~/lib/totp'
 import { verifyAccessToken } from '~/middleware/session-auth'
+import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
 import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
@@ -100,20 +101,23 @@ async function seedUser(
   const scope = options.scope ?? tenant
   const email = options.email ?? EMAIL
   const id = deps.ids.next()
-  await deps.users.create({
-    id,
-    projectId: scope.projectId,
-    environmentId: scope.environmentId,
-    email,
-    emailNormalized: email,
-    emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: options.password === false ? null : PASSWORD_HASH,
-  })
+  await deps.users.create(
+    {
+      id,
+      projectId: scope.projectId,
+      environmentId: scope.environmentId,
+      email,
+      emailNormalized: email,
+      emailVerifiedAt: options.verified === false ? null : deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: options.password === false ? null : PASSWORD_HASH,
+    },
+    Audit.none('fixture')
+  )
   return (await deps.users.findById(scope.environmentId, id)) as UserRecord
 }
 
@@ -381,7 +385,7 @@ describe('confirmTotp', () => {
   test('a user deleted in between cannot confirm', async () => {
     const user = await seedUser()
     const { secret } = await Mfa.startTotp(deps, tenant, user.id)
-    await deps.users.delete(tenant.environmentId, user.id)
+    await deps.users.delete(tenant.environmentId, user.id, Audit.none('fixture'))
     expect((await rejection(confirm(user.id, codeFor(secret)))).code).toBe('mfa.enrolment_expired')
   })
 
@@ -505,7 +509,7 @@ describe('a sealed secret is bound to its environment, user and row', () => {
     const at = deps.clock.now()
     for (const environmentId of [tenant.environmentId, otherTenant.environmentId]) {
       for (const userId of [row.userId, ...others]) {
-        await deps.factors.removeForUser(environmentId, userId)
+        await deps.factors.removeForUser(environmentId, userId, Audit.none('fixture'))
       }
     }
     expect(
@@ -518,7 +522,12 @@ describe('a sealed secret is bound to its environment, user and row', () => {
       })
     ).toBe(true)
     expect(
-      await deps.factors.confirmTotp(row.environmentId, row.id, { step: 0, at, backupCodes: [] })
+      await deps.factors.confirmTotp(row.environmentId, row.id, {
+        activity: Audit.none('fixture'),
+        step: 0,
+        at,
+        backupCodes: [],
+      })
     ).toBe(true)
   }
 
@@ -824,7 +833,7 @@ describe('verifyBackupCode', () => {
     const user = await seedUser()
     const { codes } = await enrol(user.id)
     const sent = deps.mailer.outbox.length
-    await deps.users.delete(tenant.environmentId, user.id)
+    await deps.users.delete(tenant.environmentId, user.id, Audit.none('fixture'))
     expect(await spend(user.id, codes[0])).toBe(9)
     await Notices.settled()
     expect(deps.mailer.outbox).toHaveLength(sent)
@@ -1587,7 +1596,8 @@ describe('stepUpMethods', () => {
       withPassword.id,
       tenant,
       [],
-      deps.clock.now()
+      deps.clock.now(),
+      Audit.none('fixture')
     )
     expect(await Mfa.stepUpMethods(deps, tenant, withPassword.id)).toEqual(['totp'])
     expect(await Mfa.secondFactors(deps, tenant, withPassword.id)).toEqual(['totp'])
@@ -1679,7 +1689,8 @@ describe('requireRecentAuthentication', () => {
       user.id,
       tenant,
       [],
-      deps.clock.now()
+      deps.clock.now(),
+      Audit.none('fixture')
     )
     const err = await rejection(check({ sub: user.id, auth_time: nowSeconds(), amr: ['pwd'] }))
     expect(err.toJSON()).toMatchObject({ params: { methods: 'totp' } })
@@ -1820,7 +1831,8 @@ describe('stepUp', () => {
       user.id,
       tenant,
       [],
-      deps.clock.now()
+      deps.clock.now(),
+      Audit.none('fixture')
     )
     expect(
       (

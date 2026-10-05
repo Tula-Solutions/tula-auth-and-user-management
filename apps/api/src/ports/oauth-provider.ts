@@ -33,7 +33,7 @@ export interface OAuthCredentials {
 export interface OAuthAuthorizationRequest {
   /** Random, single use. The only link between the provider's answer and the attempt. */
   state: string
-  /** PKCE verifier (RFC 7636). The URL carries only its S256 challenge. */
+  /** PKCE verifier (RFC 7636). The URL carries only its S256 challenge (not sent to Apple). */
   codeVerifier: string
   /** Bound into the ID token by OIDC providers, and checked when it comes back. */
   nonce: string

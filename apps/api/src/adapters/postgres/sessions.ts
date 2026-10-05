@@ -2,7 +2,7 @@ import { type Database, refreshTokens, sessions, users, withTenant } from '@tula
 import { and, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import {
   type Authentication,
   mergeAuthMethods,
@@ -76,9 +76,10 @@ export class PostgresSessionStore implements SessionStore {
   async create(
     session: NewSession,
     token: NewRefreshToken,
-    activity?: Activity,
+    recorded: Recorded,
     limit?: SessionLimit
   ): Promise<SessionCreation> {
+    const activity = activityOf(recorded)
     const { environmentId, userId } = session
     try {
       return await withTenant(this.db, environmentId, async (tx) => {
@@ -122,8 +123,7 @@ export class PostgresSessionStore implements SessionStore {
             // Rolls the endings back too: nothing changes unless the session is created.
             throw new LostRace()
           }
-          const { activity: ending } = limit
-          await recordActivity(tx, ending ? ended.map(ending) : [])
+          await recordActivity(tx, recordedOf(ended.map(limit.activity)))
         }
         await tx.insert(sessions).values({ ...session, updatedAt: session.createdAt })
         await tx.insert(refreshTokens).values(tokenValues(session, token))
@@ -315,8 +315,9 @@ export class PostgresSessionStore implements SessionStore {
     id: string,
     reason: SessionRevokeReason,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       const rows = await tx
         .update(sessions)
@@ -340,8 +341,9 @@ export class PostgresSessionStore implements SessionStore {
     environmentId: string,
     id: string,
     authentication: Authentication,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<SessionRecord | null> {
+    const activity = activityOf(recorded)
     const { at } = authentication
     return withTenant(this.db, environmentId, async (tx) => {
       // Locked, so two step-ups of one session merge their methods instead of one overwriting
@@ -382,7 +384,7 @@ export class PostgresSessionStore implements SessionStore {
     userId: string,
     reason: SessionRevokeReason,
     at: Date,
-    options: RevokeByUserOptions = {}
+    options: RevokeByUserOptions
   ): Promise<string[]> {
     const { exceptSessionId, activity } = options
     return withTenant(this.db, environmentId, async (tx) => {
@@ -399,7 +401,7 @@ export class PostgresSessionStore implements SessionStore {
         )
         .returning({ id: sessions.id })
       const ids = rows.map((row) => row.id)
-      await recordActivity(tx, activity ? ids.map(activity) : [])
+      await recordActivity(tx, recordedOf(ids.map(activity)))
       return ids
     })
   }

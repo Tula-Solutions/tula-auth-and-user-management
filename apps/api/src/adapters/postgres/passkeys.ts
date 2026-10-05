@@ -11,7 +11,7 @@ import {
 import { and, asc, eq, inArray, lte, ne } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
-import type { Activity } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   PasskeyChallengePurpose,
   PasskeyChallengeRecord,
@@ -53,8 +53,9 @@ export class PostgresPasskeyStore implements PasskeyStore {
   async create(
     passkey: PasskeyRecord,
     limit: number,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<PasskeyCreateOutcome> {
+    const activity = activityOf(recorded)
     const { environmentId, userId } = passkey
     try {
       return await withTenant(this.db, environmentId, async (tx) => {
@@ -148,8 +149,9 @@ export class PostgresPasskeyStore implements PasskeyStore {
     id: string,
     name: string,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       const rows = await tx
         .update(passkeys)
@@ -169,8 +171,9 @@ export class PostgresPasskeyStore implements PasskeyStore {
     userId: string,
     id: string,
     allowed: (remaining: SignInMeans) => boolean,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<PasskeyRemoveOutcome> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       // Locked, so two removals for one user run one after the other: the second sees what the
       // first left. The same lock `unlinkIdentity` takes, so the two cannot cross either.
@@ -223,7 +226,8 @@ export class PostgresPasskeyStore implements PasskeyStore {
     })
   }
 
-  async removeForUser(environmentId: string, userId: string, activity?: Activity): Promise<number> {
+  async removeForUser(environmentId: string, userId: string, recorded: Recorded): Promise<number> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       const rows = await tx
         .delete(passkeys)

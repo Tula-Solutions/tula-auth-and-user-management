@@ -1,5 +1,5 @@
 import { AUTHENTICATION_METHODS, type SessionClient } from '@tula/contract'
-import type { Activity } from '~/ports/activity-log'
+import type { Recorded } from '~/ports/activity-log'
 
 /** Why a session ended early. */
 export type SessionRevokeReason =
@@ -90,7 +90,7 @@ export interface SessionLimit {
   /** The moment "live" is judged at, and the revocation time of the ended sessions. */
   at: Date
   /** Builds the activity for each ended session; recorded in the same transaction. */
-  activity?: (sessionId: string) => Activity
+  activity: (sessionId: string) => Recorded
 }
 
 /** What {@link SessionStore.create} did. */
@@ -224,7 +224,7 @@ export interface RevokeByUserOptions {
   /** A session to leave signed in. */
   exceptSessionId?: string
   /** Builds the activity for each revoked session; recorded in the same transaction. */
-  activity?: (sessionId: string) => Activity
+  activity: (sessionId: string) => Recorded
 }
 
 /** Sessions and their refresh tokens, always read and written inside one environment. */
@@ -248,7 +248,7 @@ export interface SessionStore {
   create(
     session: NewSession,
     token: NewRefreshToken,
-    activity?: Activity,
+    activity: Recorded,
     limit?: SessionLimit
   ): Promise<SessionCreation>
 
@@ -332,7 +332,7 @@ export interface SessionStore {
     id: string,
     reason: SessionRevokeReason,
     at: Date,
-    activity?: Activity
+    activity: Recorded
   ): Promise<boolean>
 
   /**
@@ -350,7 +350,7 @@ export interface SessionStore {
     environmentId: string,
     id: string,
     authentication: Authentication,
-    activity?: Activity
+    activity: Recorded
   ): Promise<SessionRecord | null>
 
   /**
@@ -382,7 +382,7 @@ export interface SessionStore {
     userId: string,
     reason: SessionRevokeReason,
     at: Date,
-    options?: RevokeByUserOptions
+    options: RevokeByUserOptions
   ): Promise<string[]>
 
   /**

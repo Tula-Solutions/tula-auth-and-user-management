@@ -2,7 +2,7 @@ import type { OAuthProvider } from '@tula/contract'
 import { type Database, oauthProviders, withTenant } from '@tula/db'
 import { and, asc, eq } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded } from '~/ports/activity-log'
 import type { OAuthProviderRecord, OAuthProviderStore } from '~/ports/oauth-provider-store'
 
 const columns = {
@@ -48,7 +48,8 @@ export class PostgresOAuthProviderStore implements OAuthProviderStore {
     return row ?? null
   }
 
-  async upsert(record: OAuthProviderRecord, activity?: Activity): Promise<OAuthProviderRecord> {
+  async upsert(record: OAuthProviderRecord, recorded: Recorded): Promise<OAuthProviderRecord> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, record.environmentId, async (tx) => {
       // One statement creates or replaces, so two concurrent first saves cannot both insert.
       const [row] = await tx
@@ -74,8 +75,9 @@ export class PostgresOAuthProviderStore implements OAuthProviderStore {
   async delete(
     environmentId: string,
     provider: OAuthProvider,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       const rows = await tx
         .delete(oauthProviders)

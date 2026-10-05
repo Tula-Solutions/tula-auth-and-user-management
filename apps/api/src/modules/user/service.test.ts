@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
+import * as Audit from '~/modules/audit/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
@@ -403,7 +404,7 @@ describe('changePassword on an account with no password', () => {
 
   test('says nothing about anyone else: an account that no longer exists is a generic failure', async () => {
     const { user, change } = await setup()
-    await deps.users.delete(tenant.environmentId, user.id)
+    await deps.users.delete(tenant.environmentId, user.id, Audit.none('fixture'))
     expect((await rejection(change('x'))).code).toBe('auth.invalid_credentials')
   })
 

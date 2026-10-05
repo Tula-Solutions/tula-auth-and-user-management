@@ -1,4 +1,4 @@
-import type { Activity } from '~/ports/activity-log'
+import type { Recorded } from '~/ports/activity-log'
 
 /** A user's authenticator (TOTP) factor. The secret is only ever held sealed. */
 export interface FactorRecord {
@@ -37,7 +37,7 @@ export interface FactorConfirmation {
   /** The user's new backup codes; any earlier ones are removed. */
   backupCodes: readonly NewBackupCode[]
   /** Recorded in the same transaction, only if the factor was confirmed. */
-  activity?: Activity
+  activity: Recorded
 }
 
 /**
@@ -112,7 +112,7 @@ export interface FactorStore {
   removeForUser(
     environmentId: string,
     userId: string,
-    activity?: Activity,
+    activity: Recorded,
     onlyFactorId?: string
   ): Promise<boolean>
 
@@ -133,7 +133,7 @@ export interface FactorStore {
     scope: { projectId: string },
     codes: readonly NewBackupCode[],
     at: Date,
-    activity?: Activity
+    activity: Recorded
   ): Promise<boolean>
 
   /**
@@ -153,7 +153,7 @@ export interface FactorStore {
     userId: string,
     codeHash: string,
     at: Date,
-    activity?: Activity
+    activity: Recorded
   ): Promise<number | null>
 
   /**

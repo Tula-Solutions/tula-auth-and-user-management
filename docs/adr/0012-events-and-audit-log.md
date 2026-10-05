@@ -23,6 +23,46 @@ of.
   write's transaction. The change and its record either both happen or neither does: if the
   record cannot be written, the change is rolled back. There is deliberately no standalone
   "write an audit entry" method.
+- **The activity is a required argument** (added after the Phase 1 review; until then it was
+  optional, and "every change is recorded" was held by tests and review only). Every store
+  method that changes a user, an identity, a session, a second factor, a passkey, an API key,
+  a signing key, a provider's credentials or an environment's settings takes
+  `activity: Recorded` (`~/ports/activity-log`), in the port and in the memory and Postgres
+  adapters alike, including the per-session builders of `SessionLimit` and `revokeByUser`
+  and the entry for a password removed by `markEmailVerified`. A call without one does not
+  compile, and `undefined` is not accepted: `ports/activity-log.test.ts` holds a
+  `@ts-expect-error` line for each method, which `typecheck` fails on if the call ever
+  compiles again.
+- **Two ways to write without a record, both visible.**
+  - *A write that is never recorded is a method of its own that takes no activity*:
+    `upgradePasswordHash` and the signing-key store's `insert` (see "What is deliberately not
+    recorded"). This was already how both were written, which is why it was chosen over a
+    sentinel for them: the exception is in the port's method list, with its reason in its
+    documentation, and cannot be reached by passing a different argument to a recording
+    method.
+  - *`Audit.none(reason)`* builds the one value (`Unrecorded`) a recording method accepts in
+    place of an activity. `reason` is a closed union, `UnrecordedReason`, with one member,
+    `'fixture'`: a row that stands for something that happened elsewhere, in a test or in the
+    browser tests' fixture (`e2e/server.ts`). Several hundred test call sites seed stores
+    this way, and giving each a real activity would fill the logs the same tests assert on.
+    The server's own code has no use for it, and two things keep it out. **The value is
+    branded**: `Unrecorded` has one key, a `unique symbol` that `ports/activity-log.ts`
+    declares and does not export (and does not register with `Symbol.for`), so no object
+    literal anywhere else is an `Unrecorded`, to the compiler or at run time. The port's
+    `unrecordedFor` is the only code that can set the key, `Audit.none` is its only caller,
+    and stores tell the value apart only through `isUnrecorded` (an own-property check for
+    that key): a look-alike forced through a cast is taken for the activity it claims to be,
+    never skipped. **And a source guard** (`ports/activity-log.test.ts`) reads every file
+    under `apps/api/src` outside tests and test support and refuses any way of reaching
+    either builder: a named or renamed import, a re-export, an `import()`, a namespace import
+    used for anything but `Namespace.otherName` (so a computed member, or the namespace
+    handed on or taken apart, is refused too), and a literal keyed `unrecorded`. The guard
+    works on text with comments and string contents removed, not on a syntax tree: it is the
+    second layer, and what it cannot follow it refuses. What neither layer stops is
+    reflection on a value `Audit.none` already returned (`Object.getOwnPropertySymbols`),
+    which needs the call the guard refuses. A new reason is a change to this ADR.
+  - `environmentSettings.replace`, `passkeys.reportRegression` and the control plane's writes
+    take a plain `Activity`: they have no unrecorded form at all.
 - **Recorded only when something changed.** A store records the activity only if its guarded
   write took effect. Revoking an already-revoked session, banning an already-banned user or
   revoking a key twice writes nothing more.
@@ -55,8 +95,13 @@ of.
 - **What is deliberately not recorded.** Writes that change no one's access: upgrading a weak
   password hash after a successful sign-in (the password did not change); creating an
   environment's first signing keys (the server does it by itself); the bookkeeping timestamps
-  `last_sign_in_at` (the sign-in itself is `session.created`) and an API key's `last_used_at`;
-  and transient rows (flow attempts, verification tokens). Workspaces, projects and
+  `last_sign_in_at` (the sign-in itself is `session.created`) and an API key's `last_used_at`,
+  a session's `last_active_at` and a passkey's use (its counter and time; the sign-in is
+  `session.created`); the replay marker of a TOTP time step; an authenticator enrolment that
+  is only started (it counts as nothing until confirmed, which is recorded); transient rows
+  (flow attempts, verification tokens, WebAuthn challenges); and the retention job's deletes
+  of rows that had already ended ([ADR 0017](0017-retention.md)). None of these store methods
+  takes an activity. Workspaces, projects and
   environments are created by the seed script, outside the API. Rotating keys *is* recorded.
 - **Large batches are split.** Ending every session of one user can produce thousands of
   entries; they are inserted 500 per statement, inside the same transaction.

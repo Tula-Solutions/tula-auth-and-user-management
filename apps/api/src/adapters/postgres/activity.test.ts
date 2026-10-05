@@ -17,6 +17,7 @@ import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { cleanOrigin } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
+import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
@@ -137,13 +138,13 @@ describe('atomicity', () => {
     await expect(users.create(user, broken(a, user.id))).rejects.toThrow()
     expect(await users.findById(a.environmentId, user.id)).toBeNull()
     // And the email is still free: the identity and credential rolled back too.
-    expect(await users.create(user)).toBe(true)
+    expect(await users.create(user, Audit.none('fixture'))).toBe(true)
   })
 
   test('a user is not deleted, banned or re-passworded when the record cannot be written', async () => {
     const users = new PostgresUserRepository(testDb.db)
     const user = newUser(a)
-    await users.create(user)
+    await users.create(user, Audit.none('fixture'))
     const env = a.environmentId
     await expect(users.delete(env, user.id, broken(a, user.id))).rejects.toThrow()
     await expect(users.setBanned(env, user.id, now, now, broken(a, user.id))).rejects.toThrow()
@@ -160,7 +161,7 @@ describe('atomicity', () => {
     const users = new PostgresUserRepository(testDb.db)
     const sessions = new PostgresSessionStore(testDb.db)
     const user = newUser(a)
-    await users.create(user)
+    await users.create(user, Audit.none('fixture'))
     const session = (id: string) => ({
       id,
       ...scope(a),
@@ -187,7 +188,7 @@ describe('atomicity', () => {
     expect(await sessions.findById(a.environmentId, lost)).toBeNull()
 
     const kept = Bun.randomUUIDv7()
-    await sessions.create(session(kept), token(kept))
+    await sessions.create(session(kept), token(kept), Audit.none('fixture'))
     await expect(
       sessions.revoke(a.environmentId, kept, 'sign_out', now, broken(a, kept))
     ).rejects.toThrow()
@@ -215,7 +216,7 @@ describe('atomicity', () => {
     expect(await keys.findByHash(sha256Hex(lost))).toBeNull()
 
     const kept = Bun.randomUUIDv7()
-    await keys.insert(key(kept))
+    await keys.insert(key(kept), Audit.none('fixture'))
     await expect(keys.revoke(a.environmentId, kept, now, broken(a, kept))).rejects.toThrow()
     expect((await keys.findByHash(sha256Hex(kept)))?.revokedAt).toBeNull()
   })

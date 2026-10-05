@@ -1,5 +1,5 @@
 import { durationToMs, type Jwk, MAX_ACCESS_TOKEN_TTL } from '@tula/contract'
-import type { Activity } from '~/ports/activity-log'
+import type { Recorded } from '~/ports/activity-log'
 
 /** Lifecycle of a signing key: `next` is published ahead of use, `active` signs, `retired` verifies. */
 export type SigningKeyStatus = 'next' | 'active' | 'retired'
@@ -104,5 +104,5 @@ export interface SigningKeyStore {
    * @returns `false` when the keys are no longer in the expected states (a concurrent rotation
    *   won); nothing is changed in that case.
    */
-  rotate(environmentId: string, plan: RotationPlan, at: Date, activity?: Activity): Promise<boolean>
+  rotate(environmentId: string, plan: RotationPlan, at: Date, activity: Recorded): Promise<boolean>
 }

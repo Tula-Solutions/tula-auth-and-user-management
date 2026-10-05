@@ -1,4 +1,4 @@
-import type { Activity } from '~/ports/activity-log'
+import type { Activity, Recorded } from '~/ports/activity-log'
 import type { SignInMeans } from '~/ports/user-repository'
 
 /** A user's passkey: a WebAuthn credential's public half. Nothing in it is a secret. */
@@ -81,7 +81,7 @@ export interface PasskeyStore {
    * @param activity - Recorded in the same transaction, only if the passkey was stored.
    * @returns What happened.
    */
-  create(passkey: PasskeyRecord, limit: number, activity?: Activity): Promise<PasskeyCreateOutcome>
+  create(passkey: PasskeyRecord, limit: number, activity: Recorded): Promise<PasskeyCreateOutcome>
 
   /**
    * @param environmentId - The environment to look in.
@@ -135,7 +135,7 @@ export interface PasskeyStore {
     id: string,
     name: string,
     at: Date,
-    activity?: Activity
+    activity: Recorded
   ): Promise<boolean>
 
   /**
@@ -156,7 +156,7 @@ export interface PasskeyStore {
     userId: string,
     id: string,
     allowed: (remaining: SignInMeans) => boolean,
-    activity?: Activity
+    activity: Recorded
   ): Promise<PasskeyRemoveOutcome>
 
   /**
@@ -167,7 +167,7 @@ export interface PasskeyStore {
    * @param activity - Recorded in the same transaction, only if a passkey was removed.
    * @returns How many passkeys were removed.
    */
-  removeForUser(environmentId: string, userId: string, activity?: Activity): Promise<number>
+  removeForUser(environmentId: string, userId: string, activity: Recorded): Promise<number>
 
   /**
    * Store a session's challenge, replacing an earlier one of the same purpose.

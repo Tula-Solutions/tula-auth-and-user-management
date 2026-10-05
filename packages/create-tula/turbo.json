@@ -1,0 +1,21 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "transit": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+    },
+    "generate:check": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+    },
+    "typecheck": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+    },
+    "test": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+    },
+    "test:coverage": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+    }
+  }
+}

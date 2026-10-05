@@ -19,6 +19,7 @@ import { decodeJwt } from 'jose'
 import { RateLimitError, ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
+import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
@@ -970,7 +971,8 @@ describe('signing in with a passkey', () => {
       TEST_TENANT.environmentId,
       userId,
       deps.clock.now(),
-      deps.clock.now()
+      deps.clock.now(),
+      Audit.none('fixture')
     )
     const res = await passkeySignIn(authenticator)
     expect(await errorOf(res)).toMatchObject({ status: 403, code: 'auth.user_banned' })
@@ -1013,20 +1015,23 @@ describe('a passkey sign-in by a user whose address is not verified', () => {
   /** A user with an unverified address and a passkey; a password only when asked. */
   async function unverifiedWithPasskey(options: { password?: boolean } = {}) {
     const userId = deps.ids.next()
-    await deps.users.create({
-      id: userId,
-      projectId: TEST_TENANT.projectId,
-      environmentId: TEST_TENANT.environmentId,
-      email: EMAIL,
-      emailNormalized: EMAIL,
-      emailVerifiedAt: null,
-      firstName: null,
-      lastName: null,
-      createdAt: deps.clock.now(),
-      identityId: deps.ids.next(),
-      credentialId: deps.ids.next(),
-      passwordHash: options.password ? await Passwords.hash(PASSWORD) : null,
-    })
+    await deps.users.create(
+      {
+        id: userId,
+        projectId: TEST_TENANT.projectId,
+        environmentId: TEST_TENANT.environmentId,
+        email: EMAIL,
+        emailNormalized: EMAIL,
+        emailVerifiedAt: null,
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: options.password ? await Passwords.hash(PASSWORD) : null,
+      },
+      Audit.none('fixture')
+    )
     const session = await Sessions.create(deps, TEST_TENANT, {
       userId,
       client: 'ios',

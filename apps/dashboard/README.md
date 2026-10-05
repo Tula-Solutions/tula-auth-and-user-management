@@ -113,7 +113,11 @@ has no way to call a client route.
 - `bun run --filter @tula/dashboard test`: bun test in happy-dom with Testing Library.
   `src/app.test.tsx` and `src/screens.test.tsx` render the whole app against
   `src/testing/fake-api.ts`; the mutator, the save model and the helpers have unit tests.
-  Coverage is per file (80%, `bunfig.toml`).
+  Coverage is per file (80%, `bunfig.toml`). The scripts pass `--timeout 30000`: a `findBy*`
+  or `waitFor` waits up to 10 s (`src/testing/setup.ts`), and on a slow runner Bun's default of
+  5 s would end the test first, with "timed out" where the query's own message should be. It
+  is a flag because Bun ignores a `timeout` under `[test]` in `bunfig.toml`; run the tests
+  through the scripts, since a bare `bun test` here has the default.
 - `bun run e2e`: the `dashboard` Playwright project (`e2e/tests/dashboard/`) drives the built
   app **served by the API at `/dashboard`** with its real Content-Security-Policy, against
   the real API in process. Every test fails on a policy violation, a console error or an

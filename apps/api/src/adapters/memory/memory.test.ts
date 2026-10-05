@@ -9,6 +9,7 @@ import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { describeRateLimiter } from '~/adapters/rate-limiter.suite'
 import { systemClock } from '~/adapters/system/clock'
 import { uuidV7Ids } from '~/adapters/system/ids'
+import * as Audit from '~/modules/audit/service'
 import { RETIRED_KEY_RETENTION_MS } from '~/ports/signing-key-store'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -67,7 +68,7 @@ function newKey(id: string, environmentId: string, createdAt: Date, keyHash = `h
 describe('MemoryApiKeyRepository', () => {
   test('finds by hash without exposing the hash', async () => {
     const repo = new MemoryApiKeyRepository()
-    const stored = await repo.insert(newKey('k1', 'e1', TEST_EPOCH))
+    const stored = await repo.insert(newKey('k1', 'e1', TEST_EPOCH), Audit.none('fixture'))
     expect(stored).not.toHaveProperty('keyHash')
     expect(stored).toMatchObject({ id: 'k1', lastUsedAt: null, revokedAt: null })
     expect(await repo.findByHash('hash-k1')).toEqual(stored)
@@ -76,34 +77,40 @@ describe('MemoryApiKeyRepository', () => {
 
   test('rejects a duplicate hash like the unique index does', async () => {
     const repo = new MemoryApiKeyRepository()
-    await repo.insert(newKey('k1', 'e1', TEST_EPOCH, 'same'))
-    await expect(repo.insert(newKey('k2', 'e1', TEST_EPOCH, 'same'))).rejects.toThrow()
+    await repo.insert(newKey('k1', 'e1', TEST_EPOCH, 'same'), Audit.none('fixture'))
+    await expect(
+      repo.insert(newKey('k2', 'e1', TEST_EPOCH, 'same'), Audit.none('fixture'))
+    ).rejects.toThrow()
   })
 
   test('lists one environment newest first', async () => {
     const repo = new MemoryApiKeyRepository()
     const later = new Date(TEST_EPOCH.getTime() + 1000)
-    await repo.insert(newKey('old', 'e1', TEST_EPOCH))
-    await repo.insert(newKey('new', 'e1', later))
-    await repo.insert(newKey('tie', 'e1', TEST_EPOCH))
-    await repo.insert(newKey('elsewhere', 'e2', later))
+    await repo.insert(newKey('old', 'e1', TEST_EPOCH), Audit.none('fixture'))
+    await repo.insert(newKey('new', 'e1', later), Audit.none('fixture'))
+    await repo.insert(newKey('tie', 'e1', TEST_EPOCH), Audit.none('fixture'))
+    await repo.insert(newKey('elsewhere', 'e2', later), Audit.none('fixture'))
     expect((await repo.listByEnvironment('e1')).map((key) => key.id)).toEqual(['new', 'tie', 'old'])
   })
 
   test('revokes only within the given environment and keeps the first time', async () => {
     const repo = new MemoryApiKeyRepository()
-    await repo.insert(newKey('k1', 'e1', TEST_EPOCH))
-    expect(await repo.revoke('e2', 'k1', TEST_EPOCH)).toBeNull()
-    expect((await repo.revoke('e1', 'k1', TEST_EPOCH))?.revokedAt).toEqual(TEST_EPOCH)
+    await repo.insert(newKey('k1', 'e1', TEST_EPOCH), Audit.none('fixture'))
+    expect(await repo.revoke('e2', 'k1', TEST_EPOCH, Audit.none('fixture'))).toBeNull()
+    expect((await repo.revoke('e1', 'k1', TEST_EPOCH, Audit.none('fixture')))?.revokedAt).toEqual(
+      TEST_EPOCH
+    )
     const later = new Date(TEST_EPOCH.getTime() + 5000)
-    expect((await repo.revoke('e1', 'k1', later))?.revokedAt).toEqual(TEST_EPOCH)
+    expect((await repo.revoke('e1', 'k1', later, Audit.none('fixture')))?.revokedAt).toEqual(
+      TEST_EPOCH
+    )
   })
 })
 
 describe('MemoryApiKeyRepository.touch', () => {
   test('sets the last used time of an existing key', async () => {
     const repo = new MemoryApiKeyRepository()
-    await repo.insert(newKey('k1', 'e1', TEST_EPOCH))
+    await repo.insert(newKey('k1', 'e1', TEST_EPOCH), Audit.none('fixture'))
     await repo.touch('k1', TEST_EPOCH)
     await repo.touch('missing', TEST_EPOCH)
     expect((await repo.findByHash('hash-k1'))?.lastUsedAt).toEqual(TEST_EPOCH)

@@ -4,7 +4,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
 import * as logger from '~/lib/logger'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded } from '~/ports/activity-log'
 import {
   canVerify,
   type NewSigningKey,
@@ -97,8 +97,9 @@ export class PostgresSigningKeyStore implements SigningKeyStore {
     environmentId: string,
     plan: RotationPlan,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     try {
       await withTenant(this.db, environmentId, async (tx) => {
         // Order matters under the partial unique indexes: free the active slot, then the next

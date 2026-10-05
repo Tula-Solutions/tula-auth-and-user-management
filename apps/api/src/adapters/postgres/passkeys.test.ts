@@ -11,6 +11,7 @@ import { describePasskeyStore, type PasskeySuiteTenant } from '~/adapters/passke
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
+import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type { PasskeyRecord } from '~/ports/passkey-store'
 
@@ -103,7 +104,7 @@ describe('PostgresPasskeyStore', () => {
   test('a rename or a removal whose audit entry cannot be written changes nothing', async () => {
     const userId = await suiteTenant(a).user()
     const record = passkey(userId)
-    await store().create(record, 10)
+    await store().create(record, 10, Audit.none('fixture'))
     await expect(
       store().rename(
         a.environmentId,
@@ -130,12 +131,14 @@ describe('PostgresPasskeyStore', () => {
   })
 
   test('a passkey for a user who does not exist is refused as over the limit, not stored', async () => {
-    expect(await store().create(passkey(Bun.randomUUIDv7()), 10)).toBe('limit')
+    expect(await store().create(passkey(Bun.randomUUIDv7()), 10, Audit.none('fixture'))).toBe(
+      'limit'
+    )
   })
 
   test('deleting a user removes their passkeys and challenges', async () => {
     const userId = await suiteTenant(a).user()
-    await store().create(passkey(userId), 10)
+    await store().create(passkey(userId), 10, Audit.none('fixture'))
     await store().putChallenge({
       id: Bun.randomUUIDv7(),
       projectId: a.projectId,
@@ -160,7 +163,7 @@ describe('PostgresPasskeyStore', () => {
 
   test('without a tenant scope the runtime role sees no passkey and no challenge', async () => {
     const userId = await suiteTenant(a).user()
-    await store().create(passkey(userId), 10)
+    await store().create(passkey(userId), 10, Audit.none('fixture'))
     expect(await testDb.db.select().from(passkeys).where(eq(passkeys.userId, userId))).toEqual([])
     expect(await testDb.db.select().from(passkeyChallenges)).toEqual([])
     expect(
@@ -172,8 +175,8 @@ describe('PostgresPasskeyStore', () => {
 
   test('unlinking an identity counts the user’s passkeys among what remains', async () => {
     const userId = await suiteTenant(a).user()
-    await store().create(passkey(userId), 10)
-    await store().create(passkey(userId), 10)
+    await store().create(passkey(userId), 10, Audit.none('fixture'))
+    await store().create(passkey(userId), 10, Audit.none('fixture'))
     const repository = new PostgresUserRepository(testDb.db)
     const identity = {
       id: Bun.randomUUIDv7(),
@@ -184,12 +187,18 @@ describe('PostgresPasskeyStore', () => {
       subject: `subject-${userId}`,
       createdAt: now,
     }
-    expect(await repository.linkIdentity(identity)).toBe('linked')
+    expect(await repository.linkIdentity(identity, Audit.none('fixture'))).toBe('linked')
     let seen: unknown
-    await repository.unlinkIdentity(a.environmentId, userId, identity.id, (remaining) => {
-      seen = remaining
-      return false
-    })
+    await repository.unlinkIdentity(
+      a.environmentId,
+      userId,
+      identity.id,
+      (remaining) => {
+        seen = remaining
+        return false
+      },
+      Audit.none('fixture')
+    )
     expect(seen).toEqual({ hasPassword: false, emailVerified: false, providers: [], passkeys: 2 })
   })
 })

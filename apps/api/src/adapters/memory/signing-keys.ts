@@ -1,6 +1,6 @@
 import type { Jwk } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import type { Activity } from '~/ports/activity-log'
+import { activityOf, type Recorded } from '~/ports/activity-log'
 import {
   canVerify,
   type NewSigningKey,
@@ -89,8 +89,9 @@ export class MemorySigningKeyStore implements SigningKeyStore {
     environmentId: string,
     plan: RotationPlan,
     at: Date,
-    activity?: Activity
+    recorded: Recorded
   ): Promise<boolean> {
+    const activity = activityOf(recorded)
     const find = (id: string) =>
       this.#keys.find((key) => key.id === id && key.environmentId === environmentId)
     const retiring = find(plan.retireId)

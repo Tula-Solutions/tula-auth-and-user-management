@@ -11,6 +11,7 @@ import {
 import { decodeJwt } from 'jose'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
+import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/router'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
@@ -144,20 +145,23 @@ function sentCode(): string {
 
 async function seedUser() {
   const id = deps.ids.next()
-  await deps.users.create({
-    id,
-    projectId: tenant.projectId,
-    environmentId: tenant.environmentId,
-    email: EMAIL,
-    emailNormalized: EMAIL,
-    emailVerifiedAt: deps.clock.now(),
-    firstName: null,
-    lastName: null,
-    createdAt: deps.clock.now(),
-    identityId: deps.ids.next(),
-    credentialId: deps.ids.next(),
-    passwordHash: PASSWORD_HASH,
-  })
+  await deps.users.create(
+    {
+      id,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: EMAIL,
+      emailNormalized: EMAIL,
+      emailVerifiedAt: deps.clock.now(),
+      firstName: null,
+      lastName: null,
+      createdAt: deps.clock.now(),
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: PASSWORD_HASH,
+    },
+    Audit.none('fixture')
+  )
   return id
 }
 

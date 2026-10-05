@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type { OAuthProviderRecord, OAuthProviderStore } from '~/ports/oauth-provider-store'
 
@@ -73,7 +74,7 @@ export function describeOAuthProviderStore(
 
     test('stores a provider and reads it back, in its environment only', async () => {
       const input = record(ctx.a, { provider: 'apple', config: { teamId: 'TEAM', keyId: 'KEY' } })
-      expect(await ctx.store.upsert(input)).toEqual(input)
+      expect(await ctx.store.upsert(input, Audit.none('fixture'))).toEqual(input)
       expect(await ctx.store.find(ctx.a.environmentId, 'apple')).toEqual(input)
       expect(await ctx.store.find(ctx.a.environmentId, 'google')).toBeNull()
       expect(await ctx.store.find(ctx.b.environmentId, 'apple')).toBeNull()
@@ -82,9 +83,9 @@ export function describeOAuthProviderStore(
 
     test('lists an environment’s providers in a stable order', async () => {
       for (const provider of ['google', 'apple', 'github'] as const) {
-        await ctx.store.upsert(record(ctx.a, { provider }))
+        await ctx.store.upsert(record(ctx.a, { provider }), Audit.none('fixture'))
       }
-      await ctx.store.upsert(record(ctx.b))
+      await ctx.store.upsert(record(ctx.b), Audit.none('fixture'))
       expect((await ctx.store.list(ctx.a.environmentId)).map((row) => row.provider)).toEqual([
         'apple',
         'github',
@@ -93,7 +94,7 @@ export function describeOAuthProviderStore(
     })
 
     test('a second save replaces the credentials and keeps the row’s id and creation time', async () => {
-      const first = await ctx.store.upsert(record(ctx.a))
+      const first = await ctx.store.upsert(record(ctx.a), Audit.none('fixture'))
       const second = await ctx.store.upsert(
         record(ctx.a, {
           clientId: 'new-client',
@@ -101,7 +102,8 @@ export function describeOAuthProviderStore(
           enabled: false,
           createdAt: later,
           updatedAt: later,
-        })
+        }),
+        Audit.none('fixture')
       )
       expect(second).toEqual({
         ...first,
@@ -114,23 +116,31 @@ export function describeOAuthProviderStore(
     })
 
     test('two concurrent first saves leave one row', async () => {
-      await Promise.all([1, 2].map(() => ctx.store.upsert(record(ctx.a))))
+      await Promise.all([1, 2].map(() => ctx.store.upsert(record(ctx.a), Audit.none('fixture'))))
       expect(await ctx.store.list(ctx.a.environmentId)).toHaveLength(1)
     })
 
     test('the same provider in two environments is two rows', async () => {
-      await ctx.store.upsert(record(ctx.a, { clientId: 'a' }))
-      await ctx.store.upsert(record(ctx.b, { clientId: 'b' }))
+      await ctx.store.upsert(record(ctx.a, { clientId: 'a' }), Audit.none('fixture'))
+      await ctx.store.upsert(record(ctx.b, { clientId: 'b' }), Audit.none('fixture'))
       expect((await ctx.store.find(ctx.a.environmentId, 'google'))?.clientId).toBe('a')
       expect((await ctx.store.find(ctx.b.environmentId, 'google'))?.clientId).toBe('b')
     })
 
     test('deletes a provider, in its environment only', async () => {
-      await ctx.store.upsert(record(ctx.a))
-      expect(await ctx.store.delete(ctx.b.environmentId, 'google')).toBe(false)
-      expect(await ctx.store.delete(ctx.a.environmentId, 'github')).toBe(false)
-      expect(await ctx.store.delete(ctx.a.environmentId, 'google')).toBe(true)
-      expect(await ctx.store.delete(ctx.a.environmentId, 'google')).toBe(false)
+      await ctx.store.upsert(record(ctx.a), Audit.none('fixture'))
+      expect(await ctx.store.delete(ctx.b.environmentId, 'google', Audit.none('fixture'))).toBe(
+        false
+      )
+      expect(await ctx.store.delete(ctx.a.environmentId, 'github', Audit.none('fixture'))).toBe(
+        false
+      )
+      expect(await ctx.store.delete(ctx.a.environmentId, 'google', Audit.none('fixture'))).toBe(
+        true
+      )
+      expect(await ctx.store.delete(ctx.a.environmentId, 'google', Audit.none('fixture'))).toBe(
+        false
+      )
       expect(await ctx.store.find(ctx.a.environmentId, 'google')).toBeNull()
     })
 
