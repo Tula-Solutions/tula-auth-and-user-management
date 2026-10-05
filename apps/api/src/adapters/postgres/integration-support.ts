@@ -8,6 +8,7 @@ import {
 } from '@tula/db'
 import { createTestTenant, type TestTenant } from '@tula/db/testing'
 import { inArray, sql } from 'drizzle-orm'
+import { runEvery } from '~/adapters/postgres/integration-cleanup'
 
 /** A tenant of an integration run: its ids and a way to add a user to it. */
 export interface IntegrationTenant {
@@ -39,29 +40,6 @@ export const WAIT_FOR_WAITERS_MS = 5_000
 
 /** Rolls a {@link Hold}'s transaction back: it only ever held locks. */
 class Release extends Error {}
-
-/**
- * Run every step, one after another, whether or not an earlier one failed.
- *
- * For cleanup: a pool that will not close must not leave the other pool open or the run's
- * tenants in the database.
- *
- * @param steps - The steps, in order.
- * @throws The first failure, after every step has run.
- */
-export async function runEvery(steps: readonly (() => Promise<unknown>)[]): Promise<void> {
-  const failures: unknown[] = []
-  for (const step of steps) {
-    try {
-      await step()
-    } catch (error) {
-      failures.push(error)
-    }
-  }
-  if (failures.length > 0) {
-    throw failures[0]
-  }
-}
 
 /** Real Postgres for the `*.integration.ts` files of the stores. */
 export interface IntegrationDatabase {

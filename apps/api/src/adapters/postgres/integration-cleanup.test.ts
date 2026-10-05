@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { runEvery } from '~/adapters/postgres/integration-support'
+import { runEvery } from '~/adapters/postgres/integration-cleanup'
 
 describe('runEvery: the cleanup of an integration run', () => {
   test('a step that fails does not keep the later ones from running, and its error is rethrown', async () => {
