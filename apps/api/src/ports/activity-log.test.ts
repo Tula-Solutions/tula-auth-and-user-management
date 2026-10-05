@@ -4,7 +4,13 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import type { Deps } from '~/dependencies'
 import * as Audit from '~/modules/audit/service'
-import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
+import {
+  type Activity,
+  activityOf,
+  isUnrecorded,
+  type Recorded,
+  recordedOf,
+} from '~/ports/activity-log'
 import type { ApiKeyRepository, NewApiKey } from '~/ports/api-key-repository'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 import type { FactorStore } from '~/ports/factor-store'
@@ -150,7 +156,155 @@ function _reasons(): Recorded[] {
     Audit.none('nobody will notice'),
     // @ts-expect-error only `Audit.none` and `Audit.entry` build what a store takes
     {},
+    // @ts-expect-error a literal is not an `Unrecorded`: its key is a symbol nobody can name
+    { unrecorded: 'fixture' },
+    // @ts-expect-error nor is one keyed by a symbol anyone can reach
+    { [Symbol.for('unrecorded')]: 'fixture' },
+    // @ts-expect-error
+    { [Symbol.iterator]: 'fixture', unrecorded: 'fixture' },
   ]
+}
+
+/** The files that may build an `Unrecorded`: where it is defined, and tests and their support. */
+function mayLeaveUnrecorded(file: string): boolean {
+  return (
+    /\.(test|suite|integration)\.ts$/.test(file) ||
+    file === 'testing.ts' ||
+    file.startsWith('testing/') ||
+    file === 'modules/audit/service.ts' ||
+    file === 'ports/activity-log.ts'
+  )
+}
+
+/**
+ * Every way a source file reaches for "not recorded", as text. The type is the first guard
+ * (an `Unrecorded` cannot be written as a literal); this is the second, for the two functions
+ * that can build one.
+ */
+function waysToLeaveUnrecorded(source: string, file = 'modules/example/service.ts'): string[] {
+  const { code, bare } = withoutComments(source)
+  const found: string[] = []
+  // A literal shaped like the value before it was branded. It no longer compiles as one; a
+  // file that writes it anyway is trying to.
+  if (/(['"`]?)\bunrecorded\1\s*:/.test(code)) {
+    found.push('a literal keyed `unrecorded`')
+  }
+  for (const [module, builder] of BUILDERS) {
+    const names = (specifier: string) => moduleOf(specifier, file) === module
+    for (const [, type, clause, specifier] of code.matchAll(IMPORT)) {
+      if (type || !names(specifier as string)) {
+        continue
+      }
+      if (namedBindings(clause as string).includes(builder)) {
+        found.push(`imports \`${builder}\` from ${module}`)
+      }
+      const namespace = (clause as string).match(/\*\s*as\s+([\w$]+)/)?.[1]
+      // A namespace is fine while every use of it is `Namespace.someOtherName`. Anything else
+      // (the builder, a computed member, the namespace handed on or taken apart) is refused,
+      // because from there the builder cannot be followed by reading.
+      for (const use of namespace ? bare.matchAll(usesOf(namespace)) : []) {
+        const member = use[1]
+        if (member === undefined || member === builder) {
+          found.push(`reaches \`${builder}\` through \`${namespace}\``)
+          break
+        }
+      }
+    }
+    for (const [, clause, specifier] of code.matchAll(EXPORT_FROM)) {
+      const all = (clause as string).startsWith('*')
+      if (
+        names(specifier as string) &&
+        (all || namedBindings(clause as string).includes(builder))
+      ) {
+        found.push(`re-exports \`${builder}\` from ${module}`)
+      }
+    }
+    // Only the audit service is ever loaded lazily for its builder; the port has no reason
+    // to be, and nothing in the server loads either this way.
+    for (const [, specifier] of code.matchAll(DYNAMIC_IMPORT)) {
+      if (names(specifier as string)) {
+        found.push(`loads ${module} with import()`)
+      }
+    }
+  }
+  return found
+}
+
+/** The two functions that build an `Unrecorded`, by the module that exports each. */
+const BUILDERS = [
+  ['modules/audit/service', 'none'],
+  ['ports/activity-log', 'unrecordedFor'],
+] as const
+const IMPORT = /\bimport\s+(type\s+)?([\w$*{},\s]+?)\s+from\s*['"]([^'"]+)['"]/g
+const EXPORT_FROM = /\bexport\s+(\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s*from\s*['"]([^'"]+)['"]/g
+const DYNAMIC_IMPORT = /\b(?:import|require)\s*\(\s*['"`]([^'"`]+)['"`]\s*\)/g
+
+/** Every use of a namespace binding, with the member it reads when it is a plain `.name`. */
+function usesOf(namespace: string): RegExp {
+  return new RegExp(
+    `(?<![\\w$.])${namespace.replace(/\$/g, '\\$')}\\b(?:\\s*\\.\\s*([A-Za-z_$][\\w$]*))?`,
+    'g'
+  )
+}
+
+/** The exported names a `{ a, b as c, type d }` clause binds as values. */
+function namedBindings(clause: string): string[] {
+  const braces = clause.match(/\{([^}]*)\}/)?.[1] ?? ''
+  return braces
+    .split(',')
+    .map((binding) => binding.trim())
+    .filter((binding) => binding !== '' && !binding.startsWith('type '))
+    .map((binding) => binding.split(/\s+as\s+/)[0] as string)
+}
+
+/** The module a specifier names, as a path under `apps/api/src` without its extension. */
+function moduleOf(specifier: string, file: string): string {
+  const from = specifier.startsWith('~/')
+    ? specifier.slice(2).split('/')
+    : specifier.startsWith('.')
+      ? [...file.split('/').slice(0, -1), ...specifier.split('/')]
+      : [specifier]
+  const parts: string[] = []
+  for (const part of from) {
+    if (part === '..') {
+      parts.pop()
+    } else if (part !== '.' && part !== '') {
+      parts.push(part)
+    }
+  }
+  return parts.join('/').replace(/\.ts$/, '')
+}
+
+/**
+ * A source file without its comments (`code`), and also without the contents of its string
+ * and template literals and without its import and export lines (`bare`): what is left of
+ * `bare` is where a binding is used.
+ */
+function withoutComments(source: string): { code: string; bare: string } {
+  let code = ''
+  let bare = ''
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i] as string
+    if (c === '/' && source[i + 1] === '/') {
+      i = (source.indexOf('\n', i) + source.length + 1) % (source.length + 1)
+      i--
+    } else if (c === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2)
+      i = end === -1 ? source.length : end + 1
+    } else if (c === "'" || c === '"' || c === '`') {
+      let end = i + 1
+      while (end < source.length && source[end] !== c) {
+        end += source[end] === '\\' ? 2 : 1
+      }
+      code += source.slice(i, end + 1)
+      bare += `${c}${c}`
+      i = end
+    } else {
+      code += c
+      bare += c
+    }
+  }
+  return { code, bare: bare.replace(/\b(?:import|export)\b[^;\n]*?\bfrom\s*['"]{2}/gs, '') }
 }
 
 describe('what a store is told about the audit entry of a write', () => {
@@ -176,7 +330,24 @@ describe('what a store is told about the audit entry of a write', () => {
       target: { type: 'user', id: 'user' },
     })
     const none = Audit.none('fixture')
-    expect(none).toEqual({ unrecorded: 'fixture' })
+    expect(isUnrecorded(none)).toBe(true)
+    expect(isUnrecorded(entry)).toBe(false)
+    // Nothing to read, copy or serialise: no string key, and frozen.
+    expect(Object.keys(none)).toEqual([])
+    expect(JSON.stringify(none)).toBe('{}')
+    expect(Object.isFrozen(none)).toBe(true)
+    // A look-alike forced past the compiler is not one at run time either: a store takes it
+    // for the activity it claims to be, so nothing is skipped silently.
+    const forgeries: object[] = [
+      { unrecorded: 'fixture' },
+      { [Symbol('unrecorded')]: 'fixture' },
+      { [Symbol.for('unrecorded')]: 'fixture' },
+      Object.create(none),
+    ]
+    for (const forged of forgeries) {
+      expect(isUnrecorded(forged as Recorded)).toBe(false)
+      expect(activityOf(forged as Recorded)).toBe(forged as Activity)
+    }
     expect(activityOf(entry)).toBe(entry)
     expect(activityOf(none)).toBeUndefined()
     expect(recordedOf([none, entry, none])).toEqual([entry])
@@ -206,26 +377,80 @@ describe('what a store is told about the audit entry of a write', () => {
   // `Audit.none` exists for rows that stand for something that happened elsewhere. The
   // server itself has no such write: every one of its store calls records.
   test('the server’s own code never passes `Audit.none`', async () => {
-    const allowedIn = (file: string) =>
-      /\.(test|suite|integration)\.ts$/.test(file) ||
-      file === 'testing.ts' ||
-      file.startsWith('testing/') ||
-      // Where it is defined and documented.
-      file === 'modules/audit/service.ts' ||
-      file === 'ports/activity-log.ts'
     const offenders: string[] = []
     let scanned = 0
     for await (const file of new Glob('**/*.ts').scan(`${import.meta.dir}/..`)) {
       scanned++
-      if (allowedIn(file)) {
+      if (mayLeaveUnrecorded(file)) {
         continue
       }
       const source = await Bun.file(`${import.meta.dir}/../${file}`).text()
-      if (/\bAudit\s*\.\s*none\b|\bunrecorded\s*:/.test(source)) {
-        offenders.push(file)
-      }
+      offenders.push(...waysToLeaveUnrecorded(source).map((way) => `${file}: ${way}`))
     }
     expect(scanned).toBeGreaterThan(200)
     expect(offenders).toEqual([])
+  })
+
+  // Review finding F1: the guard matched the text `Audit.none`, so any other spelling of the
+  // same call walked past it. Each of these is source a server file could have held.
+  test.each([
+    [
+      'a named import',
+      "import { none } from '~/modules/audit/service'\nawait deps.users.create(user, none('fixture'))",
+    ],
+    [
+      'a renamed import',
+      "import { entry, none as skip } from '~/modules/audit/service'\nskip('fixture')",
+    ],
+    [
+      'a namespace under another name',
+      "import * as A from '~/modules/audit/service'\nA.none('fixture')",
+    ],
+    [
+      'a member reached by a string',
+      "import * as Audit from '~/modules/audit/service'\nAudit['no' + 'ne']('fixture')",
+    ],
+    [
+      'a member taken apart',
+      "import * as Audit from '~/modules/audit/service'\nconst { none: skip } = Audit",
+    ],
+    ['a relative path', "import { none } from '../audit/service'\nnone('fixture')"],
+    [
+      'a multi-line import',
+      "import {\n  entry,\n  none,\n} from '~/modules/audit/service'\nnone('fixture')",
+    ],
+    ['a dynamic import', "const { none } = await import('~/modules/audit/service')"],
+    ['a re-export', "export { none } from '~/modules/audit/service'"],
+    ['a re-export of everything', "export * from '~/modules/audit/service'"],
+    ['a literal', "const skipped = { 'unrecorded': 'fixture' }"],
+    ['a literal with a bare key', 'const skipped = { unrecorded: reason }'],
+    [
+      'the port’s own constructor',
+      "import { unrecordedFor } from '~/ports/activity-log'\nunrecordedFor('fixture')",
+    ],
+    [
+      'the port’s constructor through a namespace',
+      "import * as Log from '~/ports/activity-log'\nLog['unrecorded' + 'For']('fixture')",
+    ],
+  ])('the guard reports %s', (_name, source) => {
+    expect(waysToLeaveUnrecorded(source)).not.toEqual([])
+  })
+
+  test.each([
+    [
+      'recording through the namespace',
+      "import * as Audit from '~/modules/audit/service'\nAudit.entry(deps, scope, { type })\nAudit.list(deps, tenant, {})",
+    ],
+    [
+      'the names a store needs',
+      "import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'",
+    ],
+    [
+      'the word in another module and in prose',
+      "import { none } from '~/lib/option'\n// none of this is unrecorded\nnone()",
+    ],
+    ['a type-only import', "import type { EntryInput } from '~/modules/audit/service'"],
+  ])('the guard leaves %s alone', (_name, source) => {
+    expect(waysToLeaveUnrecorded(source)).toEqual([])
   })
 })

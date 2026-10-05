@@ -45,8 +45,22 @@ of.
     `'fixture'`: a row that stands for something that happened elsewhere, in a test or in the
     browser tests' fixture (`e2e/server.ts`). Several hundred test call sites seed stores
     this way, and giving each a real activity would fill the logs the same tests assert on.
-    The server's own code has no use for it, and a test fails if `Audit.none` appears under
-    `apps/api/src` outside tests and test support. A new reason is a change to this ADR.
+    The server's own code has no use for it, and two things keep it out. **The value is
+    branded**: `Unrecorded` has one key, a `unique symbol` that `ports/activity-log.ts`
+    declares and does not export (and does not register with `Symbol.for`), so no object
+    literal anywhere else is an `Unrecorded`, to the compiler or at run time. The port's
+    `unrecordedFor` is the only code that can set the key, `Audit.none` is its only caller,
+    and stores tell the value apart only through `isUnrecorded` (an own-property check for
+    that key): a look-alike forced through a cast is taken for the activity it claims to be,
+    never skipped. **And a source guard** (`ports/activity-log.test.ts`) reads every file
+    under `apps/api/src` outside tests and test support and refuses any way of reaching
+    either builder: a named or renamed import, a re-export, an `import()`, a namespace import
+    used for anything but `Namespace.otherName` (so a computed member, or the namespace
+    handed on or taken apart, is refused too), and a literal keyed `unrecorded`. The guard
+    works on text with comments and string contents removed, not on a syntax tree: it is the
+    second layer, and what it cannot follow it refuses. What neither layer stops is
+    reflection on a value `Audit.none` already returned (`Object.getOwnPropertySymbols`),
+    which needs the call the guard refuses. A new reason is a change to this ADR.
   - `environmentSettings.replace`, `passkeys.reportRegression` and the control plane's writes
     take a plain `Activity`: they have no unrecorded form at all.
 - **Recorded only when something changed.** A store records the activity only if its guarded

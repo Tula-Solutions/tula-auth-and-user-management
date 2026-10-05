@@ -927,8 +927,12 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   method of its own that takes none (`upgradePasswordHash`, the signing-key store's
   `insert`), added together with a line in ADR 0012. `Audit.none('fixture')` is the explicit
   "not recorded" for seed data in tests and in `e2e/server.ts`; its reasons are a closed
-  list, and `ports/activity-log.test.ts` fails if the server's own code calls it. That file
-  also holds the `@ts-expect-error` line of every such method: a new one gets a line there.
+  list. Its value is branded with a symbol `ports/activity-log.ts` does not export: never
+  export that key, never build the value anywhere but `unrecordedFor`, never call that from
+  anywhere but `Audit.none`, and tell the value apart only with `isUnrecorded`.
+  `ports/activity-log.test.ts` fails if a server file reaches either function by any import
+  form (keep its bypass fixtures, and add one for a new form). That file also holds the
+  `@ts-expect-error` line of every such method: a new one gets a line there.
 - Operator-supplied text that reaches an email (the app name) is untrusted input: it goes
   through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
   subject or HTML. A user agent never reaches an email at all: only the family

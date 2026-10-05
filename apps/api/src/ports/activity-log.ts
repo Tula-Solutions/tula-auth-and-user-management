@@ -29,18 +29,52 @@ export interface Activity {
  * decision, made here and in ADR 0012, not at a call site.
  *
  * - `fixture`: the row stands for something that happened elsewhere (a test's or a
- *   development fixture's seed data). Never passed by the server's own code: a harness test
- *   (`ports/activity-log.test.ts`) refuses `Audit.none(` anywhere under `apps/api/src`
- *   outside tests and test support.
+ *   development fixture's seed data). Never passed by the server's own code: a test
+ *   (`ports/activity-log.test.ts`) refuses every way of reaching `Audit.none` or
+ *   {@link unrecordedFor} under `apps/api/src` outside tests and test support.
  */
 export type UnrecordedReason = 'fixture'
 
 /**
+ * The key of an {@link Unrecorded}. **Not exported, on purpose**: a value keyed by it can only
+ * be made in this module, so no object literal anywhere else is an `Unrecorded`, to the
+ * compiler or at run time. It is not `Symbol.for`: the registry would hand it to anyone.
+ */
+const UNRECORDED: unique symbol = Symbol('unrecorded')
+
+/**
  * The value a caller passes **instead of** an {@link Activity} to say, visibly, that a write
- * is not recorded. Built only by `Audit.none(reason)`.
+ * is not recorded. Built only by `Audit.none(reason)`, through {@link unrecordedFor}; told
+ * apart only with {@link isUnrecorded}. It has no field a caller can write or read.
  */
 export interface Unrecorded {
-  readonly unrecorded: UnrecordedReason
+  readonly [UNRECORDED]: UnrecordedReason
+}
+
+/**
+ * Build an {@link Unrecorded}. The key lives here, so the value has to be made here; **the
+ * one caller is `Audit.none`** (`~/modules/audit/service`), which is what everything else
+ * uses. `ports/activity-log.test.ts` fails if any other file of the server names this.
+ *
+ * @param reason - Why the write is not recorded.
+ * @returns The value to pass in place of an activity.
+ */
+export function unrecordedFor(reason: UnrecordedReason): Unrecorded {
+  return Object.freeze({ [UNRECORDED]: reason })
+}
+
+/**
+ * Whether a store was told, explicitly, to record nothing.
+ *
+ * Asks for the key itself, as an own property. Anything else (a cast object, a look-alike
+ * with a string key, another symbol of the same description) is not one, and a store then
+ * treats it as the activity it claims to be: nothing is skipped silently.
+ *
+ * @param recorded - What the caller passed.
+ * @returns `true` for a value {@link unrecordedFor} built.
+ */
+export function isUnrecorded(recorded: Recorded): recorded is Unrecorded {
+  return Object.hasOwn(recorded, UNRECORDED)
 }
 
 /**
@@ -60,7 +94,7 @@ export type Recorded = Activity | Unrecorded
  * @returns The activity, or `undefined` for an explicit {@link Unrecorded}.
  */
 export function activityOf(recorded: Recorded): Activity | undefined {
-  return 'unrecorded' in recorded ? undefined : recorded
+  return isUnrecorded(recorded) ? undefined : recorded
 }
 
 /**

@@ -50,6 +50,17 @@ else. Adapters are stateless; credentials are passed per call.
   wrong or missing verifier is its documented behaviour ("Authorizing OAuth apps":
   `code_challenge`, `code_challenge_method` = `S256` only, `code_verifier` required once a
   challenge was sent), which no test here observes.
+  **Attempts in flight across the upgrade.** A GitHub attempt started by the version before
+  this one stored a verifier (every attempt always has) but its authorization URL carried no
+  challenge. If its callback is served by the new version, the token request carries a
+  `code_verifier` for a code that was asked for without one. What github.com does with that
+  is not known here: RFC 7636 leaves it to the server, and GitHub's page speaks only of the
+  case where a challenge was sent. The worst case is that those sign-ins fail once
+  (`oauth.provider_error`) and the user starts again: an attempt lives ten minutes, so it
+  affects GitHub sign-ins begun in the ten minutes before the deployment and finished after
+  it, and with several instances also one started on an old instance and finished on a new
+  one while both run. Nothing is done about it in code: accepting a callback without the
+  verifier, even for a while, would be the gap this change closes.
 - **Apple**: OIDC with `response_mode=form_post` (the callback arrives as a cross-site `POST`),
   a client secret that is an ES256 JWT signed with the developer's key (team id, key id,
   Services ID; valid five minutes, minted per exchange), the ID token verified like Google's.

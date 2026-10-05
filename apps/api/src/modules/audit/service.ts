@@ -8,7 +8,13 @@ import {
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type Actor, cleanOrigin } from '~/lib/actor'
-import type { Activity, AuditEntry, Unrecorded, UnrecordedReason } from '~/ports/activity-log'
+import {
+  type Activity,
+  type AuditEntry,
+  type Unrecorded,
+  type UnrecordedReason,
+  unrecordedFor,
+} from '~/ports/activity-log'
 
 /** What happened, to build an {@link Activity} from. */
 export interface EntryInput {
@@ -61,8 +67,10 @@ export function entry(
  *
  * Every store method that changes who can do what requires an activity; this is the one way
  * to pass none, and it shows at the call site with its reason. The reasons are a closed list
- * (`UnrecordedReason`, ADR 0012), and the server's own code has none: a harness test fails if
- * this is called outside tests and test support.
+ * (`UnrecordedReason`, ADR 0012), and the server's own code has none: a test
+ * (`ports/activity-log.test.ts`) fails if a file outside tests and test support reaches this
+ * function by any import form. The value is branded with a key only the port's module holds,
+ * so it cannot be written as a literal instead.
  *
  * @param reason - Why the write is not recorded.
  * @returns The value to pass in place of the activity.
@@ -73,7 +81,7 @@ export function entry(
  * ```
  */
 export function none(reason: UnrecordedReason): Unrecorded {
-  return { unrecorded: reason }
+  return unrecordedFor(reason)
 }
 
 function toAuditLog(record: AuditEntry): AuditLog {
