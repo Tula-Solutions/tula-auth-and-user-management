@@ -1,5 +1,12 @@
 import { z } from 'zod'
+import { MAX_JWT_TEMPLATES } from './custom-claims'
 import { type Duration, DurationSchema, durationToMs } from './duration'
+import {
+  type JwtTemplate,
+  JwtTemplateSchema,
+  jwtTemplateOfProfile,
+  readStoredJwtTemplate,
+} from './jwt-template'
 import type { SessionClient } from './session'
 
 /**
@@ -124,6 +131,13 @@ const profileFields = {
    * which are chosen by client kind.
    */
   clientSelectable: z.boolean().default(false),
+  /**
+   * The JWT template whose custom claims this profile's sessions carry (a key of
+   * `sessions.jwtTemplates`), or `null` (the default) for none: such a session's token is
+   * exactly what it was before templates existed (ADR 0036). A name with no template is
+   * refused when the settings are saved.
+   */
+  jwtTemplate: SessionProfileNameSchema.nullable().default(null),
 }
 
 const refreshFields = {
@@ -257,6 +271,62 @@ function profilesOf(profile: ProfileSchema) {
     })
 }
 
+const TEMPLATE_NAME_RULE = `a template name is lowercase letters, digits and single hyphens, starting with a letter, at most ${MAX_SESSION_PROFILE_NAME_LENGTH} characters`
+
+function isTemplateName(name: string): boolean {
+  return name.length <= MAX_SESSION_PROFILE_NAME_LENGTH && PROFILE_NAME.test(name)
+}
+
+/**
+ * The environment's JWT templates by name (the grammar of a profile name), at most
+ * {@link MAX_JWT_TEMPLATES}. See `JwtTemplate`.
+ */
+const JwtTemplates = z
+  .record(z.string().refine(isTemplateName, { message: TEMPLATE_NAME_RULE }), JwtTemplateSchema)
+  .refine((templates) => Object.keys(templates).length <= MAX_JWT_TEMPLATES, {
+    message: `at most ${MAX_JWT_TEMPLATES} templates`,
+  })
+  .default({})
+
+// For stored documents: whatever this version would not accept is left out, never a failed
+// read (see `readStoredJwtTemplate`). Leaving a template out only ever removes claims.
+const StoredJwtTemplates = z
+  .unknown()
+  .optional()
+  .transform((stored): Record<string, JwtTemplate> => {
+    const templates: Record<string, JwtTemplate> = {}
+    if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) {
+      return templates
+    }
+    for (const name of Object.keys(stored)) {
+      const template = readStoredJwtTemplate((stored as Record<string, unknown>)[name])
+      if (template && isTemplateName(name) && Object.keys(templates).length < MAX_JWT_TEMPLATES) {
+        templates[name] = template
+      }
+    }
+    return templates
+  })
+
+/**
+ * Report every profile that names a template the document does not have: on the profile, so
+ * the message lands on the field that has to change.
+ */
+function templatesExist(
+  settings: { profiles: Record<string, unknown>; jwtTemplates: Record<string, JwtTemplate> },
+  context: z.RefinementCtx
+): void {
+  for (const [name, profile] of Object.entries(settings.profiles)) {
+    const { jwtTemplate } = profile as { jwtTemplate: string | null }
+    if (jwtTemplate !== null && !jwtTemplateOfProfile(settings, { jwtTemplate })) {
+      context.addIssue({
+        code: 'custom',
+        message: 'names a JWT template that does not exist',
+        path: ['profiles', name, 'jwtTemplate'],
+      })
+    }
+  }
+}
+
 const limitFields = {
   /**
    * The most live sessions one user may have; `null` (the default) = no limit. Only sessions
@@ -279,15 +349,29 @@ const limitFields = {
  *   take the defaults); up to {@link MAX_CUSTOM_SESSION_PROFILES} more may be added under
  *   kebab-case names.
  * - `maxPerUser` and `onLimit`: the concurrent-session rule.
+ * - `jwtTemplates`: named sets of custom claims (ADR 0036), at most
+ *   {@link MAX_JWT_TEMPLATES}; a profile uses one by naming it in its `jwtTemplate`. A profile
+ *   that names a template the document does not have is refused, so a template in use cannot
+ *   be removed without first unsetting it on every profile that names it.
  */
 export const SessionSettingsSchema = z
-  .strictObject({ profiles: profilesOf(SessionProfileSchema).prefault({}), ...limitFields })
+  .strictObject({
+    profiles: profilesOf(SessionProfileSchema).prefault({}),
+    ...limitFields,
+    jwtTemplates: JwtTemplates,
+  })
+  .superRefine(templatesExist)
   .meta({ ref: 'SessionSettings' })
 
-/** The `sessions` section of a stored settings document: unknown keys are dropped. */
+/**
+ * The `sessions` section of a stored settings document: unknown keys are dropped, and so is a
+ * template (or a claim of one) this version would not accept. A profile that names a template
+ * that is not there is read as stored and gets no custom claims (`jwtTemplateOfProfile`).
+ */
 export const StoredSessionSettingsSchema = z.object({
   profiles: profilesOf(StoredProfile).prefault({}),
   ...limitFields,
+  jwtTemplates: StoredJwtTemplates,
 })
 
 /** The `sessions` section of an environment's settings. */

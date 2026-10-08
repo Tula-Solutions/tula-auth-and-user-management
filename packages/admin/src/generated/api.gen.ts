@@ -16,6 +16,9 @@ export interface Schemas {
     auth_time?: number
     amr?: string[]
     sp?: string
+    ext?: {
+      [key: string]: string | number | boolean
+    }
   }
   ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted'
   ApiKey: {
@@ -424,6 +427,17 @@ export interface Schemas {
     meta: Schemas['PaginationMeta']
     data: Schemas['Environment'][]
   }
+  JwtTemplate: {
+    claims?: {
+      [key: string]: Schemas['JwtTemplateClaim']
+    }
+  }
+  JwtTemplateClaim: {
+    from: Schemas['JwtTemplateSource']
+  } | {
+    value: string | number | boolean
+  }
+  JwtTemplateSource: 'user.email' | 'user.email_verified' | 'user.created_at' | 'session.client' | 'session.created_at'
   MfaPolicy: 'off' | 'optional' | 'required'
   OAuthProvider: 'google' | 'github' | 'apple'
   OAuthProviderDeletedEvent: {
@@ -584,10 +598,12 @@ export interface Schemas {
     absoluteTimeout?: Schemas['Duration'] | null
     stepUpAfter?: Schemas['Duration'] | null
     clientSelectable?: boolean
+    jwtTemplate?: Schemas['SessionProfileName'] | null
     refresh?: {
       reuseGracePeriod?: Schemas['Duration'] | null
     }
   }
+  SessionProfileName: string
   SessionReuseDetectedEvent: {
     id: string
     type: 'session.reuse_detected'
@@ -630,6 +646,9 @@ export interface Schemas {
     }
     maxPerUser?: number | null
     onLimit?: Schemas['SessionLimitAction']
+    jwtTemplates?: {
+      [key: string]: Schemas['JwtTemplate']
+    }
   }
   SessionSteppedUpEvent: {
     id: string

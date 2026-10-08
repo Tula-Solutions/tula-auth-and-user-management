@@ -1742,6 +1742,8 @@ export interface PasskeyRequestOptions {
   allowCredentials?: PasskeyRequestOptionsAllowCredentialsItem[];
 }
 
+export type AccessTokenClaimsExt = {[key: string]: string | number | boolean};
+
 export interface AccessTokenClaims {
   iss: string;
   sub: string;
@@ -1767,6 +1769,7 @@ export interface AccessTokenClaims {
   auth_time?: number;
   amr?: string[];
   sp?: string;
+  ext?: AccessTokenClaimsExt;
 }
 
 export interface VerifySessionRequest {
@@ -1878,7 +1881,6 @@ export interface FlowAttempt {
 }
 
 /**
- * The session profile the client would like. Honoured only when the environment marks that profile `clientSelectable`; any other name is ignored and the session gets the profile of its client kind (`web`, or `mobile` for every other client).
  * @maxLength 32
  * @pattern ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$
  */
@@ -2323,6 +2325,7 @@ export interface SessionProfile {
   absoluteTimeout?: Duration | null;
   stepUpAfter?: Duration | null;
   clientSelectable?: boolean;
+  jwtTemplate?: SessionProfileName | null;
   refresh?: SessionProfileRefresh;
 }
 
@@ -2334,16 +2337,42 @@ export const SessionLimitAction = {
   refuse_newest: 'refuse_newest',
 } as const;
 
+export type JwtTemplateSource = typeof JwtTemplateSource[keyof typeof JwtTemplateSource];
+
+
+export const JwtTemplateSource = {
+  useremail: 'user.email',
+  useremail_verified: 'user.email_verified',
+  usercreated_at: 'user.created_at',
+  sessionclient: 'session.client',
+  sessioncreated_at: 'session.created_at',
+} as const;
+
+export type JwtTemplateClaim = {
+  from: JwtTemplateSource;
+} | {
+  value: string | number | boolean;
+};
+
+export type JwtTemplateClaims = {[key: string]: JwtTemplateClaim};
+
+export interface JwtTemplate {
+  claims?: JwtTemplateClaims;
+}
+
 export type SessionSettingsProfiles = {
   web?: SessionProfile;
   mobile?: SessionProfile;
   [key: string]: unknown;
 };
 
+export type SessionSettingsJwtTemplates = {[key: string]: JwtTemplate};
+
 export interface SessionSettings {
   profiles?: SessionSettingsProfiles;
   maxPerUser?: number | null;
   onLimit?: SessionLimitAction;
+  jwtTemplates?: SessionSettingsJwtTemplates;
 }
 
 export interface SettingsManagedBy {

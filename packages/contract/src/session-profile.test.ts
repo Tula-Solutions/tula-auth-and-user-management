@@ -35,6 +35,7 @@ describe('session profile defaults', () => {
       refresh: { reuseGracePeriod: '10s' },
       stepUpAfter: null,
       clientSelectable: false,
+      jwtTemplate: null,
     })
     expect(DEFAULT_WEB_SESSION_PROFILE).toEqual(SessionProfileSchema.parse({}))
     expect(DEFAULT_MOBILE_SESSION_PROFILE).toEqual(DEFAULT_WEB_SESSION_PROFILE)
@@ -45,6 +46,7 @@ describe('session profile defaults', () => {
       profiles: { web: DEFAULT_WEB_SESSION_PROFILE, mobile: DEFAULT_MOBILE_SESSION_PROFILE },
       maxPerUser: null,
       onLimit: 'end_oldest',
+      jwtTemplates: {},
     })
   })
 

@@ -1,5 +1,6 @@
 import { durationToMs } from './duration'
 import type { EnvironmentSettings } from './environment-settings'
+import { type JwtTemplateClaim, jwtTemplateOfProfile } from './jwt-template'
 import type { PasswordPolicy } from './password-policy'
 import { DEFAULT_STEP_UP_AFTER, type SessionProfile, type SessionSettings } from './session-profile'
 
@@ -88,6 +89,28 @@ function shorterRetention(was: number | null, is: number | null): boolean {
   return is !== null && (was === null || is < was)
 }
 
+/** The custom claims a profile's sessions carry: its template's, or none. */
+function claimsOf(
+  settings: SessionSettings,
+  profile: SessionProfile
+): Record<string, JwtTemplateClaim> {
+  return jwtTemplateOfProfile(settings, profile)?.template.claims ?? {}
+}
+
+/**
+ * Whether sessions that carried the claims `was` lose one, or get one that is read from
+ * somewhere else, when they carry `is` instead. A claim that is only added is not counted, and
+ * neither is the order the claims are written in.
+ */
+function claimsLost(
+  was: Record<string, JwtTemplateClaim>,
+  is: Record<string, JwtTemplateClaim>
+): boolean {
+  return Object.entries(was).some(
+    ([key, claim]) => !Object.hasOwn(is, key) || JSON.stringify(is[key]) !== JSON.stringify(claim)
+  )
+}
+
 /**
  * Where the `sessions` section got weaker:
  *
@@ -101,6 +124,15 @@ function shorterRetention(was: number | null, is: number | null): boolean {
  *   built-in would not have given, which is exactly how sessions come to "be had more
  *   freely". One that is no looser than `web`, or that clients cannot select (nothing can
  *   get it), weakens nothing.
+ *
+ * - `sessions.profiles.<name>.jwtTemplate`: the sessions of a profile that existed lose a
+ *   custom claim they carried, or a claim they carried is now read from another source or
+ *   holds another constant (see `claimsLost`). What is compared is what the sessions carry,
+ *   not how it is written: the profile stopped using its template, uses another, or its
+ *   template changed; a removed profile is compared with the built-in `web`. An application
+ *   may be authorizing on that claim, and one that reads a missing claim as permission would
+ *   open up. Adding a claim or a template, and changing a template no profile uses, is not
+ *   listed.
  *
  * Changing `onLimit` or a profile's `type` is not a weakening either way.
  */
@@ -119,6 +151,9 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
       : looser(after.profiles.web, was)
     if (weaker) {
       paths.push(`sessions.profiles.${name}`)
+    }
+    if (claimsLost(claimsOf(before, was), claimsOf(after, is ?? after.profiles.web))) {
+      paths.push(`sessions.profiles.${name}.jwtTemplate`)
     }
   }
   for (const [name, is] of Object.entries(after.profiles)) {
@@ -152,7 +187,11 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
  *   longer be told);
  * - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
  * - `sessions.maxPerUser`, `sessions.profiles.<name>`: sessions live longer or can be had
- *   more freely (a raised or removed limit, a looser profile, one clients may now select).
+ *   more freely (a raised or removed limit, a looser profile, one clients may now select);
+ * - `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or
+ *   one of their claims changes its source or its constant (ADR 0036). It is listed because
+ *   an application decides on those claims: taking one away can lock users out, and opens up
+ *   an application that reads a missing claim as permission.
  *
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
