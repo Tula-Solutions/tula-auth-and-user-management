@@ -1,6 +1,6 @@
 import { defineConfig } from 'bunup'
 
-// One entry per `exports` subpath (package.json › publishConfig.exports). The six besides the
+// One entry per `exports` subpath (package.json › publishConfig.exports). The seven besides the
 // index import no Zod, which is what lets an SDK use them without a schema library in the bundle.
 export default defineConfig({
   entry: [
@@ -11,6 +11,7 @@ export default defineConfig({
     'src/issuer.ts',
     'src/password-rules.ts',
     'src/theme.ts',
+    'src/webhook-signature.ts',
   ],
   format: ['esm'],
   // Runs anywhere the contract does: browsers, React Native, Node, Bun, edge runtimes.

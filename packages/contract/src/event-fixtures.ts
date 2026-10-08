@@ -10,6 +10,7 @@ const API_KEY = '0199c2f4-7a12-7a55-b3c4-6f1e2d8a9b03'
 const ENVIRONMENT = '0199c2f4-7a13-7b66-a4d5-7e2f3c9b0a04'
 const PASSKEY = '0199c2f4-7a14-7c77-95e6-8f3a4d0c1b05'
 const SIGNING_KEY = '0199c2f4-7a15-7d88-86f7-9a4b5e1d2c06'
+const WEBHOOK_ENDPOINT = '0199c2f4-7a18-7abb-99ca-cd7e8b4a5f09'
 
 const schemaVersion = EVENT_SCHEMA_VERSION
 const occurredAt = '2026-10-08T09:30:00.000Z'
@@ -24,6 +25,7 @@ const aboutUser = { type: 'user', id: USER } as const
 const aboutSession = { type: 'session', id: SESSION } as const
 const aboutApiKey = { type: 'api_key', id: API_KEY } as const
 const aboutEnvironment = { type: 'environment', id: ENVIRONMENT } as const
+const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } as const
 
 /** The id of the `n`th example event. */
 function eventId(n: number): string {
@@ -288,5 +290,32 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutEnvironment,
     data: { provider: 'apple' },
+  },
+  'webhook_endpoint.created': {
+    id: eventId(27),
+    type: 'webhook_endpoint.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: { eventTypes: 3, enabled: true },
+  },
+  'webhook_endpoint.updated': {
+    id: eventId(28),
+    type: 'webhook_endpoint.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: { changed: ['url', 'eventTypes', 'enabled'] },
+  },
+  'webhook_endpoint.deleted': {
+    id: eventId(29),
+    type: 'webhook_endpoint.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: {},
   },
 }

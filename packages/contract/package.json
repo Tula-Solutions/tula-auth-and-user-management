@@ -14,6 +14,7 @@
     "./issuer": "./src/issuer.ts",
     "./password-rules": "./src/password-rules.ts",
     "./theme": "./src/theme.ts",
+    "./webhook-signature": "./src/webhook-signature.ts",
     "./openapi.json": "./openapi.json"
   },
   "publishConfig": {
@@ -45,6 +46,10 @@
       "./theme": {
         "types": "./dist/theme.d.ts",
         "default": "./dist/theme.js"
+      },
+      "./webhook-signature": {
+        "types": "./dist/webhook-signature.d.ts",
+        "default": "./dist/webhook-signature.js"
       },
       "./openapi.json": "./openapi.json",
       "./package.json": "./package.json"
