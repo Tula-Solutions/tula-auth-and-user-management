@@ -1213,6 +1213,19 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   `expect(document.activeElement).toBe(element)`: focus moves in an effect, so the check races
   it, and a matcher that fails on a happy-dom element formats its whole window (a message of
   over 100 MB, which is what times CI out).
+- **Assert that something is not on the page with `expectAbsent(screen.queryBy…(…))`**
+  (`harness.tsx`), never `expect(screen.queryBy…(…)).toBeNull()`: that matcher fails exactly
+  when it holds an element, and then formats the window (22 seconds and 290 MB on CI, for one
+  button). `harness.test.tsx` fails for a test file of `packages/react` that does it.
+- **In `packages/react`, `findBy…`, `waitFor` and every `w.user` call return a page React has
+  finished with** (`src/testing/settle.ts`, installed by `setup.ts`): the effects of the last
+  commit have run, and so has every render they asked for. Testing Library alone returns after
+  the commit and one zero-delay timer, and on a starved runner that timer beats React's next
+  turn: a test then saw a control an effect was about to remove, and another typed into a
+  field while the title's focus effect was still to come. Never configure another
+  `asyncWrapper`, and keep the two `onAStarvedRunner` tests in `harness.test.tsx`: they fail
+  every time without it. A control that must never be drawn is a different claim: test what
+  was on the page when its effect ran (the `drawnWhenAsked` test in `passkey.test.tsx`).
 - **The documentation is tested** (`.claude/hooks/docs.test.ts`, in `test:harness`): every
   relative link and anchor in `docs/**` and the READMEs resolves; every variable in
   `apps/api/src/env.ts` is in `.env.example` and in the settings table of `docs/self-host.md`,

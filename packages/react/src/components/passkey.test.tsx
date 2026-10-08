@@ -11,6 +11,7 @@ import { useTula } from '../hooks/use-tula'
 import {
   attempt,
   completed,
+  expectAbsent,
   expectFocus,
   failure,
   json,
@@ -190,7 +191,7 @@ describe('<SignIn> with a passkey', () => {
     const field = await screen.findByLabelText('Email address')
     await waitFor(() => expect(w.api.calls(ROUTE.config)).toHaveLength(1))
     expect(field.getAttribute('autocomplete')).toBe('username')
-    expect(screen.queryByRole('button', { name: 'Sign in with a passkey' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Sign in with a passkey' }))
   })
 
   test('hidden, not broken, in a browser without WebAuthn', async () => {
@@ -198,7 +199,7 @@ describe('<SignIn> with a passkey', () => {
     w.mount(<SignIn />)
     const field = await screen.findByLabelText('Email address')
     await waitFor(() => expect(field.getAttribute('autocomplete')).toBe('username webauthn'))
-    expect(screen.queryByRole('button', { name: 'Sign in with a passkey' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Sign in with a passkey' }))
     expect(w.api.calls(PK.start)).toHaveLength(0)
   })
 
@@ -287,7 +288,7 @@ describe('<SignIn> with a passkey', () => {
     // success either: nothing was done, so it is drawn in the neutral tone, not the green one.
     expect(quiet.tagName).toBe('OUTPUT')
     expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
     expect(document.body.textContent).not.toContain('the browser said something')
     await expectFocus(button)
     expect(button.getAttribute('aria-disabled')).toBeNull()
@@ -350,6 +351,33 @@ describe('<SignIn> with a passkey', () => {
 
   test('after an address, in a browser without WebAuthn: the passkey is not among the ways', async () => {
     const w = passkeyWorld(null)
+    // The browser is asked from an effect, so each time it is asked the page is as the commit
+    // before left it: what a user sees until the answer has been drawn. The link used to be
+    // there (a passkey was "not ruled out yet") and to go away one render later, which a slow
+    // CI runner caught in between (TULA-64).
+    const drawnWhenAsked: number[] = []
+    spyOn(w.client.signIn, 'canUsePasskey').mockImplementation(() => {
+      drawnWhenAsked.push(
+        screen.queryAllByRole('button', { name: 'Sign in with a passkey' }).length
+      )
+      return false
+    })
+    w.mount(<SignIn />)
+    w.api.on(ROUTE.signIn, () =>
+      started('sign_in', { status: 'needs_first_factor', strategies: ['password', 'passkey'] })
+    )
+    await w.user.type(await screen.findByLabelText('Email address'), EMAIL)
+    const askedBefore = drawnWhenAsked.length
+    await w.user.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByLabelText('Password')
+    // The screen that lists the ways asked for itself, and never had the link.
+    expect(drawnWhenAsked.length).toBeGreaterThan(askedBefore)
+    expect(drawnWhenAsked.every((count) => count === 0)).toBe(true)
+    expectAbsent(screen.queryByRole('button', { name: 'Sign in with a passkey' }))
+  })
+
+  test('after an address, in a browser with WebAuthn: the passkey joins the other ways once the browser has said so', async () => {
+    const w = passkeyWorld()
     w.mount(<SignIn />)
     w.api.on(ROUTE.signIn, () =>
       started('sign_in', { status: 'needs_first_factor', strategies: ['password', 'passkey'] })
@@ -357,7 +385,12 @@ describe('<SignIn> with a passkey', () => {
     await w.user.type(await screen.findByLabelText('Email address'), EMAIL)
     await w.user.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByLabelText('Password')
-    expect(screen.queryByRole('button', { name: 'Sign in with a passkey' })).toBeNull()
+    const ways = screen.getByRole('list', { name: 'Other ways to sign in' })
+    expect(
+      within(ways)
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+    ).toEqual(['Sign in with a passkey'])
   })
 
   test('where a passkey is the only way and the browser has none: the unsupported screen', async () => {
@@ -440,7 +473,7 @@ describe('<SignIn> passkeys in the address field’s autofill', () => {
     expect(waiting?.signal?.aborted).toBe(true)
     expect(live(browser)).toHaveLength(0)
     // Its ending is the screen's own doing: nothing is said about it.
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
 
     const modal = browser.gets.find((get) => !get.conditional)
     await act(async () => {
@@ -522,7 +555,7 @@ describe('a passkey as the second factor', () => {
     w.mount(<SignIn />)
     await passwordAnswers(w, secondFactor(['passkey']))
     expect(await screen.findByText(/This browser cannot use passkeys/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Use your passkey' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Use your passkey' }))
     expect(screen.getByRole('button', { name: 'Back to sign in' })).toBeTruthy()
   })
 
@@ -544,14 +577,14 @@ describe('a passkey as the second factor', () => {
 
     await w.user.click(use)
     expect(await screen.findByText(/passkey request was cancelled or timed out/)).toBeTruthy()
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
     await expectFocus(use)
     // Nothing was sent to be judged, and nothing of the dismissal follows to the code form.
     expect(w.api.calls(PK.second)).toHaveLength(0)
     await w.user.click(screen.getByRole('button', { name: 'Use your authenticator app' }))
     await expectFocus(await screen.findByLabelText('Authentication code'))
-    expect(screen.queryByText(/passkey request was cancelled/)).toBeNull()
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByText(/passkey request was cancelled/))
+    expectAbsent(screen.queryByRole('alert'))
   })
 
   test('next to a code, in a browser without WebAuthn: the passkey is not offered', async () => {
@@ -559,7 +592,7 @@ describe('a passkey as the second factor', () => {
     w.mount(<SignIn />)
     await passwordAnswers(w, secondFactor(['totp', 'passkey']))
     await screen.findByLabelText('Authentication code')
-    expect(screen.queryByRole('button', { name: 'Use your passkey instead' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Use your passkey instead' }))
   })
 
   test('a refused passkey is an alert; a wrong code afterwards is the code field’s', async () => {
@@ -573,7 +606,7 @@ describe('a passkey as the second factor', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('incorrect')
     await w.user.click(screen.getByRole('button', { name: 'Use your authenticator app' }))
     await screen.findByLabelText('Authentication code')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
   })
 })
 
@@ -638,7 +671,7 @@ describe('the step-up dialog with a passkey', () => {
     const w = steppingWorld('passkey')
     const dialog = await open(w)
     expect(within(dialog).getByText('Use your passkey to continue.')).toBeTruthy()
-    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText('Password'))
     await w.user.click(within(dialog).getByRole('button', { name: 'Use your passkey' }))
     expect(await screen.findByText('result: done')).toBeTruthy()
     await waitFor(() => expect(openDialogs()).toBe(0))
@@ -670,7 +703,7 @@ describe('the step-up dialog with a passkey', () => {
     await w.user.click(use)
     const quiet = await within(dialog).findByText(/passkey request was cancelled/)
     expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
-    expect(within(dialog).queryByRole('alert')).toBeNull()
+    expectAbsent(within(dialog).queryByRole('alert'))
     await expectFocus(use)
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     expect(await screen.findByText('result: declined')).toBeTruthy()
@@ -681,7 +714,7 @@ describe('the step-up dialog with a passkey', () => {
     const w = steppingWorld('totp,backup_code,passkey')
     const dialog = await open(w)
     await within(dialog).findByLabelText('Authentication code')
-    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText('Password'))
     await w.user.click(
       await within(dialog).findByRole('button', { name: 'Use your passkey instead' })
     )
@@ -694,7 +727,7 @@ describe('the step-up dialog with a passkey', () => {
     const w = steppingWorld('passkey,password', null)
     const dialog = await open(w)
     expect(await within(dialog).findByLabelText('Password')).toBeTruthy()
-    expect(within(dialog).queryByRole('button', { name: 'Use your passkey instead' })).toBeNull()
+    expectAbsent(within(dialog).queryByRole('button', { name: 'Use your passkey instead' }))
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
   })
@@ -751,8 +784,8 @@ describe('<UserProfile> passkeys', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    expect(screen.queryByRole('heading', { name: 'Passkeys' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(screen.queryByRole('heading', { name: 'Passkeys' }))
+    expectAbsent(screen.queryByRole('button', { name: 'Add a passkey' }))
   })
 
   test('passkeys off and the user has one: listed, renamed and removed as ever, with no "Add" and a line saying so', async () => {
@@ -760,7 +793,7 @@ describe('<UserProfile> passkeys', () => {
     w.mount(<UserProfile />)
     const area = await section()
     expect(await within(area).findByText('MacBook')).toBeTruthy()
-    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(within(area).queryByRole('button', { name: 'Add a passkey' }))
     expect(within(area).getByText(/New passkeys cannot be added right now/)).toBeTruthy()
     expect(within(area).getByRole('button', { name: 'Rename MacBook' })).toBeTruthy()
 
@@ -769,8 +802,8 @@ describe('<UserProfile> passkeys', () => {
     // The removal is confirmed where it happened, with the focus on the section's title.
     expect(await within(area).findByText('The passkey was removed.')).toBeTruthy()
     expect(w.api.calls(PK.remove)).toHaveLength(1)
-    expect(within(area).queryByText('MacBook')).toBeNull()
-    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(within(area).queryByText('MacBook'))
+    expectAbsent(within(area).queryByRole('button', { name: 'Add a passkey' }))
     await expectFocus(within(area).getByRole('heading', { name: 'Passkeys' }))
   })
 
@@ -782,7 +815,7 @@ describe('<UserProfile> passkeys', () => {
     await w.user.click(await within(area).findByRole('button', { name: 'Remove passkey' }))
     expect(await within(area).findByText('The passkey was removed.')).toBeTruthy()
     expect(within(area).getByText('YubiKey')).toBeTruthy()
-    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(within(area).queryByRole('button', { name: 'Add a passkey' }))
     await expectFocus(within(area).getByRole('heading', { name: 'Passkeys' }))
   })
 
@@ -846,7 +879,7 @@ describe('<UserProfile> passkeys', () => {
     const again = await screen.findByRole('dialog')
     await w.user.click(within(again).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
-    expect(within(area).queryByRole('alert')).toBeNull()
+    expectAbsent(within(area).queryByRole('alert'))
     expect(w.api.calls(PK.create)).toHaveLength(1)
   })
 
@@ -864,7 +897,7 @@ describe('<UserProfile> passkeys', () => {
     const quiet = await within(area).findByText(/passkey request was cancelled/)
     expect(quiet.tagName).toBe('OUTPUT')
     expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
-    expect(within(area).queryByRole('alert')).toBeNull()
+    expectAbsent(within(area).queryByRole('alert'))
     await expectFocus(add)
     expect(add.getAttribute('aria-disabled')).toBeNull()
 
@@ -884,7 +917,7 @@ describe('<UserProfile> passkeys', () => {
       expect(within(area).getByRole('alert').textContent).not.toContain('already has a passkey')
     )
     expect(w.api.calls(PK.create)).toHaveLength(1)
-    expect(within(area).queryByText('Your passkey was added.')).toBeNull()
+    expectAbsent(within(area).queryByText('Your passkey was added.'))
   })
 
   test('rename: a field under the row, a name is required, and focus returns to "Rename"', async () => {
@@ -914,7 +947,7 @@ describe('<UserProfile> passkeys', () => {
     expect(await within(area).findByText('The passkey was renamed.')).toBeTruthy()
     expect(w.api.calls(PK.rename)[0]?.body).toEqual({ name: 'Work laptop' })
     await expectFocus(await within(area).findByRole('button', { name: 'Rename Work laptop' }))
-    expect(within(area).queryByLabelText('Passkey name')).toBeNull()
+    expectAbsent(within(area).queryByLabelText('Passkey name'))
   })
 
   test('rename can be cancelled, and a refusal keeps the field open with its message', async () => {
@@ -925,7 +958,7 @@ describe('<UserProfile> passkeys', () => {
     await w.user.click(rename)
     await w.user.click(await within(area).findByRole('button', { name: 'Cancel' }))
     await expectFocus(rename)
-    expect(within(area).queryByLabelText('Passkey name')).toBeNull()
+    expectAbsent(within(area).queryByLabelText('Passkey name'))
 
     w.api.on(PK.rename, () => failure(404, 'resource.not_found'))
     await w.user.click(rename)
@@ -953,7 +986,7 @@ describe('<UserProfile> passkeys', () => {
     await w.user.click(await within(area).findByRole('button', { name: 'Remove passkey' }))
     expect(await within(area).findByText('The passkey was removed.')).toBeTruthy()
     expect(w.api.calls(PK.remove)).toHaveLength(1)
-    expect(within(area).queryByText('MacBook')).toBeNull()
+    expectAbsent(within(area).queryByText('MacBook'))
     expect(within(area).getByText('YubiKey')).toBeTruthy()
     await expectFocus(within(area).getByRole('heading', { name: 'Passkeys' }))
   })
@@ -969,7 +1002,7 @@ describe('<UserProfile> passkeys', () => {
     const alert = await within(area).findByRole('alert')
     expect(alert.textContent?.length).toBeGreaterThan(10)
     expect(within(area).getByText('MacBook')).toBeTruthy()
-    expect(within(area).queryByRole('group')).toBeNull()
+    expectAbsent(within(area).queryByRole('group'))
     await expectFocus(remove)
   })
 
@@ -978,7 +1011,7 @@ describe('<UserProfile> passkeys', () => {
     w.mount(<UserProfile />)
     const area = await section()
     expect(await within(area).findByText(/This browser cannot create passkeys/)).toBeTruthy()
-    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(within(area).queryByRole('button', { name: 'Add a passkey' }))
     expect(await within(area).findByRole('button', { name: 'Remove MacBook' })).toBeTruthy()
   })
 
@@ -988,8 +1021,8 @@ describe('<UserProfile> passkeys', () => {
     w.mount(<UserProfile />)
     const area = await section()
     expect(await within(area).findByRole('alert')).toBeTruthy()
-    expect(within(area).queryByText('You have no passkeys yet.')).toBeNull()
-    expect(within(area).queryByText('Loading your passkeys…')).toBeNull()
+    expectAbsent(within(area).queryByText('You have no passkeys yet.'))
+    expectAbsent(within(area).queryByText('Loading your passkeys…'))
   })
 
   test('a result that arrives after the session ended is dropped', async () => {
@@ -1011,7 +1044,7 @@ describe('<UserProfile> passkeys', () => {
       finish({ toJSON: () => REGISTRATION })
       await Promise.resolve()
     })
-    expect(screen.queryByText('Your passkey was added.')).toBeNull()
+    expectAbsent(screen.queryByText('Your passkey was added.'))
     // The dialog that was open was ended with the session.
     const request = browser.creates[0] as { signal?: AbortSignal }
     expect(request.signal?.aborted).toBe(true)

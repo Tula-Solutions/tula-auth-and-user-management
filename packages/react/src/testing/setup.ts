@@ -13,7 +13,13 @@ GlobalRegistrator.register({ url: 'http://localhost:5173/' })
 // own `beforeAll` when first imported, which the runner refuses inside a test or a hook. It
 // cleans up after each test only when it finds a global `afterEach`; with `bun:test` it has to
 // be asked.
-const { cleanup } = await import('@testing-library/react')
+const { act, cleanup, configure, getConfig } = await import('@testing-library/react')
+const { settlingWrapper } = await import('./settle')
+
+// `findBy…`, `waitFor` and user-event return a page React has finished with, not one whose
+// effects are still to run: see `reactSettled` for the race this removes.
+configure({ asyncWrapper: settlingWrapper(getConfig().asyncWrapper, act) })
+
 afterEach(() => {
   cleanup()
 })

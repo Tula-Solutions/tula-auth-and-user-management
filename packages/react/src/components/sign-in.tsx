@@ -538,10 +538,10 @@ function FirstFactorScreen(
   const linkConfigured = safeUrl(props.emailLinkUrl, 'http://localhost') !== null
   // Until the browser has been asked (after mount) a passkey is not ruled out: where it is the
   // only method, the screen must not open on "not supported" and then change its mind.
-  const passkeyUsable = usePasskeySupport() !== false
+  const passkeySupport = usePasskeySupport()
   const known = supportedStrategies(step.strategies, {
     link: storageUsable && linkConfigured,
-    passkey: passkeyUsable,
+    passkey: passkeySupport !== false,
   })
   // What the user picked on this screen; until then, what the server last emailed for, or the
   // first strategy on offer.
@@ -558,6 +558,11 @@ function FirstFactorScreen(
   const others = known.filter(
     (strategy) =>
       strategy !== active &&
+      // Among the other ways only once the browser is known to have WebAuthn, as on the
+      // second-factor and step-up screens: "not ruled out" above is for the screen itself. A
+      // link that is drawn and then taken away, in a browser that cannot use it, is a control
+      // that is broken for as long as it shows.
+      (strategy !== 'passkey' || passkeySupport === true) &&
       // The email a link came in carries the code, and that screen takes it.
       !(strategy === 'email_code' && active === 'email_link' && prepared?.strategy === 'email_link')
   )

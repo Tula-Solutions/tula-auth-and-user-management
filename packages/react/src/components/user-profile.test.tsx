@@ -4,6 +4,7 @@ import type { Session } from '@tula/core'
 import { StrictMode } from 'react'
 import {
   attempt,
+  expectAbsent,
   expectFocus,
   failure,
   json,
@@ -62,7 +63,7 @@ describe('<UserProfile>', () => {
     const w = world()
     const { container } = w.mount(<UserProfile />)
     await waitFor(() => expect(w.client.state.status).toBe('signed-out'))
-    expect(container.querySelector('[data-tula-element="card"]')).toBeNull()
+    expectAbsent(container.querySelector('[data-tula-element="card"]'))
   })
 
   test('profile, and the devices with this one marked', async () => {
@@ -86,7 +87,7 @@ describe('<UserProfile>', () => {
     expect(within(current).getByText('This device')).toBeTruthy()
     expect(within(current).getByText('Active now')).toBeTruthy()
     // This device has no sign-out button of its own.
-    expect(within(current).queryByRole('button')).toBeNull()
+    expectAbsent(within(current).queryByRole('button'))
     expect(within(phone).getByText('Safari on iPhone')).toBeTruthy()
     expect(within(phone).getByText('Last active 2 days ago')).toBeTruthy()
     expect(within(phone).getByRole('button', { name: 'Sign out Safari on iPhone' })).toBeTruthy()
@@ -103,13 +104,13 @@ describe('<UserProfile>', () => {
     w.mount(<UserProfile />)
     await w.user.click(await screen.findByRole('button', { name: 'Sign out Safari on iPhone' }))
     expect(await screen.findByText('That device was signed out.')).toBeTruthy()
-    expect(screen.queryByText('Safari on iPhone')).toBeNull()
+    expectAbsent(screen.queryByText('Safari on iPhone'))
     expect(w.api.calls('DELETE /v1/client/sessions/session_2')).toHaveLength(1)
 
     await w.user.click(screen.getByRole('button', { name: 'Sign out of all other devices' }))
     expect(await screen.findByText('Signed out of 2 other devices.')).toBeTruthy()
     // Only this device is left, and with it nothing to sign out.
-    expect(screen.queryByRole('button', { name: 'Sign out of all other devices' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Sign out of all other devices' }))
     expect(w.client.state.status).toBe('signed-in')
   })
 
@@ -120,7 +121,7 @@ describe('<UserProfile>', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       'The service is temporarily unavailable. Try again shortly.'
     )
-    expect(screen.queryByText('Loading your devices…')).toBeNull()
+    expectAbsent(screen.queryByText('Loading your devices…'))
   })
 
   test('a revoke the server refuses leaves the list and shows why', async () => {
@@ -249,7 +250,7 @@ describe('<UserProfile>', () => {
     })
     expect(await screen.findByText('other@northline.app')).toBeTruthy()
     expect((screen.getByLabelText('Current password') as HTMLInputElement).value).toBe('')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
   })
 
   test('the device list is fetched once, however often effects run', async () => {
@@ -295,9 +296,9 @@ describe('<UserProfile>', () => {
     expect(section.getAttribute('aria-labelledby')).toBe(heading.id)
     expect(section.textContent).toContain('This account has no password')
     expect(section.textContent).toContain('Forgot password?')
-    expect(screen.queryByLabelText('Current password')).toBeNull()
-    expect(screen.queryByLabelText('New password')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Update password' })).toBeNull()
+    expectAbsent(screen.queryByLabelText('Current password'))
+    expectAbsent(screen.queryByLabelText('New password'))
+    expectAbsent(screen.queryByRole('button', { name: 'Update password' }))
     expect(w.api.calls(ROUTE.changePassword)).toHaveLength(0)
   })
 
@@ -348,7 +349,7 @@ describe('<UserProfile>', () => {
     await w.user.click(buttons.at(-1) as HTMLElement)
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/bye'))
     expect(w.client.state.status).toBe('signed-out')
-    expect(container.querySelector('[data-tula-element="card"]')).toBeNull()
+    expectAbsent(container.querySelector('[data-tula-element="card"]'))
     expect(openDialogs()).toBe(0)
   })
 

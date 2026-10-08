@@ -159,6 +159,13 @@ paths:
   the field it belongs to.
 - Tests: `bun test` in happy-dom (preload `src/testing/setup.ts`), Testing Library queries by
   role and label, the world from `src/testing/harness.tsx`. Coverage is per file (90%).
+  Absence is `expectAbsent(screen.queryBy…(…))`, never `expect(…).toBeNull()` on a query's
+  result (a failing matcher formats the element's whole window). An awaited `findBy…`,
+  `waitFor` or `w.user` call returns after React's pending effects and their renders
+  (`src/testing/settle.ts`): do not configure another `asyncWrapper`.
+- A passkey is listed among a screen's other ways only once the browser is known to have
+  WebAuthn (`usePasskeySupport() === true`), on the first-factor, second-factor and step-up
+  screens alike: "not ruled out yet" is for the screen itself, never for a link.
 - Browser tests live in `e2e/tests`. A new screen or state gets a scenario and an
   `expectAccessible` call in both colour schemes; no axe rule is disabled without a comment
   saying why. `e2e/server.ts` must keep refusing to start without `E2E=1`.

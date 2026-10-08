@@ -5,6 +5,7 @@ import {
   attempt,
   CODE_STEP,
   completed,
+  expectAbsent,
   expectFocus,
   failure,
   ROUTE,
@@ -230,7 +231,7 @@ describe('<SignUp>', () => {
       'That code is incorrect. 4 attempts left.'
     )
     // The confirmation of the resend does not linger next to the new error.
-    expect(screen.queryByText('A new code is on its way.')).toBeNull()
+    expectAbsent(screen.queryByText('A new code is on its way.'))
   })
 
   test('the sign-in link uses the provider’s URL', async () => {
