@@ -7,7 +7,13 @@ import { createQueryClient } from '~/app'
 import { useSettingsEditor } from '~/features/settings/settings-editor'
 import { EnvironmentProvider } from '~/features/shell/environment-context'
 import { useScope } from '~/state/scope'
-import { type FakeApi, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
+import {
+  type FakeApi,
+  fakeWebhookDelivery,
+  fakeWebhookEndpoint,
+  IDS,
+  installFakeApi,
+} from '~/testing/fake-api'
 import {
   DEV_PATH,
   holdAnswers,
@@ -262,18 +268,94 @@ describe('switching environment', () => {
 
   test('an open deletion of a webhook endpoint does not survive a switch', async () => {
     const api = installFakeApi()
-    api.state.webhookEndpoints.push(fakeWebhookEndpoint({ url: WEBHOOK_ADDRESS }))
+    // The worst case: production has an endpoint of the same address, and (which no real
+    // server does) of the same id. A card that was kept would be this one's, with the
+    // confirmation still open on it; an empty production list would close it by itself.
+    // (Three things each close it, and this test passes while any one holds: the screens'
+    // key on the environment, the list item's, and the list being read again from nothing
+    // after a switch. The first is what the tests of the signing secret and of the users'
+    // confirmation fail without.)
+    const development = fakeWebhookEndpoint({ url: WEBHOOK_ADDRESS })
+    api.state.webhookEndpoints.push(development, {
+      ...development,
+      environmentId: IDS.production,
+    })
     const current = start(`${DEV_PATH}/webhooks`, { api })
     const { user, router, location } = current
+    // Production's list is already known, so nothing has to load on the way there.
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` })
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/webhooks`))
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.development)
+    )
     await user.click(await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` }))
     await waitFor(() => expect(openDialogs()).toBe(1))
 
     await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
     await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
-    await screen.findByText('No webhook endpoints yet')
-    await waitFor(() => expect(openDialogs()).toBe(0))
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.production)
+    )
+    await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` })
+    expect(openDialogs()).toBe(0)
     expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
-    expect(api.state.webhookEndpoints).toHaveLength(1)
+    expect(api.state.webhookEndpoints).toHaveLength(2)
+  })
+})
+
+// The router keeps a route's component when only `$endpointId` or `$deliveryId` changes, and
+// a query that is already cached draws at once: without a key, what was opened or shown for
+// one endpoint or delivery would be on the screen of the next.
+describe('what was opened for one endpoint or delivery is not on the screen of the next', () => {
+  test('a deletion opened on one endpoint’s screen is not open on another’s', async () => {
+    const api = installFakeApi()
+    const first = fakeWebhookEndpoint({ url: 'https://one.example.com/webhooks' })
+    const second = fakeWebhookEndpoint({ url: 'https://two.example.com/webhooks' })
+    api.state.webhookEndpoints.push(first, second)
+    const { user, router, location } = start(`${DEV_PATH}/webhooks/${second.id}`, { api })
+    // The second endpoint is read first, so that it is drawn at once when it is come back to.
+    await screen.findByRole('button', { name: `Delete ${second.url}` })
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks/${first.id}` }))
+    await user.click(await screen.findByRole('button', { name: `Delete ${first.url}` }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks/${second.id}` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/webhooks/${second.id}`))
+    await screen.findByRole('button', { name: `Delete ${second.url}` })
+    expect(openDialogs()).toBe(0)
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+    expect(api.state.webhookEndpoints).toHaveLength(2)
+  })
+
+  test('the result of sending one delivery again is not shown on another delivery', async () => {
+    const api = installFakeApi()
+    const endpoint = fakeWebhookEndpoint({ url: WEBHOOK_ADDRESS })
+    const first = fakeWebhookDelivery(endpoint.id, { eventType: 'user.created' })
+    const second = fakeWebhookDelivery(endpoint.id, { eventType: 'session.revoked' })
+    api.state.webhookEndpoints.push(endpoint)
+    api.state.webhookDeliveries.push(first, second)
+    const at = (delivery: { id: string }) =>
+      `${DEV_PATH}/webhooks/${endpoint.id}/deliveries/${delivery.id}`
+    const { user, router, location } = start(at(second), { api })
+    await screen.findByText('session.revoked')
+    await act(() => router.navigate({ href: at(first) }))
+    await screen.findByText('user.created')
+    await user.click(screen.getByRole('button', { name: 'Send again' }))
+    expect((await screen.findByTestId('send-result')).textContent).toBe(
+      'Delivered: the endpoint answered 204 in 41 ms.'
+    )
+
+    await act(() => router.navigate({ href: at(second) }))
+    await waitFor(() => expect(location()).toBe(at(second)))
+    await screen.findByText('session.revoked')
+    expect(screen.queryAllByTestId('send-result')).toHaveLength(0)
+    expect(api.calls.filter((call) => call.path.endsWith('/redeliver'))).toHaveLength(1)
   })
 })
 
