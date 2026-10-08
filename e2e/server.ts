@@ -8,6 +8,7 @@ import { findDashboardDir } from '../apps/api/src/lib/dashboard-files'
 import * as Audit from '../apps/api/src/modules/audit/service'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
 import * as OAuth from '../apps/api/src/modules/oauth/service'
+import * as Webhooks from '../apps/api/src/modules/webhook/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '../apps/api/src/testing'
 import {
@@ -15,11 +16,13 @@ import {
   EnvironmentSettingsSchema,
 } from '../packages/contract/src/index'
 import { testRouteRefusal } from './guard'
+import { RECEIVER_PORT, receiverResponse } from './receiver'
 
 // The server the browser tests run against: the REAL API (`createApp`, every route and
-// middleware) on memory adapters, plus the built example app, on two local ports. Nothing is
-// mocked; the only differences from production are where data lives (memory) and where email
-// goes (an outbox the tests read).
+// middleware) on memory adapters, the built example app, and a receiver for the dashboard's
+// webhook tests to have deliveries sent to, on three local ports (`API_PORT`, `APP_PORT`,
+// `RECEIVER_PORT`). Nothing of the API is mocked; the only differences from production are
+// where data lives (memory) and where email goes (an outbox the tests read).
 //
 //   E2E=1 bun run e2e/server.ts
 //
@@ -327,6 +330,11 @@ function testRoute(request: Request): Response | Promise<Response> | null {
     clock.reset()
     return json({ now: clock.now().getTime() })
   }
+  if (request.method === 'POST' && url.pathname === '/__test/webhook-round') {
+    // One round of the webhook worker (`server.ts` runs it on a timer; the fixture has none),
+    // so that a test decides when what is owed is queued and sent.
+    return Webhooks.run(deps).then((report) => json({ report }))
+  }
   return json({ error: 'unknown test route' }, 404)
 }
 
@@ -360,6 +368,20 @@ const web = Bun.serve({
   },
 })
 
+/**
+ * Where the dashboard's webhook tests have deliveries sent: `receiverResponse`
+ * (`e2e/receiver.ts`), which answers with the status code a path names and nothing else,
+ * behind the same guard as the test routes. Bound to the loopback **address**, which is the
+ * one place the API's own outbound guard lets a delivery go in the `local` tier; nothing
+ * about that guard is changed for it.
+ */
+const receiver = Bun.serve({
+  port: RECEIVER_PORT,
+  hostname: '127.0.0.1',
+  fetch: (request) => receiverResponse(request),
+})
+
 process.stdout.write(
-  `e2e: API on ${api.url.origin} (memory adapters), example app on ${web.url.origin}\n`
+  `e2e: webhook receiver on ${receiver.url.origin}\n` +
+    `e2e: API on ${api.url.origin} (memory adapters), example app on ${web.url.origin}\n`
 )

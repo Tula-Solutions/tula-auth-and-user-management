@@ -27,6 +27,9 @@ import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRouteImpor
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/signing-keys'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/users/index'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/users/$userId'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/webhooks/index'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/webhooks/$endpointId/index'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/webhooks/$endpointId/deliveries/$deliveryId'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -129,6 +132,28 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute =
     path: '/users/$userId',
     getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
   } as any)
+const AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRouteImport.update({
+    id: '/webhooks/',
+    path: '/webhooks/',
+    getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+  } as any)
+const AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRouteImport.update(
+    {
+      id: '/webhooks/$endpointId/',
+      path: '/webhooks/$endpointId/',
+      getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+    } as any,
+  )
+const AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRouteImport.update(
+    {
+      id: '/webhooks/$endpointId/deliveries/$deliveryId',
+      path: '/webhooks/$endpointId/deliveries/$deliveryId',
+      getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -148,6 +173,9 @@ export interface FileRoutesByFullPath {
   '/w/$workspaceId/p/$projectId/e/$environmentId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
@@ -166,6 +194,9 @@ export interface FileRoutesByTo {
   '/w/$workspaceId/p/$projectId/e/$environmentId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -187,6 +218,9 @@ export interface FileRoutesById {
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -208,6 +242,9 @@ export interface FileRouteTypes {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/sign-in'
@@ -226,6 +263,9 @@ export interface FileRouteTypes {
     | '/w/$workspaceId/p/$projectId/e/$environmentId'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId'
   id:
     | '__root__'
     | '/_app'
@@ -246,6 +286,9 @@ export interface FileRouteTypes {
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -381,6 +424,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRouteImport
       parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
     }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/'
+      path: '/webhooks'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/'
+      path: '/webhooks/$endpointId'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId'
+      path: '/webhooks/$endpointId/deliveries/$deliveryId'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/deliveries/$deliveryId'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
   }
 }
 
@@ -395,6 +459,9 @@ interface AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren {
   AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRoute
 }
 
 const AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren: AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren =
@@ -419,6 +486,12 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren: AppWWorkspaceId
       AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdDeliveriesDeliveryIdRoute,
   }
 
 const AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteWithChildren =

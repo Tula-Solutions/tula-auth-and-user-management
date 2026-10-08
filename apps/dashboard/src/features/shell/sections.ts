@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Timer,
   Users,
+  Webhook,
 } from 'lucide-react'
 
 /** The base path of everything that belongs to one environment. */
@@ -24,6 +25,7 @@ export interface EnvironmentSection {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/api-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/audit-log'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
   label: string
@@ -58,6 +60,7 @@ export const ENVIRONMENT_SECTIONS: readonly EnvironmentSection[] = [
     label: 'Signing keys',
     icon: FileKey2,
   },
+  { segment: 'webhooks', to: `${ENVIRONMENT_PATH}/webhooks`, label: 'Webhooks', icon: Webhook },
   {
     segment: 'audit-log',
     to: `${ENVIRONMENT_PATH}/audit-log`,

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { screen, waitFor, within } from '@testing-library/react'
-import { FAKE_TOKEN, failure, IDS, installFakeApi } from '~/testing/fake-api'
+import { act, screen, waitFor, within } from '@testing-library/react'
+import { FAKE_TOKEN, failure, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
 import {
   DEV_PATH,
   expectFocus,
@@ -33,6 +33,14 @@ async function heading(name: string | RegExp): Promise<HTMLElement> {
 
 function dialog(): HTMLElement {
   return screen.getByRole('dialog')
+}
+
+/** Everything the query client holds of its mutations: their answers and what they were sent. */
+function mutationsOf(current: World): unknown[] {
+  return current.queryClient
+    .getMutationCache()
+    .getAll()
+    .map((mutation) => [mutation.state.data, mutation.state.variables])
 }
 
 describe('session', () => {
@@ -328,6 +336,110 @@ describe('API keys', () => {
     await user.click(within(dialog()).getByRole('button', { name: 'Revoke key' }))
     await screen.findByText(/^Revoked/)
     expect(api.state.keys[0]?.revokedAt).not.toBeNull()
+  })
+})
+
+describe('webhook signing secrets', () => {
+  const URL = 'https://api.example.com/webhooks/tula'
+
+  test('a new endpoint’s secret is shown once and is gone everywhere after the dialog closes', async () => {
+    const { user, api } = start(`${DEV_PATH}/webhooks`)
+    await heading('Webhooks')
+    await user.click(await screen.findByRole('button', { name: 'Add endpoint' }))
+    await user.type(within(dialog()).getByLabelText('Address'), URL)
+    await user.click(within(dialog()).getByRole('checkbox', { name: 'user.created' }))
+    await user.click(within(dialog()).getByRole('checkbox', { name: 'session.revoked' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Add endpoint' }))
+
+    const shown = await within(dialog()).findByTestId('webhook-secret')
+    const secret = shown.textContent ?? ''
+    expect(secret).toMatch(/^whsec_[A-Za-z0-9+/=]{20,}$/)
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Copy the signing secret now')
+    // The request named the address and the types, and nothing else: the server makes the secret.
+    expect(api.callsTo('POST', '/v1/admin/webhook-endpoints').at(-1)?.body).toEqual({
+      url: URL,
+      eventTypes: ['user.created', 'session.revoked'],
+      enabled: true,
+    })
+    // While it is on screen it is in the document, and nowhere else.
+    expect(localStorage.length + sessionStorage.length).toBe(0)
+    expect(JSON.stringify(mutationsOf(world as World)).includes(secret)).toBe(false)
+    await user.click(within(dialog()).getByRole('button', { name: 'I have copied it' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectNothingKept(world as World, [secret])
+    await screen.findByRole('heading', { level: 2, name: URL })
+    await screen.findByText('1 of 10 endpoints')
+
+    // Walk on: another screen, back again, the dialog reopened. The secret never comes back.
+    await user.click(screen.getByRole('link', { name: 'API keys' }))
+    await heading('API keys')
+    expectNothingKept(world as World, [secret])
+    await user.click(screen.getByRole('link', { name: 'Webhooks' }))
+    await heading('Webhooks')
+    await user.click(await screen.findByRole('button', { name: 'Add endpoint' }))
+    expect((within(dialog()).getByLabelText('Address') as HTMLInputElement).value).toBe('')
+    expect(within(dialog()).queryAllByTestId('webhook-secret')).toHaveLength(0)
+    expectNothingKept(world as World, [secret])
+  })
+
+  test('Escape on the secret is the same as closing it: nothing of it stays', async () => {
+    const { user } = start(`${DEV_PATH}/webhooks`)
+    await user.click(await screen.findByRole('button', { name: 'Add endpoint' }))
+    await user.type(within(dialog()).getByLabelText('Address'), URL)
+    await user.click(within(dialog()).getByRole('checkbox', { name: 'user.created' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Add endpoint' }))
+    const secret = (await within(dialog()).findByTestId('webhook-secret')).textContent ?? ''
+    expect(secret).toMatch(/^whsec_/)
+    // What the platform does for Escape on a modal dialog: it closes, and says so.
+    act(() => {
+      ;(dialog() as HTMLDialogElement).close()
+    })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectNothingKept(world as World, [secret])
+  })
+
+  test('a rotated secret is shown once with the overlap in words, and is gone after the dialog closes', async () => {
+    const api = installFakeApi()
+    api.state.webhookEndpoints.push(fakeWebhookEndpoint({ url: URL }))
+    const { user } = start(`${DEV_PATH}/webhooks`, { api })
+    await user.click(await screen.findByRole('button', { name: `Rotate the secret of ${URL}` }))
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Rotate the signing secret?')
+    expect(dialog().textContent).toContain(
+      'The current secret is not dropped: for 24 hours every delivery is signed with both'
+    )
+    expect(api.calls.some((call) => call.path.endsWith('/secret/rotate'))).toBe(false)
+    await user.click(within(dialog()).getByRole('button', { name: 'Rotate secret' }))
+
+    const secret = (await within(dialog()).findByTestId('webhook-secret')).textContent ?? ''
+    expect(secret).toMatch(/^whsec_[A-Za-z0-9+/=]{20,}$/)
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Copy the new secret now')
+    // When the previous secret stops signing: said in words, with the server's own time.
+    const overlap = within(dialog()).getByTestId('overlap-ends')
+    expect(overlap.textContent).toContain('The previous secret keeps signing beside it until')
+    expect(overlap.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-05T12:00:00.000Z')
+    // The request carried no body: the server makes the secret.
+    expect(api.calls.find((call) => call.path.endsWith('/secret/rotate'))?.body).toBeUndefined()
+    expect(localStorage.length + sessionStorage.length).toBe(0)
+    expect(JSON.stringify(mutationsOf(world as World)).includes(secret)).toBe(false)
+
+    await user.click(within(dialog()).getByRole('button', { name: 'I have copied it' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectNothingKept(world as World, [secret])
+    // The card now says that two secrets sign, and until when.
+    const notice = await screen.findByTestId('rotation-overlap')
+    expect(notice.textContent).toContain('Two secrets are signing')
+    expect(notice.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-05T12:00:00.000Z')
+
+    // Walk on, come back, open the dialog again: it asks again, and shows no secret.
+    await user.click(screen.getByRole('link', { name: 'Signing keys' }))
+    await heading('Signing keys')
+    expectNothingKept(world as World, [secret])
+    await user.click(screen.getByRole('link', { name: 'Webhooks' }))
+    await heading('Webhooks')
+    await user.click(await screen.findByRole('button', { name: `Rotate the secret of ${URL}` }))
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Rotate the signing secret?')
+    expect(within(dialog()).queryAllByTestId('webhook-secret')).toHaveLength(0)
+    expectNothingKept(world as World, [secret])
   })
 })
 

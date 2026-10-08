@@ -4,7 +4,8 @@ The dashboard is a web app for the operator of a deployment. The API serves it a
 `/dashboard` (the image ships it; nothing else to deploy), and it manages the same things the
 admin API and the CLI do: workspaces, projects and environments; users and their sessions;
 sign-in methods and OAuth providers; the password policy and session profiles; API keys and
-signing keys; the audit logs; and the deployment's diagnostics.
+signing keys; webhook endpoints and their deliveries; the audit logs; and the deployment's
+diagnostics.
 
 How it is built and tested: [apps/dashboard/README.md](../apps/dashboard/README.md). The
 session, its CSRF rules and how the app is served: [ADR 0032](adr/0032-dashboard.md).
@@ -51,6 +52,9 @@ deletes a workspace, project or environment yet.
 | Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. **JWT templates** ([docs](jwt-templates.md)): add a template and its claims (a source or a fixed value each), see how large it can get against the 1,024-byte cap and which profiles use it, and choose a template on a profile's card. A reserved or malformed claim name and the caps are refused in the form; a template a profile uses cannot be taken out until the profile lets go of it; a save that takes claims away from a profile's sessions asks first. |
 | API keys | List (prefix and last four characters only), create, revoke. |
 | Signing keys | List with status; rotate. |
+| Webhooks | List an environment's webhook endpoints with how each is doing; add one (its signing secret is shown once), change its address and event types, switch it off and on, rotate its secret, send a test event, delete it. |
+| A webhook endpoint | The endpoint, and the log of what was sent to it: one row per delivery, filtered by state and event type. |
+| A delivery | Every request the server made for it (status code, duration, time, and why one failed), and "Send again". |
 | Audit log | An environment's entries, filtered by action, actor type, actor, target and day. |
 | Settings | App name, support address, allowed origins and redirect URLs, security notices, audit retention. |
 | Instance audit log | Dashboard sign-ins, and workspaces, projects and environments being created. |
@@ -73,6 +77,48 @@ deletes a workspace, project or environment yet.
   yet, so a second rotation within ten minutes is refused.
 - **At least one sign-in method must stay on.** Switching off the last one (counting enabled
   providers) is refused by the server, and the dashboard says so.
+- **A webhook signing secret is shown once**, when the endpoint is added and when its secret
+  is rotated. Copy it from the dialog; closing the dialog discards it, and the API cannot
+  show it again. If it is lost, rotate. While the request is under way the dialog cannot be
+  closed (Cancel says why, Escape does nothing): the server has made the secret by the time
+  it answers, and the answer is the only place it is. The same holds for a new API key.
+  Leaving the page during that moment still loses the secret; the endpoint is then in the
+  list, and its secret is rotated to get one.
+- **Rotating a webhook secret breaks nothing at once.** For 24 hours every delivery is signed
+  with the new secret and the previous one, and the endpoint's card says until when. "End
+  the overlap now" stops the previous secret at once: use it once your receiver has the new
+  one, or when the old one leaked. It names the endpoint and, in a production environment,
+  asks for its address to be typed, as deleting does. A second rotation waits until the
+  overlap is over.
+- **An address is shown so that it can be checked by eye.** A character nobody can see, or
+  one that turns the text round (a zero-width space, a right-to-left override), is written
+  out as `\u{…}` with its code point, wherever the address appears; so is a mark that is
+  drawn on the character before it (a stroke laid over a slash, an accent that is a
+  character of its own), and a backslash, so two addresses are shown alike only when they
+  are the same. To confirm by typing, type what is shown. In the form that adds or changes
+  an endpoint the field holds the address as it is, and the written-out form appears under
+  it when the two differ. The price: an address that holds text of a script written with
+  such marks as itself, and not in Punycode or percent escapes, is shown with escapes in
+  it. Letters of different scripts that look alike are not told apart.
+- **An endpoint the server switched off says why**: it answered `410 Gone`, or requests to it
+  failed for five days. Fix the receiver, send a test event, then switch the endpoint on.
+- **A test event changes nothing about an endpoint.** It carries `"test": true`, is sent
+  once, and neither counts as a failure nor ends a run of failures. "Send again" on a
+  delivery is one request too, with the same event and id; if it gets through it does end
+  the run. Both share a limit of ten requests a minute per environment, beside the admin
+  API's general one; a refusal for too many requests says how long to wait, not which of
+  the two it was, because the server's answer does not say.
+- **An address that names nothing reads "not found"**: an endpoint or a delivery that was
+  deleted, one of another environment, and an id that is no id at all (a mistyped address)
+  alike, with the way back to the list. A page past the newest 10,000 deliveries, which the
+  server does not page beyond, is read as the first page.
+- **Some event types are explained where they are chosen**: the three `hook.*` types are
+  about hooks (a question asked before a sign-up), not webhooks, and say so; so do
+  `signing_key.rotated`, `webhook_endpoint.secret_rotated`, `webhook_endpoint.disabled` and
+  `session.reuse_detected`.
+- **Deleting an endpoint deletes its delivery log** and its pending deliveries with it.
+
+More about webhooks: [webhooks.md](webhooks.md).
 
 ## Saving settings
 
@@ -111,7 +157,8 @@ it a retention period, and entries older than that are then deleted permanently.
 ## Switching and signing out
 
 - Switching environment, project, workspace or user discards what was typed and not saved on
-  the screen you leave: a settings draft, a half-typed provider secret, an open confirmation.
+  the screen you leave: a settings draft, a half-typed provider secret, a webhook secret
+  still on screen, an open confirmation.
   Nothing typed for one environment can be saved to another.
 - If signing out fails (the API did not answer), the dashboard stays where it is and says
   that you are still signed in. Choose "Sign out" again; until it succeeds the session in
