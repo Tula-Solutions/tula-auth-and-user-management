@@ -2,7 +2,14 @@ import { z } from 'zod'
 import { FlowAttemptSchema } from './flow'
 
 /** The OAuth providers an environment can configure with its own credentials (ADR 0026). */
-export const OAUTH_PROVIDERS = ['google', 'github', 'apple', 'microsoft'] as const
+export const OAUTH_PROVIDERS = [
+  'google',
+  'github',
+  'apple',
+  'microsoft',
+  'discord',
+  'linkedin',
+] as const
 
 /** One of {@link OAUTH_PROVIDERS}. */
 export const OAuthProviderSchema = z.enum(OAUTH_PROVIDERS).meta({ ref: 'OAuthProvider' })
@@ -150,7 +157,7 @@ const credential = (max: number) => z.string().trim().min(1).max(max)
 /**
  * Set a provider's credentials and whether sign-in offers it.
  *
- * - Google and GitHub: `clientId` and `clientSecret`.
+ * - Google, GitHub, Discord and LinkedIn: `clientId` and `clientSecret`.
  * - Apple: `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file's
  *   contents, PKCS#8 PEM).
  * - Microsoft: `clientId` (the application id), `clientSecret` and `tenant`

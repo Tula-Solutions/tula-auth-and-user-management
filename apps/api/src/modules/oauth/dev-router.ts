@@ -55,6 +55,8 @@ const NAMES = {
   github: 'GitHub',
   apple: 'Apple',
   microsoft: 'Microsoft',
+  discord: 'Discord',
+  linkedin: 'LinkedIn',
 } as const
 
 /** The organization the mock's Microsoft accounts are in when nothing else is said. */
@@ -78,6 +80,17 @@ function guidOf(seed: string): string {
     hex.slice(16, 20),
     hex.slice(20, 32),
   ].join('-')
+}
+
+/**
+ * The account id of an address when none is typed. Discord's is a snowflake (decimal digits,
+ * here sixty bits of the address's hash), as the real adapter accepts nothing else.
+ */
+function derivedSubject(provider: string, normalizedEmail: string): string {
+  const hex = sha256Hex(normalizedEmail)
+  return provider === 'discord'
+    ? String(BigInt(`0x${hex.slice(0, 15)}`) + 1n)
+    : `mock-${hex.slice(0, 24)}`
 }
 
 const ACCOUNT_FIELDS =
@@ -199,7 +212,7 @@ router.post('/authorize', async (c) => {
             consent.object_id || guidOf(email?.normalized ?? '')
           )
         : null
-      : consent.subject || (email ? `mock-${sha256Hex(email.normalized).slice(0, 24)}` : null)
+      : consent.subject || (email ? derivedSubject(consent.provider, email.normalized) : null)
   if (subject === null) {
     return refused(c)
   }

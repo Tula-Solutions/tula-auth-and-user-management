@@ -512,19 +512,83 @@ for (const colorScheme of ['light', 'dark'] as const) {
   })
 }
 
+// Discord and LinkedIn: an account is the provider's own id, and its address counts as
+// verified only when the provider says so (Discord's `verified`, LinkedIn's
+// `email_verified`). The browser sees outcomes, as with every provider.
+for (const colorScheme of ['light', 'dark'] as const) {
+  for (const [provider, name, subject] of [
+    [
+      'discord',
+      'Discord',
+      () => String(BigInt(Date.now()) * 4194304n + BigInt(Math.floor(Math.random() * 4194304))),
+    ],
+    ['linkedin', 'LinkedIn', () => `li-${crypto.randomUUID()}`],
+  ] as const) {
+    test(`sign up and sign in with ${name}; an address the provider does not vouch for is refused (${colorScheme})`, async ({
+      page,
+      request,
+    }) => {
+      await useProviders(request, ['google', provider])
+      await page.emulateMedia({ colorScheme })
+      const email = uniqueEmail(`oauth-${provider}-${colorScheme}`)
+      const account = subject()
+
+      await page.goto('/sign-in')
+      const button = page.getByRole('button', { name: `Continue with ${name}` })
+      await expect(button).toBeVisible()
+      await expectAccessible(page, `sign-in with a ${name} button (${colorScheme})`)
+      await button.click()
+      await expect(page.getByRole('heading', { name: `Mock ${name} sign-in` })).toBeVisible()
+      await consentAtProvider(page, { email, subject: account })
+      await expect(page.getByRole('heading', { name: /^Hello/ })).toBeVisible()
+      expect(page.url()).not.toContain('tula_ticket')
+      expect(await storage(page)).toEqual({ session: [], local: [] })
+      await page.goto('/account')
+      await expect(connected(page).getByText(name)).toBeVisible()
+      await expectAccessible(page, `profile with a ${name} account (${colorScheme})`)
+      await signOut(page)
+
+      // The same id signs the same user in, whatever address the provider now reports and
+      // whether or not it vouches for it.
+      await page.goto('/sign-in')
+      await page.getByRole('button', { name: `Continue with ${name}` }).click()
+      await consentAtProvider(page, {
+        email: uniqueEmail(`oauth-${provider}-renamed`),
+        subject: account,
+        unverified: true,
+      })
+      await expect(page.getByRole('heading', { name: /^Hello/ })).toBeVisible()
+      await page.goto('/account')
+      await expect(page.getByText(email)).toBeVisible()
+      await signOut(page)
+
+      // Another account that carries this user's address, unverified: nobody is signed in,
+      // and nothing is linked.
+      await page.goto('/sign-in')
+      await page.getByRole('button', { name: `Continue with ${name}` }).click()
+      await consentAtProvider(page, { email, subject: subject(), unverified: true })
+      await expect(page.getByRole('heading', { name: 'We could not sign you in' })).toBeVisible()
+      await expect(page.getByText(/not verified with this provider/)).toBeVisible()
+      await expectAccessible(page, `OAuth callback: ${name} address not verified (${colorScheme})`)
+      await page.goto('/')
+      await expect(page.getByRole('heading', { name: /^Hello/ })).toHaveCount(0)
+    })
+  }
+}
+
 // The provider buttons: each drawn with its mark, named, and readable in both schemes
 // at a desktop width and on a 375 px phone.
 for (const colorScheme of ['light', 'dark'] as const) {
   for (const width of [1280, 375]) {
-    test(`Google, GitHub, Apple and Microsoft buttons render with their marks (${colorScheme}, ${width}px)`, async ({
+    test(`all six provider buttons render with their marks (${colorScheme}, ${width}px)`, async ({
       page,
       request,
     }) => {
-      await useProviders(request, ['google', 'github', 'apple', 'microsoft'])
+      await useProviders(request, ['google', 'github', 'apple', 'microsoft', 'discord', 'linkedin'])
       await page.setViewportSize({ width, height: 800 })
       await page.emulateMedia({ colorScheme })
       await page.goto('/sign-in')
-      for (const name of ['Google', 'GitHub', 'Apple', 'Microsoft']) {
+      for (const name of ['Google', 'GitHub', 'Apple', 'Microsoft', 'Discord', 'LinkedIn']) {
         const button = page.getByRole('button', { name: `Continue with ${name}`, exact: true })
         await expect(button).toBeVisible()
         // The mark is decorative (the label names the provider), 18 px square, and drawn.
@@ -540,7 +604,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         expect(size?.height ?? 0).toBeLessThan(60)
       }
       // GitHub's and Apple's marks take the label's colour; Google's and Microsoft's keep
-      // their own four.
+      // their own four, Discord's and LinkedIn's their own one.
       const colours = await page.evaluate(() =>
         [...document.querySelectorAll('.tula-oauth-buttons button')].map((button) => ({
           label: getComputedStyle(button.querySelector('span') ?? button).color,
@@ -549,15 +613,17 @@ for (const colorScheme of ['light', 'dark'] as const) {
           ),
         }))
       )
-      expect(colours).toHaveLength(4)
+      expect(colours).toHaveLength(6)
       expect(new Set(colours[0]?.fills).size).toBe(4)
       expect(colours[1]?.fills).toEqual([colours[1]?.label])
       expect(colours[2]?.fills).toEqual([colours[2]?.label])
       expect(new Set(colours[3]?.fills).size).toBe(4)
+      expect(colours[4]?.fills).toEqual(['rgb(88, 101, 242)'])
+      expect(colours[5]?.fills).toEqual(['rgb(10, 102, 194)'])
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         width
       )
-      await expectAccessible(page, `four provider buttons (${colorScheme}, ${width}px)`)
+      await expectAccessible(page, `six provider buttons (${colorScheme}, ${width}px)`)
     })
   }
 }

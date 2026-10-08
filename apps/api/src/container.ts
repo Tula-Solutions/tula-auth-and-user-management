@@ -9,8 +9,10 @@ import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { createAppleProvider } from '~/adapters/oauth/apple'
+import { createDiscordProvider } from '~/adapters/oauth/discord'
 import { createGitHubProvider } from '~/adapters/oauth/github'
 import { createGoogleProvider } from '~/adapters/oauth/google'
+import { createLinkedInProvider } from '~/adapters/oauth/linkedin'
 import { createMicrosoftProvider } from '~/adapters/oauth/microsoft'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
@@ -170,6 +172,8 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
           github: createGitHubProvider(),
           apple: createAppleProvider(),
           microsoft: createMicrosoftProvider(),
+          discord: createDiscordProvider(),
+          linkedin: createLinkedInProvider(),
         },
     activityLog: new PostgresActivityLog(database.db),
     revokedSessions: redis

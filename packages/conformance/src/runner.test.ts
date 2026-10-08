@@ -127,6 +127,39 @@ describe('runScenario', () => {
     expect(second?.headers['content-type']).toBeUndefined()
   })
 
+  test('a generated snowflake is a decimal id in a string, fresh for each variable and each run', async () => {
+    const ids: string[] = []
+    for (let run = 0; run < 20; run += 1) {
+      const { target, requests } = fakeTarget(() => ({ status: 204 }))
+      const result = await runScenario(
+        scenario(
+          [
+            {
+              name: 'send',
+              request: {
+                method: 'POST',
+                path: '/v1/anything',
+                body: { one: '{{one}}', other: '{{other}}' },
+              },
+              expect: { status: 204 },
+            },
+          ],
+          { variables: { one: { generate: 'snowflake' }, other: { generate: 'snowflake' } } }
+        ),
+        target
+      )
+      expect(result.status).toBe('passed')
+      const sent = requests[0]?.body as { one: string; other: string }
+      ids.push(sent.one, sent.other)
+    }
+    for (const id of ids) {
+      // What Discord's API writes: no sign, no leading zero, within 64 bits.
+      expect(id).toMatch(/^[1-9][0-9]{0,19}$/)
+      expect(BigInt(id) < 2n ** 64n).toBe(true)
+    }
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   test('attempt sends the captured secret as x-tula-attempt, and nothing when it is left out', async () => {
     const { target, requests } = fakeTarget((_seen, index) =>
       index === 0

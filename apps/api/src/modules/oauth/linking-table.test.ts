@@ -87,6 +87,16 @@ const TABLE: Record<string, { evidence: string; rows: Row[] }> = {
       'the ID token’s xms_edov, the boolean true; the email claim alone is what a tenant administrator typed',
     rows: RULE,
   },
+  discord: {
+    evidence:
+      'the verified field of /users/@me, the boolean true, beside an email; Discord is OAuth 2.0 and signs nothing',
+    rows: RULE,
+  },
+  linkedin: {
+    evidence:
+      'the ID token’s email_verified, the boolean true and nothing else (LinkedIn documents a Boolean)',
+    rows: RULE,
+  },
 }
 
 const ADDRESSES: Address[] = ['verified', 'unverified', 'none']

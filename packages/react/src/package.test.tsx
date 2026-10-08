@@ -123,8 +123,11 @@ describe('what @tula/react costs a browser bundle', () => {
    * The phase-1 review fixes took it just past that, to about 45.6 kB, and the budget to
    * 46 kB: the provider's "sign-out did not finish" dialog with its retry and strings, the
    * refusal of a destination that names a host without a scheme, and `discard()` on every flow.
+   * Discord's and LinkedIn's buttons (TULA-13) are two more marks, each one path, and two
+   * names: 861 bytes, from 45,985 to 46,846. The budget moved by exactly those bytes, to
+   * 46,861, so the fifteen bytes of room there were are what is left.
    */
-  const GZIP_BUDGET_BYTES = 46_000
+  const GZIP_BUDGET_BYTES = 46_861
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

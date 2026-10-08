@@ -45,7 +45,7 @@ function signInPage(options: { oauth?: string[]; storage?: boolean; signedIn?: b
   const tabStorage = fakeLinkStorage()
   const page = fakePage('http://localhost:5173/sign-in')
   const w = world({
-    oauth: options.oauth ?? ['google', 'github', 'apple', 'microsoft'],
+    oauth: options.oauth ?? ['google', 'github', 'apple', 'microsoft', 'discord', 'linkedin'],
     tabStorage: options.storage === false ? undefined : tabStorage,
     page,
     signedIn: options.signedIn,
@@ -63,6 +63,8 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
       'Continue with GitHub',
       'Continue with Apple',
       'Continue with Microsoft',
+      'Continue with Discord',
+      'Continue with LinkedIn',
     ])
     for (const button of buttons) {
       // The mark is decoration: the name comes from the text.
@@ -109,6 +111,34 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
     await waitFor(() => expect(page.assigned).toHaveLength(1))
     expect(w.api.calls(START)[0]?.body).toEqual({ provider: 'microsoft', redirectUrl: CALLBACK })
   })
+
+  test.each([
+    ['discord', 'Discord', '#5865F2'],
+    ['linkedin', 'LinkedIn', '#0A66C2'],
+  ])(
+    '%s: its name is the text, its mark is drawn in the page and asks the network for nothing',
+    async (provider, name, colour) => {
+      const { w, page } = signInPage({ oauth: [provider] })
+      w.api.on(START, () => json(200, started()))
+      w.mount(<SignIn oauthCallbackUrl={CALLBACK} />)
+      const button = await screen.findByRole('button', { name: `Continue with ${name}` })
+      expect(button.textContent).toBe(`Continue with ${name}`)
+      const mark = button.querySelector('svg')
+      expect(mark?.getAttribute('aria-hidden')).toBe('true')
+      expect(mark?.getAttribute('focusable')).toBe('false')
+      // One shape in the provider's own colour.
+      const fills = [...(mark?.querySelectorAll('path') ?? [])].map((path) =>
+        path.getAttribute('fill')
+      )
+      expect(fills).toEqual([colour])
+      // Nothing in the mark refers to anything outside the page.
+      expect(button.innerHTML).not.toMatch(/https?:|url\(|<image|<use|href/i)
+      expectAbsent(button.querySelector('img'))
+      await w.user.click(button)
+      await waitFor(() => expect(page.assigned).toHaveLength(1))
+      expect(w.api.calls(START)[0]?.body).toEqual({ provider, redirectUrl: CALLBACK })
+    }
+  )
 
   test('nothing is offered where no provider is enabled, or where the tab cannot keep the binding', async () => {
     for (const options of [{ oauth: [] }, { storage: false }]) {
@@ -452,6 +482,21 @@ describe('connected accounts in <UserProfile>', () => {
     expect(view.getByRole('button', { name: 'Disconnect Microsoft' })).toBeTruthy()
     expectAbsent(view.queryByRole('button', { name: 'Connect Microsoft' }))
   })
+
+  test.each([
+    ['discord', 'Discord'],
+    ['linkedin', 'LinkedIn'],
+  ])(
+    'a %s account is listed by name, and can be connected where it is offered',
+    async (provider, name) => {
+      const identity = { id: 'identity_9', provider, createdAt: '2026-01-01T00:00:00.000Z' }
+      const connected = await profile([GOOGLE, identity], ['google', provider])
+      const view = within(connected.section)
+      await view.findByText(name)
+      expect(view.getByRole('button', { name: `Disconnect ${name}` })).toBeTruthy()
+      expectAbsent(view.queryByRole('button', { name: `Connect ${name}` }))
+    }
+  )
 
   test('lists the connected accounts and offers to connect the providers that are not', async () => {
     const { section } = await profile([GOOGLE])

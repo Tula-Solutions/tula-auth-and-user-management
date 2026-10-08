@@ -288,7 +288,11 @@ export const OAuthStepSchema = z
         callback: z.string().optional(),
         /** The address the provider reports. */
         email: z.string().optional(),
-        /** The provider's id for the account. Derived from the address when left out. */
+        /**
+         * The provider's id for the account. Derived from the address when left out. For
+         * Discord it is a snowflake (a decimal number in a string); the mock provider refuses
+         * anything else, as the adapter does.
+         */
         subject: z.string().optional(),
         /**
          * Microsoft only: the tenant id (`tid`) of the account, a GUID. Left out, the mock
@@ -506,10 +510,15 @@ export const StepSchema = z
 /**
  * A variable's starting value: a literal, or a value generated fresh for each run. `email` is a
  * unique address; `password` is a long random one that meets every built-in policy and is in no
- * breach list; `uuid` is a random lower-case GUID (a Microsoft tenant id or object id).
+ * breach list; `uuid` is a random lower-case GUID (a Microsoft tenant id or object id);
+ * `snowflake` is a random decimal number of at most nineteen digits, in a string, with no
+ * leading zero (a Discord user id).
  */
 export const VariableSchema = z
-  .union([z.string(), z.object({ generate: z.enum(['email', 'password', 'uuid']) }).strict()])
+  .union([
+    z.string(),
+    z.object({ generate: z.enum(['email', 'password', 'uuid', 'snowflake']) }).strict(),
+  ])
   .meta({ ref: 'ConformanceVariable' })
 
 /**

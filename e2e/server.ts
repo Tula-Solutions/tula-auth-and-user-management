@@ -255,7 +255,14 @@ async function enableProviders(body: unknown): Promise<Response> {
   }
   const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
   const actor = { type: 'system', id: null, ipAddress: null, userAgent: null } as const
-  for (const provider of ['google', 'github', 'apple', 'microsoft'] as const) {
+  for (const provider of [
+    'google',
+    'github',
+    'apple',
+    'microsoft',
+    'discord',
+    'linkedin',
+  ] as const) {
     if (wanted.includes(provider)) {
       await OAuth.update(
         deps,

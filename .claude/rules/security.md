@@ -158,6 +158,15 @@ Before finishing any change here, confirm each item holds and has a test:
     (one organization to `organizations` or `common`) is **not** a recorded weakening
     (`diff.test.ts` pins it): it admits accounts from more directories, though a sign-up
     still needs the verified-domain claim, so say so when a change touches it.
+    **Whether an ID token's nonce is checked is said at every call** of `verifyIdToken`:
+    the attempt's nonce, or `NONCE_NOT_ECHOED` for a provider that documents no nonce
+    (LinkedIn only, which has no PKCE either: ADR 0026 says what binds its code). Never
+    give the parameter a default, and never pass the symbol for a provider that echoes one.
+    **Discord** (`adapters/oauth/discord.ts`): the account is the user id, accepted only
+    through `isSnowflake`; the address is verified only with `verified === true`.
+    **LinkedIn** (`adapters/oauth/linkedin.ts`): only with `email_verified === true`, the
+    boolean, and only the two issuers of `LINKEDIN_ISSUERS`. Test `"true"`, `1` and an
+    absent claim for both.
 30. **The mock provider** exists only with `ENVIRONMENT=local` and `OAUTH_MOCK_PROVIDER=true`:
     `env.ts` refuses it elsewhere, and with a `PUBLIC_URL` that is not loopback; the container
     logs a warning at boot while it is on; the routes are not mounted otherwise; and the consent

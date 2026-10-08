@@ -2118,7 +2118,7 @@ describe('SDK journeys: OAuth', () => {
     options: {
       cookies?: Map<string, string>
       browserTab?: ReturnType<typeof tab>
-      provider?: 'google' | 'microsoft'
+      provider?: 'google' | 'microsoft' | 'discord' | 'linkedin'
     } = {}
   ) {
     const browserTab = options.browserTab ?? tab()
@@ -2451,6 +2451,143 @@ describe('SDK journeys: OAuth', () => {
       })
     }
   )
+
+  // Discord names an account by its user id (a snowflake) and LinkedIn by the `sub` of its ID
+  // token; each proves an address only when it says so itself. The SDK needs to know none of
+  // it: it is given outcomes.
+  const snowflake = () =>
+    String(BigInt(`0x${crypto.randomUUID().replaceAll('-', '').slice(0, 15)}`) + 1n)
+  for (const { provider, name, accountId } of [
+    { provider: 'discord', name: 'Discord', accountId: snowflake },
+    { provider: 'linkedin', name: 'LinkedIn', accountId: () => `li-${crypto.randomUUID()}` },
+  ] as const) {
+    const providerServer = async (): Promise<Server> => {
+      const s = await oauthServer()
+      const saved = await s.admin('PUT', `/v1/admin/oauth-providers/${provider}`, {
+        clientId: `journey-${provider}-client`,
+        clientSecret: `journey-${provider}-secret`,
+      })
+      expect(saved.status).toBe(200)
+      return s
+    }
+    const withProvider = (s: Server, consent: Record<string, string>) =>
+      continueWithGoogle(s, consent, { provider })
+
+    journey(
+      `${name} sign-up and sign-in`,
+      `${name}: the config offers it, a sign-up comes back signed in, and the same account signs in again whatever address is reported`,
+      async () => {
+        const s = await providerServer()
+        const email = freshEmail()
+        const subject = accountId()
+        expect((await s.client('web').tula.config.get()).signIn.oauth).toEqual(['google', provider])
+        const first = await withProvider(s, { email, subject })
+        expect(first.outcome.status).toBe('complete')
+        expect(first.landing.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+        expect(first.location.href).toBe(CALLBACK_PAGE)
+        expect(first.browserTab.entries.size).toBe(0)
+        expect(await first.landing.tula.user.identities.list()).toMatchObject([{ provider }])
+        const userId =
+          first.landing.tula.state.status === 'signed-in'
+            ? (first.landing.tula.state.user?.id ?? '')
+            : ''
+        await first.landing.tula.session.signOut()
+
+        // The same id, another address the provider does not vouch for: the same user.
+        const again = await withProvider(s, { email: freshEmail(), subject, unverified: '1' })
+        expect(again.outcome.status).toBe('complete')
+        expect(again.landing.tula.state).toMatchObject({
+          status: 'signed-in',
+          user: { id: userId, email },
+        })
+
+        // A new account whose address the provider has not verified is an outcome, not a
+        // session.
+        const unvouched = await withProvider(s, {
+          email: freshEmail(),
+          subject: accountId(),
+          unverified: '1',
+        })
+        expect(unvouched.outcome).toMatchObject({
+          status: 'error',
+          code: 'oauth.email_unverified',
+        })
+        expect(unvouched.landing.tula.state.status).not.toBe('signed-in')
+        expect(unvouched.browserTab.entries.size).toBe(0)
+      }
+    )
+
+    journey(
+      `${name} account linking`,
+      `${name}: an unverified address links to nobody; a verified one, and a verified Tula address, links; a profile links whatever the provider says`,
+      async () => {
+        const s = await providerServer()
+        const member = freshEmail()
+        const created = await s.admin('POST', '/v1/admin/users', {
+          email: member,
+          password: PASSWORD,
+          emailVerified: true,
+        })
+        const memberId = ((await created.json()) as { id: string }).id
+
+        // Someone typed the member's address into an account of theirs and never proved it.
+        const attacker = { subject: accountId(), unverified: '1' }
+        const taken = await withProvider(s, { email: member, ...attacker })
+        expect(taken.outcome).toMatchObject({ status: 'error', code: 'oauth.email_unverified' })
+        expect(taken.landing.tula.state.status).not.toBe('signed-in')
+        expect(taken.landing.cookies.size).toBe(0)
+        // The same outcome for an address nobody has.
+        const nobody = await withProvider(s, { email: freshEmail(), ...attacker })
+        expect(nobody.outcome).toEqual(taken.outcome)
+
+        // The member's own account, its address verified by the provider: linked, signed in.
+        const linked = await withProvider(s, { email: member, subject: accountId() })
+        expect(linked.outcome.status).toBe('complete')
+        expect(linked.landing.tula.state).toMatchObject({ user: { id: memberId } })
+        expect(await linked.landing.tula.user.identities.list()).toMatchObject([{ provider }])
+
+        // An account whose Tula address was never verified is not linked into.
+        const squatted = freshEmail()
+        await s.admin('POST', '/v1/admin/users', { email: squatted, password: PASSWORD })
+        const refused = await withProvider(s, { email: squatted, subject: accountId() })
+        expect(refused.outcome).toMatchObject({ status: 'error', code: 'oauth.account_exists' })
+
+        // From a profile the session is the proof: unverified, another address, connected.
+        const colleagueEmail = freshEmail()
+        const colleague = s.client('web')
+        await s.admin('POST', '/v1/admin/users', {
+          email: colleagueEmail,
+          password: PASSWORD,
+          emailVerified: true,
+        })
+        const signIn = await colleague.tula.signIn.start({ identifier: colleagueEmail })
+        await signIn.submitPassword({ password: PASSWORD })
+        const profileTab = tab()
+        profileTab.open(`${APP_ORIGIN}/account`)
+        // A client reads its tab when it is created: the profile page's own.
+        const profile = s.client('web', { cookies: colleague.cookies })
+        await profile.tula.load()
+        const { url } = await profile.tula.user.identities.link({
+          provider,
+          redirectUrl: CALLBACK_PAGE,
+        })
+        const second = { subject: accountId(), unverified: '1' }
+        profileTab.open(await atProvider(s, url, { email: freshEmail(), ...second }))
+        const landing = s.client('web', { cookies: profile.cookies })
+        await landing.tula.load()
+        expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
+          status: 'linked',
+          identity: { provider },
+        })
+        await landing.tula.session.signOut()
+        const back = await withProvider(s, { email: freshEmail(), ...second })
+        expect(back.outcome.status).toBe('complete')
+        expect(back.landing.tula.state).toMatchObject({
+          user: { email: colleagueEmail },
+        })
+      }
+    )
+  }
 
   journey(
     'OAuth with a second factor',

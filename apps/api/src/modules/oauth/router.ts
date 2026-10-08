@@ -75,7 +75,7 @@ router.get(
     tags: ['OAuth'],
     summary: 'List OAuth providers',
     description:
-      'Every provider (Google, GitHub, Apple, Microsoft), configured or not: whether credentials are ' +
+      'Every provider (Google, GitHub, Apple, Microsoft, Discord, LinkedIn), configured or not: whether credentials are ' +
       'stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to ' +
       'paste into the provider’s console exactly. Never a secret.',
     security: openapi.security.admin,
@@ -105,7 +105,7 @@ router.put(
     summary: 'Set an OAuth provider’s credentials',
     description:
       'Stores the environment’s own credentials for the provider and whether sign-in offers ' +
-      'it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the ' +
+      'it. Google, GitHub, Discord and LinkedIn take `clientId` and `clientSecret`; Apple takes `clientId` (the ' +
       'Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM); Microsoft ' +
       'takes `clientId`, `clientSecret` and `tenant` (`common`, `organizations`, `consumers` ' +
       'or a tenant id: which accounts may sign in). The secret is ' +
@@ -266,7 +266,7 @@ router.get(
     tags: ['OAuth'],
     summary: 'List my connected accounts',
     description:
-      'The provider accounts (Google, GitHub, Apple, Microsoft) connected to the signed-in user. Never ' +
+      'The provider accounts (Google, GitHub, Apple, Microsoft, Discord, LinkedIn) connected to the signed-in user. Never ' +
       'the provider’s own id for an account.',
     security: openapi.security.session,
     responses: {

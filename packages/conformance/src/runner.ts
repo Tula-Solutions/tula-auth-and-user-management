@@ -191,6 +191,11 @@ function initialVariables(scenario: Scenario, origin: string): Record<string, st
       continue
     }
     const random = crypto.randomUUID().replaceAll('-', '')
+    if (value.generate === 'snowflake') {
+      // Sixty random bits, plus one so that it is never zero: at most nineteen digits.
+      variables[name] = String(BigInt(`0x${random.slice(0, 15)}`) + 1n)
+      continue
+    }
     variables[name] =
       value.generate === 'email'
         ? // A fresh address per run, so runs never collide and per-address limits start clean.

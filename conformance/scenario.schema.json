@@ -34,7 +34,7 @@
             "properties": {
               "generate": {
                 "type": "string",
-                "enum": ["email", "password", "uuid"]
+                "enum": ["email", "password", "uuid", "snowflake"]
               }
             },
             "required": ["generate"],

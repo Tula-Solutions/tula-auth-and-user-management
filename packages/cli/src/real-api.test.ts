@@ -420,6 +420,41 @@ describe('tula diff / tula apply against the API', () => {
     expect((await providers()).microsoft?.tenant).toBe('organizations')
   })
 
+  test.each([
+    ['discord', 'DISCORD_CLIENT_SECRET'],
+    ['linkedin', 'LINKEDIN_CLIENT_SECRET'],
+  ] as const)(
+    '%s is created from a client id and a secret, which a second run finds unchanged',
+    async (provider, variable) => {
+      const file = (enabled: boolean) =>
+        dev({
+          providers: {
+            [provider]: { clientId: 'the-client', clientSecret: env(variable), enabled },
+          },
+        })
+      const secret = `real-api-${provider}-secret-do-not-print`
+      const withSecret = { env: { [variable]: secret } }
+      const config = await file(true)
+      const plan = await tula(['diff', '--config', config], withSecret)
+      expect(plan.stdout).toContain(`+ ${provider}: create`)
+      expect(plan.stdout).toContain(`secret set from $${variable}`)
+      const run = await tula(['apply', '--config', config, '--yes'], withSecret)
+      expect(run.code).toBe(0)
+      expect(writes(run)).toContain(`PUT /v1/admin/oauth-providers/${provider}`)
+      expect(run.stdout + run.stderr).not.toContain(secret)
+      expect(await providers()).toMatchObject({
+        [provider]: { configured: true, enabled: true, clientId: 'the-client', tenant: null },
+      })
+      expect((await tula(['diff', '--config', config])).code).toBe(0)
+
+      // Switched off: an update that needs no secret, and the stored one is kept.
+      const off = await tula(['apply', '--config', await file(false), '--yes'])
+      expect(off.code).toBe(0)
+      expect(off.stdout).toContain('stored secret kept')
+      expect((await providers())[provider]).toMatchObject({ configured: true, enabled: false })
+    }
+  )
+
   test('a secret whose variable is not set stops the run before anything is written', async () => {
     const config = await dev({
       settings: { app: { name: 'Northline' } },

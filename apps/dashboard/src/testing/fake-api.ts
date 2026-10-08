@@ -558,17 +558,19 @@ export function installFakeApi() {
       'GET',
       /^\/v1\/admin\/oauth-providers$/,
       () => ({
-        data: (['google', 'github', 'apple', 'microsoft'] as const).map((provider) => ({
-          provider,
-          configured: false,
-          enabled: false,
-          clientId: null,
-          teamId: null,
-          keyId: null,
-          tenant: null,
-          callbackUrl: `http://localhost:3003/v1/client/oauth/${provider}/callback`,
-          updatedAt: null,
-        })),
+        data: (['google', 'github', 'apple', 'microsoft', 'discord', 'linkedin'] as const).map(
+          (provider) => ({
+            provider,
+            configured: false,
+            enabled: false,
+            clientId: null,
+            teamId: null,
+            keyId: null,
+            tenant: null,
+            callbackUrl: `http://localhost:3003/v1/client/oauth/${provider}/callback`,
+            updatedAt: null,
+          })
+        ),
       }),
     ],
   ]

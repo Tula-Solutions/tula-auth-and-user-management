@@ -616,7 +616,8 @@ describe('the mock provider', () => {
     redirectUri: REDIRECT_URI,
     nonce: NONCE,
     codeChallenge: s256('the-verifier'),
-    profile: { subject: 'mock-1', email: 'maya@northline.app', emailVerified: true },
+    // Digits: an id every provider the mock stands in for can have (Discord's are snowflakes).
+    profile: { subject: '4815162342', email: 'maya@northline.app', emailVerified: true },
   }
 
   test('sends the browser to the consent page on the API with the standard parameters', () => {
@@ -664,7 +665,7 @@ describe('the mock provider', () => {
 
   // The conformance scenarios and SDK journeys sign in with GitHub through this adapter: the
   // verifier is checked for every provider it stands in for, not only Google.
-  test.each(['google', 'github', 'apple'] as const)(
+  test.each(['google', 'github', 'apple', 'discord', 'linkedin'] as const)(
     'standing in for %s: the URL carries the S256 challenge and only its verifier redeems the code',
     async (name) => {
       const standIn = createMockProvider(name, {

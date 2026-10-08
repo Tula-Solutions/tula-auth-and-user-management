@@ -236,6 +236,8 @@ describe('the question of a hook', () => {
     ['oauth_github'],
     ['oauth_apple'],
     ['oauth_microsoft'],
+    ['oauth_discord'],
+    ['oauth_linkedin'],
   ])('a sign-up made by %s can be asked about', (method) => {
     const fixture = HOOK_QUESTION_FIXTURES.before_sign_up
     expect(

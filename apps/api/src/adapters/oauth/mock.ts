@@ -1,4 +1,5 @@
 import type { OAuthProvider as OAuthProviderName } from '@tula/contract'
+import { isSnowflake } from '~/adapters/oauth/discord'
 import { tenantAccepts } from '~/adapters/oauth/microsoft'
 import { timingSafeEqual } from '~/lib/crypto'
 import type { SecretBox } from '~/lib/secret-box'
@@ -76,6 +77,8 @@ export function issueMockCode(
  * only exchanged with the PKCE verifier matching the challenge the authorization URL carried.
  * For Microsoft it also keeps the tenant rule: an account of a tenant the environment's
  * `tenant` does not accept is refused, as the real adapter refuses its token.
+ * For Discord it keeps the shape of an id: an account id that is not a snowflake is refused, as
+ * the real adapter refuses such a user object.
  *
  * @param provider - The provider this instance stands in for.
  * @param deps - Secret box, clock and the API's public URL.
@@ -131,6 +134,9 @@ export function createMockProvider(
       ) {
         throw new OAuthProviderError('invalid_token')
       }
+      if (provider === 'discord' && !isSnowflake(grant.profile.subject)) {
+        throw new OAuthProviderError('invalid_profile')
+      }
       return grant.profile
     },
   }
@@ -152,5 +158,7 @@ export function mockOAuthProviders(deps: {
     github: createMockProvider('github', deps),
     apple: createMockProvider('apple', deps),
     microsoft: createMockProvider('microsoft', deps),
+    discord: createMockProvider('discord', deps),
+    linkedin: createMockProvider('linkedin', deps),
   }
 }

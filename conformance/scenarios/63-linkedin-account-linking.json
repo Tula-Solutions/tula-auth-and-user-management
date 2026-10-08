@@ -1,0 +1,657 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "LinkedIn account linking",
+  "description": "Which account a LinkedIn identity signs in to. An address counts as verified only when the ID token says the address is verified (email_verified: true). Without that, an account that reports a member’s address is connected to nothing and signs nobody in, and the answer is the same as for an address nobody has. With it, and the member’s own address verified, the LinkedIn account is connected and signs the member in; with it and an account whose address was never verified, nothing is connected (oauth.account_exists). A signed-in user connects a LinkedIn account from their profile whatever its address and whether or not it is verified. Uses the server’s mock provider. The provider’s credentials are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "member": {
+      "generate": "email"
+    },
+    "squatted": {
+      "generate": "email"
+    },
+    "nobody": {
+      "generate": "email"
+    },
+    "colleague": {
+      "generate": "email"
+    },
+    "elsewhere": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "memberAccount": {
+      "generate": "uuid"
+    },
+    "attackerAccount": {
+      "generate": "uuid"
+    },
+    "squatterAccount": {
+      "generate": "uuid"
+    },
+    "secondAccount": {
+      "generate": "uuid"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment’s own LinkedIn credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/linkedin",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-linkedin-client",
+          "clientSecret": "conformance-linkedin-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "linkedin",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-linkedin-client",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-linkedin-secret"]
+      }
+    },
+    {
+      "name": "a member with a verified address and a password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{member}}",
+          "password": "{{password}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      },
+      "capture": {
+        "memberId": "id"
+      }
+    },
+    {
+      "name": "an attacker continues with LinkedIn",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_linkedin"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "their account reports the member’s address, unverified",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{member}}",
+        "subject": "{{attackerAccount}}",
+        "unverified": true,
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "nothing is connected and nobody is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "oauth.email_unverified",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "the attacker tries an address nobody has",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_linkedin"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding"
+      }
+    },
+    {
+      "name": "reported the same way",
+      "oauth": {
+        "authorizationUrl": "{{bUrl}}",
+        "email": "{{nobody}}",
+        "subject": "{{attackerAccount}}",
+        "unverified": true,
+        "captureTicket": "bTicket",
+        "captureAttempt": "bId"
+      }
+    },
+    {
+      "name": "the answer is the same: it says nothing about who has an account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{bTicket}}",
+          "attemptId": "{{bId}}",
+          "binding": "{{bBinding}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "oauth.email_unverified",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "the member continues with LinkedIn",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_linkedin"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "cUrl": "authorizationUrl",
+        "cBinding": "binding"
+      }
+    },
+    {
+      "name": "LinkedIn vouches for the member’s address",
+      "oauth": {
+        "authorizationUrl": "{{cUrl}}",
+        "email": "{{member}}",
+        "subject": "{{memberAccount}}",
+        "captureTicket": "cTicket",
+        "captureAttempt": "cId"
+      }
+    },
+    {
+      "name": "both sides have verified the address: the LinkedIn account is connected and the member signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{cTicket}}",
+          "attemptId": "{{cId}}",
+          "binding": "{{cBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{memberId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "linkedToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the member now has a connected LinkedIn account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{linkedToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "linkedin",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the connection is in the audit log, once, by provider and never by address or id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=user.identity_linked&targetId={{memberId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": "$any",
+          "data": [
+            {
+              "id": "$any",
+              "action": "user.identity_linked",
+              "actor": "$any",
+              "target": {
+                "type": "user",
+                "id": "{{memberId}}"
+              },
+              "ipAddress": "$any",
+              "userAgent": "$any",
+              "metadata": {
+                "provider": "linkedin",
+                "method": "auto"
+              },
+              "occurredAt": "$any"
+            }
+          ]
+        },
+        "bodyExcludes": ["{{member}}", "{{memberAccount}}", "{{attackerAccount}}"]
+      }
+    },
+    {
+      "name": "an account whose address was never verified",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{squatted}}",
+          "password": "{{password}}",
+          "emailVerified": false
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      }
+    },
+    {
+      "name": "the address’s owner continues with LinkedIn",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_linkedin"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "dUrl": "authorizationUrl",
+        "dBinding": "binding"
+      }
+    },
+    {
+      "name": "LinkedIn vouches for the address",
+      "oauth": {
+        "authorizationUrl": "{{dUrl}}",
+        "email": "{{squatted}}",
+        "subject": "{{squatterAccount}}",
+        "captureTicket": "dTicket",
+        "captureAttempt": "dId"
+      }
+    },
+    {
+      "name": "the LinkedIn account is not connected to the unverified account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{dTicket}}",
+          "attemptId": "{{dId}}",
+          "binding": "{{dBinding}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.account_exists",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "a colleague with a verified address and a password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{colleague}}",
+          "password": "{{password}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      },
+      "capture": {
+        "colleagueId": "id"
+      }
+    },
+    {
+      "name": "starts a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{colleague}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "pId": "id",
+        "pSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "and completes it with the password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{pId}}/password",
+        "attempt": "{{pSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "colleagueToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the colleague has no connected account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{colleagueToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "the colleague starts connecting a LinkedIn account from their profile",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth",
+        "accessToken": "{{colleagueToken}}",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attemptId": "$any",
+          "expiresAt": "$any",
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "eUrl": "authorizationUrl",
+        "eBinding": "binding"
+      }
+    },
+    {
+      "name": "LinkedIn reports another address, unverified",
+      "oauth": {
+        "authorizationUrl": "{{eUrl}}",
+        "email": "{{elsewhere}}",
+        "subject": "{{secondAccount}}",
+        "unverified": true,
+        "captureTicket": "eTicket",
+        "captureAttempt": "eId"
+      }
+    },
+    {
+      "name": "the signed-in user connects it all the same: the session is the proof, not the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth/exchange",
+        "accessToken": "{{colleagueToken}}",
+        "body": {
+          "ticket": "{{eTicket}}",
+          "attemptId": "{{eId}}",
+          "binding": "{{eBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "provider": "linkedin",
+          "createdAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "that LinkedIn account continues with LinkedIn",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_linkedin"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "fUrl": "authorizationUrl",
+        "fBinding": "binding"
+      }
+    },
+    {
+      "name": "the same id, its address still unverified",
+      "oauth": {
+        "authorizationUrl": "{{fUrl}}",
+        "email": "{{elsewhere}}",
+        "subject": "{{secondAccount}}",
+        "unverified": true,
+        "captureTicket": "fTicket",
+        "captureAttempt": "fId"
+      }
+    },
+    {
+      "name": "and signs the colleague in, not a new account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{fTicket}}",
+          "attemptId": "{{fId}}",
+          "binding": "{{fBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{colleagueId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the linkedin credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/linkedin",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

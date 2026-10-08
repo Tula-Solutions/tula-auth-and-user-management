@@ -309,3 +309,18 @@ dashboard in a browser. Not verified:
 | **The portal steps of `docs/providers/microsoft.md`**, among them adding `xms_edov` as an optional claim | Written from the documentation; not clicked through. |
 | **Microsoft's token endpoint refusing a wrong PKCE verifier** | The requests the adapter builds (unit tests) and the mock provider, which refuses one. |
 | **The button against Microsoft's branding guidelines** | Not checked against the guidelines' page in this change: the four-square logo and its colours are drawn from memory of them, and the button keeps the theme's surface, type and "Continue with …" wording. |
+
+## Step 2.5, Discord and LinkedIn (TULA-13, [ADR 0026](../adr/0026-oauth.md))
+
+| What | What it was tested against instead |
+| --- | --- |
+| **A real Discord application, token and user object** | The requests the adapter builds and answers the tests stub (`adapters/oauth/discord.test.ts`), and the API's mock provider for the whole flow (conformance scenarios 60 and 61, the SDK journeys, the browser tests). No request went to `discord.com`. |
+| **That Discord honours PKCE** | Nothing. Discord's OAuth2 page (read 2026-10-08) does not mention PKCE; `arctic`'s `Discord` client sends an S256 challenge and the verifier, and the mock provider refuses a wrong verifier. Whether Discord checks it, ignores it or will one day reject it was not observed. |
+| **The `/api/v10` in the profile URL** | Written from memory of Discord's API reference; the user page read on 2026-10-08 names `GET /users/@me` and not the version prefix. |
+| **That `verified` and `id` arrive as a JSON boolean and a string** | Discord's user resource page as read (`verified?` boolean, `id` snowflake, shown as a string in the example). A `"true"` or a numeric id is read as unverified and refused. |
+| **A real LinkedIn app, token and keys document** | ID tokens the tests sign with their own keys, published through a stubbed keys document (`adapters/oauth/linkedin.test.ts`), and the mock provider for the whole flow (scenarios 62 and 63, the journeys, the browser tests). No token request went to `linkedin.com`; its discovery document was fetched once, by hand, to read it. |
+| **Whether a real LinkedIn ID token carries `email` and `email_verified`, and whether the latter is a JSON boolean** | Nothing. LinkedIn's guide lists only `iss`, `sub`, `aud`, `iat`, `exp` for the ID token and documents the address for the userinfo endpoint (`email_verified` as Boolean). The adapter reads the token only. If the token has no address, or the claim is the string `"true"`, **nobody can sign up with LinkedIn** (`oauth.email_missing` / `oauth.email_unverified`); `docs/providers/linkedin.md` says so at its top. |
+| **Which `iss` a real LinkedIn token carries** | The discovery document says `https://www.linkedin.com/oauth`, the guide `https://www.linkedin.com`. The adapter accepts exactly those two; neither was seen in a token. |
+| **That LinkedIn has no PKCE and echoes no nonce for this flow** | LinkedIn's authorization-code flow page and discovery document, as read on 2026-10-08: no such parameter, no `code_challenge_methods_supported`, no `nonce` in `claims_supported`. One of that page's error messages mentions a code verifier, which suggests PKCE exists for some other kind of client; it was not looked into. |
+| **The portal steps of `docs/providers/discord.md` and `docs/providers/linkedin.md`** | Written from the documentation; not clicked through. |
+| **The two buttons against Discord's and LinkedIn's brand guidelines** | Not checked. Both marks (the paths and the colours `#5865F2` and `#0A66C2`) were drawn from memory, without either brand page open. |

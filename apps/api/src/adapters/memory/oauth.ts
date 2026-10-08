@@ -71,5 +71,7 @@ export function fakeOAuthProviders(): FakeOAuthProviders {
     github: new FakeOAuthProvider('github'),
     apple: new FakeOAuthProvider('apple'),
     microsoft: new FakeOAuthProvider('microsoft'),
+    discord: new FakeOAuthProvider('discord'),
+    linkedin: new FakeOAuthProvider('linkedin'),
   }
 }

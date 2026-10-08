@@ -408,6 +408,96 @@ describe('settings controls', () => {
     })
   })
 
+  describe('providers by the server’s name', () => {
+    const listed = (provider: string, over: Record<string, unknown> = {}) => ({
+      provider,
+      configured: false,
+      enabled: false,
+      clientId: null,
+      teamId: null,
+      keyId: null,
+      tenant: null,
+      callbackUrl: `http://localhost:3003/v1/oauth/callback/${provider}`,
+      updatedAt: null,
+      ...over,
+    })
+
+    test.each([
+      ['discord', 'Discord'],
+      ['linkedin', 'LinkedIn'],
+    ])('the %s card takes a client id and a secret, and nothing else', async (provider, name) => {
+      const api = installFakeApi()
+      const bodies: unknown[] = []
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({ data: [listed(provider)] }))
+      api.override('PUT', new RegExp(`^/v1/admin/oauth-providers/${provider}$`), (call) => {
+        bodies.push(call.body)
+        return { provider }
+      })
+      const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+      const card = (await screen.findByRole('heading', { name })).closest('li') as HTMLElement
+      expect(
+        within(card).getByText(`http://localhost:3003/v1/oauth/callback/${provider}`)
+      ).toBeTruthy()
+      for (const absent of ['Who can sign in', 'Team ID', 'Key ID', 'Private key (.p8)']) {
+        expect(within(card).queryByLabelText(absent) === null).toBe(true)
+      }
+      await user.type(within(card).getByLabelText('Client ID'), 'the-client')
+      await user.type(within(card).getByLabelText('Client secret'), 'the-secret-value')
+      await user.click(within(card).getByRole('button', { name: `Save ${name}` }))
+      await screen.findByText(`${name} saved`)
+      expect(bodies).toEqual([
+        { clientId: 'the-client', enabled: true, clientSecret: 'the-secret-value' },
+      ])
+      // Saved: the secret is gone from the page.
+      expect(document.documentElement.outerHTML.includes('the-secret-value')).toBe(false)
+    })
+
+    // A later server lists a provider this version has no form for, or a name that is a
+    // property of every object. Neither gets a card whose fields would be a guess.
+    test('a provider this version does not know has no card, and the known ones keep theirs', async () => {
+      const api = installFakeApi()
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({
+        data: [
+          listed('facebook'),
+          listed('constructor'),
+          listed('__proto__'),
+          listed('toString'),
+          listed('discord'),
+        ],
+      }))
+      start(`${DEV_PATH}/sign-in-methods`, { api })
+      await screen.findByRole('heading', { name: 'Discord' })
+      const section = screen.getByRole('heading', { name: 'OAuth providers' }).closest('section')
+      const cards = within(section as HTMLElement).getAllByRole('listitem')
+      expect(cards).toHaveLength(1)
+      const text = section?.textContent ?? ''
+      for (const unknown of ['facebook', 'constructor', '__proto__', 'toString', 'function']) {
+        expect(text.includes(unknown)).toBe(false)
+      }
+    })
+
+    test.each([
+      [['discord'], 'No password; signs in with Discord.'],
+      [['linkedin', 'github'], 'No password; signs in with LinkedIn and GitHub.'],
+      // Unknown to this version: said as the server names it, never looked up as a property.
+      [['facebook'], 'No password; signs in with facebook.'],
+      [['constructor', 'toString'], 'No password; signs in with constructor and toString.'],
+      [['__proto__'], 'No password; signs in with __proto__.'],
+    ])('a user who signs in with %p: %s', async (providers, sentence) => {
+      const api = installFakeApi()
+      api.state.authentication = {
+        ...api.state.authentication,
+        hasPassword: false,
+        identities: providers.map((provider) => ({
+          provider,
+          linkedAt: '2026-03-01T09:00:00.000Z',
+        })),
+      }
+      start(`${DEV_PATH}/users/${IDS.user}`, { api })
+      await screen.findByText(sentence)
+    })
+  })
+
   test('Apple takes a team, a key id and a private key; a provider can be removed; “enabled” may be refused', async () => {
     const api = installFakeApi()
     const bodies: unknown[] = []

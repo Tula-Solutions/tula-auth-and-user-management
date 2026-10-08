@@ -68,6 +68,10 @@ describe('conformance scenarios, in process', () => {
       'sign-in hook that times out',
       'Microsoft sign-up and sign-in',
       'Microsoft account linking',
+      'Discord sign-up and sign-in',
+      'Discord account linking',
+      'LinkedIn sign-up and sign-in',
+      'LinkedIn account linking',
     ])
   })
 

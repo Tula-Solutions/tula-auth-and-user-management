@@ -18,6 +18,8 @@ describe('OAuth providers', () => {
       expect(HOOK_SIGN_UP_METHODS).toContain(`oauth_${provider}`)
     }
     expect(OAUTH_PROVIDERS).toContain('microsoft')
+    expect(OAUTH_PROVIDERS).toContain('discord')
+    expect(OAUTH_PROVIDERS).toContain('linkedin')
   })
 })
 

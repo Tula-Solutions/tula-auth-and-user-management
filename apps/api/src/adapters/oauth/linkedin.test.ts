@@ -1,0 +1,452 @@
+import { afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test'
+import { exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
+import * as logger from '~/lib/logger'
+import { type OAuthFailure, OAuthProviderError } from '~/ports/oauth-provider'
+import { NONCE_NOT_ECHOED, remoteKeySet, verifyIdToken } from './id-token'
+import { createLinkedInProvider } from './linkedin'
+
+const REDIRECT_URI = 'https://auth.northline.app/v1/oauth/callback/linkedin'
+const CLIENT_ID = '86abcd1234efgh'
+const SECRET = 'linkedin-client-secret'
+const ACCESS_TOKEN = 'linkedin-access-token-canary'
+const TOKEN_URL = 'https://www.linkedin.com/oauth/v2/accessToken'
+const KEYS_URL = 'https://www.linkedin.com/oauth/openid/jwks'
+/** The issuer of LinkedIn's discovery document, and the one its guide's table gives. */
+const ISSUER = 'https://www.linkedin.com/oauth'
+const GUIDE_ISSUER = 'https://www.linkedin.com'
+const credentials = { clientId: CLIENT_ID, clientSecret: SECRET }
+const exchangeInput = {
+  code: 'the-code',
+  codeVerifier: 'the-verifier',
+  nonce: 'nonce-of-this-attempt',
+  redirectUri: REDIRECT_URI,
+}
+
+type Keys = { privateKey: CryptoKey; jwk: JWK }
+let linkedinKeys: Keys
+let stranger: Keys
+
+async function keys(kid: string): Promise<Keys> {
+  const pair = await generateKeyPair('RS256', { extractable: true })
+  return {
+    privateKey: pair.privateKey,
+    jwk: { ...(await exportJWK(pair.publicKey)), kid, alg: 'RS256', use: 'sig' },
+  }
+}
+
+beforeAll(async () => {
+  linkedinKeys = await keys('linkedin-key')
+  stranger = await keys('linkedin-key')
+})
+
+const spies: ReturnType<typeof spyOn>[] = []
+afterEach(() => {
+  for (const spy of spies.splice(0)) {
+    spy.mockRestore()
+  }
+})
+
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+
+interface TokenOptions {
+  issuer?: string
+  audience?: string
+  subject?: string | null
+  expiresIn?: string
+  key?: Keys
+  alg?: string
+  claims?: Record<string, unknown>
+}
+
+/** A token with the claims LinkedIn's discovery document lists, and no nonce. */
+function idToken(options: TokenOptions = {}): Promise<string> {
+  const jwt = new SignJWT({
+    name: 'Maya Okafor',
+    given_name: 'Maya',
+    family_name: 'Okafor',
+    picture: 'https://media.licdn.test/picture',
+    locale: 'en_US',
+    email: 'maya@northline.app',
+    email_verified: true,
+    ...options.claims,
+  })
+    .setProtectedHeader({ alg: options.alg ?? 'RS256', kid: 'linkedin-key' })
+    .setIssuer(options.issuer ?? ISSUER)
+    .setAudience(options.audience ?? CLIENT_ID)
+    .setIssuedAt()
+    .setExpirationTime(options.expiresIn ?? '5m')
+  if (options.subject !== null) {
+    jwt.setSubject(options.subject ?? '782bbtaQ')
+  }
+  return jwt.sign((options.key ?? linkedinKeys).privateKey)
+}
+
+const unsigned = (claims: Record<string, unknown>) =>
+  [
+    Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url'),
+    Buffer.from(JSON.stringify(claims)).toString('base64url'),
+    '',
+  ].join('.')
+
+type Answer = () => Response | Promise<Response>
+interface Call {
+  url: string
+  body: string
+  headers: Headers
+}
+
+/**
+ * Stand in for LinkedIn: its token endpoint and its key document, by exact address. A request
+ * to any other address (the userinfo endpoint among them) fails the test.
+ */
+function linkedin(token: string | Promise<string>, overrides: Record<string, Answer> = {}) {
+  const calls: Call[] = []
+  const routes: Record<string, Answer> = {
+    [TOKEN_URL]: async () =>
+      jsonResponse({
+        access_token: ACCESS_TOKEN,
+        expires_in: 5184000,
+        scope: 'email,openid,profile',
+        token_type: 'Bearer',
+        id_token: await token,
+      }),
+    [KEYS_URL]: () => jsonResponse({ keys: [linkedinKeys.jwk] }),
+    ...overrides,
+  }
+  spies.push(
+    spyOn(globalThis, 'fetch').mockImplementation((async (
+      input: string | URL | Request,
+      init?: RequestInit
+    ) => {
+      const url = input instanceof Request ? input.url : String(input)
+      calls.push({
+        url,
+        body: input instanceof Request ? await input.clone().text() : '',
+        headers: input instanceof Request ? input.headers : new Headers(init?.headers),
+      })
+      const route = routes[url]
+      if (!route) {
+        throw new Error(`unexpected request to ${url}`)
+      }
+      return route()
+    }) as typeof fetch)
+  )
+  return { calls, exchange: () => createLinkedInProvider().exchange(credentials, exchangeInput) }
+}
+
+async function failureOf(promise: Promise<unknown>): Promise<OAuthFailure | string> {
+  try {
+    await promise
+    return 'resolved'
+  } catch (error) {
+    return error instanceof OAuthProviderError ? error.failure : `threw ${String(error)}`
+  }
+}
+
+describe('the authorization URL', () => {
+  test('carries state and the three scopes; no challenge and no nonce, which LinkedIn documents neither of', () => {
+    const url = new URL(
+      createLinkedInProvider().authorizationUrl(credentials, {
+        state: 'the-state',
+        codeVerifier: 'the-verifier',
+        nonce: 'nonce-of-this-attempt',
+        redirectUri: REDIRECT_URI,
+      })
+    )
+    expect(url.origin + url.pathname).toBe('https://www.linkedin.com/oauth/v2/authorization')
+    // Exactly the five parameters of LinkedIn's "Request an Authorization Code" table.
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      response_type: 'code',
+      client_id: CLIENT_ID,
+      state: 'the-state',
+      scope: 'openid profile email',
+      redirect_uri: REDIRECT_URI,
+    })
+    for (const kept of ['the-verifier', 'nonce-of-this-attempt', SECRET]) {
+      expect(url.toString()).not.toContain(kept)
+    }
+  })
+})
+
+describe('the exchange', () => {
+  test('sends the code and the client’s credentials in the body, and reads the profile from the verified ID token', async () => {
+    const { calls, exchange } = linkedin(idToken())
+    expect(await exchange()).toEqual({
+      subject: '782bbtaQ',
+      email: 'maya@northline.app',
+      emailVerified: true,
+      givenName: 'Maya',
+      familyName: 'Okafor',
+    })
+    // The token endpoint and the key document: no userinfo call, nothing sent the access token.
+    expect(calls.map((call) => call.url)).toEqual([TOKEN_URL, KEYS_URL])
+    // Exactly the five parameters of LinkedIn's "Exchange Authorization Code" table.
+    expect(Object.fromEntries(new URLSearchParams(calls[0]?.body))).toEqual({
+      grant_type: 'authorization_code',
+      code: 'the-code',
+      redirect_uri: REDIRECT_URI,
+      client_id: CLIENT_ID,
+      client_secret: SECRET,
+    })
+    for (const call of calls) {
+      expect(call.headers.get('authorization')).toBeNull()
+      expect(`${call.url}${call.body}`).not.toContain(ACCESS_TOKEN)
+    }
+  })
+
+  test('the profile holds nothing of a token, and nothing is logged', async () => {
+    const token = await idToken()
+    const { exchange } = linkedin(token)
+    const logged = (['debug', 'info', 'warn', 'error'] as const).map((level) => {
+      const spy = spyOn(logger, level).mockImplementation(() => undefined)
+      spies.push(spy)
+      return spy
+    })
+    const profile = await exchange()
+    expect(JSON.stringify(profile)).not.toContain('canary')
+    expect(JSON.stringify(profile)).not.toContain(token.split('.')[2] as string)
+    expect(Object.keys(profile).sort()).toEqual([
+      'email',
+      'emailVerified',
+      'familyName',
+      'givenName',
+      'subject',
+    ])
+    for (const spy of logged) {
+      expect(spy).not.toHaveBeenCalled()
+    }
+  })
+
+  test('both spellings of LinkedIn’s issuer are accepted', async () => {
+    expect((await linkedin(idToken({ issuer: ISSUER })).exchange()).subject).toBe('782bbtaQ')
+    spies.splice(0).forEach((spy) => {
+      spy.mockRestore()
+    })
+    expect((await linkedin(idToken({ issuer: GUIDE_ISSUER })).exchange()).subject).toBe('782bbtaQ')
+  })
+
+  test('the account is sub, never the address or a name', async () => {
+    const first = await linkedin(
+      idToken({ claims: { email: 'someone-else@elsewhere.test', name: 'Renamed' } })
+    ).exchange()
+    expect(first.subject).toBe('782bbtaQ')
+  })
+
+  test('a token that carries a nonce is judged by the rest: LinkedIn is asked for none', async () => {
+    const { exchange } = linkedin(idToken({ claims: { nonce: 'whatever-linkedin-put-there' } }))
+    expect((await exchange()).subject).toBe('782bbtaQ')
+  })
+})
+
+describe('whether the address is verified', () => {
+  // LinkedIn documents `email_verified` as a Boolean and both fields as optional. Only the
+  // JSON boolean `true` beside an address counts; a string is not taken for one.
+  test.each([
+    ['email_verified: true and an address', { email_verified: true }, 'maya@northline.app', true],
+    ['email_verified: false', { email_verified: false }, 'maya@northline.app', false],
+    ['no email_verified', { email_verified: undefined }, 'maya@northline.app', false],
+    ['the string "true"', { email_verified: 'true' }, 'maya@northline.app', false],
+    ['the number 1', { email_verified: 1 }, 'maya@northline.app', false],
+    ['email_verified: true and no address', { email: undefined }, null, false],
+    ['email_verified: true and an empty address', { email: '' }, null, false],
+    ['an address that is not a string', { email: ['maya@northline.app'] }, null, false],
+  ] as [string, Record<string, unknown>, string | null, boolean][])(
+    '%s',
+    async (_name, claims, email, emailVerified) => {
+      const { exchange } = linkedin(idToken({ claims }))
+      expect(await exchange()).toMatchObject({ email, emailVerified })
+    }
+  )
+})
+
+describe('refusals', () => {
+  test.each([
+    ['another issuer', () => idToken({ issuer: 'https://www.linkedin.com.evil.test' })],
+    ['an issuer that only starts like LinkedIn’s', () => idToken({ issuer: `${ISSUER}/v2` })],
+    ['Google’s issuer', () => idToken({ issuer: 'https://accounts.google.com' })],
+    ['another audience', () => idToken({ audience: 'someone-elses-client' })],
+    ['an expired token', () => idToken({ expiresIn: '-5m' })],
+    ['a token signed by another key with the same kid', () => idToken({ key: stranger })],
+    [
+      'an unsigned token',
+      async () =>
+        unsigned({
+          iss: ISSUER,
+          aud: CLIENT_ID,
+          sub: '782bbtaQ',
+          iat: Math.floor(Date.now() / 1000),
+          exp: Math.floor(Date.now() / 1000) + 300,
+          email: 'maya@northline.app',
+          email_verified: true,
+        }),
+    ],
+    [
+      'a tampered payload',
+      async () => {
+        const [header, payload, signature] = (await idToken()).split('.') as [
+          string,
+          string,
+          string,
+        ]
+        const claims = JSON.parse(Buffer.from(payload, 'base64url').toString())
+        const forged = Buffer.from(
+          JSON.stringify({ ...claims, email: 'victim@northline.app' })
+        ).toString('base64url')
+        return [header, forged, signature].join('.')
+      },
+    ],
+    ['something that is not a token', async () => 'not-a-jwt'],
+  ] as [string, () => Promise<string>][])('refuses %s', async (_name, token) => {
+    expect(await failureOf(linkedin(token()).exchange())).toBe('invalid_token')
+  })
+
+  test('refuses a PS256 token: RS256 is the only algorithm LinkedIn lists', async () => {
+    const pair = await generateKeyPair('PS256', { extractable: true })
+    const jwk = { ...(await exportJWK(pair.publicKey)), kid: 'linkedin-key', use: 'sig' }
+    const token = idToken({ alg: 'PS256', key: { privateKey: pair.privateKey, jwk } })
+    const { exchange } = linkedin(token, { [KEYS_URL]: () => jsonResponse({ keys: [jwk] }) })
+    expect(await failureOf(exchange())).toBe('invalid_token')
+  })
+
+  test('refuses a token without a subject', async () => {
+    expect(await failureOf(linkedin(idToken({ subject: null })).exchange())).toBe('invalid_token')
+  })
+
+  test('a token response without an ID token is refused, and userinfo is not asked instead', async () => {
+    const { calls, exchange } = linkedin('', {
+      [TOKEN_URL]: () => jsonResponse({ access_token: ACCESS_TOKEN, expires_in: 5184000 }),
+    })
+    expect(await failureOf(exchange())).toBe('invalid_token')
+    expect(calls.map((call) => call.url)).toEqual([TOKEN_URL])
+  })
+
+  test.each([
+    [
+      'a refused code',
+      () =>
+        jsonResponse({ error: 'invalid_request', error_description: 'canary-in-the-answer' }, 400),
+      'invalid_grant',
+    ],
+    ['a server error', () => new Response('canary-in-the-answer', { status: 503 }), 'unavailable'],
+    [
+      'a network failure',
+      () => Promise.reject(new TypeError('fetch failed: canary-in-the-answer')),
+      'unavailable',
+    ],
+  ] as [string, Answer, OAuthFailure][])(
+    'maps %s to a failure that carries nothing of it',
+    async (_name, answer, failure) => {
+      const { exchange } = linkedin('', { [TOKEN_URL]: answer })
+      const error = await exchange().catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(OAuthProviderError)
+      expect((error as Error).message).toBe(`oauth provider: ${failure}`)
+      expect((error as Error).cause).toBeUndefined()
+      expect(`${String(error)}${JSON.stringify(error)}`).not.toContain('canary')
+    }
+  )
+
+  test('a refused token’s error carries nothing of the token', async () => {
+    const token = await idToken({ audience: 'someone-elses-client' })
+    const error = await linkedin(token)
+      .exchange()
+      .catch((caught: unknown) => caught)
+    expect((error as Error).message).toBe('oauth provider: invalid_token')
+    expect((error as Error).cause).toBeUndefined()
+    expect(`${String(error)}${JSON.stringify(error)}`).not.toContain(token.split('.')[1] as string)
+  })
+
+  test.each([
+    ['cannot be fetched', () => new Response('nope', { status: 500 }), 'invalid_token'],
+    ['is not a key set', () => jsonResponse({ keys: 'none' }), 'invalid_token'],
+    ['holds no key of that id', () => jsonResponse({ keys: [] }), 'invalid_token'],
+  ] as [string, Answer, OAuthFailure][])(
+    'the key document %s: the token does not verify',
+    async (_name, answer, failure) => {
+      const { exchange } = linkedin(idToken(), { [KEYS_URL]: answer })
+      expect(await failureOf(exchange())).toBe(failure)
+    }
+  )
+})
+
+describe('a LinkedIn that never answers', () => {
+  const hang = () => new Promise<Response>(() => undefined)
+
+  test.each([
+    ['the token endpoint', TOKEN_URL],
+    ['the key document', KEYS_URL],
+  ])('%s hanging is unavailable after the timeout', async (_name, url) => {
+    linkedin(idToken(), { [url]: hang })
+    const since = performance.now()
+    expect(
+      await failureOf(
+        createLinkedInProvider({ timeoutMs: 40 }).exchange(credentials, exchangeInput)
+      )
+    ).toBe('unavailable')
+    expect(performance.now() - since).toBeLessThan(2000)
+  })
+})
+
+describe('whether the nonce is checked is said at every call', () => {
+  const expected = { audience: CLIENT_ID, issuers: [ISSUER] }
+
+  function keySet() {
+    spies.push(
+      spyOn(globalThis, 'fetch').mockImplementation((async () =>
+        jsonResponse({ keys: [linkedinKeys.jwk] })) as unknown as typeof fetch)
+    )
+    return remoteKeySet(KEYS_URL, 1000)
+  }
+
+  test('a call that does not say is refused, by the compiler and at run time', async () => {
+    const token = await idToken()
+    expect(
+      await failureOf(
+        // @ts-expect-error -- `nonce` is required: leaving it out must not turn the check off.
+        verifyIdToken(keySet(), token, expected, 1000)
+      )
+    ).toBe('invalid_token')
+  })
+
+  test.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['an empty string', ''],
+    ['another symbol', Symbol('nonce-not-echoed')],
+  ])('%s in its place refuses every token', async (_name, nonce) => {
+    const token = await idToken({ claims: { nonce: '' } })
+    expect(
+      await failureOf(
+        verifyIdToken(keySet(), token, { ...expected, nonce: nonce as unknown as string }, 1000)
+      )
+    ).toBe('invalid_token')
+  })
+
+  test('a string is compared: a token with none, or another, is refused', async () => {
+    for (const claims of [{}, { nonce: 'another' }]) {
+      const token = await idToken({ claims })
+      expect(
+        await failureOf(
+          verifyIdToken(keySet(), token, { ...expected, nonce: 'this-attempt' }, 1000)
+        )
+      ).toBe('invalid_token')
+    }
+    const token = await idToken({ claims: { nonce: 'this-attempt' } })
+    expect(
+      await failureOf(verifyIdToken(keySet(), token, { ...expected, nonce: 'this-attempt' }, 1000))
+    ).toBe('resolved')
+  })
+
+  test('the marker accepts a token with no nonce, and still checks everything else', async () => {
+    const good = await idToken()
+    expect(
+      await failureOf(verifyIdToken(keySet(), good, { ...expected, nonce: NONCE_NOT_ECHOED }, 1000))
+    ).toBe('resolved')
+    const foreign = await idToken({ audience: 'someone-elses-client' })
+    expect(
+      await failureOf(
+        verifyIdToken(keySet(), foreign, { ...expected, nonce: NONCE_NOT_ECHOED }, 1000)
+      )
+    ).toBe('invalid_token')
+  })
+})
