@@ -12,13 +12,20 @@ import {
 import { ActionButton } from '~/components/action-button'
 import { type Column, DataTable } from '~/components/data-table'
 import { PageHeader, Section } from '~/components/page'
-import { QueryState } from '~/components/states'
+import { EmptyState, type QueryLike, QueryState } from '~/components/states'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import type { EnvironmentScope } from '~/features/users/users-screen'
+import { Address } from './address'
 import { refreshWebhooks } from './queries'
 import { Moment } from './rotate-secret-dialog'
 import { SendResult } from './send-result'
-import { answerText, deliveryStateLabel, failureReasonText, webhookMessageFor } from './words'
+import {
+  answerText,
+  deliveryStateLabel,
+  failureReasonText,
+  isNotFound,
+  webhookMessageFor,
+} from './words'
 
 /** Props of {@link WebhookDeliveryScreen}. */
 export interface WebhookDeliveryScreenProps {
@@ -164,38 +171,55 @@ export function WebhookDeliveryScreen({
         title='Delivery'
         description='One event owed to one endpoint, and every request the server made to hand it over. Of an answer the server keeps the status code and the time it took, nothing else.'
       />
-      <QueryState query={delivery} label='Loading the delivery'>
-        {(found) => (
-          <>
-            <Section title='What was sent'>
-              <Facts
-                delivery={found}
-                // Server text: rendered as text, never a link.
-                address={
-                  <span className='font-mono text-xs break-all'>{endpoint.data?.url ?? '…'}</span>
-                }
-              />
-            </Section>
-            <Section title='Requests'>
-              {found.attempts.length === 0 ? (
-                <p className='text-sm text-muted-foreground'>
-                  No request has been made for this delivery yet.
-                </p>
-              ) : (
-                <DataTable
-                  caption='Requests made for this delivery'
-                  rows={found.attempts}
-                  rowKey={(attempt) => String(attempt.attempt)}
-                  columns={ATTEMPT_COLUMNS}
-                />
-              )}
-            </Section>
-            <Section title='Send again'>
-              <SendAgain delivery={found} />
-            </Section>
-          </>
-        )}
-      </QueryState>
+      {delivery.data === undefined && isNotFound(delivery.error) ? (
+        <EmptyState title='Delivery not found'>
+          This endpoint has no delivery with that id. Deliveries are kept for 90 days after they
+          ended, and go with their endpoint when it is deleted.
+        </EmptyState>
+      ) : (
+        <DeliveryFound query={delivery} address={endpoint.data?.url} />
+      )}
     </>
+  )
+}
+
+function DeliveryFound({
+  query,
+  address,
+}: {
+  query: QueryLike<WebhookDeliveryDetail>
+  /** The endpoint's address, once it is known. */
+  address: string | undefined
+}) {
+  return (
+    <QueryState query={query} label='Loading the delivery'>
+      {(found) => (
+        <>
+          <Section title='What was sent'>
+            <Facts
+              delivery={found}
+              address={address === undefined ? '…' : <Address url={address} className='text-xs' />}
+            />
+          </Section>
+          <Section title='Requests'>
+            {found.attempts.length === 0 ? (
+              <p className='text-sm text-muted-foreground'>
+                No request has been made for this delivery yet.
+              </p>
+            ) : (
+              <DataTable
+                caption='Requests made for this delivery'
+                rows={found.attempts}
+                rowKey={(attempt) => String(attempt.attempt)}
+                columns={ATTEMPT_COLUMNS}
+              />
+            )}
+          </Section>
+          <Section title='Send again'>
+            <SendAgain delivery={found} />
+          </Section>
+        </>
+      )}
+    </QueryState>
   )
 }

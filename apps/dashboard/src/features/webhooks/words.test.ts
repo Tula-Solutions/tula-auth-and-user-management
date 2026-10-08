@@ -1,14 +1,27 @@
 import { describe, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { WEBHOOK_REDELIVER_REFUSALS, WEBHOOK_ROTATION_REFUSALS } from '@tula/contract'
+import {
+  DEFAULT_PAGE_SIZE,
+  WEBHOOK_REDELIVER_REFUSALS,
+  WEBHOOK_ROTATION_REFUSALS,
+} from '@tula/contract'
+import { ACTIVITY_TYPES } from '@tula/contract/event-types'
 import { ApiError } from '~/api/errors'
-import { deliverySearch } from './delivery-search'
+import { entryImports } from '~/testing/entry-imports'
+import {
+  DELIVERY_LIST_WINDOW,
+  DELIVERY_PAGE_SIZE,
+  deliverySearch,
+  LAST_DELIVERY_PAGE,
+} from './delivery-search'
+import { eventTypeNote, NOTED_EVENT_TYPES } from './event-type-notes'
 import {
   answerText,
   deliveryStateLabel,
   endpointState,
   failureReasonText,
+  isNotFound,
   lastResultText,
   sendResultText,
   webhookMessageFor,
@@ -192,15 +205,118 @@ describe('a refusal in words', () => {
     expect(webhookMessageFor(conflict)).toBe('The server’s own description.')
   })
 
-  test('the limit on requests made on demand, with and without a time to wait', () => {
+  test('a refusal for too many requests does not name a limit the answer did not name', () => {
+    // A 429 says `rate_limited` and how long to wait, whichever limit it was: the general
+    // one for the admin API (per address) or the one for requests made on demand.
     const limited = (retryAfter: number | null) =>
       new ApiError({ status: 429, code: 'rate_limited', detail: 'Too many requests.', retryAfter })
     expect(webhookMessageFor(limited(7), 'send')).toBe(
-      'Test events and deliveries sent again share a limit of ten a minute for the environment. Try again in 7 seconds.'
+      'Too many requests. Try again in 7 seconds. Test events and deliveries sent again also have an allowance of their own, for the whole environment.'
     )
     expect(webhookMessageFor(limited(null), 'send')).toBe(
-      'Test events and deliveries sent again share a limit of ten a minute for the environment. Wait a moment, then try again.'
+      'Too many requests. Wait a moment, then try again. Test events and deliveries sent again also have an allowance of their own, for the whole environment.'
     )
+    expect(webhookMessageFor(limited(7))).toBe('Too many requests. Try again in 7 seconds.')
+    for (const action of ['send', 'other'] as const) {
+      expect(webhookMessageFor(limited(7), action)).not.toMatch(/\bten\b|\b10\b|a minute/)
+    }
+  })
+
+  test.each([
+    ['resource.not_found', 404, undefined],
+    // An id from a hand-edited address that is no id at all: the API refuses the path
+    // parameter (422), which to the reader is the same thing as an id nothing has.
+    [
+      'validation.failed',
+      422,
+      [{ field: 'id', code: 'validation.failed', message: 'Invalid UUID' }],
+    ],
+    [
+      'validation.failed',
+      422,
+      [{ field: 'deliveryId', code: 'validation.failed', message: 'Invalid UUID' }],
+    ],
+  ])('%s (%i) for the thing a screen is about is “not found”', (code, status, errors) => {
+    const error = new ApiError({
+      status,
+      code,
+      detail: 'The server’s own description.',
+      fieldErrors: errors,
+    })
+    expect(isNotFound(error)).toBe(true)
+  })
+
+  test.each([
+    [
+      'a refused filter',
+      422,
+      'validation.failed',
+      [{ field: 'page', code: 'validation.failed', message: 'x' }],
+    ],
+    [
+      'a refused body',
+      422,
+      'validation.failed',
+      [{ field: 'url', code: 'validation.failed', message: 'x' }],
+    ],
+    ['a refusal with no field', 422, 'validation.failed', []],
+    ['a conflict', 409, 'resource.conflict', undefined],
+    ['a failure of the server', 500, 'internal', undefined],
+  ])('%s is not “not found”', (_name, status, code, errors) => {
+    const error = new ApiError({
+      status,
+      code,
+      detail: 'The server’s own description.',
+      fieldErrors: errors,
+    })
+    expect(isNotFound(error)).toBe(false)
+  })
+})
+
+describe('an event type that could be misread says what it is about', () => {
+  test.each([
+    [
+      'hook.created',
+      'A hook (a question the server asks your backend before a sign-up) was registered. Not sent when a hook is asked.',
+    ],
+    [
+      'hook.updated',
+      'A hook (a question the server asks your backend before a sign-up) was changed, switched on or switched off. Not sent when a hook is asked.',
+    ],
+    [
+      'hook.deleted',
+      'A hook (a question the server asks your backend before a sign-up) was removed. Not sent when a hook is asked.',
+    ],
+    [
+      'signing_key.rotated',
+      'The key that signs this environment’s access tokens was replaced. Not about a webhook signing secret.',
+    ],
+    [
+      'webhook_endpoint.secret_rotated',
+      'A webhook endpoint’s signing secret was replaced. The event carries when the overlap ends, never a secret.',
+    ],
+    [
+      'webhook_endpoint.disabled',
+      'The server switched a webhook endpoint off by itself (it answered 410, or failed for five days). Not sent when an operator switches one off: that is webhook_endpoint.updated.',
+    ],
+    [
+      'session.reuse_detected',
+      'A refresh token that had already been used was presented again, and the server ended every session of that sign-in.',
+    ],
+  ])('%s', (type, note) => {
+    expect(eventTypeNote(type)).toBe(note)
+  })
+
+  test('a type that says what it is has no note, and neither has one nobody knows', () => {
+    expect(eventTypeNote('user.created')).toBeUndefined()
+    expect(eventTypeNote('invoice.paid')).toBeUndefined()
+    // An inherited key is not a type.
+    expect(eventTypeNote('constructor')).toBeUndefined()
+  })
+
+  test('every note is about a type the contract defines', () => {
+    expect(NOTED_EVENT_TYPES.filter((type) => !ACTIVITY_TYPES.includes(type as never))).toEqual([])
+    expect(NOTED_EVENT_TYPES).toHaveLength(7)
   })
 })
 
@@ -214,8 +330,63 @@ describe('the delivery list’s filters, read from an address', () => {
     [{ state: 'bogus', eventType: 'invoice.paid', page: 1 }, {}],
     [{ state: ['failed'], eventType: 7, page: '2' }, { page: 2 }],
     [{ state: 'pending', other: 'x', page: -1 }, { state: 'pending' }],
+    // The last page the server answers: 500 pages of 20 are its newest 10,000 deliveries.
+    [{ page: 500 }, { page: 500 }],
+    // A page past that is refused by the server (422), so it is no page: the first one.
+    [{ page: 501 }, {}],
+    [{ state: 'failed', page: 600 }, { state: 'failed' }],
+    [{ page: 1_000_001 }, {}],
   ])('%j reads as %j', (search, filters) => {
     expect<unknown>(deliverySearch(search)).toEqual(filters)
+  })
+
+  test('the window and the page size are the server’s, as the generated client states them', () => {
+    // The API's `WEBHOOK_DELIVERY_LIST_WINDOW` is not in the contract; the operation's
+    // description, which the client is generated with, says it.
+    const client = readFileSync(join(import.meta.dir, '../../api/generated/api.gen.ts'), 'utf8')
+    const stated = /pages through the newest (\d+) matching deliveries/.exec(client)
+    expect(Number(stated?.[1])).toBe(DELIVERY_LIST_WINDOW)
+    expect(DELIVERY_LIST_WINDOW).toBe(10_000)
+    expect(DELIVERY_PAGE_SIZE).toBe(DEFAULT_PAGE_SIZE)
+    expect(LAST_DELIVERY_PAGE).toBe(500)
+  })
+})
+
+describe('what a route file runs before its screen is loaded stays free of Zod', () => {
+  // `validateSearch` and `beforeLoad` are part of the entry chunk; the screen (`component`)
+  // is split off and loaded later. The entry chunk's imports run before `lib/zod-csp.ts`
+  // has told Zod not to probe `new Function`, so a schema built there is a
+  // Content-Security-Policy violation in the browser, and nothing in happy-dom notices.
+  const SRC = join(import.meta.dir, '../..')
+  const ROUTE_FILES = [
+    'index.tsx',
+    '$endpointId/index.tsx',
+    '$endpointId/deliveries/$deliveryId.tsx',
+  ].map((file) =>
+    join(SRC, 'routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/webhooks', file)
+  )
+
+  test('the three route files exist and each names a screen', () => {
+    for (const file of ROUTE_FILES) {
+      expect(entryImports(file, SRC).lazy.length).toBe(1)
+    }
+  })
+
+  test('nothing they import at module level, however far down, reaches Zod or the contract’s schemas', () => {
+    for (const file of ROUTE_FILES) {
+      const { reached, forbidden } = entryImports(file, SRC)
+      // The walk went somewhere: the generated client is what the search reader reads.
+      expect(forbidden).toEqual([])
+      expect(reached.length).toBeGreaterThan(0)
+    }
+    const reader = entryImports(ROUTE_FILES[1] as string, SRC).reached
+    expect(reader.some((path) => path.endsWith('features/webhooks/delivery-search.ts'))).toBe(true)
+    expect(reader.some((path) => path.endsWith('api/generated/api.gen.ts'))).toBe(true)
+  })
+
+  test('the walk would see it: a screen’s module does reach the contract’s schemas', () => {
+    const screen = join(SRC, 'features/webhooks/webhooks-screen.tsx')
+    expect(entryImports(screen, SRC, { everything: true }).forbidden).toContain('@tula/contract')
   })
 })
 
@@ -240,11 +411,21 @@ describe('the vocabulary', () => {
 
   test('the webhooks screens never say “hook” or “callback”', () => {
     const files = [...sources(HERE), ...sources(ROUTES)]
-    // Fourteen files of the feature and three routes: a walk that finds none proves nothing.
-    expect(files.length).toBe(17)
-    const offending = files.filter((file) =>
-      /callback|(?<!web)hook/i.test(readFileSync(file, 'utf8'))
-    )
+    // Sixteen files of the feature and three routes: a walk that finds none proves nothing.
+    expect(files.length).toBe(19)
+    const offending = files
+      // The one file that has to say the word: the notes on the `hook.*` event types.
+      .filter((file) => !file.endsWith('event-type-notes.ts'))
+      .filter((file) => /callback|(?<!web)hook/i.test(readFileSync(file, 'utf8')))
     expect(offending).toEqual([])
+  })
+
+  test('the notes say “hook” only of the `hook.*` types, and never for a webhook', () => {
+    const notes = readFileSync(join(HERE, 'event-type-notes.ts'), 'utf8')
+    expect(/callback/i.test(notes)).toBe(false)
+    const saying = NOTED_EVENT_TYPES.filter((type) =>
+      /(?<!web)hook/i.test(eventTypeNote(type) ?? '')
+    )
+    expect(saying).toEqual(['hook.created', 'hook.updated', 'hook.deleted'])
   })
 })

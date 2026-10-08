@@ -203,6 +203,7 @@ function initialState(): FakeState {
     webhookEndpoints: [],
     webhookDeliveries: [],
     webhookReceiver: { statusCode: 204, durationMs: 41, failureReason: null },
+    webhookNow: NOW,
     canStillSignIn: true,
     authentication: {
       hasPassword: true,

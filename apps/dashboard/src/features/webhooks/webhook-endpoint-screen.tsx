@@ -16,13 +16,11 @@ import { NativeSelectOption } from '~/components/ui/native-select'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import type { EnvironmentScope } from '~/features/users/users-screen'
 import { formatDateTime } from '~/lib/format'
-import { type DeliveryFilters, deliverySearch } from './delivery-search'
+import { DELIVERY_PAGE_SIZE, type DeliveryFilters, deliverySearch } from './delivery-search'
 import { EndpointCard } from './endpoint-card'
+import { eventTypeNote } from './event-type-notes'
 import { Moment } from './rotate-secret-dialog'
-import { deliveryStateLabel, lastResultText } from './words'
-
-/** How many deliveries one page of the list holds (the API's default). */
-export const DELIVERY_PAGE_SIZE = 20
+import { deliveryStateLabel, isNotFound, lastResultText } from './words'
 
 /** Props of {@link WebhookEndpointScreen}. */
 export interface WebhookEndpointScreenProps {
@@ -125,6 +123,7 @@ function Deliveries({
         </SelectField>
         <SelectField
           label='Event type'
+          hint={filters.eventType ? eventTypeNote(filters.eventType) : undefined}
           value={filters.eventType ?? ''}
           onChange={(event) => choose('eventType', event.target.value)}
         >
@@ -209,7 +208,14 @@ export function WebhookEndpointScreen({
         title='Webhook endpoint'
         description='What this endpoint is, how it is doing, and everything that was sent to it.'
       />
-      {gone ? null : (
+      {gone ? null : endpoint.data === undefined && isNotFound(endpoint.error) ? (
+        // Nothing has that id, or what the address names is no id: said as what it is, not
+        // as a failure to load with a "Try again" that cannot help.
+        <EmptyState title='Webhook endpoint not found'>
+          This environment has no webhook endpoint with that id. It may have been deleted, or the
+          address may be mistyped.
+        </EmptyState>
+      ) : (
         <QueryState query={endpoint} label='Loading the endpoint'>
           {(found) => (
             <>

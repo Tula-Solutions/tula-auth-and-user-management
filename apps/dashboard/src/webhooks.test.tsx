@@ -451,7 +451,9 @@ describe('rotating a signing secret', () => {
         name: `End the secret overlap of ${HOME} now`,
       })
     )
-    expect(within(dialog()).getByRole('heading').textContent).toBe('End the overlap now?')
+    expect(within(dialog()).getByRole('heading').textContent).toBe(
+      `End the secret overlap of ${HOME} now?`
+    )
     expect(dialog().textContent).toContain(
       'The previous secret stops signing at once and is deleted.'
     )
@@ -564,7 +566,7 @@ describe('sending a test event', () => {
     await user.click(within(dialog()).getByRole('button', { name: 'Send test event' }))
     await waitFor(() =>
       expect(alerts()).toEqual([
-        'Test events and deliveries sent again share a limit of ten a minute for the environment. Try again in 30 seconds.',
+        'Too many requests. Try again in 30 seconds. Test events and deliveries sent again also have an allowance of their own, for the whole environment.',
       ])
     )
     expect(within(dialog()).queryAllByTestId('send-result')).toHaveLength(0)
@@ -782,11 +784,41 @@ describe('the deliveries of an endpoint', () => {
     const elsewhere = fakeWebhookEndpoint({ url: HOME, environmentId: IDS.production })
     api.state.webhookEndpoints.push(elsewhere)
     start(`${DEV_PATH}/webhooks/${elsewhere.id}`, { api })
-    expect((await screen.findByRole('alert')).textContent).toContain('This could not be loaded')
+    await screen.findByText('Webhook endpoint not found')
+    await screen.findByText(
+      'This environment has no webhook endpoint with that id. It may have been deleted, or the address may be mistyped.'
+    )
+    // Said as what it is: not as a failure to load, with a "Try again" that cannot help.
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: 'Try again' })).toHaveLength(0)
     expect(screen.queryAllByRole('heading', { level: 2, name: HOME })).toHaveLength(0)
     expect(screen.getByRole('link', { name: '← All webhook endpoints' }).getAttribute('href')).toBe(
       `/dashboard${DEV_PATH}/webhooks`
     )
+  })
+
+  test('an address that names no id at all reads the same, not as a refused request', async () => {
+    const { api } = start(`${DEV_PATH}/webhooks/not-an-id`)
+    await screen.findByText('Webhook endpoint not found')
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+    expect(screen.getByRole('link', { name: '← All webhook endpoints' }).getAttribute('href')).toBe(
+      `/dashboard${DEV_PATH}/webhooks`
+    )
+    // Nothing is asked about deliveries of an endpoint that is not there.
+    expect(api.calls.filter((call) => call.path.endsWith('/deliveries'))).toHaveLength(0)
+  })
+
+  test('a failure that is not “not found” is still a failure, with a way to try again', async () => {
+    const api = installFakeApi()
+    const endpoint = fakeWebhookEndpoint({ url: HOME })
+    api.state.webhookEndpoints.push(endpoint)
+    api.override('GET', /^\/v1\/admin\/webhook-endpoints\/[^/]+$/, () =>
+      failure(500, 'internal', 'Something went wrong.')
+    )
+    start(`${DEV_PATH}/webhooks/${endpoint.id}`, { api })
+    expect((await screen.findByRole('alert')).textContent).toContain('This could not be loaded')
+    expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1)
+    expect(screen.queryAllByText('Webhook endpoint not found')).toHaveLength(0)
   })
 
   test('deleting the endpoint from its own screen leads back to the list, with no error on the way', async () => {
@@ -940,7 +972,7 @@ describe('one delivery', () => {
     await user.click(await screen.findByRole('button', { name: 'Send again' }))
     await waitFor(() =>
       expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toEqual([
-        'Test events and deliveries sent again share a limit of ten a minute for the environment. Try again in 12 seconds.',
+        'Too many requests. Try again in 12 seconds. Test events and deliveries sent again also have an allowance of their own, for the whole environment.',
       ])
     )
   })
@@ -981,7 +1013,29 @@ describe('one delivery', () => {
     const delivery = fakeWebhookDelivery(other.id)
     api.state.webhookDeliveries.push(delivery)
     start(`${DEV_PATH}/webhooks/${mine.id}/deliveries/${delivery.id}`, { api })
-    expect((await screen.findByRole('alert')).textContent).toContain('This could not be loaded')
+    await screen.findByText('Delivery not found')
+    await screen.findByText(
+      'This endpoint has no delivery with that id. Deliveries are kept for 90 days after they ended, and go with their endpoint when it is deleted.'
+    )
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
     expect(screen.queryAllByTestId('delivery-facts')).toHaveLength(0)
+    expect(
+      screen.getByRole('link', { name: '← Deliveries of this endpoint' }).getAttribute('href')
+    ).toBe(`/dashboard${DEV_PATH}/webhooks/${mine.id}`)
+  })
+
+  test('a delivery address that names no id at all reads the same', async () => {
+    const api = installFakeApi()
+    const mine = fakeWebhookEndpoint({ url: HOME })
+    api.state.webhookEndpoints.push(mine)
+    start(`${DEV_PATH}/webhooks/${mine.id}/deliveries/not-an-id`, { api })
+    await screen.findByText('Delivery not found')
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
+  })
+
+  test('nor does one under an endpoint that is no id', async () => {
+    start(`${DEV_PATH}/webhooks/not-an-id/deliveries/also-not`)
+    await screen.findByText('Delivery not found')
+    expect(screen.queryAllByRole('alert')).toHaveLength(0)
   })
 })

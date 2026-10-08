@@ -203,12 +203,13 @@ export type WebhookAction = 'create' | 'send' | 'other'
  * The sentence to show when a webhook call was refused or failed.
  *
  * The three webhook codes carry a fixed word in `params.reason`; each word has a sentence of
- * the dashboard's own. Registering an eleventh endpoint and the limit on requests made on
- * demand have theirs too. Anything else is what every other screen says.
+ * the dashboard's own. Registering an eleventh endpoint has its own too, and a refusal for
+ * too many requests made on demand says that those have an allowance of their own. Anything
+ * else is what every other screen says.
  *
  * @param error - What the mutation threw.
  * @param action - What was being done: `create` (the endpoint limit is a conflict there),
- *   `send` (a test event or a delivery sent again, which share a rate limit), or `other`.
+ *   `send` (a test event or a delivery sent again, which share an allowance), or `other`.
  * @returns A sentence for the operator, never a bare code.
  */
 export function webhookMessageFor(error: unknown, action: WebhookAction = 'other'): string {
@@ -222,11 +223,38 @@ export function webhookMessageFor(error: unknown, action: WebhookAction = 'other
     return `This environment already has ${MAX_WEBHOOK_ENDPOINTS} webhook endpoints, the most one can have. Delete one first.`
   }
   if (action === 'send' && failure.code === 'rate_limited') {
-    const wait =
-      failure.retryAfter === null
-        ? 'Wait a moment, then try again.'
-        : `Try again in ${failure.retryAfter} seconds.`
-    return `Test events and deliveries sent again share a limit of ten a minute for the environment. ${wait}`
+    // The answer says "too many" and how long to wait, not which limit it was (the admin
+    // API's general one counts too). So no number is named: only that these requests have
+    // an allowance beside it, which is why this may be said after very few of them.
+    return `${messageFor(error)} Test events and deliveries sent again also have an allowance of their own, for the whole environment.`
   }
   return messageFor(error)
+}
+
+/** The path parameters of the webhook routes: what an address names an endpoint or a delivery by. */
+const PATH_FIELDS: ReadonlySet<string> = new Set(['id', 'deliveryId'])
+
+/**
+ * Whether a failed read means "there is no such endpoint or delivery here".
+ *
+ * A 404 does, and so does a 422 that is only about the ids in the path: an address typed by
+ * hand may name something that is no id at all, which the API refuses before it looks. To
+ * the reader both are the same: nothing has that id.
+ *
+ * @param error - What the query threw.
+ * @returns True for a 404, and for a `validation.failed` whose every field is a path id.
+ */
+export function isNotFound(error: unknown): boolean {
+  if (!error) {
+    return false
+  }
+  const failure = toApiError(error)
+  if (failure.status === 404) {
+    return true
+  }
+  return (
+    failure.code === 'validation.failed' &&
+    failure.fieldErrors.length > 0 &&
+    failure.fieldErrors.every((entry) => PATH_FIELDS.has(entry.field))
+  )
 }
