@@ -392,11 +392,14 @@ describe('a refresh', () => {
   test('replayed inside the grace window asks nothing either', async () => {
     await register()
     const first = await create()
+    const find = spyOn(deps.hooks, 'findByPoint')
     await Sessions.refresh(deps, tenant, first.refreshToken ?? '')
     deps.clock.advance('2s')
     const replayed = await Sessions.refresh(deps, tenant, first.refreshToken ?? '')
     expect(decoded(replayed).ext).toEqual({ plan: 'pro', seats: 5 })
     expect(received).toHaveLength(1)
+    expect(find).not.toHaveBeenCalled()
+    find.mockRestore()
   })
 
   test('never reads the hooks at all', async () => {
@@ -488,12 +491,17 @@ describe('a stateful session', () => {
     expect(tokens.accessToken).toBeUndefined()
     expect(received).toHaveLength(1)
     respond = claims({ plan: 'free' })
+    const find = spyOn(deps.hooks, 'findByPoint')
     const first = await Sessions.authenticate(deps, tenant, tokens.sessionToken ?? '')
     deps.clock.advance('5m')
     const second = await Sessions.authenticate(deps, tenant, tokens.sessionToken ?? '')
     expect(first.ext).toEqual({ plan: 'pro', seats: 5 })
     expect(second.ext).toEqual({ plan: 'pro', seats: 5 })
     expect(received).toHaveLength(1)
+    // Both ways through the check were taken: the first answered from the row alone, the
+    // second, five minutes on, wrote the session's activity down.
+    expect(find).not.toHaveBeenCalled()
+    find.mockRestore()
   })
 
   test('a failing hook refuses it like any other session', async () => {
@@ -629,5 +637,152 @@ describe('when a session’s user proves a factor again', () => {
     expect(decoded(stepped).ext).toEqual({ fresh: true })
     expect((await row(tokens.sessionId)).hookClaims).toEqual({ fresh: true })
     expect(steppedUp()).toHaveLength(1)
+  })
+})
+
+describe('a template that outgrew what a session’s hook answered', () => {
+  // The hook's claims were checked against the cap, beside the template of that moment, when
+  // they were answered. A template saved later can be valid alone and too much beside them.
+  const RESTRICTION = 'r'.repeat(900)
+  const grown = (web: Record<string, unknown> = {}) => ({
+    jwtTemplates: {
+      app: { claims: { one: { value: 'a'.repeat(250) }, two: { value: 'b'.repeat(250) } } },
+    },
+    profiles: { web: { ...web, jwtTemplate: 'app' } },
+  })
+
+  test('a refresh keeps the hook’s claims and leaves the template’s out', async () => {
+    await register()
+    respond = claims({ restricted: RESTRICTION })
+    const first = await create()
+    expect(decoded(first).ext).toEqual({ restricted: RESTRICTION })
+    configure(grown())
+    const second = await Sessions.refresh(deps, tenant, first.refreshToken ?? '')
+    // Never no `ext` at all: an application that reads a restriction as a present claim
+    // would take its absence for "unrestricted".
+    expect(decoded(second).ext).toEqual({ restricted: RESTRICTION })
+    const warned = logged()
+    expect(warned).toContain('"template":"app"')
+    expect(warned).toContain(tenant.environmentId)
+    expect(warned).not.toContain(RESTRICTION)
+    expect(warned).not.toContain('a'.repeat(250))
+    // The row is not rewritten: when the template shrinks again both are issued.
+    configure({
+      jwtTemplates: { app: { claims: { one: { value: 'small' } } } },
+      profiles: { web: { jwtTemplate: 'app' } },
+    })
+    deps.clock.advance('2m')
+    const third = await Sessions.refresh(deps, tenant, second.refreshToken ?? '')
+    expect(decoded(third).ext).toEqual({ one: 'small', restricted: RESTRICTION })
+  })
+
+  test('the replay of a refresh inside the grace window keeps them too', async () => {
+    await register()
+    respond = claims({ restricted: RESTRICTION })
+    const first = await create()
+    configure(grown())
+    await Sessions.refresh(deps, tenant, first.refreshToken ?? '')
+    deps.clock.advance('2s')
+    const replayed = await Sessions.refresh(deps, tenant, first.refreshToken ?? '')
+    expect(decoded(replayed).ext).toEqual({ restricted: RESTRICTION })
+  })
+
+  test('a stateful session’s check keeps them, on both of its ways', async () => {
+    configure({ profiles: { web: { type: 'stateful' } } })
+    await register()
+    respond = claims({ restricted: RESTRICTION })
+    const tokens = await create()
+    configure(grown({ type: 'stateful' }))
+    const first = await Sessions.authenticate(deps, tenant, tokens.sessionToken ?? '')
+    deps.clock.advance('5m')
+    const second = await Sessions.authenticate(deps, tenant, tokens.sessionToken ?? '')
+    expect(first.ext).toEqual({ restricted: RESTRICTION })
+    expect(second.ext).toEqual({ restricted: RESTRICTION })
+  })
+
+  test('an address that grew after the hook answered costs the template’s claims, not the hook’s', async () => {
+    configure({
+      jwtTemplates: { app: { claims: { email: { from: 'user.email' } } } },
+      profiles: { web: { jwtTemplate: 'app' } },
+    })
+    await register()
+    // Fits beside `maya@northline.app` with a few bytes to spare.
+    const big = 'x'.repeat(MAX_CUSTOM_CLAIMS_BYTES - 60)
+    respond = claims({ big })
+    const first = await create()
+    expect(decoded(first).ext).toEqual({ big, email: 'maya@northline.app' })
+    const find = deps.users.findById.bind(deps.users)
+    const longer = `${'m'.repeat(100)}@northline.app`
+    const users = spyOn(deps.users, 'findById').mockImplementation(async (environmentId, id) => {
+      const user = await find(environmentId, id)
+      return user && { ...user, email: longer, emailNormalized: longer }
+    })
+    const second = await Sessions.refresh(deps, tenant, first.refreshToken ?? '')
+    users.mockRestore()
+    expect(decoded(second).ext).toEqual({ big })
+    expect(logged()).not.toContain(longer)
+  })
+
+  test('a template alone is never over the cap, and stored claims that fail their own check still go whole', async () => {
+    configure(grown())
+    const first = await create()
+    // Written past the service: over the cap by itself, so `stored` drops it before any merge.
+    await deps.sessions.recordAuthentication(
+      tenant.environmentId,
+      first.sessionId,
+      {
+        at: deps.clock.now(),
+        methods: [],
+        hookClaims: { claims: { big: 'x'.repeat(MAX_CUSTOM_CLAIMS_BYTES) } },
+      },
+      Audit.none('fixture')
+    )
+    const second = await Sessions.refresh(deps, tenant, first.refreshToken ?? '')
+    expect(decoded(second).ext).toEqual({ one: 'a'.repeat(250), two: 'b'.repeat(250) })
+  })
+
+  test('at a sign-in claims that do not fit beside the template are still the hook’s failure', async () => {
+    // The two moments differ on purpose: when the hook answers, the operator can be told on
+    // the hook (`claims_too_large`) and nothing is stored; later there is nobody to tell.
+    configure(grown())
+    const hook = await register()
+    respond = claims({ restricted: RESTRICTION })
+    expect((await failure(create())).code).toBe('hook.unavailable')
+    expect((await deps.hooks.find(tenant.environmentId, hook.id))?.lastFailureReason).toBe(
+      'claims_too_large'
+    )
+  })
+})
+
+describe('step-ups that keep getting in each other’s way', () => {
+  test('the hook is asked three times and no more; then the step-up gives up and has changed nothing', async () => {
+    await register()
+    const tokens = await create()
+    received = []
+    const rivals = ['email', 'otp', 'mfa'] as const
+    const at = new Date(deps.clock.now().getTime() + 1000)
+    let calls = 0
+    respond = async () => {
+      // A rival step-up of the same session lands while the hook is thinking, every time.
+      const method = rivals[calls] ?? 'email'
+      calls += 1
+      await deps.sessions.recordAuthentication(
+        tenant.environmentId,
+        tokens.sessionId,
+        { at, methods: [method], hookClaims: { claims: { rival: calls } } },
+        Audit.none('fixture')
+      )
+      return Response.json({ claims: { mine: calls } })
+    }
+    deps.clock.advance('3m')
+    const refused = await failure(stepUp(tokens.sessionId, ['pwd']))
+    expect(refused.code).toBe('service.unavailable')
+    expect(received).toHaveLength(3)
+    // What the session holds is what the rivals wrote: nothing of the step-up that gave up.
+    const after = await row(tokens.sessionId)
+    expect(after.hookClaims).toEqual({ rival: 3 })
+    expect([...after.authMethods].sort()).toEqual(['email', 'mfa', 'otp', 'pwd'])
+    expect(after.factorVerifiedAt).toEqual(at)
+    expect(steppedUp()).toEqual([])
   })
 })

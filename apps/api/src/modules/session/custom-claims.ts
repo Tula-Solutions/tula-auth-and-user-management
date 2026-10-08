@@ -83,11 +83,21 @@ export function needsUser(template: NamedJwtTemplate | null): boolean {
  *   same namespace (a template is the profile's default for every user, a hook's claim is
  *   about this one), keys and values are held to the same rules as a template's
  *   (`isCustomClaimKey`, one scalar), and the whole is under the same cap.
- * - A result larger than `MAX_CUSTOM_CLAIMS_BYTES` is dropped **whole** and logged by the
- *   template's name. A saved template cannot produce one (`jwtTemplateMaxBytes` is an upper
- *   bound, checked when settings are saved); this is the defence behind that. A sign-in is
- *   not failed and no value is cut short: an application that authorizes on a claim reads a
- *   missing one as "no".
+ * - A result larger than `MAX_CUSTOM_CLAIMS_BYTES` is never cut to fit, and a sign-in or a
+ *   refresh is never failed for it. What goes depends on what there is:
+ *   - **The template's claims go and the hook's stay** when there are both. A template alone
+ *     cannot exceed the cap (`jwtTemplateMaxBytes`, checked at save), and a hook's claims
+ *     alone cannot (checked when they were answered and again by {@link stored}); the two
+ *     together can, when a template was saved, or an address grew, after the hook answered.
+ *     The hook's claims are about this user and may be a restriction an application reads as
+ *     a present claim: dropping them would fail open. The template's are the profile's
+ *     default for everybody. The whole of the template's go, not the keys that did not fit:
+ *     which of them a token carries must not depend on their sizes.
+ *   - **Everything goes** when one source alone is over the cap. Neither can be by the rules
+ *     above; this is the defence behind them.
+ *
+ *   Either way it is logged once per issue, by the environment, the template's name and the
+ *   byte counts, never a key or a value.
  *
  * @param template - The profile's template as configured now, or `null`.
  * @param facts - The user and the session the sources are read from.
@@ -104,17 +114,27 @@ export function build(
     return undefined
   }
   const bytes = customClaimsBytes(claims)
-  if (bytes > MAX_CUSTOM_CLAIMS_BYTES) {
-    // Names and sizes only: a claim's value may be an address.
-    logger.warn('custom claims over the size cap; the session is issued without them', {
+  if (bytes <= MAX_CUSTOM_CLAIMS_BYTES) {
+    return claims
+  }
+  const others = merged(null, facts, extra)
+  const otherBytes = customClaimsBytes(others)
+  const kept =
+    Object.keys(others).length > 0 && otherBytes <= MAX_CUSTOM_CLAIMS_BYTES ? others : undefined
+  // Names and sizes only: a claim's value may be an address.
+  logger.warn(
+    kept
+      ? 'custom claims over the size cap; issued with the hook’s claims and without the template’s'
+      : 'custom claims over the size cap; the session is issued without them',
+    {
       environmentId: facts.environmentId,
       template: template?.name ?? null,
       bytes,
+      hookBytes: kept ? otherBytes : undefined,
       max: MAX_CUSTOM_CLAIMS_BYTES,
-    })
-    return undefined
-  }
-  return claims
+    }
+  )
+  return kept
 }
 
 /** The template's claims with each later source's over them, before any cap. */
@@ -146,6 +166,11 @@ function merged(
  * Whether a hook's claims can be issued beside the template's: the cap is on the two merged,
  * as a token would carry them. Asked when the hook answers, so that claims that do not fit
  * are a failed call (`claims_too_large`) and are never stored, cut or silently dropped.
+ *
+ * Stricter than {@link build}, on purpose. When the hook answers there is someone to tell:
+ * the failure is noted on the hook, where the operator looks, and its `failureMode`
+ * decides. When a template outgrows claims that are already stored there is nobody to fail,
+ * so `build` keeps the hook's and leaves the template's out.
  *
  * @param template - The profile's template as configured now, or `null`.
  * @param facts - The user and the session the template's sources are read from.
