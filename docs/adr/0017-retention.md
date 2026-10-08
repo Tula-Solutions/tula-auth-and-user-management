@@ -50,6 +50,8 @@ webhook worker of Phase 2, so today every event is undelivered and none is safe 
 Shipping the delete now would mean dead code and a `DELETE` grant on the outbox for the runtime
 role (migration 0003 deliberately gives it none) with nothing to use it. The delete, its grant
 and a policy limiting it to delivered rows land with the worker that marks rows delivered.
+*Since 2026-10-08 a worker marks them ([ADR 0034](0034-webhooks.md)); the delete itself, and
+one for delivery rows, is still to come, as a later step of the same work.*
 
 **Deletes go through the stores, per environment, in batches.** Each store has one purge method
 (`deleteExpired`, `deleteEnded`) taking an environment, a cutoff and a limit. The Postgres
@@ -237,7 +239,8 @@ when old entries go; what changes is what an operator can look up.
   adapter and prove the SQL is valid.
 - The purge finds its rows through each table's `environment_id` index and filters the rest.
   If a table grows large enough for that to matter, an index on the cutoff column is the fix.
-- `events` still grows without bound until Phase 2. `audit_logs` grows without bound in every
+- `events` still grows without bound: its rows are settled by the webhook worker since
+  [ADR 0034](0034-webhooks.md) and not yet deleted, and `webhook_deliveries` grows with it. `audit_logs` grows without bound in every
   environment that has not set `audit.retentionDays`, which is the default.
 - A session's audit entries can now be gone before or after its row, depending on the
   environment's period; neither waits for the other.

@@ -10,7 +10,7 @@ everything here is run from a checkout of the repository ([quickstart](quickstar
 | --- | --- |
 | [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
 | [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
-| [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. |
+| [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. [Phase 2's list](plans/phase-2-unverified.md) is kept step by step. |
 
 ## Sign-in methods
 
@@ -28,6 +28,12 @@ by error code. Their code samples are copied from files of this repository by
 | [Passkeys](methods/passkeys.md) | WebAuthn: sign-in, second step, step-up. |
 | [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
 | [Sessions](methods/sessions.md) | Profiles, devices, the concurrent-session limit, what your server sees. |
+
+## Events for your backend
+
+| | |
+| --- | --- |
+| [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula/admin`, what is stored, and what is not built yet (retries among them). |
 
 ## Tools
 

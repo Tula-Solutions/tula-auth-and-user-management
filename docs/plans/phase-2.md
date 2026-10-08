@@ -196,6 +196,17 @@ for a step it does not know; the native SDKs must do the same from their first v
   deliveries, "send a test event" and "redeliver". The dashboard's webhooks screen. A
   `verifyWebhook()` helper in `@tula/admin`. `tula.config.ts` gains endpoints (the secret is
   never in the file).
+  *As built, first part (TULA-26, [ADR 0034](../adr/0034-webhooks.md)):* the tracer bullet
+  only. Endpoints with a sealed secret shown once, the Standard Webhooks signature, one
+  attempt per endpoint and event (a failure is recorded and not repeated), the worker inside
+  each API instance under its own job lock, `verifyWebhook` in `@tula/admin`, the `webhook`
+  conformance step, and two scenarios. `webhook_endpoints` has no failure count and
+  `webhook_deliveries` no attempt count or next attempt yet: they arrive with retries. Still
+  to come, each its own ticket: retries and disabling a failing endpoint, the delivery log's
+  routes with "send a test event" and "redeliver", secret rotation, endpoints in
+  `tula.config.ts`, the dashboard screen, the worker as its own service, and deleting
+  delivered events. What it did not verify is in
+  [phase-2-unverified.md](phase-2-unverified.md).
 - **Why now.** First, because it is the oldest promise in the codebase (the outbox has been
   filling since Phase 0) and needs nothing external. Before 2.3 because hooks reuse its
   outbound client, its secret handling and its dashboard patterns.
