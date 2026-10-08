@@ -21,6 +21,64 @@ const workspaceDirs = ['apps', 'packages']
       .map((entry) => join(group, entry.name))
   )
 
+// `actions/upload-artifact` skips hidden files and directories unless told otherwise, so an
+// upload from a dot directory (`.release`) finds nothing. The release workflow runs only on
+// `main`, where no pull request exercises it: this is the check that runs before a merge.
+describe('artifact uploads', () => {
+  const workflows = readdirSync(join(root, '.github', 'workflows')).filter((name) =>
+    /\.ya?ml$/.test(name)
+  )
+
+  // The upload steps of a workflow, without their comment lines.
+  const uploadSteps = (workflow: string) =>
+    workflow
+      .split(/\n\s*- /)
+      .filter((step) => step.includes('uses: actions/upload-artifact'))
+      .map((step) =>
+        step
+          .split('\n')
+          .filter((line) => !line.trim().startsWith('#'))
+          .join('\n')
+      )
+
+  // A path segment that starts with a dot, with or without anything after it. `./x` and
+  // `../x` are not hidden.
+  const namesHiddenPath = (step: string) => /(?:^|[\s/'"!])\.[\w-]/m.test(step)
+
+  test.each([
+    ['path: .release/*.tgz', true],
+    ['path: .release', true],
+    ['path: build/.cache/out', true],
+    ['path: "!.cache/x"', true],
+    ['path: |\n  dist\n  .release/', true],
+    ['path: ./dist/*.tgz', false],
+    ['path: ../dist', false],
+    ['path: e2e/playwright-report', false],
+  ])('%j names a hidden path: %p', (step, hidden) => {
+    expect(namesHiddenPath(step)).toBe(hidden)
+  })
+
+  test.each(workflows)(
+    '%s uploads from a dot directory only with hidden files included',
+    async (name) => {
+      const workflow = await read(join('.github', 'workflows', name))
+      for (const step of uploadSteps(workflow)) {
+        if (namesHiddenPath(step)) {
+          expect(step).toContain('include-hidden-files: true')
+        }
+      }
+    }
+  )
+
+  test('the release workflow keeps its tarballs', async () => {
+    const [upload, ...others] = uploadSteps(await read('.github/workflows/release.yml'))
+    // Exactly one step is found: a re-indented workflow must not make this check empty.
+    expect(others).toEqual([])
+    expect(upload).toContain('path: .release/*.tgz')
+    expect(upload).toContain('include-hidden-files: true')
+  })
+})
+
 // Nothing may be published until the licence and the npm scope are decided
 // (docs/releasing.md). These tests are the tripwire: turning publishing on means changing
 // them on purpose, in the same change as the rest of the checklist.
