@@ -13,7 +13,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 const MAX_SHOWN_LENGTH = 40
 
 function isSecretShaped(value: string): boolean {
-  return value.length > MAX_SHOWN_LENGTH || /^(tula_(rt|sk|pk)_|eyJ)/.test(value)
+  return value.length > MAX_SHOWN_LENGTH || /^(tula_(rt|sk|pk)_|whsec_|eyJ)/.test(value)
 }
 
 /**

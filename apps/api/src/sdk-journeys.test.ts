@@ -64,6 +64,15 @@ const SERVER_ONLY: Record<string, string> = {
     'the marker is set and read on the admin API with a secret key, which a client SDK never ' +
     'holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ ' +
     '`real-api.test.ts`.',
+  'webhook delivered and signed':
+    'webhook endpoints are registered on the admin API with a secret key, and a delivery goes ' +
+    'from the server to an operator’s backend: a client SDK is on neither side of it. The ' +
+    'receiving side is `@tula/admin`’s `verifyWebhook`, which `packages/admin/src/' +
+    'webhook-real-api.test.ts` hands a delivery the real worker made.',
+  'webhook endpoint on a refused address':
+    'the outbound guard judges an address an operator registers with a secret key, which a ' +
+    'client SDK never holds; `@tula/admin` is driven against the refusal in ' +
+    '`packages/admin/src/webhook-real-api.test.ts`.',
   'two instances':
     'a property of the deployment (two API processes sharing Postgres and Redis). A client talks ' +
     'to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host ' +

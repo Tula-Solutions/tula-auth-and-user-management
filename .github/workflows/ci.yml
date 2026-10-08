@@ -267,17 +267,28 @@ jobs:
           bun run conformance | tee conformance.log
           # `bun run --filter` prefixes every line with the package name, so none of these
           # patterns may be anchored to the start of a line.
-          if grep -Eq '(^|: )SKIPPED ' conformance.log; then
+          #
+          # One scenario is skipped here, and only that one: its webhook receiver is a
+          # listener on this runner, which a server in a container can reach only at a private
+          # address, and the server's outbound guard refuses those (conformance/README.md,
+          # "The webhook scenario needs a receiver the server can reach"). It runs in process
+          # in the verify job.
+          skipped=$(grep -E '(^|: )SKIPPED ' conformance.log |
+            grep -Ev '(^|: )SKIPPED webhook delivered and signed$' || true)
+          if [ -n "$skipped" ]; then
             echo "scenarios were skipped" >&2
             exit 1
           fi
           grep -Eq '(^|: )PASSED two instances$' conformance.log
+          # The outbound guard's refusals at save time need no receiver: they run here,
+          # against the packaged server and a real Postgres.
+          grep -Eq '(^|: )PASSED webhook endpoint on a refused address$' conformance.log
           if [ "${{ matrix.mode }}" = two-ports ]; then
             # The cross-instance scenario must have run against two instances: without the
             # second URL its steps would all go to one server and prove nothing about sharing.
-            grep -Eq ' 0 failed, 0 skipped against http://localhost:3003 and http://localhost:3004$' conformance.log
+            grep -Eq ' 0 failed, 1 skipped against http://localhost:3003 and http://localhost:3004$' conformance.log
           else
-            grep -Eq ' 0 failed, 0 skipped against http://localhost:3005 \(one address, 6000 ms after each settings change\)$' conformance.log
+            grep -Eq ' 0 failed, 1 skipped against http://localhost:3005 \(one address, 6000 ms after each settings change\)$' conformance.log
           fi
         shell: bash -euo pipefail {0}
       - name: Both instances answered behind the one address

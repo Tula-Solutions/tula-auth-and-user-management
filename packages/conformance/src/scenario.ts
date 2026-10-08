@@ -317,6 +317,61 @@ export const OAuthStepSchema = z
   .strict()
   .meta({ ref: 'ConformanceOAuthStep' })
 
+/**
+ * Play the operator's backend that receives webhooks (ADR 0034): an HTTP listener the runner
+ * owns, which a scenario registers as an endpoint and then asks what arrived.
+ *
+ * Receivers are named and live for one scenario run. A step does exactly one of two things:
+ *
+ * - `captureUrl` starts the receiver (on first use) and stores the URL the server is to be
+ *   given for it, to send as the `url` of `POST /v1/admin/webhook-endpoints`;
+ * - `expect` takes the next delivery that arrived there (of the event `type`, when one is
+ *   named) and checks it: a `POST` of JSON with the Standard Webhooks headers `webhook-id`,
+ *   `webhook-timestamp` (whole seconds, within five minutes of the target's clock) and
+ *   `webhook-signature`, of which one `v1,<base64>` entry is the HMAC-SHA256 of
+ *   `<id>.<timestamp>.<body>` under `secret` (the `whsec_…` value the registration returned);
+ *   a body that is an event of the contract whose `id` is the `webhook-id`; and `body`,
+ *   matched as a request step's `expect.body` is.
+ *
+ * A runner needs a listener the server under test can reach, which is why a scenario with
+ * such a step sets `needsWebhookReceiver` and is skipped by a target that has none. Where the
+ * target can run a delivery round itself (in process) the step asks for one and looks at once;
+ * against a live server it waits for the server's own worker, up to the target's timeout.
+ *
+ * The receiver answers every delivery `204` with no body.
+ */
+export const WebhookStepSchema = z
+  .object({
+    name: z.string().min(1),
+    webhook: z
+      .object({
+        /** Which receiver. Started on first use. */
+        receiver: z.string().min(1),
+        /** Variable that receives the URL to register as the endpoint's address. */
+        captureUrl: z.string().min(1).optional(),
+        /** What the next delivery must be. */
+        expect: z
+          .object({
+            /** The endpoint's signing secret, e.g. `{{secret}}` captured from its registration. */
+            secret: z.string(),
+            /** Take the next delivery of this event type; without it, the next delivery. */
+            type: z.string().optional(),
+            /** Matched against the delivered event like a response body: a subset. */
+            body: z.unknown().optional(),
+            /** Variable that receives the event's id (the `webhook-id` header). */
+            captureId: z.string().min(1).optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .refine((webhook) => (webhook.captureUrl === undefined) !== (webhook.expect === undefined), {
+        message: 'a webhook step takes either `captureUrl` or `expect`',
+      }),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceWebhookStep' })
+
 /** Let time pass, e.g. past the refresh reuse grace period. */
 export const WaitStepSchema = z
   .object({ name: z.string().min(1), wait: DurationSchema })
@@ -332,6 +387,7 @@ export const StepSchema = z
     TotpStepSchema,
     OAuthStepSchema,
     PasskeyStepSchema,
+    WebhookStepSchema,
     WaitStepSchema,
   ])
   .meta({ ref: 'ConformanceStep' })
@@ -358,6 +414,11 @@ export const ScenarioSchema = z
     description: z.string().min(1),
     /** `true` when a step uses the secret key. */
     needsSecretKey: z.boolean().optional(),
+    /**
+     * `true` when a step uses a webhook receiver: the server has to be able to reach a
+     * listener the runner starts, so a target that offers none skips the scenario.
+     */
+    needsWebhookReceiver: z.boolean().optional(),
     variables: z.record(z.string(), VariableSchema).optional(),
     steps: z.array(StepSchema).min(1),
     /**
@@ -378,6 +439,14 @@ export const ScenarioSchema = z
         (step) => !('request' in step) || step.request.auth !== 'secret'
       ),
     { message: 'a scenario with an `auth: "secret"` step must set `needsSecretKey: true`' }
+  )
+  // The same for the receiver: without the flag a target that cannot be reached would run the
+  // scenario and fail it, instead of saying it was not run.
+  .refine(
+    (scenario) =>
+      scenario.needsWebhookReceiver === true ||
+      [...scenario.steps, ...(scenario.cleanup ?? [])].every((step) => !('webhook' in step)),
+    { message: 'a scenario with a `webhook` step must set `needsWebhookReceiver: true`' }
   )
   .meta({ ref: 'ConformanceScenario' })
 
