@@ -29,7 +29,11 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   import-walk test in `src/features/webhooks/words.test.ts`.
 - A dialog whose answer carries a secret cannot be dismissed while its request is in flight
   (`Modal`'s `busy`, `SecretRequestActions`); refresh the list from the mutation hook's own
-  `onSuccess`. `src/secret-dialogs.test.tsx` holds it.
+  `onSuccess`, started and not awaited (an awaited refresh keeps the secret off the screen
+  until the list is back). `src/secret-dialogs.test.tsx` holds it.
+- A confirmation's button stays unavailable from the click until its dialog closes: the
+  mutation is no longer pending while the list is read again, and a second click would send
+  the request again.
 - An address from the server is shown through `features/webhooks/address.tsx` (`printable()`
   inside `<bdi dir="ltr">`), also in a dialog's title and in the text to type to confirm.
 - The address holds the selection and every filter; route files read parameters and pass

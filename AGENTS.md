@@ -736,14 +736,24 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
   that let go would drop the only answer that holds it. `Modal`'s `busy` refuses Escape and
   undoes a forced close, `SecretRequestActions` keeps Cancel focusable but unavailable and
   says why, and the list is refreshed by the mutation hook's own `onSuccess`, never the one
-  passed to `mutate()`. A navigation or an environment switch still loses the secret:
+  passed to `mutate()`. That refresh is **started and not awaited** (the callback returns
+  nothing): the query client waits for a hook-level `onSuccess` before the mutation counts
+  as done, so an awaited refresh keeps the secret off the screen, and the dialog shut, for
+  as long as the list takes to come back. A navigation or an environment switch still loses the secret:
   accepted, and nothing of it is shown under another environment.
   `src/secret-dialogs.test.tsx` holds each.
 - **An address from the server is shown so that it can be checked.** A webhook endpoint's
   address goes through `printable()` (`src/lib/printable.ts`: what a reader cannot see is
   written as an escape) inside `<bdi dir="ltr">` (`features/webhooks/address.tsx`), in
   cards, headings, dialog titles and the text to type for a confirmation; what is typed is
-  compared with what is displayed.
+  compared with what is displayed. Combining marks are written out too, and the address
+  field of the add and edit forms says so under the input when what it holds differs from
+  what can be seen.
+- **A confirmed change is sent once.** A confirmation's button stays unavailable from the
+  click until its dialog closes (a refused request gives it back), because the mutation is
+  no longer pending while the list is read again and a second click would send the request
+  a second time. `src/webhooks.test.tsx` ("a confirmed change is sent once") holds it for
+  the webhook dialogs; the API key revocation predates the rule and does not follow it yet.
 - **No secret outlives its form.** The admin token, a created API key, a typed password and a
   provider secret are component state only while their form or dialog is open: never
   `localStorage`, `sessionStorage`, the address or a log. A mutation that carries one uses
