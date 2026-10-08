@@ -85,7 +85,7 @@ describe('POST /v1/admin/hooks', () => {
     ['a deadline of a minute', { deadlineMs: 60_000 }],
     ['a deadline under the floor', { deadlineMs: 99 }],
     ['a secret of the caller’s own', { secret: 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw' }],
-    ['a point that does not exist', { point: 'before_token' }],
+    ['a point that does not exist', { point: 'before_refresh' }],
     ['a failure mode that does not exist', { failureMode: 'open' }],
     ['an unknown field', { claims: { role: 'admin' } }],
     ['an address with a space', { url: 'https://a.example/x y' }],
@@ -205,7 +205,17 @@ describe('the OpenAPI document', () => {
     const document = await json<{ components: { schemas: Record<string, unknown> } }>(
       await app.request(OPENAPI_PATH)
     )
-    for (const name of ['HookBeforeSignUpQuestion', 'HookBeforeSignUpData', 'HookAnswer', 'Hook']) {
+    for (const name of [
+      'HookBeforeSignUpQuestion',
+      'HookBeforeSignUpData',
+      'HookBeforeSessionQuestion',
+      'HookBeforeSessionData',
+      'HookBeforeTokenQuestion',
+      'HookBeforeTokenData',
+      'HookAnswer',
+      'HookClaimsAnswer',
+      'Hook',
+    ]) {
       expect(Object.keys(document.components.schemas)).toContain(name)
     }
   })

@@ -6,6 +6,7 @@ import { EVENT_DATA_SCHEMAS, TulaEventSchema } from './events'
 import {
   CreatedHookSchema,
   CreateHookRequestSchema,
+  HOOK_ANSWER_KINDS,
   HOOK_DEFAULT_DEADLINE_MS,
   HOOK_FAILURE_REASONS,
   HOOK_FIELDS,
@@ -17,9 +18,11 @@ import {
   HOOK_QUESTION_SCHEMAS,
   HOOK_QUESTION_TYPES,
   HookAnswerSchema,
+  HookClaimsAnswerSchema,
   HookQuestionSchema,
   HookSchema,
   hookWeakenings,
+  readHookClaimsAnswer,
   UpdateHookRequestSchema,
 } from './hook'
 
@@ -79,7 +82,7 @@ describe('CreateHookRequestSchema', () => {
 
   test.each([
     ['no point', { url }],
-    ['a point that does not exist', { point: 'before_session', url }],
+    ['a point that does not exist', { point: 'before_refresh', url }],
     ['no address', { point: 'before_sign_up' }],
     ['an empty address', { point: 'before_sign_up', url: '' }],
     ['an address with a space', { point: 'before_sign_up', url: 'https://a.example/x y' }],
@@ -193,7 +196,7 @@ describe('the answer of a hook', () => {
 
 describe('the question of a hook', () => {
   test('every point has a type, a schema and an example that its schema accepts', () => {
-    expect(HOOK_POINTS).toEqual(['before_sign_up'])
+    expect(HOOK_POINTS).toEqual(['before_sign_up', 'before_session', 'before_token'])
     for (const point of HOOK_POINTS) {
       expect(HOOK_QUESTION_TYPES[point]).toBe(`hook.${point}`)
       const fixture = HOOK_QUESTION_FIXTURES[point]
@@ -263,6 +266,219 @@ describe('the question of a hook', () => {
       expect(ACTIVITY_TYPES as readonly string[]).not.toContain(type)
     }
   })
+
+  test('before a session it holds the user, the client, the profile, what was proven, whether it is a sign-up and the IP address', () => {
+    const { data } = HOOK_QUESTION_FIXTURES.before_session
+    expect(Object.keys(data).sort()).toEqual([
+      'amr',
+      'client',
+      'ipAddress',
+      'profile',
+      'signUp',
+      'userId',
+    ])
+  })
+
+  test('before a token it holds the user, the session, the client, the profile and what was proven', () => {
+    const { data } = HOOK_QUESTION_FIXTURES.before_token
+    expect(Object.keys(data).sort()).toEqual(['amr', 'client', 'profile', 'sessionId', 'userId'])
+  })
+
+  // The address is in `before_sign_up` because no account exists yet to name. Once there is
+  // one, its id names it, and nothing a request said about itself goes along.
+  test.each(
+    (['before_session', 'before_token'] as const).flatMap((point) =>
+      [
+        'email',
+        'password',
+        'passwordHash',
+        'code',
+        'token',
+        'accessToken',
+        'refreshToken',
+        'attemptId',
+        'attemptSecret',
+        'secret',
+        'userAgent',
+        'firstName',
+        'lastName',
+        'emailVerified',
+        'claims',
+      ].map((key) => [point, key] as const)
+    )
+  )('a %s question never holds %s: the schema is strict', (point, key) => {
+    const fixture = HOOK_QUESTION_FIXTURES[point]
+    const question = { ...fixture, data: { ...fixture.data, [key]: 'x' } }
+    expect(HOOK_QUESTION_SCHEMAS[point].safeParse(question).success).toBe(false)
+    expect(HookQuestionSchema.safeParse(question).success).toBe(false)
+  })
+
+  test('a token question has no IP address and a session question no session: neither exists there', () => {
+    const session = HOOK_QUESTION_FIXTURES.before_session
+    const token = HOOK_QUESTION_FIXTURES.before_token
+    expect(
+      HOOK_QUESTION_SCHEMAS.before_session.safeParse({
+        ...session,
+        data: { ...session.data, sessionId: token.data.sessionId },
+      }).success
+    ).toBe(false)
+    expect(
+      HOOK_QUESTION_SCHEMAS.before_token.safeParse({
+        ...token,
+        data: { ...token.data, ipAddress: '203.0.113.7' },
+      }).success
+    ).toBe(false)
+  })
+
+  test.each([
+    ['a method in upper case', ['PWD']],
+    ['a method with a space', ['pwd otp']],
+    ['a method that is a sentence', ['x'.repeat(33)]],
+    ['more methods than there could be', Array.from({ length: 17 }, (_, n) => `m${n}`)],
+    ['something that is not a list', 'pwd'],
+  ])('what was proven is a short list of bounded names: %s is refused', (_name, amr) => {
+    for (const point of ['before_session', 'before_token'] as const) {
+      const fixture = HOOK_QUESTION_FIXTURES[point]
+      expect(
+        HOOK_QUESTION_SCHEMAS[point].safeParse({ ...fixture, data: { ...fixture.data, amr } })
+          .success
+      ).toBe(false)
+    }
+  })
+
+  test('one point’s data is not another’s question', () => {
+    const {
+      before_sign_up: signUp,
+      before_session: session,
+      before_token: token,
+    } = HOOK_QUESTION_FIXTURES
+    expect(HookQuestionSchema.safeParse({ ...signUp, data: session.data }).success).toBe(false)
+    expect(HookQuestionSchema.safeParse({ ...session, data: token.data }).success).toBe(false)
+    expect(HookQuestionSchema.safeParse({ ...token, data: signUp.data }).success).toBe(false)
+  })
+})
+
+describe('what each point takes for an answer', () => {
+  test('a sign-up and a session are decided; a token is given claims', () => {
+    expect(HOOK_ANSWER_KINDS).toEqual({
+      before_sign_up: 'decision',
+      before_session: 'decision',
+      before_token: 'claims',
+    })
+  })
+})
+
+describe('the answer of a claims hook', () => {
+  const read = (body: unknown) => readHookClaimsAnswer(body)
+
+  test('claims under one key, and nothing else', () => {
+    expect(read({ claims: { role: 'admin', seats: 3, staff: false } })).toEqual({
+      claims: { role: 'admin', seats: 3, staff: false },
+    })
+    expect(HookClaimsAnswerSchema.safeParse({ claims: { role: 'admin' } }).success).toBe(true)
+  })
+
+  test('no claims is an answer: the token is issued without any of the hook’s', () => {
+    expect(read({ claims: {} })).toEqual({ claims: {} })
+    expect(HookClaimsAnswerSchema.safeParse({ claims: {} }).success).toBe(true)
+  })
+
+  // Not an answer at all: the shape is wrong. Never read as "no claims".
+  test.each([
+    ['nothing', undefined],
+    ['null', null],
+    ['a string', 'claims'],
+    ['a list', [{ claims: {} }]],
+    ['an empty object', {}],
+    ['a decision', { decision: 'allow' }],
+    ['claims beside a decision', { decision: 'allow', claims: { role: 'admin' } }],
+    ['a subject beside the claims', { claims: { role: 'admin' }, sub: 'someone-else' }],
+    ['methods beside the claims', { claims: {}, amr: ['mfa'] }],
+    ['a verified address beside the claims', { claims: {}, emailVerified: true }],
+    ['a user beside the claims', { claims: {}, userId: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01' }],
+    ['a `__proto__` key beside the claims', JSON.parse('{"claims":{},"__proto__":{"a":1}}')],
+    ['claims that are a list', { claims: ['admin'] }],
+    ['claims that are a string', { claims: 'role=admin' }],
+    ['claims that are null', { claims: null }],
+  ])('%s is not an answer', (_name, body) => {
+    expect(read(body)).toEqual({ problem: 'answer_invalid' })
+    expect(HookClaimsAnswerSchema.safeParse(body).success).toBe(false)
+  })
+
+  // The shape is right and a claim breaks a rule: the whole answer fails, nothing is applied.
+  test.each([
+    ['a reserved name', { claims: { role: 'admin', sub: 'someone-else' } }],
+    ['the methods', { claims: { amr: 'mfa' } }],
+    ['the namespace itself', { claims: { ext: 'x' } }],
+    ['a key outside the grammar', { claims: { 'my-claim': 1 } }],
+    ['a nested object', { claims: { role: { name: 'admin' } } }],
+    ['a list value', { claims: { roles: ['admin'] } }],
+    ['a null value', { claims: { role: null } }],
+  ])('%s among the claims fails the whole answer', (_name, body) => {
+    expect(read(body)).toEqual({ problem: 'claims_invalid' })
+    expect(HookClaimsAnswerSchema.safeParse(body).success).toBe(false)
+  })
+
+  test('a `__proto__` claim fails the answer; it is not silently dropped', () => {
+    const body: unknown = JSON.parse('{"claims":{"role":"admin","__proto__":{"admin":true}}}')
+    expect(read(body)).toEqual({ problem: 'claims_invalid' })
+  })
+
+  test('claims over the cap fail the whole answer', () => {
+    const at = { claims: { a: 'x'.repeat(1016) } }
+    expect(read(at)).toEqual(at)
+    expect(read({ claims: { a: 'x'.repeat(1017) } })).toEqual({ problem: 'claims_too_large' })
+    expect(HookClaimsAnswerSchema.safeParse({ claims: { a: 'x'.repeat(1017) } }).success).toBe(
+      false
+    )
+  })
+
+  test('every problem is a failure reason an operator can be shown', () => {
+    for (const problem of ['answer_invalid', 'claims_invalid', 'claims_too_large'] as const) {
+      expect(HOOK_FAILURE_REASONS).toContain(problem)
+    }
+  })
+
+  test('a decision is not a claims answer and claims are not a decision', () => {
+    expect(HookAnswerSchema.safeParse({ claims: {} }).success).toBe(false)
+    expect(HookClaimsAnswerSchema.safeParse({ decision: 'allow' }).success).toBe(false)
+  })
+})
+
+describe('what is recorded about a session and its hooks', () => {
+  test('a session let through because its hook failed says so, and so does one without the claims hook’s claims', () => {
+    const schema = EVENT_DATA_SCHEMAS['session.created']
+    const created = { userId: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01', client: 'web' as const }
+    expect(schema.parse(created)).toEqual(created)
+    expect(schema.parse({ ...created, hookBypassed: true }).hookBypassed).toBe(true)
+    expect(schema.parse({ ...created, claimsHookBypassed: true }).claimsHookBypassed).toBe(true)
+  })
+
+  test('a step-up made without the claims hook’s claims says so', () => {
+    const schema = EVENT_DATA_SCHEMAS['session.stepped_up']
+    const stepped = {
+      userId: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01',
+      methods: ['otp' as const, 'mfa' as const],
+    }
+    expect(schema.parse({ ...stepped, claimsHookBypassed: true }).claimsHookBypassed).toBe(true)
+    expect(schema.parse(stepped)).toEqual(stepped)
+  })
+
+  test.each([['session.created'], ['session.stepped_up']] as const)(
+    '%s has no field for a claim, a denial code or an address: booleans only',
+    (type) => {
+      const { shape } = EVENT_DATA_SCHEMAS[type]
+      for (const key of ['claims', 'code', 'url', 'email', 'ipAddress', 'reason']) {
+        expect(Object.keys(shape)).not.toContain(key)
+      }
+      for (const flag of Object.keys(shape).filter((key) => key.endsWith('Bypassed'))) {
+        expect(
+          EVENT_DATA_SCHEMAS[type].safeParse({ ...EVENT_FIXTURES[type].data, [flag]: 'yes' })
+            .success
+        ).toBe(false)
+      }
+    }
+  )
 })
 
 describe('what is recorded about a hook', () => {

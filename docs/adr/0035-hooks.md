@@ -2,7 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-08
-- **Ticket:** TULA-45 (phase 2, step 2.3; the tracer for hooks)
+- **Ticket:** TULA-45 (phase 2, step 2.3; the tracer for hooks); TULA-53 (the hooks before a
+  session and before a token: the dated section at the end)
 
 ## Context
 
@@ -18,8 +19,9 @@ something that has already happened, and its answer changes nothing. The two sha
 client, a signature and a secret format ([ADR 0034](0034-webhooks.md)), and nothing else.
 
 This ADR decides the first point, `before_sign_up`, and what every later point inherits. Two
-more points (before a session is created, before a token is issued), a dashboard screen and
-hooks in `tula.config.ts` are later tickets and are not built here.
+more points (before a session is created, before a token is issued) were added by TULA-53
+and are decided in [the dated section at the end](#2026-10-08-hooks-before-a-session-and-before-a-token-tula-53);
+a dashboard screen and hooks in `tula.config.ts` are later tickets and are not built here.
 
 ## Decision
 
@@ -314,7 +316,6 @@ journey through `@tula/core`.
 
 ## Not built yet
 
-- Hooks before a session is created and before a token is issued (and the claims answer).
 - Secret rotation for a hook.
 - A hook in `tula.config.ts`; `tula apply` refusing `hookWeakenings` under `--yes`.
 - The dashboard screen, with its confirmation for a weakening.
@@ -340,3 +341,334 @@ journey through `@tula/core`.
   which accounts.
 - **Reuse `webhook.url_not_allowed` for a hook's refused address.** One code less in every
   bundle, and the wrong word in an operator's logs.
+
+## 2026-10-08: Hooks before a session and before a token (TULA-53)
+
+Two more points, built on everything above. What `before_sign_up` established holds for all
+three and is not repeated: one hook per point per environment, the shared secret and
+signature, `Outbound.request`, the deadline held three times, "anything but a 2xx whose body
+is exactly an answer is a failure", the failure mode with `deny` as the default, weakenings,
+the fixed failure word on the hook, a count per environment, no route that asks on demand,
+and a question that is an allow-list, named field by field and never stored. The point enum
+is text in the database (`hooks.point`), so the two new points need no migration; the claims
+do (`0022`, below).
+
+### The points and their answers
+
+| Point | Asked by | Answer |
+| --- | --- | --- |
+| `before_sign_up` | `Flows.verifyEmail`, `OAuth.resolveAccount` | a decision |
+| `before_session` | the flow engine's `finish` | a decision |
+| `before_token` | `Sessions.create`, `Sessions.recordAuthentication` | claims |
+
+`HOOK_ANSWER_KINDS` in the contract says which point reads which kind. A deciding point's
+answer is the existing `HookAnswerSchema`. A claims point's is `{ "claims": { … } }`
+(`HookClaimsAnswerSchema`, strict). **A claims hook cannot deny**: its answer has no
+`decision`, and a decision sent to it is not an answer. One hook that both decided and added
+claims would have made a missing `claims` ambiguous and given the refusal of a sign-in two
+places to come from; an operator who wants both registers both.
+
+`Hooks.beforeSession` returns the same two words `beforeSignUp` does (`'clear'`,
+`'bypassed'`) and throws otherwise. `Hooks.beforeToken` returns
+`{ claims, asked, bypassed }`: checked claims or `null`, and nothing else of the answer. In
+both, the parsed body never leaves `call`.
+
+### The questions
+
+`before_session`: `userId`, `client`, `profile`, `amr`, `signUp`, `ipAddress`.
+`before_token`: `userId`, `sessionId`, `client`, `profile`, `amr`. Strict schemas, fixtures,
+and members of the union `verifyHook` accepts.
+
+- **No email address in either.** The account exists and its id names it; the operator has
+  the admin API to look it up. An address would add a copy of personal data to every sign-in
+  for the operators who do not need it. `before_sign_up` carries one because no id exists.
+- **No IP address in `before_token`.** Its answer is stored on the session and issued with
+  every later token. A claim computed from one request's address would be signed into tokens
+  used from other addresses, and would invite exactly that mistake. A decision about an
+  address belongs to `before_session`, which has it.
+- `signUp` is `true` when the sign-in created the account: an attempt of kind `sign_up`, or
+  an OAuth sign-in whose exchange created the user (kept on the attempt as `accountCreated`,
+  so it survives a wait on an enrolment). A password reset's session is `false`.
+- `amr` is sent in the canonical order and is a set; the docs say so.
+- Never a password, a code, a token, an attempt id or a user agent.
+
+### Where `before_session` is asked
+
+In `finish`, and nowhere else: after the attempt's compare-and-set to `complete`, and
+immediately before `Sessions.create`. `finish` is the only caller of `Sessions.create` in
+the server (checked: `modules/flow/service.ts` is the one non-test call site), so the rule
+"asked before every session a sign-in creates" has one place to hold. It is reached only
+when every factor is proven, including a second factor and an enrolment the environment
+requires. It is not asked at a refresh, a step-up, or for anything an administrator does:
+none of them goes through `finish`.
+
+**The enumeration argument.** A wrong password and an unknown address end before `finish`,
+with `auth.invalid_credentials`, and the receiver is not called for either. `hook.denied` is
+therefore seen only by someone who proved every factor, and tells them nothing they could
+not learn by signing in. The side-by-side test holds it.
+
+**Lockout.** The password step counts its guess and clears the count on a correct password
+before `finish` runs, as without a hook. A denial adds no count and no clear: it is not a
+failed guess (an operator's "no" must not lock a user out, nor be a way for one user's
+denials to trip another's limit), and it clears nothing an attacker could not already clear
+by knowing the password.
+
+**Order with `before_sign_up`.** A sign-up asks `before_sign_up` before the account exists
+and `before_session` after it was created. A denial or failure at `before_session` leaves
+the account (verified) and no session. Rolling the account back was rejected: the account's
+creation is committed, recorded (`user.created`) and may already have been delivered to a
+webhook, and "deny the account" already has a hook of its own. `docs/hooks.md` says so.
+
+### What a refusal at `before_session` leaves, and the attempt
+
+No session, no tokens, no cookie, no `session.created`, no new-device notice, no sign-in
+time: the hook throws before `Sessions.create`. The same two codes as a sign-up
+(`hook.denied` with `params.code`, `hook.unavailable`); no new error code. Their default
+messages were reworded to fit all three points ("This was not allowed." / "This is
+unavailable right now. Try again later."), which made them shorter: `@tula/core`'s bundle
+did not grow and its budget is unchanged.
+
+**The attempt ends, for a denial and for a failure alike.** It is already `complete` when
+the hook is asked: `finish` spends the attempt first, on purpose (two racing requests must
+not make two sessions from one proof), and every error past that point, `session.limit_reached`
+among them, already leaves it spent. The cost is stated in the docs: the last proof is used
+up (an emailed code, a time step, **a backup code**), and after `hook.unavailable` the user
+starts a new sign-in rather than repeating one step.
+
+Rejected: asking before the compare-and-set and leaving the attempt open on a failure. The
+steps that lead to `finish` are not repeatable once their proof is accepted (the code is
+spent, the time step is used, a sign-up's account exists, an in-flow enrolment is
+confirmed), so "open" would have meant a new kind of step that completes an attempt with no
+proof presented. And two racing requests would each ask the hook.
+
+### `before_token`: not an authority
+
+The answer is judged on the body **as parsed**, not on a schema's output, by one Zod-free
+function in the contract (`readHookClaimsAnswer`, over `checkCustomClaims`): exactly one own
+key, `claims`, holding a plain object whose every key passes `isCustomClaimKey` (so no
+reserved name: `sub`, `amr`, `auth_time`, `ext`, …, and not `__proto__`, `constructor` or
+`prototype`) and whose every value is one string, number or boolean, within
+`MAX_CUSTOM_CLAIMS_BYTES`. (Zod's record type drops a `__proto__` key silently, which is why
+the raw value is what is judged.) The result is a copy built with `Object.fromEntries`.
+
+**A rule-breaking answer is a failed call, whole.** `claims_invalid` or `claims_too_large`
+is noted on the hook and the failure mode decides; none of the answer's claims is used, its
+good ones included. Dropping only the bad claim was rejected: an application that authorizes
+on two claims must not receive a token where one survived.
+
+The claims reach a token only through `CustomClaims.build(template, facts, [hookClaims])`,
+inside `ext`. A hook therefore cannot set a claim Tula issues, cannot change what the
+session has proven, its user, its profile or its lifetime, and cannot touch the user record.
+A test answers `sub`, `amr`, `emailVerified`, `userId` and `__proto__` and compares the
+session and the token with ones made without a hook.
+
+**Which side wins a key both set: the hook.** A template is the profile's default for every
+user; a hook's claim is a statement about this user at this sign-in, which is the more
+specific. It also lets an operator write a least-privilege default as a template constant
+(`plan: free`) that a hook raises, and that remains when the hook fails under `allow`.
+Rejected: the template winning (a constant would then silently mask the hook, with no
+failure to see), and treating a collision as a failure (a template edit could then break
+every sign-in).
+
+**The cap is on the merged claims.** When the hook answers, the service measures its claims
+together with the template's as configured at that moment (`CustomClaims.fits`): over the
+cap is `claims_too_large`, a failed call. A refresh is never failed for the cap.
+
+**Later, the hook's claims are kept and the template's are left out** (review round 1,
+2026-10-08; this replaces "the whole namespace is dropped", which was wrong). A template
+alone cannot exceed the cap and a hook's claims alone cannot, but the two together can: an
+operator saves a larger template, or the user's address grows, after the hook answered.
+Dropping all of `ext` then, as the first version did, removed the hook's claims from every
+existing session until its next step-up, and an application that reads a restriction as a
+present claim (`restricted: true`, a tenant id) failed open. So at issue, over the cap,
+`CustomClaims.build` issues the hook's stored claims alone and leaves out **all** of the
+template's (not the keys that did not fit: which of a template's claims a token carries
+must not depend on their sizes), and logs the environment, the template's name and the two
+byte counts, once per issue, with no key and no value. The row is not rewritten: when the
+template shrinks, both are issued again. Only when a source alone is over the cap (which
+the rules above exclude: a stored value that fails its own check is dropped by
+`CustomClaims.stored` before any merge) does everything go.
+
+The two moments differ on purpose. **When the hook answers**, claims that do not fit beside
+the template are still the hook's failure (`claims_too_large`): there is someone to tell,
+the failure shows on the hook where the operator looks, nothing is stored, and the hook's
+`failureMode` decides. **When a template outgrows claims already stored** there is no call
+to fail and nobody at the request to tell, so the more specific source is kept. Rejected:
+"hook kept, template dropped" at answer time too (an operator would never learn that their
+hook and their template do not fit together, and under `deny` they chose to be told), and
+refusing a template at save because some session's stored claims would not fit beside it
+(a save would then depend on every session's row).
+
+### `before_token`: when it is asked, and what "inputs" means
+
+**A session's inputs are what the question names**: the user, the session, the client kind,
+the profile name, and `amr`. Of these only `amr` changes during a session's life, and only
+through `Sessions.recordAuthentication` (a step-up; the enrolling session after an
+authenticator is confirmed). So the hook is asked:
+
+1. in `Sessions.create`, after the signing key is loaded and before anything is stored. The
+   claims go on the row in the same insert (`sessions.hook_claims`) and into the first
+   token. A session never exists without the answer its hook gave;
+2. in `Sessions.recordAuthentication`, **every time**, before the write. The stored claims
+   are **replaced** by what the hook says now: its claims, or none when there is no hook any
+   more, it is off, or it failed under `allow`. Never merged, never kept.
+
+**Not inputs**, and so no call: a refresh, the grace-window replay, a stateful session's
+check (none reads `deps.hooks` at all; a test spies on it), a change of the JWT template
+(its claims are read at every issue anyway), a change of the profile's configuration, a
+change of the user, and a change, switch-off or removal of the hook itself. A session keeps
+the claims it was given until it ends or steps up. The remedy for "this user's claims must
+change now" is to end their sessions, which the docs say. Asking at a refresh was rejected
+by the ticket and by arithmetic: every session refreshes about once a minute.
+
+**Replace, not keep, at a step-up.** Keeping the old claims when the hook has gone or failed
+would issue, with a fresh `auth_time` and a larger `amr`, an answer that was given about a
+session that had proven less. An absent claim is read as "no" (ADR 0036); a stale one is
+read as "yes".
+
+**A concurrent step-up.** The hook is asked about `amr` as the service read it. The store's
+write is a compare-and-set on those methods (`ifAuthMethods`, set equality, under the row's
+lock in Postgres), so claims asked about one set of methods are never stored beside another.
+On a miss the service reads the session again and asks again, three passes at most, then
+`service.unavailable`.
+
+### `before_token`: failure
+
+- **At a sign-in, `deny`**: `hook.unavailable`, and nothing is created. The attempt is spent
+  (it was before `before_session`).
+- **At a sign-in, `allow`**: the session is created with no hook claims; the template's
+  remain. `session.created` carries `claimsHookBypassed: true`.
+- **At a step-up, `deny`**: the step-up fails with `hook.unavailable` and nothing about the
+  session changes: not `amr`, not `auth_time`, not the claims, no `session.stepped_up`. The
+  cost: what proved the step-up (a time step, an emailed code) is spent, and the user proves
+  again. Rejected: stepping up anyway and keeping the old claims (stale, see above), and
+  stepping up without claims (that is `allow`, which the operator did not choose: a session
+  whose claims silently vanish under `deny` is the failure mode ignored).
+- **At a step-up, `allow`**: stepped up, claims cleared, `claimsHookBypassed: true` on
+  `session.stepped_up`.
+- The one caller that swallows the error is the confirmation of an authenticator from a
+  signed-in session (`Mfa.confirmTotp`): marking the enrolling session as stepped up is
+  bookkeeping there, and its failure was already logged and ignored before hooks existed.
+  The factor is on, the session is not stepped up, its claims are as they were.
+
+Over the environment's ceiling the answer is `rate_limited` whatever the failure mode, as
+for a sign-up.
+
+### Stored on the session
+
+Migration `0022_session_hook_claims`: `sessions.hook_claims jsonb null`, with the check
+`sessions_hook_claims_bounds` (an object, at most 4,096 bytes as text: a backstop, the
+contract's cap is 1,024). The row holds only the hook's own claims, never the merged ones:
+the template's are read at every issue. Both adapters, the shared store suite and the
+PGlite tests cover it.
+
+**Read back, they are judged again** (`CustomClaims.stored`, the same `checkCustomClaims`):
+a row is not trusted for having been written by this server. A value that breaks a rule is
+dropped whole, with a warning that names the session and not the content, and the token is
+issued without hook claims. Never a 500: this runs on every refresh.
+
+A stateful session is asked for at creation like any other; its check
+(`Sessions.authenticate`) and `POST /v1/admin/sessions/verify` answer with the stored claims
+merged with the template's, so `auth()` of `@tula/nextjs` returns them for both session
+types.
+
+### Order, bounds and cost
+
+`finish`: the attempt is spent; `before_session`; `Sessions.create`, which loads the signing
+key, asks `before_token`, and only then stores the session. Both hooks are asked before any
+session exists, so neither can leave a live session behind a refusal. The claims hook is not
+asked when the session hook refused.
+
+Each call ends at the hook's deadline (5 s at most), nothing is retried, and a sign-in asks
+two hooks at most: 10 s at the most, 4 s at the defaults. A sign-up that completes in one
+request can ask three (15 s, 6 s). A timeout sets `lastFailedAt` and
+`lastFailureReason: 'timeout'` on the hook; a scenario shows it.
+
+Two things are asked about and may then not happen. Under `sessions.onLimit: refuse_newest`
+the store refuses the session after both hooks were asked (the limit is decided atomically
+in the insert, which must come last). And the late check in `finish` for a second factor
+confirmed during the attempt revokes the session it just created. In both, the endpoint was
+told of a session that does not exist; a receiver must not treat a question as a record.
+
+Counts: each point has its own bucket per environment. `before_sign_up` keeps 600 a minute
+and its key. `before_session` and `before_token` have 3,000 each, the flow engine's ceiling
+for steps that check a secret, because a call of either needs a sign-in or a step-up whose
+every factor was proven.
+
+Response caps: 1 KiB for a decision, 4 KiB for a claims answer (the claims are at most
+1,024 bytes compact; the rest is room for the key and for JSON written with spaces).
+
+### Events and the audit log
+
+Booleans only, added as optional fields, so `EVENT_SCHEMA_VERSION` is unchanged:
+`session.created.data.hookBypassed` and `.claimsHookBypassed`,
+`session.stepped_up.data.claimsHookBypassed`. Present only when true. Not named for a
+"token": anything that flags by key name (`secret`, `token`, `key`) would take it for a
+credential. Nothing an operator typed is in an event or an audit entry: not the denial's
+code (it goes to the client and to a log line), not a claim's key or value. The event canary
+test runs the three new scenarios unmodified.
+
+### SDKs
+
+- `@tula/admin`: `TulaHookQuestion` is the union of three; `TulaHookClaimsAnswer` is new;
+  `HOOK_QUESTION_TYPE_NAMES` has three members. A receiver narrows on `type`.
+- `@tula/nextjs`: nothing changed. `auth().customClaims` already reads `ext`; a real-API
+  test proves it returns a hook's claim, for a token session (through a refresh) and a
+  stateful one.
+- `@tula/core`: no code changed; it stays Zod-free and within its bundle budget.
+
+### What a refusal costs that is easy to miss (review round 1, 2026-10-08)
+
+**Single-use proofs are spent before the hook is asked**: a backup code, an authenticator's
+time step, an emailed code, a passkey's counter. The order is not changed: asking before the
+proof is what the design rules out (whether a hook was asked would then say something to
+someone who cannot sign in), and giving a spent proof back invites its replay. The sharp
+case is the default `deny` during an outage of the operator's endpoint: every sign-in with
+a backup code burns one of ten and signs nobody in. `docs/hooks.md` says so, with the
+advice that follows (an operator who cannot keep the endpoint up should weigh `allow`; a
+refused user should not retry with backup codes). A test pins it (a refused sign-in with a
+backup code leaves nine), so that a change is a decision.
+
+**A refusal while a user enrols an authenticator inside a sign-in ends their other
+sessions and undoes the enrolment. That order is kept.** Where the environment requires
+two-step verification, `Mfa.confirmTotp` ends every other session of the user before it
+turns the factor on (ADR 0025: the sessions that did not prove a factor end before anything
+else); `finish` then asks `before_session`, and `Sessions.create` asks `before_token`. A
+denial, or a failure under `deny`, removes the factor and its backup codes again, and the
+sessions are already gone: the user is signed out on their other devices and enrols afresh
+at the next sign-in. The concurrent-session rule could cause the same before this ticket; a
+hook makes it reachable whenever the operator's endpoint refuses or is down. It is
+accepted: it is safe (nothing is left that should not be), it happens at most once per
+user (an enrolment inside a sign-in), and `docs/hooks.md` says it. Tests pin it for a
+denial, a `before_session` that hangs and a `before_token` that hangs: the factor absent,
+no backup code, no new session, the earlier session ended and denylisted.
+
+Rejected (built in review round 1 and taken out again the same day): ending the other
+sessions only once the attempt's session exists, after `finish`. It kept the user's sessions
+through a refused sign-in, and cost a weaker guarantee in the place that guards it:
+
+- a process that dies, or a sweep that fails, between `finish` and the sweep leaves the
+  factor on beside sessions that never proved it, silently and until they expire;
+- for the length of `finish` (up to the two hooks' deadlines) the factor is on beside such
+  sessions, where before they were ended first so that a failure left nothing changed;
+- under a concurrent-session rule that refuses the newest session, a user at the limit
+  could no longer complete an enrolling sign-in, which today works because the enrolment
+  has made room (a test now pins that it does).
+
+Also rejected: asking `before_session` before the sweep, inside the confirmation. The hook
+would be asked before the factor is proven, or from a callback between the proof and the
+sweep with the attempt spent before the factor is confirmed; and the claims hook, asked as
+the session is created, would still fail after the sweep.
+
+### Conformance
+
+The `hook` step's `answer` also takes a claims answer. Three scenarios, each with a
+receiver (`needsWebhookReceiver`, skipped by name by CI's containerised targets, eight
+names now) and an SDK journey: `sign-in denied by a hook`, `claims added by a hook` (the
+claims asserted on the token, and a refresh that does not ask), `sign-in hook that times
+out`.
+
+### Not in this ticket
+
+The dashboard's screen for hooks and hooks in `tula.config.ts` (TULA-59). Secret rotation
+for a hook, a call log and a test question remain as listed below.

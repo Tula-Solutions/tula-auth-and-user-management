@@ -35,6 +35,8 @@ export function describeSessionStore(
     const now = new Date('2026-01-01T00:00:00.000Z')
     const later = (ms: number) => new Date(now.getTime() + ms)
     const DAY = 86_400_000
+    /** An authentication that leaves the session without a hook's claims. */
+    const NO_CLAIMS = { claims: null }
     let ctx: SessionSuiteContext
     let counter = 0
 
@@ -92,6 +94,7 @@ export function describeSessionStore(
         type: 'hybrid',
         factorVerifiedAt: null,
         authMethods: [],
+        hookClaims: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -155,7 +158,7 @@ export function describeSessionStore(
       const updated = await ctx.store.recordAuthentication(
         ctx.a.environmentId,
         s.id,
-        { at: later(60_000), methods: ['otp', 'mfa'] },
+        { at: later(60_000), methods: ['otp', 'mfa'], hookClaims: NO_CLAIMS },
         steppedUp(ctx.a, s.id)
       )
       expect(updated).toEqual({
@@ -163,6 +166,7 @@ export function describeSessionStore(
         type: 'hybrid',
         factorVerifiedAt: later(60_000),
         authMethods: ['pwd', 'otp', 'mfa'],
+        hookClaims: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -183,6 +187,7 @@ export function describeSessionStore(
         {
           at: later(1_000),
           methods: ['otp', 'mfa'],
+          hookClaims: NO_CLAIMS,
         },
         Audit.none('fixture')
       )
@@ -193,6 +198,7 @@ export function describeSessionStore(
         {
           at: later(2_000),
           methods: ['backup_code', 'mfa', 'backup_code'],
+          hookClaims: NO_CLAIMS,
         },
         Audit.none('fixture')
       )
@@ -211,7 +217,7 @@ export function describeSessionStore(
           ctx.store.recordAuthentication(
             ctx.a.environmentId,
             s.id,
-            { at: later(1_000), methods },
+            { at: later(1_000), methods, hookClaims: NO_CLAIMS },
             Audit.none('fixture')
           )
         )
@@ -236,7 +242,7 @@ export function describeSessionStore(
         ctx.store.recordAuthentication(
           tenant.environmentId,
           id,
-          { at, methods: ['otp', 'mfa'] },
+          { at, methods: ['otp', 'mfa'], hookClaims: NO_CLAIMS },
           steppedUp(tenant, id)
         )
 
@@ -262,6 +268,168 @@ export function describeSessionStore(
         authMethods: ['pwd', 'otp', 'mfa'],
       })
       expect(await recorded(ctx.a, idle.session.id)).toEqual(['session.stepped_up'])
+    })
+
+    describe('the claims a hook gave a session', () => {
+      const CLAIMS = { role: 'admin', seats: 3, staff: false }
+
+      test('a session is stored with them and has none otherwise', async () => {
+        const plain = await seed(ctx.a)
+        const withClaims = await seed(ctx.a, { hookClaims: CLAIMS })
+        expect((await ctx.store.findById(ctx.a.environmentId, plain.session.id))?.hookClaims).toBe(
+          null
+        )
+        const read = await ctx.store.findById(ctx.a.environmentId, withClaims.session.id)
+        expect(read?.hookClaims).toEqual({ role: 'admin', seats: 3, staff: false })
+        // A refresh reads them from here: the token lookup returns them too.
+        const found = await ctx.store.findToken(ctx.a.environmentId, withClaims.root.tokenHash)
+        expect(found?.session.hookClaims).toEqual({ role: 'admin', seats: 3, staff: false })
+        const [listed] = await ctx.store.listActiveByUser(
+          ctx.a.environmentId,
+          withClaims.userId,
+          now
+        )
+        expect(listed?.hookClaims).toEqual({ role: 'admin', seats: 3, staff: false })
+      })
+
+      test('what a caller is handed is not the store’s own copy', async () => {
+        const given = { role: 'admin' }
+        const { session: s } = await seed(ctx.a, { hookClaims: given })
+        given.role = 'owner'
+        const read = await ctx.store.findById(ctx.a.environmentId, s.id)
+        expect(read?.hookClaims).toEqual({ role: 'admin' })
+        ;(read?.hookClaims as Record<string, unknown>).role = 'owner'
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toEqual({
+          role: 'admin',
+        })
+      })
+
+      test('an authentication replaces them: with new ones, or with none', async () => {
+        const { session: s } = await seed(ctx.a, { authMethods: ['pwd'], hookClaims: CLAIMS })
+        const replaced = await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          { at: later(1_000), methods: ['otp', 'mfa'], hookClaims: { claims: { role: 'owner' } } },
+          Audit.none('fixture')
+        )
+        expect(replaced?.hookClaims).toEqual({ role: 'owner' })
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toEqual({
+          role: 'owner',
+        })
+        const cleared = await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          { at: later(2_000), methods: ['pwd'], hookClaims: { claims: null } },
+          Audit.none('fixture')
+        )
+        expect(cleared?.hookClaims).toBeNull()
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toBeNull()
+      })
+
+      test('they are written only over the methods they were asked about', async () => {
+        const { session: s } = await seed(ctx.a, {
+          factorVerifiedAt: now,
+          authMethods: ['pwd'],
+          hookClaims: CLAIMS,
+        })
+        // Another step-up got in between: the session has proven more than the hook was told.
+        await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          { at: later(1_000), methods: ['email'], hookClaims: { claims: { role: 'member' } } },
+          Audit.none('fixture')
+        )
+        const stale = await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          {
+            at: later(2_000),
+            methods: ['otp', 'mfa'],
+            hookClaims: { claims: { role: 'owner' }, ifAuthMethods: ['pwd'] },
+          },
+          steppedUp(ctx.a, s.id)
+        )
+        expect(stale).toBeNull()
+        // Nothing of it was written: not the claims, not the methods, not the time, no entry.
+        const untouched = await ctx.store.findById(ctx.a.environmentId, s.id)
+        expect(untouched?.hookClaims).toEqual({ role: 'member' })
+        expect(untouched?.authMethods).toEqual(['pwd', 'email'])
+        expect(untouched?.factorVerifiedAt).toEqual(later(1_000))
+        expect(await recorded(ctx.a, s.id)).toEqual([])
+
+        // Over the methods as they are, in any order (a set), it is written.
+        const fresh = await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          {
+            at: later(3_000),
+            methods: ['otp', 'mfa'],
+            hookClaims: { claims: { role: 'owner' }, ifAuthMethods: ['email', 'pwd'] },
+          },
+          steppedUp(ctx.a, s.id)
+        )
+        expect(fresh?.hookClaims).toEqual({ role: 'owner' })
+        expect(fresh?.authMethods).toEqual(['pwd', 'email', 'otp', 'mfa'])
+        expect(fresh?.factorVerifiedAt).toEqual(later(3_000))
+        expect(await recorded(ctx.a, s.id)).toEqual(['session.stepped_up'])
+      })
+
+      test('a subset or a superset of the methods is not the methods', async () => {
+        const { session: s } = await seed(ctx.a, { authMethods: ['pwd', 'email'] })
+        for (const ifAuthMethods of [['pwd'], ['pwd', 'email', 'otp'], []]) {
+          expect(
+            await ctx.store.recordAuthentication(
+              ctx.a.environmentId,
+              s.id,
+              {
+                at: later(1_000),
+                methods: ['otp'],
+                hookClaims: { claims: { role: 'owner' }, ifAuthMethods },
+              },
+              Audit.none('fixture')
+            )
+          ).toBeNull()
+        }
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toBeNull()
+      })
+
+      test('a refresh and a touch leave them as they are', async () => {
+        const { session: s, root } = await seed(ctx.a, { hookClaims: CLAIMS })
+        expect(
+          await ctx.store.rotate(ctx.a.environmentId, {
+            parentId: root.id,
+            child: token(s.id, { parentId: root.id }),
+            at: later(1_000),
+            idleExpiresAt: later(8 * DAY),
+          })
+        ).toBe(true)
+        expect(await ctx.store.touch(ctx.a.environmentId, s.id, later(2_000), later(8 * DAY))).toBe(
+          true
+        )
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toEqual({
+          role: 'admin',
+          seats: 3,
+          staff: false,
+        })
+      })
+
+      test('another environment neither reads nor replaces them', async () => {
+        const { session: s } = await seed(ctx.a, { authMethods: ['pwd'], hookClaims: CLAIMS })
+        expect(await ctx.store.findById(ctx.b.environmentId, s.id)).toBeNull()
+        expect(
+          await ctx.store.recordAuthentication(
+            ctx.b.environmentId,
+            s.id,
+            { at: later(1_000), methods: ['otp'], hookClaims: { claims: { role: 'owner' } } },
+            Audit.none('fixture')
+          )
+        ).toBeNull()
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toEqual({
+          role: 'admin',
+          seats: 3,
+          staff: false,
+        })
+      })
     })
 
     test('stores sessions with no absolute limit, user agent or IP', async () => {

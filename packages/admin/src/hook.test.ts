@@ -6,7 +6,12 @@ import {
   webhookSecretBytes,
 } from '@tula/contract/webhook-signature'
 import { isTulaAdminError, type TulaAdminError } from './errors'
-import { HOOK_QUESTION_TYPE_NAMES, type TulaHookAnswer, verifyHook } from './hook'
+import {
+  HOOK_QUESTION_TYPE_NAMES,
+  type TulaHookAnswer,
+  type TulaHookClaimsAnswer,
+  verifyHook,
+} from './hook'
 import { verifyWebhook } from './webhook'
 
 const SECRET = formatWebhookSecret(new Uint8Array(32).fill(51))
@@ -57,6 +62,38 @@ describe('verifyHook', () => {
     }
     const answer: TulaHookAnswer = { decision: 'deny', code: 'disposable_email' }
     expect(answer.decision).toBe('deny')
+  })
+
+  test('returns the question asked before a session, typed by its facts', async () => {
+    const fixture = HOOK_QUESTION_FIXTURES.before_session
+    const asked = await verify(await signed(fixture, { id: fixture.id }))
+    expect(asked).toEqual(fixture)
+    if (asked.type !== 'hook.before_session') {
+      throw new Error('expected the question asked before a session')
+    }
+    expect(asked.data.signUp).toBe(false)
+    expect(asked.data.amr).toEqual(['pwd', 'otp', 'mfa'])
+    // @ts-expect-error a session's question has no address of the user's
+    expect(asked.data.email).toBeUndefined()
+    const answer: TulaHookAnswer = { decision: 'allow' }
+    expect(answer).toEqual({ decision: 'allow' })
+  })
+
+  test('returns the question asked before a token, answered with claims and nothing else', async () => {
+    const fixture = HOOK_QUESTION_FIXTURES.before_token
+    const asked = await verify(await signed(fixture, { id: fixture.id }))
+    expect(asked).toEqual(fixture)
+    if (asked.type !== 'hook.before_token') {
+      throw new Error('expected the question asked before a token')
+    }
+    expect(asked.data.sessionId).toBe(fixture.data.sessionId)
+    // @ts-expect-error a token's question has no address the request came from
+    expect(asked.data.ipAddress).toBeUndefined()
+    const answer: TulaHookClaimsAnswer = { claims: { plan: 'pro', seats: 5, beta: false } }
+    expect(Object.keys(answer)).toEqual(['claims'])
+    // @ts-expect-error a claims hook cannot decide
+    const deciding: TulaHookClaimsAnswer = { decision: 'deny' }
+    expect(deciding).toBeDefined()
   })
 
   test('knows exactly the question types the contract has', () => {
@@ -118,7 +155,10 @@ describe('verifyHook', () => {
     ['an event', EVENT_FIXTURES['user.created']],
     ['an event about a hook, whose type also begins with hook.', EVENT_FIXTURES['hook.created']],
     ['a test event', { ...EVENT_FIXTURES['user.created'], test: true }],
-    ['a question of a type this version does not know', { ...question, type: 'hook.before_token' }],
+    [
+      'a question of a type this version does not know',
+      { ...question, type: 'hook.before_refresh' },
+    ],
     ['a question with an actor', { ...question, actor: { type: 'user', id: 'u' } }],
     ['a question with a target', { ...question, target: { type: 'user', id: 'u' } }],
     ['a question with no data', { ...question, data: undefined }],

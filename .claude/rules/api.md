@@ -47,7 +47,10 @@ paths:
   about to create an account for a proven address (after the emailed code in
   `Flows.verifyEmail`; the new-user row of `OAuth.resolveAccount`). The caller gets `'clear'`
   or `'bypassed'` and nothing of the answer. Never ask one from a start, from an admin route
-  or on demand.
+  or on demand. `Hooks.beforeSession` is called from the flow service's `finish` only
+  (after the attempt's move to `complete`, before `Sessions.create`), and
+  `Hooks.beforeToken` from `Sessions.create` and `Sessions.recordAuthentication` only: a
+  refresh reads the claims stored on the session and calls nobody.
 - Return flow steps from `@tula/contract` for any sign-in/sign-up interaction. Never return UI
   hints like "show the password form".
 - Throw `AuthError(code, params)` or `ServiceException` subclasses. Add new error codes to

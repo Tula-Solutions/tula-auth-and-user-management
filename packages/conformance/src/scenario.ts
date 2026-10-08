@@ -1,4 +1,4 @@
-import { DurationSchema, HookAnswerSchema } from '@tula/contract'
+import { DurationSchema, HookAnswerSchema, HookClaimsAnswerSchema } from '@tula/contract'
 import { z } from 'zod'
 
 /** An HTTP header name. */
@@ -407,7 +407,8 @@ export const WebhookStepSchema = z
  *
  * - With `captureUrl` and/or `answer`: start the receiver (on first use), store the URL to
  *   register as the hook's address, and say how it answers every question from now on: an
- *   answer of the contract (`{ "decision": "allow" }`, `{ "decision": "deny", "code": … }`),
+ *   answer of the contract (`{ "decision": "allow" }`, `{ "decision": "deny", "code": … }`,
+ *   or a claims hook's `{ "claims": { … } }`),
  *   a bare status (`{ "status": 500 }`), or `"hang"` (it never answers, and the server gives
  *   up at the hook's deadline). A receiver that was never given an `answer` answers `204`,
  *   which is no answer of the contract.
@@ -434,6 +435,7 @@ export const HookStepSchema = z
         answer: z
           .union([
             HookAnswerSchema,
+            HookClaimsAnswerSchema,
             z.strictObject({ status: z.number().int().min(200).max(599) }),
             z.literal('hang'),
           ])

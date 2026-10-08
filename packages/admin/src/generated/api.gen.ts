@@ -95,7 +95,7 @@ export interface Schemas {
     kind: Schemas['EnvironmentKind']
   }
   CreateHookRequest: {
-    point: 'before_sign_up'
+    point: 'before_sign_up' | 'before_session' | 'before_token'
     url: string
     enabled?: boolean
     deadlineMs?: number
@@ -340,6 +340,21 @@ export interface Schemas {
     decision: 'deny'
     code?: string
   }
+  HookBeforeSessionData: {
+    userId: string
+    client: Schemas['SessionClient']
+    profile: string
+    amr: string[]
+    signUp: boolean
+    ipAddress: string | null
+  }
+  HookBeforeSessionQuestion: {
+    id: string
+    type: 'hook.before_session'
+    schemaVersion: 1
+    occurredAt: string
+    data: Schemas['HookBeforeSessionData']
+  }
   HookBeforeSignUpData: {
     email: string
     method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple'
@@ -352,6 +367,25 @@ export interface Schemas {
     schemaVersion: 1
     occurredAt: string
     data: Schemas['HookBeforeSignUpData']
+  }
+  HookBeforeTokenData: {
+    userId: string
+    sessionId: string
+    client: Schemas['SessionClient']
+    profile: string
+    amr: string[]
+  }
+  HookBeforeTokenQuestion: {
+    id: string
+    type: 'hook.before_token'
+    schemaVersion: 1
+    occurredAt: string
+    data: Schemas['HookBeforeTokenData']
+  }
+  HookClaimsAnswer: {
+    claims: {
+      [key: string]: string | number | boolean
+    }
   }
   HookCreatedEvent: {
     id: string
@@ -367,7 +401,7 @@ export interface Schemas {
     test?: true
   }
   HookCreatedEventData: {
-    point: 'before_sign_up'
+    point: 'before_sign_up' | 'before_session' | 'before_token'
     enabled: boolean
     failureMode: 'deny' | 'allow'
     weakened?: boolean
@@ -386,13 +420,13 @@ export interface Schemas {
     test?: true
   }
   HookDeletedEventData: {
-    point: 'before_sign_up'
+    point: 'before_sign_up' | 'before_session' | 'before_token'
     weakened?: boolean
   }
   HookList: {
     data: Schemas['Hook'][]
   }
-  HookQuestion: Schemas['HookBeforeSignUpQuestion']
+  HookQuestion: Schemas['HookBeforeSignUpQuestion'] | Schemas['HookBeforeSessionQuestion'] | Schemas['HookBeforeTokenQuestion']
   HookUpdatedEvent: {
     id: string
     type: 'hook.updated'
@@ -407,7 +441,7 @@ export interface Schemas {
     test?: true
   }
   HookUpdatedEventData: {
-    point: 'before_sign_up'
+    point: 'before_sign_up' | 'before_session' | 'before_token'
     changed: ('url' | 'enabled' | 'deadlineMs' | 'failureMode')[]
     weakened?: boolean
   }
@@ -586,6 +620,8 @@ export interface Schemas {
   SessionCreatedEventData: {
     userId: string
     client: Schemas['SessionClient']
+    hookBypassed?: boolean
+    claimsHookBypassed?: boolean
   }
   SessionLimitAction: 'end_oldest' | 'refuse_newest'
   SessionList: {
@@ -666,6 +702,7 @@ export interface Schemas {
   SessionSteppedUpEventData: {
     userId: string
     methods: ('pwd' | 'email' | 'otp' | 'backup_code' | 'mfa' | 'hwk' | 'swk' | 'user')[]
+    claimsHookBypassed?: boolean
   }
   SessionType: 'hybrid' | 'stateful'
   SetPasswordRequest: {

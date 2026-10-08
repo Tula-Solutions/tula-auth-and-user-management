@@ -56,6 +56,7 @@ import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import { OAuthProviderError } from '~/ports/oauth-provider'
+import { mergeAuthMethods } from '~/ports/session-store'
 import type { UserRecord } from '~/ports/user-repository'
 import { sendAccountExistsNotice, sendNoAccountNotice, sendNoAccountSignInNotice } from './mailer'
 import { assertAccepts, nextStatus } from './transitions'
@@ -336,6 +337,12 @@ const StateSchema = z.object({
    */
   amr: z.array(z.string()).optional(),
   /**
+   * The attempt is a sign-in that created its account (a first sign-in with a provider). The
+   * `before_session` hook is told so (`signUp`), also when the attempt waited on an enrolment
+   * in between. A sign-up attempt needs no mark: its kind says it.
+   */
+  accountCreated: z.boolean().optional(),
+  /**
    * The WebAuthn challenge an attempt issued and has not used yet (ADR 0027), and when it stops
    * being accepted (epoch milliseconds). Top-level, because taking it is a compare-and-set on
    * its value (`StateGuard`): a challenge is used up by the first request that presents an
@@ -612,6 +619,17 @@ async function load(
  * confirmed while this attempt was between its first factor and here), the session is revoked,
  * no tokens are returned and the answer is `flow.invalid_step`: start again. (Not for a
  * sign-up: its account is created by the same request and cannot have a factor yet.)
+ *
+ * **The `before_session` hook is asked here and nowhere else** (ADR 0035): after the attempt
+ * is spent, when every factor it needed is proven, and immediately before `Sessions.create`.
+ * So it is asked for a sign-in, a sign-up's first session and the session a password reset
+ * ends in, and never for a refresh, a step-up or anything an administrator does. A denial
+ * (`hook.denied`) and a failure the hook does not let through (`hook.unavailable`) are
+ * thrown before a session exists: no session, no tokens, no cookie, no `session.created`, no
+ * notice. The attempt stays spent, as for any other error past this point (see above): the
+ * client starts again, and what proved the last step is not given back. The session's own
+ * `before_token` hook is asked by `Sessions.create`, before it stores anything, so a sign-in
+ * asks two hooks at most and neither can leave a session behind a refusal.
  */
 async function finish(
   deps: Deps,
@@ -633,6 +651,16 @@ async function finish(
   if (!moved) {
     throw new AuthError('flow.invalid_step')
   }
+  // Named field by field from the server's own records: the allow-list of the question
+  // (`HookBeforeSessionDataSchema`). No address of the user's, no user agent, no attempt.
+  const clearance = await Hooks.beforeSession(deps, tenant, {
+    userId,
+    client: state.client,
+    profile: await Sessions.profileNameFor(deps, tenant, state),
+    amr: mergeAuthMethods([], state.amr ?? []),
+    signUp: attempt.kind === 'sign_up' || state.accountCreated === true,
+    ipAddress: cleanOrigin(context).ipAddress,
+  })
   const tokens = await Sessions.create(deps, tenant, {
     userId,
     client: state.client,
@@ -640,6 +668,7 @@ async function finish(
     ipAddress: context.ipAddress,
     authMethods: state.amr ?? [],
     profile: state.profile,
+    hookBypassed: clearance === 'bypassed',
   })
   if (
     attempt.kind !== 'sign_up' &&
@@ -1841,7 +1870,10 @@ export async function exchangeOAuth(
     deps,
     tenant,
     attempt,
-    firstProven(state, OAuth.strategyOf(provider), 'fed'),
+    {
+      ...firstProven(state, OAuth.strategyOf(provider), 'fed'),
+      ...(created && { accountCreated: true }),
+    },
     user.id,
     next,
     required,

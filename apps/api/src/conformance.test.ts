@@ -63,6 +63,9 @@ describe('conformance scenarios, in process', () => {
       'sign-up denied by a hook',
       'hook that times out',
       'jwt template custom claims',
+      'sign-in denied by a hook',
+      'claims added by a hook',
+      'sign-in hook that times out',
     ])
   })
 

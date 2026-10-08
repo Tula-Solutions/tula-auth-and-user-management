@@ -205,15 +205,17 @@ export const ERROR_DEFINITIONS = {
     message: 'The signing secret cannot be changed now.',
   },
 
-  // Hooks (ADR 0035). The operator's `before_sign_up` hook refused the sign-up; `params.code`
-  // is the hook's own message code when it gave one, for the app to turn into words. Answered
-  // only where the address was already proven, so it says nothing about any account.
-  'hook.denied': { status: 403, message: 'This sign-up was not allowed.' },
-  // The hook could not be asked or gave no usable answer, and it refuses on failure. Nothing
-  // was created; signing up again later may work.
+  // Hooks (ADR 0035). The operator's hook refused a sign-up (`before_sign_up`) or a sign-in
+  // (`before_session`); `params.code` is the hook's own message code when it gave one, for
+  // the app to turn into words. Answered only where the address, or every factor, was
+  // already proven, so it says nothing about any account. One code for both points: a client
+  // knows which of the two it was doing, and the words name neither.
+  'hook.denied': { status: 403, message: 'This was not allowed.' },
+  // A hook could not be asked or gave no usable answer, and it refuses on failure. Nothing
+  // was created; trying again later may work.
   'hook.unavailable': {
     status: 503,
-    message: 'Sign-up is unavailable right now. Try again later.',
+    message: 'This is unavailable right now. Try again later.',
   },
   // A hook's address is not one the server may call: as `webhook.url_not_allowed`.
   'hook.url_not_allowed': { status: 422, message: 'The server cannot call that address.' },

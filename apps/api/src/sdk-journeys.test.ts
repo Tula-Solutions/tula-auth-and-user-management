@@ -350,11 +350,12 @@ describe('SDK journeys against the API in process', () => {
     expect((await tula.session.getToken())?.split('.')).toHaveLength(3)
   })
 
-  /** The operator's endpoint of a `before_sign_up` hook: a listener in this process. */
+  /** The operator's endpoint of a hook (a sign-up's unless said): a listener in this process. */
   async function withHook(
     s: Server,
     respond: () => Response | Promise<Response>,
-    run: (asked: () => number) => Promise<void>
+    run: (asked: () => number) => Promise<void>,
+    point: 'before_sign_up' | 'before_session' | 'before_token' = 'before_sign_up'
   ): Promise<void> {
     let asked = 0
     const endpoint = Bun.serve({
@@ -370,8 +371,8 @@ describe('SDK journeys against the API in process', () => {
         s.deps,
         { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId },
         {
-          point: 'before_sign_up',
-          url: `http://127.0.0.1:${endpoint.port}/before-sign-up`,
+          point,
+          url: `http://127.0.0.1:${endpoint.port}/${point}`,
           enabled: true,
           deadlineMs: 100,
           failureMode: 'deny',
@@ -404,7 +405,7 @@ describe('SDK journeys against the API in process', () => {
           expect(error.code).toBe('hook.denied')
           expect(error.status).toBe(403)
           expect(error.params).toEqual({ code: 'disposable_email' })
-          expect(error.message).toBe('This sign-up was not allowed.')
+          expect(error.message).toBe('This was not allowed.')
           expect(asked()).toBe(1)
           expect(tula.state.status).not.toBe('signed-in')
           expect(await tula.session.getToken()).toBeNull()
@@ -447,6 +448,113 @@ describe('SDK journeys against the API in process', () => {
           expect(tula.state.status).not.toBe('signed-in')
           expect(await tula.session.getToken()).toBeNull()
         }
+      )
+    }
+  )
+
+  journey(
+    'sign-in denied by a hook',
+    'sign-in denied by a hook: the client gets the operator’s code and no session, and a new attempt signs in',
+    async () => {
+      const s = await server()
+      const { email } = await signUp(s)
+      let answer: unknown = { decision: 'deny', code: 'account_suspended' }
+      await withHook(
+        s,
+        () => Response.json(answer),
+        async (asked) => {
+          const { tula } = s.client('server')
+          const flow = await tula.signIn.start({ identifier: email })
+          expect(asked()).toBe(0)
+          const wrong = await caught(flow.submitPassword({ password: 'not-the-password-123' }))
+          expect(wrong.code).toBe('auth.invalid_credentials')
+          expect(asked()).toBe(0)
+
+          const error = await caught(flow.submitPassword({ password: PASSWORD }))
+          expect(error.code).toBe('hook.denied')
+          expect(error.status).toBe(403)
+          expect(error.params).toEqual({ code: 'account_suspended' })
+          expect(error.message).toBe('This was not allowed.')
+          expect(asked()).toBe(1)
+          expect(tula.state.status).not.toBe('signed-in')
+          expect(await tula.session.getToken()).toBeNull()
+
+          // The attempt has ended on the server: the flow object the client holds is spent.
+          expect((await caught(flow.submitPassword({ password: PASSWORD }))).code).toBe(
+            'flow.not_found'
+          )
+          answer = { decision: 'allow' }
+          const again = await tula.signIn.start({ identifier: email })
+          expect((await again.submitPassword({ password: PASSWORD })).status).toBe('complete')
+          expect(tula.state.status).toBe('signed-in')
+          expect(asked()).toBe(2)
+        },
+        'before_session'
+      )
+    }
+  )
+
+  journey(
+    'claims added by a hook',
+    'claims added by a hook: the token @tula/core hands out carries them, and a refresh keeps them without asking again',
+    async () => {
+      const s = await server()
+      let answer: unknown = { claims: { plan: 'pro', seats: 5 } }
+      await withHook(
+        s,
+        () => Response.json(answer),
+        async (asked) => {
+          const { tula, email } = await signUp(s)
+          expect(asked()).toBe(1)
+          const first = decodeJwt((await tula.session.getToken()) ?? '')
+          expect(readCustomClaims(first)).toEqual({ plan: 'pro', seats: 5 })
+          // Under the namespace claim only: nothing of the answer is a claim of its own.
+          expect(first).not.toHaveProperty('plan')
+
+          answer = { claims: { plan: 'free' } }
+          const refreshed = decodeJwt((await tula.session.refresh()) ?? '')
+          expect(readCustomClaims(refreshed)).toEqual({ plan: 'pro', seats: 5 })
+          expect(refreshed.sid).toBe(first.sid)
+          expect(asked()).toBe(1)
+
+          // A new sign-in is a new session, and is asked about.
+          const again = await signIn(s, email)
+          expect(readCustomClaims(decodeJwt((await again.tula.session.getToken()) ?? ''))).toEqual({
+            plan: 'free',
+          })
+          expect(asked()).toBe(2)
+        },
+        'before_token'
+      )
+    }
+  )
+
+  journey(
+    'sign-in hook that times out',
+    'sign-in hook that times out: the client is told to try again later, in bounded time, and holds no session',
+    async () => {
+      const s = await server()
+      const { email } = await signUp(s)
+      await withHook(
+        s,
+        () => new Promise<Response>(() => undefined),
+        async (asked) => {
+          const { tula } = s.client('server')
+          const flow = await tula.signIn.start({ identifier: email })
+          const started = performance.now()
+          const error = await caught(flow.submitPassword({ password: PASSWORD }))
+          // The hook's deadline is 100 ms: bounded well inside a second.
+          expect(performance.now() - started).toBeLessThan(1500)
+          expect(error.code).toBe('hook.unavailable')
+          expect(error.status).toBe(503)
+          expect(error.message).toBe('This is unavailable right now. Try again later.')
+          // Nothing of an operator's code: this was not a denial.
+          expect(error.params?.code).toBeUndefined()
+          expect(asked()).toBe(1)
+          expect(tula.state.status).not.toBe('signed-in')
+          expect(await tula.session.getToken()).toBeNull()
+        },
+        'before_session'
       )
     }
   )

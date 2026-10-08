@@ -444,8 +444,10 @@ whose answer decides what happens next (step 2.3).
 ### Hooks (`modules/hook`, see ADR 0035)
 
 A **hook** is a signed question whose answer decides what happens next
-([GLOSSARY.md](GLOSSARY.md)). Never call it a webhook, and never call a webhook a hook. The
-one point so far is `before_sign_up`.
+([GLOSSARY.md](GLOSSARY.md)). Never call it a webhook, and never call a webhook a hook.
+There are three points (`HOOK_POINTS`): `before_sign_up` and `before_session` decide (allow
+or deny), `before_token` adds claims and cannot deny. The first six rules below were written
+for `before_sign_up` and hold for all three unless they name it.
 
 - **The hook is asked only where a new account is about to be created for a proven
   address**: in `Flows.verifyEmail` after `Verification.verifyCode` and the decoy check, and
@@ -456,8 +458,9 @@ one point so far is `before_sign_up`.
   sign-up calls `Hooks.beforeSignUp` at that same point, and gets the side-by-side test (an
   existing and a new address: same answers, and the receiver called for neither before the
   proof).
-- **A hook is not an authority.** `Hooks.beforeSignUp` returns `'clear'` or `'bypassed'` and
-  throws otherwise; the parsed answer never leaves `call` in the service. Never return more
+- **A hook is not an authority.** `Hooks.beforeSignUp` and `Hooks.beforeSession` return
+  `'clear'` or `'bypassed'` and throw otherwise; `Hooks.beforeToken` returns claims that
+  passed every rule, or none. The parsed answer never leaves `call` in the service. Never return more
   of an answer, never widen the two-member verdict, and never let a key of the answer reach
   a user, an attempt's state or a session. Keep the test that answers `emailVerified`,
   `userId`, `amr` and compares the account with one made without a hook.
@@ -492,6 +495,60 @@ one point so far is `before_sign_up`.
   other's bodies: a question has a type from a closed list and no `actor` or `target`.
 - The `hook` conformance step uses the `webhook` step's receiver; a scenario with one sets
   `needsWebhookReceiver` and is added, by name, to the skipped set in `.github/workflows/ci.yml`.
+- **`before_session` is asked in one place: the flow service's `finish`**, after every factor
+  is proven and the attempt has been moved to `complete`, immediately before
+  `Sessions.create`. So it is asked for a sign-in, a sign-up (after `before_sign_up`, which
+  is asked earlier, where the account is made) and a reset that signs in; never for a
+  refresh, a step-up or anything an administrator does. A wrong password, a locked account
+  and a missing second factor never reach it: keep the side-by-side tests
+  (`modules/flow/session-hook.test.ts`). A denial or a failure under `deny` leaves no
+  session, token, cookie, `session.created` or new-device notice, and the attempt is spent
+  (the user starts again): that cost is stated in `docs/hooks.md`. Never move the question
+  before the attempt's compare-and-set (a parallel submit would ask twice), and never after
+  `Sessions.create` (a refused sign-in would leave a live session).
+- **Neither later question holds an email address, and `before_token`'s holds no IP address
+  either**: ids, the client kind, the profile's name and `amr` in both; `signUp` and the
+  request's IP address in `before_session` only (`HookBeforeSessionDataSchema`,
+  `HookBeforeTokenDataSchema`, strict). A claim is stored and issued with every later
+  token, so it must not depend on the address of one request. Never a password, a code, a
+  token, the attempt's id or the user agent in either.
+- **A hook that refuses an enrolling sign-in costs the user their other sessions, and that
+  is kept.** `Mfa.confirmTotp` ends the sessions that did not prove the factor before it
+  turns the factor on (ADR 0025), inside an attempt too; a refusal after that undoes the
+  factor, not the sweep. Never move the sweep after the session exists to spare it: tests
+  pin the cost, and ADR 0035 has the alternative and why it was taken out.
+- **A proof is spent before a hook is asked and is never given back**: a backup code, a time
+  step, an emailed code, a passkey's counter. Never reorder to save one, and never un-spend
+  one. A test pins the backup code (nine left after a refused sign-in).
+- **`before_token` is asked when a session is created and when it proves a factor again, and
+  never at a refresh.** `Sessions.create` and `Sessions.recordAuthentication` are the only
+  callers of `Hooks.beforeToken`; the answer is stored on the session (`sessions.hook_claims`)
+  and every issue after that reads the row: a refresh, a refresh inside the grace window and
+  a stateful session's request make **no** call (a test counts them, and that the hook store
+  is not even read). The inputs are the user, the session, the client kind, the profile's
+  name and `amr`; a new input is a decision recorded in ADR 0035, with the place that asks
+  again when it changes.
+- **A claims answer is exactly `{ claims }`, judged whole.** A reserved name, a malformed key
+  (`__proto__` among them), a value that is not a scalar, a key beside `claims`, or claims
+  that with the profile's template exceed `MAX_CUSTOM_CLAIMS_BYTES` (`CustomClaims.fits`) is a
+  **failure** (`claims_invalid`, `claims_too_large`): never partly applied, never trimmed.
+  Under `deny` the sign-in or the step-up fails with `hook.unavailable` and nothing changes;
+  under `allow` the session carries no hook claims and its event says
+  `claimsHookBypassed: true`. **Where the hook and the template set the same key the hook
+  wins.** Stored claims are judged again on every read (`CustomClaims.stored`): a row that
+  no longer passes is issued without them and logged, never a 500.
+- **A step-up replaces the stored claims, with a compare-and-set on what the session had
+  proven** (`ifAuthMethods`), so two step-ups at once cannot store claims that describe
+  neither; a miss is retried (`STEP_UP_ATTEMPTS`) and then answers 503. Never write
+  `hook_claims` by another path.
+- **A sign-in waits for at most two hooks** (`before_session`, `before_token`), a sign-up
+  for three: at most 5 seconds each, one after another. `docs/hooks.md` states the worst
+  case; a fourth call on that path is a decision, not an addition. The two later points are
+  counted apart from sign-ups (`HOOK_SESSION_CALLS_PER_MINUTE`, per point).
+- **What a hook let through is said with a boolean and nothing else**: `hookBypassed` and
+  `claimsHookBypassed` on `session.created`, `claimsHookBypassed` on `session.stepped_up`.
+  Never a claim's key or value, the operator's code or a reason in an event or an audit
+  entry.
 
 ### JWT templates and custom claims (`modules/session/custom-claims.ts`, see ADR 0036)
 
@@ -515,19 +572,29 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
 - **The cap is `MAX_CUSTOM_CLAIMS_BYTES` (1,024), enforced twice.** At save a template is
   refused when its claims *could* exceed it (`jwtTemplateMaxBytes`, every source at its
   maximum). At build `CustomClaims.build` checks again and, over the cap, drops the **whole**
-  namespace and logs the template's name and the byte count, never a value. Never truncate,
+  namespace (of a template alone; beside a hook's stored claims, the template's part: see
+  the `before_token` rule below) and logs the template's name and the byte count, never a
+  value. Never truncate,
   never raise the cap for a feature: it is what keeps `tula_at` inside a browser's cookie
   limit (a test in `packages/nextjs/src/real-api.test.ts` measures it).
-- **Claims are read at every issue and stored nowhere.** `Sessions` builds them wherever it
+- **A template's claims are read at every issue and stored nowhere** (a hook's are stored on
+  the session: "Hooks" above). `Sessions` builds them wherever it
   signs a token or answers for a stateful session, from the settings as configured now. A
   refresh uses the user row `rejectBanned` already loaded and **gains no read**; the other
   paths read the user only when `CustomClaims.needsUser(template)`. Keep the tests that count
   those reads.
 - **No value means no key, and no claim means no `ext`.** Never `null`, never `{}`. A token
   of a profile without a template has exactly the claim set of before (a snapshot test).
-- **A later source of claims (a hook) goes through `CustomClaims.build`'s `extra`**: the same
-  namespace, key grammar, reserved names, scalar values and cap. Never merge claims into a
-  token by another path.
+- **The `before_token` hook's claims go through `CustomClaims.build`'s `extra`** (ADR 0035):
+  the same namespace, key grammar, reserved names, scalar values and cap, and the hook's
+  value wins a key the template also sets. **Over the cap at issue (a template saved, or an
+  address grown, after the claims were stored) the hook's claims are issued and all of the
+  template's are left out**, logged by environment, template name and byte counts: a
+  template alone cannot exceed the cap, the two together can, and dropping the hook's
+  claims would fail open for an application that reads a restriction as a present claim.
+  Everything goes only when one source alone is over the cap. When the hook *answers*, not
+  fitting beside the template is still its failure (`claims_too_large`). Never merge claims
+  into a token by another path.
 - **A reader treats a malformed `ext` as absent, whole** (`readCustomClaims`): not a plain
   object, a reserved or malformed key, a value that is not a scalar, over the cap.
   `@tula/nextjs` sets `SessionClaims.ext` and `auth().customClaims` only from it, for a token
@@ -1599,7 +1666,8 @@ apps/api/src/
                       # workspaces, projects, environments, the instance audit log),
                       # webhook (endpoints, the delivery worker: a background job, the
                       # delivery log, test events and sending a delivery again),
-                      # hook (the question asked before a sign-up, and its admin routes)
+                      # hook (the questions asked before a sign-up, a session and a token,
+                      # and their admin routes)
 ```
 
 ## Common commands
