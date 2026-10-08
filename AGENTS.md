@@ -1040,6 +1040,12 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
 - Component tests (`packages/react`) run in happy-dom through a preload
   (`src/testing/setup.ts`) with Testing Library, against `@tula/core`'s own fake API
   (`src/testing/harness.tsx`).
+- **A component test's `user` never pauses between keys** (`world()` sets up user-event with
+  `delay: null`; `src/testing/harness.test.tsx` holds it). user-event's default waits for a
+  timer after every keystroke, and on a CI runner busy with the other packages' tests each of
+  those waits took tens of milliseconds: a test that signs in types some fifty keys, and the
+  first one of the run died at the five-second limit. Use `w.user`, never a
+  `userEvent.setup()` of the test's own.
 - **In a component test, wait for focus with `await expectFocus(element)` and for a dialog to
   close with `waitFor(() => expect(openDialogs()).toBe(0))`** (both in `harness.tsx`). Never
   `expect(element)` inside `waitFor`, and never a synchronous
