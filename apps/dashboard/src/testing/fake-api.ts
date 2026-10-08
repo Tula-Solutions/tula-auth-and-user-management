@@ -1,4 +1,12 @@
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
+
+export {
+  type FakeWebhookDelivery,
+  type FakeWebhookEndpoint,
+  fakeWebhookDelivery,
+  fakeWebhookEndpoint,
+} from './fake-webhooks'
 
 // A small stand-in for the API, for component tests: the routes the dashboard calls, on plain
 // in-memory data, answering with the contract's shapes and error envelope. The real API is
@@ -28,7 +36,9 @@ export interface FakeCall {
   body: unknown
 }
 
-type Handler = (call: FakeCall, match: RegExpExecArray) => Response | unknown
+/** What answers one route of the fake: a response, or a body to send with a 200. */
+export type FakeHandler = (call: FakeCall, match: RegExpExecArray) => Response | unknown
+type Handler = FakeHandler
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -44,15 +54,23 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
  * @param code - Error code.
  * @param detail - Description.
  * @param errors - Field errors.
+ * @param params - The envelope's parameters (`reason`, `max`).
  * @returns The response.
  */
 export function failure(
   status: number,
   code: string,
   detail: string,
-  errors?: { field: string; code: string; message: string }[]
+  errors?: { field: string; code: string; message: string }[],
+  params?: Record<string, unknown>
 ): Response {
-  return json(status, { status, code, detail, ...(errors ? { errors } : {}) })
+  return json(status, {
+    status,
+    code,
+    detail,
+    ...(params ? { params } : {}),
+    ...(errors ? { errors } : {}),
+  })
 }
 
 function page<T>(rows: T[]) {
@@ -60,7 +78,7 @@ function page<T>(rows: T[]) {
 }
 
 /** The fake's data, open to a test that wants to arrange or inspect it. */
-export interface FakeState {
+export interface FakeState extends FakeWebhookState {
   /** Whether `TULA_ADMIN_TOKEN` is set (the instance routes exist). */
   adminToken: boolean
   signedIn: boolean
@@ -182,6 +200,9 @@ function initialState(): FakeState {
         occurredAt: NOW,
       },
     ],
+    webhookEndpoints: [],
+    webhookDeliveries: [],
+    webhookReceiver: { statusCode: 204, durationMs: 41, failureReason: null },
     canStillSignIn: true,
     authentication: {
       hasPassword: true,
@@ -496,6 +517,7 @@ export function installFakeApi() {
         ]),
     ],
     ['GET', /^\/v1\/admin\/audit-logs$/, () => page(state.audit)],
+    ...webhookRoutes(state),
     ['GET', /^\/v1\/admin\/settings$/, () => structuredClone(state.settings)],
     [
       'PUT',
