@@ -503,6 +503,23 @@
                       {
                         "type": "object",
                         "properties": {
+                          "claims": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": ["string", "number", "boolean"]
+                            }
+                          }
+                        },
+                        "required": ["claims"],
+                        "additionalProperties": false,
+                        "ref": "HookClaimsAnswer"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
                           "status": {
                             "type": "integer",
                             "minimum": 200,
@@ -1028,6 +1045,23 @@
                           }
                         ],
                         "ref": "HookAnswer"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "claims": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": ["string", "number", "boolean"]
+                            }
+                          }
+                        },
+                        "required": ["claims"],
+                        "additionalProperties": false,
+                        "ref": "HookClaimsAnswer"
                       },
                       {
                         "type": "object",
