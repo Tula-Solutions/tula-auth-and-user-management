@@ -1,8 +1,9 @@
-import { describe, expect, test } from 'bun:test'
-import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, jest, test } from 'bun:test'
+import { act, render, screen } from '@testing-library/react'
 import { Glob } from 'bun'
 import { useEffect, useState } from 'react'
 import { expectAbsent, world } from './harness'
+import { reactSettled } from './settle'
 
 /**
  * Count the timers started while `run` is going.
@@ -144,6 +145,31 @@ describe('what a test sees after it has waited (`reactSettled`, installed by set
 
     expect(seen).toEqual({ effects: 1, focused: true })
     expect(screen.getByTestId('answer').textContent).toBe('answered')
+  })
+})
+
+describe('reactSettled under fake timers', () => {
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  // Bun's fake timers fake `setImmediate` as well: waiting for one would last until the test
+  // moved time, which a test that has just called `findBy…` is not about to do. The guard is
+  // the package's own check; Testing Library's wants a global `jest`, which Bun lacks.
+  test('returns at once, without waiting for an immediate that will not come', async () => {
+    jest.useFakeTimers()
+    expect(Object.hasOwn(globalThis.setTimeout, 'clock')).toBe(true)
+
+    let settled = false
+    void reactSettled(act).then(() => {
+      settled = true
+    })
+    // Microtasks only: no timer and no immediate can run while they are faked.
+    for (let turn = 0; turn < 10; turn++) {
+      await Promise.resolve()
+    }
+
+    expect(settled).toBe(true)
   })
 })
 

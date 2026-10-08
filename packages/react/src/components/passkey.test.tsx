@@ -376,8 +376,20 @@ describe('<SignIn> with a passkey', () => {
     expectAbsent(screen.queryByRole('button', { name: 'Sign in with a passkey' }))
   })
 
-  test('after an address, in a browser with WebAuthn: the passkey joins the other ways once the browser has said so', async () => {
+  test('after an address, in a browser with WebAuthn: the other ways are absent from the first commit and the passkey joins them once the browser has said so', async () => {
     const w = passkeyWorld()
+    // A decision, not an accident: the link is hidden until the browser has answered, so here,
+    // where the passkey is the only other way, the whole list is missing from the screen's
+    // first commit and arrives with the next one (a frame late, after the title has taken the
+    // focus). The other choice draws a control that vanishes in a browser without WebAuthn.
+    // Each entry is what was on the page when the browser was asked on the password screen.
+    const listsWhenAsked: number[] = []
+    spyOn(w.client.signIn, 'canUsePasskey').mockImplementation(() => {
+      if (screen.queryAllByLabelText('Password').length > 0) {
+        listsWhenAsked.push(screen.queryAllByRole('list', { name: 'Other ways to sign in' }).length)
+      }
+      return true
+    })
     w.mount(<SignIn />)
     w.api.on(ROUTE.signIn, () =>
       started('sign_in', { status: 'needs_first_factor', strategies: ['password', 'passkey'] })
@@ -385,6 +397,8 @@ describe('<SignIn> with a passkey', () => {
     await w.user.type(await screen.findByLabelText('Email address'), EMAIL)
     await w.user.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByLabelText('Password')
+    expect(listsWhenAsked.length).toBeGreaterThan(0)
+    expect(listsWhenAsked.every((count) => count === 0)).toBe(true)
     const ways = screen.getByRole('list', { name: 'Other ways to sign in' })
     expect(
       within(ways)

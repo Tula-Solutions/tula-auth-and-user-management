@@ -358,7 +358,16 @@ whose answer decides what happens next (step 2.3).
 - **One WebAuthn request at a time, and never during render** ([ADR 0027](docs/adr/0027-passkeys.md)).
   Whether the browser can use a passkey is asked after mount (`usePasskeySupport`), and a
   passkey control is hidden, not broken, where it cannot: a method that is the user's only
-  one says so in words. The request that waits in the address field's autofill
+  one says so in words. **Hidden until known**: a passkey button, and a passkey among a
+  screen's other ways, is drawn only once `usePasskeySupport() === true`, on the first-factor,
+  second-factor and step-up screens alike (`sign-in.tsx`, `mfa.tsx`, `prompts.tsx`). Because
+  support is asked after mount, a browser that has WebAuthn draws the link one commit after
+  the screen (a frame late; where it is the only other way the whole list arrives with it,
+  after the title has taken the focus). That is accepted: the other choice draws, in a browser
+  without WebAuthn, a control that is then taken away. Only the screen itself treats "not
+  asked yet" as "not ruled out", so that a passkey-only step does not open on "not supported".
+  `passkey.test.tsx` pins both halves; reading support during render instead is a design
+  change, not a fix. The request that waits in the address field's autofill
   (`autocomplete="username webauthn"`, `withPasskey({ autofill: true })`) is an effect that
   waits: its own signal per run, aborted in the cleanup, and **aborted before any other
   ceremony starts** (`components/passkey.tsx` is the one place that starts one). It never sets
@@ -1216,10 +1225,17 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
 - **Assert that something is not on the page with `expectAbsent(screen.queryBy…(…))`**
   (`harness.tsx`), never `expect(screen.queryBy…(…)).toBeNull()`: that matcher fails exactly
   when it holds an element, and then formats the window (22 seconds and 290 MB on CI, for one
-  button). `harness.test.tsx` fails for a test file of `packages/react` that does it.
-- **In `packages/react`, `findBy…`, `waitFor` and every `w.user` call return a page React has
-  finished with** (`src/testing/settle.ts`, installed by `setup.ts`): the effects of the last
-  commit have run, and so has every render they asked for. Testing Library alone returns after
+  button). `harness.test.tsx` fails for a test file of `packages/react` that does it inline;
+  it does not see a result kept in a variable first (`const el = …; expect(el).toBeNull()`),
+  which is the same mistake.
+- **In `packages/react`, `findBy…`, `waitFor` and every `w.user` call return after the effects
+  of the last commit, and after the renders and effects those asked for**
+  (`src/testing/settle.ts`, installed by `setup.ts`). Nothing more: work React is given from
+  a timer or a later task (a countdown's tick, an answer the fake API has not given yet) is
+  not waited for, so wait for what it draws. Under `jest.useFakeTimers()` it waits for
+  nothing (`setImmediate` is faked too); the check for that is the package's own
+  (`Object.hasOwn(setTimeout, 'clock')`), because Testing Library's also wants a global
+  `jest`, which Bun does not define. Testing Library alone returns after
   the commit and one zero-delay timer, and on a starved runner that timer beats React's next
   turn: a test then saw a control an effect was about to remove, and another typed into a
   field while the title's focus effect was still to come. Never configure another

@@ -559,9 +559,13 @@ function FirstFactorScreen(
     (strategy) =>
       strategy !== active &&
       // Among the other ways only once the browser is known to have WebAuthn, as on the
-      // second-factor and step-up screens: "not ruled out" above is for the screen itself. A
-      // link that is drawn and then taken away, in a browser that cannot use it, is a control
-      // that is broken for as long as it shows.
+      // second-factor and step-up screens (`mfa.tsx`, `prompts.tsx`): "not ruled out" above is
+      // for the screen itself. The cost, accepted: support is asked after mount, so in a
+      // browser that has WebAuthn the link (and, where it is the only other way, this whole
+      // list) is drawn one commit after the screen, a frame late and after the title has taken
+      // the focus. The other choice draws, in a browser that has none, a link that is then
+      // taken away: a control that is broken for as long as it shows. Late is better than
+      // wrong. `passkey.test.tsx` pins both halves.
       (strategy !== 'passkey' || passkeySupport === true) &&
       // The email a link came in carries the code, and that screen takes it.
       !(strategy === 'email_code' && active === 'email_link' && prepared?.strategy === 'email_link')

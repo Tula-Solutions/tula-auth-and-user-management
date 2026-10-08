@@ -5,8 +5,14 @@ type Act = (callback: () => Promise<void>) => Promise<void>
 type AsyncWrapper = (callback: () => Promise<unknown>) => Promise<unknown>
 
 /**
- * Whether a test has replaced the timers (`jest.useFakeTimers()`), read the way Testing Library
- * reads it. A turn of the event loop cannot be waited for then: the test moves time by hand.
+ * Whether a test has replaced the timers (`jest.useFakeTimers()` from `bun:test`). A turn of the
+ * event loop cannot be waited for then: `setImmediate` is faked too, and the test moves time by
+ * hand.
+ *
+ * The check is this package's own. Bun's fake timers put a `clock` property on `setTimeout`,
+ * which is half of what Testing Library looks for; the other half is a global `jest`, which
+ * Bun does not define, so Testing Library itself never takes Bun's fake timers to be on.
+ * `harness.test.tsx` holds that this check sees them.
  */
 function timersAreFaked(): boolean {
   return Object.hasOwn(globalThis.setTimeout, 'clock')
