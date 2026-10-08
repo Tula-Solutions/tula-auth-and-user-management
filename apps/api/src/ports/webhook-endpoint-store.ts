@@ -109,19 +109,35 @@ export interface WebhookEndpointStore {
   delete(environmentId: string, id: string, activity: Recorded): Promise<boolean>
 
   /**
-   * Write what the worker knows of an endpoint's run of failures: when it began and when a
-   * request last failed, or `null` for both after a success. The worker's own bookkeeping: it
-   * changes nothing about who can do what and is **not recorded** (ADR 0012). What it leads
-   * to, the endpoint being switched off, is ({@link WebhookEndpointStore.disable}).
+   * Write an endpoint's run of failures (when it began and when a request last failed, or
+   * `null` for both), **only if the row still holds what the caller read**. The worker's own
+   * bookkeeping: it changes nothing about who can do what and is **not recorded** (ADR 0012).
+   * What it leads to, the endpoint being switched off, is ({@link WebhookEndpointStore.disable}).
    *
-   * `updatedAt` does not move: no administrator changed the endpoint. The service decides
-   * the values (whether a failure continues a run or begins one); the store writes them.
+   * A compare-and-set, because the worker computes the new values from a row it read a while
+   * ago. An administrator may have switched the endpoint on again or given it another address
+   * since (both forget the run), or a delivery sent again may have got through: written
+   * blindly, the worker's next failure would bring the forgotten run back, and could switch
+   * off an endpoint that had just been reset. On `false` the caller reads the row again and
+   * applies its rule to what is there now.
+   *
+   * `updatedAt` does not move: no administrator changed the endpoint.
    *
    * @param environmentId - The environment. An endpoint of another is not touched.
    * @param id - The endpoint.
-   * @param health - The run as it stands now.
+   * @param expected - What the caller read: both values must still be exactly these. `null`
+   *   writes over whatever is there, which is right for one case only: a request got through,
+   *   and that ends any run.
+   * @param next - The run as it stands now.
+   * @returns `false` when nothing was written: the endpoint is gone, or its run is no longer
+   *   what was read.
    */
-  setHealth(environmentId: string, id: string, health: WebhookEndpointHealth): Promise<void>
+  setHealth(
+    environmentId: string,
+    id: string,
+    expected: WebhookEndpointHealth | null,
+    next: WebhookEndpointHealth
+  ): Promise<boolean>
 
   /**
    * Switch an endpoint off because of what its deliveries did, and say why.

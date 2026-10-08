@@ -15,6 +15,7 @@ import * as Outbound from '~/lib/outbound'
 import * as Audit from '~/modules/audit/service'
 import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 // Retries, giving up, switching an endpoint off, the caps of a round, the delivery log, test
 // events and sending a delivery again (TULA-42). The receiver is a listener in this process,
@@ -169,13 +170,15 @@ describe('the retry schedule', () => {
     respond = answer(500)
     const started = deps.clock.now().getTime()
 
-    expect(await round()).toMatchObject({ undelivered: 1, givenUp: 0 })
+    expect(comparable(await round())).toMatchObject(comparable({ undelivered: 1, givenUp: 0 }))
     for (const [index, wait] of Webhooks.WEBHOOK_RETRY_DELAYS.entries()) {
-      expect(deliveryOf(eventId)).toMatchObject({
-        state: 'pending',
-        attempts: index + 1,
-        nextAttemptAt: new Date(deps.clock.now().getTime() + durationToMs(wait)),
-      })
+      expect(comparable(deliveryOf(eventId))).toMatchObject(
+        comparable({
+          state: 'pending',
+          attempts: index + 1,
+          nextAttemptAt: new Date(deps.clock.now().getTime() + durationToMs(wait)),
+        })
+      )
       // One millisecond early is too early, however often the worker looks.
       deps.clock.advance(durationToMs(wait) - 1)
       await round()
@@ -189,14 +192,16 @@ describe('the retry schedule', () => {
     }
 
     const given = deliveryOf(eventId)
-    expect(given).toMatchObject({
-      state: 'failed',
-      attempts: Webhooks.WEBHOOK_MAX_ATTEMPTS,
-      nextAttemptAt: null,
-      completedAt: deps.clock.now(),
-      statusCode: 500,
-      failureReason: null,
-    })
+    expect(comparable(given)).toMatchObject(
+      comparable({
+        state: 'failed',
+        attempts: Webhooks.WEBHOOK_MAX_ATTEMPTS,
+        nextAttemptAt: null,
+        completedAt: deps.clock.now(),
+        statusCode: 500,
+        failureReason: null,
+      })
+    )
     // Every request is on record, numbered, each with a status code and a duration and
     // nothing else of what the receiver said.
     expect(given.log.map((attempt) => attempt.attempt)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
@@ -209,7 +214,9 @@ describe('the retry schedule', () => {
         'id',
         'statusCode',
       ])
-      expect(attempt).toMatchObject({ statusCode: 500, durationMs: 0, failureReason: null })
+      expect(comparable(attempt)).toMatchObject(
+        comparable({ statusCode: 500, durationMs: 0, failureReason: null })
+      )
     }
     // Every request carried the same id: a receiver drops a repeat by it.
     expect(new Set(sentTo('/hook'))).toEqual(new Set([eventId]))
@@ -224,7 +231,9 @@ describe('the retry schedule', () => {
     expect(received).toHaveLength(Webhooks.WEBHOOK_MAX_ATTEMPTS)
     expect(deliveryOf(eventId).state).toBe('failed')
     // A day of failures is not what switches an endpoint off.
-    expect(await endpointNow(endpoint.id)).toMatchObject({ enabled: true, disabledReason: null })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ enabled: true, disabledReason: null })
+    )
   })
 
   test('the schedule is eight requests over a day and a few hours, inside the age at which a delivery is given up', () => {
@@ -300,14 +309,16 @@ describe('the retry schedule', () => {
     expect((await endpointNow(endpoint.id)).failingSince).toEqual(deps.clock.now())
     deps.clock.advance('5s')
     respond = answer(200)
-    expect(await round()).toMatchObject({ delivered: 1, undelivered: 0 })
-    expect(deliveryOf(eventId)).toMatchObject({
-      state: 'delivered',
-      attempts: 2,
-      statusCode: 200,
-      nextAttemptAt: null,
-      completedAt: deps.clock.now(),
-    })
+    expect(comparable(await round())).toMatchObject(comparable({ delivered: 1, undelivered: 0 }))
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        state: 'delivered',
+        attempts: 2,
+        statusCode: 200,
+        nextAttemptAt: null,
+        completedAt: deps.clock.now(),
+      })
+    )
     expect(deliveryOf(eventId).log.map((attempt) => attempt.statusCode)).toEqual([502, 200])
     expect((await endpointNow(endpoint.id)).failingSince).toBeNull()
   })
@@ -335,16 +346,20 @@ describe('the retry schedule', () => {
     const eventId = happen()
     await round()
     expect(received).toEqual([])
-    expect(deliveryOf(eventId)).toMatchObject({
-      state: 'pending',
-      attempts: 1,
-      failureReason: 'address_not_allowed',
-    })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        state: 'pending',
+        attempts: 1,
+        failureReason: 'address_not_allowed',
+      })
+    )
     // The name is pointed back: the retry gets through.
     deps.outbound.point('hooks.example.test', '127.0.0.1')
     deps.clock.advance('5s')
     await round()
-    expect(deliveryOf(eventId)).toMatchObject({ state: 'delivered', attempts: 2 })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({ state: 'delivered', attempts: 2 })
+    )
   })
 
   test('a failing endpoint holds nothing back: its environment’s later events are settled and reach the healthy endpoint at once', async () => {
@@ -374,20 +389,26 @@ describe('what is not an attempt', () => {
     const events = [happen(), happen(), happen()]
     // Many more rounds than a delivery has attempts.
     for (let count = 0; count < 3 * Webhooks.WEBHOOK_MAX_ATTEMPTS; count++) {
-      expect(await round()).toMatchObject({ undelivered: 0, givenUp: 0, disabled: 0 })
+      expect(comparable(await round())).toMatchObject(
+        comparable({ undelivered: 0, givenUp: 0, disabled: 0 })
+      )
       deps.clock.advance(Webhooks.WEBHOOK_SIGNING_RETRY_DELAY)
     }
     expect(received).toEqual([])
     for (const eventId of events) {
-      expect(deliveryOf(eventId)).toMatchObject({
-        state: 'pending',
-        attempts: 0,
-        failureReason: 'signing_failed',
-        log: [],
-      })
+      expect(comparable(deliveryOf(eventId))).toMatchObject(
+        comparable({
+          state: 'pending',
+          attempts: 0,
+          failureReason: 'signing_failed',
+          log: [],
+        })
+      )
     }
     // The fault was the server's: the endpoint is not failing and is not switched off.
-    expect(await endpointNow(endpoint.id)).toMatchObject({ enabled: true, failingSince: null })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ enabled: true, failingSince: null })
+    )
 
     // The swap removed and re-made the endpoint, and its deliveries went with it; these are
     // the ones that count: queued again for the same events.
@@ -404,7 +425,7 @@ describe('what is not an attempt', () => {
         at: deps.clock.now(),
       }))
     )
-    expect(await round()).toMatchObject({ delivered: 3 })
+    expect(comparable(await round())).toMatchObject(comparable({ delivered: 3 }))
     expect(sentTo('/hook')).toEqual(events)
   })
 
@@ -423,21 +444,23 @@ describe('what is not an attempt', () => {
     })
     spies.push(request as never)
 
-    expect(await round()).toMatchObject({ undelivered: 1, deferred: 5 })
+    expect(comparable(await round())).toMatchObject(comparable({ undelivered: 1, deferred: 5 }))
     expect(request).toHaveBeenCalledTimes(1)
     const put = deps.webhookDeliveries.rows.filter(
       (row) => row.failureReason === 'endpoint_unresponsive'
     )
     expect(put).toHaveLength(5)
     for (const row of put) {
-      expect(row).toMatchObject({
-        state: 'pending',
-        attempts: 0,
-        lastAttemptAt: null,
-        nextAttemptAt: new Date(
-          deps.clock.now().getTime() + durationToMs(Webhooks.WEBHOOK_UNRESPONSIVE_DELAY)
-        ),
-      })
+      expect(comparable(row)).toMatchObject(
+        comparable({
+          state: 'pending',
+          attempts: 0,
+          lastAttemptAt: null,
+          nextAttemptAt: new Date(
+            deps.clock.now().getTime() + durationToMs(Webhooks.WEBHOOK_UNRESPONSIVE_DELAY)
+          ),
+        })
+      )
       expect(deps.webhookDeliveries.attemptsOf(row.id)).toEqual([])
     }
 
@@ -457,7 +480,9 @@ describe('what is not an attempt', () => {
   test('a delivery the round did not get to is left exactly as it was', async () => {
     await register()
     const events = Array.from({ length: Webhooks.WEBHOOK_ENDPOINT_ROUND_CAP + 3 }, () => happen())
-    expect(await round()).toMatchObject({ delivered: Webhooks.WEBHOOK_ENDPOINT_ROUND_CAP })
+    expect(comparable(await round())).toMatchObject(
+      comparable({ delivered: Webhooks.WEBHOOK_ENDPOINT_ROUND_CAP })
+    )
     const left = deps.webhookDeliveries.rows.filter((row) => row.state === 'pending')
     expect(left).toHaveLength(3)
     expect(left.every((row) => row.attempts === 0 && row.failureReason === null)).toBe(true)
@@ -475,18 +500,20 @@ describe('giving up by age', () => {
     await round()
     deps.clock.advance(durationToMs(Webhooks.WEBHOOK_DELIVERY_MAX_AGE))
     // Exactly at the limit it still waits.
-    expect(await round()).toMatchObject({ givenUp: 0 })
+    expect(comparable(await round())).toMatchObject(comparable({ givenUp: 0 }))
     expect(deliveryOf(eventId).state).toBe('pending')
     deps.clock.advance(1)
-    expect(await round()).toMatchObject({ givenUp: 1 })
-    expect(deliveryOf(eventId)).toMatchObject({
-      state: 'failed',
-      attempts: 0,
-      failureReason: 'expired',
-      nextAttemptAt: null,
-      completedAt: deps.clock.now(),
-      log: [],
-    })
+    expect(comparable(await round())).toMatchObject(comparable({ givenUp: 1 }))
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        state: 'failed',
+        attempts: 0,
+        failureReason: 'expired',
+        nextAttemptAt: null,
+        completedAt: deps.clock.now(),
+        log: [],
+      })
+    )
     expect(received).toEqual([])
   })
 
@@ -501,15 +528,19 @@ describe('giving up by age', () => {
     deps.clock.advance('2d')
     await round()
     expect(received).toHaveLength(1)
-    expect(deliveryOf(eventId)).toMatchObject({ state: 'pending', attempts: 1 })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({ state: 'pending', attempts: 1 })
+    )
     deps.clock.advance('1d')
     deps.clock.advance(1)
-    expect(await round()).toMatchObject({ givenUp: 1 })
-    expect(deliveryOf(eventId)).toMatchObject({
-      state: 'failed',
-      attempts: 1,
-      failureReason: 'expired',
-    })
+    expect(comparable(await round())).toMatchObject(comparable({ givenUp: 1 }))
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        state: 'failed',
+        attempts: 1,
+        failureReason: 'expired',
+      })
+    )
     // The one request that was made is still its only attempt.
     expect(deliveryOf(eventId).log).toHaveLength(1)
     expect(received).toHaveLength(1)
@@ -542,10 +573,12 @@ describe('giving up by age, with more to give up than a round takes', () => {
     const report = await round()
     // Two environments, each at its ceiling.
     expect(expire).toHaveBeenCalledTimes(2 * Webhooks.WEBHOOK_MAX_EXPIRE_BATCHES)
-    expect(report).toMatchObject({
-      failed: 0,
-      givenUp: 2 * Webhooks.WEBHOOK_MAX_EXPIRE_BATCHES * Webhooks.WEBHOOK_EXPIRE_BATCH_SIZE,
-    })
+    expect(comparable(report)).toMatchObject(
+      comparable({
+        failed: 0,
+        givenUp: 2 * Webhooks.WEBHOOK_MAX_EXPIRE_BATCHES * Webhooks.WEBHOOK_EXPIRE_BATCH_SIZE,
+      })
+    )
   })
 })
 
@@ -561,14 +594,18 @@ describe('an event that is gone', () => {
     deps.activityLog.dropEvents(new Set([eventId]))
     deps.clock.advance('5s')
     respond = answer(204)
-    expect(await round()).toMatchObject({ givenUp: 1, delivered: 0, failed: 0 })
+    expect(comparable(await round())).toMatchObject(
+      comparable({ givenUp: 1, delivered: 0, failed: 0 })
+    )
     expect(received).toHaveLength(1)
-    expect(deliveryOf(eventId)).toMatchObject({
-      state: 'failed',
-      attempts: 1,
-      failureReason: 'event_gone',
-      statusCode: null,
-    })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        state: 'failed',
+        attempts: 1,
+        failureReason: 'event_gone',
+        statusCode: null,
+      })
+    )
   })
 
   test('a pending delivery whose stored payload is no longer its event’s is not sent either', async () => {
@@ -582,7 +619,9 @@ describe('an event that is gone', () => {
     deps.clock.advance('5s')
     await round()
     expect(received).toHaveLength(1)
-    expect(deliveryOf(eventId)).toMatchObject({ state: 'failed', failureReason: 'event_gone' })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({ state: 'failed', failureReason: 'event_gone' })
+    )
   })
 })
 
@@ -596,31 +635,41 @@ describe('an endpoint that says 410 Gone', () => {
     respond = answer(410)
     const report = await round()
 
-    expect(report).toMatchObject({ undelivered: 1, givenUp: 1, disabled: 1 })
+    expect(comparable(report)).toMatchObject(
+      comparable({ undelivered: 1, givenUp: 1, disabled: 1 })
+    )
     // One request: the second delivery was not tried once the endpoint said "stop".
     expect(received).toHaveLength(1)
-    expect(deliveryOf(first)).toMatchObject({
-      state: 'failed',
-      attempts: 1,
-      statusCode: 410,
-      nextAttemptAt: null,
-    })
-    expect(deliveryOf(second)).toMatchObject({ state: 'pending', attempts: 0 })
-    expect(await Webhooks.get(deps, tenant, endpoint.id)).toMatchObject({
-      enabled: false,
-      disabledReason: 'gone',
-    })
+    expect(comparable(deliveryOf(first))).toMatchObject(
+      comparable({
+        state: 'failed',
+        attempts: 1,
+        statusCode: 410,
+        nextAttemptAt: null,
+      })
+    )
+    expect(comparable(deliveryOf(second))).toMatchObject(
+      comparable({ state: 'pending', attempts: 0 })
+    )
+    expect(comparable(await Webhooks.get(deps, tenant, endpoint.id))).toMatchObject(
+      comparable({
+        enabled: false,
+        disabledReason: 'gone',
+      })
+    )
 
     const entry = deps.activityLog.ofType('webhook_endpoint.disabled')
     expect(entry).toHaveLength(1)
-    expect(entry[0]).toMatchObject({
-      environmentId: tenant.environmentId,
-      actor: { type: 'system', id: null },
-      target: { type: 'webhook_endpoint', id: endpoint.id },
-      data: { reason: 'gone' },
-      ipAddress: null,
-      userAgent: null,
-    })
+    expect(comparable(entry[0])).toMatchObject(
+      comparable({
+        environmentId: tenant.environmentId,
+        actor: { type: 'system', id: null },
+        target: { type: 'webhook_endpoint', id: endpoint.id },
+        data: { reason: 'gone' },
+        ipAddress: null,
+        userAgent: null,
+      })
+    )
     // The event it becomes is an event of the contract, with no address and no secret in it.
     const payload = deps.activityLog.events.at(-1)
     expect(TulaEventSchema.parse(payload)).toEqual(payload as never)
@@ -649,11 +698,13 @@ describe('an endpoint that says 410 Gone', () => {
     await round()
     const told = received.filter((request) => request.path === '/watch')
     expect(told).toHaveLength(1)
-    expect(JSON.parse((told[0] as Received).body)).toMatchObject({
-      type: 'webhook_endpoint.disabled',
-      actor: { type: 'system', id: null },
-      data: { reason: 'gone' },
-    })
+    expect(comparable(JSON.parse((told[0] as Received).body))).toMatchObject(
+      comparable({
+        type: 'webhook_endpoint.disabled',
+        actor: { type: 'system', id: null },
+        data: { reason: 'gone' },
+      })
+    )
   })
 })
 
@@ -709,10 +760,12 @@ describe('an endpoint that keeps failing', () => {
       await round()
     }
     expect(received).toHaveLength(Webhooks.WEBHOOK_MAX_ATTEMPTS)
-    expect(await endpointNow(endpoint.id)).toMatchObject({
-      failingSince: first,
-      lastFailedAt: deps.clock.now(),
-    })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({
+        failingSince: first,
+        lastFailedAt: deps.clock.now(),
+      })
+    )
 
     // The receiver is fixed. Nothing happens for five days, so nothing tells the server so.
     deps.clock.advance(Webhooks.WEBHOOK_DISABLE_AFTER)
@@ -720,24 +773,30 @@ describe('an endpoint that keeps failing', () => {
     // One new event meets one 500: the ninth request the endpoint has ever been sent.
     const hiccup = await failOne()
     expect(received).toHaveLength(Webhooks.WEBHOOK_MAX_ATTEMPTS + 1)
-    expect(await Webhooks.get(deps, tenant, endpoint.id)).toMatchObject({
-      enabled: true,
-      disabledReason: null,
-      // A run of its own, begun by this failure: not the one from six days ago.
-      failingSince: deps.clock.now().toISOString(),
-      lastFailedAt: deps.clock.now().toISOString(),
-    })
+    expect(comparable(await Webhooks.get(deps, tenant, endpoint.id))).toMatchObject(
+      comparable({
+        enabled: true,
+        disabledReason: null,
+        // A run of its own, begun by this failure: not the one from six days ago.
+        failingSince: deps.clock.now().toISOString(),
+        lastFailedAt: deps.clock.now().toISOString(),
+      })
+    )
     expect(deps.activityLog.ofType('webhook_endpoint.disabled')).toEqual([])
     // And its retry gets through.
     respond = answer(204)
     deps.clock.advance('5s')
     await round()
-    expect(deliveryOf(hiccup)).toMatchObject({ state: 'delivered', attempts: 2 })
-    expect(await endpointNow(endpoint.id)).toMatchObject({
-      enabled: true,
-      failingSince: null,
-      lastFailedAt: null,
-    })
+    expect(comparable(deliveryOf(hiccup))).toMatchObject(
+      comparable({ state: 'delivered', attempts: 2 })
+    )
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({
+        enabled: true,
+        failingSince: null,
+        lastFailedAt: null,
+      })
+    )
   })
 
   test('failures with no silence longer than the schedule and no success, for five days, switch it off, not a moment sooner', async () => {
@@ -751,11 +810,13 @@ describe('an endpoint that keeps failing', () => {
     for (const wait of ['1h', '11h', '12h', '1d', '1d', '1d']) {
       deps.clock.advance(wait)
       await failOne()
-      expect(await endpointNow(endpoint.id)).toMatchObject({
-        enabled: true,
-        failingSince: since,
-        lastFailedAt: deps.clock.now(),
-      })
+      expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+        comparable({
+          enabled: true,
+          failingSince: since,
+          lastFailedAt: deps.clock.now(),
+        })
+      )
     }
     // One millisecond short of five days since the first failure.
     deps.clock.set(new Date(since.getTime() + durationToMs(Webhooks.WEBHOOK_DISABLE_AFTER) - 1))
@@ -767,21 +828,27 @@ describe('an endpoint that keeps failing', () => {
     const last = happen()
     const report = await round()
     expect(report.disabled).toBe(1)
-    expect(await Webhooks.get(deps, tenant, endpoint.id)).toMatchObject({
-      enabled: false,
-      disabledReason: 'failing',
-      failingSince: since.toISOString(),
-      updatedAt: deps.clock.now().toISOString(),
-    })
-    expect(deps.activityLog.ofType('webhook_endpoint.disabled')).toMatchObject([
-      {
-        actor: { type: 'system', id: null },
-        target: { type: 'webhook_endpoint', id: endpoint.id },
-        data: { reason: 'failing' },
-      },
-    ])
+    expect(comparable(await Webhooks.get(deps, tenant, endpoint.id))).toMatchObject(
+      comparable({
+        enabled: false,
+        disabledReason: 'failing',
+        failingSince: since.toISOString(),
+        updatedAt: deps.clock.now().toISOString(),
+      })
+    )
+    expect(comparable(deps.activityLog.ofType('webhook_endpoint.disabled'))).toMatchObject(
+      comparable([
+        {
+          actor: { type: 'system', id: null },
+          target: { type: 'webhook_endpoint', id: endpoint.id },
+          data: { reason: 'failing' },
+        },
+      ])
+    )
     // The request that tripped it was made and is on record; its retry never is.
-    expect(deliveryOf(last)).toMatchObject({ state: 'pending', attempts: 1 })
+    expect(comparable(deliveryOf(last))).toMatchObject(
+      comparable({ state: 'pending', attempts: 1 })
+    )
     const sent = received.length
     respond = answer(204)
     deps.clock.advance('1h')
@@ -799,16 +866,20 @@ describe('an endpoint that keeps failing', () => {
     const since = deps.clock.now()
     deps.clock.advance(Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS)
     await failOne()
-    expect(await endpointNow(endpoint.id)).toMatchObject({
-      failingSince: since,
-      lastFailedAt: deps.clock.now(),
-    })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({
+        failingSince: since,
+        lastFailedAt: deps.clock.now(),
+      })
+    )
     deps.clock.advance(Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS + 1)
     await failOne()
-    expect(await endpointNow(endpoint.id)).toMatchObject({
-      failingSince: deps.clock.now(),
-      lastFailedAt: deps.clock.now(),
-    })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({
+        failingSince: deps.clock.now(),
+        lastFailedAt: deps.clock.now(),
+      })
+    )
   })
 
   test('silences that restart the run keep an endpoint on for ever, however long it has been failing now and then', async () => {
@@ -823,6 +894,151 @@ describe('an endpoint that keeps failing', () => {
     expect((await endpointNow(endpoint.id)).enabled).toBe(true)
   })
 
+  // The review's case (F6): the worker wrote the run from what it had read at the start of
+  // its lane, over whatever an administrator had done to the endpoint since.
+  test('a run an administrator reset while the round was sending is not brought back, and does not switch the endpoint off', async () => {
+    quietLogs()
+    const endpoint = await register()
+    respond = answer(500)
+    await failOne()
+    const since = deps.clock.now()
+    for (let day = 0; day < 4; day++) {
+      deps.clock.advance('1d')
+      await failOne()
+    }
+    // Five days to the millisecond: the next failed request would switch it off.
+    deps.clock.set(new Date(since.getTime() + durationToMs(Webhooks.WEBHOOK_DISABLE_AFTER)))
+    happen()
+    let reset = false
+    respond = async () => {
+      if (!reset) {
+        reset = true
+        // While the request is in flight, the operator points the endpoint at a fixed
+        // receiver: a fresh start.
+        await Webhooks.update(deps, tenant, endpoint.id, { url: receiverUrl('/fixed') }, TEST_ACTOR)
+      }
+      return new Response(null, { status: 500 })
+    }
+    const report = await round()
+    expect(reset).toBe(true)
+    expect(report.disabled).toBe(0)
+    expect(deps.activityLog.ofType('webhook_endpoint.disabled')).toEqual([])
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({
+        enabled: true,
+        disabledReason: null,
+        // A run of its own, begun by the first failure after the reset.
+        failingSince: deps.clock.now(),
+        lastFailedAt: deps.clock.now(),
+      })
+    )
+  })
+
+  test('an endpoint reset and then switched off while the round was sending keeps no run, and is sent nothing more', async () => {
+    quietLogs()
+    const endpoint = await register()
+    respond = answer(500)
+    await failOne()
+    deps.clock.advance('1h')
+    happen()
+    happen()
+    let seen = 0
+    respond = async () => {
+      seen += 1
+      if (seen === 1) {
+        await Webhooks.update(deps, tenant, endpoint.id, { url: receiverUrl('/moved') }, TEST_ACTOR)
+        await Webhooks.update(deps, tenant, endpoint.id, { enabled: false }, TEST_ACTOR)
+      }
+      return new Response(null, { status: 500 })
+    }
+    await round()
+    // One request: the lane learnt that the endpoint is off when its write found the run gone.
+    expect(seen).toBe(1)
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ enabled: false, disabledReason: null, failingSince: null, lastFailedAt: null })
+    )
+  })
+
+  test('an endpoint whose run keeps changing under the worker costs that failure its place in the run, and nothing else', async () => {
+    quietLogs()
+    const endpoint = await register()
+    respond = answer(500)
+    const write = spyOn(deps.webhookEndpoints, 'setHealth').mockImplementation(async () => false)
+    spies.push(write as never)
+    const eventId = await failOne()
+    // Tried a bounded number of times, then let go: the round is fine and the delivery has
+    // its attempt.
+    expect(write).toHaveBeenCalledTimes(3)
+    expect(deliveryOf(eventId).attempts).toBe(1)
+    expect((await endpointNow(endpoint.id)).enabled).toBe(true)
+  })
+
+  test('a run ended by a delivery sent again while the round was sending is not brought back either', async () => {
+    quietLogs()
+    const endpoint = await register()
+    respond = answer(500)
+    const given = await failOne()
+    for (const wait of Webhooks.WEBHOOK_RETRY_DELAYS) {
+      deps.clock.advance(wait)
+      await round()
+    }
+    const since = (await endpointNow(endpoint.id)).failingSince
+    expect(since).not.toBeNull()
+    deps.clock.advance('1h')
+    happen()
+    let again = false
+    respond = async () => {
+      if (!again) {
+        again = true
+        // In flight: the administrator sends the given-up delivery again, and it gets through.
+        respond = answer(204)
+        await Webhooks.redeliver(deps, tenant, endpoint.id, deliveryOf(given).id)
+        respond = answer(500)
+      }
+      return new Response(null, { status: 500 })
+    }
+    await round()
+    expect(again).toBe(true)
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ failingSince: deps.clock.now(), lastFailedAt: deps.clock.now() })
+    )
+  })
+
+  // The review's case (F8), from the guide: a dead endpoint is switched off only if it is
+  // sent events often enough to keep one run going.
+  test.each([
+    ['every two days', '2d', false],
+    ['every four days', '4d', true],
+  ])(
+    'a dead endpoint sent an event %s: still on after a month is %s',
+    async (_, every, stillOn) => {
+      quietLogs()
+      const endpoint = await register()
+      respond = answer(500)
+      const end = deps.clock.now().getTime() + durationToMs('30d')
+      let next = deps.clock.now().getTime()
+      // Every round a worker would run that has anything due, with a new event each `every`.
+      while (deps.clock.now().getTime() < end && (await endpointNow(endpoint.id)).enabled) {
+        if (deps.clock.now().getTime() >= next) {
+          happen()
+          next += durationToMs(every)
+        }
+        await round()
+        const due = deps.webhookDeliveries.rows
+          .filter((row) => row.state === 'pending' && row.nextAttemptAt)
+          .map((row) => (row.nextAttemptAt as Date).getTime())
+        const wake = Math.min(next, ...due)
+        deps.clock.set(new Date(Math.max(wake, deps.clock.now().getTime() + 1)))
+      }
+      expect((await endpointNow(endpoint.id)).enabled).toBe(stillOn)
+      // The two sides of what the guide says: one event's retries span the schedule, and the
+      // next event must come before the silence after them is longer than the limit.
+      const span = Webhooks.WEBHOOK_RETRY_DELAYS.reduce((sum, wait) => sum + durationToMs(wait), 0)
+      const reach = span + Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS
+      expect(durationToMs(every) <= reach).toBe(!stillOn)
+    }
+  )
+
   test('one success in between starts the count again', async () => {
     quietLogs()
     const endpoint = await register()
@@ -834,7 +1050,9 @@ describe('an endpoint that keeps failing', () => {
     }
     respond = answer(204)
     await failOne()
-    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null, lastFailedAt: null })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ failingSince: null, lastFailedAt: null })
+    )
     respond = answer(500)
     deps.clock.advance('12h')
     await failOne()
@@ -844,7 +1062,9 @@ describe('an endpoint that keeps failing', () => {
       await failOne()
     }
     // Eight and a half days after the first failure, four after the latest run of them began.
-    expect(await endpointNow(endpoint.id)).toMatchObject({ enabled: true, failingSince: since })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ enabled: true, failingSince: since })
+    )
   })
 
   test('rounds in which nothing is due do not count: the rule needs no scan and looks only when a request fails', async () => {
@@ -873,32 +1093,40 @@ describe('an endpoint that keeps failing', () => {
     await round()
 
     const updated = await Webhooks.update(deps, tenant, endpoint.id, { enabled: true }, TEST_ACTOR)
-    expect(updated).toMatchObject({
-      enabled: true,
-      disabledReason: null,
-      failingSince: null,
-      lastFailedAt: null,
-    })
-    expect(deps.activityLog.entries.at(-1)).toMatchObject({
-      type: 'webhook_endpoint.updated',
-      actor: { type: TEST_ACTOR.type },
-      data: { changed: ['enabled'] },
-    })
+    expect(comparable(updated)).toMatchObject(
+      comparable({
+        enabled: true,
+        disabledReason: null,
+        failingSince: null,
+        lastFailedAt: null,
+      })
+    )
+    expect(comparable(deps.activityLog.entries.at(-1))).toMatchObject(
+      comparable({
+        type: 'webhook_endpoint.updated',
+        actor: { type: TEST_ACTOR.type },
+        data: { changed: ['enabled'] },
+      })
+    )
     respond = answer(204)
     const sent = received.length
     await round()
     expect(received.slice(sent).map((request) => request.headers['webhook-id'])).toContain(pending)
     // It waited, untried, while the endpoint was off (an older delivery's retry was what
     // tripped the switch), and is delivered on its first request.
-    expect(deliveryOf(pending)).toMatchObject({ state: 'delivered', attempts: 1 })
+    expect(comparable(deliveryOf(pending))).toMatchObject(
+      comparable({ state: 'delivered', attempts: 1 })
+    )
     expect(deps.webhookDeliveries.rows.some((row) => row.eventId === whileOff)).toBe(false)
     // A fresh start: one failure now is the first of a new run, five days from tripping.
     respond = answer(500)
     await failOne()
-    expect(await endpointNow(endpoint.id)).toMatchObject({
-      enabled: true,
-      failingSince: deps.clock.now(),
-    })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({
+        enabled: true,
+        failingSince: deps.clock.now(),
+      })
+    )
   })
 
   test('a new address is a fresh start too; a change of event types is not', async () => {
@@ -908,18 +1136,22 @@ describe('an endpoint that keeps failing', () => {
     await failOne()
     const since = deps.clock.now()
     await Webhooks.update(deps, tenant, endpoint.id, { eventTypes: ['user.banned'] }, TEST_ACTOR)
-    expect(await endpointNow(endpoint.id)).toMatchObject({
-      failingSince: since,
-      lastFailedAt: since,
-    })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({
+        failingSince: since,
+        lastFailedAt: since,
+      })
+    )
     await Webhooks.update(deps, tenant, endpoint.id, { url: receiverUrl('/new') }, TEST_ACTOR)
-    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null, lastFailedAt: null })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ failingSince: null, lastFailedAt: null })
+    )
   })
 
   test('an administrator switching an endpoint off leaves no reason of the server’s', async () => {
     const endpoint = await register()
     const off = await Webhooks.update(deps, tenant, endpoint.id, { enabled: false }, TEST_ACTOR)
-    expect(off).toMatchObject({ enabled: false, disabledReason: null })
+    expect(comparable(off)).toMatchObject(comparable({ enabled: false, disabledReason: null }))
     expect(deps.activityLog.ofType('webhook_endpoint.disabled')).toEqual([])
   })
 
@@ -934,7 +1166,7 @@ describe('an endpoint that keeps failing', () => {
     expect(deps.webhookDeliveries.rows.filter((row) => row.endpointId === doomed.id)).toEqual([])
     deps.clock.advance('1d')
     const later = happen()
-    expect(await round()).toMatchObject({ failed: 0, delivered: 1 })
+    expect(comparable(await round())).toMatchObject(comparable({ failed: 0, delivered: 1 }))
     expect(sentTo('/doomed')).toEqual([eventId])
     expect(sentTo('/kept')).toEqual([eventId, later])
   })
@@ -956,15 +1188,19 @@ describe('an endpoint that keeps failing', () => {
     )
     deps.clock.advance('1h')
     await round()
-    expect(deliveryOf(eventId)).toMatchObject({ state: 'pending', attempts: 2 })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({ state: 'pending', attempts: 2 })
+    )
     await Webhooks.update(deps, tenant, endpoint.id, { enabled: true }, TEST_ACTOR)
     await round()
     // It goes on from its third request, not from its first.
-    expect(deliveryOf(eventId)).toMatchObject({
-      state: 'pending',
-      attempts: 3,
-      nextAttemptAt: new Date(deps.clock.now().getTime() + durationToMs('30m')),
-    })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        state: 'pending',
+        attempts: 3,
+        nextAttemptAt: new Date(deps.clock.now().getTime() + durationToMs('30m')),
+      })
+    )
   })
 })
 
@@ -1026,7 +1262,7 @@ describe('the caps of a round', () => {
       perPath.set(path, (perPath.get(path) ?? 0) - 1)
       return new Response(null, { status: 204 })
     }
-    expect(await round()).toMatchObject({ delivered: 40, failed: 0 })
+    expect(comparable(await round())).toMatchObject(comparable({ delivered: 40, failed: 0 }))
     expect(most).toBe(Webhooks.WEBHOOK_MAX_CONCURRENT_DELIVERIES)
     expect(mostPerPath).toBe(1)
     for (const path of paths) {
@@ -1048,7 +1284,7 @@ describe('the caps of a round', () => {
         return real(settings, url, init)
       }) as never
     )
-    expect(await round()).toMatchObject({ failed: 1, delivered: 2 })
+    expect(comparable(await round())).toMatchObject(comparable({ failed: 1, delivered: 2 }))
     expect(sentTo('/works')).toEqual(events)
   })
 
@@ -1090,10 +1326,14 @@ describe('two instances', () => {
     await arrived
     expect(await Webhooks.run(second)).toBeNull()
     release()
-    expect(await first).toMatchObject({ delivered: 1 })
-    expect(await Webhooks.run(second)).toMatchObject({ delivered: 0, undelivered: 0 })
+    expect(comparable(await first)).toMatchObject(comparable({ delivered: 1 }))
+    expect(comparable(await Webhooks.run(second))).toMatchObject(
+      comparable({ delivered: 0, undelivered: 0 })
+    )
     expect(sentTo('/hook')).toEqual([eventId, eventId])
-    expect(deliveryOf(eventId)).toMatchObject({ state: 'delivered', attempts: 2 })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({ state: 'delivered', attempts: 2 })
+    )
   })
 
   test('without the lock, two rounds that send the same retry record it once: the count is not doubled', async () => {
@@ -1140,10 +1380,12 @@ describe('two instances', () => {
     await Webhooks.deliverPending(ahead)
     expect(received).toHaveLength(2)
     // Counted once, wherever it was sent from; the next wait is by the sender's clock.
-    expect(deliveryOf(eventId)).toMatchObject({
-      attempts: 2,
-      nextAttemptAt: new Date(ahead.clock.now().getTime() + durationToMs('5m')),
-    })
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        attempts: 2,
+        nextAttemptAt: new Date(ahead.clock.now().getTime() + durationToMs('5m')),
+      })
+    )
     await round()
     expect(received).toHaveLength(2)
   })
@@ -1308,15 +1550,19 @@ describe('a test event', () => {
       durationMs: 0,
       failureReason: null,
     })
-    expect(await Webhooks.getDelivery(deps, tenant, endpoint.id, result.deliveryId)).toMatchObject({
-      eventId: null,
-      eventType: 'session.reuse_detected',
-      test: true,
-      state: 'delivered',
-      attemptCount: 1,
-      nextAttemptAt: null,
-      attempts: [{ attempt: 1, statusCode: 204 }],
-    })
+    expect(
+      comparable(await Webhooks.getDelivery(deps, tenant, endpoint.id, result.deliveryId))
+    ).toMatchObject(
+      comparable({
+        eventId: null,
+        eventType: 'session.reuse_detected',
+        test: true,
+        state: 'delivered',
+        attemptCount: 1,
+        nextAttemptAt: null,
+        attempts: [{ attempt: 1, statusCode: 204 }],
+      })
+    )
     expect(deps.activityLog.outbox).toHaveLength(outbox)
     expect(deps.activityLog.entries).toHaveLength(audit)
 
@@ -1333,7 +1579,9 @@ describe('a test event', () => {
     const endpoint = await register()
     await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType })
     const sent: unknown = JSON.parse((received[0] as Received).body)
-    expect(TulaEventSchema.parse(sent)).toMatchObject({ type: eventType, test: true })
+    expect(comparable(TulaEventSchema.parse(sent))).toMatchObject(
+      comparable({ type: eventType, test: true })
+    )
   })
 
   test('no real event is ever marked as a test', async () => {
@@ -1362,12 +1610,16 @@ describe('a test event', () => {
       failureReason: 'address_not_allowed',
     })
     expect(JSON.stringify(result)).not.toContain('169.254')
-    expect(await Webhooks.getDelivery(deps, tenant, endpoint.id, result.deliveryId)).toMatchObject({
-      test: true,
-      state: 'failed',
-      failureReason: 'address_not_allowed',
-      attempts: [{ attempt: 1, statusCode: null, failureReason: 'address_not_allowed' }],
-    })
+    expect(
+      comparable(await Webhooks.getDelivery(deps, tenant, endpoint.id, result.deliveryId))
+    ).toMatchObject(
+      comparable({
+        test: true,
+        state: 'failed',
+        failureReason: 'address_not_allowed',
+        attempts: [{ attempt: 1, statusCode: null, failureReason: 'address_not_allowed' }],
+      })
+    )
   })
 
   test('goes through the outbound guard with the delivery’s deadline and cap, and keeps nothing of the answer', async () => {
@@ -1383,11 +1635,13 @@ describe('a test event', () => {
     const result = await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType: 'user.created' })
     expect(request).toHaveBeenCalledTimes(1)
     expect(request.mock.calls[0]?.[0]).toBe(deps.outbound)
-    expect(request.mock.calls[0]?.[2]).toMatchObject({
-      method: 'POST',
-      timeoutMs: Webhooks.WEBHOOK_DELIVERY_TIMEOUT_MS,
-      maxResponseBytes: Webhooks.WEBHOOK_MAX_RESPONSE_BYTES,
-    })
+    expect(comparable(request.mock.calls[0]?.[2])).toMatchObject(
+      comparable({
+        method: 'POST',
+        timeoutMs: Webhooks.WEBHOOK_DELIVERY_TIMEOUT_MS,
+        maxResponseBytes: Webhooks.WEBHOOK_MAX_RESPONSE_BYTES,
+      })
+    )
     expect(Object.keys(result).sort()).toEqual([
       'deliveryId',
       'durationMs',
@@ -1414,13 +1668,17 @@ describe('a test event', () => {
       const result = await Webhooks.sendTest(deps, tenant, endpoint.id, {
         eventType: 'user.created',
       })
-      expect(result).toMatchObject({ outcome: 'failed', statusCode: status })
+      expect(comparable(result)).toMatchObject(
+        comparable({ outcome: 'failed', statusCode: status })
+      )
     }
-    expect(await endpointNow(endpoint.id)).toMatchObject({
-      enabled: true,
-      disabledReason: null,
-      failingSince: null,
-    })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({
+        enabled: true,
+        disabledReason: null,
+        failingSince: null,
+      })
+    )
     expect(deps.activityLog.ofType('webhook_endpoint.disabled')).toEqual([])
     respond = answer(204)
     deps.clock.advance('1d')
@@ -1468,12 +1726,16 @@ describe('a test event', () => {
       durationMs: 0,
       failureReason: 'signing_failed',
     })
-    expect(await Webhooks.getDelivery(deps, tenant, endpoint.id, result.deliveryId)).toMatchObject({
-      test: true,
-      state: 'failed',
-      attemptCount: 0,
-      attempts: [],
-    })
+    expect(
+      comparable(await Webhooks.getDelivery(deps, tenant, endpoint.id, result.deliveryId))
+    ).toMatchObject(
+      comparable({
+        test: true,
+        state: 'failed',
+        attemptCount: 0,
+        attempts: [],
+      })
+    )
   })
 
   test('to an endpoint removed while the request is under way records nothing', async () => {
@@ -1543,14 +1805,16 @@ describe('sending a delivery again', () => {
     // No second delivery: the ninth request of the same one.
     expect(deps.webhookDeliveries.rows).toHaveLength(1)
     const after = deliveryOf(eventId)
-    expect(after).toMatchObject({
-      id: delivery.id,
-      state: 'delivered',
-      attempts: Webhooks.WEBHOOK_MAX_ATTEMPTS + 1,
-      statusCode: 200,
-      completedAt: deps.clock.now(),
-      nextAttemptAt: null,
-    })
+    expect(comparable(after)).toMatchObject(
+      comparable({
+        id: delivery.id,
+        state: 'delivered',
+        attempts: Webhooks.WEBHOOK_MAX_ATTEMPTS + 1,
+        statusCode: 200,
+        completedAt: deps.clock.now(),
+        nextAttemptAt: null,
+      })
+    )
     expect(after.log.map((attempt) => attempt.attempt)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
     // The log of what was tried before is as it was.
     expect(after.log.slice(0, 8)).toEqual(delivery.log)
@@ -1564,14 +1828,16 @@ describe('sending a delivery again', () => {
     const { endpoint, eventId, delivery } = await givenUp()
     respond = answer(503)
     const result = await Webhooks.redeliver(deps, tenant, endpoint.id, delivery.id)
-    expect(result).toMatchObject({ outcome: 'failed', statusCode: 503 })
-    expect(deliveryOf(eventId)).toMatchObject({
-      state: 'failed',
-      attempts: Webhooks.WEBHOOK_MAX_ATTEMPTS + 1,
-      statusCode: 503,
-      nextAttemptAt: null,
-      completedAt: delivery.completedAt,
-    })
+    expect(comparable(result)).toMatchObject(comparable({ outcome: 'failed', statusCode: 503 }))
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        state: 'failed',
+        attempts: Webhooks.WEBHOOK_MAX_ATTEMPTS + 1,
+        statusCode: 503,
+        nextAttemptAt: null,
+        completedAt: delivery.completedAt,
+      })
+    )
     respond = answer(204)
     deps.clock.advance('2d')
     await round()
@@ -1590,10 +1856,14 @@ describe('sending a delivery again', () => {
     await round()
     const { id } = deliveryOf(eventId)
     respond = answer(500)
-    expect(await Webhooks.redeliver(deps, tenant, endpoint.id, id)).toMatchObject({
-      outcome: 'failed',
-    })
-    expect(deliveryOf(eventId)).toMatchObject({ state: 'delivered', attempts: 2, statusCode: 500 })
+    expect(comparable(await Webhooks.redeliver(deps, tenant, endpoint.id, id))).toMatchObject(
+      comparable({
+        outcome: 'failed',
+      })
+    )
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({ state: 'delivered', attempts: 2, statusCode: 500 })
+    )
     expect(sentTo('/hook')).toEqual([eventId, eventId])
   })
 
@@ -1606,11 +1876,13 @@ describe('sending a delivery again', () => {
     const error = await failure(
       Webhooks.redeliver(deps, tenant, endpoint.id, deliveryOf(eventId).id)
     )
-    expect(error).toMatchObject({
-      status: 409,
-      code: 'webhook.cannot_redeliver',
-      params: { reason: 'delivery_pending' },
-    })
+    expect(comparable(error)).toMatchObject(
+      comparable({
+        status: 409,
+        code: 'webhook.cannot_redeliver',
+        params: { reason: 'delivery_pending' },
+      })
+    )
     expect(received).toHaveLength(1)
     expect(deliveryOf(eventId).attempts).toBe(1)
   })
@@ -1620,11 +1892,13 @@ describe('sending a delivery again', () => {
     const { endpoint, delivery } = await givenUp()
     await Webhooks.update(deps, tenant, endpoint.id, { enabled: false }, TEST_ACTOR)
     const error = await failure(Webhooks.redeliver(deps, tenant, endpoint.id, delivery.id))
-    expect(error).toMatchObject({
-      status: 409,
-      code: 'webhook.cannot_redeliver',
-      params: { reason: 'endpoint_disabled' },
-    })
+    expect(comparable(error)).toMatchObject(
+      comparable({
+        status: 409,
+        code: 'webhook.cannot_redeliver',
+        params: { reason: 'endpoint_disabled' },
+      })
+    )
     expect(received).toEqual([])
     expect(deps.webhookDeliveries.attemptsOf(delivery.id)).toHaveLength(delivery.log.length)
   })
@@ -1637,11 +1911,13 @@ describe('sending a delivery again', () => {
     deps.activityLog.dropEvents(new Set([eventId]))
     for (const id of [delivery.id, test.deliveryId]) {
       const error = await failure(Webhooks.redeliver(deps, tenant, endpoint.id, id))
-      expect(error).toMatchObject({
-        status: 409,
-        code: 'webhook.cannot_redeliver',
-        params: { reason: 'event_gone' },
-      })
+      expect(comparable(error)).toMatchObject(
+        comparable({
+          status: 409,
+          code: 'webhook.cannot_redeliver',
+          params: { reason: 'event_gone' },
+        })
+      )
     }
     expect(received).toEqual([])
   })
@@ -1680,10 +1956,12 @@ describe('sending a delivery again', () => {
     }))
     spies.push(lookup as never)
     const error = await failure(Webhooks.redeliver(deps, tenant, endpoint.id, delivery.id))
-    expect(error).toMatchObject({
-      code: 'webhook.cannot_redeliver',
-      params: { reason: 'event_gone' },
-    })
+    expect(comparable(error)).toMatchObject(
+      comparable({
+        code: 'webhook.cannot_redeliver',
+        params: { reason: 'event_gone' },
+      })
+    )
     expect(received).toEqual([])
   })
 
@@ -1698,12 +1976,16 @@ describe('sending a delivery again', () => {
     deps.outbound.point('hooks.example.test', '10.0.0.7')
     received = []
     const result = await Webhooks.redeliver(deps, tenant, endpoint.id, deliveryOf(eventId).id)
-    expect(result).toMatchObject({ outcome: 'failed', failureReason: 'address_not_allowed' })
+    expect(comparable(result)).toMatchObject(
+      comparable({ outcome: 'failed', failureReason: 'address_not_allowed' })
+    )
     expect(received).toEqual([])
-    expect(deliveryOf(eventId).log.at(-1)).toMatchObject({
-      attempt: 2,
-      failureReason: 'address_not_allowed',
-    })
+    expect(comparable(deliveryOf(eventId).log.at(-1))).toMatchObject(
+      comparable({
+        attempt: 2,
+        failureReason: 'address_not_allowed',
+      })
+    )
   })
 
   test('with a secret the server cannot open sends nothing and records no attempt', async () => {
@@ -1762,7 +2044,9 @@ describe('what a request on demand does to an endpoint’s health', () => {
     const { endpoint, delivery } = await failing()
     respond = answer(204)
     await Webhooks.redeliver(deps, tenant, endpoint.id, delivery.id)
-    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null, lastFailedAt: null })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ failingSince: null, lastFailedAt: null })
+    )
   })
 
   test('a test event that gets through does not: it is no delivery of an event, and a receiver may treat tests apart', async () => {
@@ -1803,17 +2087,23 @@ describe('an answer larger than the server reads', () => {
     const endpoint = await register()
     const eventId = happen()
     respond = big(200)
-    expect(await round()).toMatchObject({ delivered: 1, undelivered: 0 })
+    expect(comparable(await round())).toMatchObject(comparable({ delivered: 1, undelivered: 0 }))
     const delivery = deliveryOf(eventId)
-    expect(delivery).toMatchObject({
-      state: 'delivered',
-      attempts: 1,
-      statusCode: 200,
-      failureReason: null,
-      nextAttemptAt: null,
-    })
-    expect(delivery.log).toMatchObject([{ attempt: 1, statusCode: 200, failureReason: null }])
-    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null })
+    expect(comparable(delivery)).toMatchObject(
+      comparable({
+        state: 'delivered',
+        attempts: 1,
+        statusCode: 200,
+        failureReason: null,
+        nextAttemptAt: null,
+      })
+    )
+    expect(comparable(delivery.log)).toMatchObject(
+      comparable([{ attempt: 1, statusCode: 200, failureReason: null }])
+    )
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ failingSince: null })
+    )
     // Once, not eight times.
     deps.clock.advance('2d')
     await round()
@@ -1833,7 +2123,9 @@ describe('an answer larger than the server reads', () => {
     respond = big(200)
     deps.clock.advance('5s')
     await round()
-    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null })
+    expect(comparable(await endpointNow(endpoint.id))).toMatchObject(
+      comparable({ failingSince: null })
+    )
   })
 
   test('with any other status is an ordinary failed request, with that status, and is retried', async () => {
@@ -1841,14 +2133,18 @@ describe('an answer larger than the server reads', () => {
     await register()
     const eventId = happen()
     respond = big(503)
-    expect(await round()).toMatchObject({ delivered: 0, undelivered: 1 })
-    expect(deliveryOf(eventId)).toMatchObject({
-      state: 'pending',
-      attempts: 1,
-      statusCode: 503,
-      failureReason: null,
-    })
-    expect(deliveryOf(eventId).log).toMatchObject([{ statusCode: 503, failureReason: null }])
+    expect(comparable(await round())).toMatchObject(comparable({ delivered: 0, undelivered: 1 }))
+    expect(comparable(deliveryOf(eventId))).toMatchObject(
+      comparable({
+        state: 'pending',
+        attempts: 1,
+        statusCode: 503,
+        failureReason: null,
+      })
+    )
+    expect(comparable(deliveryOf(eventId).log)).toMatchObject(
+      comparable([{ statusCode: 503, failureReason: null }])
+    )
   })
 
   test('to a test event and to a delivery sent again is judged the same way', async () => {
@@ -1858,12 +2154,18 @@ describe('an answer larger than the server reads', () => {
     await round()
     respond = big(202)
     const test = await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType: 'user.created' })
-    expect(test).toMatchObject({ outcome: 'delivered', statusCode: 202, failureReason: null })
+    expect(comparable(test)).toMatchObject(
+      comparable({ outcome: 'delivered', statusCode: 202, failureReason: null })
+    )
     const again = await Webhooks.redeliver(deps, tenant, endpoint.id, deliveryOf(eventId).id)
-    expect(again).toMatchObject({ outcome: 'delivered', statusCode: 202, failureReason: null })
+    expect(comparable(again)).toMatchObject(
+      comparable({ outcome: 'delivered', statusCode: 202, failureReason: null })
+    )
     respond = big(500)
     const failed = await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType: 'user.created' })
-    expect(failed).toMatchObject({ outcome: 'failed', statusCode: 500, failureReason: null })
+    expect(comparable(failed)).toMatchObject(
+      comparable({ outcome: 'failed', statusCode: 500, failureReason: null })
+    )
     expect(JSON.stringify([test, again, failed])).not.toContain('canary')
   })
 })
@@ -1884,20 +2186,24 @@ describe('how many requests one delivery can gather', () => {
     const room = Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS - Webhooks.WEBHOOK_MAX_ATTEMPTS
     expect(room).toBeGreaterThan(0)
     for (let count = 0; count < room; count++) {
-      expect(await Webhooks.redeliver(deps, tenant, endpoint.id, id)).toMatchObject({
-        outcome: 'failed',
-      })
+      expect(comparable(await Webhooks.redeliver(deps, tenant, endpoint.id, id))).toMatchObject(
+        comparable({
+          outcome: 'failed',
+        })
+      )
     }
     expect(deliveryOf(eventId).attempts).toBe(Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS)
     const sent = received.length
 
     respond = answer(204)
     const error = await failure(Webhooks.redeliver(deps, tenant, endpoint.id, id))
-    expect(error).toMatchObject({
-      status: 409,
-      code: 'webhook.cannot_redeliver',
-      params: { reason: 'attempt_limit' },
-    })
+    expect(comparable(error)).toMatchObject(
+      comparable({
+        status: 409,
+        code: 'webhook.cannot_redeliver',
+        params: { reason: 'attempt_limit' },
+      })
+    )
     expect(received).toHaveLength(sent)
     // What one answer of the log can hold is bounded by that.
     const detail = await Webhooks.getDelivery(deps, tenant, endpoint.id, id)

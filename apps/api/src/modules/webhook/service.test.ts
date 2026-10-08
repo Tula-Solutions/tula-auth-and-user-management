@@ -14,6 +14,7 @@ import * as Outbound from '~/lib/outbound'
 import * as Audit from '~/modules/audit/service'
 import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const tenant: Tenant = {
   projectId: TEST_TENANT.projectId,
@@ -150,12 +151,14 @@ describe('registering an endpoint', () => {
     const created = await register()
     expect(created.secret).toMatch(/^whsec_[A-Za-z0-9+/]{43}=$/)
     expect(webhookSecretBytes(created.secret)?.length).toBe(32)
-    expect(created).toMatchObject({
-      url: receiverUrl(),
-      eventTypes: ['user.deleted'],
-      enabled: true,
-      createdAt: deps.clock.now().toISOString(),
-    })
+    expect(comparable(created)).toMatchObject(
+      comparable({
+        url: receiverUrl(),
+        eventTypes: ['user.deleted'],
+        enabled: true,
+        createdAt: deps.clock.now().toISOString(),
+      })
+    )
 
     const stored = await deps.webhookEndpoints.find(tenant.environmentId, created.id)
     expect(stored?.secret).not.toContain(created.secret)
@@ -188,13 +191,15 @@ describe('registering an endpoint', () => {
       enabled: false,
     })
     expect(deps.activityLog.entries).toHaveLength(1)
-    expect(deps.activityLog.entries[0]).toMatchObject({
-      type: 'webhook_endpoint.created',
-      environmentId: tenant.environmentId,
-      actor: { type: TEST_ACTOR.type, id: TEST_ACTOR.id },
-      target: { type: 'webhook_endpoint', id: created.id },
-      data: { eventTypes: 2, enabled: false },
-    })
+    expect(comparable(deps.activityLog.entries[0])).toMatchObject(
+      comparable({
+        type: 'webhook_endpoint.created',
+        environmentId: tenant.environmentId,
+        actor: { type: TEST_ACTOR.type, id: TEST_ACTOR.id },
+        target: { type: 'webhook_endpoint', id: created.id },
+        data: { eventTypes: 2, enabled: false },
+      })
+    )
     const record = JSON.stringify([deps.activityLog.entries, deps.activityLog.events])
     expect(record).not.toContain('canary')
     expect(record).not.toContain('127.0.0.1')
@@ -263,10 +268,12 @@ describe('registering an endpoint', () => {
       await register()
     }
     const error = await failure(register())
-    expect(error.toJSON()).toMatchObject({
-      status: 409,
-      params: { max: MAX_WEBHOOK_ENDPOINTS },
-    })
+    expect(comparable(error.toJSON())).toMatchObject(
+      comparable({
+        status: 409,
+        params: { max: MAX_WEBHOOK_ENDPOINTS },
+      })
+    )
     expect(await Webhooks.list(deps, tenant)).toHaveLength(MAX_WEBHOOK_ENDPOINTS)
     // Another environment has its own allowance.
     expect((await register(otherTenant)).id).toBeString()
@@ -288,7 +295,9 @@ describe('reading, changing and removing an endpoint', () => {
       404
     )
     expect(await Webhooks.list(deps, otherTenant)).toEqual([])
-    expect(await Webhooks.get(deps, tenant, created.id)).toMatchObject({ enabled: true })
+    expect(comparable(await Webhooks.get(deps, tenant, created.id))).toMatchObject(
+      comparable({ enabled: true })
+    )
     expect(deps.activityLog.entries.map((entry) => entry.type)).toEqual([
       'webhook_endpoint.created',
     ])
@@ -315,11 +324,13 @@ describe('reading, changing and removing an endpoint', () => {
       createdAt: created.createdAt,
       updatedAt: deps.clock.now().toISOString(),
     })
-    expect(deps.activityLog.entries.at(-1)).toMatchObject({
-      type: 'webhook_endpoint.updated',
-      target: { type: 'webhook_endpoint', id: created.id },
-      data: { changed: ['url', 'eventTypes', 'enabled'] },
-    })
+    expect(comparable(deps.activityLog.entries.at(-1))).toMatchObject(
+      comparable({
+        type: 'webhook_endpoint.updated',
+        target: { type: 'webhook_endpoint', id: created.id },
+        data: { changed: ['url', 'eventTypes', 'enabled'] },
+      })
+    )
     const record = JSON.stringify([deps.activityLog.entries, deps.activityLog.events])
     expect(record).not.toContain('canary')
     expect(record).not.toContain(created.secret)
@@ -367,16 +378,20 @@ describe('reading, changing and removing an endpoint', () => {
         TEST_ACTOR
       )
     )
-    expect(error.toJSON()).toMatchObject({
-      status: 422,
-      code: 'webhook.url_not_allowed',
-      params: { reason: 'address_not_allowed' },
-    })
+    expect(comparable(error.toJSON())).toMatchObject(
+      comparable({
+        status: 422,
+        code: 'webhook.url_not_allowed',
+        params: { reason: 'address_not_allowed' },
+      })
+    )
     expect(JSON.stringify(error.toJSON())).not.toContain('192.168')
-    expect(await Webhooks.get(deps, tenant, created.id)).toMatchObject({
-      url: receiverUrl(),
-      enabled: true,
-    })
+    expect(comparable(await Webhooks.get(deps, tenant, created.id))).toMatchObject(
+      comparable({
+        url: receiverUrl(),
+        enabled: true,
+      })
+    )
     expect(deps.activityLog.ofType('webhook_endpoint.updated')).toEqual([])
   })
 
@@ -407,11 +422,13 @@ describe('reading, changing and removing an endpoint', () => {
     const created = await register()
     await Webhooks.remove(deps, tenant, created.id, TEST_ACTOR)
     expect(await Webhooks.list(deps, tenant)).toEqual([])
-    expect(deps.activityLog.entries.at(-1)).toMatchObject({
-      type: 'webhook_endpoint.deleted',
-      target: { type: 'webhook_endpoint', id: created.id },
-      data: {},
-    })
+    expect(comparable(deps.activityLog.entries.at(-1))).toMatchObject(
+      comparable({
+        type: 'webhook_endpoint.deleted',
+        target: { type: 'webhook_endpoint', id: created.id },
+        data: {},
+      })
+    )
     expect((await failure(Webhooks.remove(deps, tenant, created.id, TEST_ACTOR))).status).toBe(404)
     expect(deps.activityLog.ofType('webhook_endpoint.deleted')).toHaveLength(1)
   })
@@ -448,11 +465,13 @@ describe('a delivery round', () => {
     )
     // The body is the stored payload, and an event of the contract.
     expect(JSON.parse(request.body)).toEqual(outboxRow(eventId).payload)
-    expect(TulaEventSchema.parse(JSON.parse(request.body))).toMatchObject({
-      id: eventId,
-      type: 'user.deleted',
-      schemaVersion: 1,
-    })
+    expect(comparable(TulaEventSchema.parse(JSON.parse(request.body)))).toMatchObject(
+      comparable({
+        id: eventId,
+        type: 'user.deleted',
+        schemaVersion: 1,
+      })
+    )
 
     const attempt = {
       id: expect.any(String),
@@ -508,7 +527,9 @@ describe('a delivery round', () => {
       return new Response('ok')
     }
     await Webhooks.deliverPending(deps)
-    expect(await deliveriesOf(eventId)).toMatchObject([{ durationMs: 120, statusCode: 200 }])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ durationMs: 120, statusCode: 200 }])
+    )
   })
 
   test('an event of a type nobody subscribed to is sent nowhere and marked delivered', async () => {
@@ -524,7 +545,9 @@ describe('a delivery round', () => {
     const eventId = happen()
     const report = await Webhooks.deliverPending(deps)
     expect(outboxRow(eventId).deliveredAt).not.toBeNull()
-    expect(report).toMatchObject({ events: 1, delivered: 0, undelivered: 0 })
+    expect(comparable(report)).toMatchObject(
+      comparable({ events: 1, delivered: 0, undelivered: 0 })
+    )
   })
 
   test('a switched-off endpoint is sent nothing, and the events of that time are not sent later', async () => {
@@ -554,10 +577,12 @@ describe('a delivery round', () => {
     const endpoint = await register(tenant, { eventTypes: ['webhook_endpoint.created'] })
     await Webhooks.deliverPending(deps)
     expect(received).toHaveLength(1)
-    expect(JSON.parse((received[0] as Received).body)).toMatchObject({
-      type: 'webhook_endpoint.created',
-      target: { type: 'webhook_endpoint', id: endpoint.id },
-    })
+    expect(comparable(JSON.parse((received[0] as Received).body))).toMatchObject(
+      comparable({
+        type: 'webhook_endpoint.created',
+        target: { type: 'webhook_endpoint', id: endpoint.id },
+      })
+    )
     expect((received[0] as Received).body).not.toContain(endpoint.secret)
     expect((received[0] as Received).body).not.toContain('127.0.0.1')
   })
@@ -567,11 +592,15 @@ describe('a delivery round', () => {
     const second = await register(tenant, { url: receiverUrl('/second') })
     const eventId = happen()
     await Webhooks.deliverPending(deps)
-    expect(received.map((request) => request.path)).toEqual(['/first', '/second'])
+    // Endpoints are served side by side: which request arrives first is not fixed.
+    expect(received.map((request) => request.path).sort()).toEqual(['/first', '/second'])
     const signatures = received.map((request) => request.headers['webhook-signature'])
     expect(signatures[0]).not.toBe(signatures[1])
-    for (const [index, endpoint] of [first, second].entries()) {
-      const request = received[index] as Received
+    for (const [path, endpoint] of [
+      ['/first', first],
+      ['/second', second],
+    ] as const) {
+      const request = received.find((one) => one.path === path) as Received
       expect(request.headers['webhook-signature']).toBe(
         await signWebhook(
           webhookSecretBytes(endpoint.secret) as Uint8Array<ArrayBuffer>,
@@ -616,10 +645,10 @@ describe('a delivery round', () => {
     const eventId = happen()
     respond = () => new Response(null, { status })
     const report = await Webhooks.deliverPending(deps)
-    expect(await deliveriesOf(eventId)).toMatchObject([
-      { state: 'delivered', statusCode: status, failureReason: null },
-    ])
-    expect(report).toMatchObject({ delivered: 1, undelivered: 0 })
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ state: 'delivered', statusCode: status, failureReason: null }])
+    )
+    expect(comparable(report)).toMatchObject(comparable({ delivered: 1, undelivered: 0 }))
   })
 
   // Changed with retries (TULA-42): a failed request used to be the end of a delivery. It is
@@ -634,17 +663,21 @@ describe('a delivery round', () => {
       respond = () => new Response('no', { status })
       const report = await Webhooks.deliverPending(deps)
       const due = new Date(deps.clock.now().getTime() + 5_000)
-      expect(await deliveriesOf(eventId)).toMatchObject([
-        {
-          state: 'pending',
-          attempts: 1,
-          statusCode: status,
-          failureReason: null,
-          nextAttemptAt: due,
-          completedAt: null,
-        },
-      ])
-      expect(report).toMatchObject({ delivered: 0, undelivered: 1, givenUp: 0 })
+      expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+        comparable([
+          {
+            state: 'pending',
+            attempts: 1,
+            statusCode: status,
+            failureReason: null,
+            nextAttemptAt: due,
+            completedAt: null,
+          },
+        ])
+      )
+      expect(comparable(report)).toMatchObject(
+        comparable({ delivered: 0, undelivered: 1, givenUp: 0 })
+      )
       // The event is settled all the same: its delivery exists, and goes its own way.
       expect(outboxRow(eventId).deliveredAt).not.toBeNull()
 
@@ -658,9 +691,9 @@ describe('a delivery round', () => {
       deps.clock.advance(1)
       await Webhooks.deliverPending(deps)
       expect(received.map((request) => request.headers['webhook-id'])).toEqual([eventId, eventId])
-      expect(await deliveriesOf(eventId)).toMatchObject([
-        { state: 'delivered', attempts: 2, statusCode: 204, nextAttemptAt: null },
-      ])
+      expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+        comparable([{ state: 'delivered', attempts: 2, statusCode: 204, nextAttemptAt: null }])
+      )
     }
   )
 
@@ -671,7 +704,9 @@ describe('a delivery round', () => {
       new Response(null, { status: 302, headers: { location: receiverUrl('/elsewhere') } })
     await Webhooks.deliverPending(deps)
     expect(received.map((request) => request.path)).toEqual(['/hook'])
-    expect(await deliveriesOf(eventId)).toMatchObject([{ state: 'pending', statusCode: 302 }])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ state: 'pending', statusCode: 302 }])
+    )
   })
 
   // Changed after review (TULA-42, F3): this was a failed delivery with no status, which with
@@ -683,9 +718,9 @@ describe('a delivery round', () => {
     const eventId = happen()
     respond = () => new Response('x'.repeat(Webhooks.WEBHOOK_MAX_RESPONSE_BYTES + 1))
     await Webhooks.deliverPending(deps)
-    expect(await deliveriesOf(eventId)).toMatchObject([
-      { state: 'delivered', statusCode: 200, failureReason: null },
-    ])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ state: 'delivered', statusCode: 200, failureReason: null }])
+    )
     expect(outboxRow(eventId).deliveredAt).not.toBeNull()
   })
 
@@ -750,11 +785,13 @@ describe('a delivery round', () => {
     await Webhooks.deliverPending(deps)
     expect(request).toHaveBeenCalledTimes(1)
     expect(request.mock.calls[0]?.[0]).toBe(deps.outbound)
-    expect(request.mock.calls[0]?.[2]).toMatchObject({
-      method: 'POST',
-      timeoutMs: Webhooks.WEBHOOK_DELIVERY_TIMEOUT_MS,
-      maxResponseBytes: Webhooks.WEBHOOK_MAX_RESPONSE_BYTES,
-    })
+    expect(comparable(request.mock.calls[0]?.[2])).toMatchObject(
+      comparable({
+        method: 'POST',
+        timeoutMs: Webhooks.WEBHOOK_DELIVERY_TIMEOUT_MS,
+        maxResponseBytes: Webhooks.WEBHOOK_MAX_RESPONSE_BYTES,
+      })
+    )
     expect(Webhooks.WEBHOOK_DELIVERY_TIMEOUT_MS).toBeLessThanOrEqual(5_000)
     expect(Webhooks.WEBHOOK_MAX_RESPONSE_BYTES).toBeLessThanOrEqual(64 * 1024)
   })
@@ -773,14 +810,16 @@ describe('a delivery round', () => {
       await Webhooks.deliverPending(deps)
       await Webhooks.deliverPending(deps)
       expect(request).toHaveBeenCalledTimes(1)
-      expect(await deliveriesOf(eventId)).toMatchObject([
-        {
-          state: 'pending',
-          statusCode: null,
-          durationMs: Webhooks.WEBHOOK_DELIVERY_TIMEOUT_MS,
-          failureReason: reason,
-        },
-      ])
+      expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+        comparable([
+          {
+            state: 'pending',
+            statusCode: null,
+            durationMs: Webhooks.WEBHOOK_DELIVERY_TIMEOUT_MS,
+            failureReason: reason,
+          },
+        ])
+      )
     }
   )
 
@@ -792,9 +831,9 @@ describe('a delivery round', () => {
     await register(tenant, { url: `http://127.0.0.1:${port}/hook` })
     const eventId = happen()
     await Webhooks.deliverPending(deps)
-    expect(await deliveriesOf(eventId)).toMatchObject([
-      { state: 'pending', statusCode: null, failureReason: 'connection_failed' },
-    ])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ state: 'pending', statusCode: null, failureReason: 'connection_failed' }])
+    )
   })
 })
 
@@ -815,14 +854,16 @@ describe('the outbound guard at delivery time', () => {
     await Webhooks.deliverPending(deps)
 
     expect(received).toHaveLength(1)
-    expect(await deliveriesOf(second)).toMatchObject([
-      {
-        endpointId: endpoint.id,
-        state: 'pending',
-        statusCode: null,
-        failureReason: 'address_not_allowed',
-      },
-    ])
+    expect(comparable(await deliveriesOf(second))).toMatchObject(
+      comparable([
+        {
+          endpointId: endpoint.id,
+          state: 'pending',
+          statusCode: null,
+          failureReason: 'address_not_allowed',
+        },
+      ])
+    )
     expect(outboxRow(second).deliveredAt).not.toBeNull()
     expect(logged()).not.toContain('10.0.0.7')
     expect(logged()).not.toContain('hooks.example.test')
@@ -836,7 +877,9 @@ describe('the outbound guard at delivery time', () => {
     const eventId = happen()
     await Webhooks.deliverPending(deps)
     expect(received).toEqual([])
-    expect(await deliveriesOf(eventId)).toMatchObject([{ failureReason: 'address_not_allowed' }])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ failureReason: 'address_not_allowed' }])
+    )
   })
 
   test('a name that no longer resolves is a failed delivery', async () => {
@@ -846,7 +889,9 @@ describe('the outbound guard at delivery time', () => {
     deps.outbound.point('hooks.example.test')
     const eventId = happen()
     await Webhooks.deliverPending(deps)
-    expect(await deliveriesOf(eventId)).toMatchObject([{ failureReason: 'resolve_failed' }])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ failureReason: 'resolve_failed' }])
+    )
   })
 
   test('an endpoint saved in the local tier is refused once the deployment is not local', async () => {
@@ -856,7 +901,9 @@ describe('the outbound guard at delivery time', () => {
     const eventId = happen()
     await Webhooks.deliverPending(deps)
     expect(received).toEqual([])
-    expect(await deliveriesOf(eventId)).toMatchObject([{ failureReason: 'scheme_not_allowed' }])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ failureReason: 'scheme_not_allowed' }])
+    )
   })
 
   test('the name is resolved for every delivery, never remembered from the last one', async () => {
@@ -934,18 +981,22 @@ describe('what a round never does', () => {
     expect(received).toEqual([])
     // Changed with retries (TULA-42): this was a row settled as failed for good. Nothing was
     // sent, so it is no attempt; the delivery waits for the key to be right.
-    expect(await deliveriesOf(eventId)).toMatchObject([
-      {
-        state: 'pending',
-        attempts: 0,
-        statusCode: null,
-        failureReason: 'signing_failed',
-        lastAttemptAt: null,
-        log: [],
-      },
-    ])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([
+        {
+          state: 'pending',
+          attempts: 0,
+          statusCode: null,
+          failureReason: 'signing_failed',
+          lastAttemptAt: null,
+          log: [],
+        },
+      ])
+    )
     expect(outboxRow(eventId).deliveredAt).not.toBeNull()
-    expect(report).toMatchObject({ failed: 0, undelivered: 0, deferred: 1, givenUp: 0 })
+    expect(comparable(report)).toMatchObject(
+      comparable({ failed: 0, undelivered: 0, deferred: 1, givenUp: 0 })
+    )
     expect(logged()).not.toContain(first.secret)
     expect(logged()).not.toContain(second.secret)
     expect(logged()).not.toContain((theirs as NonNullable<typeof theirs>).secret)
@@ -972,7 +1023,9 @@ describe('what a round never does', () => {
     const eventId = happen()
     await Webhooks.deliverPending(deps)
     expect(received).toEqual([])
-    expect(await deliveriesOf(eventId)).toMatchObject([{ failureReason: 'signing_failed' }])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ failureReason: 'signing_failed' }])
+    )
   })
 
   test('a sealed value that opens to something that is no signing secret does not sign', async () => {
@@ -994,7 +1047,9 @@ describe('what a round never does', () => {
     const eventId = happen()
     await Webhooks.deliverPending(deps)
     expect(received).toEqual([])
-    expect(await deliveriesOf(eventId)).toMatchObject([{ failureReason: 'signing_failed' }])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ failureReason: 'signing_failed' }])
+    )
   })
 
   test('the address and the secret of an endpoint are never logged, whatever happens to its deliveries', async () => {
@@ -1121,11 +1176,13 @@ describe('races and failures inside a round', () => {
     await arrived
     expect(await Webhooks.run(second)).toBeNull()
     release()
-    expect(await first).toMatchObject({ delivered: 1 })
+    expect(comparable(await first)).toMatchObject(comparable({ delivered: 1 }))
     expect(received).toHaveLength(1)
     expect(await deliveriesOf(eventId)).toHaveLength(1)
     // Once the first is done, the next round is the second's to run: nothing is left.
-    expect(await Webhooks.run(second)).toMatchObject({ events: 0, delivered: 0 })
+    expect(comparable(await Webhooks.run(second))).toMatchObject(
+      comparable({ events: 0, delivered: 0 })
+    )
     expect(received).toHaveLength(1)
   })
 
@@ -1161,7 +1218,9 @@ describe('races and failures inside a round', () => {
       }) as never
     )
     const report = await Webhooks.deliverPending(deps)
-    expect(report).toMatchObject({ environments: 2, failed: 1, delivered: 1 })
+    expect(comparable(report)).toMatchObject(
+      comparable({ environments: 2, failed: 1, delivered: 1 })
+    )
     expect(received.map((request) => request.headers['webhook-id'])).toEqual([theirs])
     expect(logged()).toContain('webhook delivery failed in one environment')
     expect(logged()).toContain(tenant.environmentId)
@@ -1188,9 +1247,13 @@ describe('races and failures inside a round', () => {
     )
     const report = await Webhooks.deliverPending(deps)
     expect(report.failed).toBe(1)
-    expect(await deliveriesOf(first)).toMatchObject([{ state: 'delivered', attempts: 1 }])
+    expect(comparable(await deliveriesOf(first))).toMatchObject(
+      comparable([{ state: 'delivered', attempts: 1 }])
+    )
     // Sent, and nothing says so: still pending, still due, with no attempt counted.
-    expect(await deliveriesOf(second)).toMatchObject([{ state: 'pending', attempts: 0, log: [] }])
+    expect(comparable(await deliveriesOf(second))).toMatchObject(
+      comparable([{ state: 'pending', attempts: 0, log: [] }])
+    )
 
     failing.mockRestore()
     await Webhooks.deliverPending(deps)
@@ -1201,7 +1264,9 @@ describe('races and failures inside a round', () => {
       second,
     ])
     // The request that was not recorded does not use up one of the delivery's attempts.
-    expect(await deliveriesOf(second)).toMatchObject([{ state: 'delivered', attempts: 1 }])
+    expect(comparable(await deliveriesOf(second))).toMatchObject(
+      comparable([{ state: 'delivered', attempts: 1 }])
+    )
   })
 
   test('an error that is not the guard’s fails the environment and leaves the delivery waiting, with nothing counted', async () => {
@@ -1215,7 +1280,9 @@ describe('races and failures inside a round', () => {
     )
     const report = await Webhooks.deliverPending(deps)
     expect(report.failed).toBe(1)
-    expect(await deliveriesOf(eventId)).toMatchObject([{ state: 'pending', attempts: 0, log: [] }])
+    expect(comparable(await deliveriesOf(eventId))).toMatchObject(
+      comparable([{ state: 'pending', attempts: 0, log: [] }])
+    )
   })
 
   test('a slow endpoint uses up its environment’s budget, not the round: the next environment is served', async () => {
@@ -1261,12 +1328,18 @@ describe('races and failures inside a round', () => {
     const reads = spyOn(deps.webhookDeliveries, 'pendingEvents')
     spies.push(reads as never)
     const first = await Webhooks.deliverPending(deps)
-    expect(first).toMatchObject({ events: backlog - 50, skipped: backlog - 50 })
+    expect(comparable(first)).toMatchObject(
+      comparable({ events: backlog - 50, skipped: backlog - 50 })
+    )
     // Ten batches for this environment, one empty read for the other.
     expect(reads).toHaveBeenCalledTimes(Webhooks.WEBHOOK_MAX_BATCHES + 1)
     expect(reads.mock.calls.every(([, limit]) => limit === Webhooks.WEBHOOK_BATCH_SIZE)).toBe(true)
-    expect(await Webhooks.deliverPending(deps)).toMatchObject({ events: 50, skipped: 50 })
-    expect(await Webhooks.deliverPending(deps)).toMatchObject({ events: 0, skipped: 0 })
+    expect(comparable(await Webhooks.deliverPending(deps))).toMatchObject(
+      comparable({ events: 50, skipped: 50 })
+    )
+    expect(comparable(await Webhooks.deliverPending(deps))).toMatchObject(
+      comparable({ events: 0, skipped: 0 })
+    )
   })
 })
 
@@ -1345,7 +1418,9 @@ describe('a backlog owed to nobody', () => {
     expect(received.map((request) => request.headers['webhook-id'])).toEqual([fresh])
     expect(outboxRow(fresh).deliveredAt).not.toBeNull()
     expect(old.every((id) => outboxRow(id).deliveredAt !== null)).toBe(true)
-    expect(report).toMatchObject({ unowed: 12_000, delivered: 1, skipped: 0 })
+    expect(comparable(report)).toMatchObject(
+      comparable({ unowed: 12_000, delivered: 1, skipped: 0 })
+    )
     // Settled in bulk: no delivery row, nothing sent.
     expect(deps.webhookDeliveries.rows.map((row) => row.eventId)).toEqual([fresh])
   })
@@ -1356,7 +1431,7 @@ describe('a backlog owed to nobody', () => {
     const reads = spyOn(deps.webhookDeliveries, 'pendingEvents')
     spies.push(reads as never)
     const report = await Webhooks.deliverPending(deps)
-    expect(report).toMatchObject({ events: 3_000, unowed: 3_000 })
+    expect(comparable(report)).toMatchObject(comparable({ events: 3_000, unowed: 3_000 }))
     expect(old.every((id) => outboxRow(id).deliveredAt !== null)).toBe(true)
     // Not read a hundred at a time.
     expect(
@@ -1408,7 +1483,9 @@ describe('a backlog owed to nobody', () => {
     deps.clock.advance('1s')
     const settle = spyOn(deps.webhookDeliveries, 'settleBefore')
     spies.push(settle as never)
-    expect(await Webhooks.deliverPending(deps, AbortSignal.abort())).toMatchObject({ unowed: 0 })
+    expect(comparable(await Webhooks.deliverPending(deps, AbortSignal.abort()))).toMatchObject(
+      comparable({ unowed: 0 })
+    )
     expect(settle).not.toHaveBeenCalled()
     await Webhooks.deliverPending(deps)
     expect(settle).toHaveBeenCalled()
@@ -1523,12 +1600,18 @@ describe('stopping a round', () => {
     const report = await Webhooks.deliverPending(deps, stop.signal)
     expect(received.map((request) => request.headers['webhook-id'])).toEqual([first])
     // What was sent is on record, so the next start does not send it again.
-    expect(await deliveriesOf(first)).toMatchObject([{ state: 'delivered' }])
+    expect(comparable(await deliveriesOf(first))).toMatchObject(
+      comparable([{ state: 'delivered' }])
+    )
     expect(outboxRow(first).deliveredAt).not.toBeNull()
     // Queued before the stop, never tried: it waits with nothing counted.
-    expect(await deliveriesOf(second)).toMatchObject([{ state: 'pending', attempts: 0 }])
+    expect(comparable(await deliveriesOf(second))).toMatchObject(
+      comparable([{ state: 'pending', attempts: 0 }])
+    )
     expect(outboxRow(theirs).deliveredAt).toBeNull()
-    expect(report).toMatchObject({ environments: 1, failed: 0, delivered: 1 })
+    expect(comparable(report)).toMatchObject(
+      comparable({ environments: 1, failed: 0, delivered: 1 })
+    )
 
     respond = () => new Response(null, { status: 204 })
     await Webhooks.deliverPending(deps)
@@ -1541,7 +1624,7 @@ describe('stopping a round', () => {
     await register()
     const eventId = happen()
     const report = await Webhooks.run(deps, AbortSignal.abort())
-    expect(report).toMatchObject({ environments: 0, events: 0 })
+    expect(comparable(report)).toMatchObject(comparable({ environments: 0, events: 0 }))
     expect(received).toEqual([])
     expect(outboxRow(eventId).deliveredAt).toBeNull()
   })
@@ -1553,7 +1636,7 @@ describe('run', () => {
     spies.push(lock as never)
     await register()
     happen()
-    expect(await Webhooks.run(deps)).toMatchObject({ delivered: 1 })
+    expect(comparable(await Webhooks.run(deps))).toMatchObject(comparable({ delivered: 1 }))
     expect(lock.mock.calls.map(([job]) => job)).toEqual(['webhook_delivery'])
   })
 
@@ -1562,7 +1645,7 @@ describe('run', () => {
     await deps.jobLock.runExclusive('retention', async () => {
       inside = await Webhooks.run(deps)
     })
-    expect(inside).toMatchObject({ environments: 2 })
+    expect(comparable(inside)).toMatchObject(comparable({ environments: 2 }))
   })
 
   test.each([
@@ -1606,7 +1689,7 @@ describe('run', () => {
         throw new Error('down')
       }) as never
     )
-    expect(await Webhooks.run(deps)).toMatchObject({ failed: 2 })
+    expect(comparable(await Webhooks.run(deps))).toMatchObject(comparable({ failed: 2 }))
     const warned = ((spies[2]?.mock.calls ?? []) as unknown[][]).map(([message]) => message)
     expect(warned).toContain('webhook delivery round finished')
   })
@@ -1617,7 +1700,7 @@ describe('run', () => {
     })
     expect(Webhooks.run(deps)).rejects.toThrow('database is down')
     list.mockRestore()
-    expect(await Webhooks.run(deps)).toMatchObject({ environments: 2 })
+    expect(comparable(await Webhooks.run(deps))).toMatchObject(comparable({ environments: 2 }))
   })
 
   test('the worker wakes often enough for a webhook to be prompt, and a delivery fits inside its environment’s budget', () => {

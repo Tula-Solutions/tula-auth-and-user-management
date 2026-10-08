@@ -1,5 +1,5 @@
 import { type Database, webhookEndpoints, withTenant } from '@tula/db'
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
@@ -110,19 +110,40 @@ export class PostgresWebhookEndpointStore implements WebhookEndpointStore {
   }
 
   /** @inheritdoc */
-  async setHealth(environmentId: string, id: string, health: WebhookEndpointHealth): Promise<void> {
-    await withTenant(this.db, environmentId, (tx) =>
+  async setHealth(
+    environmentId: string,
+    id: string,
+    expected: WebhookEndpointHealth | null,
+    next: WebhookEndpointHealth
+  ): Promise<boolean> {
+    // `IS NOT DISTINCT FROM`: equal, or both NULL. Plain `=` is never true of a NULL.
+    const still = (
+      column: typeof webhookEndpoints.failingSince | typeof webhookEndpoints.lastFailedAt,
+      value: Date | null
+    ) => (value === null ? isNull(column) : eq(column, value))
+    const rows = await withTenant(this.db, environmentId, (tx) =>
       tx
         .update(webhookEndpoints)
         // `updated_at` is set to itself: the column updates itself on every write otherwise,
         // and no administrator changed the endpoint.
         .set({
-          failingSince: health.failingSince,
-          lastFailedAt: health.lastFailedAt,
+          failingSince: next.failingSince,
+          lastFailedAt: next.lastFailedAt,
           updatedAt: sql`${webhookEndpoints.updatedAt}`,
         })
-        .where(and(eq(webhookEndpoints.environmentId, environmentId), eq(webhookEndpoints.id, id)))
+        .where(
+          and(
+            eq(webhookEndpoints.environmentId, environmentId),
+            eq(webhookEndpoints.id, id),
+            // The compare of the compare-and-set: in the statement itself, so it is judged
+            // against the row as it is when the update takes its lock.
+            expected ? still(webhookEndpoints.failingSince, expected.failingSince) : undefined,
+            expected ? still(webhookEndpoints.lastFailedAt, expected.lastFailedAt) : undefined
+          )
+        )
+        .returning({ id: webhookEndpoints.id })
     )
+    return rows.length === 1
   }
 
   /** @inheritdoc */

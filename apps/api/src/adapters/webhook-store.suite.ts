@@ -8,6 +8,7 @@ import type {
   WebhookDeliveryStore,
 } from '~/ports/webhook-delivery-store'
 import type { WebhookEndpointRecord, WebhookEndpointStore } from '~/ports/webhook-endpoint-store'
+import { comparable } from '~/testing/comparable'
 
 /** A tenant for the suite. */
 export interface WebhookSuiteTenant {
@@ -223,7 +224,9 @@ export function describeWebhookStores(
         later,
         Audit.none('fixture')
       )
-      expect(updated).toMatchObject({ id: record.id, secret: record.secret, createdAt: now })
+      expect(comparable(updated)).toMatchObject(
+        comparable({ id: record.id, secret: record.secret, createdAt: now })
+      )
     })
 
     test('updating an endpoint that does not exist changes and records nothing', async () => {
@@ -252,6 +255,70 @@ export function describeWebhookStores(
       expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toBeNull()
       expect(await remove()).toBe(false)
       expect(await ctx.recorded()).toEqual(['webhook_endpoint.deleted'])
+    })
+
+    test('a run written from what was read does not bring back one that was cleared meanwhile', async () => {
+      const record = await registered(ctx.a)
+      const first = new Date('2026-01-03T00:00:00.000Z')
+      const second = new Date('2026-01-04T00:00:00.000Z')
+      const third = new Date('2026-01-05T00:00:00.000Z')
+      const none = { failingSince: null, lastFailedAt: null }
+      // From nothing to a run: what was read is what is there.
+      expect(
+        await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, none, {
+          failingSince: first,
+          lastFailedAt: first,
+        })
+      ).toBe(true)
+      const read = { failingSince: first, lastFailedAt: first }
+      // An administrator switches it off and on again: the run is forgotten.
+      await ctx.endpoints.update(
+        ctx.a.environmentId,
+        record.id,
+        { enabled: true, resetHealth: true },
+        later,
+        Audit.none('fixture')
+      )
+      // The worker, still holding what it read before that, records its next failure.
+      expect(
+        await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, read, {
+          failingSince: first,
+          lastFailedAt: second,
+        })
+      ).toBe(false)
+      expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual({
+        ...record,
+        updatedAt: later,
+      })
+      // Half right is not right: the same start, another last failure.
+      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, none, {
+        failingSince: first,
+        lastFailedAt: second,
+      })
+      expect(
+        await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, read, {
+          failingSince: first,
+          lastFailedAt: third,
+        })
+      ).toBe(false)
+      expect(
+        await ctx.endpoints.setHealth(
+          ctx.a.environmentId,
+          record.id,
+          { failingSince: first, lastFailedAt: second },
+          { failingSince: first, lastFailedAt: third }
+        )
+      ).toBe(true)
+      expect((await ctx.endpoints.find(ctx.a.environmentId, record.id))?.lastFailedAt).toEqual(
+        third
+      )
+      // Whatever is there (`null`): a success clears a run it did not read.
+      expect(await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, null, none)).toBe(true)
+      expect(await ctx.endpoints.setHealth(ctx.b.environmentId, record.id, null, read)).toBe(false)
+      expect(
+        await ctx.endpoints.setHealth(ctx.a.environmentId, Bun.randomUUIDv7(), null, read)
+      ).toBe(false)
+      expect(await ctx.recorded()).toEqual([])
     })
 
     test('the server switches an endpoint off once, with its reason, and that is recorded', async () => {
@@ -306,7 +373,7 @@ export function describeWebhookStores(
 
     test('an update can forget what the worker held against an endpoint, and otherwise keeps it', async () => {
       const record = await registered(ctx.a)
-      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, {
+      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, null, {
         failingSince: now,
         lastFailedAt: later,
       })
@@ -324,12 +391,14 @@ export function describeWebhookStores(
         later,
         Audit.none('fixture')
       )
-      expect(kept).toMatchObject({
-        enabled: false,
-        disabledReason: 'gone',
-        failingSince: now,
-        lastFailedAt: later,
-      })
+      expect(comparable(kept)).toMatchObject(
+        comparable({
+          enabled: false,
+          disabledReason: 'gone',
+          failingSince: now,
+          lastFailedAt: later,
+        })
+      )
       const reset = await ctx.endpoints.update(
         ctx.a.environmentId,
         record.id,
@@ -337,17 +406,19 @@ export function describeWebhookStores(
         later,
         Audit.none('fixture')
       )
-      expect(reset).toMatchObject({
-        enabled: true,
-        disabledReason: null,
-        failingSince: null,
-        lastFailedAt: null,
-      })
+      expect(comparable(reset)).toMatchObject(
+        comparable({
+          enabled: true,
+          disabledReason: null,
+          failingSince: null,
+          lastFailedAt: null,
+        })
+      )
     })
 
     test('another environment cannot mark an endpoint as failing or switch it off', async () => {
       const record = await registered(ctx.a)
-      await ctx.endpoints.setHealth(ctx.b.environmentId, record.id, {
+      await ctx.endpoints.setHealth(ctx.b.environmentId, record.id, null, {
         failingSince: later,
         lastFailedAt: later,
       })
@@ -418,7 +489,7 @@ export function describeWebhookStores(
       const legacy = { actor: { type: 'system', id: null }, target: null, data: { reason: 'x' } }
       const id = await ctx.seedEvent(ctx.a, { ...seeded(0), payload: legacy })
       const [event] = await ctx.deliveries.pendingEvents(ctx.a.environmentId, 1)
-      expect(event).toMatchObject({ id, payload: legacy })
+      expect(comparable(event)).toMatchObject(comparable({ id, payload: legacy }))
     })
 
     test('a marked event no longer waits, keeps its first time, and is counted once', async () => {
@@ -542,11 +613,13 @@ export function describeWebhookStores(
       expect(await ctx.deliveries.enqueue([again])).toBe(0)
       expect(await read(ctx.a, target.id, again.id)).toBeNull()
       // The first row is as the worker left it: not reset to a fresh delivery.
-      expect((await read(ctx.a, target.id, id))?.delivery).toMatchObject({
-        attempts: 1,
-        nextAttemptAt: retryAt,
-        createdAt: now,
-      })
+      expect(comparable((await read(ctx.a, target.id, id))?.delivery)).toMatchObject(
+        comparable({
+          attempts: 1,
+          nextAttemptAt: retryAt,
+          createdAt: now,
+        })
+      )
       expect(await ctx.deliveries.enqueue([])).toBe(0)
     })
 
@@ -641,32 +714,36 @@ export function describeWebhookStores(
       expect(
         await ctx.deliveries.recordAttempt(ctx.a.environmentId, id, first, retry, 'pending')
       ).toBe(1)
-      expect(await read(ctx.a, target.id, id)).toMatchObject({
-        delivery: {
-          state: 'pending',
-          attempts: 1,
-          nextAttemptAt: retryAt,
-          lastAttemptAt: later,
-          statusCode: null,
-          failureReason: 'timeout',
-          completedAt: null,
-        },
-        attempts: [{ ...first, attempt: 1 }],
-      })
+      expect(comparable(await read(ctx.a, target.id, id))).toMatchObject(
+        comparable({
+          delivery: {
+            state: 'pending',
+            attempts: 1,
+            nextAttemptAt: retryAt,
+            lastAttemptAt: later,
+            statusCode: null,
+            failureReason: 'timeout',
+            completedAt: null,
+          },
+          attempts: [{ ...first, attempt: 1 }],
+        })
+      )
       const second = attempt({ statusCode: 204, attemptedAt: retryAt })
       expect(
         await ctx.deliveries.recordAttempt(ctx.a.environmentId, id, second, done, 'pending')
       ).toBe(2)
       const found = await read(ctx.a, target.id, id)
-      expect(found?.delivery).toMatchObject({
-        state: 'delivered',
-        attempts: 2,
-        nextAttemptAt: null,
-        lastAttemptAt: retryAt,
-        statusCode: 204,
-        failureReason: null,
-        completedAt: later,
-      })
+      expect(comparable(found?.delivery)).toMatchObject(
+        comparable({
+          state: 'delivered',
+          attempts: 2,
+          nextAttemptAt: null,
+          lastAttemptAt: retryAt,
+          statusCode: 204,
+          failureReason: null,
+          completedAt: later,
+        })
+      )
       expect(found?.attempts).toEqual([
         { ...first, attempt: 1 },
         { ...second, attempt: 2 },
@@ -711,14 +788,16 @@ export function describeWebhookStores(
       expect(
         await ctx.deliveries.recordAttempt(ctx.a.environmentId, id, again, null, 'ended')
       ).toBe(2)
-      expect((await read(ctx.a, target.id, id))?.delivery).toMatchObject({
-        state: 'failed',
-        attempts: 2,
-        statusCode: 503,
-        lastAttemptAt: retryAt,
-        completedAt: later,
-        nextAttemptAt: null,
-      })
+      expect(comparable((await read(ctx.a, target.id, id))?.delivery)).toMatchObject(
+        comparable({
+          state: 'failed',
+          attempts: 2,
+          statusCode: 503,
+          lastAttemptAt: retryAt,
+          completedAt: later,
+          nextAttemptAt: null,
+        })
+      )
       expect(
         await ctx.deliveries.recordAttempt(
           ctx.a.environmentId,
@@ -728,10 +807,12 @@ export function describeWebhookStores(
           'ended'
         )
       ).toBe(3)
-      expect((await read(ctx.a, target.id, id))?.delivery).toMatchObject({
-        state: 'delivered',
-        attempts: 3,
-      })
+      expect(comparable((await read(ctx.a, target.id, id))?.delivery)).toMatchObject(
+        comparable({
+          state: 'delivered',
+          attempts: 3,
+        })
+      )
     })
 
     test('another environment cannot record a request for a delivery, or read it', async () => {
@@ -750,10 +831,12 @@ export function describeWebhookStores(
           maxCount: 1000,
         })
       ).toEqual({ deliveries: [], totalCount: 0 })
-      expect((await read(ctx.a, target.id, id))?.delivery).toMatchObject({
-        state: 'pending',
-        attempts: 0,
-      })
+      expect(comparable((await read(ctx.a, target.id, id))?.delivery)).toMatchObject(
+        comparable({
+          state: 'pending',
+          attempts: 0,
+        })
+      )
       expect(
         await ctx.deliveries.recordAttempt(
           ctx.a.environmentId,
@@ -797,21 +880,25 @@ export function describeWebhookStores(
           later
         )
       ).toBe(1)
-      expect(await read(ctx.a, target.id, waiting.id)).toMatchObject({
-        delivery: {
-          state: 'pending',
-          attempts: 0,
-          nextAttemptAt: retryAt,
-          lastAttemptAt: null,
-          statusCode: null,
-          failureReason: 'endpoint_unresponsive',
-        },
-        attempts: [],
-      })
-      expect((await read(ctx.a, target.id, ended.id))?.delivery).toMatchObject({
-        state: 'delivered',
-        failureReason: null,
-      })
+      expect(comparable(await read(ctx.a, target.id, waiting.id))).toMatchObject(
+        comparable({
+          delivery: {
+            state: 'pending',
+            attempts: 0,
+            nextAttemptAt: retryAt,
+            lastAttemptAt: null,
+            statusCode: null,
+            failureReason: 'endpoint_unresponsive',
+          },
+          attempts: [],
+        })
+      )
+      expect(comparable((await read(ctx.a, target.id, ended.id))?.delivery)).toMatchObject(
+        comparable({
+          state: 'delivered',
+          failureReason: null,
+        })
+      )
       expect(await ctx.deliveries.defer(ctx.a.environmentId, [], 'timeout', retryAt, later)).toBe(0)
     })
 
@@ -829,16 +916,18 @@ export function describeWebhookStores(
       const ids = [waiting.id, ended.id]
       expect(await ctx.deliveries.giveUp(ctx.b.environmentId, ids, 'event_gone', later)).toBe(0)
       expect(await ctx.deliveries.giveUp(ctx.a.environmentId, ids, 'event_gone', later)).toBe(1)
-      expect(await read(ctx.a, target.id, waiting.id)).toMatchObject({
-        delivery: {
-          state: 'failed',
-          attempts: 0,
-          nextAttemptAt: null,
-          failureReason: 'event_gone',
-          completedAt: later,
-        },
-        attempts: [],
-      })
+      expect(comparable(await read(ctx.a, target.id, waiting.id))).toMatchObject(
+        comparable({
+          delivery: {
+            state: 'failed',
+            attempts: 0,
+            nextAttemptAt: null,
+            failureReason: 'event_gone',
+            completedAt: later,
+          },
+          attempts: [],
+        })
+      )
       expect((await read(ctx.a, target.id, ended.id))?.delivery.state).toBe('delivered')
       expect(await ctx.deliveries.giveUp(ctx.a.environmentId, [], 'expired', later)).toBe(0)
     })
@@ -870,12 +959,14 @@ export function describeWebhookStores(
       // The one queued at the cutoff itself is not before it; one that ended is not touched.
       expect(await state(ctx.a, target.id, atCutoff.id)).toBe('pending')
       expect(await state(ctx.a, target.id, ended.id)).toBe('delivered')
-      expect((await read(ctx.a, target.id, first.id))?.delivery).toMatchObject({
-        failureReason: 'expired',
-        completedAt: later,
-        nextAttemptAt: null,
-        attempts: 0,
-      })
+      expect(comparable((await read(ctx.a, target.id, first.id))?.delivery)).toMatchObject(
+        comparable({
+          failureReason: 'expired',
+          completedAt: later,
+          nextAttemptAt: null,
+          attempts: 0,
+        })
+      )
       const theirEndpoint = (await ctx.endpoints.list(ctx.b.environmentId))[0]?.id as string
       expect(await state(ctx.b, theirEndpoint, theirs.id)).toBe('pending')
     })
@@ -1037,7 +1128,7 @@ export function describeWebhookStores(
       const record = await registered(ctx.a)
       const first = new Date('2026-01-03T00:00:00.000Z')
       const second = new Date('2026-01-04T00:00:00.000Z')
-      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, {
+      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, null, {
         failingSince: first,
         lastFailedAt: second,
       })
@@ -1047,19 +1138,19 @@ export function describeWebhookStores(
         failingSince: first,
         lastFailedAt: second,
       })
-      await ctx.endpoints.setHealth(ctx.b.environmentId, record.id, {
+      await ctx.endpoints.setHealth(ctx.b.environmentId, record.id, null, {
         failingSince: null,
         lastFailedAt: null,
       })
       expect((await ctx.endpoints.find(ctx.a.environmentId, record.id))?.failingSince).toEqual(
         first
       )
-      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, {
+      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, null, {
         failingSince: null,
         lastFailedAt: null,
       })
       expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(record)
-      await ctx.endpoints.setHealth(ctx.a.environmentId, Bun.randomUUIDv7(), {
+      await ctx.endpoints.setHealth(ctx.a.environmentId, Bun.randomUUIDv7(), null, {
         failingSince: first,
         lastFailedAt: first,
       })
@@ -1113,10 +1204,12 @@ export function describeWebhookStores(
       expect(await ctx.eventExists(ctx.a, stillSending.eventId)).toBe(true)
       expect(await ctx.eventExists(ctx.a, finished.eventId)).toBe(false)
       // The record of the delivery, and of its request, is still there without its event.
-      expect(await read(ctx.a, target.id, finished.id)).toMatchObject({
-        delivery: { eventId: finished.eventId, state: 'delivered' },
-        attempts: [{ attempt: 1, statusCode: 204 }],
-      })
+      expect(comparable(await read(ctx.a, target.id, finished.id))).toMatchObject(
+        comparable({
+          delivery: { eventId: finished.eventId, state: 'delivered' },
+          attempts: [{ attempt: 1, statusCode: 204 }],
+        })
+      )
       // Once that delivery has ended too, its event goes.
       await ctx.deliveries.giveUp(ctx.a.environmentId, [stillSending.id], 'expired', later)
       expect(await ctx.deliveries.deleteSettledEvents(ctx.a.environmentId, cutoff, 10)).toBe(1)

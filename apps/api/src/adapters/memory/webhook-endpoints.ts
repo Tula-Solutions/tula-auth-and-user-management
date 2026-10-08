@@ -93,13 +93,29 @@ export class MemoryWebhookEndpointStore implements WebhookEndpointStore {
   }
 
   /** @inheritdoc */
-  async setHealth(environmentId: string, id: string, health: WebhookEndpointHealth): Promise<void> {
+  async setHealth(
+    environmentId: string,
+    id: string,
+    expected: WebhookEndpointHealth | null,
+    next: WebhookEndpointHealth
+  ): Promise<boolean> {
     const record = this.#records.get(id)
     if (!record || record.environmentId !== environmentId) {
-      return
+      return false
     }
-    record.failingSince = health.failingSince && new Date(health.failingSince)
-    record.lastFailedAt = health.lastFailedAt && new Date(health.lastFailedAt)
+    const same = (a: Date | null, b: Date | null) => a?.getTime() === b?.getTime()
+    if (
+      expected &&
+      !(
+        same(record.failingSince, expected.failingSince) &&
+        same(record.lastFailedAt, expected.lastFailedAt)
+      )
+    ) {
+      return false
+    }
+    record.failingSince = next.failingSince && new Date(next.failingSince)
+    record.lastFailedAt = next.lastFailedAt && new Date(next.lastFailedAt)
+    return true
   }
 
   /** @inheritdoc */

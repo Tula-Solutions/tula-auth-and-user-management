@@ -749,24 +749,69 @@ async function settle(
     await switchOff(deps, round, endpoint, 'gone')
     return
   }
-  // A failure continues the run only if the one before it was recent. After a silence longer
-  // than the schedule itself, nothing says the endpoint stayed broken (it was sent nothing),
-  // so this failure begins a run of its own: one bad day, a fix and a hiccup a week later
-  // are two short runs, not one long one.
-  const continues =
-    endpoint.failingSince !== null &&
-    endpoint.lastFailedAt !== null &&
-    now.getTime() - endpoint.lastFailedAt.getTime() <= WEBHOOK_FAILURE_RUN_MAX_GAP_MS
-  const failingSince = continues && endpoint.failingSince ? endpoint.failingSince : now
-  await deps.webhookEndpoints.setHealth(round.environmentId, endpoint.id, {
-    failingSince,
-    lastFailedAt: now,
-  })
-  endpoint.failingSince = failingSince
-  endpoint.lastFailedAt = now
-  if (now.getTime() - failingSince.getTime() >= durationToMs(WEBHOOK_DISABLE_AFTER)) {
-    await switchOff(deps, round, endpoint, 'failing')
+  await noteFailure(deps, round, endpoint, now)
+}
+
+/** How often {@link noteFailure} reads the endpoint again before it lets the failure go. */
+const HEALTH_WRITE_TRIES = 3
+
+/**
+ * A request to an endpoint has just failed: continue its run of failures or begin one, and
+ * switch the endpoint off if the run has lasted long enough.
+ *
+ * A failure continues the run only if the one before it was recent. After a silence longer
+ * than the schedule itself, nothing says the endpoint stayed broken (it was sent nothing),
+ * so this failure begins a run of its own: one bad day, a fix and a hiccup a week later are
+ * two short runs, not one long one.
+ *
+ * The run is written **only over what was read** (`setHealth` compares). The lane read the
+ * endpoint when it began; since then an administrator may have switched it on again or given
+ * it another address, or a delivery sent again may have got through, and each of those ends
+ * the run. Then the row is read again and the rule applied to what it holds now, so a run
+ * that was reset is never brought back, and never switches off an endpoint that was just
+ * reset.
+ */
+async function noteFailure(
+  deps: Pick<Deps, 'webhookEndpoints' | 'ids' | 'clock'>,
+  round: Round,
+  endpoint: WebhookEndpointRecord,
+  now: Date
+): Promise<void> {
+  for (let tries = 0; tries < HEALTH_WRITE_TRIES; tries++) {
+    const read = { failingSince: endpoint.failingSince, lastFailedAt: endpoint.lastFailedAt }
+    const continues =
+      read.failingSince !== null &&
+      read.lastFailedAt !== null &&
+      now.getTime() - read.lastFailedAt.getTime() <= WEBHOOK_FAILURE_RUN_MAX_GAP_MS
+    const failingSince = continues && read.failingSince ? read.failingSince : now
+    const written = await deps.webhookEndpoints.setHealth(round.environmentId, endpoint.id, read, {
+      failingSince,
+      lastFailedAt: now,
+    })
+    if (written) {
+      endpoint.failingSince = failingSince
+      endpoint.lastFailedAt = now
+      if (now.getTime() - failingSince.getTime() >= durationToMs(WEBHOOK_DISABLE_AFTER)) {
+        await switchOff(deps, round, endpoint, 'failing')
+      }
+      return
+    }
+    const current = await deps.webhookEndpoints.find(round.environmentId, endpoint.id)
+    if (!current) {
+      // Removed meanwhile: there is no endpoint to keep a run for, and the lane ends.
+      endpoint.enabled = false
+      return
+    }
+    // Its run as it is now, and its switch: the lane sends nothing more to one that is off.
+    endpoint.failingSince = current.failingSince
+    endpoint.lastFailedAt = current.lastFailedAt
+    endpoint.enabled = current.enabled
+    if (!current.enabled) {
+      return
+    }
   }
+  // Changed under the worker three times in a row. This one failure goes unrecorded on the
+  // endpoint (it is on its delivery); the next one is judged afresh.
 }
 
 /** A request got through: whatever run of failures the endpoint had is over. */
@@ -774,15 +819,16 @@ async function clearHealth(
   deps: Pick<Deps, 'webhookEndpoints'>,
   endpoint: WebhookEndpointRecord
 ): Promise<void> {
-  if (endpoint.failingSince === null && endpoint.lastFailedAt === null) {
-    return
+  // Over whatever is there, read or not: a real event was taken, and that ends any run. An
+  // endpoint with none on record is not written to at all.
+  if (endpoint.failingSince !== null || endpoint.lastFailedAt !== null) {
+    await deps.webhookEndpoints.setHealth(endpoint.environmentId, endpoint.id, null, {
+      failingSince: null,
+      lastFailedAt: null,
+    })
+    endpoint.failingSince = null
+    endpoint.lastFailedAt = null
   }
-  await deps.webhookEndpoints.setHealth(endpoint.environmentId, endpoint.id, {
-    failingSince: null,
-    lastFailedAt: null,
-  })
-  endpoint.failingSince = null
-  endpoint.lastFailedAt = null
 }
 
 /**
