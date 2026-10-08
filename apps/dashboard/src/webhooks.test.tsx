@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import { ACTIVITY_TYPES } from '@tula/contract/event-types'
 import {
   failure,
@@ -8,7 +8,15 @@ import {
   IDS,
   installFakeApi,
 } from '~/testing/fake-api'
-import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
+import {
+  DEV_PATH,
+  expectFocus,
+  holdAnswers,
+  openDialogs,
+  PROD_PATH,
+  renderApp,
+  type World,
+} from '~/testing/harness'
 
 // The webhooks screens: an environment's endpoints, one endpoint's deliveries, one delivery's
 // attempts. Rendered as the whole app, against the fake API.
@@ -404,6 +412,83 @@ describe('deleting an endpoint', () => {
     await user.click(within(dialog()).getByRole('button', { name: 'Delete endpoint' }))
     await screen.findByText('No webhook endpoints yet')
     expect(api.state.webhookEndpoints).toHaveLength(0)
+  })
+})
+
+// The request has succeeded and the list is still being read again: for that moment the
+// confirmation is still open, and its button must not send the request a second time.
+describe('a confirmed change is sent once, however slow the list is to come back', () => {
+  const list = () =>
+    holdAnswers(
+      (path, _headers, method) => method === 'GET' && path === '/v1/admin/webhook-endpoints'
+    )
+  const sent = (api: World['api'], method: string) =>
+    api.calls.filter((call) => call.method === method).map((call) => call.path)
+
+  /** Confirm, wait for the list to be asked for again, and confirm once more. */
+  async function confirmTwice(current: World, label: string, method: string): Promise<void> {
+    const hold = list()
+    await current.user.click(within(dialog()).getByRole('button', { name: label }))
+    await waitFor(() => expect(hold.held()).toBe(1))
+    expect(sent(current.api, method)).toHaveLength(1)
+    for (const confirm of within(dialog()).queryAllByRole('button', { name: label })) {
+      expect(confirm.getAttribute('aria-disabled')).toBe('true')
+      await current.user.click(confirm)
+    }
+    await act(() => hold.release())
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(current.api, method)).toHaveLength(1)
+    expect(pageAlerts()).toEqual([])
+  }
+
+  /** Every alert on the page: a second request would have been answered 404 in one. */
+  function pageAlerts(): string[] {
+    return screen.queryAllByRole('alert').map((alert) => alert.textContent ?? '')
+  }
+
+  test('a deletion', async () => {
+    const current = withEndpoint()
+    await current.user.click(
+      within(await card(HOME)).getByRole('button', { name: `Delete ${HOME}` })
+    )
+    await confirmTwice(current, 'Delete endpoint', 'DELETE')
+    await screen.findByText('No webhook endpoints yet')
+  })
+
+  test('a deletion in production, with the address still typed', async () => {
+    const current = withEndpoint({ environmentId: IDS.production }, PROD_PATH)
+    await current.user.click(
+      within(await card(HOME)).getByRole('button', { name: `Delete ${HOME}` })
+    )
+    await current.user.type(within(dialog()).getByLabelText(/to confirm/), HOME)
+    await confirmTwice(current, 'Delete endpoint', 'DELETE')
+  })
+
+  test('the end of an overlap', async () => {
+    const current = withEndpoint({ rotationOverlapEndsAt: '2026-10-05T09:30:00.000Z' })
+    await current.user.click(
+      within(await card(HOME)).getByRole('button', {
+        name: `End the secret overlap of ${HOME} now`,
+      })
+    )
+    await confirmTwice(current, 'End the overlap', 'DELETE')
+    await expectFocus(screen.getByRole('heading', { level: 2, name: HOME }))
+  })
+
+  test('switching off', async () => {
+    const current = withEndpoint()
+    await current.user.click(
+      within(await card(HOME)).getByRole('button', { name: `Switch off ${HOME}` })
+    )
+    await confirmTwice(current, 'Switch off', 'PATCH')
+    expect(current.api.state.webhookEndpoints[0]?.enabled).toBe(false)
+  })
+
+  test('an edit', async () => {
+    const current = withEndpoint()
+    await current.user.click(within(await card(HOME)).getByRole('button', { name: `Edit ${HOME}` }))
+    await current.user.click(within(dialog()).getByRole('checkbox', { name: 'user.deleted' }))
+    await confirmTwice(current, 'Save changes', 'PATCH')
   })
 })
 

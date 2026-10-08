@@ -92,6 +92,10 @@ export function EndpointCard({
   const [rotating, setRotating] = useState(false)
   const [testing, setTesting] = useState(false)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  // From the click until the confirmation closes, which is after the lists were read again:
+  // the request has succeeded well before that, and a button that came back to life in
+  // between would send it a second time.
+  const [running, setRunning] = useState(false)
   const title = useRef<HTMLHeadingElement>(null)
   const [overlapsEnded, setOverlapsEnded] = useState(0)
   const url = endpoint.url
@@ -113,8 +117,12 @@ export function EndpointCard({
     update.reset()
     remove.reset()
     revoke.reset()
+    setRunning(false)
     setConfirmation(null)
   }
+
+  /** What a refused request does: the confirmation stays, and can be tried again. */
+  const refused = { onError: () => setRunning(false) }
 
   async function done(message: string) {
     await refreshWebhooks(queryClient)
@@ -123,9 +131,13 @@ export function EndpointCard({
   }
 
   function switchTo(enabled: boolean) {
+    setRunning(true)
     update.mutate(
       { id: endpoint.id, data: { enabled } },
-      { onSuccess: () => done(enabled ? 'Endpoint switched on' : 'Endpoint switched off') }
+      {
+        ...refused,
+        onSuccess: () => done(enabled ? 'Endpoint switched on' : 'Endpoint switched off'),
+      }
     )
   }
 
@@ -147,7 +159,7 @@ export function EndpointCard({
       title: <>Switch off {address}?</>,
       label: 'Switch off',
       body: 'Nothing is sent to it while it is off, and events that happen while it is off are not sent later. Deliveries that are pending wait, and are given up once they are three days old.',
-      pending: update.isPending,
+      pending: running,
       error: update.error,
       run: () => switchTo(false),
     },
@@ -155,7 +167,7 @@ export function EndpointCard({
       title: <>Switch on {address}?</>,
       label: 'Switch on',
       body: 'Events of its types are delivered to it again from now on. Deliveries that were pending are tried again unless they are more than three days old. The server forgets why it was off and since when it was failing.',
-      pending: update.isPending,
+      pending: running,
       error: update.error,
       run: () => switchTo(true),
     },
@@ -167,18 +179,21 @@ export function EndpointCard({
       // A receiver that holds only the previous secret is cut off at once: in production the
       // endpoint is named by typing it, as for a deletion.
       typed: environment.kind === 'production',
-      pending: revoke.isPending,
+      pending: running,
       error: revoke.error,
-      run: () =>
+      run: () => {
+        setRunning(true)
         revoke.mutate(
           { id: endpoint.id },
           {
+            ...refused,
             onSuccess: async () => {
               await done('Overlap ended: one secret signs')
               setOverlapsEnded((count) => count + 1)
             },
           }
-        ),
+        )
+      },
     },
     delete: {
       title: <>Delete {address}?</>,
@@ -187,12 +202,14 @@ export function EndpointCard({
       destructive: true,
       // In production the address is typed: it names the endpoint, and it is what is lost.
       typed: environment.kind === 'production',
-      pending: remove.isPending,
+      pending: running,
       error: remove.error,
-      run: () =>
+      run: () => {
+        setRunning(true)
         remove.mutate(
           { id: endpoint.id },
           {
+            ...refused,
             onSuccess: async () => {
               // First, so that a screen about this endpoint stops asking for it before the
               // lists are read again.
@@ -201,7 +218,8 @@ export function EndpointCard({
               await done('Endpoint deleted')
             },
           }
-        ),
+        )
+      },
     },
   }
   const active = confirmation ? dialogs[confirmation] : null
