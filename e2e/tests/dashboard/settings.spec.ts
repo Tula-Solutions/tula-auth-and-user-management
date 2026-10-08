@@ -339,7 +339,20 @@ test('JWT templates: a template is built, chosen for a profile and saved; a rese
   await expect(dialog(page)).toContainText('Sessions of the “web” profile lose custom claims')
   await expectScreenAccessible(page, 'jwt templates, losing claims confirmation')
   await dialog(page).getByRole('button', { name: 'Save anyway' }).click()
-  await expect(page.getByText('Settings saved')).toBeVisible()
+  // The first save's toast may still be showing (a toast stays five seconds), so the text
+  // alone says nothing about this save: the server's settings do.
+  await expect(page.getByText('Settings saved').last()).toBeVisible()
+  await expect
+    .poll(async () => {
+      const after = await page.request.get(`${API_URL}/v1/admin/settings`, {
+        headers: { authorization: `Bearer ${SECRET_KEY}` },
+      })
+      const body = (await after.json()) as {
+        settings: { sessions: { profiles: { web: { jwtTemplate: string | null } } } }
+      }
+      return body.settings.sessions.profiles.web.jwtTemplate
+    })
+    .toBeNull()
 })
 
 test('a draft made in one environment does not follow the operator to another', async ({
