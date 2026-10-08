@@ -8,7 +8,14 @@ import { useSettingsEditor } from '~/features/settings/settings-editor'
 import { EnvironmentProvider } from '~/features/shell/environment-context'
 import { useScope } from '~/state/scope'
 import { type FakeApi, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
-import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
+import {
+  DEV_PATH,
+  holdAnswers,
+  openDialogs,
+  PROD_PATH,
+  renderApp,
+  type World,
+} from '~/testing/harness'
 
 // What an operator typed or opened for one environment must never act on another: a route
 // whose only change is `$environmentId` is not remounted by the router, so the screens are.
@@ -53,47 +60,6 @@ function goOffline(): () => void {
   return () => {
     globalThis.fetch = reachable
     setOnline(true)
-  }
-}
-
-/**
- * Hold back the answers to some requests (they are still received and recorded by the fake).
- *
- * @param slow - Which calls to hold.
- * @returns `held`: how many answers are being held. `release`: let them through; it resolves
- *   once each has been handed to the code that asked and that code has had its turn, so what
- *   a test checks next is checked after the answer, not after a pause.
- */
-function holdAnswers(slow: (path: string, headers: Headers, method: string) => boolean) {
-  const answer = globalThis.fetch
-  let open: () => void = () => undefined
-  const gate = new Promise<void>((resolve) => {
-    open = resolve
-  })
-  const handedBack: Promise<void>[] = []
-  globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
-    const response = await answer(input, init)
-    const path = new URL(String(input), 'http://localhost:3003').pathname
-    // The request's `signal` is deliberately not honoured: the worst case is an answer that
-    // arrives although nobody is waiting for it any more.
-    if (slow(path, new Headers(init.headers), (init.method ?? 'GET').toUpperCase())) {
-      const handed = Promise.withResolvers<void>()
-      handedBack.push(handed.promise)
-      await gate
-      queueMicrotask(handed.resolve)
-    }
-    return response
-  }) as typeof fetch
-  return {
-    held: () => handedBack.length,
-    async release() {
-      open()
-      await Promise.all(handedBack)
-      // The caller reads the answer and the query client tells its observers on a zero
-      // timer. Two turns of the timer queue come after both, however slow the machine.
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    },
   }
 }
 

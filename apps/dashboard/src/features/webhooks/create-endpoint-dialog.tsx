@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { useCreateWebhookEndpoint } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
 import { Modal } from '~/components/modal'
+import { SecretRequestActions } from '~/components/secret-request-actions'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import {
   AddressField,
@@ -24,13 +25,18 @@ import { SecretOnce } from './secret-once'
  * is not kept by the query client (`gcTime: 0`, and `reset()` as soon as the secret is in
  * state and again when the dialog closes).
  *
+ * While the registration is in flight the dialog cannot be dismissed: the server has made
+ * the endpoint by the time it answers, and the answer is the only place its secret is. The
+ * list is refreshed by the mutation itself, not by this component, so it is right even when
+ * the component has gone (a navigation); the secret is then lost, and shown nowhere.
+ *
  * @param props - `open` and `onClose`.
  * @returns The dialog.
  */
 export function CreateEndpointDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient()
   const create = useCreateWebhookEndpoint({
-    mutation: { gcTime: 0 },
+    mutation: { gcTime: 0, onSuccess: () => refreshWebhooks(queryClient) },
     request: useEnvironmentRequest(),
   })
   const [url, setUrl] = useState('')
@@ -48,6 +54,9 @@ export function CreateEndpointDialog({ open, onClose }: { open: boolean; onClose
   }, [open])
 
   function close() {
+    if (create.isPending) {
+      return
+    }
     setSecret(null)
     create.reset()
     onClose()
@@ -69,10 +78,9 @@ export function CreateEndpointDialog({ open, onClose }: { open: boolean; onClose
     create.mutate(
       { data: parsed.data },
       {
-        onSuccess: async (created) => {
+        onSuccess: (created) => {
           setSecret(created.secret)
           create.reset()
-          await refreshWebhooks(queryClient)
         },
       }
     )
@@ -104,6 +112,7 @@ export function CreateEndpointDialog({ open, onClose }: { open: boolean; onClose
       onClose={close}
       title='Add a webhook endpoint'
       description='Events that happen from now on are posted to it, signed. Events from before are not sent.'
+      busy={create.isPending}
     >
       <form onSubmit={submit} className='flex flex-col gap-4' noValidate>
         <AddressField value={url} onChange={setUrl} error={shown.url} />
@@ -113,14 +122,12 @@ export function CreateEndpointDialog({ open, onClose }: { open: boolean; onClose
             {shown.general}
           </p>
         ) : null}
-        <div className='flex flex-wrap justify-end gap-2'>
-          <ActionButton variant='outline' onClick={close}>
-            Cancel
-          </ActionButton>
-          <ActionButton type='submit' pending={create.isPending}>
-            Add endpoint
-          </ActionButton>
-        </div>
+        <SecretRequestActions
+          pending={create.isPending}
+          onCancel={close}
+          submitLabel='Add endpoint'
+          pendingLabel='Creating…'
+        />
       </form>
     </Modal>
   )

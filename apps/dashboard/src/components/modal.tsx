@@ -17,6 +17,12 @@ export interface ModalProps {
   footer?: ReactNode
   /** Extra classes for the panel. */
   className?: string
+  /**
+   * The dialog cannot be dismissed now: Escape is refused, and a close the browser forces
+   * anyway is undone. For a request whose answer the dialog must be there to show (a secret
+   * that is returned once): the server has acted by the time it answers.
+   */
+  busy?: boolean
 }
 
 /**
@@ -42,8 +48,11 @@ export function Modal({
   children,
   footer,
   className,
+  busy = false,
 }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const shownTitle = useRef<string | null>(null)
   const titleId = useId()
   const descriptionId = useId()
 
@@ -59,12 +68,32 @@ export function Modal({
     }
   }, [open])
 
+  // A dialog that becomes another one while it is open (a form, then its result) took away
+  // what had the focus and said nothing: the focus goes to the new title, which is read.
+  useEffect(() => {
+    if (open && shownTitle.current !== null && shownTitle.current !== title) {
+      heading.current?.focus()
+    }
+    shownTitle.current = open ? title : null
+  }, [open, title])
+
   return (
     <dialog
       ref={ref}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
+      // Escape. The backdrop needs nothing: a click on it does not close a `<dialog>`.
+      onCancel={(event) => {
+        if (busy) {
+          event.preventDefault()
+        }
+      }}
       onClose={() => {
+        if (open && busy) {
+          // A browser closes on a second Escape whatever the first was answered with.
+          ref.current?.showModal()
+          return
+        }
         if (open) {
           onClose()
         }
@@ -77,7 +106,12 @@ export function Modal({
       {open ? (
         <div className='flex flex-col gap-4 p-6'>
           <div className='flex flex-col gap-1.5'>
-            <h2 id={titleId} className='text-lg font-semibold'>
+            <h2
+              ref={heading}
+              id={titleId}
+              tabIndex={-1}
+              className='text-lg font-semibold break-words outline-none'
+            >
               {title}
             </h2>
             {description ? (

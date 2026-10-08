@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useRotateWebhookSecret, type WebhookEndpoint } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
 import { Modal } from '~/components/modal'
+import { SecretRequestActions } from '~/components/secret-request-actions'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
 import { refreshWebhooks } from './queries'
@@ -41,7 +42,9 @@ export function RotateSecretDialog({
 }) {
   const queryClient = useQueryClient()
   const rotate = useRotateWebhookSecret({
-    mutation: { gcTime: 0 },
+    // The refresh belongs to the mutation, not to this component: the card must show the
+    // overlap even when the dialog has gone before the answer came.
+    mutation: { gcTime: 0, onSuccess: () => refreshWebhooks(queryClient) },
     request: useEnvironmentRequest(),
   })
   const [rotated, setRotated] = useState<{ secret: string; overlapEndsAt: string } | null>(null)
@@ -53,6 +56,11 @@ export function RotateSecretDialog({
   }, [open])
 
   function close() {
+    // A rotation in flight cannot be walked away from: the server has already replaced the
+    // secret, and the answer is the only place the new one is.
+    if (rotate.isPending) {
+      return
+    }
     setRotated(null)
     rotate.reset()
     onClose()
@@ -62,10 +70,9 @@ export function RotateSecretDialog({
     rotate.mutate(
       { id: endpoint.id },
       {
-        onSuccess: async (answer) => {
+        onSuccess: (answer) => {
           setRotated({ secret: answer.secret, overlapEndsAt: answer.rotationOverlapEndsAt })
           rotate.reset()
-          await refreshWebhooks(queryClient)
         },
       }
     )
@@ -95,6 +102,7 @@ export function RotateSecretDialog({
       open={open}
       onClose={close}
       title='Rotate the signing secret?'
+      busy={rotate.isPending}
       description={
         <>
           The server makes a new secret for{' '}
@@ -109,14 +117,13 @@ export function RotateSecretDialog({
           {webhookMessageFor(rotate.error)}
         </p>
       ) : null}
-      <div className='flex flex-wrap justify-end gap-2'>
-        <ActionButton variant='outline' onClick={close}>
-          Cancel
-        </ActionButton>
-        <ActionButton onClick={confirm} pending={rotate.isPending}>
-          Rotate secret
-        </ActionButton>
-      </div>
+      <SecretRequestActions
+        pending={rotate.isPending}
+        onCancel={close}
+        onSubmit={confirm}
+        submitLabel='Rotate secret'
+        pendingLabel='Rotating…'
+      />
     </Modal>
   )
 }
