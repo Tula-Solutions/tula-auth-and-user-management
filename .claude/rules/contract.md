@@ -13,8 +13,8 @@ paths:
 - Every exported schema has `.meta({ ref: 'Name' })` and a JSDoc block; public helpers include
   `@example`.
 - Keep this package free of Node/Bun-only APIs. It must run in browsers and React Native.
-- `error-codes.ts`, `headers.ts`, `issuer.ts`, `password-rules.ts`, `theme.ts` and
-  `event-types.ts` must not import Zod (types only from schema modules): they are the entry
+- `error-codes.ts`, `headers.ts`, `issuer.ts`, `password-rules.ts`, `theme.ts`,
+  `event-types.ts` and `webhook-signature.ts` must not import Zod (types only from schema modules): they are the entry
   points SDKs load at run time. A new subpath goes in both `exports` and
   `publishConfig.exports`, and in `bunup.config.ts`; `entry-points.test.ts` bundles each one
   and fails if it imports Zod or the three lists disagree.

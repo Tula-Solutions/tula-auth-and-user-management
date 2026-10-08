@@ -13,6 +13,8 @@ paths:
   - "apps/api/src/modules/jwks/**"
   - "apps/api/src/modules/verification/**"
   - "apps/api/src/lib/crypto.ts"
+  - "apps/api/src/lib/outbound.ts"
+  - "apps/api/src/modules/webhook/**"
   - "apps/api/src/middleware/**"
 ---
 
@@ -245,3 +247,21 @@ Before finishing any change here, confirm each item holds and has a test:
 46. **Static files:** a new way to serve a file goes through `resolveDashboardFile`. Test
     `..`, encoded separators, a backslash, an absolute path, a NUL, a dot file and a link that
     leaves the directory; and that a missing asset is a 404, not the app.
+47. **Webhooks (ADR 0034):** the signing secret is made by the server (32 random bytes,
+    `whsec_` + base64), returned only by the registration, stored only sealed (`secret-box`,
+    purpose `webhook-secrets`, bound to environment + endpoint id: test a ciphertext copied to
+    another endpoint's and another environment's row) and never in a log line, an audit entry,
+    an event payload or an error. An endpoint's address is in no audit entry or payload
+    either (`changed: ['url']`, never the value). The address is judged by the outbound
+    guard when it is saved (`Outbound.check`) **and** at every delivery (`Outbound.request`):
+    test a name that passed when saved and resolves to a private address at delivery, and
+    that nothing was sent. A refusal answers `webhook.url_not_allowed` with the guard's fixed
+    word and never the address or what it resolved to. Of a receiver's answer only the status
+    code and the duration are kept: test with a canary in the answer's headers and body
+    against the delivery row, the logs and every store. One endpoint's failure, slowness or
+    removal mid-round must not fail the round or another environment's deliveries.
+48. **The outbound guard (`lib/outbound.ts`):** every rule of `request` is a rule of `check`,
+    and both share the functions that hold them; a new rule gets a row in both tables of
+    `outbound.test.ts`. Its settings come from `deps.outbound` only, which `container.ts`
+    builds as `{ tier }` and nothing else (a test holds that): never pass a resolver or a
+    certificate from configuration, and never call an operator's address with `fetch`.
