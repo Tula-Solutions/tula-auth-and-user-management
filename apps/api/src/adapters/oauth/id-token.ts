@@ -90,14 +90,24 @@ export function remoteKeySet(jwksUrl: string, timeoutMs: number): ProviderKeySet
 }
 
 /**
+ * Who judges an ID token's `iss`: {@link verifyIdToken}, against this list of the issuer's
+ * spellings, or its caller.
+ *
+ * `'caller-verifies'` is for a provider whose issuer depends on the token itself (Microsoft's
+ * is per tenant): the caller **must** check `iss` on what the verifier returns. The choice has
+ * no default, so that leaving it out cannot turn the check off unnoticed.
+ */
+export type ExpectedIssuers = readonly string[] | 'caller-verifies'
+
+/**
  * Verify an ID token against a key set: the signature, `RS256` only, the audience, the expiry
- * and the attempt's nonce, and the issuer when `expected.issuers` is given. A provider whose
- * issuer depends on the token itself (Microsoft's is per tenant) leaves it out and **must**
- * check `iss` on what this returns.
+ * and the attempt's nonce, and the issuer unless the caller says it judges that itself
+ * ({@link ExpectedIssuers}).
  *
  * @param keys - The provider's key set.
  * @param idToken - The token.
- * @param expected - The client id, the attempt's nonce and, for a fixed issuer, its spellings.
+ * @param expected - The client id, the attempt's nonce and who judges the issuer. A value for
+ *   `issuers` that is neither a list nor `'caller-verifies'` refuses every token.
  * @param timeoutMs - How long the key-set fetch may take.
  * @returns The verified claims and the token's protected header.
  * @throws OAuthProviderError `invalid_token`, `invalid_profile` (no `sub`) or `unavailable`
@@ -106,16 +116,22 @@ export function remoteKeySet(jwksUrl: string, timeoutMs: number): ProviderKeySet
 export async function verifyIdToken(
   keys: ProviderKeySet,
   idToken: string,
-  expected: { audience: string; nonce: string; issuers?: string[] },
+  expected: { audience: string; nonce: string; issuers: ExpectedIssuers },
   timeoutMs: number
 ): Promise<JWTVerifyResult> {
+  const { issuers } = expected
+  // The type says the same; this is for a caller the compiler did not see. An empty list is
+  // passed on as a list: it accepts no issuer.
+  if (issuers !== 'caller-verifies' && !Array.isArray(issuers)) {
+    throw new OAuthProviderError('invalid_token')
+  }
   let verified: JWTVerifyResult
   try {
     // The only network call in here is the key-set fetch. The deadline is a second guard
     // around it, for a `fetch` that does not honour the abort signal.
     verified = await withDeadline(
       jwtVerify(idToken, keys, {
-        ...(expected.issuers && { issuer: expected.issuers }),
+        ...(issuers !== 'caller-verifies' && { issuer: [...issuers] }),
         audience: expected.audience,
         algorithms: ['RS256'],
         clockTolerance: CLOCK_TOLERANCE_SECONDS,

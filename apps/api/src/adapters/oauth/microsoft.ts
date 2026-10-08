@@ -208,7 +208,8 @@ export function createMicrosoftProvider(options: ProviderOptions = {}): OAuthPro
       const { payload, protectedHeader } = await verifyIdToken(
         keys,
         idToken,
-        { audience: credentials.clientId, nonce: exchange.nonce },
+        // The issuer is the token's own tenant's: judged just below, with the key's scope.
+        { audience: credentials.clientId, nonce: exchange.nonce, issuers: 'caller-verifies' },
         timeoutMs
       )
       const tenantId = payload.tid
