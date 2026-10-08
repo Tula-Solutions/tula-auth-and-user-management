@@ -151,8 +151,8 @@ function jwtSpans(text: string): Span[] {
 
 /**
  * Shapes that are secrets wherever they turn up: a Tula secret key, a JWT, a password hash,
- * an authenticator URI or its `secret=`, a PEM block. The projection already drops every field
- * that could hold one; this is for a secret that arrives inside a field that is kept (a user
+ * an authenticator URI or its `secret=`, a PEM block, a webhook signing secret. The projection
+ * already drops every field that could hold one; this is for a secret that arrives inside a field that is kept (a user
  * who pasted a key into their name, an API that one day answers differently).
  *
  * Each answers where its shape is, and costs time in proportion to the text: a pattern here
@@ -166,6 +166,9 @@ const SECRET_SHAPES: readonly ((text: string) => Span[])[] = [
   spansOf(/\$(?:argon2(?:id|i|d)|2[aby]|scrypt)\$[^\s"']+/g),
   spansOf(/otpauth:\/\/[^\s"']+/g),
   spansOf(/-----BEGIN [A-Z ]+-----[\s\S]*?(?:-----END [A-Z ]+-----|$)/g),
+  // A webhook endpoint's signing secret (ADR 0034): `whsec_` and base64. From its prefix on,
+  // however short: one the window cut is a secret from where it starts.
+  spansOf(/whsec_[A-Za-z0-9+/=]*/g),
 ]
 
 function isTokenCharacter(code: number): boolean {
@@ -182,7 +185,8 @@ function isTokenCharacter(code: number): boolean {
 /**
  * For text the window cut: a key or a JWT that began before the cut and did not finish is too
  * short for its shape, and would be returned as it is. It is a secret from where it starts to
- * the end. (A hash, an authenticator URI and a PEM block match however short they were cut.)
+ * the end. (A hash, an authenticator URI, a PEM block and a webhook signing secret match
+ * however short they were cut.)
  */
 function cutSecretSpans(text: string): Span[] {
   let start = text.length

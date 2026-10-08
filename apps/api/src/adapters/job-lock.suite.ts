@@ -70,6 +70,24 @@ export function describeJobLock(name: string, setup: () => Promise<JobLockSuiteC
       })
     })
 
+    test('one job running does not keep another job from running', async () => {
+      const { first, second } = await setup()
+      const job = running(first, 'retention')
+      await job.started
+
+      expect(await second.runExclusive('webhook_delivery', async () => 'delivery')).toEqual({
+        ran: true,
+        value: 'delivery',
+      })
+      expect(await first.runExclusive('webhook_delivery', async () => 'again')).toEqual({
+        ran: true,
+        value: 'again',
+      })
+
+      job.finish()
+      expect(await job.outcome).toEqual({ ran: true, value: 'retention' })
+    })
+
     test('a job that fails rethrows and still frees the lock', async () => {
       const { first, second } = await setup()
       const failing = first.runExclusive('retention', async () => {

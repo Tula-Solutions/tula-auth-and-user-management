@@ -54,6 +54,27 @@ describe('createContainer', () => {
     await close()
   })
 
+  test.each(['local', 'dev', 'staging', 'prod'] as const)(
+    'the outbound guard is given the %s tier and nothing else: no resolver, no extra certificate',
+    async (tier) => {
+      const { deps, close } = createContainer(
+        parseEnv({
+          ...base,
+          ENVIRONMENT: tier,
+          // What the live tiers insist on; nothing here is ever connected to.
+          REDIS_URL: 'redis://127.0.0.1:1',
+          SMTP_URL: 'smtps://relay.example.com:465',
+          MAIL_FROM: 'Tula <auth@example.com>',
+          BREACH_CHECK: 'hibp',
+          PUBLIC_URL: 'https://auth.example.com',
+        })
+      )
+      // Exactly this: the system resolver and the system's certificate authorities.
+      expect(deps.outbound).toEqual({ tier })
+      await close()
+    }
+  )
+
   test('defaults to the recommended policy and the offline breach list', async () => {
     const { deps, close } = createContainer(parseEnv(base))
     expect(deps.config.passwordPolicy).toEqual(PASSWORD_POLICY_PRESETS.recommended)

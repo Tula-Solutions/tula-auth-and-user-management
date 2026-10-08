@@ -1,0 +1,284 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "webhook endpoint on a refused address",
+  "description": "An endpoint's address is judged by the server's outbound guard when it is saved: a private address, the cloud metadata service, a private address spelled as a number, a unique-local IPv6 address and an address with credentials are refused with webhook.url_not_allowed, on a registration and on a change of address alike, and the answer repeats nothing of the address. Nothing is stored. The same guard judges every delivery again (a name can be pointed at a private address after it was saved); that cannot be shown over HTTP alone, because a scenario cannot change what a name resolves to, so it is covered by the API's own tests (apps/api/src/modules/webhook/service.test.ts, 'the outbound guard at delivery time'). The one endpoint this scenario stores is switched off and nothing is ever sent to its address.",
+  "needsSecretKey": true,
+  "steps": [
+    {
+      "name": "a private address is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "https://10.11.12.13/hooks/tula",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed",
+          "params": {
+            "reason": "address_not_allowed"
+          }
+        },
+        "bodyExcludes": ["10.11.12.13", "hooks/tula"]
+      }
+    },
+    {
+      "name": "the cloud metadata service is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "https://169.254.169.254/latest/meta-data/",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed",
+          "params": {
+            "reason": "address_not_allowed"
+          }
+        },
+        "bodyExcludes": ["169.254", "meta-data"]
+      }
+    },
+    {
+      "name": "a private address spelled as one number is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "https://0x0a0b0c0d/",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed",
+          "params": {
+            "reason": "address_not_allowed"
+          }
+        }
+      }
+    },
+    {
+      "name": "a unique-local IPv6 address is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "https://[fd00:ec2::254]/",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed",
+          "params": {
+            "reason": "address_not_allowed"
+          }
+        }
+      }
+    },
+    {
+      "name": "an IPv4 private address inside an IPv6 one is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "https://[::ffff:192.168.1.1]/",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed",
+          "params": {
+            "reason": "address_not_allowed"
+          }
+        }
+      }
+    },
+    {
+      "name": "an address with credentials is refused, and they are not repeated",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "https://conformance-user:conformance-password@1.1.1.1/",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed",
+          "params": {
+            "reason": "invalid_url"
+          }
+        },
+        "bodyExcludes": ["conformance-user", "conformance-password"]
+      }
+    },
+    {
+      "name": "a scheme that is not http is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "ftp://1.1.1.1/hooks",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed",
+          "params": {
+            "reason": "invalid_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "none of them was stored",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "bodyExcludes": [
+          "10.11.12.13",
+          "169.254.169.254",
+          "0x0a0b0c0d",
+          "fd00:ec2",
+          "192.168.1.1",
+          "conformance-user"
+        ]
+      }
+    },
+    {
+      "name": "register an endpoint on a public address, switched off: nothing is sent to it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "https://1.1.1.1/tula-conformance",
+          "eventTypes": ["signing_key.rotated"],
+          "enabled": false
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "url": "https://1.1.1.1/tula-conformance",
+          "enabled": false
+        }
+      },
+      "capture": {
+        "endpointId": "id"
+      }
+    },
+    {
+      "name": "moving it to a private address is refused",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret",
+        "body": {
+          "url": "https://192.168.20.30/hooks/tula"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed",
+          "params": {
+            "reason": "address_not_allowed"
+          }
+        },
+        "bodyExcludes": ["192.168.20.30"]
+      }
+    },
+    {
+      "name": "and so is switching it on in the same request",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret",
+        "body": {
+          "url": "https://172.16.0.9/",
+          "enabled": true
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "webhook.url_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "the endpoint is as it was: its address, and still off",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "url": "https://1.1.1.1/tula-conformance",
+          "enabled": false
+        }
+      }
+    },
+    {
+      "name": "no change was recorded for it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{endpointId}}&action=webhook_endpoint.updated",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the endpoint",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

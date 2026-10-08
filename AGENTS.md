@@ -122,7 +122,8 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - A change to a publishable package comes with a changeset (`bunx changeset`).
 - **`@tula/core` must not pull Zod into an application's bundle.** Import run-time values from
   the contract's Zod-free entry points (`@tula/contract/error-codes`, `/event-types`,
-  `/headers`, `/password-rules`, `/theme`, `/issuer`) and types from `src/generated`. Anything
+  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`) and types from
+  `src/generated`. Anything
   an SDK needs at run time goes in a contract module that does not import Zod.
   `packages/contract/src/entry-points.test.ts` bundles every subpath but the index and fails
   for one that reaches Zod, and for a subpath missing from `exports`,
@@ -226,6 +227,84 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - A new tool is an entry in `TOOLS` with a strict input schema (`z.strictObject`), an entry in
   the tests' argument tables (the enumeration, canary and real-API tests run every tool) and
   a line in `docs/mcp.md`.
+
+### Webhooks (`modules/webhook`, see ADR 0034)
+
+A **webhook** is a signed notice of something that has already happened; its answer changes
+nothing ([GLOSSARY.md](GLOSSARY.md)). Never call it a callback or a hook: a hook is a question
+whose answer decides what happens next (step 2.3).
+
+- **The signing secret is the server's to make, shown once, stored sealed.** 32 bytes from the
+  CSPRNG as `whsec_` + base64 (the Standard Webhooks format), returned only in the `201` of
+  the registration (`Cache-Control: no-store`), sealed with `~/lib/secret-box` (purpose
+  `webhook-secrets`, bound to environment and endpoint id). Never a request field, never
+  returned by a read, a list or an update, never in a log line, an audit entry, an event
+  payload or an error. A secret that cannot be opened is a recorded failed delivery
+  (`signing_failed`), not a failed round.
+- **An endpoint's address is not written anywhere it could travel.** Not in an audit entry,
+  not in an event payload (they go to every other subscribed endpoint), not in a log line. A
+  change is recorded as `changed: ['url']`.
+- **The outbound guard judges the address when it is saved and again at every delivery.**
+  `Outbound.check(deps.outbound, url)` on a registration and on a change of address;
+  `Outbound.request(deps.outbound, …)` for the delivery, never `fetch`. A refusal answers
+  `webhook.url_not_allowed` with the guard's fixed word in `params.reason`, never the address
+  or what its name resolved to. `deps.outbound` is built in `container.ts` as `{ tier }` and
+  nothing else; never loosen the guard for a test, a scenario or a deployment.
+- **Never store more of a receiver's answer than its status code and how long it took.**
+  `webhook_deliveries` has no column for a header or a body and must not get one; the worker
+  reads `answer.status` and drops the rest where the request was made. `failure_reason` is
+  one of the server's own fixed words. This is what keeps an endpoint from being a way to
+  read whatever answers at its address. A new delivery path gets the canary test (a
+  recognisable string in the answer's headers and body, absent from every store and log).
+- **Signing is the contract's `signWebhook`** (`@tula/contract/webhook-signature`, Zod-free,
+  web platform APIs only): `v1,` + base64 HMAC-SHA256 over `<id>.<timestamp>.<body>`, the
+  body being the exact text sent. The server, `@tula/admin`'s `verifyWebhook` and the
+  conformance runner all use it; the contract's tests hold the reference libraries' example.
+- **The worker is `Webhooks.run`, on every instance, under its own job lock**
+  (`'webhook_delivery'`, advisory lock id 2: never renumber). Per environment: undelivered
+  events oldest first in bounded batches; an event is **owed** to the endpoints that are
+  switched on, subscribed to its type and were registered no later than it happened; **at
+  most** one attempt per endpoint and event (retries are a later step); `delivered_at` is set once every
+  owed endpoint has a delivery row, which includes the event owed to nobody. A row with no
+  `schemaVersion` (recorded before the event contract) is never sent: it is marked and
+  counted. One environment's failure is logged and skipped, and each has a time budget per
+  round, so a slow endpoint cannot hold up the others.
+- **Two kinds of event are settled without being tried, and every document says so.** After
+  an endpoint lets one delivery run out its deadline, the rest of what it is owed in that
+  round is recorded `endpoint_unresponsive` (no request made), so one hung endpoint cannot
+  spend the budget its environment's other endpoints share; and everything owed to an
+  endpoint whose sealed secret does not open is recorded `signing_failed`, logged **once per
+  endpoint per round with a count**, never once per event. Neither is sent later until
+  retries exist: a receiver that is slow once can lose up to a round's worth, and a wrong
+  `TULA_MASTER_KEY` loses events the receiver did nothing to lose. Never describe either row
+  as an attempt, and never leave such events unsettled instead (with no retry and no
+  give-up, a dead endpoint would hold its environment's outbox for ever).
+- **What is owed to nobody is settled in bulk, by one store call a batch**
+  (`WebhookDeliveryStore.settleBefore(environment, cutoff, at, limit)`): events from strictly
+  before the earliest endpoint that is **switched on** was registered, or before the pass
+  began when none is on. An event at the same instant as that registration is owed and is
+  left for the per-event path. A switched-off endpoint's date does not count: "owed" is
+  decided by the endpoints as they are when the worker looks. Keep the boundary and the
+  isolation tests in the shared suite.
+- **The cap on endpoints is counted and inserted under the environment's lock**
+  (`deps.environmentLock`, scope `webhook_endpoints`); the address is judged before the lock.
+- **Delivery is at least once and says so**: the request is sent before its row is written;
+  the unique `(endpoint_id, event_id)` makes a second row a no-op. Docs and the verifier's
+  JSDoc tell a receiver to drop repeats by id.
+- **`verifyWebhook` (`@tula/admin`) is Zod-free and web-platform only**, refuses a wrong or
+  missing signature (constant-time, every entry compared), a malformed header, a
+  `webhook-id` or `webhook-timestamp` sent twice (as a list in a plain record, or joined with
+  a comma by a `Headers` object) and a timestamp more than five minutes away in either
+  direction. A `webhook-signature` sent twice is one list, as the reference library reads it:
+  it accepts any one right entry of however many, and never puts the secret, a signature or the body in an error.
+- **The `webhook` conformance step needs a receiver the server can reach.** A scenario with
+  one is marked `needsWebhookReceiver` and skipped by a target without one; a live server in
+  a container cannot reach the runner's loopback, and the answer to that is the skip, never a
+  looser guard. What cannot be shown over HTTP (a name re-pointed between save and delivery)
+  is an API test, and the scenario's description says so.
+- A new event type, a new store method that changes an endpoint, or a new kind of secret
+  follows the existing rules: a schema and a fixture in the contract, an `Activity` and a
+  `@ts-expect-error` line, a pattern in `@tula/mcp`'s `SECRET_SHAPES`.
 
 ### React SDK (see ADR 0022)
 
@@ -458,8 +537,11 @@ a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)).
 
 **Background jobs** are service functions `server.ts` runs on boot and on a timer, on every
 instance; `deps.jobLock.runExclusive(job, fn)` lets one instance through and the others skip
-the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). The only one so
-far is `modules/retention`, which has no router. Its deletes go through store methods that take
+the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are two,
+each with its own job name and lock id (`JOB_LOCK_IDS`: never renumber, only add):
+the webhook worker (`Webhooks.run` in `modules/webhook`,
+[ADR 0034](docs/adr/0034-webhooks.md)) and `modules/retention`, which has no router. The
+retention job's deletes go through store methods that take
 an environment, a cutoff and a batch limit, never through a query of its own. That includes
 an environment's audit entries past its `audit.retentionDays`.
 
@@ -474,6 +556,9 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
   Flow routes also read `x-tula-client` (how tokens are delivered; fixed when the attempt
   starts) and, on every call after the start, `x-tula-attempt` (the attempt's secret;
   `FLOW_ATTEMPT_HEADER` in `@tula/contract`).
+- `/v1/admin/webhook-endpoints` is where an environment's webhook endpoints are registered,
+  changed and removed ([ADR 0034](docs/adr/0034-webhooks.md)); like every admin route it is
+  behind `secretKey()`.
 - `/v1/admin/*` — server-to-server with a **secret key**
   (`Authorization: Bearer tula_sk_<env>_…`), or the dashboard with its **session** plus
   `x-tula-environment: <environment id>`. `secretKey()` accepts both; never add a second
@@ -709,7 +794,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
   cascade), authenticator enrolments that were never confirmed, expired WebAuthn challenges.
   A new table of short-lived rows gets a batched purge method on its store, in both adapters
-  and the shared suite, and a line in that job. Outbox events are never deleted by it.
+  and the shared suite, and a line in that job. Outbox events and webhook delivery rows are
+  never deleted by it: their purge is a later step of the webhook work
+  ([ADR 0034](docs/adr/0034-webhooks.md)).
 - **An environment's audit entries are deleted only by the retention job, and only past the
   period the environment set** (`audit.retentionDays`, 1 to 3650 days; `null`, the default,
   keeps them for ever; [ADR 0012](docs/adr/0012-events-and-audit-log.md),
@@ -803,7 +890,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   CLI: [ADR 0031](docs/adr/0031-instance-admin-and-cli.md); the dashboard's session, its CSRF
   rules, the control plane and how the app is served: [ADR 0032](docs/adr/0032-dashboard.md);
   the MCP server, what it may return and why it has no write tools:
-  [ADR 0033](docs/adr/0033-mcp-server.md).
+  [ADR 0033](docs/adr/0033-mcp-server.md); webhooks (endpoints, the signing secret, the
+  signature, the delivery worker and what is kept of a receiver's answer):
+  [ADR 0034](docs/adr/0034-webhooks.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
   takes the `Origin` header and accepts it only when the environment allows it **and** it
   belongs to `passkeys.rpId`; nothing in a body chooses the origin or the relying party. Call
@@ -944,7 +1033,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   `NODE_TLS_REJECT_UNAUTHORIZED` says, and has one deadline and a response cap. It
   is built on `node:https`, not `fetch`, because Bun's `fetch` takes a proxy from the
   environment whatever it is told. Call it at delivery time, not only when a URL is saved:
-  DNS changes. Its error is a fixed word (`OutboundError.reason`): never store or show more
+  DNS changes. `Outbound.check` applies the same rules to an address that is being saved and
+  sends nothing; the two share the functions that hold the rules, so a new rule is a rule of
+  both and gets a row in both tables of the tests. Both take `deps.outbound`, which
+  `container.ts` builds as `{ tier }` and nothing else. Its error is a fixed word (`OutboundError.reason`): never store or show more
   of an answer than a caller needs. A new refused range gets a row in the table of
   `lib/outbound.test.ts`.
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
@@ -1036,7 +1128,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook}`,
   `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
@@ -1199,7 +1291,8 @@ apps/api/src/
                       # oauth (provider credentials, account linking, the provider callback,
                       # the dev-only mock provider's consent page),
                       # instance (diagnostics), control-plane (the dashboard's session,
-                      # workspaces, projects, environments, the instance audit log)
+                      # workspaces, projects, environments, the instance audit log),
+                      # webhook (endpoints, and the delivery worker: a background job)
 ```
 
 ## Common commands

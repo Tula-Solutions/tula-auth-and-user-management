@@ -71,6 +71,9 @@ export const BROWSER_ONLY_INSTANCE_OPERATIONS: readonly string[] = [
   'deleteDashboardSession',
 ]
 
+/** The component that is any event a webhook delivers: a union told apart by `type`. */
+export const WEBHOOK_EVENT_SCHEMA = 'TulaEvent'
+
 /** Security scheme of an admin operation: the environment's secret key. */
 export const SECRET_KEY_SECURITY_SCHEME = 'secretKey'
 
@@ -412,6 +415,10 @@ export function renderAdminApi(document: OpenApiDocument): string {
     ),
     // The error envelope, so the transport's reading of it can be checked against its schema.
     ...all.flatMap((operation) => operation.errors),
+    // What a webhook delivers: no operation returns it, and `verifyWebhook` is typed from it.
+    ...(Object.hasOwn(document.components.schemas, WEBHOOK_EVENT_SCHEMA)
+      ? [{ $ref: `${REF_PREFIX}${WEBHOOK_EVENT_SCHEMA}` }]
+      : []),
   ])
 
   const schemaLines = schemas.map((name) => {

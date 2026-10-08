@@ -17,7 +17,7 @@ export interface Schemas {
     amr?: string[]
     sp?: string
   }
-  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted'
+  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted'
   ApiKey: {
     id: string
     kind: Schemas['ApiKeyKind']
@@ -28,10 +28,38 @@ export interface Schemas {
     lastUsedAt: string | null
     revokedAt: string | null
   }
+  ApiKeyCreatedEvent: {
+    id: string
+    type: 'api_key.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'api_key'
+      id: string
+    }
+    data: Schemas['ApiKeyCreatedEventData']
+  }
+  ApiKeyCreatedEventData: {
+    kind: 'publishable' | 'secret'
+  }
   ApiKeyKind: 'publishable' | 'secret'
   ApiKeyList: {
     data: Schemas['ApiKey'][]
   }
+  ApiKeyRevokedEvent: {
+    id: string
+    type: 'api_key.revoked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'api_key'
+      id: string
+    }
+    data: Schemas['ApiKeyRevokedEventData']
+  }
+  ApiKeyRevokedEventData: Record<string, never>
   AuditLog: {
     id: string
     action: string
@@ -72,6 +100,11 @@ export interface Schemas {
     lastName?: string
     emailVerified?: boolean
   }
+  CreateWebhookEndpointRequest: {
+    url: string
+    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted')[]
+    enabled?: boolean
+  }
   CreateWorkspaceRequest: {
     name: string
   }
@@ -90,6 +123,16 @@ export interface Schemas {
   CreatedProject: {
     project: Schemas['Project']
     environments: Schemas['Environment'][]
+  }
+  CreatedWebhookEndpoint: {
+    id: string
+    url: string
+    eventTypes: string[]
+    enabled: boolean
+    createdAt: string
+    updatedAt: string
+    /** The signing secret. Store it now: it is shown only once. */
+    secret: string
   }
   DiagnosticCheck: {
     id: string
@@ -208,7 +251,26 @@ export interface Schemas {
     }
     managedBy: Schemas['SettingsManagedBy'] | null
   }
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  EnvironmentSettingsUpdatedEvent: {
+    id: string
+    type: 'environment.settings_updated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'environment'
+      id: string
+    }
+    data: Schemas['EnvironmentSettingsUpdatedEventData']
+  }
+  EnvironmentSettingsUpdatedEventData: {
+    revision: number
+    changed: string[]
+    weakened?: boolean
+    managedBy?: string | null
+    outsideConfig?: boolean
+  }
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -218,6 +280,10 @@ export interface Schemas {
   }
   ErrorParams: {
     [key: string]: string | number | boolean
+  }
+  EventActor: {
+    type: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin'
+    id: string | null
   }
   FieldError: {
     field: string
@@ -243,6 +309,21 @@ export interface Schemas {
   }
   MfaPolicy: 'off' | 'optional' | 'required'
   OAuthProvider: 'google' | 'github' | 'apple'
+  OAuthProviderDeletedEvent: {
+    id: string
+    type: 'oauth_provider.deleted'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'environment'
+      id: string
+    }
+    data: Schemas['OAuthProviderDeletedEventData']
+  }
+  OAuthProviderDeletedEventData: {
+    provider: Schemas['OAuthProvider']
+  }
   OAuthProviderSettings: {
     provider: Schemas['OAuthProvider']
     configured: boolean
@@ -263,6 +344,23 @@ export interface Schemas {
     keyId?: string
     privateKey?: string
     enabled?: boolean
+  }
+  OAuthProviderUpdatedEvent: {
+    id: string
+    type: 'oauth_provider.updated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'environment'
+      id: string
+    }
+    data: Schemas['OAuthProviderUpdatedEventData']
+  }
+  OAuthProviderUpdatedEventData: {
+    provider: Schemas['OAuthProvider']
+    changed: ('clientId' | 'secret' | 'teamId' | 'keyId' | 'enabled')[]
+    created?: boolean
   }
   PaginationMeta: {
     totalCount: number
@@ -321,6 +419,22 @@ export interface Schemas {
     current: boolean
   }
   SessionClient: 'web' | 'ios' | 'android' | 'server'
+  SessionCreatedEvent: {
+    id: string
+    type: 'session.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'session'
+      id: string
+    }
+    data: Schemas['SessionCreatedEventData']
+  }
+  SessionCreatedEventData: {
+    userId: string
+    client: Schemas['SessionClient']
+  }
   SessionLimitAction: 'end_oldest' | 'refuse_newest'
   SessionList: {
     data: Schemas['Session'][]
@@ -336,6 +450,38 @@ export interface Schemas {
       reuseGracePeriod?: Schemas['Duration'] | null
     }
   }
+  SessionReuseDetectedEvent: {
+    id: string
+    type: 'session.reuse_detected'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'session'
+      id: string
+    }
+    data: Schemas['SessionReuseDetectedEventData']
+  }
+  SessionReuseDetectedEventData: {
+    userId: string
+    reason: 'reuse_detected'
+  }
+  SessionRevokedEvent: {
+    id: string
+    type: 'session.revoked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'session'
+      id: string
+    }
+    data: Schemas['SessionRevokedEventData']
+  }
+  SessionRevokedEventData: {
+    userId: string
+    reason: 'sign_out' | 'revoked_by_user' | 'revoked_by_admin' | 'password_changed' | 'user_banned' | 'mfa_changed' | 'session_limit'
+  }
   SessionSettings: {
     profiles?: {
       web?: Schemas['SessionProfile']
@@ -344,6 +490,22 @@ export interface Schemas {
     }
     maxPerUser?: number | null
     onLimit?: Schemas['SessionLimitAction']
+  }
+  SessionSteppedUpEvent: {
+    id: string
+    type: 'session.stepped_up'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'session'
+      id: string
+    }
+    data: Schemas['SessionSteppedUpEventData']
+  }
+  SessionSteppedUpEventData: {
+    userId: string
+    methods: ('pwd' | 'email' | 'otp' | 'backup_code' | 'mfa' | 'hwk' | 'swk' | 'user')[]
   }
   SessionType: 'hybrid' | 'stateful'
   SetPasswordRequest: {
@@ -367,9 +529,31 @@ export interface Schemas {
   SigningKeyList: {
     data: Schemas['SigningKey'][]
   }
+  SigningKeyRotatedEvent: {
+    id: string
+    type: 'signing_key.rotated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'signing_key'
+      id: string
+    }
+    data: Schemas['SigningKeyRotatedEventData']
+  }
+  SigningKeyRotatedEventData: {
+    retiredKeyId: string
+    nextKeyId: string
+  }
   SigningKeyStatus: 'next' | 'active' | 'retired'
+  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent']
   UpdateProjectRequest: {
     name: string
+  }
+  UpdateWebhookEndpointRequest: {
+    url?: string
+    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted')[]
+    enabled?: boolean
   }
   User: {
     id: string
@@ -396,15 +580,306 @@ export interface Schemas {
     passkeys: Schemas['Passkey'][]
     canSignInWithoutPasskeys: boolean
   }
+  UserBackupCodeUsedEvent: {
+    id: string
+    type: 'user.backup_code_used'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserBackupCodeUsedEventData']
+  }
+  UserBackupCodeUsedEventData: Record<string, never>
+  UserBackupCodesRegeneratedEvent: {
+    id: string
+    type: 'user.backup_codes_regenerated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserBackupCodesRegeneratedEventData']
+  }
+  UserBackupCodesRegeneratedEventData: Record<string, never>
+  UserBannedEvent: {
+    id: string
+    type: 'user.banned'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserBannedEventData']
+  }
+  UserBannedEventData: Record<string, never>
+  UserCreatedEvent: {
+    id: string
+    type: 'user.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserCreatedEventData']
+  }
+  UserCreatedEventData: {
+    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple'
+    emailVerified: boolean
+    passwordless?: boolean
+  }
+  UserDeletedEvent: {
+    id: string
+    type: 'user.deleted'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserDeletedEventData']
+  }
+  UserDeletedEventData: Record<string, never>
+  UserEmailVerifiedEvent: {
+    id: string
+    type: 'user.email_verified'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserEmailVerifiedEventData']
+  }
+  UserEmailVerifiedEventData: Record<string, never>
+  UserIdentityLinkedEvent: {
+    id: string
+    type: 'user.identity_linked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserIdentityLinkedEventData']
+  }
+  UserIdentityLinkedEventData: {
+    provider: Schemas['OAuthProvider']
+    method: 'auto' | 'profile'
+  }
+  UserIdentityUnlinkedEvent: {
+    id: string
+    type: 'user.identity_unlinked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserIdentityUnlinkedEventData']
+  }
+  UserIdentityUnlinkedEventData: {
+    provider: Schemas['OAuthProvider']
+  }
   UserList: {
     meta: Schemas['PaginationMeta']
     data: Schemas['User'][]
   }
+  UserMfaDisabledEvent: {
+    id: string
+    type: 'user.mfa_disabled'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserMfaDisabledEventData']
+  }
+  UserMfaDisabledEventData: {
+    method: 'self' | 'admin_reset' | 'enrolment_incomplete'
+  }
+  UserMfaEnabledEvent: {
+    id: string
+    type: 'user.mfa_enabled'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserMfaEnabledEventData']
+  }
+  UserMfaEnabledEventData: {
+    method: 'totp'
+  }
+  UserPasskeyAddedEvent: {
+    id: string
+    type: 'user.passkey_added'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserPasskeyAddedEventData']
+  }
+  UserPasskeyAddedEventData: {
+    passkeyId: string
+    synced: boolean
+  }
+  UserPasskeyCounterRegressedEvent: {
+    id: string
+    type: 'user.passkey_counter_regressed'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserPasskeyCounterRegressedEventData']
+  }
+  UserPasskeyCounterRegressedEventData: {
+    passkeyId: string
+  }
+  UserPasskeyRemovedEvent: {
+    id: string
+    type: 'user.passkey_removed'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserPasskeyRemovedEventData']
+  }
+  UserPasskeyRemovedEventData: {
+    method: 'user' | 'admin_reset'
+    passkeyId?: string
+    canStillSignIn?: boolean
+  }
+  UserPasskeyRenamedEvent: {
+    id: string
+    type: 'user.passkey_renamed'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserPasskeyRenamedEventData']
+  }
+  UserPasskeyRenamedEventData: {
+    passkeyId: string
+  }
+  UserPasswordChangedEvent: {
+    id: string
+    type: 'user.password_changed'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserPasswordChangedEventData']
+  }
+  UserPasswordChangedEventData: {
+    method: 'admin_reset' | 'self' | 'reset' | 'email_verification'
+    created?: boolean
+    removed?: boolean
+  }
   UserSort: 'createdAt' | '-createdAt' | 'email' | '-email' | 'lastSignInAt' | '-lastSignInAt'
+  UserUnbannedEvent: {
+    id: string
+    type: 'user.unbanned'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'user'
+      id: string
+    }
+    data: Schemas['UserUnbannedEventData']
+  }
+  UserUnbannedEventData: Record<string, never>
   VerifySessionRequest: {
     token: string
   }
   WebOrigin: string
+  WebhookEndpoint: {
+    id: string
+    url: string
+    eventTypes: string[]
+    enabled: boolean
+    createdAt: string
+    updatedAt: string
+  }
+  WebhookEndpointCreatedEvent: {
+    id: string
+    type: 'webhook_endpoint.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'webhook_endpoint'
+      id: string
+    }
+    data: Schemas['WebhookEndpointCreatedEventData']
+  }
+  WebhookEndpointCreatedEventData: {
+    eventTypes: number
+    enabled: boolean
+  }
+  WebhookEndpointDeletedEvent: {
+    id: string
+    type: 'webhook_endpoint.deleted'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'webhook_endpoint'
+      id: string
+    }
+    data: Schemas['WebhookEndpointDeletedEventData']
+  }
+  WebhookEndpointDeletedEventData: Record<string, never>
+  WebhookEndpointList: {
+    data: Schemas['WebhookEndpoint'][]
+  }
+  WebhookEndpointUpdatedEvent: {
+    id: string
+    type: 'webhook_endpoint.updated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'webhook_endpoint'
+      id: string
+    }
+    data: Schemas['WebhookEndpointUpdatedEventData']
+  }
+  WebhookEndpointUpdatedEventData: {
+    changed: ('url' | 'eventTypes' | 'enabled')[]
+  }
   Workspace: {
     id: string
     name: string
@@ -424,16 +899,22 @@ export interface Operations {
   createApiKey: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateApiKeyRequest']; response: Schemas['CreatedApiKey'] }
   /** Create a user (`POST /v1/admin/users`). */
   createUser: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateUserRequest']; response: Schemas['User'] }
+  /** Register a webhook endpoint (`POST /v1/admin/webhook-endpoints`). */
+  createWebhookEndpoint: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateWebhookEndpointRequest']; response: Schemas['CreatedWebhookEndpoint'] }
   /** Remove an OAuth provider’s credentials (`DELETE /v1/admin/oauth-providers/{provider}`). */
   deleteOAuthProvider: { params: { provider: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Delete a user (`DELETE /v1/admin/users/{userId}`). */
   deleteUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
+  /** Remove a webhook endpoint (`DELETE /v1/admin/webhook-endpoints/{id}`). */
+  deleteWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Read the environment’s settings (`GET /v1/admin/settings`). */
   getEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['EnvironmentSettingsState'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
   getUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Get how a user signs in (`GET /v1/admin/users/{userId}/authentication`). */
   getUserAuthentication: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['UserAuthentication'] }
+  /** Get a webhook endpoint (`GET /v1/admin/webhook-endpoints/{id}`). */
+  getWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookEndpoint'] }
   /** List API keys (`GET /v1/admin/api-keys`). */
   listApiKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ApiKeyList'] }
   /** List the audit log (`GET /v1/admin/audit-logs`). */
@@ -448,6 +929,8 @@ export interface Operations {
   listUsers: { params: Record<string, never>; query: { q?: string; page?: number; size?: number; sort?: Schemas['UserSort'] }; headers: Record<string, never>; body: undefined; response: Schemas['UserList'] }
   /** List a user’s sessions (`GET /v1/admin/users/{userId}/sessions`). */
   listUserSessions: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
+  /** List webhook endpoints (`GET /v1/admin/webhook-endpoints`). */
+  listWebhookEndpoints: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookEndpointList'] }
   /** Replace the environment’s settings (`PUT /v1/admin/settings`). */
   replaceEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: { 'If-Match': string; 'x-tula-managed-by'?: string; 'x-tula-config-hash'?: string }; body: Schemas['EnvironmentSettingsInput']; response: Schemas['EnvironmentSettingsState'] }
   /** Reset a user’s two-step verification (`DELETE /v1/admin/users/{userId}/factors`). */
@@ -466,6 +949,8 @@ export interface Operations {
   unbanUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Set an OAuth provider’s credentials (`PUT /v1/admin/oauth-providers/{provider}`). */
   updateOAuthProvider: { params: { provider: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['OAuthProviderUpdate']; response: Schemas['OAuthProviderSettings'] }
+  /** Change a webhook endpoint (`PATCH /v1/admin/webhook-endpoints/{id}`). */
+  updateWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['UpdateWebhookEndpointRequest']; response: Schemas['WebhookEndpoint'] }
   /** Verify a session for a backend (`POST /v1/admin/sessions/verify`). */
   verifySession: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['VerifySessionRequest']; response: Schemas['AccessTokenClaims'] }
 }
@@ -483,11 +968,14 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   banUser: { method: 'POST', path: '/v1/admin/users/{userId}/ban' },
   createApiKey: { method: 'POST', path: '/v1/admin/api-keys' },
   createUser: { method: 'POST', path: '/v1/admin/users' },
+  createWebhookEndpoint: { method: 'POST', path: '/v1/admin/webhook-endpoints' },
   deleteOAuthProvider: { method: 'DELETE', path: '/v1/admin/oauth-providers/{provider}' },
   deleteUser: { method: 'DELETE', path: '/v1/admin/users/{userId}' },
+  deleteWebhookEndpoint: { method: 'DELETE', path: '/v1/admin/webhook-endpoints/{id}' },
   getEnvironmentSettings: { method: 'GET', path: '/v1/admin/settings' },
   getUser: { method: 'GET', path: '/v1/admin/users/{userId}' },
   getUserAuthentication: { method: 'GET', path: '/v1/admin/users/{userId}/authentication' },
+  getWebhookEndpoint: { method: 'GET', path: '/v1/admin/webhook-endpoints/{id}' },
   listApiKeys: { method: 'GET', path: '/v1/admin/api-keys' },
   listAuditLogs: { method: 'GET', path: '/v1/admin/audit-logs' },
   listEnvironments: { method: 'GET', path: '/v1/admin/environments' },
@@ -495,6 +983,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listSigningKeys: { method: 'GET', path: '/v1/admin/signing-keys' },
   listUsers: { method: 'GET', path: '/v1/admin/users' },
   listUserSessions: { method: 'GET', path: '/v1/admin/users/{userId}/sessions' },
+  listWebhookEndpoints: { method: 'GET', path: '/v1/admin/webhook-endpoints' },
   replaceEnvironmentSettings: { method: 'PUT', path: '/v1/admin/settings' },
   resetUserFactors: { method: 'DELETE', path: '/v1/admin/users/{userId}/factors' },
   revokeApiKey: { method: 'DELETE', path: '/v1/admin/api-keys/{id}' },
@@ -504,6 +993,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   setUserPassword: { method: 'PUT', path: '/v1/admin/users/{userId}/password' },
   unbanUser: { method: 'POST', path: '/v1/admin/users/{userId}/unban' },
   updateOAuthProvider: { method: 'PUT', path: '/v1/admin/oauth-providers/{provider}' },
+  updateWebhookEndpoint: { method: 'PATCH', path: '/v1/admin/webhook-endpoints/{id}' },
   verifySession: { method: 'POST', path: '/v1/admin/sessions/verify' },
 }
 

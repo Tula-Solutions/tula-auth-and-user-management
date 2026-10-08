@@ -1,6 +1,7 @@
 import type { Target } from '@tula/conformance'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
+import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const PUBLISHABLE_KEY = 'tula_pk_dev_conformance00000000000000000000'
@@ -81,6 +82,14 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
     },
     // Authenticator codes are computed for the clock the server reads, not the wall clock.
     now: () => deps.clock.now().getTime(),
+    // A webhook receiver is a listener on loopback, which the `local` tier's outbound guard
+    // allows; no timer runs here, so a `webhook` step asks for a round of the real worker.
+    webhooks: {
+      hostname: '127.0.0.1',
+      deliver: async () => {
+        await Webhooks.run(deps)
+      },
+    },
     deps,
   }
 }

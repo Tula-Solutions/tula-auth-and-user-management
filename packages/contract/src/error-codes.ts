@@ -181,6 +181,14 @@ export const ERROR_DEFINITIONS = {
     message: 'This is your only way to sign in. Add a password or connect another account first.',
   },
 
+  // A webhook endpoint's address is not one the server may call (ADR 0034): not `https`,
+  // credentials in it, or a host that does not resolve to public addresses only.
+  // `params.reason` is a fixed word saying which rule; never the address or what it resolved to.
+  'webhook.url_not_allowed': {
+    status: 422,
+    message: 'The server cannot deliver to that address.',
+  },
+
   // Passkeys (ADR 0027). A failed passkey sign-in is always `auth.invalid_credentials`.
   'passkey.registration_failed': {
     status: 422,

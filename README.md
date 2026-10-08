@@ -23,13 +23,16 @@ and prebuilt UI, first-class native mobile, and data you own.
 - **Operations**: per-environment settings, settings as code (`tula diff`, `tula apply`), a
   dashboard, `tula doctor`, an audit log, a read-only MCP server, and `create-tula` to scaffold
   a project.
+- **Webhooks, first step**: an environment's events posted to your backend, signed
+  ([Standard Webhooks](https://www.standardwebhooks.com/)), with a verifier in `@tula/admin`.
+  One attempt per event for now; no retries yet ([docs/webhooks.md](docs/webhooks.md)).
 - **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
   ([docs/self-host.md](docs/self-host.md)).
 - **A conformance suite** that the server passes in process, as two packaged instances, behind
   one address, and through the client SDK.
 
-Not built yet: native SDKs and Expo, webhooks, SMS, more providers, organizations and roles
-(see [Roadmap](#roadmap)).
+Not built yet: native SDKs and Expo, webhook retries and their dashboard screen, hooks, SMS,
+more providers, organizations and roles (see [Roadmap](#roadmap)).
 
 ## Try it
 
@@ -102,6 +105,7 @@ makes them unreadable.
 | `GET, POST /v1/admin/users`, `GET, DELETE /v1/admin/users/:id`, `POST …/ban`, `POST …/unban`, `PUT …/password` | secret key | Manage users |
 | `GET, PUT /v1/admin/settings` | secret key | The environment's settings: app name, password policy, sign-in methods, allowed origins (`If-Match` on the revision) |
 | `GET /v1/admin/audit-logs` | secret key | The record of auth events and admin actions |
+| `GET, POST /v1/admin/webhook-endpoints`, `GET, PATCH, DELETE /v1/admin/webhook-endpoints/:id` | secret key | Where an environment's events are delivered, signed ([docs/webhooks.md](docs/webhooks.md)) |
 | `GET /v1/client/config` | publishable key | What a sign-in screen needs: app name, sign-in methods, password policy |
 | `GET /v1/client/password-policy` | publishable key | Password rules for the live checklist |
 | `POST /v1/client/sign-ups`, `…/sign-ups/:id/verify-email`, `…/sign-ups/:id/resend-code` | publishable key | Sign up with email and password, verified by an emailed code |
@@ -151,8 +155,13 @@ Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
 - [x] Settings as code, the CLI, `create-tula`, the dashboard, the MCP server
 - [ ] Published packages and image
 
-Phase 2 ([plan](docs/plans/phase-2.md)) adds native SDKs and Expo, webhooks, SMS codes
-and more providers; Phase 3 organizations, roles, invitations and importers.
+Phase 2 ([plan](docs/plans/phase-2.md), under way) adds native SDKs and Expo, webhooks, SMS
+codes and more providers; Phase 3 organizations, roles, invitations and importers.
+
+- [x] Typed, versioned event payloads; the outbound-request guard
+- [x] Webhooks: an endpoint, a signed delivery, `verifyWebhook` ([ADR 0034](docs/adr/0034-webhooks.md))
+- [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the
+      dashboard screen
 
 ## License
 

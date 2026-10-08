@@ -47,9 +47,15 @@ describe('cleanText', () => {
     ['an argon2 hash', '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA'],
     ['an otpauth URI', 'otpauth://totp/App:maya?secret=JBSWY3DPEHPK3PXP'],
     ['a PEM block', '-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----'],
+    ['a webhook signing secret', 'whsec_d2hzZWNib2R5K3doc2VjYm9keS93aHNlY2JvZHk9PQ=='],
+    ['a webhook signing secret inside text', 'secret: whsec_d2hzZWNib2R5K3doc2VjYm9keQ== ok'],
+    ['a webhook signing secret that was cut short', 'whsec_d2hz'],
   ])('%s is replaced, whatever field it arrived in', (_name, input) => {
     const text = cleanText(input, 500)
     expect(text).toContain(REDACTED)
+    expect(text).not.toContain('d2hz')
+    expect(text).not.toContain('K3doc2Vj')
+    expect(text).not.toContain('9keQ')
     expect(text).not.toContain('aaaaaaaa')
     expect(text).not.toContain('bbbbbbbb')
     expect(text).not.toContain('JBSWY3DPEHPK3PXP')
@@ -144,6 +150,8 @@ describe('a secret split by characters a reader cannot see', () => {
     test.each([
       ['a secret key, in its body', split(`tula_sk_live_${KEY_BODY}`, 16, splitter)],
       ['a secret key, in its prefix', split(`tula_sk_live_${KEY_BODY}`, 4, splitter)],
+      ['a webhook signing secret, in its body', split(`whsec_${KEY_BODY}`, 14, splitter)],
+      ['a webhook signing secret, in its prefix', split(`whsec_${KEY_BODY}`, 3, splitter)],
       [
         'a JWT',
         split('eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJlLXNpZ25hdHVyZQ', 28, splitter),
@@ -242,6 +250,9 @@ describe('the work is bounded', () => {
     ['a secret key’s prefix with no end', `tula_sk_${'a'.repeat(600_000)}`],
     ['the start of a hash, repeated', '$argon2id$2b'.repeat(50_000)],
     ['the start of an authenticator URI, repeated', 'otpauth://'.repeat(60_000)],
+    ['the start of a webhook secret, repeated', 'whsec_'.repeat(100_000)],
+    ['almost the start of a webhook secret, repeated', 'whsec'.repeat(120_000)],
+    ['a webhook secret with no end', `whsec_${'a'.repeat(600_000)}`],
     ['PEM headers that never close', '-----BEGIN A'.repeat(50_000)],
     [
       'a PEM block with footers that never close',
@@ -322,6 +333,8 @@ describe('the work is bounded', () => {
       48,
       ['c2FsdHNhbHQ'],
     ],
+    ['a webhook signing secret cut in its body', `whsec_${'w'.repeat(44)}`, 12, ['www']],
+    ['a webhook signing secret cut after its prefix', `whsec_${'w'.repeat(44)}`, 6, ['www']],
     [
       'an authenticator URI cut in its secret',
       'otpauth://totp/App:maya?secret=JBSWY3DPEHPK3PXP',

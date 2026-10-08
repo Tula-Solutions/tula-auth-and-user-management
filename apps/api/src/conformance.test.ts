@@ -56,6 +56,8 @@ describe('conformance scenarios, in process', () => {
       'admin user sessions',
       'dashboard credential rules',
       'admin user authentication',
+      'webhook delivered and signed',
+      'webhook endpoint on a refused address',
     ])
   })
 
@@ -113,6 +115,38 @@ describe('conformance scenarios, in process', () => {
     expect(two && (await runScenario(two.scenario, counted))).toMatchObject({ status: 'passed' })
     expect(counts.first).toBeGreaterThan(5)
     expect(counts.second).toBeGreaterThan(5)
+  })
+
+  test('a scenario that needs a webhook receiver is skipped, not failed, by a target without one', async () => {
+    const webhook = scenarios.find(({ scenario }) => scenario.needsWebhookReceiver)
+    const target = { ...(await inProcessTarget()), webhooks: undefined }
+    expect(webhook && (await runScenario(webhook.scenario, target))).toMatchObject({
+      status: 'skipped',
+      steps: [],
+      reason: 'needs a webhook receiver the server can reach',
+    })
+    expect(target.deps.activityLog.entries).toEqual([])
+  })
+
+  test('the webhook scenario’s delivery left the server through the outbound guard and was recorded', async () => {
+    const webhook = scenarios.find(
+      ({ scenario }) => scenario.name === 'webhook delivered and signed'
+    )
+    const target = await inProcessTarget()
+    expect(webhook && (await runScenario(webhook.scenario, target))).toMatchObject({
+      status: 'passed',
+    })
+    // Every event of the run is settled: the outbox does not grow.
+    expect(target.deps.activityLog.outbox.length).toBeGreaterThan(0)
+    const waiting = await target.deps.webhookDeliveries.pendingEvents(
+      TEST_TENANT.environmentId,
+      100
+    )
+    // What was recorded after the last round (the switch-off and the removal) still waits.
+    expect(waiting.map((event) => event.type)).toEqual([
+      'webhook_endpoint.updated',
+      'webhook_endpoint.deleted',
+    ])
   })
 
   test('a scenario that needs a secret key is skipped, not failed, without one', async () => {

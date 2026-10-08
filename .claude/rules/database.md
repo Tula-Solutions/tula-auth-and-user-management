@@ -25,10 +25,13 @@ paths:
   job deletes an environment's entries past its `audit.retentionDays`, and the restrictive
   policy `audit_logs_retention_floor` refuses any entry younger than a day; it is the only
   tenant table with a second policy, and a second policy is always restrictive), `events` has
-  no DELETE. Admin deletes run under the owner
+  no DELETE (the webhook worker sets `delivered_at` with the UPDATE it has held since 0003),
+  `webhook_deliveries` has SELECT and INSERT only (migration 0018: one row per endpoint and
+  event, written once; it goes with its endpoint or its event by cascade, and has no column
+  for anything of a receiver's answer beyond a status code). Admin deletes run under the owner
   (`DATABASE_MIGRATION_URL`), never the request path. The retention job (ADR 0017) deletes
   expired tenant rows as the runtime role, per environment inside `withTenant`, through batched
-  store methods; it never touches `events`. New tables get **no**
+  store methods; it never touches `events` or `webhook_deliveries`. New tables get **no**
   default grants: add them to the matrix in the same migration (a test fails otherwise). Run all
   migrations as the same owner role (default privileges are per-owner).
 - Refresh tokens are pruned by deleting sessions (cascade), never token-by-token.

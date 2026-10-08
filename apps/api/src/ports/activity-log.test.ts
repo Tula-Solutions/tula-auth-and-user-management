@@ -19,6 +19,7 @@ import type { PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
 import type { RotationPlan, SigningKeyStore } from '~/ports/signing-key-store'
 import type { NewIdentity, NewUser, UserRepository } from '~/ports/user-repository'
+import type { WebhookEndpointRecord, WebhookEndpointStore } from '~/ports/webhook-endpoint-store'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
 
 // AGENTS.md: "every change to who can do what is recorded, in the same transaction". The
@@ -39,6 +40,7 @@ declare const passkey: PasskeyRecord
 declare const apiKey: NewApiKey
 declare const provider: OAuthProviderRecord
 declare const plan: RotationPlan
+declare const endpoint: WebhookEndpointRecord
 declare const settings: Parameters<EnvironmentSettingsStore['replace']>[2]
 
 async function _users(users: UserRepository): Promise<void> {
@@ -127,6 +129,17 @@ async function _keysAndSettings(
   await signingKeys.insert(ENV, [])
 }
 
+async function _webhookEndpoints(endpoints: WebhookEndpointStore): Promise<void> {
+  // @ts-expect-error an endpoint decides where an environment's events are sent
+  await endpoints.insert(endpoint)
+  // @ts-expect-error
+  await endpoints.insert(endpoint, undefined)
+  // @ts-expect-error
+  await endpoints.update(ENV, 'endpoint', { enabled: false }, AT)
+  // @ts-expect-error
+  await endpoints.delete(ENV, 'endpoint')
+}
+
 /** The memory adapters are what tests hold (`TestDeps`): they are as strict as the ports. */
 async function _memoryAdapters(deps: TestDeps): Promise<void> {
   // @ts-expect-error
@@ -147,6 +160,10 @@ async function _memoryAdapters(deps: TestDeps): Promise<void> {
   await deps.signingKeys.rotate(ENV, plan, AT)
   // @ts-expect-error
   await deps.oauthProviders.upsert(provider)
+  // @ts-expect-error
+  await deps.webhookEndpoints.insert(endpoint)
+  // @ts-expect-error
+  await deps.webhookEndpoints.delete(ENV, 'endpoint')
 }
 
 function _reasons(): Recorded[] {
@@ -315,6 +332,7 @@ describe('what a store is told about the audit entry of a write', () => {
       _passkeys,
       _factors,
       _keysAndSettings,
+      _webhookEndpoints,
       _memoryAdapters,
       _reasons,
     ]) {

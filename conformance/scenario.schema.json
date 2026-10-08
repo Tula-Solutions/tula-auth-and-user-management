@@ -16,6 +16,9 @@
     "needsSecretKey": {
       "type": "boolean"
     },
+    "needsWebhookReceiver": {
+      "type": "boolean"
+    },
     "variables": {
       "type": "object",
       "propertyNames": {
@@ -377,6 +380,51 @@
                 "type": "string",
                 "minLength": 1
               },
+              "webhook": {
+                "type": "object",
+                "properties": {
+                  "receiver": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expect": {
+                    "type": "object",
+                    "properties": {
+                      "secret": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "body": {},
+                      "captureId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["secret"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["receiver"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "webhook"],
+            "additionalProperties": false,
+            "ref": "ConformanceWebhookStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "wait": {
                 "type": "string",
                 "ref": "Duration"
@@ -718,6 +766,51 @@
             "required": ["name", "passkey"],
             "additionalProperties": false,
             "ref": "ConformancePasskeyStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "webhook": {
+                "type": "object",
+                "properties": {
+                  "receiver": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "expect": {
+                    "type": "object",
+                    "properties": {
+                      "secret": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "body": {},
+                      "captureId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["secret"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["receiver"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "webhook"],
+            "additionalProperties": false,
+            "ref": "ConformanceWebhookStep"
           },
           {
             "type": "object",

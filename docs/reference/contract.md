@@ -90,7 +90,7 @@ _constant_, defined in `packages/contract/src/audit.ts`
 What a recorded action can be about.
 
 ```ts
-const AUDIT_TARGET_TYPES: readonly ["user", "session", "api_key", "signing_key", "environment"]
+const AUDIT_TARGET_TYPES: readonly ["user", "session", "api_key", "signing_key", "environment", "webhook_endpoint"]
 ```
 
 ### `AUTHENTICATION_METHODS`
@@ -507,6 +507,51 @@ in another way) and gets one through a password reset or an admin "set password"
 const CreateUserRequestSchema
 ```
 
+### `CreateWebhookEndpointRequest`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+Create-endpoint request body.
+
+```ts
+export type CreateWebhookEndpointRequest = z.infer<typeof CreateWebhookEndpointRequestSchema>
+```
+
+### `CreateWebhookEndpointRequestSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Body of `POST /v1/admin/webhook-endpoints`.
+
+`url` must be one the server may call: `https`, no credentials, and a host that resolves to
+public addresses only (`webhook.url_not_allowed` otherwise). There is no `secret` field: the
+server generates it.
+
+```ts
+const CreateWebhookEndpointRequestSchema
+```
+
+### `CreatedWebhookEndpoint`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+A newly registered webhook endpoint, with its signing secret.
+
+```ts
+export type CreatedWebhookEndpoint = z.infer<typeof CreatedWebhookEndpointSchema>
+```
+
+### `CreatedWebhookEndpointSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+A newly registered endpoint. `secret` is its signing secret (`whsec_…`), in this response
+only: the server keeps it sealed and never returns it again.
+
+```ts
+const CreatedWebhookEndpointSchema
+```
+
 ### `CurrentUser`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -866,7 +911,8 @@ _constant_, defined in `packages/contract/src/event-types.ts`
 What each event is about: the `target.type` of its payload. `target.id` is that thing's id.
 
 An event about a user's credentials targets the `user` (the passkey or session concerned
-is named in `data`); an OAuth provider's credentials belong to the `environment`.
+is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
+endpoint has an id of its own, as an API key does, so it is its own kind of target.
 
 ```ts
 const EVENT_TARGET_TYPES: Record<any, any>
@@ -1757,6 +1803,41 @@ few hundred bytes) with plenty to spare, and nothing a body could be padded with
 
 ```ts
 const MAX_VERIFIED_TOKEN_LENGTH: 4096
+```
+
+### `MAX_WEBHOOK_ENDPOINTS`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Most webhook endpoints one environment may have. Every event is sent to each endpoint that
+subscribed to its type, so the number of endpoints bounds the requests one event causes.
+
+```ts
+const MAX_WEBHOOK_ENDPOINTS: 10
+```
+
+**Example**
+
+```ts
+if (endpoints.length >= MAX_WEBHOOK_ENDPOINTS) {
+  // remove one first
+}
+```
+
+### `MAX_WEBHOOK_URL_LENGTH`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Longest address of a webhook endpoint.
+
+```ts
+const MAX_WEBHOOK_URL_LENGTH: 2048
+```
+
+**Example**
+
+```ts
+url.length <= MAX_WEBHOOK_URL_LENGTH
 ```
 
 ### `MIN_ACCESS_TOKEN_TTL`
@@ -3360,6 +3441,26 @@ const TulaEventSchema: z.ZodType<EventOf<any>, unknown, z.core.$ZodTypeInternals
 const event = TulaEventSchema.parse(JSON.parse(body))
 ```
 
+### `UpdateWebhookEndpointRequest`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+Update-endpoint request body.
+
+```ts
+export type UpdateWebhookEndpointRequest = z.infer<typeof UpdateWebhookEndpointRequestSchema>
+```
+
+### `UpdateWebhookEndpointRequestSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Body of `PATCH /v1/admin/webhook-endpoints/{id}`: the fields to change, at least one.
+
+```ts
+const UpdateWebhookEndpointRequestSchema
+```
+
 ### `User`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -3499,6 +3600,123 @@ Body of `POST /v1/admin/sessions/verify`: the value of a `stateful` session's co
 const VerifySessionRequestSchema: z.ZodObject<{ token: z.ZodString; }, z.core.$strip>
 ```
 
+### `WEBHOOK_ENDPOINT_FIELDS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+The fields of a webhook endpoint an update can change, as `webhook_endpoint.updated` names
+them. `url` says the address changed, never what it is or was.
+
+```ts
+const WEBHOOK_ENDPOINT_FIELDS: readonly ["url", "eventTypes", "enabled"]
+```
+
+**Example**
+
+```ts
+const changed: (typeof WEBHOOK_ENDPOINT_FIELDS)[number][] = ['url', 'enabled']
+```
+
+### `WEBHOOK_ID_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying the delivery's id: the event's id. A delivery that is repeated
+carries the same id, so a receiver drops duplicates by it.
+
+```ts
+const WEBHOOK_ID_HEADER: "webhook-id"
+```
+
+**Example**
+
+```ts
+const id = request.headers.get(WEBHOOK_ID_HEADER)
+```
+
+### `WEBHOOK_SECRET_PREFIX`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+What an endpoint's signing secret starts with. The rest is the base64 of the key's bytes.
+
+```ts
+const WEBHOOK_SECRET_PREFIX: "whsec_"
+```
+
+**Example**
+
+```ts
+secret.startsWith(WEBHOOK_SECRET_PREFIX) // 'whsec_…'
+```
+
+### `WEBHOOK_SIGNATURE_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying the signatures: one or more of `v1,<base64>`, separated by spaces.
+A receiver accepts the delivery when any one of them is right.
+
+```ts
+const WEBHOOK_SIGNATURE_HEADER: "webhook-signature"
+```
+
+**Example**
+
+```ts
+const signatures = (request.headers.get(WEBHOOK_SIGNATURE_HEADER) ?? '').split(' ')
+```
+
+### `WEBHOOK_SIGNATURE_VERSION`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+The version label of an HMAC-SHA256 signature: what stands before the comma.
+
+```ts
+const WEBHOOK_SIGNATURE_VERSION: "v1"
+```
+
+**Example**
+
+```ts
+const [version, signature] = entry.split(',') // version === WEBHOOK_SIGNATURE_VERSION
+```
+
+### `WEBHOOK_TIMESTAMP_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying when the delivery was sent, in whole seconds since the Unix epoch.
+It is signed, and a receiver refuses one too far from its own clock.
+
+```ts
+const WEBHOOK_TIMESTAMP_HEADER: "webhook-timestamp"
+```
+
+**Example**
+
+```ts
+const sentAt = Number(request.headers.get(WEBHOOK_TIMESTAMP_HEADER)) * 1000
+```
+
+### `WEBHOOK_TOLERANCE_SECONDS`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+How far a delivery's timestamp may be from the receiver's clock, either way, in seconds.
+Five minutes: what bounds the replay of a captured delivery.
+
+```ts
+const WEBHOOK_TOLERANCE_SECONDS: number
+```
+
+**Example**
+
+```ts
+const fresh = Math.abs(now - sentAt) <= WEBHOOK_TOLERANCE_SECONDS
+```
+
 ### `WebOriginSchema`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
@@ -3509,6 +3727,47 @@ exact match. `http://` is accepted for `localhost`, `127.0.0.1` and `[::1]` only
 
 ```ts
 const WebOriginSchema: z.ZodString
+```
+
+### `WebhookEndpoint`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+A listed webhook endpoint.
+
+```ts
+export type WebhookEndpoint = z.infer<typeof WebhookEndpointSchema>
+```
+
+### `WebhookEndpointList`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+An environment's webhook endpoints.
+
+```ts
+export type WebhookEndpointList = z.infer<typeof WebhookEndpointListSchema>
+```
+
+### `WebhookEndpointListSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+An environment's webhook endpoints, oldest first.
+
+```ts
+const WebhookEndpointListSchema
+```
+
+### `WebhookEndpointSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+A webhook endpoint as listed. The signing secret is never part of it: it is returned once,
+by the call that created the endpoint.
+
+```ts
+const WebhookEndpointSchema
 ```
 
 ### `builtInSessionProfile`
@@ -3689,6 +3948,30 @@ export function evaluatePassword(
 
 ```ts
 const { ok, checks } = evaluatePassword(PASSWORD_POLICY_PRESETS.recommended, 'correct horse')
+```
+
+### `formatWebhookSecret`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+Write a signing secret from its key bytes.
+
+```ts
+export function formatWebhookSecret(key: Uint8Array): string
+```
+
+**Parameters**
+
+- `key`: 24 to 64 random bytes.
+
+**Returns** `whsec_` and the base64 of the bytes.
+
+**Throws** RangeError when the key is shorter or longer than the scheme allows.
+
+**Example**
+
+```ts
+const secret = formatWebhookSecret(crypto.getRandomValues(new Uint8Array(32)))
 ```
 
 ### `hasEnabledSignInMethod`
@@ -4025,6 +4308,40 @@ export function settingsWeakenings(
 settingsWeakenings(current, { ...current, mfa: { policy: 'off' } }) // ['mfa.policy']
 ```
 
+### `signWebhook`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+Sign one delivery: HMAC-SHA256 over `<id>.<timestamp>.<body>`, keyed with the secret's bytes.
+
+The body is the exact text that is sent. A receiver must verify the bytes it received, not
+a body it parsed and wrote out again.
+
+```ts
+export async function signWebhook(
+  key: Uint8Array<ArrayBuffer>,
+  id: string,
+  timestamp: number,
+  body: string
+): Promise<string>
+```
+
+**Parameters**
+
+- `key`: The key bytes ({@link webhookSecretBytes}).
+- `id`: The delivery's id (the `webhook-id` header). It has no `.` in it.
+- `timestamp`: Whole seconds since the Unix epoch (the `webhook-timestamp` header).
+- `body`: The request body, as sent.
+
+**Returns** The signature as it stands in the header: `v1,<base64>`.
+
+**Example**
+
+```ts
+const signature = await signWebhook(key, event.id, Math.floor(Date.now() / 1000), body)
+// 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='
+```
+
 ### `stepUpWindowSeconds`
 
 _function_, defined in `packages/contract/src/session-profile.ts`
@@ -4081,6 +4398,28 @@ export function themeToCssVariables(theme: ThemeOverrides): Record<string, strin
 ```ts
 themeToCssVariables({ light: { primary: '#0f766e' }, dark: { primary: '#5eead4' }, radius: '6px' })
 // { '--tula-color-primary': '#0f766e', '--tula-dark-color-primary': '#5eead4', '--tula-radius': '6px' }
+```
+
+### `webhookSecretBytes`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+The key bytes of a signing secret.
+
+```ts
+export function webhookSecretBytes(secret: string): Uint8Array<ArrayBuffer> | null
+```
+
+**Parameters**
+
+- `secret`: An endpoint's secret: `whsec_` and the base64 of 24 to 64 bytes.
+
+**Returns** The bytes, or `null` for anything else. Never throws, and says nothing of the value.
+
+**Example**
+
+```ts
+const key = webhookSecretBytes(process.env.TULA_WEBHOOK_SECRET ?? '')
 ```
 
 ## `@tula/contract/error-codes`
@@ -4232,7 +4571,8 @@ _constant_, defined in `packages/contract/src/event-types.ts`
 What each event is about: the `target.type` of its payload. `target.id` is that thing's id.
 
 An event about a user's credentials targets the `user` (the passkey or session concerned
-is named in `data`); an OAuth provider's credentials belong to the `environment`.
+is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
+endpoint has an id of its own, as an API key does, so it is its own kind of target.
 
 ```ts
 const EVENT_TARGET_TYPES: Record<any, any>
@@ -5079,4 +5419,188 @@ export function themeToCssVariables(theme: ThemeOverrides): Record<string, strin
 ```ts
 themeToCssVariables({ light: { primary: '#0f766e' }, dark: { primary: '#5eead4' }, radius: '6px' })
 // { '--tula-color-primary': '#0f766e', '--tula-dark-color-primary': '#5eead4', '--tula-radius': '6px' }
+```
+
+## `@tula/contract/webhook-signature`
+
+Source: `packages/contract/src/webhook-signature.ts`
+
+### `WEBHOOK_ID_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying the delivery's id: the event's id. A delivery that is repeated
+carries the same id, so a receiver drops duplicates by it.
+
+```ts
+const WEBHOOK_ID_HEADER: "webhook-id"
+```
+
+**Example**
+
+```ts
+const id = request.headers.get(WEBHOOK_ID_HEADER)
+```
+
+### `WEBHOOK_SECRET_PREFIX`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+What an endpoint's signing secret starts with. The rest is the base64 of the key's bytes.
+
+```ts
+const WEBHOOK_SECRET_PREFIX: "whsec_"
+```
+
+**Example**
+
+```ts
+secret.startsWith(WEBHOOK_SECRET_PREFIX) // 'whsec_…'
+```
+
+### `WEBHOOK_SIGNATURE_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying the signatures: one or more of `v1,<base64>`, separated by spaces.
+A receiver accepts the delivery when any one of them is right.
+
+```ts
+const WEBHOOK_SIGNATURE_HEADER: "webhook-signature"
+```
+
+**Example**
+
+```ts
+const signatures = (request.headers.get(WEBHOOK_SIGNATURE_HEADER) ?? '').split(' ')
+```
+
+### `WEBHOOK_SIGNATURE_VERSION`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+The version label of an HMAC-SHA256 signature: what stands before the comma.
+
+```ts
+const WEBHOOK_SIGNATURE_VERSION: "v1"
+```
+
+**Example**
+
+```ts
+const [version, signature] = entry.split(',') // version === WEBHOOK_SIGNATURE_VERSION
+```
+
+### `WEBHOOK_TIMESTAMP_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying when the delivery was sent, in whole seconds since the Unix epoch.
+It is signed, and a receiver refuses one too far from its own clock.
+
+```ts
+const WEBHOOK_TIMESTAMP_HEADER: "webhook-timestamp"
+```
+
+**Example**
+
+```ts
+const sentAt = Number(request.headers.get(WEBHOOK_TIMESTAMP_HEADER)) * 1000
+```
+
+### `WEBHOOK_TOLERANCE_SECONDS`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+How far a delivery's timestamp may be from the receiver's clock, either way, in seconds.
+Five minutes: what bounds the replay of a captured delivery.
+
+```ts
+const WEBHOOK_TOLERANCE_SECONDS: number
+```
+
+**Example**
+
+```ts
+const fresh = Math.abs(now - sentAt) <= WEBHOOK_TOLERANCE_SECONDS
+```
+
+### `formatWebhookSecret`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+Write a signing secret from its key bytes.
+
+```ts
+export function formatWebhookSecret(key: Uint8Array): string
+```
+
+**Parameters**
+
+- `key`: 24 to 64 random bytes.
+
+**Returns** `whsec_` and the base64 of the bytes.
+
+**Throws** RangeError when the key is shorter or longer than the scheme allows.
+
+**Example**
+
+```ts
+const secret = formatWebhookSecret(crypto.getRandomValues(new Uint8Array(32)))
+```
+
+### `signWebhook`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+Sign one delivery: HMAC-SHA256 over `<id>.<timestamp>.<body>`, keyed with the secret's bytes.
+
+The body is the exact text that is sent. A receiver must verify the bytes it received, not
+a body it parsed and wrote out again.
+
+```ts
+export async function signWebhook(
+  key: Uint8Array<ArrayBuffer>,
+  id: string,
+  timestamp: number,
+  body: string
+): Promise<string>
+```
+
+**Parameters**
+
+- `key`: The key bytes ({@link webhookSecretBytes}).
+- `id`: The delivery's id (the `webhook-id` header). It has no `.` in it.
+- `timestamp`: Whole seconds since the Unix epoch (the `webhook-timestamp` header).
+- `body`: The request body, as sent.
+
+**Returns** The signature as it stands in the header: `v1,<base64>`.
+
+**Example**
+
+```ts
+const signature = await signWebhook(key, event.id, Math.floor(Date.now() / 1000), body)
+// 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='
+```
+
+### `webhookSecretBytes`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+The key bytes of a signing secret.
+
+```ts
+export function webhookSecretBytes(secret: string): Uint8Array<ArrayBuffer> | null
+```
+
+**Parameters**
+
+- `secret`: An endpoint's secret: `whsec_` and the base64 of 24 to 64 bytes.
+
+**Returns** The bytes, or `null` for anything else. Never throws, and says nothing of the value.
+
+**Example**
+
+```ts
+const key = webhookSecretBytes(process.env.TULA_WEBHOOK_SECRET ?? '')
 ```

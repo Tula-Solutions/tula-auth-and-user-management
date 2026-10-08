@@ -174,6 +174,11 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         'Per-environment settings (admin) and the public configuration clients draw from them.',
     },
     { name: 'Audit', description: 'The record of auth events and admin actions (admin).' },
+    {
+      name: 'Webhooks',
+      description:
+        'Where an environment’s events are delivered, signed, to an operator’s backend (admin).',
+    },
   ],
   components: {
     securitySchemes: {

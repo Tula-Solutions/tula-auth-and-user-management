@@ -459,6 +459,62 @@ function send(
 }
 
 /**
+ * The URL as one the server may call at all, judged by what is written in it: `https` (`http`
+ * in the `local` tier), a host, no credentials. Where it leads is {@link pinnedAddresses}'.
+ *
+ * @throws OutboundError `invalid_url` or `scheme_not_allowed`.
+ */
+function callableUrl(deps: OutboundDeps, url: string): URL {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new OutboundError('invalid_url')
+  }
+  const plain = parsed.protocol === 'http:' && deps.tier === 'local'
+  if (parsed.protocol !== 'https:' && !plain) {
+    throw new OutboundError(parsed.protocol === 'http:' ? 'scheme_not_allowed' : 'invalid_url')
+  }
+  if (parsed.username !== '' || parsed.password !== '' || parsed.hostname === '') {
+    throw new OutboundError('invalid_url')
+  }
+  return parsed
+}
+
+/** Default deadline of {@link check}: it only resolves a name, and a request is waiting on it. */
+export const OUTBOUND_CHECK_TIMEOUT_MS = 5_000
+
+/**
+ * Judge an address an operator typed by the rules of {@link request}, and send nothing.
+ *
+ * For the moment an address is saved: the scheme, the credentials, and where the host leads
+ * **now** (it is resolved, and every address it has must be one the server calls). It makes no
+ * connection, so it says nothing about whether anything listens there.
+ *
+ * Passing this is not a licence to call the address later: a name can be pointed elsewhere
+ * after it was saved. Every call still goes through {@link request}, which resolves and judges
+ * again.
+ *
+ * @param deps - The tier, and the resolver in tests.
+ * @param url - The operator's URL.
+ * @param timeoutMs - Deadline for resolving the name. Defaults to {@link OUTBOUND_CHECK_TIMEOUT_MS}.
+ * @throws OutboundError with the `reason` the address is refused for: `invalid_url`,
+ *   `scheme_not_allowed`, `resolve_failed`, `address_not_allowed`, `timeout`, or
+ *   `invalid_request` for a deadline that is not a usable number.
+ * @example
+ * await Outbound.check(deps.outbound, input.url)
+ */
+export async function check(
+  deps: OutboundDeps,
+  url: string,
+  timeoutMs: number = OUTBOUND_CHECK_TIMEOUT_MS
+): Promise<void> {
+  const parsed = callableUrl(deps, url)
+  const { timeoutMs: deadline } = checkRequest({ timeoutMs })
+  await pinnedAddresses(deps, parsed, AbortSignal.timeout(deadline))
+}
+
+/**
  * Call an address an operator typed. The only way the server does so.
  *
  * An operator's URL can name anything the server can reach: its own loopback services, the
@@ -484,19 +540,7 @@ export async function request(
   url: string,
   init: OutboundRequest = {}
 ): Promise<OutboundResponse> {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    throw new OutboundError('invalid_url')
-  }
-  const plain = parsed.protocol === 'http:' && deps.tier === 'local'
-  if (parsed.protocol !== 'https:' && !plain) {
-    throw new OutboundError(parsed.protocol === 'http:' ? 'scheme_not_allowed' : 'invalid_url')
-  }
-  if (parsed.username !== '' || parsed.password !== '' || parsed.hostname === '') {
-    throw new OutboundError('invalid_url')
-  }
+  const parsed = callableUrl(deps, url)
   const { timeoutMs, limit } = checkRequest(init)
   const deadline = AbortSignal.timeout(timeoutMs)
   const addresses = await pinnedAddresses(deps, parsed, deadline)

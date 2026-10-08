@@ -913,7 +913,107 @@ export interface OAuthProviderDeletedEvent {
   data: OAuthProviderDeletedEventData;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent;
+/**
+ * A webhook endpoint was registered. Its address and signing secret are not in the event.
+ */
+export interface WebhookEndpointCreatedEventData {
+  /**
+     * @minimum 1
+     * @maximum 29
+     */
+  eventTypes: number;
+  enabled: boolean;
+}
+
+export type WebhookEndpointCreatedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A webhook endpoint was registered. Its address and signing secret are not in the event.
+ */
+export interface WebhookEndpointCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointCreatedEventTarget;
+  data: WebhookEndpointCreatedEventData;
+}
+
+export type WebhookEndpointUpdatedEventDataChangedItem = typeof WebhookEndpointUpdatedEventDataChangedItem[keyof typeof WebhookEndpointUpdatedEventDataChangedItem];
+
+
+export const WebhookEndpointUpdatedEventDataChangedItem = {
+  url: 'url',
+  eventTypes: 'eventTypes',
+  enabled: 'enabled',
+} as const;
+
+/**
+ * A webhook endpoint was changed.
+ */
+export interface WebhookEndpointUpdatedEventData {
+  /**
+     * @minItems 1
+     * @maxItems 3
+     */
+  changed: WebhookEndpointUpdatedEventDataChangedItem[];
+}
+
+export type WebhookEndpointUpdatedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A webhook endpoint was changed.
+ */
+export interface WebhookEndpointUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointUpdatedEventTarget;
+  data: WebhookEndpointUpdatedEventData;
+}
+
+/**
+ * A webhook endpoint was removed; nothing more is delivered to it.
+ */
+export interface WebhookEndpointDeletedEventData { [key: string]: unknown }
+
+export type WebhookEndpointDeletedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A webhook endpoint was removed; nothing more is delivered to it.
+ */
+export interface WebhookEndpointDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointDeletedEventTarget;
+  data: WebhookEndpointDeletedEventData;
+}
+
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent;
 
 export interface StatusResponse {
   status: 'ok';
@@ -968,6 +1068,7 @@ export const ErrorCode = {
   oauthidentity_in_use: 'oauth.identity_in_use',
   oauthalready_linked: 'oauth.already_linked',
   identitylast_sign_in_method: 'identity.last_sign_in_method',
+  webhookurl_not_allowed: 'webhook.url_not_allowed',
   passkeyregistration_failed: 'passkey.registration_failed',
   passkeyalready_registered: 'passkey.already_registered',
   passkeylimit_reached: 'passkey.limit_reached',
@@ -1826,6 +1927,9 @@ export const ActivityType = {
   environmentsettings_updated: 'environment.settings_updated',
   oauth_providerupdated: 'oauth_provider.updated',
   oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
 } as const;
 
 export type AuditLogQueryActorType = typeof AuditLogQueryActorType[keyof typeof AuditLogQueryActorType];
@@ -2316,6 +2420,136 @@ export interface PasskeyRenameRequest {
      * @maxLength 64
      */
   name: string;
+}
+
+export interface WebhookEndpoint {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  url: string;
+  eventTypes: string[];
+  enabled: boolean;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface WebhookEndpointList {
+  data: WebhookEndpoint[];
+}
+
+export interface CreatedWebhookEndpoint {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  url: string;
+  eventTypes: string[];
+  enabled: boolean;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  /** The signing secret. Store it now: it is shown only once. */
+  secret: string;
+}
+
+export type CreateWebhookEndpointRequestEventTypesItem = typeof CreateWebhookEndpointRequestEventTypesItem[keyof typeof CreateWebhookEndpointRequestEventTypesItem];
+
+
+export const CreateWebhookEndpointRequestEventTypesItem = {
+  usercreated: 'user.created',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+} as const;
+
+export interface CreateWebhookEndpointRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^[^\s\u0000-\u001f\u007f]+$
+     */
+  url: string;
+  /**
+     * @minItems 1
+     * @maxItems 29
+     */
+  eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
+  enabled?: boolean;
+}
+
+export type UpdateWebhookEndpointRequestEventTypesItem = typeof UpdateWebhookEndpointRequestEventTypesItem[keyof typeof UpdateWebhookEndpointRequestEventTypesItem];
+
+
+export const UpdateWebhookEndpointRequestEventTypesItem = {
+  usercreated: 'user.created',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+} as const;
+
+export interface UpdateWebhookEndpointRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^[^\s\u0000-\u001f\u007f]+$
+     */
+  url?: string;
+  /**
+     * @minItems 1
+     * @maxItems 29
+     */
+  eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
+  enabled?: boolean;
 }
 
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
@@ -4933,6 +5167,464 @@ export const useDeleteOAuthProvider = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteOAuthProviderMutationOptions(options), queryClient);
+    }
+
+export const getListWebhookEndpointsUrl = () => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints`
+}
+
+/**
+ * The environment’s webhook endpoints, oldest first. A signing secret is never returned here: it is shown once, when its endpoint is created.
+ * @summary List webhook endpoints
+ */
+export const listWebhookEndpoints = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookEndpointList> => {
+
+  return dashboardFetch<WebhookEndpointList>(getListWebhookEndpointsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWebhookEndpointsQueryKey = () => {
+    return [
+    `/v1/admin/webhook-endpoints`
+    ] as const;
+    }
+
+
+export const getListWebhookEndpointsQueryOptions = <TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWebhookEndpointsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWebhookEndpoints>>> = ({ signal }) => listWebhookEndpoints({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListWebhookEndpointsQueryResult = NonNullable<Awaited<ReturnType<typeof listWebhookEndpoints>>>
+export type ListWebhookEndpointsQueryError = ErrorEnvelope
+
+
+export function useListWebhookEndpoints<TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhookEndpoints>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhookEndpoints>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhookEndpoints<TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhookEndpoints>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhookEndpoints>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhookEndpoints<TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List webhook endpoints
+ */
+
+export function useListWebhookEndpoints<TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListWebhookEndpointsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateWebhookEndpointUrl = () => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints`
+}
+
+/**
+ * Registers an address that events of the given types are delivered to, signed (Standard Webhooks: `webhook-id`, `webhook-timestamp`, `webhook-signature`). The server generates the signing secret (`whsec_…`) and returns it in this response only; it is stored encrypted and cannot be read again. Events that happened before the endpoint was registered are not sent to it. An address the server may not call is refused with `webhook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * @summary Register a webhook endpoint
+ */
+export const createWebhookEndpoint = async (createWebhookEndpointRequest: CreateWebhookEndpointRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedWebhookEndpoint> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedWebhookEndpoint>(getCreateWebhookEndpointUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createWebhookEndpointRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateWebhookEndpointMutationKey = () => ['createWebhookEndpoint'] as const;
+
+export const getCreateWebhookEndpointMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWebhookEndpoint>>, TError,CreateWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWebhookEndpoint>>, TError,CreateWebhookEndpointMutationVariables, TContext> => {
+
+const mutationKey = getCreateWebhookEndpointMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWebhookEndpoint>>, CreateWebhookEndpointMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createWebhookEndpoint(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWebhookEndpointMutationResult = NonNullable<Awaited<ReturnType<typeof createWebhookEndpoint>>>
+    export type CreateWebhookEndpointMutationBody = CreateWebhookEndpointRequest
+    export type CreateWebhookEndpointMutationError = ErrorEnvelope
+    export type CreateWebhookEndpointMutationVariables = {data: CreateWebhookEndpointRequest}
+
+    /**
+ * @summary Register a webhook endpoint
+ */
+export const useCreateWebhookEndpoint = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWebhookEndpoint>>, TError,CreateWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createWebhookEndpoint>>,
+        TError,
+        CreateWebhookEndpointMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateWebhookEndpointMutationOptions(options), queryClient);
+    }
+
+export const getGetWebhookEndpointUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}`
+}
+
+/**
+ * One webhook endpoint of the environment. Never its signing secret.
+ * @summary Get a webhook endpoint
+ */
+export const getWebhookEndpoint = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookEndpoint> => {
+
+  return dashboardFetch<WebhookEndpoint>(getGetWebhookEndpointUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWebhookEndpointQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/webhook-endpoints/${id}`
+    ] as const;
+    }
+
+
+export const getGetWebhookEndpointQueryOptions = <TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWebhookEndpointQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWebhookEndpoint>>> = ({ signal }) => getWebhookEndpoint(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWebhookEndpointQueryResult = NonNullable<Awaited<ReturnType<typeof getWebhookEndpoint>>>
+export type GetWebhookEndpointQueryError = ErrorEnvelope
+
+
+export function useGetWebhookEndpoint<TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhookEndpoint>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhookEndpoint>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhookEndpoint<TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhookEndpoint>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhookEndpoint>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhookEndpoint<TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a webhook endpoint
+ */
+
+export function useGetWebhookEndpoint<TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWebhookEndpointQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateWebhookEndpointUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}`
+}
+
+/**
+ * Changes the address, the event types or whether the endpoint is on; a field left out keeps its value. While an endpoint is off nothing is delivered to it, and the events of that time are not sent later. The signing secret cannot be changed here. Recorded in the audit log by the names of the fields that changed, never their values. An address the server may not call is refused with `webhook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * @summary Change a webhook endpoint
+ */
+export const updateWebhookEndpoint = async (id: string,
+    updateWebhookEndpointRequest: UpdateWebhookEndpointRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookEndpoint> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<WebhookEndpoint>(getUpdateWebhookEndpointUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateWebhookEndpointRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateWebhookEndpointMutationKey = () => ['updateWebhookEndpoint'] as const;
+
+export const getUpdateWebhookEndpointMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWebhookEndpoint>>, TError,UpdateWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateWebhookEndpoint>>, TError,UpdateWebhookEndpointMutationVariables, TContext> => {
+
+const mutationKey = getUpdateWebhookEndpointMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWebhookEndpoint>>, UpdateWebhookEndpointMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateWebhookEndpoint(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWebhookEndpointMutationResult = NonNullable<Awaited<ReturnType<typeof updateWebhookEndpoint>>>
+    export type UpdateWebhookEndpointMutationBody = UpdateWebhookEndpointRequest
+    export type UpdateWebhookEndpointMutationError = ErrorEnvelope
+    export type UpdateWebhookEndpointMutationVariables = {id: string;data: UpdateWebhookEndpointRequest}
+
+    /**
+ * @summary Change a webhook endpoint
+ */
+export const useUpdateWebhookEndpoint = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWebhookEndpoint>>, TError,UpdateWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateWebhookEndpoint>>,
+        TError,
+        UpdateWebhookEndpointMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateWebhookEndpointMutationOptions(options), queryClient);
+    }
+
+export const getDeleteWebhookEndpointUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}`
+}
+
+/**
+ * Removes the endpoint: nothing more is delivered to it, and its signing secret and the record of its deliveries are deleted with it.
+ * @summary Remove a webhook endpoint
+ */
+export const deleteWebhookEndpoint = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteWebhookEndpointUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteWebhookEndpointMutationKey = () => ['deleteWebhookEndpoint'] as const;
+
+export const getDeleteWebhookEndpointMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWebhookEndpoint>>, TError,DeleteWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWebhookEndpoint>>, TError,DeleteWebhookEndpointMutationVariables, TContext> => {
+
+const mutationKey = getDeleteWebhookEndpointMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWebhookEndpoint>>, DeleteWebhookEndpointMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteWebhookEndpoint(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteWebhookEndpointMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWebhookEndpoint>>>
+
+    export type DeleteWebhookEndpointMutationError = ErrorEnvelope
+    export type DeleteWebhookEndpointMutationVariables = {id: string}
+
+    /**
+ * @summary Remove a webhook endpoint
+ */
+export const useDeleteWebhookEndpoint = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWebhookEndpoint>>, TError,DeleteWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteWebhookEndpoint>>,
+        TError,
+        DeleteWebhookEndpointMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteWebhookEndpointMutationOptions(options), queryClient);
     }
 
 export const getGetInstanceDiagnosticsUrl = () => {

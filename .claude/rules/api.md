@@ -29,6 +29,13 @@ paths:
   never `allowedOrigin`'s loopback rule.
 - Whatever runs after a transaction has committed (first signing keys) logs its failure and
   lets the answer stand.
+- A background job is a service function `server.ts` starts on boot and on a timer on every
+  instance, under `deps.jobLock.runExclusive(<its own job name>, …)`; a new job gets a new id
+  in `JOB_LOCK_IDS` (never renumber). It serves environments one at a time and a failure in
+  one is logged and skipped (`modules/retention`, `modules/webhook`).
+- The server calls an address an operator typed only through `~/lib/outbound`
+  (`Outbound.check` when the address is saved, `Outbound.request` to call it), with
+  `deps.outbound`. Never `fetch`.
 - Return flow steps from `@tula/contract` for any sign-in/sign-up interaction. Never return UI
   hints like "show the password form".
 - Throw `AuthError(code, params)` or `ServiceException` subclasses. Add new error codes to

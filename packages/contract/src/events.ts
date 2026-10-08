@@ -61,6 +61,17 @@ function passkeyRemovalIsWhole(removal: {
 const provider = OAuthProviderSchema
 
 /**
+ * The fields of a webhook endpoint an update can change, as `webhook_endpoint.updated` names
+ * them. `url` says the address changed, never what it is or was.
+ *
+ * @example
+ * ```ts
+ * const changed: (typeof WEBHOOK_ENDPOINT_FIELDS)[number][] = ['url', 'enabled']
+ * ```
+ */
+export const WEBHOOK_ENDPOINT_FIELDS = ['url', 'eventTypes', 'enabled'] as const
+
+/**
  * Most names an `environment.settings_updated` event lists in `changed`. Above what the
  * settings document can hold; the API has a test that builds the largest one.
  *
@@ -292,6 +303,25 @@ export const EVENT_DATA_SCHEMAS = {
     'OAuthProviderDeleted',
     'An OAuth provider’s credentials were removed.',
     { provider }
+  ),
+  'webhook_endpoint.created': data(
+    'WebhookEndpointCreated',
+    'A webhook endpoint was registered. Its address and signing secret are not in the event.',
+    {
+      /** How many event types the endpoint subscribed to. */
+      eventTypes: z.number().int().min(1).max(ACTIVITY_TYPES.length),
+      /** Whether the endpoint was registered switched on. */
+      enabled: z.boolean(),
+    }
+  ),
+  'webhook_endpoint.updated': data('WebhookEndpointUpdated', 'A webhook endpoint was changed.', {
+    /** Which fields changed. Names only: `url` says the address changed, never what it is. */
+    changed: z.array(z.enum(WEBHOOK_ENDPOINT_FIELDS)).min(1).max(WEBHOOK_ENDPOINT_FIELDS.length),
+  }),
+  'webhook_endpoint.deleted': data(
+    'WebhookEndpointDeleted',
+    'A webhook endpoint was removed; nothing more is delivered to it.',
+    {}
   ),
 } as const satisfies Record<ActivityType, z.ZodObject>
 

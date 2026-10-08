@@ -59,6 +59,11 @@ export const ACTIVITY_TYPES = [
   // An OAuth provider's credentials set, changed or removed. `changed` lists keys, never values.
   'oauth_provider.updated',
   'oauth_provider.deleted',
+  // A webhook endpoint registered, changed or removed. `changed` lists field names; neither
+  // the endpoint's address nor its signing secret is ever in an event.
+  'webhook_endpoint.created',
+  'webhook_endpoint.updated',
+  'webhook_endpoint.deleted',
 ] as const
 
 /** A recorded action type: one of {@link ACTIVITY_TYPES}. */
@@ -84,7 +89,8 @@ export const EVENT_SCHEMA_VERSION = 1
  * What each event is about: the `target.type` of its payload. `target.id` is that thing's id.
  *
  * An event about a user's credentials targets the `user` (the passkey or session concerned
- * is named in `data`); an OAuth provider's credentials belong to the `environment`.
+ * is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
+ * endpoint has an id of its own, as an API key does, so it is its own kind of target.
  *
  * @example
  * ```ts
@@ -118,6 +124,9 @@ export const EVENT_TARGET_TYPES = {
   'environment.settings_updated': 'environment',
   'oauth_provider.updated': 'environment',
   'oauth_provider.deleted': 'environment',
+  'webhook_endpoint.created': 'webhook_endpoint',
+  'webhook_endpoint.updated': 'webhook_endpoint',
+  'webhook_endpoint.deleted': 'webhook_endpoint',
 } as const satisfies Record<ActivityType, AuditTargetType>
 
 /** What an event of type `T` is about. */

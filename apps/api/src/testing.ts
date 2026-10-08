@@ -16,6 +16,7 @@ import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryMailer } from '~/adapters/memory/mailer'
 import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
 import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
+import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
@@ -23,6 +24,8 @@ import { MemorySessionStore } from '~/adapters/memory/sessions'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
+import { MemoryWebhookDeliveryStore } from '~/adapters/memory/webhook-deliveries'
+import { MemoryWebhookEndpointStore } from '~/adapters/memory/webhook-endpoints'
 import type { AppConfig, Deps } from '~/dependencies'
 import type { Actor } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
@@ -56,6 +59,9 @@ export interface TestDeps extends Deps {
   jobLock: MemoryJobLock
   environmentLock: MemoryEnvironmentLock
   controlPlane: MemoryControlPlane
+  webhookEndpoints: MemoryWebhookEndpointStore
+  webhookDeliveries: MemoryWebhookDeliveryStore
+  outbound: FakeOutbound
 }
 
 /** Master key for test secret boxes. Never use outside tests. */
@@ -94,6 +100,8 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   const users = new MemoryUserRepository(activityLog)
   // Shared with the control plane, so an environment created through it resolves everywhere.
   const environments = overrides.environments ?? new MemoryEnvironmentRepository()
+  // Shared with the delivery store, which refuses a delivery of an endpoint that is gone.
+  const webhookEndpoints = overrides.webhookEndpoints ?? new MemoryWebhookEndpointStore(activityLog)
   return {
     config: TEST_CONFIG,
     ids: new SequentialIds(),
@@ -120,10 +128,14 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     environmentLock: new MemoryEnvironmentLock(),
     probes: [],
     diagnostics: new MemoryDiagnostics(clock),
+    webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
+    // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
+    outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),
     ...overrides,
     clock,
     activityLog,
     environments,
+    webhookEndpoints,
   }
 }
 

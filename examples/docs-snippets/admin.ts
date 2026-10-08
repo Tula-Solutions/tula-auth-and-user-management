@@ -1,6 +1,12 @@
-import { createAdminClient, ifMatch, isTulaAdminError } from '@tula/admin'
+import {
+  createAdminClient,
+  ifMatch,
+  isTulaAdminError,
+  type TulaWebhookEvent,
+  verifyWebhook,
+} from '@tula/admin'
 
-// The admin API calls shown in docs/methods/*.md, through `@tula/admin` so that they are
+// The admin API calls shown in docs/methods/*.md and docs/webhooks.md, through `@tula/admin` so that they are
 // typed against the OpenAPI contract. Copied by region (`bun run docs:generate`) and compiled
 // by `bun run typecheck:scripts`. Nothing here runs.
 
@@ -150,3 +156,62 @@ export async function providers(clientSecret: string) {
   // #endregion
   return data
 }
+
+/** Register a webhook endpoint and keep the secret its registration returns. */
+export async function registerWebhook(storeSecret: (secret: string) => Promise<void>) {
+  // #region webhook-register
+  const { data: endpoint } = await admin.call('createWebhookEndpoint', {
+    body: {
+      url: 'https://api.example.com/webhooks/tula',
+      eventTypes: ['user.created', 'user.deleted', 'session.reuse_detected'],
+    },
+  })
+  // The only time the secret is returned: put it in your secret manager now.
+  await storeSecret(endpoint.secret)
+  // #endregion
+  // #region webhook-manage
+  // Stop deliveries (events from while it is off are not sent later), then remove it.
+  await admin.call('updateWebhookEndpoint', {
+    params: { id: endpoint.id },
+    body: { enabled: false },
+  })
+  await admin.call('deleteWebhookEndpoint', { params: { id: endpoint.id } })
+  // #endregion
+}
+
+/** What handles an event once: yours. */
+declare function alreadyHandled(eventId: string): Promise<boolean>
+declare function provisionWorkspace(userId: string): Promise<void>
+declare function alertSecurity(userId: string): Promise<void>
+/** The endpoint's signing secret (`whsec_…`), from your secret manager. */
+declare const webhookSecret: string
+
+// #region webhook-verify
+// The route your endpoint's address leads to, on any server that gives you a `Request`.
+export async function receiveWebhook(request: Request): Promise<Response> {
+  let event: TulaWebhookEvent
+  try {
+    // The body exactly as it arrived: the signature is over these bytes.
+    event = await verifyWebhook(await request.text(), request.headers, webhookSecret)
+  } catch (error) {
+    // Not from Tula, changed on the way, or older than five minutes.
+    return new Response(null, { status: isTulaAdminError(error) ? 400 : 500 })
+  }
+  // Delivery is at least once: the same event id can arrive again.
+  if (await alreadyHandled(event.id)) {
+    return new Response(null, { status: 204 })
+  }
+  switch (event.type) {
+    case 'user.created':
+      await provisionWorkspace(event.target.id)
+      break
+    case 'session.reuse_detected':
+      await alertSecurity(event.data.userId)
+      break
+    default:
+    // A type this code does not handle, or one a later server added: nothing to do.
+  }
+  // Answer quickly, with a 2xx and a small body. Anything else counts as a failed delivery.
+  return new Response(null, { status: 204 })
+}
+// #endregion

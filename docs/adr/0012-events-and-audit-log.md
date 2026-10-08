@@ -71,7 +71,8 @@ of.
   `user.deleted`, `user.password_changed`, `session.created`, `session.revoked` (with its
   `reason`), `session.reuse_detected`, `api_key.created`, `api_key.revoked` and
   `signing_key.rotated` at first; later steps added two-step verification, identities,
-  passkeys, step-up, settings and OAuth providers. The list is `ACTIVITY_TYPES`, in
+  passkeys, step-up, settings, OAuth providers and webhook endpoints
+  ([ADR 0034](0034-webhooks.md)). The list is `ACTIVITY_TYPES`, in
   `@tula/contract/event-types`: an entry point that imports no Zod, so a receiver can switch
   on a type without a schema library.
 - **An event's payload is a typed, versioned contract** (added in Phase 2, step 2.1, before
@@ -205,8 +206,11 @@ of.
   `session.created`); the replay marker of a TOTP time step; an authenticator enrolment that
   is only started (it counts as nothing until confirmed, which is recorded); transient rows
   (flow attempts, verification tokens, WebAuthn challenges); and the retention job's deletes
-  of rows that had already ended ([ADR 0017](0017-retention.md)). None of these store methods
-  takes an activity. The retention job's delete of **audit entries** past an environment's
+  of rows that had already ended ([ADR 0017](0017-retention.md)); and what the webhook worker
+  writes ([ADR 0034](0034-webhooks.md)): a delivery row, which is itself the record of the
+  delivery, and an event's `delivered_at` (`WebhookDeliveryStore` has no method that takes an
+  activity; registering, changing and removing an endpoint *are* recorded). None of these
+  store methods takes an activity. The retention job's delete of **audit entries** past an environment's
   period is not recorded either (`deleteAuditBefore` takes no activity): an entry cannot
   record its own end, and one per run would grow the log the period bounds. What is recorded
   is the decision, the change of `audit.retentionDays` (`environment.settings_updated`);
@@ -221,10 +225,11 @@ of.
 - An operation made of several writes is recorded per write. Banning a user is one transaction
   for the ban and one for ending their sessions; a crash between them leaves the ban recorded
   and the sessions still open, which the ban check on refresh then closes (and records).
-- Nothing reads the outbox yet. Events accumulate undelivered until the webhook worker (Phase 2)
-  ships. The retention job ([ADR 0017](0017-retention.md)) deletes no event: none is safe to
-  drop before something has delivered it, so the outbox purge lands with that worker, and the
-  outbox still grows without bound. Audit entries are deleted where an environment has set
+- The outbox is read by the webhook worker since Phase 2, step 2.2
+  ([ADR 0034](0034-webhooks.md)): every event is settled (`delivered_at`), whether or not an
+  endpoint was owed it. Until then nothing read it and events accumulated undelivered. The
+  retention job ([ADR 0017](0017-retention.md)) still deletes no event: the purge of
+  delivered events is a later step of 2.2, so the outbox still grows without bound. Audit entries are deleted where an environment has set
   `audit.retentionDays`, and kept for ever where it has not (the default). An event therefore
   outlives the audit entry it shares an id with.
 - Not recorded: token refreshes (about one a minute per session), failed sign-ins, lockouts and
@@ -234,8 +239,9 @@ of.
   2.1; they are now the typed, versioned event described above. **The stored shape changed
   with no migration**: nothing had read the outbox and nothing was deployed, so a database
   that holds rows of the earlier shape (a development one) holds rows no delivery worker
-  should send. They are told apart by `schemaVersion`, which the earlier shape lacks; what the
-  worker does with such a row is decided with the worker (2.2).
+  should send. They are told apart by `schemaVersion`, which the earlier shape lacks. The
+  worker never sends such a row: it marks it delivered and counts it in the round's report
+  ([ADR 0034](0034-webhooks.md)).
 - The payload schemas are a public contract from the first delivery: a mistake in one (a
   field that should not have been there, a name that reads badly) costs a new
   `schemaVersion`. Each `data` field is therefore what its call sites record today and no

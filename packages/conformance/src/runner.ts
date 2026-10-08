@@ -9,6 +9,7 @@ import { VirtualAuthenticator } from './passkey'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
 import { expandJson, fill } from './template'
 import { base32Decode, totp, wrongTotp } from './totp'
+import { checkDelivery, type ReceivedDelivery, WebhookReceiver } from './webhook'
 
 /** Header carrying the publishable key. */
 export const PUBLISHABLE_KEY_HEADER = 'x-tula-publishable-key'
@@ -73,12 +74,50 @@ export interface Target {
    * one instance sees its own write at once.
    */
   settleMs?: number
+  /**
+   * How the server under test reaches a listener the runner starts, for `webhook` steps.
+   * Left out, scenarios marked `needsWebhookReceiver` are skipped: a server in a container, or
+   * one outside the `local` tier, cannot call the runner's loopback address, and the server's
+   * outbound guard is never loosened to make it.
+   */
+  webhooks?: WebhookTarget
 }
+
+/** Where a scenario's webhook receivers listen, and how their deliveries are waited for. */
+export interface WebhookTarget {
+  /** The address the listener binds, e.g. `127.0.0.1`. */
+  hostname: string
+  /**
+   * The URL the server is given for a listener on `port`. Defaults to
+   * `http://<hostname>:<port>/webhooks/tula`.
+   *
+   * @param port - The port the listener got.
+   * @returns The URL to register as the endpoint's address.
+   */
+  url?: (port: number) => string
+  /**
+   * Run one round of the server's delivery worker now. An in-process target gives it, since
+   * no timer runs there; a live target leaves it out, and the runner waits for the server's
+   * own worker instead.
+   */
+  deliver?: () => Promise<void>
+  /** How long to wait for a delivery from a live server, in milliseconds. Defaults to 30,000. */
+  timeoutMs?: number
+}
+
+/** How long a `webhook` step waits for a live server's worker unless the target says. */
+export const WEBHOOK_WAIT_MS = 30_000
+
+/** How often a waiting `webhook` step looks at what has arrived. */
+const WEBHOOK_POLL_MS = 100
 
 /** Whether a request replaces the environment's settings, which instances cache (ADR 0018). */
 function changesSettings(request: ScenarioRequest): boolean {
   return request.method !== 'GET' && request.path.split('?')[0] === '/v1/admin/settings'
 }
+
+/** Why a scenario marked `needsWebhookReceiver` is skipped by a target that offers none. */
+export const WEBHOOK_RECEIVER_SKIP_REASON = 'needs a webhook receiver the server can reach'
 
 /** How one step went. */
 export interface StepResult {
@@ -239,6 +278,10 @@ async function runStep(
     await runPasskey(step, variables)
     return
   }
+  if ('webhook' in step) {
+    await runWebhook(target, step, variables)
+    return
+  }
   if ('totp' in step) {
     const secret = base32Decode(fill(step.totp.secret, variables))
     const now = target.now ? target.now() : Date.now()
@@ -377,6 +420,77 @@ async function runPasskey(
     variables[passkey.capture] = JSON.stringify(response)
   } catch (error) {
     throw new StepFailure([error instanceof Error ? error.message : 'the authenticator failed'])
+  }
+}
+
+// The webhook receivers of each scenario run, by name. Keyed like the authenticators, and
+// stopped when the run ends.
+const RECEIVERS = new WeakMap<object, Map<string, WebhookReceiver>>()
+
+/** Stop every listener a scenario run started. */
+function stopReceivers(variables: object): void {
+  for (const receiver of RECEIVERS.get(variables)?.values() ?? []) {
+    receiver.stop()
+  }
+  RECEIVERS.delete(variables)
+}
+
+/** Start a named receiver and store its URL, or check the next delivery that reached it. */
+async function runWebhook(
+  target: Target,
+  step: Extract<Step, { webhook: unknown }>,
+  variables: Record<string, string>
+): Promise<void> {
+  const { webhooks } = target
+  if (!webhooks) {
+    throw new StepFailure(['this target has no webhook receiver the server can reach'])
+  }
+  const named = RECEIVERS.get(variables) ?? new Map<string, WebhookReceiver>()
+  RECEIVERS.set(variables, named)
+  const { webhook } = step
+  if (webhook.captureUrl !== undefined) {
+    const receiver = named.get(webhook.receiver) ?? new WebhookReceiver(webhooks.hostname)
+    named.set(webhook.receiver, receiver)
+    variables[webhook.captureUrl] = webhooks.url
+      ? webhooks.url(receiver.port)
+      : `http://${webhooks.hostname}:${receiver.port}/webhooks/tula`
+    return
+  }
+  const receiver = named.get(webhook.receiver)
+  // The schema guarantees `expect` where there is no `captureUrl`.
+  const expected = fill(webhook.expect, variables)
+  if (!receiver || !expected) {
+    throw new StepFailure([`the receiver ${webhook.receiver} was not started by an earlier step`])
+  }
+  let delivery: ReceivedDelivery | undefined
+  if (webhooks.deliver) {
+    // In process nothing runs on a timer: one round, and what it sent has arrived.
+    await webhooks.deliver()
+    delivery = receiver.take(expected.type)
+  } else {
+    const deadline = Date.now() + (webhooks.timeoutMs ?? WEBHOOK_WAIT_MS)
+    for (;;) {
+      delivery = receiver.take(expected.type)
+      if (delivery || Date.now() >= deadline) {
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, WEBHOOK_POLL_MS))
+    }
+  }
+  if (!delivery) {
+    throw new StepFailure([
+      expected.type === undefined
+        ? 'no delivery arrived at the receiver'
+        : `no delivery of ${expected.type} arrived at the receiver`,
+    ])
+  }
+  const now = target.now ? target.now() : Date.now()
+  const { problems, id } = await checkDelivery(delivery, expected.secret, now, expected.body)
+  if (problems.length > 0) {
+    throw new StepFailure(problems)
+  }
+  if (expected.captureId && id !== undefined) {
+    variables[expected.captureId] = id
   }
 }
 
@@ -557,6 +671,14 @@ export async function runScenario(scenario: Scenario, target: Target): Promise<S
   if (scenario.needsSecretKey && !target.secretKey) {
     return { name: scenario.name, status: 'skipped', steps: [], reason: 'needs a secret key' }
   }
+  if (scenario.needsWebhookReceiver && !target.webhooks) {
+    return {
+      name: scenario.name,
+      status: 'skipped',
+      steps: [],
+      reason: WEBHOOK_RECEIVER_SKIP_REASON,
+    }
+  }
   const variables = initialVariables(scenario, nextOrigin())
   const steps: StepResult[] = []
   /** Run steps in order until one fails. Returns whether all of them passed. */
@@ -580,10 +702,15 @@ export async function runScenario(scenario: Scenario, target: Target): Promise<S
     }
     return true
   }
-  const passed = await run(scenario.steps)
-  // Whatever happened above: a scenario that changed the server's settings puts them back.
-  const cleaned = await run(scenario.cleanup ?? [])
-  return { name: scenario.name, status: passed && cleaned ? 'passed' : 'failed', steps }
+  try {
+    const passed = await run(scenario.steps)
+    // Whatever happened above: a scenario that changed the server's settings puts them back.
+    const cleaned = await run(scenario.cleanup ?? [])
+    return { name: scenario.name, status: passed && cleaned ? 'passed' : 'failed', steps }
+  } finally {
+    // No listener of a scenario outlives its run, however the run ended.
+    stopReceivers(variables)
+  }
 }
 
 /**

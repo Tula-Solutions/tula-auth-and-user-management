@@ -1,12 +1,15 @@
 import { sql } from 'drizzle-orm'
 import { index, jsonb, text, timestamp } from 'drizzle-orm/pg-core'
 import { primaryKey } from '../mixins'
-import { tenantColumns, tenantConstraints } from '../tenant-columns'
+import { tenantColumns, tenantConstraints, tenantParentKey } from '../tenant-columns'
 import { tula } from './pg-schema'
 
 /**
  * Transactional outbox: auth events are written in the same transaction as the change they
- * describe, then delivered to webhooks and analytics by a worker (Phase 2).
+ * describe, then delivered to the environment's webhook endpoints by a worker (ADR 0034).
+ *
+ * `delivered_at` is `null` until the worker has settled the event: every endpoint it had to go
+ * to has a row in `webhook_deliveries` (also when there was none to go to).
  */
 export const events = tula.table(
   'events',
@@ -20,7 +23,12 @@ export const events = tula.table(
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
   },
   (t) => [
-    index('events_undelivered_idx').on(t.occurredAt).where(sql`delivered_at is null`),
+    // What the worker reads: one environment's unsettled events, oldest first. Leading with
+    // the environment keeps an environment with nothing waiting from scanning the others'.
+    index('events_environment_undelivered_idx')
+      .on(t.environmentId, t.occurredAt, t.id)
+      .where(sql`delivered_at is null`),
+    tenantParentKey('events', t),
     ...tenantConstraints('events', t),
   ]
 )
