@@ -7,7 +7,7 @@ import { createQueryClient } from '~/app'
 import { useSettingsEditor } from '~/features/settings/settings-editor'
 import { EnvironmentProvider } from '~/features/shell/environment-context'
 import { useScope } from '~/state/scope'
-import { type FakeApi, IDS, installFakeApi } from '~/testing/fake-api'
+import { type FakeApi, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
 import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
 
 // What an operator typed or opened for one environment must never act on another: a route
@@ -106,6 +106,7 @@ function queueMutationsWhileOffline(current: World) {
 }
 
 const ENVIRONMENT = 'x-tula-environment'
+const WEBHOOK_ADDRESS = 'https://api.example.com/webhooks/tula'
 
 /**
  * Give the fake one settings document per environment, with the same revision in both: the
@@ -223,6 +224,62 @@ describe('switching environment', () => {
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(current.api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
   })
+
+  test('a webhook signing secret on screen and a typed address do not follow the operator', async () => {
+    const current = start(`${DEV_PATH}/webhooks`)
+    const { user, router, location, api } = current
+    await screen.findByRole('heading', { level: 1, name: 'Webhooks' })
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    const adding = screen.getByRole('dialog')
+    await user.type(within(adding).getByLabelText('Address'), WEBHOOK_ADDRESS)
+    await user.click(within(adding).getByRole('checkbox', { name: 'user.created' }))
+    await user.click(within(adding).getByRole('button', { name: 'Add endpoint' }))
+    const secret = (await screen.findByTestId('webhook-secret')).textContent ?? ''
+    expect(secret).toStartWith('whsec_')
+
+    // The secret's dialog is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    await screen.findByText('No webhook endpoints yet')
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes(secret)).toBe(false)
+    expect(document.documentElement.outerHTML.includes(WEBHOOK_ADDRESS)).toBe(false)
+
+    // A half-typed address for production is not there when development is opened again.
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Address'),
+      'https://prod.example.com/half'
+    )
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks` }))
+    await screen.findByRole('heading', { level: 2, name: WEBHOOK_ADDRESS })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    expect(
+      (within(screen.getByRole('dialog')).getByLabelText('Address') as HTMLInputElement).value
+    ).toBe('')
+    expect(
+      api
+        .callsTo('POST', '/v1/admin/webhook-endpoints')
+        .map((call) => call.headers.get(ENVIRONMENT))
+    ).toEqual([IDS.development])
+  })
+
+  test('an open deletion of a webhook endpoint does not survive a switch', async () => {
+    const api = installFakeApi()
+    api.state.webhookEndpoints.push(fakeWebhookEndpoint({ url: WEBHOOK_ADDRESS }))
+    const current = start(`${DEV_PATH}/webhooks`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    await screen.findByText('No webhook endpoints yet')
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+    expect(api.state.webhookEndpoints).toHaveLength(1)
+  })
 })
 
 // A request belongs to the environment of the screen that made it. Two layers, tested apart:
@@ -300,6 +357,43 @@ describe.each([
       expect((within(card()).getByLabelText('Client ID') as HTMLInputElement).value).toBe('')
     )
     expect(document.documentElement.outerHTML.includes('dev-secret-whole')).toBe(false)
+  })
+
+  test('a webhook endpoint is never registered in production', async () => {
+    const current = start(`${DEV_PATH}/webhooks`)
+    if (queued) {
+      queueMutationsWhileOffline(current)
+    }
+    const { user, api, router, location } = current
+    await screen.findByRole('heading', { level: 1, name: 'Webhooks' })
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    const adding = screen.getByRole('dialog')
+    await user.type(within(adding).getByLabelText('Address'), WEBHOOK_ADDRESS)
+    await user.click(within(adding).getByRole('checkbox', { name: 'user.created' }))
+
+    const online = goOffline()
+    await user.click(within(adding).getByRole('button', { name: 'Add endpoint' }))
+    if (!queued) {
+      await within(adding).findByText(/The API did not answer/)
+    }
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    online()
+
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.production)
+    )
+    await screen.findByText('No webhook endpoints yet')
+    const sent = api
+      .callsTo('POST', '/v1/admin/webhook-endpoints')
+      .map((call) => call.headers.get(ENVIRONMENT))
+    expect(sent.filter((environment) => environment !== IDS.development)).toEqual([])
+    expect(
+      api.state.webhookEndpoints.filter((endpoint) => endpoint.environmentId === IDS.production)
+    ).toEqual([])
+    expect(screen.queryAllByTestId('webhook-secret')).toHaveLength(0)
   })
 })
 
