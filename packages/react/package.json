@@ -1,6 +1,7 @@
 {
   "name": "@tula/react",
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "description": "Tula's React SDK: a provider, hooks and prebuilt, themeable, accessible components for sign-up, sign-in, password reset and account management.",

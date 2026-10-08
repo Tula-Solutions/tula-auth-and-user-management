@@ -622,7 +622,7 @@ The marginal cost per active user is tiny (a few token refreshes and DB reads). 
 
 ## 10. Open decisions
 
-1. **License:** Apache-2.0 (max adoption) vs AGPL/ELv2 (protects against cloud resellers).
+1. **License:** resolved, October 2026: Apache-2.0 for the whole repository (max adoption; the server can be embedded in an app without licence friction). The alternative was AGPL/ELv2, which protects against cloud resellers.
 2. **Free tier size:** 25K vs 50K MRU to match Clerk headline.
 3. **Native first target:** resolved in 5.7: TypeScript SDKs first, then native Swift and Kotlin, with the Expo wrapper reusing the native components.
 4. **Hosting stack for cloud:** resolved for V1 in 5.8: everything runs locally. The hosted stack (Neon + Railway + Cloudflare vs AWS) gets decided in V2.

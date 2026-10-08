@@ -1,6 +1,7 @@
 {
   "name": "@tula/mcp",
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "description": "Tula's Model Context Protocol server (`tula mcp`): read-only tools over an environment's users, sessions, audit entries and settings, and scaffolds for the provider, a protected route and a sign-in page. It changes nothing and returns no secret.",

@@ -1,7 +1,8 @@
 # Releasing
 
-**Nothing is published yet.** The licence and the npm scope are undecided (Phase 1 plan,
-Decisions 1 and 2). Everything below is built and exercised as a dry run only. The design is in
+**Nothing is published yet.** The licence is decided: Apache-2.0 for the whole repository
+([`LICENSE`](../LICENSE)). The npm scope is not (Phase 1 plan, Decision 2). Everything below is
+built and exercised as a dry run only. The design is in
 [ADR 0020](adr/0020-packaging-and-release.md).
 
 ## Publishable packages
@@ -87,11 +88,11 @@ three changes without the test being changed too:
    is not private.
 4. `.changeset/config.json` has `"access": "restricted"`.
 
-When the licence and the scope are decided, the change that turns publishing on is, in order:
+When the scope is decided, the change that turns publishing on is, in order:
 
-1. Add the `LICENSE` file and the `license`, `repository` and `homepage` fields to each
-   publishable package (the staging step already copies `LICENSE` and `README.md` into the
-   tarball).
+1. Add the `repository` and `homepage` fields to each publishable package. The `license`
+   field is there, and the staging step copies `README.md` and the repository's `LICENSE`
+   into the tarball.
 2. If the scope changes, rename the packages (and `PUBLISHABLE_PACKAGES`, the `fixed` group and
    every import).
 3. Remove `"private": true` from the publishable packages only.

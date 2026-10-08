@@ -100,5 +100,6 @@ SDK needs them.
 - `openapi-typescript` could not be used for the SDK's generated types: it is built on the
   TypeScript 5 compiler API, which TypeScript 7 does not ship. See
   [ADR 0021](0021-core-sdk.md).
-- No `license` field yet, so the packed manifests are not installable in good conscience.
-  That is deliberate until Decision 1 of the Phase 1 plan is made.
+- The packed manifests had no `license` field until Decision 1 of the Phase 1 plan was made.
+  It was made in October 2026: Apache-2.0 for the whole repository. Every publishable package
+  now carries the field and ships the repository's `LICENSE`.
