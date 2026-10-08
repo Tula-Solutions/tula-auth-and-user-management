@@ -324,7 +324,9 @@ export const OAuthStepSchema = z
  * Receivers are named and live for one scenario run. A step does exactly one of two things:
  *
  * - `captureUrl` starts the receiver (on first use) and stores the URL the server is to be
- *   given for it, to send as the `url` of `POST /v1/admin/webhook-endpoints`;
+ *   given for it, to send as the `url` of `POST /v1/admin/webhook-endpoints`. With `answers`
+ *   the receiver answers its next deliveries with those statuses, one each, in order (a
+ *   backend that fails and then recovers: `[500]`), and `204` again after them;
  * - `expect` takes the next delivery that arrived there (of the event `type`, when one is
  *   named) and checks it: a `POST` of JSON with the Standard Webhooks headers `webhook-id`,
  *   `webhook-timestamp` (whole seconds, within five minutes of the target's clock) and
@@ -338,7 +340,9 @@ export const OAuthStepSchema = z
  * target can run a delivery round itself (in process) the step asks for one and looks at once;
  * against a live server it waits for the server's own worker, up to the target's timeout.
  *
- * The receiver answers every delivery `204` with no body.
+ * The receiver answers a delivery `204` with no body, unless `answers` said otherwise for it.
+ * A scenario that needs the server's retry to be due uses a `wait` step: a real sleep against
+ * a live server, the test clock in process.
  */
 export const WebhookStepSchema = z
   .object({
@@ -349,6 +353,11 @@ export const WebhookStepSchema = z
         receiver: z.string().min(1),
         /** Variable that receives the URL to register as the endpoint's address. */
         captureUrl: z.string().min(1).optional(),
+        /**
+         * With `captureUrl`: the HTTP statuses the receiver answers its next deliveries with,
+         * one each, in order. After them it answers `204` again.
+         */
+        answers: z.array(z.number().int().min(200).max(599)).min(1).max(16).optional(),
         /** What the next delivery must be. */
         expect: z
           .object({
@@ -367,6 +376,9 @@ export const WebhookStepSchema = z
       .strict()
       .refine((webhook) => (webhook.captureUrl === undefined) !== (webhook.expect === undefined), {
         message: 'a webhook step takes either `captureUrl` or `expect`',
+      })
+      .refine((webhook) => webhook.answers === undefined || webhook.captureUrl !== undefined, {
+        message: '`answers` belongs to the step that starts the receiver (`captureUrl`)',
       }),
   })
   .strict()
