@@ -65,6 +65,7 @@ const jsonResponse = (body: unknown, status = 200) =>
 interface TokenOptions {
   tenantId?: string | null
   objectId?: unknown
+  subject?: string
   issuer?: string
   audience?: string
   nonce?: string | null
@@ -89,7 +90,7 @@ function idToken(options: TokenOptions = {}): Promise<string> {
     .setProtectedHeader({ alg: options.alg ?? 'RS256', kid: key.kid })
     .setIssuer(options.issuer ?? issuerOf(tenantId ?? CONTOSO))
     .setAudience(options.audience ?? CLIENT_ID)
-    .setSubject('pairwise-sub-of-this-app-registration')
+    .setSubject(options.subject ?? 'pairwise-sub-of-this-app-registration')
     .setIssuedAt()
     .setExpirationTime(options.expiresIn ?? '5m')
     .sign(key.privateKey)
@@ -458,6 +459,55 @@ describe('refusals', () => {
     }
     const { exchange } = microsoft('common', idToken({ key, alg: 'PS256' }), [key])
     expect(await failureOf(exchange())).toBe('invalid_token')
+  })
+
+  // The exact `iss` rule and the key-scope rule overlap for most forged tokens: each of
+  // these rows is refused by one of them alone, so that neither can go unnoticed.
+  describe('the issuer rule and the key-scope rule, each alone', () => {
+    test('a personal-account key signing its own issuer with another tenant’s tid: only the exact iss rule refuses it', async () => {
+      // The key's scope equals the token's `iss`, and `common` accepts any tenant: what is
+      // wrong is that `iss` is not the issuer of the `tid` the account would be filed under.
+      const token = idToken({
+        key: consumers,
+        tenantId: CONTOSO,
+        issuer: issuerOf(MICROSOFT_CONSUMER_TENANT_ID),
+      })
+      const { exchange } = microsoft('common', token)
+      expect(await failureOf(exchange())).toBe('invalid_token')
+    })
+
+    test('a template-scoped key signing tid A under the issuer of B', async () => {
+      const token = idToken({ key: organizations, tenantId: CONTOSO, issuer: issuerOf(FABRIKAM) })
+      const { exchange } = microsoft('common', token)
+      expect(await failureOf(exchange())).toBe('invalid_token')
+    })
+
+    test.each([
+      ['another tenant’s fixed issuer', issuerOf(FABRIKAM)],
+      // A template is not enough: it has to be the template of this issuer.
+      ['a template of the v1.0 issuer', 'https://sts.windows.net/{tenantid}/'],
+      ['a template on another host', 'https://login.microsoftonline.evil.test/{tenantid}/v2.0'],
+      ['a template without the version', 'https://login.microsoftonline.com/{tenantid}'],
+      ['only the placeholder', '{tenantid}'],
+    ])(
+      'a key scoped to %s signing a well-formed token: only the key-scope rule refuses it',
+      async (_name, scope) => {
+        const scoped = await keys('scoped-key', scope)
+        // `iss` is exactly the issuer of the token's own `tid`, and the tenant is accepted.
+        const token = idToken({ key: scoped, tenantId: CONTOSO })
+        const { exchange } = microsoft('common', token, [scoped])
+        expect(await failureOf(exchange())).toBe('invalid_token')
+      }
+    )
+
+    test('the same token under a key scoped to its issuer, by template or exactly, is accepted', async () => {
+      for (const scope of [ANY_TENANT, issuerOf(CONTOSO)]) {
+        const scoped = await keys('scoped-key', scope)
+        const { exchange } = microsoft('common', idToken({ key: scoped }), [scoped])
+        expect(await failureOf(exchange())).toBe('resolved')
+        fetchSpy?.mockRestore()
+      }
+    })
   })
 
   test('refuses a token whose key names no issuer in the key document', async () => {
