@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '~/dependencies'
+import { isLoopbackHost } from '~/env'
 import { ForbiddenError, NotFoundError } from '~/exceptions'
 
 /**
@@ -12,8 +13,10 @@ import { ForbiddenError, NotFoundError } from '~/exceptions'
  *
  * It is for tools, not for pages: a request that carries an `Origin`, or that a browser
  * marks as coming from another site, is refused, so a page a developer happens to have open
- * cannot read the codes of the API running beside it. It is deliberately outside the OpenAPI
- * document: it is not part of the contract.
+ * cannot read the codes of the API running beside it. Neither stops a page that reaches this
+ * port by DNS rebinding (it is same-origin with itself), so the `Host` header must also name
+ * this machine: that page's names the attacker's domain. It is deliberately outside the
+ * OpenAPI document: it is not part of the contract.
  */
 const router = new Hono<AppEnv>()
 
@@ -22,6 +25,10 @@ router.get('/messages', (c) => {
   const { config, smsInbox } = c.get('deps')
   if (config.tier !== 'local' || smsInbox === null) {
     throw new NotFoundError()
+  }
+  if (!isLoopbackHost(c.req.header('host'))) {
+    // Nothing in the body: whoever asked under another name is told nothing at all.
+    return c.body(null, 403)
   }
   const site = c.req.header('sec-fetch-site')
   if (

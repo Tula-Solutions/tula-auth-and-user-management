@@ -385,8 +385,8 @@ Before finishing any change here, confirm each item holds and has a test:
     code calls before anything is counted, spent or sent. An empty `sms.allowedCountries`
     allows nothing. The development inbox (`SMS_PROVIDER=dev`, `/v1/dev/sms/messages`) exists
     only with `ENVIRONMENT=local` and a loopback `PUBLIC_URL`, refuses a request with an
-    `Origin`, and is checked in `env.ts`, `container.ts`, `createApp` and the handler: keep
-    all four. A phone number is personal data: never in a log line, an audit entry, an event
+    `Origin` and one whose `Host` is not loopback (DNS rebinding), and is checked in `env.ts`,
+    `container.ts`, `createApp` and the handler: keep all four. A phone number is personal data: never in a log line, an audit entry, an event
     payload, an error or a limiter or lockout key (a keyed hash there). A phone code is a
     `phone_verification` token whose keyed hash covers the user and the number, guessed under
     `Phone.codeLockKey` (its own per-user key, never `Mfa.stepUpLockKey`). Test: SMS off, on

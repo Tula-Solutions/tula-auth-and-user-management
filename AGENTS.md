@@ -694,8 +694,10 @@ signs in with one (TULA-27), and it is **not unique**.
   provider.** `SMS_PROVIDER=dev` needs `ENVIRONMENT=local` **and** a loopback `PUBLIC_URL`
   (`env.ts` refuses to boot otherwise), `container.ts` builds the inbox in that tier only and
   warns on every boot, and `/v1/dev/sms/messages` is mounted only there and checks again in
-  the handler. It refuses a request with an `Origin` or a cross-site `Sec-Fetch-Site`, and is
-  not in the OpenAPI document. Never loosen its guards. The inbox is per process.
+  the handler. It refuses a request with an `Origin` or a cross-site `Sec-Fetch-Site`, and one
+  whose `Host` header is not a loopback name (`isLoopbackHost` in `env.ts`, the same rule as
+  for `PUBLIC_URL`: a DNS-rebinding page is same-origin with itself and only its `Host` gives
+  it away), and is not in the OpenAPI document. Never loosen its guards. The inbox is per process.
 - **`Settings.requireSms` is the one place the `sms` settings are checked**, and every step
   that sends a code by SMS or accepts one calls it first, before anything is counted, spent
   or sent: a code asked for before SMS was switched off, or its country removed, is not

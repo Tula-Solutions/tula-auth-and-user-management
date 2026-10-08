@@ -44,7 +44,10 @@ whoever asks, so it is gated like the mock OAuth provider ([ADR 0026](0026-oauth
 warns at every boot; `createApp` mounts `GET /v1/dev/sms/messages` only when the tier is
 `local` and there is an inbox, and the handler checks both again. The route is for tools:
 a request with an `Origin`, or one a browser marks as coming from another site, is refused,
-so a page open beside a local API cannot read its codes. It is not in the OpenAPI document.
+so a page open beside a local API cannot read its codes. Neither check stops a page that
+reaches the port by DNS rebinding (it is same-origin with itself), so the request's `Host`
+header must also name this machine (`isLoopbackHost`, the rule `PUBLIC_URL` is judged by, on
+any port): otherwise 403 with an empty body. It is not in the OpenAPI document.
 Each instance has its own inbox; a reader of several instances asks each.
 
 ### The number on a user

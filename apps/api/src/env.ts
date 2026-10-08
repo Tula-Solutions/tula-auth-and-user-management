@@ -285,7 +285,32 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '
  */
 export function isLoopbackUrl(url: string): boolean {
   const host = parsedUrl(url)?.hostname.toLowerCase()
-  return host !== undefined && (LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost'))
+  return host !== undefined && isLoopbackName(host)
+}
+
+/** The one rule both functions here judge a host name by. Lower case, no port. */
+function isLoopbackName(name: string): boolean {
+  return LOOPBACK_HOSTS.has(name) || name.endsWith('.localhost')
+}
+
+// A `Host` header: a name or an IPv4 address, or an IPv6 address in brackets, then an
+// optional port. Nothing else: no user information, path, space or empty name.
+const HOST_HEADER = /^([a-z0-9.-]+|\[[0-9a-f:]+\])(:[0-9]{1,5})?$/
+
+/**
+ * Whether a request's `Host` header names this machine, by the rule of {@link isLoopbackUrl},
+ * on any port.
+ *
+ * What a development-only route asks before it answers: a page that reaches this port by DNS
+ * rebinding is same-origin with itself (no `Origin`, `Sec-Fetch-Site: same-origin`), but its
+ * `Host` header still names the attacker's domain.
+ *
+ * @param host - The header's value (`localhost:3003`), or `undefined` when there was none.
+ * @returns `true` only for a well-formed loopback host. Missing or malformed is `false`.
+ */
+export function isLoopbackHost(host: string | undefined): boolean {
+  const match = host === undefined ? null : HOST_HEADER.exec(host.toLowerCase())
+  return match?.[1] !== undefined && isLoopbackName(match[1])
 }
 
 /**

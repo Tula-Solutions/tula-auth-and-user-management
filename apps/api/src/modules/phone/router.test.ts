@@ -1039,7 +1039,11 @@ describe('the development inbox route', () => {
     target: ReturnType<typeof createApp>,
     query = '',
     headers: Record<string, string> = {}
-  ) => target.request(`/v1/dev/sms/messages${query}`, { headers })
+  ) =>
+    target.request(`/v1/dev/sms/messages${query}`, {
+      // What a tool on this machine sends. A `host` of the test's own replaces it.
+      headers: { host: 'localhost:3003', ...headers },
+    })
 
   test('does not exist without an inbox', async () => {
     expect((await inbox(app)).status).toBe(404)
@@ -1087,6 +1091,53 @@ describe('the development inbox route', () => {
     const res = await inbox(local, '', headers)
     expect(res.status).toBe(403)
     expect(await res.text()).not.toContain('123456')
+  })
+
+  // DNS rebinding: a page of attacker.example, re-resolved to this machine, is same-origin
+  // with itself. Its GET has no `Origin` and says `same-origin`. What it cannot choose is
+  // the `Host` header, which names the attacker's domain.
+  test.each([
+    ['a rebinding page’s', 'attacker.example'],
+    ['a rebinding page’s, with a port', 'attacker.example:3003'],
+    ['a name that only starts like loopback', 'localhost.attacker.example'],
+    ['a name that only ends like loopback', 'attacker-localhost'],
+    ['an address that embeds loopback', '127.0.0.1.attacker.example'],
+    ['every interface', '0.0.0.0:3003'],
+    ['a LAN address', '192.168.1.10:3003'],
+    ['user information before a loopback name', 'attacker.example@localhost'],
+    ['a path', 'localhost/attacker.example'],
+    ['an empty one', ''],
+    ['one that is only a port', ':3003'],
+    ['one with a space', 'localhost attacker.example'],
+  ])('refuses a Host that is not this machine (%s): 403, an empty body', async (_name, host) => {
+    const local = createApp({ ...deps, smsInbox: deps.sms })
+    await deps.sms.send({ to: NUMBER, text: 'code 123456' })
+    const res = await inbox(local, '', { host, 'sec-fetch-site': 'same-origin' })
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  test('refuses a request with no Host at all', async () => {
+    const local = createApp({ ...deps, smsInbox: deps.sms })
+    await deps.sms.send({ to: NUMBER, text: 'code 123456' })
+    const res = await local.request('/v1/dev/sms/messages')
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  test.each([
+    'localhost:3003',
+    'localhost',
+    'LOCALHOST:3004',
+    '127.0.0.1:3003',
+    '[::1]:3003',
+    'api.localhost:3003',
+  ])('answers on a loopback Host, any port: %s', async (host) => {
+    const local = createApp({ ...deps, smsInbox: deps.sms })
+    await deps.sms.send({ to: NUMBER, text: 'code 123456' })
+    const res = await inbox(local, '', { host, 'sec-fetch-site': 'same-origin' })
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain('123456')
   })
 
   test('is not in the OpenAPI document', async () => {

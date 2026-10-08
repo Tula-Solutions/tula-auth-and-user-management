@@ -101,7 +101,8 @@ GET /v1/dev/sms/messages?to=+14155550142
 
 Each is `{ to, text, sentAt }`. The route exists only in the `local` tier, is not part of
 the API's contract, and refuses a request that carries an `Origin` (it is for `curl` and
-test runners, not for pages). Every instance has its own inbox, and a restart empties it.
+test runners, not for pages) or whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or a
+`*.localhost` name: ask it under one of those, on whatever port. Every instance has its own inbox, and a restart empties it.
 
 ## What is stored, and where a number goes
 
