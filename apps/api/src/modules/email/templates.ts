@@ -1,4 +1,4 @@
-import { DEFAULT_APP_NAME, MAX_APP_NAME_LENGTH } from '@tula/contract'
+import { DEFAULT_APP_NAME, MAX_APP_NAME_LENGTH, type OAuthProvider } from '@tula/contract'
 import type { MailMessage } from '~/ports/mailer'
 
 /** Who an email is from, as far as the reader is concerned: the environment's `app` settings. */
@@ -95,16 +95,7 @@ export interface IdentityChangedMessage {
   /** Connected, or disconnected. */
   change: 'linked' | 'unlinked'
   /** Which provider. One of a fixed set of names, never text from the provider. */
-  provider:
-    | 'google'
-    | 'github'
-    | 'apple'
-    | 'microsoft'
-    | 'discord'
-    | 'linkedin'
-    | 'github'
-    | 'apple'
-    | 'microsoft'
+  provider: OAuthProvider
   /** When it happened. */
   at: Date
 }
