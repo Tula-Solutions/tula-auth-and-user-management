@@ -104,6 +104,15 @@ the API's contract, and refuses a request that carries an `Origin` (it is for `c
 test runners, not for pages) or whose `Host` is not `localhost`, `127.0.0.1`, `[::1]` or a
 `*.localhost` name: ask it under one of those, on whatever port. Every instance has its own inbox, and a restart empties it.
 
+## What this does not stop yet
+
+A number is not proven before the first message to it, and the limit of five codes an hour
+is the number's, whoever asks. A signed-in user of your app can therefore have up to five
+codes an hour texted to a number that is not theirs; the number's owner cannot add it
+themselves for the rest of that hour; and the "too many requests" answer tells the caller
+that someone asked for that number recently. Limits per destination and a ceiling on what
+SMS may cost are not built yet.
+
 ## What is stored, and where a number goes
 
 - The account's number, in E.164 form, and when it was verified. There is never an

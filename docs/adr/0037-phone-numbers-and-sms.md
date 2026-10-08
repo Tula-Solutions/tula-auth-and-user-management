@@ -178,6 +178,24 @@ Your Northline verification code is 123456.
   one sets `needsSmsInbox` and is skipped by a target without an inbox
   (`CONFORMANCE_SMS_INBOX_URLS`).
 
+## What this does not stop yet
+
+A number is neither unique nor proven before its first message, and the per-number limit
+counts whoever asks. So any signed-in, recently authenticated account can have up to five
+codes an hour texted to a number that is not theirs. Three things follow, and all three are
+accepted for this step:
+
+- the owner of that number gets messages they did not ask for (each names the app, and none
+  can be used by the account that asked without the phone);
+- the owner's own attempt to add the number is refused for the rest of the hour, because the
+  allowance is the number's;
+- the `rate_limited` answer tells the caller that somebody asked for that number lately. It
+  is the same answer, word for word, as for the caller's own second try.
+
+What bounds this is per-destination limits and the spend ceiling, which are TULA-28. Until
+then the bounds are the ones above: a session, a recent authentication, five an hour per
+account and five an hour per number.
+
 ## What is not built
 
 Each is a seam left open, not a decision taken:

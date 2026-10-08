@@ -701,7 +701,19 @@ describe('sending', () => {
     const maya = await signUp()
     const sam = await signUp(OTHER_EMAIL)
     expect((await ask(maya.accessToken)).status).toBe(200)
-    expect(await codeOf(await ask(sam.accessToken))).toBe('rate_limited')
+    // What Sam sees is the answer anyone gets who asks too soon, word for word what Maya
+    // gets for her own second try: nothing in it says whose limit it was. (That the answer
+    // comes at all tells Sam somebody asked for this number lately: accepted, ADR 0037,
+    // "What this does not stop yet".)
+    const refused = await ask(sam.accessToken)
+    const own = await ask(maya.accessToken)
+    const seen = await errorOf(refused)
+    expect(seen).toMatchObject({ status: 429, code: 'rate_limited' })
+    expect(seen).toEqual(await errorOf(own))
+    expect(refused.headers.get('retry-after')).toBe(own.headers.get('retry-after'))
+    // Nothing was sent to the number for Sam, and nothing is pending for him.
+    expect(deps.sms.outbox.map((message) => message.to)).toEqual([NUMBER])
+    expect(await latestToken(sam.userId)).toBeNull()
     // The refused send still used Sam's own minute (a user's limits are counted first).
     expect(await codeOf(await ask(sam.accessToken, GERMAN))).toBe('rate_limited')
     // Another user and another number are not affected.
