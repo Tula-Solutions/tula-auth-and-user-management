@@ -74,6 +74,12 @@ under its own issuer. If only some organizations should get in, use one tenant i
 it in your application: Tula has no list of allowed tenants, and a hook is not told the
 tenant.
 
+Widening `tenant` (one organization's id to `organizations` or `common`) is not recorded
+or flagged as a weakening: the audit entry says `changed: ['tenant']` and no more, and
+`tula apply --yes` needs no `--allow-weaker` for it. It matters because it admits accounts
+from more directories; an account is still created only for an address that comes with the
+verified-domain claim.
+
 ## What Tula checks in the token
 
 Tula asks for the scopes `openid`, `profile` and `email`, sends PKCE (`code_challenge` with

@@ -493,7 +493,10 @@ tula apply --env prod --yes    # no question: for CI
   A missing variable stops the run before anything is written. Switching a provider on or off
   does not need its secret, and neither does a change of Microsoft's `tenant`: the app
   registration, and so its secret, is the same. The tenant is compared in lower case, as the
-  server stores it.
+  server stores it. A change of `tenant` is **not** counted as a weaker policy, a wider one
+  included (one organization's id to `organizations` or `common`): `apply --yes` makes it
+  without `--allow-weaker`, though it admits accounts from more directories, so read that
+  line of the plan (a sign-up still needs Microsoft's verified-domain claim).
 - Errors show the API's code and, for a refused document, each field's path:
 
   ```

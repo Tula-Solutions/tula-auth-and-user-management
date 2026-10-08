@@ -273,6 +273,32 @@ describe('planProviders', () => {
       expect(plan?.secret).toBe(secret)
     })
 
+    // Pinned, not decided (TULA-12): a wider tenant admits accounts from more directories,
+    // and nothing here calls that a weakening, so `apply --yes` makes the change without
+    // `--allow-weaker`. Whether it should be one is the owner's question; this row is what
+    // changes when it is answered.
+    test.each([
+      ['one organization to every organization', TENANT_ID, 'organizations'],
+      ['one organization to any account', TENANT_ID, 'common'],
+      ['every organization to any account', 'organizations', 'common'],
+      ['personal accounts to any account', 'consumers', 'common'],
+    ])(
+      'widening the tenant (%s) is a change and is not flagged as a weakening',
+      (_name, was, is) => {
+        const state = remote({
+          providers: [
+            ...NO_PROVIDERS.filter((entry) => entry.provider !== 'microsoft'),
+            ...stored({ tenant: was }),
+          ],
+        })
+        const result = plan({ providers: { microsoft: { ...microsoft, tenant: is } } }, state)
+        expect(result.providers.find((entry) => entry.provider === 'microsoft')?.fields).toEqual([
+          { path: 'tenant', kind: 'changed', before: was, after: is },
+        ])
+        expect(result.weakened).toEqual([])
+      }
+    )
+
     test('a tenant change with --rotate-secrets sends the secret', () => {
       const [plan] = planProviders(stored(), file({ tenant: 'common' }), { rotateSecrets: true })
       expect(plan).toMatchObject({ action: 'update', secret: 'set' })

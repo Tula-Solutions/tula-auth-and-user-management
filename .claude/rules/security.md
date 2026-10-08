@@ -154,7 +154,10 @@ Before finishing any change here, confirm each item holds and has a test:
     to `https://login.microsoftonline.com/<tid>/v2.0` for its own `tid`, a signing key whose
     `issuer` covers that issuer, and a tenant the configured `tenant` accepts; the account
     is `<tid>:<oid>`, never `sub` or an address; the address is verified only with
-    `xms_edov === true`. Test each refusal with a locally signed token.
+    `xms_edov === true`. Test each refusal with a locally signed token. Widening `tenant`
+    (one organization to `organizations` or `common`) is **not** a recorded weakening
+    (`diff.test.ts` pins it): it admits accounts from more directories, though a sign-up
+    still needs the verified-domain claim, so say so when a change touches it.
 30. **The mock provider** exists only with `ENVIRONMENT=local` and `OAUTH_MOCK_PROVIDER=true`:
     `env.ts` refuses it elsewhere, and with a `PUBLIC_URL` that is not loopback; the container
     logs a warning at boot while it is on; the routes are not mounted otherwise; and the consent
