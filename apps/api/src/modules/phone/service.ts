@@ -86,7 +86,8 @@ type RequestDeps = Pick<
  *
  * In order, and nothing is counted or sent before the step that refuses:
  * 1. the number must have the shape of one (`phone.invalid`);
- * 2. the environment must allow a message to it (`Settings.requireSms`);
+ * 2. the environment must allow a message to it (`Settings.requireSms`), and the deployment
+ *    must have a sender (`Sms.requireSender`: `sms.unavailable`);
  * 3. the send limits: one a minute and {@link PHONE_CODES_PER_HOUR} an hour per user, then
  *    one a minute and {@link PHONE_CODES_PER_NUMBER_PER_HOUR} an hour per number. The
  *    number's keys hold a keyed hash of it, never the number;
@@ -117,6 +118,7 @@ export async function request(
     throw new AuthError('phone.invalid')
   }
   await Settings.requireSms(deps, scope, phoneNumber)
+  Sms.requireSender(deps, scope)
   const issued = await Verification.issue(deps, scope, {
     purpose: PHONE_PURPOSE,
     destination: phoneNumber,

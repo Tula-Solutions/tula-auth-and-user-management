@@ -689,7 +689,10 @@ signs in with one (TULA-27), and it is **not unique**.
 - **Text messages go through the `SmsSender` port and fail closed.** `SMS_PROVIDER=none` (the
   default) is an adapter whose every send throws; a message that could not be sent is
   `sms.unavailable` (503), never treated as sent, and no adapter falls back to another. A real
-  provider is a new adapter and a new value of `SMS_PROVIDER`, nothing else.
+  provider is a new adapter and a new value of `SMS_PROVIDER`, nothing else. A sender says
+  whether the deployment has one (`configured`): without one `phone.enabled` in the client
+  config is `false`, and `Sms.requireSender` refuses after `Settings.requireSms` and **before
+  any send limit is counted**. Keep that order.
 - **The development inbox hands every code to whoever asks, and is gated like the mock OAuth
   provider.** `SMS_PROVIDER=dev` needs `ENVIRONMENT=local` **and** a loopback `PUBLIC_URL`
   (`env.ts` refuses to boot otherwise), `container.ts` builds the inbox in that tier only and

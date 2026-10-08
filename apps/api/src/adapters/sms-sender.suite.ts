@@ -28,6 +28,10 @@ export function smsInboxSuite(
       ])
     })
 
+    test('says the deployment has a sender', () => {
+      expect(create(new FixedClock()).configured).toBe(true)
+    })
+
     test('reads one number’s messages by exact match', async () => {
       const sender = create(new FixedClock())
       await sender.send({ to: '+14155550100', text: 'one' })

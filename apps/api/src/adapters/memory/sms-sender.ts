@@ -11,6 +11,8 @@ import {
 export class MemorySmsSender implements SmsSender, SmsInbox {
   /** Every message sent, oldest first. */
   readonly outbox: ReceivedSms[]
+  /** `false` simulates a deployment with no sender (`SMS_PROVIDER=none`). */
+  configured: boolean
   /** Simulates the sender being down (`send` rejects with `failed`). */
   failing: boolean
   private readonly clock: Clock
@@ -22,6 +24,7 @@ export class MemorySmsSender implements SmsSender, SmsInbox {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.outbox = []
+    this.configured = true
     this.failing = false
     this.clock = clock
   }

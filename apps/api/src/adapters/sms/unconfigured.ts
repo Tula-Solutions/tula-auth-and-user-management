@@ -9,6 +9,7 @@ import { type SmsMessage, SmsSendError, type SmsSender } from '~/ports/sms-sende
  * into a log line: it holds a code.
  */
 export const unconfiguredSmsSender: SmsSender = {
+  configured: false,
   /** @inheritdoc */
   async send(_message: SmsMessage): Promise<void> {
     throw new SmsSendError('not_configured')

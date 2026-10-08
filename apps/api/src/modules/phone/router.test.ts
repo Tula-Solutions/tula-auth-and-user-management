@@ -788,6 +788,33 @@ describe('sending', () => {
     )
   })
 
+  // Review finding: with no sender every try was a 503 that still used the user's and the
+  // number's send limits, so the first minute after a sender was configured was refused too.
+  test('with no sender, asking is refused before any send limit is counted', async () => {
+    const session = await signUp()
+    deps.sms.configured = false
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    expect(await errorOf(await ask(session.accessToken))).toEqual({
+      status: 503,
+      code: 'sms.unavailable',
+      detail: 'The text message could not be sent. Try again later.',
+    })
+    // The route's own per-IP limit is counted, as for every request; no send limit is.
+    expect(
+      hit.mock.calls.map(([key]) => key).filter((key) => key.startsWith('phone_code'))
+    ).toEqual(['phone_code_request:ip:unknown'])
+    hit.mockRestore()
+    expect(await latestToken(session.userId)).toBeNull()
+    // What the environment refuses is still said first: it is the more useful answer.
+    expect(await codeOf(await ask(session.accessToken, '+33123456789'))).toBe(
+      'sms.country_not_allowed'
+    )
+    // Nothing was spent: the same user, the same number, at once.
+    deps.sms.configured = true
+    expect((await ask(session.accessToken)).status).toBe(200)
+    expect(deps.sms.outbox).toHaveLength(1)
+  })
+
   test('a deployment with no sender answers sms.unavailable and writes the message nowhere', async () => {
     const { unconfiguredSmsSender } = await import('~/adapters/sms/unconfigured')
     const unconfigured = createTestDeps()

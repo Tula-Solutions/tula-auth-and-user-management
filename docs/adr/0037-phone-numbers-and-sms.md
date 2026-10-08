@@ -37,6 +37,15 @@ adapters, chosen in `container.ts` by `SMS_PROVIDER`:
 There is no adapter that falls back to another, and no tier in which a message that could
 not be sent is treated as sent: the caller gets `sms.unavailable` (503).
 
+A sender says whether the deployment has one at all (`SmsSender.configured`; `false` only for
+`none`). Without one, the client configuration's `phone.enabled` is `false` whatever the
+settings say, so no screen offers a number that could not be added; and a request that
+would send is refused (`Sms.requireSender`) after the settings were asked and **before any
+send limit is counted**, so a try that can only fail uses up nobody's allowance. The
+diagnostics do not yet warn about an environment with `sms.enabled` in such a deployment: it
+would add a settings read per environment to the scan, and is left for the step that brings
+a real provider (TULA-29).
+
 **The development inbox is readable only in the `local` tier.** It hands every code to
 whoever asks, so it is gated like the mock OAuth provider ([ADR 0026](0026-oauth.md)):
 `env.ts` refuses to boot with `SMS_PROVIDER=dev` unless `ENVIRONMENT=local` **and**
@@ -93,7 +102,7 @@ nothing signs in with it. It will become one when a texted code can sign someone
 (TULA-27): that change adds it to `settingsWeakenings` with its reason.
 
 The public client configuration says one thing, `phone.enabled`: whether a number can be
-added now (on, with at least one country). It never lists the countries.
+added now (on, with at least one country, in a deployment that has a sender). It never lists the countries.
 
 ### Adding, confirming and removing
 

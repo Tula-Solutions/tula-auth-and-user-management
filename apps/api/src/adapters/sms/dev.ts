@@ -15,6 +15,8 @@ export const DEV_SMS_INBOX_SIZE = 50
  * has its own.
  */
 export class DevSmsSender implements SmsSender, SmsInbox {
+  /** @inheritdoc */
+  readonly configured: boolean
   private readonly clock: Clock
   private readonly kept: ReceivedSms[]
 
@@ -22,6 +24,7 @@ export class DevSmsSender implements SmsSender, SmsInbox {
    * @param clock - Stamps each message.
    */
   constructor(clock: Clock) {
+    this.configured = true
     this.clock = clock
     this.kept = []
   }

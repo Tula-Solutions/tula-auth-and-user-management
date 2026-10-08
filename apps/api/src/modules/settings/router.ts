@@ -190,7 +190,10 @@ router.get(
     c.header('Cache-Control', `private, max-age=${CLIENT_CONFIG_MAX_AGE_SECONDS}`)
     // The response depends on which environment the key belongs to.
     c.header('Vary', PUBLISHABLE_KEY_HEADER, { append: true })
-    return c.json(ClientConfigSchema.parse(Settings.clientConfig(settings, providers)))
+    const { sms } = c.get('deps')
+    return c.json(
+      ClientConfigSchema.parse(Settings.clientConfig(settings, providers, sms.configured))
+    )
   }
 )
 

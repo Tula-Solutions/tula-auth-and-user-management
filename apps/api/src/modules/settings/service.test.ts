@@ -448,8 +448,12 @@ describe('clientConfig', () => {
     [{ enabled: true, allowedCountries: [] }, false],
     [{ enabled: true, allowedCountries: ['US', 'DE'] }, true],
   ])('a number can be added (%j) only with SMS on and a country allowed: %p', (sms, enabled) => {
-    const config = Settings.clientConfig(document({ sms }))
+    const config = Settings.clientConfig(document({ sms }), [], true)
     expect(config.phone).toEqual({ enabled })
+    // A deployment that has no way to send a message offers nothing, whatever the settings
+    // say; and that is what is assumed when the caller does not say.
+    expect(Settings.clientConfig(document({ sms }), [], false).phone).toEqual({ enabled: false })
+    expect(Settings.clientConfig(document({ sms })).phone).toEqual({ enabled: false })
     expect(JSON.stringify(config)).not.toContain('allowedCountries')
     expect(JSON.stringify(config)).not.toContain('"DE"')
   })

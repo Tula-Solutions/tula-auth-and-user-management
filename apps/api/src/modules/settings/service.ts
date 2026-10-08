@@ -477,12 +477,16 @@ export function etag(revision: number): string {
  *
  * @param settings - The environment's settings.
  * @param oauth - The OAuth providers the environment has enabled.
+ * @param smsSender - Whether the deployment has a way to send a text message
+ *   (`deps.sms.configured`). Without one no phone number is offered, whatever the settings
+ *   say: every try would be refused.
  * @returns App name and support address, enabled sign-in methods and providers, whether a
- *   sign-up needs a password, and the password policy.
+ *   sign-up needs a password, the password policy and whether a phone number can be added.
  */
 export function clientConfig(
   settings: EnvironmentSettings,
-  oauth: readonly OAuthProvider[] = []
+  oauth: readonly OAuthProvider[] = [],
+  smsSender = false
 ): ClientConfig {
   return {
     app: { name: settings.app.name, supportEmail: settings.app.supportEmail },
@@ -496,7 +500,9 @@ export function clientConfig(
     password: settings.password,
     mfa: { policy: settings.mfa.policy },
     // Whether a number can be added at all, and nothing of which countries.
-    phone: { enabled: settings.sms.enabled && settings.sms.allowedCountries.length > 0 },
+    phone: {
+      enabled: smsSender && settings.sms.enabled && settings.sms.allowedCountries.length > 0,
+    },
   }
 }
 

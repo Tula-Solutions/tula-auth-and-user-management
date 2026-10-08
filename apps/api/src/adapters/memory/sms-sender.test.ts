@@ -7,6 +7,13 @@ import { MemorySmsSender } from './sms-sender'
 smsInboxSuite('MemorySmsSender', (clock) => new MemorySmsSender(clock))
 
 describe('MemorySmsSender', () => {
+  test('says it is configured, until a test says otherwise', () => {
+    const sender = new MemorySmsSender(new FixedClock())
+    expect(sender.configured).toBe(true)
+    sender.configured = false
+    expect(sender.configured).toBe(false)
+  })
+
   test('a failing sender rejects with the fixed word and keeps nothing', async () => {
     const sender = new MemorySmsSender(new FixedClock())
     sender.failing = true

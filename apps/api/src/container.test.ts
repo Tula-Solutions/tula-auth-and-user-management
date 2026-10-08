@@ -202,6 +202,7 @@ describe('the SMS sender', () => {
     try {
       const { deps, close } = createContainer(parseEnv(local))
       expect(deps.smsInbox).toBeNull()
+      expect(deps.sms.configured).toBe(false)
       let thrown: unknown
       try {
         await deps.sms.send(message)

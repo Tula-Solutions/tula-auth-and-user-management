@@ -2,7 +2,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError } from '~/exceptions'
 import * as logger from '~/lib/logger'
 import * as Settings from '~/modules/settings/service'
-import { SmsSendError } from '~/ports/sms-sender'
+import { type SmsFailureReason, SmsSendError } from '~/ports/sms-sender'
 import { codeText } from './templates'
 
 /** What a code message needs. */
@@ -11,6 +11,30 @@ export interface CodeMessage {
   to: string
   /** The code. */
   code: string
+}
+
+/**
+ * Refuse a request that would send a message from a deployment that has no sender.
+ *
+ * Called after `Settings.requireSms` and **before any send limit is counted**: a try that
+ * can only fail must not use up the user's, or the number's, allowance. One log line for the
+ * operator, the same as for a send that failed.
+ *
+ * @param deps - The SMS sender.
+ * @param tenant - The environment, for the log line.
+ * @throws AuthError `sms.unavailable` when the deployment has no sender.
+ */
+export function requireSender(
+  deps: Pick<Deps, 'sms'>,
+  tenant: Pick<Tenant, 'environmentId'>
+): void {
+  if (!deps.sms.configured) {
+    logger.warn('text message not sent', {
+      environmentId: tenant.environmentId,
+      reason: 'not_configured' satisfies SmsFailureReason,
+    })
+    throw new AuthError('sms.unavailable')
+  }
 }
 
 /**

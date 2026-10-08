@@ -39,6 +39,12 @@ export class SmsSendError extends Error {
  */
 export interface SmsSender {
   /**
+   * Whether this deployment has a way to send a message at all. `false` for the sender of a
+   * deployment with none (`SMS_PROVIDER=none`): then nothing offers a phone number, and a
+   * request that would send is refused before anything is counted.
+   */
+  readonly configured: boolean
+  /**
    * @param message - The message to send.
    * @throws SmsSendError when it was not sent. An adapter that cannot send fails closed: it
    *   never writes the message anywhere else (a log line least of all).

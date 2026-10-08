@@ -15,7 +15,7 @@ one, and the **environment** allows it.
 
 | Value | |
 | --- | --- |
-| `none` (default) | There is no sender. A request that would send a message is answered `sms.unavailable`. |
+| `none` (default) | There is no sender. No phone number is offered (`phone.enabled` is `false` whatever the environment's settings say), and a request that would send a message is answered `sms.unavailable`, with no send limit used. |
 | `dev` | **Development and tests only.** Nothing is sent; messages are kept in the development SMS inbox (below). Accepted only with `ENVIRONMENT=local` and a loopback `PUBLIC_URL`. |
 
 There is no adapter for a real provider yet: outside development, no message can be sent.
