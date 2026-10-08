@@ -510,6 +510,12 @@ describe('refusals', () => {
     })
   })
 
+  test('a token with no oid and a GUID for its sub is refused: sub is never the account', async () => {
+    const sub = '11112222-3333-4444-5555-666677778888'
+    const { exchange } = microsoft('common', idToken({ objectId: undefined, subject: sub }))
+    expect(await failureOf(exchange())).toBe('invalid_profile')
+  })
+
   test('refuses a token whose key names no issuer in the key document', async () => {
     const unscoped = await keys('unscoped-key')
     const { exchange } = microsoft('common', idToken({ key: unscoped }), [unscoped])
