@@ -55,6 +55,7 @@ deletes a workspace, project or environment yet.
 | Webhooks | List an environment's webhook endpoints with how each is doing; add one (its signing secret is shown once), change its address and event types, switch it off and on, rotate its secret, send a test event, delete it. |
 | A webhook endpoint | The endpoint, and the log of what was sent to it: one row per delivery, filtered by state and event type. |
 | A delivery | Every request the server made for it (status code, duration, time, and why one failed), and "Send again". |
+| Hooks | The three points at which the server asks your backend a question (`before_sign_up`, `before_session`, `before_token`), each with its hook or none: its address, whether it is on, its deadline, what happens when a call fails, and the last call that failed. Add a hook (its signing secret is shown once), change it, switch it off and on, remove it. |
 | Audit log | An environment's entries, filtered by action, actor type, actor, target and day. |
 | Settings | App name, support address, allowed origins and redirect URLs, security notices, audit retention. |
 | Instance audit log | Dashboard sign-ins, and workspaces, projects and environments being created. |
@@ -119,6 +120,29 @@ deletes a workspace, project or environment yet.
 - **Deleting an endpoint deletes its delivery log** and its pending deliveries with it.
 
 More about webhooks: [webhooks.md](webhooks.md).
+
+Hooks ([hooks.md](hooks.md)) are a different thing from webhooks, on a screen of their own:
+
+- **A hook is a question, and its answer decides.** The screen always lists the three
+  points, so a point with no hook says "nothing is asked at this point" instead of being
+  absent.
+- **What lets through is asked about first.** Choosing "let it through" for when a call
+  fails, switching a hook off, and removing a hook that is on each take away a check, and
+  the server records each as a weakening. The dashboard uses the server's own rule for
+  which changes those are, says in a sentence what is let through at that point (a sign-up,
+  a sign-in, a session without the hook's claims), and in a production environment asks for
+  the point's name to be typed. Adding a hook that refuses on failure, switching one on and
+  removing one that is already off are not weakenings; removing still deletes the signing
+  secret, so in production it is typed too.
+- **"Recent outcomes" is the last call that failed, and the screen says that is all.** The
+  server keeps when a call of the hook last failed and a fixed word for why; "no answer
+  within the deadline" is shown as *Timed out*, anything else as *Failed*. It keeps nothing
+  of a call that was answered, so there is no count of what a hook allowed or denied, and an
+  old failure is not "failing now": it stays until another call fails.
+- **The signing secret is shown once**, in the dialog that added the hook, and cannot be
+  shown again or rotated. If it is lost, remove the hook and add it again.
+- **A point or a word a later server knows** is shown as the text it is. Such a hook can be
+  switched off, switched on and removed, but not edited.
 
 ## Saving settings
 

@@ -198,3 +198,10 @@ Options of `tula apply` for [webhook endpoints in the file](config.md#webhook-en
 
 A run that creates an endpoint and is given none of the last three is refused before any
 write: the server shows a signing secret once.
+
+[Hooks in the file](config.md#hooks) use the same three options for the signing secret of a
+hook the run creates, and the same file: a hook's entry in it begins with `"hook": "<point>"`.
+A hook's secret cannot be rotated, so `--discard-secrets` means removing the hook and adding
+it again to get one. A plan that lets a hook's failures through, switches a hook off or
+removes one that is on is a weakening: with `--yes` it needs `--allow-weaker`. There is no
+option of its own for removing a hook.

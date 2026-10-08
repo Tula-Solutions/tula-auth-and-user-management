@@ -182,6 +182,23 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   `diff` exits 1, `apply` writes nothing. Text from the server (an address, a
   `disabledReason`, an id) is printed through `printable()`. Every test of `apply` that
   creates an endpoint asserts the secret is absent from all output unless asked for.
+- **Hooks in the config file** ([ADR 0030](docs/adr/0030-config-and-apply.md), "Hooks in
+  the file"). `hooks` is keyed by point, and **a hook is its point**, never its address
+  (`planHooks`): a changed address is an update that keeps the id and the secret. No
+  `hooks` key means not read and not touched, even with `--prune`; a point left out is
+  *unmanaged*; a point this version does not know is never touched, `--prune` included.
+  **An entry is the whole hook**: `enabled`, `deadlineMs` and `failureMode` left out are
+  the API's defaults and are managed (never "unmanaged when left out": a hook left at
+  `allow` by a file that says nothing would be a check nobody has). **What weakens is the
+  contract's `hookWeakenings` and nothing else**, under the paths
+  `hooks.<point>.failureMode`, `hooks.<point>.enabled` and `hooks.<point>` (a hook that is
+  on, removed), in `plan.weakened`: `apply --yes` refuses it without `--allow-weaker`
+  before any write, and there is no flag of its own for removing a hook. A created hook's
+  secret is an endpoint's in every respect (no field in the file, redacted first, the same
+  three options and the same secrets file, its entry beginning with `hook`). Hook writes
+  come last, after the webhook endpoints: creations, changes that weaken nothing, changes
+  that weaken, removals; the hooks are read again before the first (`hookSnapshot`). A new
+  rule gets a row in `packages/cli/src/diff.test.ts` and a line in `docs/config.md`.
 - **The CLI reaches the database only through `tula dev`, and only by running what the API
   image ships** ([ADR 0031](docs/adr/0031-instance-admin-and-cli.md)): `docker compose run
   migrate`, the seed and `create-api-key.ts`. Everything it spawns goes through the injectable
@@ -768,6 +785,14 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
 - **Destructive actions name what they act on** and, in a production environment, ask for it
   to be typed (`ConfirmDialog`'s `requireText`). Server text is rendered as text; a link is
   an app route or a validated `https:` URL.
+- **The hooks screen** (`features/hooks`, [ADR 0035](docs/adr/0035-hooks.md), last
+  section) draws the points, not a list, so a point with no hook is said. **Which changes
+  are asked about first is the contract's `hookWeakenings`** (`weakeningSentences`), never
+  a rule of the screen's own; in production the point's name is typed. The add and edit
+  forms have no "enabled" field: the switch is an act with its own confirmation. **The
+  screen says only what the server keeps of a hook's calls**, the last one that failed, and
+  says that nothing else is recorded: never draw a count, a rate or "failing now" from it.
+  A hook is never called a webhook in its words (`features/hooks/words.test.ts`).
 - **Accessibility as in the React SDK**: labelled fields with associated, announced errors
   (`Field`), focus on the heading after a navigation (`PageHeader`), dialogs that trap and
   restore focus, state in words as well as colour, tables that stack under 640 px. Colours
