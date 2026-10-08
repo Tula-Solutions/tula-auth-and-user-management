@@ -177,6 +177,35 @@ describe('switching environment', () => {
     expect(puts[0]?.body).toEqual(expected)
   })
 
+  test('a drafted JWT template and a half-typed name do not follow the operator to another environment', async () => {
+    const api = installFakeApi()
+    const { puts } = settingsPerEnvironment(api)
+    const current = start(`${DEV_PATH}/sessions`, { api })
+    const { user } = current
+    await user.type(await screen.findByLabelText('New template name'), 'app')
+    await user.click(screen.getByRole('button', { name: 'Add template' }))
+    await user.type(screen.getByLabelText('New claim name'), 'half_typed')
+    await user.type(screen.getByLabelText('New template name'), 'second')
+    await screen.findByText('You have unsaved changes.')
+
+    await switchToProduction(current, '/sessions')
+
+    // Production has no template, no typed name, and nothing to save.
+    await screen.findByText('No templates yet.')
+    await screen.findByText('No unsaved changes.')
+    expect((screen.getByLabelText('New template name') as HTMLInputElement).value).toBe('')
+    expect(screen.queryByLabelText('New claim name') === null).toBe(true)
+
+    // A template made from here is production's, on production's document.
+    await user.type(screen.getByLabelText('New template name'), 'prod')
+    await user.click(screen.getByRole('button', { name: 'Add template' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(puts).toHaveLength(1)
+    expect(puts[0]?.environment).toBe(IDS.production)
+    expect(puts[0]?.body.sessions).toMatchObject({ jwtTemplates: { prod: { claims: {} } } })
+  })
+
   test('a half-typed provider secret does not follow the operator to another environment', async () => {
     const current = start(`${DEV_PATH}/sign-in-methods`)
     const { user, api } = current
