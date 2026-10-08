@@ -16,6 +16,7 @@ import { DataTable } from '~/components/data-table'
 import { SelectField, TextField } from '~/components/field'
 import { Modal } from '~/components/modal'
 import { PageHeader } from '~/components/page'
+import { SecretRequestActions } from '~/components/secret-request-actions'
 import { EmptyState, QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
 import { NativeSelectOption } from '~/components/ui/native-select'
@@ -42,7 +43,18 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
   const queryClient = useQueryClient()
   // `gcTime: 0`: the mutation's result (which holds the key) is not kept by the query client
   // after this component lets go of it.
-  const create = useCreateApiKey({ mutation: { gcTime: 0 }, request: useEnvironmentRequest() })
+  // The list is refreshed by the mutation itself, so it is right even when this dialog has
+  // gone before the answer came. Started, never awaited: the query client waits for what
+  // this returns before it hands over the answer, and the key must not wait for a list.
+  const create = useCreateApiKey({
+    mutation: {
+      gcTime: 0,
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: ['/v1/admin/api-keys'] })
+      },
+    },
+    request: useEnvironmentRequest(),
+  })
   const [name, setName] = useState('')
   const [kind, setKind] = useState<ApiKeyKind>('publishable')
   const [problem, setProblem] = useState<string>()
@@ -58,6 +70,10 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
   }, [open])
 
   function close() {
+    // The server has made the key by the time it answers; the answer is where the key is.
+    if (create.isPending) {
+      return
+    }
     setCreated(null)
     create.reset()
     onClose()
@@ -76,10 +92,9 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
     create.mutate(
       { data: { kind, name: trimmed } },
       {
-        onSuccess: async (result) => {
+        onSuccess: (result) => {
           setCreated({ key: result.key, kind: result.kind })
           create.reset()
-          await queryClient.invalidateQueries({ queryKey: ['/v1/admin/api-keys'] })
         },
       }
     )
@@ -115,7 +130,7 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
 
   const fieldError = problem ?? fieldErrorMap(create.error).name
   return (
-    <Modal open={open} onClose={close} title='Create API key'>
+    <Modal open={open} onClose={close} title='Create API key' busy={create.isPending}>
       <form onSubmit={submit} className='flex flex-col gap-4' noValidate>
         <TextField
           label='Name'
@@ -139,14 +154,12 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
             {messageFor(create.error)}
           </p>
         ) : null}
-        <div className='flex flex-wrap justify-end gap-2'>
-          <ActionButton variant='outline' onClick={close}>
-            Cancel
-          </ActionButton>
-          <ActionButton type='submit' pending={create.isPending}>
-            Create key
-          </ActionButton>
-        </div>
+        <SecretRequestActions
+          pending={create.isPending}
+          onCancel={close}
+          submitLabel='Create key'
+          pendingLabel='Creating…'
+        />
       </form>
     </Modal>
   )

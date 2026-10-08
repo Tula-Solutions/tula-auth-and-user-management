@@ -17,8 +17,9 @@ Every delivery and every request made for it can be [read](#the-delivery-log), a
 
 ## Register an endpoint
 
-With a secret key, on the admin API (the dashboard screen and `tula.config.ts` support come
-later):
+With a secret key, on the admin API (everything on this page can also be done
+[in the dashboard](#in-the-dashboard), and endpoints can be declared
+[in `tula.config.ts`](#endpoints-in-tulaconfigts)):
 
 <!-- snippet: examples/docs-snippets/admin.ts#webhook-register -->
 ```ts
@@ -705,9 +706,34 @@ new endpoint's secret is handed to the run that creates it (`--secrets-file`). R
 events and sending again are not in the file: they are acts, done through the admin API. See
 [Webhook endpoints in config.md](config.md#webhook-endpoints).
 
+## In the dashboard
+
+The dashboard ([dashboard.md](dashboard.md)) has a **Webhooks** screen per environment. It
+calls the routes this page describes and adds nothing of its own:
+
+- **The list** shows each endpoint's address, its event types and how it is doing, in
+  words: active, active but failing (and since when), switched off by an operator, or
+  switched off by the server with the reason. From an endpoint's card you add, edit, switch
+  off and on, rotate the secret, send a test event and delete. Deleting, and ending an
+  overlap, name the endpoint by its address and, in a production environment, ask for the
+  address to be typed. An address is shown with any character nobody can see written out
+  (`\u{200B}`), so that the one you confirm is the one you read.
+- **A signing secret is shown once**, in the dialog that follows adding an endpoint or
+  rotating its secret, and is gone when the dialog closes. The dialog cannot be closed while
+  its request is under way: the answer is the only place the secret is. While a rotation's
+  overlap lasts the card says until when two secrets sign, and offers "End the overlap now".
+- **An endpoint's deliveries** are a paged table (state, event type, when it was queued, how
+  many requests, the last result), filtered by state and event type; the filters and the
+  page are in the address, so a view can be shared.
+- **A delivery** lists every request with its status code, its duration, its time and, for a
+  failure, the server's reason as a sentence. "Send again" makes one request and shows what
+  became of it; a refusal says why. A test event is marked as one and cannot be sent again.
+
+What the dashboard cannot show is what the server does not keep: no header and no body of a
+receiver's answer ([What the server keeps](#what-the-server-keeps)).
+
 ## Not built yet
 
-- **A dashboard screen** for endpoints and their delivery log.
 - **Settings for the schedule**: the waits, the number of requests and the periods are fixed.
 - **Sending again in bulk**: one delivery per call.
 - **A test event or a delivery sent again where the worker is a service of its own**: both

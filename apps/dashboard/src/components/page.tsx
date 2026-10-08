@@ -25,17 +25,21 @@ export const NavigationFocusContext = createContext<NavigationFocus>({
  * keyboard or screen-reader user starts at the new content. It does so itself, when it
  * appears: a screen's code and data may arrive after the address has changed.
  *
- * @param props - `title`, optional `description` and `actions`.
+ * @param props - `title`, optional `description` and `actions`; `headingRef`: for a
+ *   screen that has to move the focus to its heading itself, when what had the focus is
+ *   gone (a deleted list item).
  * @returns The header.
  */
 export function PageHeader({
   title,
   description,
   actions,
+  headingRef,
 }: {
   title: string
   description?: ReactNode
   actions?: ReactNode
+  headingRef?: { current: HTMLHeadingElement | null }
 }) {
   const heading = useRef<HTMLHeadingElement>(null)
   const navigation = useContext(NavigationFocusContext)
@@ -49,7 +53,12 @@ export function PageHeader({
     <div className='flex flex-wrap items-start justify-between gap-3'>
       <div className='flex min-w-0 flex-col gap-1'>
         <h1
-          ref={heading}
+          ref={(node) => {
+            heading.current = node
+            if (headingRef) {
+              headingRef.current = node
+            }
+          }}
           tabIndex={-1}
           className='text-2xl font-semibold tracking-tight outline-none'
         >

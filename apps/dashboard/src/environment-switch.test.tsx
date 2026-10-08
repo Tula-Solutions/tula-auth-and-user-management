@@ -7,8 +7,21 @@ import { createQueryClient } from '~/app'
 import { useSettingsEditor } from '~/features/settings/settings-editor'
 import { EnvironmentProvider } from '~/features/shell/environment-context'
 import { useScope } from '~/state/scope'
-import { type FakeApi, IDS, installFakeApi } from '~/testing/fake-api'
-import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
+import {
+  type FakeApi,
+  fakeWebhookDelivery,
+  fakeWebhookEndpoint,
+  IDS,
+  installFakeApi,
+} from '~/testing/fake-api'
+import {
+  DEV_PATH,
+  holdAnswers,
+  openDialogs,
+  PROD_PATH,
+  renderApp,
+  type World,
+} from '~/testing/harness'
 
 // What an operator typed or opened for one environment must never act on another: a route
 // whose only change is `$environmentId` is not remounted by the router, so the screens are.
@@ -56,47 +69,6 @@ function goOffline(): () => void {
   }
 }
 
-/**
- * Hold back the answers to some requests (they are still received and recorded by the fake).
- *
- * @param slow - Which calls to hold.
- * @returns `held`: how many answers are being held. `release`: let them through; it resolves
- *   once each has been handed to the code that asked and that code has had its turn, so what
- *   a test checks next is checked after the answer, not after a pause.
- */
-function holdAnswers(slow: (path: string, headers: Headers, method: string) => boolean) {
-  const answer = globalThis.fetch
-  let open: () => void = () => undefined
-  const gate = new Promise<void>((resolve) => {
-    open = resolve
-  })
-  const handedBack: Promise<void>[] = []
-  globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
-    const response = await answer(input, init)
-    const path = new URL(String(input), 'http://localhost:3003').pathname
-    // The request's `signal` is deliberately not honoured: the worst case is an answer that
-    // arrives although nobody is waiting for it any more.
-    if (slow(path, new Headers(init.headers), (init.method ?? 'GET').toUpperCase())) {
-      const handed = Promise.withResolvers<void>()
-      handedBack.push(handed.promise)
-      await gate
-      queueMicrotask(handed.resolve)
-    }
-    return response
-  }) as typeof fetch
-  return {
-    held: () => handedBack.length,
-    async release() {
-      open()
-      await Promise.all(handedBack)
-      // The caller reads the answer and the query client tells its observers on a zero
-      // timer. Two turns of the timer queue come after both, however slow the machine.
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    },
-  }
-}
-
 /** Put TanStack's default back for mutations: one started offline waits for the network. */
 function queueMutationsWhileOffline(current: World) {
   current.queryClient.setDefaultOptions({
@@ -106,6 +78,7 @@ function queueMutationsWhileOffline(current: World) {
 }
 
 const ENVIRONMENT = 'x-tula-environment'
+const WEBHOOK_ADDRESS = 'https://api.example.com/webhooks/tula'
 
 /**
  * Give the fake one settings document per environment, with the same revision in both: the
@@ -252,6 +225,138 @@ describe('switching environment', () => {
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(current.api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
   })
+
+  test('a webhook signing secret on screen and a typed address do not follow the operator', async () => {
+    const current = start(`${DEV_PATH}/webhooks`)
+    const { user, router, location, api } = current
+    await screen.findByRole('heading', { level: 1, name: 'Webhooks' })
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    const adding = screen.getByRole('dialog')
+    await user.type(within(adding).getByLabelText('Address'), WEBHOOK_ADDRESS)
+    await user.click(within(adding).getByRole('checkbox', { name: 'user.created' }))
+    await user.click(within(adding).getByRole('button', { name: 'Add endpoint' }))
+    const secret = (await screen.findByTestId('webhook-secret')).textContent ?? ''
+    expect(secret).toStartWith('whsec_')
+
+    // The secret's dialog is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    await screen.findByText('No webhook endpoints yet')
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes(secret)).toBe(false)
+    expect(document.documentElement.outerHTML.includes(WEBHOOK_ADDRESS)).toBe(false)
+
+    // A half-typed address for production is not there when development is opened again.
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Address'),
+      'https://prod.example.com/half'
+    )
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks` }))
+    await screen.findByRole('heading', { level: 2, name: WEBHOOK_ADDRESS })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    expect(
+      (within(screen.getByRole('dialog')).getByLabelText('Address') as HTMLInputElement).value
+    ).toBe('')
+    expect(
+      api
+        .callsTo('POST', '/v1/admin/webhook-endpoints')
+        .map((call) => call.headers.get(ENVIRONMENT))
+    ).toEqual([IDS.development])
+  })
+
+  test('an open deletion of a webhook endpoint does not survive a switch', async () => {
+    const api = installFakeApi()
+    // The worst case: production has an endpoint of the same address, and (which no real
+    // server does) of the same id. A card that was kept would be this one's, with the
+    // confirmation still open on it; an empty production list would close it by itself.
+    // (Three things each close it, and this test passes while any one holds: the screens'
+    // key on the environment, the list item's, and the list being read again from nothing
+    // after a switch. The first is what the tests of the signing secret and of the users'
+    // confirmation fail without.)
+    const development = fakeWebhookEndpoint({ url: WEBHOOK_ADDRESS })
+    api.state.webhookEndpoints.push(development, {
+      ...development,
+      environmentId: IDS.production,
+    })
+    const current = start(`${DEV_PATH}/webhooks`, { api })
+    const { user, router, location } = current
+    // Production's list is already known, so nothing has to load on the way there.
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` })
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/webhooks`))
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.development)
+    )
+    await user.click(await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.production)
+    )
+    await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` })
+    expect(openDialogs()).toBe(0)
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+    expect(api.state.webhookEndpoints).toHaveLength(2)
+  })
+})
+
+// The router keeps a route's component when only `$endpointId` or `$deliveryId` changes, and
+// a query that is already cached draws at once: without a key, what was opened or shown for
+// one endpoint or delivery would be on the screen of the next.
+describe('what was opened for one endpoint or delivery is not on the screen of the next', () => {
+  test('a deletion opened on one endpoint’s screen is not open on another’s', async () => {
+    const api = installFakeApi()
+    const first = fakeWebhookEndpoint({ url: 'https://one.example.com/webhooks' })
+    const second = fakeWebhookEndpoint({ url: 'https://two.example.com/webhooks' })
+    api.state.webhookEndpoints.push(first, second)
+    const { user, router, location } = start(`${DEV_PATH}/webhooks/${second.id}`, { api })
+    // The second endpoint is read first, so that it is drawn at once when it is come back to.
+    await screen.findByRole('button', { name: `Delete ${second.url}` })
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks/${first.id}` }))
+    await user.click(await screen.findByRole('button', { name: `Delete ${first.url}` }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks/${second.id}` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/webhooks/${second.id}`))
+    await screen.findByRole('button', { name: `Delete ${second.url}` })
+    expect(openDialogs()).toBe(0)
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+    expect(api.state.webhookEndpoints).toHaveLength(2)
+  })
+
+  test('the result of sending one delivery again is not shown on another delivery', async () => {
+    const api = installFakeApi()
+    const endpoint = fakeWebhookEndpoint({ url: WEBHOOK_ADDRESS })
+    const first = fakeWebhookDelivery(endpoint.id, { eventType: 'user.created' })
+    const second = fakeWebhookDelivery(endpoint.id, { eventType: 'session.revoked' })
+    api.state.webhookEndpoints.push(endpoint)
+    api.state.webhookDeliveries.push(first, second)
+    const at = (delivery: { id: string }) =>
+      `${DEV_PATH}/webhooks/${endpoint.id}/deliveries/${delivery.id}`
+    const { user, router, location } = start(at(second), { api })
+    await screen.findByText('session.revoked')
+    await act(() => router.navigate({ href: at(first) }))
+    await screen.findByText('user.created')
+    await user.click(screen.getByRole('button', { name: 'Send again' }))
+    expect((await screen.findByTestId('send-result')).textContent).toBe(
+      'Delivered: the endpoint answered 204 in 41 ms.'
+    )
+
+    await act(() => router.navigate({ href: at(second) }))
+    await waitFor(() => expect(location()).toBe(at(second)))
+    await screen.findByText('session.revoked')
+    expect(screen.queryAllByTestId('send-result')).toHaveLength(0)
+    expect(api.calls.filter((call) => call.path.endsWith('/redeliver'))).toHaveLength(1)
+  })
 })
 
 // A request belongs to the environment of the screen that made it. Two layers, tested apart:
@@ -329,6 +434,43 @@ describe.each([
       expect((within(card()).getByLabelText('Client ID') as HTMLInputElement).value).toBe('')
     )
     expect(document.documentElement.outerHTML.includes('dev-secret-whole')).toBe(false)
+  })
+
+  test('a webhook endpoint is never registered in production', async () => {
+    const current = start(`${DEV_PATH}/webhooks`)
+    if (queued) {
+      queueMutationsWhileOffline(current)
+    }
+    const { user, api, router, location } = current
+    await screen.findByRole('heading', { level: 1, name: 'Webhooks' })
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    const adding = screen.getByRole('dialog')
+    await user.type(within(adding).getByLabelText('Address'), WEBHOOK_ADDRESS)
+    await user.click(within(adding).getByRole('checkbox', { name: 'user.created' }))
+
+    const online = goOffline()
+    await user.click(within(adding).getByRole('button', { name: 'Add endpoint' }))
+    if (!queued) {
+      await within(adding).findByText(/The API did not answer/)
+    }
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    online()
+
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.production)
+    )
+    await screen.findByText('No webhook endpoints yet')
+    const sent = api
+      .callsTo('POST', '/v1/admin/webhook-endpoints')
+      .map((call) => call.headers.get(ENVIRONMENT))
+    expect(sent.filter((environment) => environment !== IDS.development)).toEqual([])
+    expect(
+      api.state.webhookEndpoints.filter((endpoint) => endpoint.environmentId === IDS.production)
+    ).toEqual([])
+    expect(screen.queryAllByTestId('webhook-secret')).toHaveLength(0)
   })
 })
 

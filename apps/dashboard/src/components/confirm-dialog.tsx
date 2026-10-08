@@ -9,7 +9,7 @@ import { Label } from './ui/label'
 export interface ConfirmDialogProps {
   open: boolean
   /** The question, naming what is acted on ("Ban ada@example.com?"). */
-  title: string
+  title: ReactNode
   /** What will happen, in a sentence or two. */
   children?: ReactNode
   /** The confirming button's label ("Ban user"). */
@@ -25,6 +25,11 @@ export interface ConfirmDialogProps {
   pending?: boolean
   /** The action's failure, shown in the dialog. */
   error?: unknown
+  /**
+   * The sentence for the failure, for a screen whose refusals have words of their own.
+   * Defaults to {@link messageFor}.
+   */
+  errorText?: (error: unknown) => string
   onConfirm: () => void
   onCancel: () => void
 }
@@ -47,6 +52,7 @@ export function ConfirmDialog({
   requireText,
   pending = false,
   error,
+  errorText = messageFor,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -73,7 +79,9 @@ export function ConfirmDialog({
         {requireText !== undefined ? (
           <div className='flex flex-col gap-2'>
             <Label htmlFor={inputId}>
-              Type <span className='font-mono font-semibold'>{requireText}</span> to confirm
+              {/* Kept apart from the sentence's direction: what is typed is a name, an
+                  address, text from the server, in whatever script it is in. */}
+              Type <bdi className='font-mono font-semibold break-all'>{requireText}</bdi> to confirm
             </Label>
             <Input
               id={inputId}
@@ -86,7 +94,7 @@ export function ConfirmDialog({
         ) : null}
         {error ? (
           <p role='alert' className='text-sm text-destructive'>
-            {messageFor(error)}
+            {errorText(error)}
           </p>
         ) : null}
         <div className='flex flex-wrap justify-end gap-2'>
