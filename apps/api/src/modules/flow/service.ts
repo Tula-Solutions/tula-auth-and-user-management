@@ -2694,45 +2694,12 @@ export async function startFactorEnrolment(
 }
 
 /**
- * End the sessions a user had before the factor an attempt just turned on, keeping the one
- * the attempt created. Never throws: by now the outcome of the attempt is decided, and this
- * must not replace it.
- */
-async function sweepAfterEnrolment(
-  deps: Deps,
-  tenant: Tenant,
-  target: { userId: string; keep?: string },
-  actor: Actor
-): Promise<void> {
-  try {
-    await Mfa.endSessionsWithoutFactor(deps, tenant, target, actor)
-  } catch (error) {
-    logger.warn('could not end the sessions made before two-step verification was turned on', {
-      environmentId: tenant.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
-    })
-  }
-}
-
-/**
  * Confirm the authenticator enrolled inside an attempt, and complete the attempt.
  *
  * The code is checked exactly as from a profile (`Mfa.confirmTotp`: the user's second-factor
  * lockout, one confirmation wins, backup codes stored as keyed hashes, `user.mfa_enabled`
- * recorded, the owner emailed). Then the attempt completes: the response carries the session
- * **and the ten backup codes, once**.
- *
- * **The user's other sessions end only once the new one exists.** They were established
- * without the factor and must go, but not for a sign-in that is then refused: a
- * `before_session` hook that denies, a hook that fails, or the concurrent-session rule would
- * otherwise sign the user out everywhere and leave them with nothing (and a hook makes that
- * reachable at will). So `Mfa.confirmTotp` is told to leave the sweep to this function,
- * which runs it after `finish` (ADR 0035, "What a refusal costs"). The price is a short
- * time, at most the two hooks' deadlines, in which the factor is on beside sessions that
- * did not prove it; and a sweep that fails then is logged and not retried, because the
- * session exists and the backup codes must still reach the user. Asking the hook before the
- * code is checked would be the other way, and it is ruled out: a hook is asked only once
- * every factor is proven.
+ * recorded, every existing session of the user ended, the owner emailed). Then the attempt
+ * completes: the response carries the session **and the ten backup codes, once**.
  *
  * **The factor and the session stand or fall together.** If the attempt cannot complete after
  * the factor was confirmed (it expired in that instant, or the session could not be created),
@@ -2773,7 +2740,6 @@ export async function confirmFactorEnrolment(
   const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
   const { codes, factorId } = await Mfa.confirmTotp(deps, tenant, { userId }, code, actor, {
     notify: false,
-    sweep: 'caller',
   })
   let result: FlowResult
   try {
@@ -2802,12 +2768,9 @@ export async function confirmFactorEnrolment(
         environmentId: tenant.environmentId,
         err: undo instanceof Error ? undo.name : 'unknown',
       })
-      // The factor stayed on, so the sessions made without it go after all.
-      await sweepAfterEnrolment(deps, tenant, { userId }, actor)
     }
     throw error
   }
-  await sweepAfterEnrolment(deps, tenant, { userId, keep: result.tokens?.sessionId }, actor)
   Notices.mfaChanged(deps, tenant, user, { change: 'enabled', at: deps.clock.now() })
   return result
 }

@@ -773,6 +773,11 @@ describe('over HTTP', () => {
 })
 
 describe('an enrolment inside a sign-in that a hook then refuses', () => {
+  // Decided, not overlooked (ADR 0035, "What a refusal costs that is easy to miss"): turning
+  // a factor on ends the sessions that did not prove it **before anything else** (ADR 0025),
+  // so a sign-in refused after that has already signed the user out elsewhere. These tests
+  // pin that cost. A change here is a decision about ADR 0025's order, not a fix.
+  //
   // The user has a session from before the environment required two-step verification, and
   // signs in again: the attempt stops at the enrolment.
   async function enrolling() {
@@ -796,42 +801,42 @@ describe('an enrolment inside a sign-in that a hook then refuses', () => {
     return { userId, earlier, confirm }
   }
 
-  async function expectUndone(userId: string, earlier: string) {
-    // The session the user already had is alive, and its access token is still good.
-    expect((await liveSessions(userId)).map((session) => session.id)).toEqual([earlier])
-    expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(false)
-    // The factor is gone again, and so is every backup code made for it.
+  async function expectRefused(userId: string, earlier: string) {
+    // The enrolment is undone: no factor, and none of the codes made for it.
     expect(await deps.factors.findTotp(tenant.environmentId, userId)).toBeNull()
     expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(0)
+    // No new session: the one `session.created` is the earlier session's.
     expect(sessions()).toHaveLength(1)
-    expect(deps.activityLog.ofType('session.revoked')).toEqual([])
+    // The cost: the session the user already had is ended, and its access token refused.
+    expect(await liveSessions(userId)).toEqual([])
+    expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(true)
   }
 
-  test('a denial leaves the user’s other sessions alive and the factor absent', async () => {
+  test('a denial undoes the enrolment, and the user’s earlier sessions are ended', async () => {
     const { userId, earlier, confirm } = await enrolling()
     await hook()
     respond.before_session = deny
     expect((await rejection(confirm())).code).toBe('hook.denied')
-    await expectUndone(userId, earlier)
+    await expectRefused(userId, earlier)
   })
 
-  test('a session hook that fails leaves them alive too', async () => {
+  test('a session hook that hangs does the same', async () => {
     const { userId, earlier, confirm } = await enrolling()
     await hook()
     respond.before_session = hang
     expect((await rejection(confirm())).code).toBe('hook.unavailable')
-    await expectUndone(userId, earlier)
+    await expectRefused(userId, earlier)
   })
 
-  test('so does a claims hook that fails as the session is made', async () => {
+  test('so does a claims hook that hangs as the session is made', async () => {
     const { userId, earlier, confirm } = await enrolling()
     await hook('before_token')
     respond.before_token = hang
     expect((await rejection(confirm())).code).toBe('hook.unavailable')
-    await expectUndone(userId, earlier)
+    await expectRefused(userId, earlier)
   })
 
-  test('an enrolment that completes still ends every other session, and only then', async () => {
+  test('an enrolment that completes has ended every other session before the hook is asked', async () => {
     const { userId, earlier, confirm } = await enrolling()
     await hook()
     let aliveWhenAsked: boolean | undefined
@@ -841,7 +846,9 @@ describe('an enrolment inside a sign-in that a hook then refuses', () => {
     }
     const done = await confirm()
     expect(done.attempt.step.status).toBe('complete')
-    expect(aliveWhenAsked).toBe(true)
+    // No session that did not prove the factor is alive beside it, not even while a hook
+    // is thinking.
+    expect(aliveWhenAsked).toBe(false)
     expect((await liveSessions(userId)).map((session) => session.id)).toEqual([
       done.tokens?.sessionId ?? '',
     ])
@@ -850,6 +857,25 @@ describe('an enrolment inside a sign-in that a hook then refuses', () => {
       false
     )
     expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(10)
+  })
+
+  test('refused, and the factor cannot be removed again: it stays on, beside no session that did not prove it', async () => {
+    const { userId, earlier, confirm } = await enrolling()
+    await hook()
+    respond.before_session = deny
+    const remove = spyOn(deps.factors, 'removeForUser').mockRejectedValue(new Error('store down'))
+    // The hook's answer is what the client hears, not the failed undo.
+    expect((await rejection(confirm())).code).toBe('hook.denied')
+    remove.mockRestore()
+    expect((await deps.factors.findTotp(tenant.environmentId, userId))?.confirmedAt).toBeInstanceOf(
+      Date
+    )
+    // Codes nobody saw: the user signs in with the authenticator and makes new ones.
+    expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(10)
+    expect(await liveSessions(userId)).toEqual([])
+    expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(true)
+    expect(sessions()).toHaveLength(1)
+    expect(logged()).toContain('could not undo an enrolment whose attempt did not complete')
   })
 })
 
@@ -894,50 +920,31 @@ describe('what a refused sign-in has already spent', () => {
   })
 })
 
-describe('an enrolment inside a sign-in whose sweep goes wrong', () => {
-  async function enrolling() {
-    configure()
+describe('an enrolling sign-in at the session limit', () => {
+  test('completes where the newest session would be refused: the enrolment ended the others first', async () => {
+    configure({ sessions: { maxPerUser: 1, onLimit: 'refuse_newest' } })
     const userId = await seedUser()
     const earlier = (await signIn()).tokens?.sessionId ?? ''
     await Notices.settled()
-    configure({ policy: 'required' })
+    // At the limit, a plain sign-in is refused.
+    expect((await rejection(signIn())).code).toBe('session.limit_reached')
+    configure({ policy: 'required', sessions: { maxPerUser: 1, onLimit: 'refuse_newest' } })
+    await hook()
     const attempt = await startSignIn()
     await password(attempt)
     const enrolment = await Flows.startFactorEnrolment(deps, tenant, 'sign_in', ref(attempt), web)
-    const confirm = () =>
-      Flows.confirmFactorEnrolment(
-        deps,
-        tenant,
-        'sign_in',
-        ref(attempt),
-        codeFor(enrolment.secret),
-        web
-      )
-    return { userId, earlier, confirm }
-  }
-
-  test('a sweep that fails after the session exists does not take the session or the backup codes away', async () => {
-    const { userId, confirm } = await enrolling()
-    const sweep = spyOn(Mfa, 'endSessionsWithoutFactor').mockRejectedValue(new Error('store down'))
-    const done = await confirm()
-    sweep.mockRestore()
-    expect(done.attempt.step.status).toBe('complete')
-    expect(done.tokens?.sessionId).toBeString()
-    expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(10)
-    expect(logged()).toContain('could not end the sessions made before two-step verification')
-  })
-
-  test('refused, and the factor cannot be removed again: it stayed on, so the earlier sessions end after all', async () => {
-    const { userId, earlier, confirm } = await enrolling()
-    await hook()
-    respond.before_session = deny
-    const remove = spyOn(deps.factors, 'removeForUser').mockRejectedValue(new Error('store down'))
-    expect((await rejection(confirm())).code).toBe('hook.denied')
-    remove.mockRestore()
-    expect((await deps.factors.findTotp(tenant.environmentId, userId))?.confirmedAt).toBeInstanceOf(
-      Date
+    const done = await Flows.confirmFactorEnrolment(
+      deps,
+      tenant,
+      'sign_in',
+      ref(attempt),
+      codeFor(enrolment.secret),
+      web
     )
-    expect(await liveSessions(userId)).toEqual([])
+    expect(done.attempt.step.status).toBe('complete')
+    expect((await liveSessions(userId)).map((session) => session.id)).toEqual([
+      done.tokens?.sessionId ?? '',
+    ])
     expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(true)
   })
 })

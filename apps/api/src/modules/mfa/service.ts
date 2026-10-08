@@ -327,33 +327,6 @@ type ConfirmDeps = Pick<
 >
 
 /**
- * End the sessions of a user that were established without the factor just turned on: all of
- * them, or all but the one that proved it.
- *
- * @param deps - Session store, the revoked-session list and clock.
- * @param scope - The project and environment.
- * @param target - The user, and the one session to keep when there is one.
- * @param actor - Who turned the factor on, for the audit log.
- */
-export async function endSessionsWithoutFactor(
-  deps: ConfirmDeps,
-  scope: Scope,
-  target: { userId: string; keep?: string },
-  actor: Actor
-): Promise<void> {
-  if (target.keep) {
-    await Sessions.revokeOthers(deps, scope, {
-      userId: target.userId,
-      currentSessionId: target.keep,
-      reason: 'mfa_changed',
-      actor,
-    })
-    return
-  }
-  await Sessions.revokeAllForUser(deps, scope, target.userId, 'mfa_changed', actor)
-}
-
-/**
  * Confirm a started enrolment with the code the authenticator app shows, turning two-step
  * verification on.
  *
@@ -368,12 +341,6 @@ export async function endSessionsWithoutFactor(
  * The session that made the request (if any) is kept and marked as having proven the factor.
  * The owner is emailed (`Notices.mfaChanged`).
  *
- * An enrolment **inside a sign-in** passes `sweep: 'caller'` and nothing is ended here: the
- * attempt may still be refused after this point (a `before_session` hook, the claims hook,
- * the concurrent-session rule), the factor is then removed again, and a user must not lose
- * their sessions to a sign-in that did not happen. The flow service ends them with
- * {@link endSessionsWithoutFactor} once the new session exists.
- *
  * A wrong code counts against the user's second-factor lockout ({@link secondFactorLockKey}).
  *
  * @param deps - Factor store, crypto, sessions, lockout, notices, ids and clock.
@@ -383,9 +350,7 @@ export async function endSessionsWithoutFactor(
  * @param code - The 6-digit code.
  * @param actor - The user, for the audit log.
  * @param options - `notify: false` leaves the notice to the caller (an enrolment inside an
- *   attempt announces it only once the attempt has completed). `sweep: 'caller'` leaves
- *   ending the user's other sessions to the caller too, which must then call
- *   {@link endSessionsWithoutFactor} or remove the factor again.
+ *   attempt announces it only once the attempt has completed).
  * @returns The ten backup codes, shown this once, and the id of the factor that was confirmed
  *   (for a caller that may have to undo exactly this confirmation; never sent to a client).
  * @throws AuthError `mfa.not_available` when the environment's policy is `off` (checked before
@@ -400,7 +365,7 @@ export async function confirmTotp(
   self: { userId: string; sessionId?: string },
   code: string,
   actor: Actor,
-  options: { notify?: boolean; sweep?: 'here' | 'caller' } = {}
+  options: { notify?: boolean } = {}
 ): Promise<BackupCodes & { factorId: string }> {
   const { userId } = self
   const now = deps.clock.now()
@@ -429,11 +394,15 @@ export async function confirmTotp(
   // (as a password reset does). If this first sweep fails, nothing has changed: the enrolment
   // is still pending and can be confirmed again. The other order could leave the factor on,
   // sessions that never proved it alive, and the backup codes lost with the failed response.
-  const sweep = async () => {
-    if (options.sweep !== 'caller') {
-      await endSessionsWithoutFactor(deps, scope, { userId, keep: self.sessionId }, actor)
-    }
-  }
+  const sweep = () =>
+    self.sessionId
+      ? Sessions.revokeOthers(deps, scope, {
+          userId,
+          currentSessionId: self.sessionId,
+          reason: 'mfa_changed',
+          actor,
+        })
+      : Sessions.revokeAllForUser(deps, scope, userId, 'mfa_changed', actor)
   await sweep()
   const confirmed = await deps.factors.confirmTotp(scope.environmentId, factor.id, {
     step,
