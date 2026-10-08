@@ -151,7 +151,7 @@ Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
 - [x] Settings as code, the CLI, `create-tula`, the dashboard, the MCP server
 - [ ] Published packages and image
 
-Phase 2 ([draft plan](docs/plans/phase-2.md)) adds native SDKs and Expo, webhooks, SMS codes
+Phase 2 ([plan](docs/plans/phase-2.md)) adds native SDKs and Expo, webhooks, SMS codes
 and more providers; Phase 3 organizations, roles, invitations and importers.
 
 ## License

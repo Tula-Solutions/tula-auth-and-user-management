@@ -2,8 +2,8 @@
 
 Webhooks, hooks and JWT templates, SMS, more providers, then the native clients: Expo, Swift
 and Kotlin with prebuilt UI, native Google and Apple, device binding, the tunnel, and MCP tools
-that change things. Status: **draft** (2026-10-04), not yet approved to start. The
-[decisions](#decisions-needed-before-starting) at the end have to be settled first.
+that change things. Status: **approved to start** (2026-10-08). Drafted on 2026-10-04; the
+[decisions](#decisions) it needed were settled on 2026-10-08.
 
 ## Goal
 
@@ -25,7 +25,6 @@ What Phase 1 deliberately left open, and Phase 2 has to close:
 | --- | --- | --- |
 | Nothing reads the event outbox; `delivered_at` is never set; events are never deleted | [`events.ts`](../../packages/db/src/schema/events.ts), [`retention/service.ts`](../../apps/api/src/modules/retention/service.ts), [ADR 0012](../adr/0012-events-and-audit-log.md), [ADR 0017](../adr/0017-retention.md) | 2.2 |
 | Event payloads are not a typed contract per event type | [ADR 0012](../adr/0012-events-and-audit-log.md), "Consequences" | 2.1 |
-| The audit entry is an optional parameter of some store methods (`activity?: Activity`) | [`ports/passkey-store.ts`](../../apps/api/src/ports/passkey-store.ts), [`ports/signing-key-store.ts`](../../apps/api/src/ports/signing-key-store.ts); [unverified list](phase-1-unverified.md#known-trade-offs-recorded-by-the-whole-phase-threat-review) | 2.1 |
 | `audit.retentionDays` is stored and validated but nothing acts on it | [ADR 0017](../adr/0017-retention.md) | 2.1 |
 | Access-token claims are fixed; no custom claims | [`tokens.ts`](../../packages/contract/src/tokens.ts), [ADR 0028](../adr/0028-session-profiles.md), "Deferred" | 2.3 |
 | There is no phone number anywhere in the schema or the contract, and one mail port with one adapter | [`ports/mailer.ts`](../../apps/api/src/ports/mailer.ts) | 2.4 |
@@ -155,9 +154,10 @@ for a step it does not know; the native SDKs must do the same from their first v
 
 ### 2.1 Carry-overs and the event contract
 
-- **What.** (a) `Activity` becomes a required parameter of every store method that changes
-  who can do what; the two deliberate exceptions (ADR 0012) become explicit method names
-  rather than an omitted argument. (b) A typed payload per event type in `@tula/contract`
+- **What.** (a) Already done between Phase 1 and this plan's approval, and not part of this
+  step any more: `Activity` is a required parameter of every store method that changes who
+  can do what, and the deliberate exceptions (ADR 0012) are methods of their own
+  ([`ports/activity-log.ts`](../../apps/api/src/ports/activity-log.ts)). (b) A typed payload per event type in `@tula/contract`
   (a Zod-free entry point for the type names, like `error-codes`), with a schema version, and
   a test that every `ACTIVITY_TYPES` member has one. (c) The retention job acts on
   `audit.retentionDays`. (d) One outbound-HTTP guard, `~/lib/outbound`, used by 2.2 and 2.3:
@@ -346,7 +346,7 @@ for a step it does not know; the native SDKs must do the same from their first v
     first-party answer, and a provider with no address signs up an account with none.
   - X and Facebook are OAuth 2.0 without OIDC: the profile comes from an API call with the
     access token, which stays inside the adapter (ADR 0026). PKCE wherever the provider
-    supports it; where the library does not send it, that is recorded like GitHub's is.
+    supports it; where a provider documents none, that is recorded like Apple's is.
 - **Tests here.** Adapters with stubbed HTTP and locally generated keys; the mock provider
   for scenarios and browser tests; a table test of the linking outcome per provider.
 - **Cannot be tested here.** Any of the five against the real provider. Needs a developer
@@ -858,7 +858,47 @@ Considered for this phase and left out, with no phase assigned by any document:
 - In-process TypeScript hooks for the embedded mode.
 - UIKit and Android Views components (decision D4).
 
+## Decisions
+
+Settled on 2026-10-08, when the plan was approved to start. The options each was chosen from
+are in [the table below](#decisions-needed-before-starting).
+
+| # | Decision | Outcome |
+| --- | --- | --- |
+| D1 | Licence | **Apache-2.0 for the whole repository**, server included (business plan 10.1), not the split recommended below. Publishing is no longer blocked by it. |
+| D2 | Package names | The owner reserves the `@tula` npm scope, a Maven group and the Swift package name now. On 2026-10-08 `@tula/core`, `@tula/react` and `create-tula` were unpublished on npm; whether the `@tula` organization itself is free was not determined. |
+| D3 | Developer accounts and identifiers | One set owned by the project (Apple Developer Program, Google Play Console and Cloud project, a physical iPhone and Android phone, a domain), set up by the owner while Milestone A is built. |
+| D4 | Minimum OS versions and UI toolkits | iOS 16 and Android API 28; SwiftUI and Compose only. The floors are confirmed against platform documentation when 2.14 and 2.15 start. |
+| D5 | SMS | Twilio only. A first factor and a second factor, both off by default; never a step-up or recovery path for an account with a stronger factor; its own `amr` value. |
+| D6 | CI for native code | The macOS job runs on PRs that touch `native/swift`, `packages/contract` or `conformance/`, and nightly. Kotlin's client tests run on Linux in the normal job. |
+| D7 | Producing the native SDKs | The repository's own generator for types, error codes and theme constants; behaviour by hand. |
+| D8 | Expo | Both, in two steps: headless on `@tula/core` (2.13), native UI through Expo Modules (2.16). No React Native UI kit of Tula's own. |
+| D9 | The webhook worker | Inside the API by default, with a switch to run it as a separate service from the same image. No queue. |
+| D10 | The tunnel | One service behind the `Host` interface, chosen when 2.12 starts for a stable hostname without payment. |
+| D11 | Hooks | HTTP only in this phase. |
+| D12 | Scope and the cut order | The full eighteen steps. If the phase must shrink, in this order: 2.16, 2.7, three of the five providers, SMS as a second factor, 2.6. If only one native SDK can be finished, Swift. |
+| D13 | Publishing | Alphas during the phase, as soon as D2 allows. |
+
+Design questions settled the same day, each to be fixed in its step's ADR:
+
+| Step | Question | Outcome |
+| --- | --- | --- |
+| 2.2, 2.3 | Signature format of webhooks and hook requests | The Standard Webhooks header names and secret format. |
+| 2.3 | A hook that fails or exceeds its deadline | Refuses the sign-in by default; "allow on failure" is the operator's choice per hook and a recorded weakening. |
+| 2.4 | Enrolment of a second factor after an SMS-only sign-in, under `mfa.policy: required` | Refused until the user also proves a verified email address or a password. |
+| 2.10 | Whether a device outlives a session | It does not. A device is a bound session: no `devices` table, and losing the key ends the session. |
+| 2.10 | Revoking a user's other sessions without a recent authentication | Stays as it is: it is how an owner evicts someone else, and misuse only makes the owner sign in again. |
+| 2.17 | How an agent's write is authorized | A key kind that can read and propose and never write; a human approves each proposal in the dashboard or with `tula approve`; reversible operations only; production only where the environment opts in. |
+
+How the phase is worked is unchanged from Phase 1: one step per branch, `/review-loop`, merged
+into `develop` when CI is green, and UI checked by hand, now on simulators and phones as well
+as in a browser. Milestone A starts before the Phase 1 [unverified list](phase-1-unverified.md)
+is closed; each item is closed before the step [that depends on it](#what-on-the-phase-1-unverified-list-gets-more-dangerous).
+
 ## Decisions needed before starting
+
+Kept as written on 2026-10-04, for the options and the reasons. The outcomes are
+[above](#decisions).
 
 "Owner" is the person who owns the repository and the accounts. "Lead" is whoever leads the
 build and can decide alone.
@@ -917,10 +957,9 @@ the step named, not at the exit.
 | Automatic linking trusts a provider's "verified" flag indefinitely | 2.5 adds five providers whose flag is weaker, and 2.4 adds phone numbers, which are recycled far more often than addresses. | 2.5 (the per-provider table) |
 | Under `mfa.policy: required`, the first factor alone enrols the second | With SMS as a first factor, whoever holds a SIM-swapped number enrols their own authenticator. | 2.4 |
 | The per-identifier lockout is shared, so anyone who knows an address can lock it | A phone number is easier to know than an address, and SMS codes add a third consumer of the same budget. | 2.4 |
-| GitHub sign-in has no PKCE | In a native app the redirect can be a custom scheme another app may claim; without PKCE the binding is the only thing between an intercepted code and a session. Custom schemes must be refused for a provider without PKCE. | 2.8 |
+| Apple sign-in has no PKCE (GitHub's was added after Phase 1) | In a native app the redirect can be a custom scheme another app may claim; without PKCE the binding is the only thing between an intercepted code and a session. Custom schemes must be refused for a provider without PKCE. | 2.8 |
 | The `local` tier accepts any loopback origin and redirect | A phone is not loopback; developers will be tempted to move a device-test environment out of `local`, or to widen the rule. The tunnel is the answer and must exist first. | 2.12 |
 | Revoking a user's other sessions needs no recent authentication | A stolen phone with an unlocked app can sign the owner out of every other device. With device binding and long mobile sessions that is a stronger position than a browser tab's. | 2.10 (decide; may stay) |
-| The audit entry is an optional parameter | Phase 2 adds many store writes, some by agents. | 2.1 |
 | The MCP server was never connected to a real client | 2.17 depends on how a real client shows a tool's result to a human. | 2.17 |
 | `release.yml` never run; nothing published | Every native distribution path starts with a tag or a registry. | D13 |
 | A real load balancer; Redis failover; the proxy address path | The webhook worker and the proof-replay store add shared state that fails closed. A failover that Phase 1 would have survived as a brief 503 now also pauses deliveries and refreshes. | 2.18 |
