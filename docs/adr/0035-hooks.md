@@ -173,6 +173,18 @@ whatever path led there. One attacker, then, causes at most ten calls a second t
 operator's endpoint, and for each of them must own a fresh inbox or provider account. Over
 the ceiling the request is refused (`rate_limited`) and the attempt is left as it is.
 
+**The ceiling is counted after the code is spent, and that costs a resend.** A request
+refused by it (or by a limiter that cannot count) has already used its emailed code up, so
+retrying the same code after `Retry-After` answers `verification.invalid_code`; the user asks
+for a new code on the same attempt and submits that. Counting before the code is checked was
+considered and refused: the ceiling would then be reachable with an attempt's secret and any
+six digits, so anyone could start a sign-up for an address they do not own and use up an
+environment's whole allowance (ten calls a second) with wrong codes, refusing every real
+sign-up; and since a decoy attempt must behave like a real one, it would have to count for
+existing addresses too. Behind the code, each unit of the ceiling costs a proven inbox. A
+test pins both halves (the same code refused after the cap, a new one accepted; a wrong code
+never reaching the counter).
+
 **It cannot be made to call on demand.** The call is behind everything the step checks first:
 the attempt's secret and origin (`load`), the method's switch, the ceilings, and a code or a
 ticket that was spent. There is no route that asks a hook for its own sake (no "test this
@@ -203,6 +215,8 @@ check is down". For a provider sign-in the ticket is spent and the attempt's sec
 rotated at the exchange, so that attempt is over too, as for every other refusal there.
 
 Any other error (the ceiling on hook calls, a store that is down) leaves the attempt alone.
+If deleting the attempt itself fails, that is logged and the hook's error is still what the
+client gets; the attempt, its code spent, expires by itself.
 
 A denied sign-up is **not** recorded as an event: nothing changed, and there is no user to be
 about. It is logged with ids and the code.

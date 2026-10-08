@@ -206,7 +206,10 @@ what your endpoint said is kept.
 The hook is read when the account is about to be created, so one that was registered,
 changed, switched off or removed while a sign-up was under way applies as it is at that
 moment. An environment's hooks are called at most 600 times a minute; past that the request
-is refused with `rate_limited`.
+is refused with `rate_limited`. That limit is counted only once the address is proven, so
+that nobody without the inbox can use it up; the emailed code is therefore already spent
+when it refuses. The attempt is kept, but the same code will not work again: after the wait
+the client asks for a new code (a resend) and submits that one.
 
 ## What a hook cannot do
 

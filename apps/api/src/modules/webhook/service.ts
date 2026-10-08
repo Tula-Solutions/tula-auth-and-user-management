@@ -820,15 +820,15 @@ function warnPreviousUnreadable(endpoint: WebhookEndpointRecord): void {
  * looked at; its headers and body are dropped here and never leave this function.**
  * `Retry-After` is among what is dropped: the schedule is the server's own.
  *
+ * **Signed in one place, `signedHeaders` (`~/lib/signing-secret`)**, which the worker, a test
+ * event and a delivery sent again all reach through here: the current secret's signature and,
+ * while its overlap lasts, the previous secret's after it.
+ *
  * @param deps - The outbound guard's settings, ids and the clock.
  * @param url - The endpoint's address.
  * @param keys - Its signing keys: the current secret's, and the previous one's during an overlap.
  * @param id - The `webhook-id`: the event's id.
  * @param payload - The body, written out once: exactly that text is signed and sent.
- * **Signed in one place, `signedHeaders` (`~/lib/signing-secret`)**, which the worker, a test
- * event and a delivery sent again all reach through here: the current secret's signature and,
- * while its overlap lasts, the previous secret's after it.
- *
  * @returns The request as an attempt: when, the status or the guard's word, how long.
  */
 async function request(

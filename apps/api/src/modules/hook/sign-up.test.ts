@@ -502,6 +502,70 @@ describe('the hook as it is when the account is about to be created', () => {
   })
 })
 
+describe('when ending the attempt fails', () => {
+  beforeEach(() => configure('required'))
+
+  test.each([
+    ['a denial', deny, 'hook.denied'],
+    ['a failed hook', broken, 'hook.unavailable'],
+  ] as const)(
+    '%s is still what the client hears, and nothing of an account exists',
+    async (_name, responder, code) => {
+      await hook()
+      respond = responder
+      const { attempt } = await start()
+      const sent = sentCode()
+      spies.push(
+        spyOn(deps.flowAttempts, 'delete').mockRejectedValue(
+          new Error('connection to postgres://tula:canary-password@db lost')
+        )
+      )
+      const error = await rejection(verify(attempt, sent))
+      expect(error.code).toBe(code)
+      await expectNothingLeft()
+      const lines = JSON.stringify(spies.flatMap((spy) => spy.mock.calls))
+      expect(lines).toContain(attempt.id)
+      expect(lines).not.toContain('canary-password')
+    }
+  )
+})
+
+describe('the cap on hook calls and a spent code', () => {
+  beforeEach(() => configure('required'))
+
+  // Accepted and documented (docs/hooks.md, ADR 0035): the cap is counted after the code is
+  // spent, so that nobody without the inbox can use it up.
+  test('over the cap the code is already spent: the same code is refused, a new one works', async () => {
+    await hook()
+    const { attempt } = await start()
+    const code = sentCode()
+    const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
+    const capped = spyOn(deps.rateLimiter, 'hit').mockImplementation((key, limit, windowMs) =>
+      key === Hooks.hookCallsKey(tenant)
+        ? Promise.resolve({ allowed: false, remaining: 0, retryAfterMs: 1000 })
+        : hit(key, limit, windowMs)
+    )
+    expect((await rejection(verify(attempt, code))).code).toBe('rate_limited')
+    capped.mockRestore()
+    expect((await rejection(verify(attempt, code))).code).toMatch(/^verification\./)
+    expect(asked).toEqual([])
+    deps.clock.advance(Verification.RESEND_COOLDOWN)
+    await Flows.resendCode(deps, tenant, 'sign_up', ref(attempt), web)
+    expect((await verify(attempt, sentCode())).attempt.step.status).toBe('complete')
+    expect(asked).toHaveLength(1)
+  })
+
+  test('a wrong code never reaches the cap: it cannot be used up without the inbox', async () => {
+    await hook()
+    const { attempt } = await start()
+    const code = sentCode()
+    const counted = spyOn(deps.rateLimiter, 'hit')
+    spies.push(counted)
+    await rejection(verify(attempt, code === '000000' ? '000001' : '000000'))
+    expect(counted.mock.calls.map(([key]) => key)).not.toContain(Hooks.hookCallsKey(tenant))
+  })
+})
+
 describe('an administrator creating a user', () => {
   test('does not ask the hook: it is the operator’s own act', async () => {
     await hook()

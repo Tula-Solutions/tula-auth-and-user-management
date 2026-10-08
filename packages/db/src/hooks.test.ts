@@ -148,3 +148,31 @@ test('there is no column for anything the endpoint answered', () => {
     ].sort()
   )
 })
+
+test('the runtime role updates what the API changes, and cannot rewrite a secret, a point or who owns a hook', async () => {
+  expect(await insert(tenant)).toBeNull()
+  const update = (set: Partial<typeof hooks.$inferInsert>) =>
+    refused(() => withTenant(testDb.db, tenant.environmentId, (tx) => tx.update(hooks).set(set)))
+  expect(
+    await update({
+      url: 'https://new.example.com/hook',
+      enabled: false,
+      deadlineMs: 300,
+      failureMode: 'allow',
+      lastFailedAt: new Date('2026-10-08T10:00:00.000Z'),
+      lastFailureReason: 'timeout',
+      updatedAt: new Date('2026-10-08T10:00:00.000Z'),
+    })
+  ).toBeNull()
+  for (const set of [
+    { secret: 'sealed-by-someone-else' },
+    { point: 'before_sign_up' as const },
+    { id: Bun.randomUUIDv7() },
+    { projectId: other.projectId },
+    { environmentId: other.environmentId },
+    { createdAt: new Date('2020-01-01T00:00:00.000Z') },
+  ]) {
+    expect(await update(set)).toContain('permission denied')
+  }
+  await clear(tenant)
+})

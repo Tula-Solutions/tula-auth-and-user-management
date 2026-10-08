@@ -36,7 +36,10 @@ paths:
   `webhook_endpoints_previous_secret_whole`); the role's table-level UPDATE from 0018 covers
   them, and no grant changed. Neither of the last two has
   a column for anything of a receiver's answer beyond a status code. `hooks` (migration 0021):
-  SELECT, INSERT, UPDATE and DELETE; one row per `(environment_id, point)`; `deadline_ms`
+  SELECT, INSERT and DELETE, and UPDATE of seven columns only (the address, `enabled`,
+  `deadline_ms`, `failure_mode`, `updated_at` and the two last-failure columns: never
+  `secret`, `point`, the id, the tenant columns or `created_at`; a rotation would extend the
+  grant deliberately); one row per `(environment_id, point)`; `deadline_ms`
   held to 100..5000 by the check `hooks_deadline_bounds` (never widen it: the API's schema
   is not the only writer a table has); `last_failed_at` and `last_failure_reason` set
   together; and no column for anything an endpoint answered. Three tables have a

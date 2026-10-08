@@ -2060,7 +2060,8 @@ export async function verifyEmail(
  * only be continued by asking for another code, with the user none the wiser about why. It is
  * deleted (with the password hash it holds), nothing of an account exists, and the client is
  * told which of the two it was: `hook.denied` (with the operator's code) or
- * `hook.unavailable` (try again later). Any other error (the environment's cap on hook calls,
+ * `hook.unavailable` (try again later). If the delete itself fails, that is logged and the
+ * hook's error is still the answer: the attempt then expires by itself. Any other error (the environment's cap on hook calls,
  * a store that is down) leaves the attempt as it is.
  *
  * @returns What the hook module returns: `clear` or `bypassed`, and nothing of an answer.
@@ -2079,7 +2080,17 @@ async function clearSignUp(
       error instanceof AuthError &&
       (error.code === 'hook.denied' || error.code === 'hook.unavailable')
     ) {
-      await deps.flowAttempts.delete(tenant.environmentId, attempt.id)
+      try {
+        await deps.flowAttempts.delete(tenant.environmentId, attempt.id)
+      } catch (cleanup) {
+        // The hook's verdict is what the client must hear, not that tidying up after it
+        // failed. The attempt is left to expire; its code is spent, and nothing was created.
+        logger.warn('could not end a sign-up attempt after its hook refused it', {
+          environmentId: tenant.environmentId,
+          attemptId: attempt.id,
+          err: cleanup instanceof Error ? cleanup.name : 'unknown',
+        })
+      }
     }
     throw error
   }
