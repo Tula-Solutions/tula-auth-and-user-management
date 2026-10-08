@@ -11,7 +11,7 @@ import { DASHBOARD_PATH, dashboardRouter, dashboardSecurityHeaders } from '~/lib
 import { cors } from '~/middleware/cors'
 import { clientRateLimit } from '~/middleware/rate-limit'
 import { requestLog } from '~/middleware/request-log'
-import { documentation, eventSchemas } from '~/openapi'
+import { documentation, eventSchemas, hookSchemas } from '~/openapi'
 
 /**
  * Largest request body the API reads. Auth payloads are a few hundred bytes; the cap stops a
@@ -39,6 +39,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/oauth/router')).default],
   ['/v1', (await import('~/modules/passkey/router')).default],
   ['/v1/admin/webhook-endpoints', (await import('~/modules/webhook/router')).default],
+  ['/v1/admin/hooks', (await import('~/modules/hook/router')).default],
   ['/v1/instance', (await import('~/modules/instance/router')).default],
   ['/v1/instance', (await import('~/modules/control-plane/router')).default],
 ]
@@ -110,14 +111,18 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   }
 
   // Built on the first request and kept: the routes, and beside them the schemas no route
-  // refers to (the event payloads a webhook delivers, `eventSchemas`). A failed build is not
+  // refers to (the event payloads a webhook delivers, `eventSchemas`; the question and the
+  // answer of a hook, `hookSchemas`). A failed build is not
   // kept, so the next request tries again.
   let specs: Awaited<ReturnType<typeof generateSpecs>> | undefined
   app.get(OPENAPI_PATH, async (c) => {
     specs ??= await generateSpecs(app, {
       documentation: {
         ...documentation,
-        components: { ...documentation?.components, schemas: await eventSchemas() },
+        components: {
+          ...documentation?.components,
+          schemas: { ...(await eventSchemas()), ...(await hookSchemas()) },
+        },
       },
       exclude: [OPENAPI_PATH, new RegExp(`^${API_DOCS_PATH}(/|$)`)],
     })

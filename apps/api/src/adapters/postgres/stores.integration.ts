@@ -5,6 +5,7 @@ import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
 import { describeFactorStore } from '~/adapters/factor-store.suite'
 import { describeFlowAttemptStore } from '~/adapters/flow-attempt-store.suite'
+import { describeHookStore } from '~/adapters/hook-store.suite'
 import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
 import { describePasskeyStore } from '~/adapters/passkey-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
@@ -12,6 +13,7 @@ import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresEnvironmentSettingsStore } from '~/adapters/postgres/environment-settings'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
+import { PostgresHookStore } from '~/adapters/postgres/hooks'
 import {
   type IntegrationTenant,
   openIntegrationDatabase,
@@ -129,6 +131,21 @@ describeOAuthProviderStore('PostgresOAuthProviderStore on a real server', async 
         .reverse(),
     a,
     b,
+  }
+})
+
+// Fresh tenants per test: an environment has one hook per point, and on a real server two
+// registrations at once meet at the unique index.
+describeHookStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresHookStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
   }
 })
 

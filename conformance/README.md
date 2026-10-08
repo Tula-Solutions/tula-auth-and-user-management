@@ -108,7 +108,7 @@ A scenario is one JSON file in `scenarios/`, validated against
 [`scenario.schema.json`](scenario.schema.json) (generated from
 `packages/conformance/src/scenario.ts`; do not edit it by hand). The JSON Schema describes the
 shape only. The loader also enforces four rules it cannot express: a scenario with an
-`auth: "secret"` step must set `needsSecretKey: true`, one with a `webhook` step must set
+`auth: "secret"` step must set `needsSecretKey: true`, one with a `webhook` or a `hook` step must set
 `needsWebhookReceiver: true`, a request with the secret key cannot also carry an
 `accessToken`, and `headers` cannot name a header the runner sets itself (`x-tula-attempt`
 included: use `attempt`).
@@ -336,6 +336,21 @@ loopback.
 `49` needs time to pass for the retry. In process its `wait` steps move the test's clock and
 the `webhook` step runs a round of the worker; against a live server they are real sleeps and
 the step waits for the server's own worker. Nothing else is needed of a target.
+
+`51-sign-up-denied-by-a-hook` and `52-hook-that-times-out` use the same receiver through a
+`hook` step ([ADR 0035](../docs/adr/0035-hooks.md)): a step with `answer` scripts how the
+receiver answers every question from then on (an answer of the contract, `{ "status": 500 }`,
+or `"hang"`), and a step with `expect` checks the next question that arrived (a signed `POST`
+whose body is a question of the contract and not an event) or, with `{ "nothing": true }`,
+that the hook was not asked. A hook is asked inside the request that causes it, so nothing is
+waited for. They need a receiver the server can reach for the same reason, are skipped the
+same way, and are in CI's list of skipped names with the three above (five in all). Each
+registers the environment's one `before_sign_up` hook with the shortest deadline (100 ms) and
+removes it in `cleanup`: while one of them runs, every sign-up in that environment is asked,
+so they are not run beside other scenarios against the same environment. What a scenario
+cannot show (a name re-pointed at a private address between the save and the call, an answer
+after the deadline, every malformed answer, a secret that does not open) is in the API's own
+tests (`apps/api/src/modules/hook/`).
 
 `48-webhook-refused-address` needs no receiver and runs everywhere. It leaves out one half of
 its subject on purpose: that an address which passed when it was saved is refused **when a

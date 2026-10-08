@@ -21,6 +21,7 @@ import { PostgresEnvironmentRepository } from '~/adapters/postgres/environments'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
 import { databaseProbe } from '~/adapters/postgres/health'
+import { PostgresHookStore } from '~/adapters/postgres/hooks'
 import { PostgresJobLock } from '~/adapters/postgres/job-lock'
 import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
@@ -170,6 +171,7 @@ export function createContainer(env: Env): Container {
     environmentLock: new PostgresEnvironmentLock(database.withAdvisoryLock),
     webhookEndpoints: new PostgresWebhookEndpointStore(database.db),
     webhookDeliveries: new PostgresWebhookDeliveryStore(database.db),
+    hooks: new PostgresHookStore(database.db),
     // The tier and nothing else: the system resolver and the system's certificate authorities.
     // Nothing in the configuration can hand the guard a resolver or a certificate to trust.
     outbound: { tier: env.ENVIRONMENT },

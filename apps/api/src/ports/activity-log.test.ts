@@ -14,6 +14,7 @@ import {
 import type { ApiKeyRepository, NewApiKey } from '~/ports/api-key-repository'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 import type { FactorStore } from '~/ports/factor-store'
+import type { HookRecord, HookStore } from '~/ports/hook-store'
 import type { OAuthProviderRecord, OAuthProviderStore } from '~/ports/oauth-provider-store'
 import type { PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
@@ -46,6 +47,7 @@ declare const provider: OAuthProviderRecord
 declare const plan: RotationPlan
 declare const endpoint: WebhookEndpointRecord
 declare const rotation: WebhookSecretRotation
+declare const hook: HookRecord
 declare const settings: Parameters<EnvironmentSettingsStore['replace']>[2]
 
 async function _users(users: UserRepository): Promise<void> {
@@ -353,6 +355,24 @@ function withoutComments(source: string): { code: string; bare: string } {
   return { code, bare: bare.replace(/\b(?:import|export)\b[^;\n]*?\bfrom\s*['"]{2}/gs, '') }
 }
 
+async function _hooks(hooks: HookStore): Promise<void> {
+  const strict = { enabled: true, failureMode: 'deny' } as const
+  // @ts-expect-error a hook decides who may sign up
+  await hooks.insert(hook)
+  // @ts-expect-error
+  await hooks.insert(hook, undefined)
+  // @ts-expect-error switching a hook off, or letting it allow on failure, removes a check
+  await hooks.update(ENV, 'hook', strict, { enabled: false }, AT)
+  // @ts-expect-error
+  await hooks.update(ENV, 'hook', strict, { failureMode: 'allow' }, AT, undefined)
+  // @ts-expect-error
+  await hooks.delete(ENV, 'hook', strict)
+  // @ts-expect-error
+  await hooks.delete(ENV, 'hook', strict, undefined)
+  // When a call last failed is the server's own bookkeeping: a method of its own, taking none.
+  await hooks.noteFailure(ENV, 'hook', AT, 'timeout')
+}
+
 describe('what a store is told about the audit entry of a write', () => {
   test('the type-level assertions above are compiled, not run', () => {
     for (const unused of [
@@ -362,6 +382,7 @@ describe('what a store is told about the audit entry of a write', () => {
       _factors,
       _keysAndSettings,
       _webhookEndpoints,
+      _hooks,
       _memoryAdapters,
       _reasons,
     ]) {

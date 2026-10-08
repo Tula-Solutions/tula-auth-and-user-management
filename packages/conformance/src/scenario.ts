@@ -1,4 +1,4 @@
-import { DurationSchema } from '@tula/contract'
+import { DurationSchema, HookAnswerSchema } from '@tula/contract'
 import { z } from 'zod'
 
 /** An HTTP header name. */
@@ -399,6 +399,74 @@ export const WebhookStepSchema = z
   .strict()
   .meta({ ref: 'ConformanceWebhookStep' })
 
+/**
+ * Play the operator's endpoint that a **hook** asks (ADR 0035): the same listener as a
+ * `webhook` step's (a receiver of one name is one listener), scripted to answer a question.
+ *
+ * A step does one of two things:
+ *
+ * - With `captureUrl` and/or `answer`: start the receiver (on first use), store the URL to
+ *   register as the hook's address, and say how it answers every question from now on: an
+ *   answer of the contract (`{ "decision": "allow" }`, `{ "decision": "deny", "code": … }`),
+ *   a bare status (`{ "status": 500 }`), or `"hang"` (it never answers, and the server gives
+ *   up at the hook's deadline). A receiver that was never given an `answer` answers `204`,
+ *   which is no answer of the contract.
+ * - With `expect`: take the oldest question that arrived and check it as a receiver must (a
+ *   `POST` of JSON, the Standard Webhooks headers, exactly one signature that is right for
+ *   `secret`, a timestamp within five minutes, a body that is a question of the contract and
+ *   not an event), then match `body` like a response body. `expect: { "nothing": true }`
+ *   says no question arrived: the hook was not asked.
+ *
+ * A hook is asked inside the request that causes it, so a question has arrived (or not) by
+ * the time that request's step is over: nothing is waited for. Like a `webhook` step it needs
+ * a receiver the server can reach: the scenario sets `needsWebhookReceiver`.
+ */
+export const HookStepSchema = z
+  .object({
+    name: z.string().min(1),
+    hook: z
+      .object({
+        /** Which receiver. Started on first use; shared with `webhook` steps of the same name. */
+        receiver: z.string().min(1),
+        /** Variable that receives the URL to register as the hook's address. */
+        captureUrl: z.string().min(1).optional(),
+        /** How the receiver answers every question from now on. */
+        answer: z
+          .union([
+            HookAnswerSchema,
+            z.strictObject({ status: z.number().int().min(200).max(599) }),
+            z.literal('hang'),
+          ])
+          .optional(),
+        /** What arrived: the next question, or nothing. */
+        expect: z
+          .union([
+            z.strictObject({
+              /** The hook's signing secret, e.g. `{{secret}}` captured from its registration. */
+              secret: z.string(),
+              /** Matched against the question like a response body: a subset. */
+              body: z.unknown().optional(),
+            }),
+            z.strictObject({ nothing: z.literal(true) }),
+          ])
+          .optional(),
+      })
+      .strict()
+      .refine((hook) => hook.expect === undefined || hook.captureUrl === undefined, {
+        message: 'a hook step that checks a question (`expect`) does not start a receiver',
+      })
+      .refine((hook) => hook.expect === undefined || hook.answer === undefined, {
+        message: 'a hook step takes either `expect` or `answer`',
+      })
+      .refine(
+        (hook) =>
+          hook.expect !== undefined || hook.captureUrl !== undefined || hook.answer !== undefined,
+        { message: 'a hook step takes `captureUrl`, `answer` or `expect`' }
+      ),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceHookStep' })
+
 /** Let time pass, e.g. past the refresh reuse grace period. */
 export const WaitStepSchema = z
   .object({ name: z.string().min(1), wait: DurationSchema })
@@ -415,6 +483,7 @@ export const StepSchema = z
     OAuthStepSchema,
     PasskeyStepSchema,
     WebhookStepSchema,
+    HookStepSchema,
     WaitStepSchema,
   ])
   .meta({ ref: 'ConformanceStep' })
@@ -472,8 +541,10 @@ export const ScenarioSchema = z
   .refine(
     (scenario) =>
       scenario.needsWebhookReceiver === true ||
-      [...scenario.steps, ...(scenario.cleanup ?? [])].every((step) => !('webhook' in step)),
-    { message: 'a scenario with a `webhook` step must set `needsWebhookReceiver: true`' }
+      [...scenario.steps, ...(scenario.cleanup ?? [])].every(
+        (step) => !('webhook' in step) && !('hook' in step)
+      ),
+    { message: 'a scenario with a `webhook` or `hook` step must set `needsWebhookReceiver: true`' }
   )
   .meta({ ref: 'ConformanceScenario' })
 

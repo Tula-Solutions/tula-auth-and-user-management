@@ -1,0 +1,292 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "hook that times out",
+  "description": "A `before_sign_up` hook whose endpoint takes the question and never answers. The server gives up at the hook's deadline (here the shortest there is, 100 ms; never more than five seconds) and, because a hook refuses on failure by default, the sign-up is refused with `hook.unavailable`, which is not the code of a denial: nothing was created and the attempt has ended. The hook's read answer then says when it last failed and why, in a fixed word. Switching the hook to allow on failure is recorded as a weakening; after it a sign-up is let through while the endpoint still hangs, and the account's `user.created` entry says the hook was bypassed. Needs a receiver the server can reach.",
+  "needsSecretKey": true,
+  "needsWebhookReceiver": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "laterEmail": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start the operator's endpoint: it never answers",
+      "hook": {
+        "receiver": "validator",
+        "captureUrl": "hookUrl",
+        "answer": "hang"
+      }
+    },
+    {
+      "name": "register the hook with the shortest deadline",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/hooks",
+        "auth": "secret",
+        "body": {
+          "point": "before_sign_up",
+          "url": "{{hookUrl}}",
+          "deadlineMs": 100
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "failureMode": "deny",
+          "deadlineMs": 100
+        }
+      },
+      "capture": {
+        "hookId": "id",
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the hook does not answer in time: the sign-up is refused as unavailable, not as denied",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 503,
+        "body": {
+          "status": 503,
+          "code": "hook.unavailable",
+          "params": "$absent",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the hook was asked",
+      "hook": {
+        "receiver": "validator",
+        "expect": {
+          "secret": "{{secret}}",
+          "body": {
+            "type": "hook.before_sign_up",
+            "data": {
+              "email": "{{email}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the attempt has ended",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "flow.not_found"
+        }
+      }
+    },
+    {
+      "name": "no account exists for the address",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users?q={{email}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "the operator sees that the hook failed, and why, in a fixed word",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/hooks/{{hookId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "lastFailedAt": "$any",
+          "lastFailureReason": "timeout"
+        }
+      }
+    },
+    {
+      "name": "let sign-ups through when the hook fails",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/hooks/{{hookId}}",
+        "auth": "secret",
+        "body": {
+          "failureMode": "allow"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "failureMode": "allow"
+        }
+      }
+    },
+    {
+      "name": "that choice is recorded as a weakening",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{hookId}}&action=hook.updated",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "hook.updated",
+              "metadata": {
+                "point": "before_sign_up",
+                "changed": ["failureMode"],
+                "weakened": true
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{secret}}", "{{hookUrl}}"]
+      }
+    },
+    {
+      "name": "start another sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{laterEmail}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "laterId": "id",
+        "laterSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read its code",
+      "emailCode": {
+        "to": "{{laterEmail}}",
+        "capture": "laterCode"
+      }
+    },
+    {
+      "name": "the endpoint still hangs, and the sign-up is let through",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{laterId}}/verify-email",
+        "attempt": "{{laterSecret}}",
+        "body": {
+          "code": "{{laterCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId"
+      }
+    },
+    {
+      "name": "the account says it was created while the check was down",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{userId}}&action=user.created",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "user.created",
+              "metadata": {
+                "method": "sign_up",
+                "hookBypassed": true
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the hook",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/hooks/{{hookId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

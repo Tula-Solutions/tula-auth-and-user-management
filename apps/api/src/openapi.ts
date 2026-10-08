@@ -1,4 +1,10 @@
-import { DASHBOARD_SESSION_COOKIE, ErrorEnvelopeSchema, TulaEventSchema } from '@tula/contract'
+import {
+  DASHBOARD_SESSION_COOKIE,
+  ErrorEnvelopeSchema,
+  HookAnswerSchema,
+  HookQuestionSchema,
+  TulaEventSchema,
+} from '@tula/contract'
 import type { GenerateSpecOptions } from 'hono-openapi'
 import { resolver } from 'hono-openapi'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
@@ -179,6 +185,11 @@ export const documentation: GenerateSpecOptions['documentation'] = {
       description:
         'Where an environment’s events are delivered, signed, to an operator’s backend (admin).',
     },
+    {
+      name: 'Hooks',
+      description:
+        'Signed questions the server asks an operator’s backend before it acts, whose answer allows or denies (admin). Not webhooks: a webhook is a notice of what has already happened.',
+    },
   ],
   components: {
     securitySchemes: {
@@ -230,4 +241,22 @@ export const documentation: GenerateSpecOptions['documentation'] = {
 export async function eventSchemas() {
   const { components } = await resolver(TulaEventSchema).toOpenAPISchema()
   return components?.schemas ?? {}
+}
+
+/**
+ * The question and the answer of a hook as OpenAPI components: `HookQuestion` (any question,
+ * told apart by `type`), one `Hook<Point>Question` and `Hook<Point>Data` per point, and
+ * `HookAnswer`.
+ *
+ * No route returns either (the server posts a question to the operator's endpoint and reads
+ * its answer), so, like the event payloads, they are added to the document's
+ * `components.schemas` where it is assembled (`createApp`). Generated clients get their types
+ * from here: that is how a receiver written against `@tula/admin` is typed end to end.
+ *
+ * @returns The schemas by component name.
+ */
+export async function hookSchemas() {
+  const question = await resolver(HookQuestionSchema).toOpenAPISchema()
+  const answer = await resolver(HookAnswerSchema).toOpenAPISchema()
+  return { ...question.components?.schemas, ...answer.components?.schemas }
 }

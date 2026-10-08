@@ -15,6 +15,7 @@ import type { EnvironmentSettingsStore } from '~/ports/environment-settings-stor
 import type { FactorStore } from '~/ports/factor-store'
 import type { FlowAttemptStore } from '~/ports/flow-attempt-store'
 import type { HealthProbe } from '~/ports/health-probe'
+import type { HookStore } from '~/ports/hook-store'
 import type { IdGenerator } from '~/ports/id-generator'
 import type { JobLock } from '~/ports/job-lock'
 import type { Lockout } from '~/ports/lockout'
@@ -122,6 +123,8 @@ export interface Deps {
   webhookEndpoints: WebhookEndpointStore
   /** The outbox's waiting events and the record of what became of sending them. */
   webhookDeliveries: WebhookDeliveryStore
+  /** The questions an environment has the server ask before it acts, and their sealed secrets. */
+  hooks: HookStore
   /**
    * What the outbound guard (`~/lib/outbound`) judges an operator's address by: the tier, and
    * in tests a resolver. Pass it to `Outbound.check` and `Outbound.request`; never build one

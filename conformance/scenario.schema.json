@@ -456,6 +456,110 @@
                 "type": "string",
                 "minLength": 1
               },
+              "hook": {
+                "type": "object",
+                "properties": {
+                  "receiver": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "answer": {
+                    "anyOf": [
+                      {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "decision": {
+                                "type": "string",
+                                "const": "allow"
+                              }
+                            },
+                            "required": ["decision"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "decision": {
+                                "type": "string",
+                                "const": "deny"
+                              },
+                              "code": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9_]{1,64}$"
+                              }
+                            },
+                            "required": ["decision"],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "ref": "HookAnswer"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "integer",
+                            "minimum": 200,
+                            "maximum": 599
+                          }
+                        },
+                        "required": ["status"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "string",
+                        "const": "hang"
+                      }
+                    ]
+                  },
+                  "expect": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "secret": {
+                            "type": "string"
+                          },
+                          "body": {}
+                        },
+                        "required": ["secret"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nothing": {
+                            "type": "boolean",
+                            "const": true
+                          }
+                        },
+                        "required": ["nothing"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": ["receiver"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "hook"],
+            "additionalProperties": false,
+            "ref": "ConformanceHookStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "wait": {
                 "type": "string",
                 "ref": "Duration"
@@ -873,6 +977,110 @@
             "required": ["name", "webhook"],
             "additionalProperties": false,
             "ref": "ConformanceWebhookStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hook": {
+                "type": "object",
+                "properties": {
+                  "receiver": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "answer": {
+                    "anyOf": [
+                      {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "decision": {
+                                "type": "string",
+                                "const": "allow"
+                              }
+                            },
+                            "required": ["decision"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "decision": {
+                                "type": "string",
+                                "const": "deny"
+                              },
+                              "code": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9_]{1,64}$"
+                              }
+                            },
+                            "required": ["decision"],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "ref": "HookAnswer"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "integer",
+                            "minimum": 200,
+                            "maximum": 599
+                          }
+                        },
+                        "required": ["status"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "string",
+                        "const": "hang"
+                      }
+                    ]
+                  },
+                  "expect": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "secret": {
+                            "type": "string"
+                          },
+                          "body": {}
+                        },
+                        "required": ["secret"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nothing": {
+                            "type": "boolean",
+                            "const": true
+                          }
+                        },
+                        "required": ["nothing"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": ["receiver"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "hook"],
+            "additionalProperties": false,
+            "ref": "ConformanceHookStep"
           },
           {
             "type": "object",
