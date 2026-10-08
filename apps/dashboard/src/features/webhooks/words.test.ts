@@ -27,6 +27,27 @@ import {
   webhookMessageFor,
 } from './words'
 
+// A state or a reason is text from the server and chooses the key of a table of words. One
+// that is also the name of something every object has (`constructor`, `toString`,
+// `__proto__`) must be read as a word nobody knows, never as that function or prototype.
+describe('a word from the server that is also a name every object has', () => {
+  const inherited = [['constructor'], ['__proto__'], ['toString']]
+
+  test.each(inherited)('an endpoint switched off for the reason `%s` quotes it', (reason) => {
+    const state = endpointState({ enabled: false, disabledReason: reason, failingSince: null })
+    expect(state.kind).toBe('off-by-server')
+    expect(state.detail).toBe(`The server stopped sending to it. The server’s reason: ${reason}`)
+  })
+
+  test.each(inherited)('a delivery in the state `%s` is shown as the text it is', (state) => {
+    expect(deliveryStateLabel(state)).toBe(state)
+  })
+
+  test.each(inherited)('a request that failed for the reason `%s` quotes it', (reason) => {
+    expect(failureReasonText(reason)).toBe(`The server gave this reason: ${reason}`)
+  })
+})
+
 // The sentences of the webhooks screens. The server answers with fixed words; an operator
 // reads the dashboard's own text for each, never the word alone.
 

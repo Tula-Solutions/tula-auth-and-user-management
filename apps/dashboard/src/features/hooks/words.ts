@@ -1,18 +1,15 @@
 import { type HookFailureMode, type HookStrength, hookWeakenings } from '@tula/contract'
 import { messageFor, toApiError } from '~/api/errors'
 import type { Hook } from '~/api/generated/api.gen'
+import { own } from '~/lib/own'
 
 // Every sentence the hooks screen says about a point, a state, a failure or a refusal. The
 // server answers with fixed words (`before_token`, `allow`, `timeout`); what an operator
 // reads is the dashboard's own text for each. A word this version does not know is shown as
 // the text it is, never as markup and never as the only thing said.
 
-// The key of every lookup below is text from the server. A plain object also answers for
-// `constructor`, `toString` and `__proto__`, with a function or its prototype: only what the
-// table itself holds is a word of the dashboard's.
-function own<T>(table: Record<string, T>, key: string): T | undefined {
-  return Object.hasOwn(table, key) ? table[key] : undefined
-}
+// The key of every lookup below is text from the server, so each goes through `own`: only
+// what a table itself holds is a word of the dashboard's.
 
 /** What the screen says about one point at which a hook is asked. */
 export interface PointWords {
