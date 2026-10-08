@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { AUDIT_ACTOR_TYPES as CONTRACT_ACTOR_TYPES } from '@tula/contract'
+import {
+  AUDIT_ACTOR_TYPES as CONTRACT_ACTOR_TYPES,
+  EVENT_SCHEMA_VERSION,
+  EVENT_SCHEMAS,
+} from '@tula/contract'
 import { AUDIT_ACTOR_TYPES, auditLogs, events, withTenant } from '@tula/db'
 import {
   createTestDatabase,
@@ -85,22 +89,43 @@ function newUser(tenant: TestTenant) {
 describe('the event outbox', () => {
   test('every activity is also an undelivered event with the same id, without the origin', async () => {
     const user = newUser(a)
-    const entry = activity(a, { target: { type: 'user', id: user.id } })
+    const entry = activity(a, {
+      target: { type: 'user', id: user.id },
+      // A detail the event's schema does not name: the audit log keeps it, the outbox does not.
+      data: { method: 'admin', emailVerified: false, note: 'kept in the audit log only' },
+    })
     await new PostgresUserRepository(testDb.db).create(user, entry)
     const [event] = await withTenant(testDb.db, a.environmentId, (tx) =>
       tx.select().from(events).where(eq(events.id, entry.id))
     )
+    // The stored payload is the typed event of the contract (ADR 0012), whole: its own id,
+    // type, version and time, so a delivery needs nothing but this column.
+    const payload = {
+      id: entry.id,
+      type: 'user.created',
+      schemaVersion: EVENT_SCHEMA_VERSION,
+      occurredAt: now.toISOString(),
+      actor: entry.actor,
+      target: entry.target,
+      data: { method: 'admin', emailVerified: false },
+    }
     expect(event).toMatchObject({
       id: entry.id,
       type: 'user.created',
       environmentId: a.environmentId,
       occurredAt: now,
       deliveredAt: null,
-      payload: { actor: entry.actor, target: entry.target, data: { method: 'admin' } },
     })
+    expect(event?.payload).toEqual(payload)
+    expect(EVENT_SCHEMAS['user.created'].parse(event?.payload)).toEqual(payload as never)
     // Webhook payloads must not carry the caller's IP address or user agent.
     expect(JSON.stringify(event?.payload)).not.toContain('203.0.113.7')
     expect(JSON.stringify(event?.payload)).not.toContain('suite/1.0')
+    // The audit entry is unchanged by the allow-list: it keeps every detail it was given.
+    const [audited] = await withTenant(testDb.db, a.environmentId, (tx) =>
+      tx.select().from(auditLogs).where(eq(auditLogs.id, entry.id))
+    )
+    expect(audited?.metadata).toEqual(entry.data)
   })
 
   test('records more entries than fit in one statement (one user with thousands of sessions)', async () => {

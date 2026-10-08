@@ -121,9 +121,12 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   publishable package, not `~/`: other packages typecheck its sources under their own paths.
 - A change to a publishable package comes with a changeset (`bunx changeset`).
 - **`@tula/core` must not pull Zod into an application's bundle.** Import run-time values from
-  the contract's Zod-free entry points (`@tula/contract/error-codes`, `/headers`,
-  `/password-rules`, `/theme`, `/issuer`) and types from `src/generated`. Anything an SDK needs at run time goes in
-  a contract module that does not import Zod.
+  the contract's Zod-free entry points (`@tula/contract/error-codes`, `/event-types`,
+  `/headers`, `/password-rules`, `/theme`, `/issuer`) and types from `src/generated`. Anything
+  an SDK needs at run time goes in a contract module that does not import Zod.
+  `packages/contract/src/entry-points.test.ts` bundles every subpath but the index and fails
+  for one that reaches Zod, and for a subpath missing from `exports`,
+  `publishConfig.exports` or `bunup.config.ts`.
 - `@tula/core` ships no Node or Bun API: `typecheck:portable` checks its sources against web
   platform types only.
 - **`@tula/admin` is Zod-free at run time and server-side only.** It refuses a publishable key,
@@ -952,6 +955,35 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   records the **keys** that changed (`data.changed`), never their values. The only unrecorded
   writes are a password-hash upgrade after sign-in and an environment's first signing keys
   (ADR 0012).
+- **An event's payload is a public contract and an allow-list** (ADR 0012). Every activity
+  type has, in `@tula/contract`, a name and a target type (`event-types.ts`, Zod-free), a
+  `data` schema (`EVENT_DATA_SCHEMAS` in `events.ts`) and an example (`EVENT_FIXTURES`); a
+  type missing one of the three does not compile and fails the contract's tests. **A new
+  activity type is those three things, added together.** `Audit.entry` checks each call
+  site's `target` and `data` against them at compile time: a detail the contract has no
+  field for is added to the schema first, as a decision, never passed along. A `data` field
+  is an id the server made, a value from a closed set (an enum, not a string), a boolean or a
+  number; never an email address, a name, an IP address, a user agent, a token, a code, a
+  hash or key material, and never a free-form string. The two string fields that are not ids
+  (`changed` and `managedBy` of `environment.settings_updated`) are **bounded names, not
+  secret-proof**: a token-shaped string fits either pattern. What keeps a secret out of them
+  is that each has one producer, `Settings.changedKeys` and the validated `x-tula-managed-by`
+  header; a new string field needs that argument, not only a pattern. The union of all
+  events is `TulaEvent` / `TulaEventSchema` (never `Event`, which is the DOM's). Within
+  `EVENT_SCHEMA_VERSION` a payload only grows (a new type, an optional field, an enum
+  value); anything else is a new version. `events.payload` is built only by `eventPayload`
+  (`~/lib/event-payload`), in both adapters: it keeps what the schema names and accepts,
+  field by field, drops the rest, logs by name what it dropped, what is required and
+  missing and what breaks a rule that spans fields, and never throws (an `occurredAt` that
+  is not a time becomes the time now). The
+  audit entry's `metadata` is not narrowed by it.
+  `apps/api/src/event-canary.test.ts` runs every conformance scenario with the wire tapped
+  (every request header, whatever its name) and fails if anything a request carried, a
+  response handed out as a secret or an email held is found in a payload; a client-supplied
+  value that is meant to be in one is an entry of that test's `MAY_APPEAR`, with the one
+  field it may be in. `conformance.test.ts` holds every recorded payload to its schema. After changing a schema run `bun run contract:generate` (the schemas are
+  components of the OpenAPI document, added in `createApp` because no route refers to them)
+  and `bun run dashboard:generate`.
 - **The activity is a required parameter, in the ports and in both adapters** (`Recorded` in
   `~/ports/activity-log`): a call that leaves it out does not compile. Never make one
   optional, give one a default or accept `undefined`. A write that is never recorded is a
@@ -1124,9 +1156,11 @@ apps/api/src/
 ├── handlers.ts       # onError + validation hook → contract error envelope
 ├── openapi.ts        # shared OpenAPI responses, security requirements, document info
 ├── testing.ts        # createTestDeps(): memory adapters + FixedClock
+├── testing/          # test support shared by test files: the in-process conformance target
 ├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor,
 │                     # device (the family a user agent belongs to), safe-error,
-│                     # outbound (the guarded request to an operator's address)
+│                     # outbound (the guarded request to an operator's address),
+│                     # event-payload (an activity's typed, allow-listed event)
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/, oauth/
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,

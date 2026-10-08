@@ -55,7 +55,7 @@ function activity(environmentId: string): Activity {
     target: { type: 'environment', id: environmentId },
     ipAddress: null,
     userAgent: null,
-    data: { changed: ['app.name'] },
+    data: { revision: 1, changed: ['app.name'] },
     occurredAt: clock.now(),
   }
 }

@@ -67,7 +67,8 @@ export function describeEnvironmentSettingsStore(
         target: { type: 'environment', id: tenant.environmentId },
         ipAddress: '203.0.113.9',
         userAgent: 'suite/1.0',
-        data: { changed },
+        // A whole event of its type: the outbox payload is built from this (ADR 0012).
+        data: { revision: 1, changed },
         occurredAt: now,
       }
     }
@@ -294,7 +295,7 @@ export function describeEnvironmentSettingsStore(
       expect(await ctx.store.get(a.environmentId)).toEqual(won[0] ?? null)
       // Only the winner is on record.
       expect(await audited(a)).toEqual([
-        { changed: [won[0]?.settings.app.name === 'Left' ? 'left' : 'right'] },
+        { revision: 1, changed: [won[0]?.settings.app.name === 'Left' ? 'left' : 'right'] },
       ])
     })
 
@@ -313,7 +314,9 @@ export function describeEnvironmentSettingsStore(
 
     test('the change is on record with the keys it was given, in the same write', async () => {
       await replace(a, 0, named('Acme'), ['app.name', 'urls.allowedOrigins'])
-      expect(await audited(a)).toEqual([{ changed: ['app.name', 'urls.allowedOrigins'] }])
+      expect(await audited(a)).toEqual([
+        { revision: 1, changed: ['app.name', 'urls.allowedOrigins'] },
+      ])
     })
 
     test('one environment’s settings are invisible to, and untouched by, another', async () => {

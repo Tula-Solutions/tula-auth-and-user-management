@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
-import { openAPIRouteHandler } from 'hono-openapi'
+import { generateSpecs } from 'hono-openapi'
 import type { AppEnv, Deps } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { notFound, onError } from '~/handlers'
@@ -11,7 +11,7 @@ import { DASHBOARD_PATH, dashboardRouter, dashboardSecurityHeaders } from '~/lib
 import { cors } from '~/middleware/cors'
 import { clientRateLimit } from '~/middleware/rate-limit'
 import { requestLog } from '~/middleware/request-log'
-import { documentation } from '~/openapi'
+import { documentation, eventSchemas } from '~/openapi'
 
 /**
  * Largest request body the API reads. Auth payloads are a few hundred bytes; the cap stops a
@@ -108,13 +108,20 @@ export function createApp(deps: Deps): Hono<AppEnv> {
     app.route('/v1/dev/oauth', devOAuthRouter)
   }
 
-  app.get(
-    OPENAPI_PATH,
-    openAPIRouteHandler(app, {
-      documentation,
+  // Built on the first request and kept: the routes, and beside them the schemas no route
+  // refers to (the event payloads a webhook delivers, `eventSchemas`). A failed build is not
+  // kept, so the next request tries again.
+  let specs: Awaited<ReturnType<typeof generateSpecs>> | undefined
+  app.get(OPENAPI_PATH, async (c) => {
+    specs ??= await generateSpecs(app, {
+      documentation: {
+        ...documentation,
+        components: { ...documentation?.components, schemas: await eventSchemas() },
+      },
       exclude: [OPENAPI_PATH, new RegExp(`^${API_DOCS_PATH}(/|$)`)],
     })
-  )
+    return c.json(specs)
+  })
   // The API reference: only where `API_DOCS` is on (by default, the `local` and `dev` tiers),
   // and only from the installed package. Nothing of it is loaded from another host (ADR 0032).
   if (deps.config.apiDocs && docsBundle !== null) {

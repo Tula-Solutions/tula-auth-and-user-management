@@ -52,7 +52,7 @@ describe('PostgresEnvironmentSettingsStore', () => {
       target: { type: 'environment', id: tenant.environmentId },
       ipAddress: null,
       userAgent: null,
-      data: { changed: ['app.name'] },
+      data: { revision: 1, changed: ['app.name'] },
       occurredAt: now,
     }
   }

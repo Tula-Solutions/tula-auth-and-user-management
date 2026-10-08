@@ -4,10 +4,16 @@ import {
   type EnvironmentSettings,
   EnvironmentSettingsInputSchema,
   EnvironmentSettingsSchema,
+  EVENT_DATA_SCHEMAS,
+  MAX_CHANGED_SETTINGS,
+  MAX_CUSTOM_SESSION_PROFILES,
+  MAX_SESSION_PROFILE_NAME_LENGTH,
+  MAX_SETTING_NAME_LENGTH,
   PASSWORD_POLICY_PRESETS,
 } from '@tula/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { ServiceException } from '~/exceptions'
+import { eventPayload } from '~/lib/event-payload'
 import * as Audit from '~/modules/audit/service'
 import * as Settings from '~/modules/settings/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
@@ -269,6 +275,46 @@ describe('changedKeys', () => {
     })
     expect(Settings.changedKeys(before, after)).toEqual(['app.name', 'urls.allowedOrigins'])
     expect(Settings.changedKeys(before, structuredClone(before))).toEqual([])
+  })
+
+  // `environment.settings_updated` lists these keys in `changed`, which the event contract
+  // bounds (a name's pattern and length, the length of the list). A list that does not fit is
+  // dropped from the payload whole (`eventPayload`), so a deeper or longer setting must
+  // fail here, not go missing from a webhook.
+  test('every key of the largest settings document fits the event’s `changed`', () => {
+    const name = (n: number) => `p${n}${'x'.repeat(MAX_SESSION_PROFILE_NAME_LENGTH - 2)}`
+    const custom = Object.fromEntries(
+      Array.from({ length: MAX_CUSTOM_SESSION_PROFILES }, (_, n) => [
+        name(n),
+        DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.web,
+      ])
+    )
+    const largest = EnvironmentSettingsSchema.parse(
+      document({
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          profiles: { ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles, ...custom },
+        },
+      })
+    )
+    expect(name(0)).toHaveLength(MAX_SESSION_PROFILE_NAME_LENGTH)
+    // Against nothing at all, every key is a changed one.
+    const keys = Settings.changedKeys({} as EnvironmentSettings, largest)
+    expect(keys.some((key) => key.startsWith(`sessions.profiles.${name(0)}.refresh.`))).toBe(true)
+    expect(keys.length).toBeLessThanOrEqual(MAX_CHANGED_SETTINGS)
+    expect(Math.max(...keys.map((key) => key.length))).toBeLessThanOrEqual(MAX_SETTING_NAME_LENGTH)
+    const { changed } = EVENT_DATA_SCHEMAS['environment.settings_updated'].shape
+    expect(changed.parse(keys)).toEqual(keys)
+    // And the payload carries the whole list.
+    const payload = eventPayload(
+      Audit.entry(deps, tenant, {
+        type: 'environment.settings_updated',
+        actor: TEST_ACTOR,
+        target: { type: 'environment', id: tenant.environmentId },
+        data: { revision: 1, changed: keys },
+      })
+    )
+    expect(payload.data.changed).toEqual(keys)
   })
 
   test('a key present on one side only counts as changed', () => {

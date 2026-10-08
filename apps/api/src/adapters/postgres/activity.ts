@@ -1,5 +1,6 @@
 import { auditLogs, type Database, events, type Transaction, withTenant } from '@tula/db'
 import { and, count, desc, eq, gte, lt } from 'drizzle-orm'
+import { eventPayload } from '~/lib/event-payload'
 import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
 
 /**
@@ -31,8 +32,9 @@ export async function recordActivity(
         projectId: activity.projectId,
         environmentId: activity.environmentId,
         type: activity.type,
-        // No IP or user agent: the outbox feeds webhooks, which get only what they need.
-        payload: { actor: activity.actor, target: activity.target, data: activity.data },
+        // The typed event of `@tula/contract`: only the fields its schema names, and no IP
+        // address or user agent. The outbox feeds webhooks, which get only what they need.
+        payload: eventPayload(activity),
         occurredAt: activity.occurredAt,
       }))
     )

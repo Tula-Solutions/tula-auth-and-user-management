@@ -30,7 +30,7 @@ const ACCESS_TOKEN_VERSION: 1
 
 ### `ACTIVITY_TYPES`
 
-_constant_, defined in `packages/contract/src/audit.ts`
+_constant_, defined in `packages/contract/src/event-types.ts`
 
 Everything the API records. Each entry is written to the event outbox (for webhooks) and to
 the audit log, in the same database transaction as the change it describes.
@@ -39,8 +39,22 @@ A session ends with exactly one of `session.revoked` (its `reason` says why) or
 `session.reuse_detected` (a rotated refresh token was replayed, so the session was revoked as
 possibly stolen).
 
+A new type needs three things, and a test fails for each one that is missing: its name here
+(and in {@link EVENT_TARGET_TYPES}), a `data` schema in `EVENT_DATA_SCHEMAS` and an example
+in `EVENT_FIXTURES`.
+
 ```ts
 const ACTIVITY_TYPES
+```
+
+**Example**
+
+```ts
+import { ACTIVITY_TYPES, type ActivityType } from '@tula/contract/event-types'
+
+function isKnown(type: string): type is ActivityType {
+  return (ACTIVITY_TYPES as readonly string[]).includes(type)
+}
 ```
 
 ### `AT_LEAST_ONE_SIGN_IN_METHOD`
@@ -130,12 +144,12 @@ const AccessTokenClaimsSchema
 
 ### `ActivityType`
 
-_type_, defined in `packages/contract/src/audit.ts`
+_type_, defined in `packages/contract/src/event-types.ts`
 
-A recorded action type.
+A recorded action type: one of {@link ACTIVITY_TYPES}.
 
 ```ts
-export type ActivityType = z.infer<typeof ActivityTypeSchema>
+export type ActivityType = (typeof ACTIVITY_TYPES)[number]
 ```
 
 ### `ActivityTypeSchema`
@@ -763,6 +777,107 @@ Sign-up deliberately has no "email already taken" code: an existing address stil
 const ERROR_DEFINITIONS: Record<string, ErrorDefinition>
 ```
 
+### `EVENT_DATA_SCHEMAS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+The `data` of each event type: the details beyond who (`actor`) and what (`target`).
+
+Typed so that a type in {@link ACTIVITY_TYPES} without an entry does not compile; the
+contract's tests check the same at run time.
+
+```ts
+const EVENT_DATA_SCHEMAS: Record<any, z.ZodObject<Record<string, any>, z.core.$strip>>
+```
+
+**Example**
+
+```ts
+EVENT_DATA_SCHEMAS['session.revoked'].parse({ userId: 'u_1', reason: 'sign_out' })
+```
+
+### `EVENT_FIXTURES`
+
+_constant_, defined in `packages/contract/src/event-fixtures.ts`
+
+A valid example of every event type, keyed by type: for documentation, for a receiver's
+tests and for sending a test delivery. Every optional field is present, so an example shows
+the whole shape (but for `user.passkey_removed`, whose fields depend on its `method`: the
+example is a removal by the owner). Typed so that a type without an example does not compile.
+
+Plain data: nothing here is a real id.
+
+```ts
+const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> }
+```
+
+**Example**
+
+```ts
+test('handles a replayed refresh token', () => {
+  handle(EVENT_FIXTURES['session.reuse_detected'])
+})
+```
+
+### `EVENT_SCHEMAS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+The schema of each event type: the envelope around its {@link EVENT_DATA_SCHEMAS} entry.
+
+Parsing strips every key a schema does not name, at each level.
+
+```ts
+const EVENT_SCHEMAS
+```
+
+**Example**
+
+```ts
+const event = EVENT_SCHEMAS['user.created'].parse(JSON.parse(body))
+```
+
+### `EVENT_SCHEMA_VERSION`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+The version of the event payloads: the `schemaVersion` of every event.
+
+Within a version a payload only grows: a later server may add an event type, a field or an
+enum value, so a receiver ignores what it does not know. Removing or renaming a field, or
+changing what one means, is a new version.
+
+```ts
+const EVENT_SCHEMA_VERSION: 1
+```
+
+**Example**
+
+```ts
+if (event.schemaVersion !== EVENT_SCHEMA_VERSION) {
+  // Written by a server with a newer payload format than this code was built for.
+}
+```
+
+### `EVENT_TARGET_TYPES`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+What each event is about: the `target.type` of its payload. `target.id` is that thing's id.
+
+An event about a user's credentials targets the `user` (the passkey or session concerned
+is named in `data`); an OAuth provider's credentials belong to the `environment`.
+
+```ts
+const EVENT_TARGET_TYPES: Record<any, any>
+```
+
+**Example**
+
+```ts
+EVENT_TARGET_TYPES['session.revoked'] // 'session'
+```
+
 ### `EmailLinkRequest`
 
 _type_, defined in `packages/contract/src/flow.ts`
@@ -980,6 +1095,72 @@ Parameters that give an error its specifics, e.g. `{ min: 10 }` for `password.to
 
 ```ts
 const ErrorParamsSchema: z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean]>>
+```
+
+### `EventActorSchema`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Who did it. `id` is a user's id, an API key's (`admin`), a dashboard session's
+(`instance_admin`), or `null`: the server itself, or the instance admin token.
+
+```ts
+const EventActorSchema: z.ZodObject<{ type: z.ZodEnum<{}>; id: z.ZodNullable<z.ZodString>; }, z.core.$strip>
+```
+
+### `EventData`
+
+_type_, defined in `packages/contract/src/events.ts`
+
+The `data` of an event of type `T`; without `T`, of any event.
+
+```ts
+export type EventData<T extends ActivityType = ActivityType> = z.infer<
+  (typeof EVENT_DATA_SCHEMAS)[T]
+>
+```
+
+**Example**
+
+```ts
+const data: EventData<'session.created'> = { userId: 'u_1', client: 'ios' }
+```
+
+### `EventOf`
+
+_interface_, defined in `packages/contract/src/events.ts`
+
+An event of type `T`, as a webhook delivers it.
+
+- `id`: the event's id, the same as its audit log entry's. A delivery that is repeated
+  carries the same id: use it to drop duplicates.
+- `schemaVersion`: {@link EVENT_SCHEMA_VERSION}.
+- `occurredAt`: ISO 8601, UTC.
+- `actor`, `target`: who did it and what it was done to, by id.
+- `data`: the details, per type.
+
+There is no IP address and no user agent: those stay in the audit log.
+
+```ts
+export interface EventOf<T extends ActivityType> {
+  id: string
+  type: T
+  schemaVersion: typeof EVENT_SCHEMA_VERSION
+  occurredAt: string
+  actor: { type: AuditActorType; id: string | null }
+  target: { type: EventTargetType<T>; id: string }
+  data: EventData<T>
+}
+```
+
+### `EventTargetType`
+
+_type_, defined in `packages/contract/src/event-types.ts`
+
+What an event of type `T` is about.
+
+```ts
+export type EventTargetType<T extends ActivityType = ActivityType> = (typeof EVENT_TARGET_TYPES)[T]
 ```
 
 ### `FLOW_ATTEMPT_HEADER`
@@ -1433,6 +1614,23 @@ Longest audit retention that can be set, in days (ten years).
 const MAX_AUDIT_RETENTION_DAYS: 3650
 ```
 
+### `MAX_CHANGED_SETTINGS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Most names an `environment.settings_updated` event lists in `changed`. Above what the
+settings document can hold; the API has a test that builds the largest one.
+
+```ts
+const MAX_CHANGED_SETTINGS: 256
+```
+
+**Example**
+
+```ts
+names.slice(0, MAX_CHANGED_SETTINGS)
+```
+
 ### `MAX_CUSTOM_SESSION_PROFILES`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -1521,6 +1719,22 @@ Longest idle or absolute timeout a profile may set.
 
 ```ts
 const MAX_SESSION_TIMEOUT: Duration
+```
+
+### `MAX_SETTING_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Longest name of a changed setting, e.g. `sessions.profiles.<name>.refresh.reuseGracePeriod`.
+
+```ts
+const MAX_SETTING_NAME_LENGTH: 128
+```
+
+**Example**
+
+```ts
+name.length <= MAX_SETTING_NAME_LENGTH
 ```
 
 ### `MAX_STEP_UP_AFTER`
@@ -3109,6 +3323,42 @@ nothing until it is confirmed with a code, and expires after ten minutes.
 const TotpEnrolmentSchema: z.ZodObject<{ secret: z.ZodString; uri: z.ZodString; }, z.core.$strip>
 ```
 
+### `TulaEvent`
+
+_type_, defined in `packages/contract/src/events.ts`
+
+Any event: a union discriminated by `type`.
+
+```ts
+export type TulaEvent = { [T in ActivityType]: EventOf<T> }[ActivityType]
+```
+
+**Example**
+
+```ts
+function handle(event: TulaEvent) {
+  if (event.type === 'session.reuse_detected') {
+    alertSecurity(event.data.userId)
+  }
+}
+```
+
+### `TulaEventSchema`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Any event, told apart by `type`: what a webhook receiver parses a delivery with.
+
+```ts
+const TulaEventSchema: z.ZodType<EventOf<any>, unknown, z.core.$ZodTypeInternals<EventOf<any>, unknown>>
+```
+
+**Example**
+
+```ts
+const event = TulaEventSchema.parse(JSON.parse(body))
+```
+
 ### `User`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -3904,6 +4154,100 @@ export function errorDefinition(code: ErrorCode): ErrorDefinition
 
 ```ts
 errorDefinition('password.too_short').status // 422
+```
+
+## `@tula/contract/event-types`
+
+Source: `packages/contract/src/event-types.ts`
+
+### `ACTIVITY_TYPES`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+Everything the API records. Each entry is written to the event outbox (for webhooks) and to
+the audit log, in the same database transaction as the change it describes.
+
+A session ends with exactly one of `session.revoked` (its `reason` says why) or
+`session.reuse_detected` (a rotated refresh token was replayed, so the session was revoked as
+possibly stolen).
+
+A new type needs three things, and a test fails for each one that is missing: its name here
+(and in {@link EVENT_TARGET_TYPES}), a `data` schema in `EVENT_DATA_SCHEMAS` and an example
+in `EVENT_FIXTURES`.
+
+```ts
+const ACTIVITY_TYPES
+```
+
+**Example**
+
+```ts
+import { ACTIVITY_TYPES, type ActivityType } from '@tula/contract/event-types'
+
+function isKnown(type: string): type is ActivityType {
+  return (ACTIVITY_TYPES as readonly string[]).includes(type)
+}
+```
+
+### `ActivityType`
+
+_type_, defined in `packages/contract/src/event-types.ts`
+
+A recorded action type: one of {@link ACTIVITY_TYPES}.
+
+```ts
+export type ActivityType = (typeof ACTIVITY_TYPES)[number]
+```
+
+### `EVENT_SCHEMA_VERSION`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+The version of the event payloads: the `schemaVersion` of every event.
+
+Within a version a payload only grows: a later server may add an event type, a field or an
+enum value, so a receiver ignores what it does not know. Removing or renaming a field, or
+changing what one means, is a new version.
+
+```ts
+const EVENT_SCHEMA_VERSION: 1
+```
+
+**Example**
+
+```ts
+if (event.schemaVersion !== EVENT_SCHEMA_VERSION) {
+  // Written by a server with a newer payload format than this code was built for.
+}
+```
+
+### `EVENT_TARGET_TYPES`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+What each event is about: the `target.type` of its payload. `target.id` is that thing's id.
+
+An event about a user's credentials targets the `user` (the passkey or session concerned
+is named in `data`); an OAuth provider's credentials belong to the `environment`.
+
+```ts
+const EVENT_TARGET_TYPES: Record<any, any>
+```
+
+**Example**
+
+```ts
+EVENT_TARGET_TYPES['session.revoked'] // 'session'
+```
+
+### `EventTargetType`
+
+_type_, defined in `packages/contract/src/event-types.ts`
+
+What an event of type `T` is about.
+
+```ts
+export type EventTargetType<T extends ActivityType = ActivityType> = (typeof EVENT_TARGET_TYPES)[T]
 ```
 
 ## `@tula/contract/headers`

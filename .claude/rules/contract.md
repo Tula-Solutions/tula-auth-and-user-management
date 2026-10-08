@@ -13,8 +13,13 @@ paths:
 - Every exported schema has `.meta({ ref: 'Name' })` and a JSDoc block; public helpers include
   `@example`.
 - Keep this package free of Node/Bun-only APIs. It must run in browsers and React Native.
-- `error-codes.ts`, `headers.ts`, `password-rules.ts` and `theme.ts` must not import Zod (types only from
-  schema modules): they are the entry points SDKs load at run time. A new subpath goes in both
-  `exports` and `publishConfig.exports`, and in `bunup.config.ts`.
+- `error-codes.ts`, `headers.ts`, `issuer.ts`, `password-rules.ts`, `theme.ts` and
+  `event-types.ts` must not import Zod (types only from schema modules): they are the entry
+  points SDKs load at run time. A new subpath goes in both `exports` and
+  `publishConfig.exports`, and in `bunup.config.ts`; `entry-points.test.ts` bundles each one
+  and fails if it imports Zod or the three lists disagree.
+- A new activity type is a name in `event-types.ts`, a `data` schema in `events.ts` and a
+  fixture in `event-fixtures.ts`. An event's `data` is an allow-list and, once webhooks deliver
+  it, a public shape: fields are only ever added.
 - After changes: `bun run contract:generate` (writes `openapi.json`) and run the contract tests.
   Use `/contract-change`.

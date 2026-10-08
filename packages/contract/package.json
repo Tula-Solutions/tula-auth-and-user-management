@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./error-codes": "./src/error-codes.ts",
+    "./event-types": "./src/event-types.ts",
     "./headers": "./src/headers.ts",
     "./issuer": "./src/issuer.ts",
     "./password-rules": "./src/password-rules.ts",
@@ -24,6 +25,10 @@
       "./error-codes": {
         "types": "./dist/error-codes.d.ts",
         "default": "./dist/error-codes.js"
+      },
+      "./event-types": {
+        "types": "./dist/event-types.d.ts",
+        "default": "./dist/event-types.js"
       },
       "./headers": {
         "types": "./dist/headers.d.ts",
