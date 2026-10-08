@@ -31,10 +31,24 @@ interface Service {
   ports?: { published: string; target: number; host_ip?: string }[]
   volumes?: { source: string; target: string; read_only?: boolean }[]
   depends_on?: Record<string, unknown>
+  command?: string[]
+  network_mode?: string
+  healthcheck?: { disable?: boolean }
+  restart?: string
 }
 
-/** The Compose file as Docker resolves it, with only the given variables set. */
-function resolved(variables: Record<string, string>, profile = true): Record<string, Service> {
+/**
+ * The Compose file as Docker resolves it, with only the given variables set.
+ *
+ * @param variables - The variables of the environment file, and nothing else.
+ * @param profiles - The profiles asked for; `app` alone unless said.
+ * @param files - Further Compose files laid over the repository's, relative to its root.
+ */
+function resolved(
+  variables: Record<string, string>,
+  profiles: readonly string[] = ['app'],
+  files: readonly string[] = []
+): Record<string, Service> {
   const envFile = join(mkdtempSync(join(tmpdir(), 'tula-compose-')), 'env')
   writeFileSync(
     envFile,
@@ -48,9 +62,10 @@ function resolved(variables: Record<string, string>, profile = true): Record<str
       'compose',
       '-f',
       join(root, 'docker-compose.yml'),
+      ...files.flatMap((file) => ['-f', join(root, file)]),
       '--env-file',
       envFile,
-      ...(profile ? ['--profile', 'app'] : []),
+      ...profiles.flatMap((profile) => ['--profile', profile]),
       'config',
       '--format',
       'json',
@@ -206,11 +221,71 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
   })
 
   test('the development stack is unchanged: no API unless the profile is asked for', () => {
-    expect(Object.keys(resolved(DEVELOPER_ENV, false)).sort()).toEqual([
+    expect(Object.keys(resolved(DEVELOPER_ENV, [])).sort()).toEqual([
       'mailpit',
       'postgres',
       'redis',
     ])
+  })
+})
+
+// TULA-52: the webhook worker as a container of its own, from the same image.
+describe.skipIf(!hasCompose)('the optional worker service', () => {
+  const WITH_WORKER = ['app', 'worker']
+
+  test('the app profile alone starts no worker, and its instances deliver', () => {
+    const services = resolved({})
+    expect(Object.keys(services)).not.toContain('worker')
+    expect(services.api?.environment?.WEBHOOK_WORKER).toBe('api')
+    expect(services['api-2']?.environment?.WEBHOOK_WORKER).toBe('api')
+  })
+
+  test('the worker profile adds one service: the same image and settings, another command', () => {
+    const services = resolved({ WEBHOOK_WORKER: 'separate' }, WITH_WORKER)
+    expect(Object.keys(services).sort()).toEqual([
+      'api',
+      'api-2',
+      'lb',
+      'mailpit',
+      'migrate',
+      'postgres',
+      'redis',
+      'worker',
+    ])
+    const { api, worker } = services
+    expect(worker?.image).toBe(api?.image ?? '')
+    // Everything the API has: the database, the master key (it opens the signing secrets),
+    // Redis, and ENVIRONMENT, which is the tier the outbound guard judges an address in.
+    expect(worker?.environment).toEqual(api?.environment ?? {})
+    expect(worker?.command).toEqual(['bun', 'run', 'src/worker.ts'])
+    // It waits for the migrations like the API, and runs none itself.
+    expect(Object.keys(worker?.depends_on ?? {}).sort()).toEqual([
+      'mailpit',
+      'migrate',
+      'postgres',
+      'redis',
+    ])
+    expect(worker?.restart).toBe('unless-stopped')
+  })
+
+  test('one variable moves the deliveries: every container is given the same value', () => {
+    const services = resolved({ WEBHOOK_WORKER: 'separate' }, WITH_WORKER)
+    expect(services.api?.environment?.WEBHOOK_WORKER).toBe('separate')
+    expect(services['api-2']?.environment?.WEBHOOK_WORKER).toBe('separate')
+    expect(services.worker?.environment?.WEBHOOK_WORKER).toBe('separate')
+    // Asked for without the variable, the worker is given `api` and refuses to start
+    // (apps/api/src/process.ts): it never runs beside instances that deliver.
+    expect(resolved({}, WITH_WORKER).worker?.environment?.WEBHOOK_WORKER).toBe('api')
+  })
+
+  test('the worker takes no traffic: nothing of it is published', () => {
+    expect(resolved({ WEBHOOK_WORKER: 'separate' }, WITH_WORKER).worker?.ports ?? []).toEqual([])
+  })
+
+  test('the image the API tag names is the worker’s too', () => {
+    expect(resolved({ API_IMAGE: 'tula-api:other' }, WITH_WORKER).worker?.image).toBe(
+      'tula-api:other'
+    )
   })
 })
 

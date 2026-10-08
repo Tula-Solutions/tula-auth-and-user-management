@@ -3,6 +3,9 @@
 #   Packaged API: `docker compose --profile app up -d --build` also runs the migrations, two
 #                 instances of the API image and a proxy that puts both behind one address
 #                 (http://localhost:3005). See docs/self-host.md.
+#   Worker apart: `WEBHOOK_WORKER=separate docker compose --profile app --profile worker up -d`
+#                 also runs the webhook worker as a container of its own, and the two API
+#                 instances then make no delivery. Stop with both profiles too.
 # Host ports can be moved with POSTGRES_PORT, REDIS_PORT, MAILPIT_SMTP_PORT, MAILPIT_UI_PORT,
 # API_PORT, API_2_PORT and LB_PORT, and the built image's tag with API_IMAGE, e.g. to run a
 # second stack next to this one (with `docker compose -p <another name>`).
@@ -49,6 +52,10 @@ x-api: &api
     # Development and tests only: serves every OAuth provider from the built-in mock provider
     # (ADR 0026). The API refuses to start with it unless ENVIRONMENT is `local`.
     OAUTH_MOCK_PROVIDER: ${OAUTH_MOCK_PROVIDER:-false}
+    # Where webhook deliveries are made: `api` (inside the API instances) or `separate` (only
+    # in the `worker` service below, which then has to be started: `--profile worker`). One
+    # value for every container of the stack.
+    WEBHOOK_WORKER: ${WEBHOOK_WORKER:-api}
     LOG_LEVEL: ${LOG_LEVEL:-info}
   depends_on:
     postgres:
@@ -117,6 +124,17 @@ services:
   api-2:
     <<: *api
     ports: ['127.0.0.1:${API_2_PORT:-3004}:3003']
+
+  # The webhook worker as a container of its own (docs/self-host.md, "The webhook worker as its
+  # own service"): the same image and the same settings as the API, another command. Optional:
+  #   WEBHOOK_WORKER=separate docker compose --profile app --profile worker up -d
+  # With `separate` the two API instances make no delivery, so the worker must be running;
+  # without it the worker refuses to start, because the instances already deliver.
+  # It takes no traffic and publishes no port; the image's health check asks its `/v1/ready`.
+  worker:
+    <<: *api
+    profiles: ['worker']
+    command: ['bun', 'run', 'src/worker.ts']
 
   # Both instances behind one address, round robin (docker/lb/nginx.conf). This is what the
   # exit criterion "two packaged instances behind one address" runs against
