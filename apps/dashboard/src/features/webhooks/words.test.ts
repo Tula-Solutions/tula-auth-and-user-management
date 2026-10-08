@@ -192,6 +192,37 @@ describe('a refusal in words', () => {
     }
   })
 
+  // A reason is a word the server chose, looked up in a table. A word that names something
+  // every object has must not find it: the answer is then a function or an object, not a
+  // sentence.
+  describe.each([
+    ['webhook.url_not_allowed', 'The server cannot deliver to that address.'],
+    ['webhook.cannot_redeliver', 'This delivery cannot be sent again.'],
+    ['webhook.rotation_refused', 'The signing secret cannot be changed now.'],
+  ])('%s', (code, fallback) => {
+    test.each([['constructor'], ['__proto__'], ['toString']])(
+      'the reason `%s` is a word nobody knows, not a property of the table',
+      (reason) => {
+        expect(webhookMessageFor(refusal(code, reason))).toBe(fallback)
+      }
+    )
+
+    test('a reason the answer only inherits is no reason', () => {
+      const params = Object.create({ reason: 'delivery_pending' })
+      const error = new ApiError({ status: 409, code, detail: 'The server’s own.', params })
+      expect(webhookMessageFor(error)).toBe(fallback)
+    })
+  })
+
+  test.each([['constructor'], ['__proto__'], ['toString']])(
+    'the code `%s` is a code nobody knows, not a property of the table',
+    (code) => {
+      expect(webhookMessageFor(refusal(code, 'delivery_pending'))).toBe(
+        'The server’s own description.'
+      )
+    }
+  )
+
   test('an eleventh endpoint is a sentence only where an endpoint was being added', () => {
     const conflict = new ApiError({
       status: 409,

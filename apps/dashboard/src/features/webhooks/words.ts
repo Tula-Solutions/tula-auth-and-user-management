@@ -234,10 +234,14 @@ export type WebhookAction = 'create' | 'test' | 'redeliver' | 'other'
  */
 export function webhookMessageFor(error: unknown, action: WebhookAction = 'other'): string {
   const failure = toApiError(error)
-  const refusal = REFUSALS[failure.code]
+  // Own properties only, of the answer and of both tables: a code or a reason such as
+  // `constructor` would otherwise find what every object has, which is no sentence.
+  const refusal = Object.hasOwn(REFUSALS, failure.code) ? REFUSALS[failure.code] : undefined
   if (refusal) {
-    const reason = failure.params.reason
-    return (typeof reason === 'string' ? refusal.reasons[reason] : undefined) ?? refusal.other
+    const reason = reasonOf(failure.params)
+    return reason !== undefined && Object.hasOwn(refusal.reasons, reason)
+      ? (refusal.reasons[reason] ?? refusal.other)
+      : refusal.other
   }
   if (action === 'create' && failure.code === 'resource.conflict') {
     return `This environment already has ${MAX_WEBHOOK_ENDPOINTS} webhook endpoints, the most one can have. Delete one first.`
