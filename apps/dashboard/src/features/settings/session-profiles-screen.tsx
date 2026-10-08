@@ -1,4 +1,8 @@
-import { BUILT_IN_SESSION_PROFILES, MAX_SESSIONS_PER_USER } from '@tula/contract'
+import {
+  BUILT_IN_SESSION_PROFILES,
+  isSessionProfileName,
+  MAX_SESSIONS_PER_USER,
+} from '@tula/contract'
 import { useState } from 'react'
 import type { SessionProfile } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
@@ -6,9 +10,9 @@ import { SelectField, SwitchRow, TextField } from '~/components/field'
 import { Section } from '~/components/page'
 import { NativeSelectOption } from '~/components/ui/native-select'
 import { numberOrNull, textOrNull } from './inputs'
+import { JwtTemplatesSection } from './jwt-templates-section'
 import { type SettingsEditor, SettingsFrame } from './settings-editor'
 
-const PROFILE_NAME = /^[a-z][a-z0-9_-]{0,31}$/
 const DURATION_HINT = 'A number and a unit: 60s, 15m, 12h, 7d.'
 
 function isBuiltIn(name: string): boolean {
@@ -18,12 +22,15 @@ function isBuiltIn(name: string): boolean {
 function ProfileCard({
   name,
   profile,
+  templates,
   errors,
   onChange,
   onRemove,
 }: {
   name: string
   profile: SessionProfile
+  /** The names of the environment's JWT templates, as drafted. */
+  templates: string[]
   errors: Record<string, string>
   onChange: (profile: SessionProfile) => void
   onRemove?: () => void
@@ -108,6 +115,28 @@ function ProfileCard({
           error={errors[`${path}.refresh.reuseGracePeriod`]}
           hint='10s to 60s. Empty: a refresh token works exactly once.'
         />
+        <SelectField
+          label='JWT template'
+          value={profile.jwtTemplate ?? ''}
+          onChange={(event) =>
+            onChange({ ...profile, jwtTemplate: textOrNull(event.target.value) })
+          }
+          error={errors[`${path}.jwtTemplate`]}
+          hint='The custom claims this profile’s sessions carry. Applies from each session’s next token.'
+        >
+          <NativeSelectOption value=''>None</NativeSelectOption>
+          {/* A name the document holds but no template has: shown, so it is not changed unseen. */}
+          {profile.jwtTemplate && !templates.includes(profile.jwtTemplate) ? (
+            <NativeSelectOption value={profile.jwtTemplate}>
+              {profile.jwtTemplate} (missing)
+            </NativeSelectOption>
+          ) : null}
+          {templates.map((template) => (
+            <NativeSelectOption key={template} value={template}>
+              {template}
+            </NativeSelectOption>
+          ))}
+        </SelectField>
       </div>
       <SwitchRow
         label='Clients may ask for this profile'
@@ -133,9 +162,9 @@ function SessionFields({ draft, update, errors }: SettingsEditor) {
 
   function addProfile() {
     const name = newName.trim()
-    if (!PROFILE_NAME.test(name)) {
+    if (!isSessionProfileName(name)) {
       setNameProblem(
-        'Use lowercase letters, digits, “-” or “_”, starting with a letter (up to 32).'
+        'Use lowercase letters, digits and single “-”, starting with a letter (up to 32).'
       )
       return
     }
@@ -161,6 +190,7 @@ function SessionFields({ draft, update, errors }: SettingsEditor) {
               key={name}
               name={name}
               profile={profile}
+              templates={Object.keys(sessions.jwtTemplates ?? {})}
               errors={errors}
               onChange={(next) => setProfiles({ ...profiles, [name]: next })}
               onRemove={
@@ -203,6 +233,7 @@ function SessionFields({ draft, update, errors }: SettingsEditor) {
           </ActionButton>
         </div>
       </Section>
+      <JwtTemplatesSection draft={draft} update={update} errors={errors} />
       <Section title='Limits' description='How many sessions one user may have at the same time.'>
         <div className='grid gap-4 sm:grid-cols-2'>
           <TextField
@@ -245,7 +276,8 @@ function SessionFields({ draft, update, errors }: SettingsEditor) {
 }
 
 /**
- * Session profiles and the concurrent-session rule of an environment (ADR 0028).
+ * Session profiles, JWT templates (ADR 0036) and the concurrent-session rule of an
+ * environment (ADR 0028).
  *
  * @returns The screen.
  */
@@ -253,7 +285,7 @@ export function SessionProfilesScreen() {
   return (
     <SettingsFrame
       title='Session profiles'
-      description='How long sessions last, and how many a user may have. Changes apply to sessions that already exist.'
+      description='How long sessions last, which custom claims they carry, and how many a user may have. Changes apply to sessions that already exist.'
     >
       {(editor) => <SessionFields {...editor} />}
     </SettingsFrame>

@@ -37,6 +37,14 @@ _Avoid_: Ping, sample, dry run
 A signed question, sent to an operator's endpoint, whose answer decides what happens next: allow, deny, or claims to add.
 _Avoid_: Webhook, plugin, callback
 
+**JWT template**:
+A named set of custom claims in an environment's settings, which a session profile chooses by name.
+_Avoid_: Token template, claim mapping, session template
+
+**Custom claim**:
+A claim an operator's template adds to a session, always inside the one namespace claim `ext` and never a claim Tula sets itself.
+_Avoid_: Private claim, extra claim, metadata
+
 ### Agents
 
 **Proposal**:

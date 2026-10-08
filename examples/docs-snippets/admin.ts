@@ -143,6 +143,36 @@ export async function sessionSettings(userId: string) {
   // #endregion
 }
 
+/** A JWT template: custom claims for the sessions of a profile (ADR 0036). */
+export async function jwtTemplateSettings() {
+  // #region settings-jwt-template
+  const { data } = await admin.call('getEnvironmentSettings')
+  await admin.call('replaceEnvironmentSettings', {
+    headers: { 'If-Match': ifMatch(data.revision) },
+    body: {
+      ...data.settings,
+      sessions: {
+        ...data.settings.sessions,
+        jwtTemplates: {
+          ...data.settings.sessions?.jwtTemplates,
+          app: {
+            claims: {
+              email: { from: 'user.email' },
+              email_verified: { from: 'user.email_verified' },
+              plan: { value: 'team' },
+            },
+          },
+        },
+        profiles: {
+          ...data.settings.sessions?.profiles,
+          web: { ...data.settings.sessions?.profiles?.web, jwtTemplate: 'app' },
+        },
+      },
+    },
+  })
+  // #endregion
+}
+
 /** Store a provider's credentials and read the redirect URI to register with it. */
 export async function providers(clientSecret: string) {
   // #region providers

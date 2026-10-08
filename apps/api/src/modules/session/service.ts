@@ -3,8 +3,10 @@ import {
   ACCESS_TOKEN_VERSION,
   type AccessTokenClaims,
   type AuthenticationMethod,
+  CUSTOM_CLAIMS_CLAIM,
   durationToMs,
   environmentIssuer,
+  jwtTemplateOfProfile,
   MAX_ACCESS_TOKEN_TTL,
   type NamedSessionProfile,
   profileOfSession,
@@ -13,6 +15,7 @@ import {
   type Session,
   type SessionClient,
   type SessionProfile,
+  type SessionSettings,
   type SessionTokens,
 } from '@tula/contract'
 import { SignJWT } from 'jose'
@@ -23,6 +26,7 @@ import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Jwks from '~/modules/jwks/service'
+import * as CustomClaims from '~/modules/session/custom-claims'
 import * as Settings from '~/modules/settings/service'
 import {
   authenticatedAt,
@@ -33,6 +37,7 @@ import {
   type SessionRecord,
   type SessionRevokeReason,
 } from '~/ports/session-store'
+import type { UserRecord } from '~/ports/user-repository'
 
 /** Keyed-hash purpose for deriving refresh tokens. */
 export const KEYED_HASH_PURPOSE = 'refresh-tokens'
@@ -127,8 +132,52 @@ async function deriveSessionToken(
 
 type ClaimSource = Pick<
   SessionRecord,
-  'id' | 'userId' | 'profile' | 'factorVerifiedAt' | 'authMethods' | 'createdAt'
+  'id' | 'userId' | 'profile' | 'client' | 'factorVerifiedAt' | 'authMethods' | 'createdAt'
 >
+
+/** A session's profile as configured now, with the settings it was read from. */
+interface Configured extends NamedSessionProfile {
+  settings: SessionSettings
+}
+
+async function configured(
+  deps: ProfileDeps,
+  scope: Pick<Tenant, 'environmentId'>,
+  session: Pick<SessionRecord, 'profile' | 'client'>
+): Promise<Configured> {
+  const { sessions: settings } = await Settings.current(deps, scope)
+  return { ...profileOfSession(settings, session), settings }
+}
+
+/**
+ * The custom claims of a session now: what the JWT template of its profile says, as the
+ * environment has it configured at this moment (ADR 0036). Read at every issue, never stored
+ * on the session, so a changed template or a newly verified address shows up at the next
+ * token.
+ *
+ * The user is read only when the template has a `user.*` source and the caller does not
+ * already hold the user (`known`: a refresh has loaded it to check for a ban).
+ *
+ * @returns The claims for the namespace claim, or `undefined` for none.
+ */
+async function customClaims(
+  deps: Pick<Deps, 'users'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  { settings, profile }: Pick<Configured, 'settings' | 'profile'>,
+  session: Pick<SessionRecord, 'userId' | 'client' | 'createdAt'>,
+  known?: UserRecord | null
+): Promise<CustomClaims.Claims | undefined> {
+  const template = jwtTemplateOfProfile(settings, profile)
+  if (!template) {
+    return undefined
+  }
+  let user = known ?? null
+  if (known === undefined && CustomClaims.needsUser(template)) {
+    // In the session's own environment only: another environment's user is nobody here.
+    user = await deps.users.findById(scope.environmentId, session.userId)
+  }
+  return CustomClaims.build(template, { user, session, environmentId: scope.environmentId })
+}
 
 /**
  * The claims of a session at `now`, for a token that lives as long as its profile says: what
@@ -139,7 +188,8 @@ function claimsOf(
   scope: Scope,
   session: ClaimSource,
   profile: SessionProfile,
-  now: Date
+  now: Date,
+  custom: CustomClaims.Claims | undefined
 ): AccessTokenClaims {
   const iat = Math.floor(now.getTime() / 1000)
   return {
@@ -157,6 +207,8 @@ function claimsOf(
     auth_time: Math.floor(authenticatedAt(session).getTime() / 1000),
     amr: session.authMethods,
     sp: session.profile,
+    // Absent, never empty: a session without custom claims is what it always was.
+    ...(custom && { [CUSTOM_CLAIMS_CLAIM]: custom }),
   }
 }
 
@@ -175,9 +227,17 @@ async function signAccessToken(
   session: ClaimSource,
   profile: SessionProfile,
   now: Date,
-  { kid, privateKey }: SigningKey
+  { kid, privateKey }: SigningKey,
+  custom: CustomClaims.Claims | undefined
 ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
-  const { iss, sub, aud, iat, exp, ...claims } = claimsOf(deps, scope, session, profile, now)
+  const { iss, sub, aud, iat, exp, ...claims } = claimsOf(
+    deps,
+    scope,
+    session,
+    profile,
+    now,
+    custom
+  )
   const accessToken = await new SignJWT(claims)
     .setProtectedHeader({ alg: ACCESS_TOKEN_ALGORITHM, kid, typ: 'JWT' })
     .setIssuer(iss)
@@ -340,6 +400,16 @@ export async function create(
   const origin = cleanOrigin(input)
   // A stateful session signs nothing, so it does not depend on the signing keys.
   const signingKey = stateful ? null : await Jwks.activeSigningKey(deps, scope.environmentId)
+  // Like the key, read before the session is stored: a failed read must not leave a session
+  // the client was never given. A stateful session's claims are read when it is checked.
+  const custom = stateful
+    ? undefined
+    : await customClaims(
+        deps,
+        scope,
+        { settings, profile },
+        { userId: input.userId, client: input.client, createdAt: now }
+      )
   const authMethods = mergeAuthMethods([], input.authMethods ?? [])
   const session = {
     id: sessionId,
@@ -385,7 +455,7 @@ export async function create(
   if (!signingKey) {
     return { sessionId, sessionToken: token, cookieMaxAge }
   }
-  const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+  const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
   return {
     sessionId,
     ...access,
@@ -486,7 +556,7 @@ async function createWithinLimit(
  * @throws AuthError `session.revoked` when the session has ended or is not this user's.
  */
 export async function recordAuthentication(
-  deps: TokenDeps & ProfileDeps & Pick<Deps, 'sessions'>,
+  deps: TokenDeps & ProfileDeps & Pick<Deps, 'sessions' | 'users'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
   methods: readonly AuthenticationMethod[],
@@ -498,6 +568,12 @@ export async function recordAuthentication(
   // session signs nothing.
   const signingKey =
     current?.type === 'stateful' ? null : await Jwks.activeSigningKey(deps, scope.environmentId)
+  // Also before the write: what it reads (the profile, the user) the write does not change.
+  const issue =
+    current && signingKey && current.userId === self.userId
+      ? await configured(deps, scope, current)
+      : null
+  const custom = current && issue ? await customClaims(deps, scope, issue, current) : undefined
   const session =
     current && current.userId === self.userId
       ? await deps.sessions.recordAuthentication(
@@ -515,12 +591,11 @@ export async function recordAuthentication(
   if (!session) {
     throw new AuthError('session.revoked')
   }
-  if (!signingKey) {
+  if (!signingKey || !issue) {
     // The next request reads `auth_time` and `amr` from the row just updated.
     return { sessionId: session.id }
   }
-  const { profile } = await profileOf(deps, scope, session)
-  const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+  const access = await signAccessToken(deps, scope, session, issue.profile, now, signingKey, custom)
   return { sessionId: session.id, ...access }
 }
 
@@ -544,7 +619,7 @@ function rejectEnded(session: SessionRecord, profile: SessionProfile, now: Date)
 }
 
 /**
- * End the session of a user who has been banned since it was issued.
+ * End the session of a user who has been banned since it was issued, and return the user.
  *
  * Banning already revokes a user's sessions; this also catches a session created in the instant
  * between the ban and that revocation, so a banned user can never keep one alive.
@@ -555,7 +630,7 @@ async function rejectBanned(
   session: SessionRecord,
   now: Date,
   origin: Partial<Origin>
-): Promise<void> {
+): Promise<UserRecord | null> {
   const user = await deps.users.findById(scope.environmentId, session.userId)
   if (user?.bannedAt) {
     await denylist(deps, [session.id], now)
@@ -568,6 +643,8 @@ async function rejectBanned(
     )
     throw new AuthError('auth.user_banned')
   }
+  // Handed back so that a template's `user.*` claims cost a refresh no second read.
+  return user
 }
 
 /**
@@ -612,14 +689,23 @@ export async function refresh(
       // A stateful session's token is a cookie checked on every request, never exchanged.
       throw new AuthError('session.invalid_token')
     }
-    const { profile } = await profileOf(deps, scope, session)
+    const issue = await configured(deps, scope, session)
+    const { profile } = issue
     rejectEnded(session, profile, now)
-    await rejectBanned(deps, scope, session, now, origin)
+    const user = await rejectBanned(deps, scope, session, now, origin)
+    const custom = await customClaims(deps, scope, issue, session, user)
 
     // Reuse is judged before the token's own expiry: a rotated token replayed on a live session
     // is theft however old it is, and must not be waved through as merely "expired".
     if (token.usedAt !== null) {
-      return replayOrRevoke(deps, scope, { session, profile, token }, token.usedAt, now, origin)
+      return replayOrRevoke(
+        deps,
+        scope,
+        { session, profile, token, custom },
+        token.usedAt,
+        now,
+        origin
+      )
     }
     if (token.expiresAt.getTime() <= now.getTime()) {
       throw new AuthError('session.expired')
@@ -642,7 +728,7 @@ export async function refresh(
       idleExpiresAt,
     })
     if (rotated) {
-      const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+      const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
       return {
         sessionId: session.id,
         ...access,
@@ -657,12 +743,17 @@ export async function refresh(
 async function replayOrRevoke(
   deps: SessionDeps,
   scope: Scope,
-  presented: { session: SessionRecord; profile: SessionProfile; token: RefreshTokenRecord },
+  presented: {
+    session: SessionRecord
+    profile: SessionProfile
+    token: RefreshTokenRecord
+    custom: CustomClaims.Claims | undefined
+  },
   usedAt: Date,
   now: Date,
   origin: Partial<Origin>
 ): Promise<IssuedSession> {
-  const { session, profile, token } = presented
+  const { session, profile, token, custom } = presented
   // No grace period (`null`) is strict rotation: every replay is reuse.
   const grace = profile.refresh.reuseGracePeriod
   const withinGrace = grace !== null && now.getTime() - usedAt.getTime() < durationToMs(grace)
@@ -672,7 +763,7 @@ async function replayOrRevoke(
       : null
   if (child && child.usedAt === null) {
     const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
-    const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+    const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
     return {
       sessionId: session.id,
       ...access,
@@ -734,7 +825,8 @@ export async function authenticate(
     throw new AuthError('session.invalid_token')
   }
   const { session } = found
-  const { profile } = await profileOf(deps, scope, session)
+  const issue = await configured(deps, scope, session)
+  const { profile } = issue
   rejectEnded(session, profile, now)
   const interval = durationToMs(profile.accessTokenTtl)
   const idleLeft = limitsNow(profile, session).idleExpiresAt.getTime() - now.getTime()
@@ -742,16 +834,19 @@ export async function authenticate(
   // contract refuses a profile whose interval is longer than its idle timeout, but a document
   // stored before that rule can hold one, and an active user must never be timed out as idle.
   if (now.getTime() - session.lastActiveAt.getTime() < interval && idleLeft >= interval) {
-    return claimsOf(deps, scope, session, profile, now)
+    // The one read a template can add: the user, and only for a `user.*` source.
+    const custom = await customClaims(deps, scope, issue, session)
+    return claimsOf(deps, scope, session, profile, now, custom)
   }
-  await rejectBanned(deps, scope, session, now, origin)
+  const user = await rejectBanned(deps, scope, session, now, origin)
+  const custom = await customClaims(deps, scope, issue, session, user)
   const idleExpiresAt = idleExpiry(profile, now, limitsNow(profile, session).absoluteExpiresAt)
   if (!(await deps.sessions.touch(scope.environmentId, session.id, now, idleExpiresAt))) {
     // It ended between the read and the write.
     const ended = await deps.sessions.findById(scope.environmentId, session.id)
     throw new AuthError(ended?.revokedAt === null ? 'session.expired' : 'session.revoked')
   }
-  return claimsOf(deps, scope, session, profile, now)
+  return claimsOf(deps, scope, session, profile, now, custom)
 }
 
 function toSession(record: SessionRecord, currentSessionId: string): Session {

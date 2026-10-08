@@ -19,6 +19,7 @@ import { type Auth, authenticate, fetchCurrentUser, requestFromHeaders } from '.
  * sent the header, so `http` there decides nothing against such a cookie).
  */
 
+export type { CustomClaims } from '@tula/contract/custom-claims'
 export type { User } from '@tula/core'
 export type { Auth } from './helpers'
 export { REDIRECT_PARAM, safeRedirectPath } from './paths'
@@ -44,8 +45,10 @@ async function currentRequest(): Promise<Request> {
  * without it, a session whose token has expired reads as signed out. Verified once per
  * request, however often it is called. Reading it makes the route dynamic.
  *
- * @returns `{ isSignedIn: true, userId, sessionId, claims, getToken }`, or the signed-out
- *   shape with `null`s.
+ * @returns `{ isSignedIn: true, userId, sessionId, claims, customClaims, getToken }`, or the
+ *   signed-out shape with `null`s. `customClaims` holds what the JWT template of the
+ *   session's profile defines (empty without one), for a token session and a `stateful` one
+ *   alike.
  * @throws TypeError when the configuration is incomplete.
  *
  * @example

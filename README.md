@@ -165,6 +165,7 @@ codes and more providers; Phase 3 organizations, roles, invitations and importer
 - [x] Typed, versioned event payloads; the outbound-request guard
 - [x] Webhooks: an endpoint, a signed delivery, `verifyWebhook` ([ADR 0034](docs/adr/0034-webhooks.md))
 - [x] The hook before sign-up: a signed question, allow or deny, `verifyHook` ([ADR 0035](docs/adr/0035-hooks.md))
+- [x] JWT templates: custom claims under `ext`, per session profile ([ADR 0036](docs/adr/0036-jwt-templates.md), [docs/jwt-templates.md](docs/jwt-templates.md))
 - [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
 - [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the
       dashboard screen

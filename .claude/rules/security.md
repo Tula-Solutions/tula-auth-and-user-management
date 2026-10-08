@@ -338,3 +338,19 @@ Before finishing any change here, confirm each item holds and has a test:
     store, a log line or an error (canary in the answer's headers and body), and no log line
     holds the address asked about. `allow` on failure, switching a hook off and removing one
     that is on are recorded with `weakened: true`.
+50. **JWT templates (ADR 0036):** custom claims are issued only under `ext`, only from the
+    closed source list or an operator's constant, and only through `CustomClaims.build`.
+    Test: every reserved name and every malformed key refused at save, with the field's
+    path; each cap one over (templates, claims, key length, constant length, bytes at the
+    sources' maxima); a profile naming a missing template; removing a template in use; a
+    token of a profile without a template has exactly the old claim set; a template with no
+    value for a user adds no `ext`; nothing a request said (IP address, user agent) and no
+    name reaches a claim (canary); a template changed between sign-in and refresh; another
+    environment's template never applied; a stale settings cache on another instance; a
+    stored document with an unknown source or a dangling name still signs in; over the cap
+    at build drops the whole namespace and logs no value; a stateful session's answer
+    carries the same claims; a refresh reads the user once. For a reader: a forged or
+    malformed `ext` (not an object, an array, a reserved key, a nested value, over the cap)
+    is absent, in a token and in the sealed header, with and without the middleware.
+    Neither a template's name, a claim's key nor a constant appears in an audit entry or an
+    event's payload.

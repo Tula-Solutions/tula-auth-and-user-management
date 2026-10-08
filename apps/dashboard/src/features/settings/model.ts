@@ -93,6 +93,10 @@ const WEAKENINGS: Record<string, string> = {
  * @returns A sentence for a path this version knows; the path itself otherwise.
  */
 export function describeWeakening(path: string): string {
+  const template = /^sessions\.profiles\.(.+)\.jwtTemplate$/.exec(path)
+  if (template) {
+    return `Sessions of the “${template[1]}” profile lose custom claims, or get different ones: an application that reads them may refuse those users`
+  }
   const profile = /^sessions\.profiles\.(.+)$/.exec(path)
   if (profile) {
     return `Sessions of the “${profile[1]}” profile last longer or are easier to get`

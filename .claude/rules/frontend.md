@@ -43,6 +43,12 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
 - A token, key, password or provider secret is component state only while its form or dialog
   is open. Give a mutation that carries one `gcTime: 0` and `reset()` it when the form lets
   go. Nothing goes to web storage, the address or a log.
+- JWT templates (ADR 0036) are part of the session profiles screen's one draft
+  (`features/settings/jwt-templates-section.tsx`). What the form can know it says before a
+  save, with the contract's own functions (`isSessionProfileName` for a template's and a
+  profile's name, `isCustomClaimKey`, `RESERVED_CLAIM_NAMES`,
+  `jwtTemplateMaxBytes` and the caps): never a second copy of a rule. A weakening path gets
+  a sentence in `describeWeakening` (`model.ts`), most specific pattern first.
 - Settings screens are a `SettingsFrame` (one save model: `If-Match`, 412, weakening and
   managed-by confirmations). Do not write another save path.
 - A destructive action goes through `ConfirmDialog`, names what it acts on, and passes

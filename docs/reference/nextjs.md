@@ -2759,6 +2759,21 @@ export type Auth =
     /** Every verified claim: `auth_time`, `amr` and the rest. */
     claims: SessionClaims
     /**
+     * The session's custom claims: what the JWT template of its profile defines, as a
+     * frozen record. Empty when the profile has no template. The values are `unknown`
+     * because only you know your template: narrow before use, and read a missing claim as
+     * "no". The same for a token session and a `stateful` one.
+     *
+     * @example
+     * ```ts
+     * const { customClaims } = await auth()
+     * if (customClaims?.role !== 'admin') {
+     *   notFound()
+     * }
+     * ```
+     */
+    customClaims: CustomClaims
+    /**
      * The access token, for calling your own backend. `null` for a `stateful` session,
      * which has none.
      */
@@ -2769,6 +2784,7 @@ export type Auth =
     userId: null
     sessionId: null
     claims: null
+    customClaims: null
     getToken(): Promise<null>
   }
 ```
@@ -2780,6 +2796,27 @@ const { isSignedIn, userId } = await auth()
 if (!isSignedIn) {
   redirect('/sign-in')
 }
+```
+
+### `CustomClaims`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+The custom claims of a verified session, as an SDK hands them to an application: a frozen
+map from claim key to value.
+
+The values are typed `unknown` because only the operator knows what their template puts
+under each key: narrow before use. At run time each is a string, a number or a boolean.
+
+```ts
+export type CustomClaims = Readonly<Record<string, unknown>>
+```
+
+**Example**
+
+```ts
+const { customClaims } = await auth()
+const isAdmin = customClaims.role === 'admin' // a missing claim is `undefined`: "no"
 ```
 
 ### `REDIRECT_PARAM`
@@ -2822,6 +2859,12 @@ export interface SessionClaims {
   auth_time?: number
   /** The methods the session was authenticated with. */
   amr?: string[]
+  /**
+   * The session's custom claims: what the JWT template of its profile defines (a frozen
+   * record of strings, numbers and booleans). Present only in exactly that shape; anything
+   * else under this name was left out. The same record as `auth().customClaims`.
+   */
+  ext?: CustomClaims
   [claim: string]: unknown
 }
 ```
@@ -2867,8 +2910,10 @@ const auth: () => Promise<Auth>
 
 **Returns**
 
-`{ isSignedIn: true, userId, sessionId, claims, getToken }`, or the signed-out
-shape with `null`s.
+`{ isSignedIn: true, userId, sessionId, claims, customClaims, getToken }`, or the
+signed-out shape with `null`s. `customClaims` holds what the JWT template of the
+session's profile defines (empty without one), for a token session and a `stateful` one
+alike.
 
 **Throws** TypeError when the configuration is incomplete.
 

@@ -12,11 +12,14 @@ import {
   builtInSessionProfile,
   DEFAULT_MOBILE_SESSION_PROFILE,
   DEFAULT_WEB_SESSION_PROFILE,
+  isSessionProfileName,
   MAX_CUSTOM_SESSION_PROFILES,
   MIN_REUSE_GRACE_PERIOD,
   profileOfSession,
   resolveSessionProfile,
+  SessionProfileNameSchema,
   SessionProfileSchema,
+  SessionSettingsSchema,
   stepUpWindowSeconds,
 } from './session-profile'
 import { ACCESS_TOKEN_VERSION, AccessTokenClaimsSchema } from './tokens'
@@ -35,6 +38,7 @@ describe('session profile defaults', () => {
       refresh: { reuseGracePeriod: '10s' },
       stepUpAfter: null,
       clientSelectable: false,
+      jwtTemplate: null,
     })
     expect(DEFAULT_WEB_SESSION_PROFILE).toEqual(SessionProfileSchema.parse({}))
     expect(DEFAULT_MOBILE_SESSION_PROFILE).toEqual(DEFAULT_WEB_SESSION_PROFILE)
@@ -45,6 +49,7 @@ describe('session profile defaults', () => {
       profiles: { web: DEFAULT_WEB_SESSION_PROFILE, mobile: DEFAULT_MOBILE_SESSION_PROFILE },
       maxPerUser: null,
       onLimit: 'end_oldest',
+      jwtTemplates: {},
     })
   })
 
@@ -293,5 +298,43 @@ describe('what the wire carries for profiles', () => {
     })
     expect(parsed.sp).toBe('admin')
     expect(AccessTokenClaimsSchema.parse({ ...claims, v: ACCESS_TOKEN_VERSION }).sp).toBeUndefined()
+  })
+})
+
+describe('isSessionProfileName', () => {
+  // The one rule for a profile's name and a JWT template's, shared with the forms that ask for
+  // one: a form with a pattern of its own accepted names the schema refuses.
+  test.each(['web', 'admin', 'back-office', 'a1', 'a-1-b', 'a'.repeat(32)])(
+    'accepts %p, as the schema does',
+    (name) => {
+      expect(isSessionProfileName(name)).toBe(true)
+      expect(SessionProfileNameSchema.safeParse(name).success).toBe(true)
+    }
+  )
+
+  test.each([
+    '',
+    'a_b',
+    'a--b',
+    'a-',
+    '-a',
+    '1a',
+    'Admin',
+    'admin panel',
+    'a'.repeat(33),
+    7,
+    null,
+    undefined,
+  ])('refuses %p, as the schema does', (name) => {
+    expect(isSessionProfileName(name)).toBe(false)
+    expect(SessionProfileNameSchema.safeParse(name).success).toBe(false)
+  })
+
+  test('the settings schema refuses a template named by a name it refuses', () => {
+    for (const name of ['a_b', 'a--b', 'a-']) {
+      expect(
+        SessionSettingsSchema.safeParse({ jwtTemplates: { [name]: { claims: {} } } }).success
+      ).toBe(false)
+    }
   })
 })

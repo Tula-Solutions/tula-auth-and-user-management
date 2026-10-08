@@ -7,7 +7,7 @@ import {
   refreshSession,
   supersededCookieLines,
 } from './upstream'
-import { hasTimeLeft, isSessionOf, type SessionClaims, verifyAccessToken } from './verify'
+import { hasTimeLeft, type SessionClaims, sessionClaims, verifyAccessToken } from './verify'
 
 // What a request's cookies amount to. The middleware runs this once per request and may
 // refresh; the server helpers run the read-only half of it.
@@ -144,7 +144,9 @@ export async function openClaims(
     if (parsed.cookie !== (await cookieDigest(sessionToken))) {
       return null
     }
-    return isSessionOf(parsed.claims, config) ? parsed.claims : null
+    // Sealed by this app, and still read like any other claims: one rule for the namespace
+    // claim, wherever the claims came from.
+    return sessionClaims(parsed.claims, config)
   } catch {
     return null
   }
@@ -196,8 +198,8 @@ export async function verifyStatefulSession(
     if (response.status !== 200) {
       return { status: 'unavailable' }
     }
-    const claims: unknown = await response.json()
-    return isSessionOf(claims, config) ? { status: 'verified', claims } : { status: 'unavailable' }
+    const claims = sessionClaims(await response.json(), config)
+    return claims ? { status: 'verified', claims } : { status: 'unavailable' }
   } catch {
     return { status: 'unavailable' }
   }

@@ -6,7 +6,10 @@ import {
   EnvironmentSettingsSchema,
   EVENT_DATA_SCHEMAS,
   MAX_CHANGED_SETTINGS,
+  MAX_CUSTOM_CLAIM_KEY_LENGTH,
   MAX_CUSTOM_SESSION_PROFILES,
+  MAX_JWT_TEMPLATE_CLAIMS,
+  MAX_JWT_TEMPLATES,
   MAX_SESSION_PROFILE_NAME_LENGTH,
   MAX_SETTING_NAME_LENGTH,
   PASSWORD_POLICY_PRESETS,
@@ -286,20 +289,36 @@ describe('changedKeys', () => {
     const custom = Object.fromEntries(
       Array.from({ length: MAX_CUSTOM_SESSION_PROFILES }, (_, n) => [
         name(n),
-        DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.web,
+        { ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.web, jwtTemplate: name(0) },
       ])
+    )
+    // As many templates as there can be, each with as many claims as it can hold, under the
+    // longest names.
+    const claims = Object.fromEntries(
+      Array.from({ length: MAX_JWT_TEMPLATE_CLAIMS }, (_, n) => [
+        `c${n}`.padEnd(MAX_CUSTOM_CLAIM_KEY_LENGTH, 'x'),
+        { value: n },
+      ])
+    )
+    const jwtTemplates = Object.fromEntries(
+      Array.from({ length: MAX_JWT_TEMPLATES }, (_, n) => [name(n), { claims }])
     )
     const largest = EnvironmentSettingsSchema.parse(
       document({
         sessions: {
           ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
           profiles: { ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles, ...custom },
+          jwtTemplates,
         },
       })
     )
     expect(name(0)).toHaveLength(MAX_SESSION_PROFILE_NAME_LENGTH)
     // Against nothing at all, every key is a changed one.
     const keys = Settings.changedKeys({} as EnvironmentSettings, largest)
+    // The templates are one name, whatever they hold.
+    expect(keys.filter((key) => key.startsWith('sessions.jwtTemplates'))).toEqual([
+      'sessions.jwtTemplates',
+    ])
     expect(keys.some((key) => key.startsWith(`sessions.profiles.${name(0)}.refresh.`))).toBe(true)
     expect(keys.length).toBeLessThanOrEqual(MAX_CHANGED_SETTINGS)
     expect(Math.max(...keys.map((key) => key.length))).toBeLessThanOrEqual(MAX_SETTING_NAME_LENGTH)
@@ -322,6 +341,44 @@ describe('changedKeys', () => {
     const after = { ...document(), extra: { flag: true } } as unknown as EnvironmentSettings
     expect(Settings.changedKeys(before, after)).toEqual(['extra.flag'])
     expect(Settings.changedKeys(after, before)).toEqual(['extra.flag'])
+  })
+
+  // A constant is the operator's value: like every setting's value it stays out of the audit
+  // log and out of an event's payload. So do a claim's key and the template's name, which is
+  // also a value in the document (a profile's `jwtTemplate`).
+  test('changed templates are one key, and nothing of a template is named', () => {
+    const template = (role: string) =>
+      document({
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          jwtTemplates: { canary_name: { claims: { canary_key: { value: role } } } },
+        },
+      })
+    const keys = Settings.changedKeys(template('CANARY-before'), template('CANARY-after'))
+    expect(keys).toEqual(['sessions.jwtTemplates'])
+    expect(Settings.changedKeys(document(), template('CANARY-added'))).toEqual([
+      'sessions.jwtTemplates',
+    ])
+    expect(Settings.changedKeys(template('CANARY-removed'), document())).toEqual([
+      'sessions.jwtTemplates',
+    ])
+  })
+
+  test('a profile that changes its template is named by the field', () => {
+    const using = (jwtTemplate: string | null) =>
+      document({
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          jwtTemplates: { app: { claims: {} }, other: { claims: {} } },
+          profiles: {
+            ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles,
+            web: { ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.web, jwtTemplate },
+          },
+        },
+      })
+    expect(Settings.changedKeys(using('app'), using('other'))).toEqual([
+      'sessions.profiles.web.jwtTemplate',
+    ])
   })
 })
 

@@ -494,7 +494,9 @@ force.
 It covers the settings, the providers and the webhook endpoints as written, with each
 secret as the **name** of its variable: no secret value is hashed, so the fingerprint
 reveals nothing about one. An endpoint's event types count as a set, and an environment
-that does not mention webhooks hashes as it did before they could be written.
+that does not mention webhooks hashes as it did before they could be written. So does one
+that defines no JWT template and whose profiles name none; the order templates and their
+claims are written in never counts.
 
 ```ts
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string>
