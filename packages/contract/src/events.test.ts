@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { AUDIT_TARGET_TYPES } from './audit'
 import { EVENT_FIXTURES } from './event-fixtures'
 import { ACTIVITY_TYPES, EVENT_SCHEMA_VERSION, EVENT_TARGET_TYPES } from './event-types'
-import { EVENT_DATA_SCHEMAS, EVENT_SCHEMAS, type Event, EventSchema } from './events'
+import { EVENT_DATA_SCHEMAS, EVENT_SCHEMAS, type TulaEvent, TulaEventSchema } from './events'
 
 const sorted = (values: readonly string[]) => [...values].sort()
 
@@ -38,20 +38,24 @@ describe('every activity type has a payload', () => {
 
 describe('fixtures', () => {
   test.each([...ACTIVITY_TYPES])('%s parses with its own schema and loses nothing', (type) => {
-    const fixture: Event = EVENT_FIXTURES[type]
+    const fixture: TulaEvent = EVENT_FIXTURES[type]
     expect(fixture.type).toBe(type)
     expect(fixture.schemaVersion).toBe(EVENT_SCHEMA_VERSION)
     expect(fixture.target.type).toBe(EVENT_TARGET_TYPES[type])
     // `toEqual` on the parsed value: a fixture field the schema does not name would be gone.
     expect(EVENT_SCHEMAS[type].parse(fixture)).toEqual(fixture)
-    expect(EventSchema.parse(fixture)).toEqual(fixture)
+    expect(TulaEventSchema.parse(fixture)).toEqual(fixture)
   })
 
   test('a fixture exercises every field of its data schema', () => {
+    // Fields that belong to another `method` of the same type than the one the fixture shows.
+    const elsewhere: Partial<Record<(typeof ACTIVITY_TYPES)[number], string[]>> = {
+      'user.passkey_removed': ['canStillSignIn'],
+    }
     for (const type of ACTIVITY_TYPES) {
-      expect(sorted(Object.keys(EVENT_FIXTURES[type].data))).toEqual(
-        sorted(Object.keys(EVENT_DATA_SCHEMAS[type].shape))
-      )
+      expect(
+        sorted([...Object.keys(EVENT_FIXTURES[type].data), ...(elsewhere[type] ?? [])])
+      ).toEqual(sorted(Object.keys(EVENT_DATA_SCHEMAS[type].shape)))
     }
   })
 
@@ -64,7 +68,7 @@ describe('an event schema', () => {
   test('is refused for another type’s payload', () => {
     const created = EVENT_FIXTURES['user.created']
     expect(EVENT_SCHEMAS['session.created'].safeParse(created).success).toBe(false)
-    expect(EventSchema.safeParse({ ...created, type: 'user.exploded' }).success).toBe(false)
+    expect(TulaEventSchema.safeParse({ ...created, type: 'user.exploded' }).success).toBe(false)
   })
 
   test('refuses a target of the wrong kind', () => {
@@ -143,14 +147,64 @@ describe('ids', () => {
 
   test('the server and the instance admin token have no actor id', () => {
     const event = { ...EVENT_FIXTURES['user.banned'], actor: { type: 'instance_admin', id: null } }
-    expect(EventSchema.parse(event)).toEqual(event as never)
+    expect(TulaEventSchema.parse(event)).toEqual(event as never)
+  })
+})
+
+describe('user.passkey_removed', () => {
+  const schema = EVENT_SCHEMAS['user.passkey_removed']
+  const fixture = EVENT_FIXTURES['user.passkey_removed']
+  const { passkeyId } = fixture.data
+  const withData = (data: Record<string, unknown>) => schema.safeParse({ ...fixture, data }).success
+
+  test('by its owner it names the passkey and says nothing about signing in', () => {
+    expect(fixture.data).toEqual({ passkeyId, method: 'user' } as never)
+    expect(withData({ passkeyId, method: 'user' })).toBe(true)
+    expect(withData({ method: 'user' })).toBe(false)
+    expect(withData({ passkeyId, method: 'user', canStillSignIn: true })).toBe(false)
+  })
+
+  test('by an admin reset it names no passkey (all are removed) and says whether the user can still sign in', () => {
+    expect(withData({ method: 'admin_reset', canStillSignIn: false })).toBe(true)
+    expect(withData({ method: 'admin_reset', canStillSignIn: true })).toBe(true)
+    expect(withData({ method: 'admin_reset' })).toBe(false)
+    expect(withData({ passkeyId, method: 'admin_reset', canStillSignIn: true })).toBe(false)
+  })
+
+  test('the data schema still has a shape and its ref: the rule is a check, not another type', () => {
+    const data = EVENT_DATA_SCHEMAS['user.passkey_removed']
+    expect(sorted(Object.keys(data.shape))).toEqual(['canStillSignIn', 'method', 'passkeyId'])
+    expect(z.globalRegistry.get(data)?.ref).toBe('UserPasskeyRemovedEventData')
+  })
+})
+
+describe('environment.settings_updated', () => {
+  const { changed } = EVENT_DATA_SCHEMAS['environment.settings_updated'].shape
+
+  test('`changed` is bounded: 256 names at most', () => {
+    const names = (count: number) => Array.from({ length: count }, (_, n) => `a.key${n}`)
+    expect(changed.safeParse(names(256)).success).toBe(true)
+    expect(changed.safeParse(names(257)).success).toBe(false)
+  })
+
+  test('a name is dotted segments of letters, digits, `_` and `-`, 128 characters at most', () => {
+    for (const name of ['password.minLength', 'sessions.profiles.back-office.idleTimeout']) {
+      expect(changed.safeParse([name]).success).toBe(true)
+    }
+    for (const name of ['', 'a..b', '.a', 'a.', 'a b', 'a=b', 'a/b', `a.${'b'.repeat(127)}`]) {
+      expect(changed.safeParse([name]).success).toBe(false)
+    }
   })
 })
 
 describe('the OpenAPI names', () => {
+  test('the union is `TulaEvent`: `Event` is the DOM’s', () => {
+    expect(z.globalRegistry.get(TulaEventSchema)?.ref).toBe('TulaEvent')
+  })
+
   test('every schema has a ref of its own', () => {
     const refs = [
-      EventSchema,
+      TulaEventSchema,
       ...ACTIVITY_TYPES.flatMap((type) => [EVENT_SCHEMAS[type], EVENT_DATA_SCHEMAS[type]]),
     ].map((schema) => z.globalRegistry.get(schema)?.ref)
     for (const ref of refs) {

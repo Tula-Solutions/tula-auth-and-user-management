@@ -802,7 +802,8 @@ _constant_, defined in `packages/contract/src/event-fixtures.ts`
 
 A valid example of every event type, keyed by type: for documentation, for a receiver's
 tests and for sending a test delivery. Every optional field is present, so an example shows
-the whole shape. Typed so that a type without an example does not compile.
+the whole shape (but for `user.passkey_removed`, whose fields depend on its `method`: the
+example is a removal by the owner). Typed so that a type without an example does not compile.
 
 Plain data: nothing here is a real id.
 
@@ -1096,26 +1097,6 @@ Parameters that give an error its specifics, e.g. `{ min: 10 }` for `password.to
 const ErrorParamsSchema: z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean]>>
 ```
 
-### `Event`
-
-_type_, defined in `packages/contract/src/events.ts`
-
-Any event: a union discriminated by `type`.
-
-```ts
-export type Event = { [T in ActivityType]: EventOf<T> }[ActivityType]
-```
-
-**Example**
-
-```ts
-function handle(event: Event) {
-  if (event.type === 'session.reuse_detected') {
-    alertSecurity(event.data.userId)
-  }
-}
-```
-
 ### `EventActorSchema`
 
 _constant_, defined in `packages/contract/src/events.ts`
@@ -1170,22 +1151,6 @@ export interface EventOf<T extends ActivityType> {
   target: { type: EventTargetType<T>; id: string }
   data: EventData<T>
 }
-```
-
-### `EventSchema`
-
-_constant_, defined in `packages/contract/src/events.ts`
-
-Any event, told apart by `type`: what a webhook receiver parses a delivery with.
-
-```ts
-const EventSchema: z.ZodType<EventOf<any>, unknown, z.core.$ZodTypeInternals<EventOf<any>, unknown>>
-```
-
-**Example**
-
-```ts
-const event = EventSchema.parse(JSON.parse(body))
 ```
 
 ### `EventTargetType`
@@ -1649,6 +1614,23 @@ Longest audit retention that can be set, in days (ten years).
 const MAX_AUDIT_RETENTION_DAYS: 3650
 ```
 
+### `MAX_CHANGED_SETTINGS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Most names an `environment.settings_updated` event lists in `changed`. Above what the
+settings document can hold; the API has a test that builds the largest one.
+
+```ts
+const MAX_CHANGED_SETTINGS: 256
+```
+
+**Example**
+
+```ts
+names.slice(0, MAX_CHANGED_SETTINGS)
+```
+
 ### `MAX_CUSTOM_SESSION_PROFILES`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -1737,6 +1719,22 @@ Longest idle or absolute timeout a profile may set.
 
 ```ts
 const MAX_SESSION_TIMEOUT: Duration
+```
+
+### `MAX_SETTING_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Longest name of a changed setting, e.g. `sessions.profiles.<name>.refresh.reuseGracePeriod`.
+
+```ts
+const MAX_SETTING_NAME_LENGTH: 128
+```
+
+**Example**
+
+```ts
+name.length <= MAX_SETTING_NAME_LENGTH
 ```
 
 ### `MAX_STEP_UP_AFTER`
@@ -3323,6 +3321,42 @@ nothing until it is confirmed with a code, and expires after ten minutes.
 
 ```ts
 const TotpEnrolmentSchema: z.ZodObject<{ secret: z.ZodString; uri: z.ZodString; }, z.core.$strip>
+```
+
+### `TulaEvent`
+
+_type_, defined in `packages/contract/src/events.ts`
+
+Any event: a union discriminated by `type`.
+
+```ts
+export type TulaEvent = { [T in ActivityType]: EventOf<T> }[ActivityType]
+```
+
+**Example**
+
+```ts
+function handle(event: TulaEvent) {
+  if (event.type === 'session.reuse_detected') {
+    alertSecurity(event.data.userId)
+  }
+}
+```
+
+### `TulaEventSchema`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Any event, told apart by `type`: what a webhook receiver parses a delivery with.
+
+```ts
+const TulaEventSchema: z.ZodType<EventOf<any>, unknown, z.core.$ZodTypeInternals<EventOf<any>, unknown>>
+```
+
+**Example**
+
+```ts
+const event = TulaEventSchema.parse(JSON.parse(body))
 ```
 
 ### `User`

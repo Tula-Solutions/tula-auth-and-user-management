@@ -20,7 +20,13 @@ import { AUTHENTICATION_METHODS } from './tokens'
 //
 //   - no email address, name, IP address, user agent, token, code, hash or key material, ever;
 //   - a value from a closed set is an enum, not a string;
-//   - a string is an id the server made, or matches a pattern that cannot hold a secret.
+//   - a string is an id the server made (a UUID), with two exceptions, both in
+//     `environment.settings_updated`: the names of changed settings (`changed`) and the name
+//     of the managing tool (`managedBy`). Their patterns make them bounded names, NOT
+//     secret-proof: a token-shaped string fits either. What keeps a secret out is that each
+//     has one producer: `changed` is built by the API's `changedKeys` from the keys of the
+//     settings document, and `managedBy` is the `x-tula-managed-by` header, validated when
+//     the request is read. A new string field needs the same argument, not only a pattern.
 //
 // Within `EVENT_SCHEMA_VERSION` a payload only grows (see `./event-types`).
 
@@ -41,7 +47,39 @@ function data<Shape extends z.ZodRawShape>(name: string, description: string, sh
   return z.object(shape).meta({ ref: `${name}EventData`, description })
 }
 
+/** Which passkey removal carries which fields; see `user.passkey_removed`. */
+function passkeyRemovalIsWhole(removal: {
+  method: 'user' | 'admin_reset'
+  passkeyId?: string
+  canStillSignIn?: boolean
+}): boolean {
+  const named = removal.passkeyId !== undefined
+  const outcome = removal.canStillSignIn !== undefined
+  return removal.method === 'user' ? named && !outcome : outcome && !named
+}
+
 const provider = OAuthProviderSchema
+
+/**
+ * Most names an `environment.settings_updated` event lists in `changed`. Above what the
+ * settings document can hold; the API has a test that builds the largest one.
+ *
+ * @example
+ * ```ts
+ * names.slice(0, MAX_CHANGED_SETTINGS)
+ * ```
+ */
+export const MAX_CHANGED_SETTINGS = 256
+
+/**
+ * Longest name of a changed setting, e.g. `sessions.profiles.<name>.refresh.reuseGracePeriod`.
+ *
+ * @example
+ * ```ts
+ * name.length <= MAX_SETTING_NAME_LENGTH
+ * ```
+ */
+export const MAX_SETTING_NAME_LENGTH = 128
 
 /**
  * The `data` of each event type: the details beyond who (`actor`) and what (`target`).
@@ -126,17 +164,32 @@ export const EVENT_DATA_SCHEMAS = {
   'user.passkey_renamed': data('UserPasskeyRenamed', 'A user renamed a passkey.', {
     passkeyId: id(),
   }),
-  'user.passkey_removed': data(
-    'UserPasskeyRemoved',
-    'A passkey was removed, or every passkey of a user by an admin reset.',
-    {
-      /** The passkey removed by its owner. Absent for an admin reset, which removes them all. */
-      passkeyId: id().optional(),
+  // One type, two shapes, told apart by `method`. The pairing is a check on the object (the
+  // envelope's parse refuses a mixed one), not two types: a receiver handles one event.
+  'user.passkey_removed': z
+    .object({
+      /**
+       * Who removed what:
+       *
+       * - `user`: the owner removed one passkey. `passkeyId` is present, `canStillSignIn` is
+       *   absent (the removal is refused when it would be the user's last way to sign in).
+       * - `admin_reset`: an admin reset removed **every** passkey of the user. `passkeyId`
+       *   is absent, `canStillSignIn` is present.
+       */
       method: z.enum(['user', 'admin_reset']),
-      /** After an admin reset: whether the user still has a way to sign in. */
+      /** With `method: 'user'` only: the passkey that was removed. */
+      passkeyId: id().optional(),
+      /** With `method: 'admin_reset'` only: whether the user still has a way to sign in. */
       canStillSignIn: z.boolean().optional(),
-    }
-  ),
+    })
+    .refine(passkeyRemovalIsWhole, {
+      message: '`passkeyId` goes with `user`, `canStillSignIn` with `admin_reset`',
+    })
+    .meta({
+      ref: 'UserPasskeyRemovedEventData',
+      description:
+        'A passkey was removed by its owner (`method: user`, with `passkeyId`), or every passkey of a user by an admin reset (`method: admin_reset`, with `canStillSignIn`).',
+    }),
   'user.passkey_counter_regressed': data(
     'UserPasskeyCounterRegressed',
     'A passkey’s signature counter did not grow: it may have been cloned. The sign-in was refused.',
@@ -187,16 +240,33 @@ export const EVENT_DATA_SCHEMAS = {
     {
       /** The settings’ revision after this change. */
       revision: z.number().int().positive(),
-      /** The dotted keys that changed, e.g. `password.minLength`. Never a value. */
-      changed: z.array(
-        z
-          .string()
-          .max(128)
-          .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/)
-      ),
+      /**
+       * The dotted names of the settings that changed, e.g. `password.minLength`. Never a
+       * value.
+       *
+       * **The set of names is open**: it follows the settings document, so a later server
+       * lists settings this version does not know, and a name can hold what an operator
+       * chose (a session profile's name: `sessions.profiles.back-office.idleTimeout`).
+       * Treat each name as opaque text; do not switch on the whole list.
+       *
+       * Bounded (at most `MAX_CHANGED_SETTINGS` names of at most `MAX_SETTING_NAME_LENGTH`
+       * characters), not secret-proof: see the note at the top of this module.
+       */
+      changed: z
+        .array(
+          z
+            .string()
+            .max(MAX_SETTING_NAME_LENGTH)
+            .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/)
+        )
+        .max(MAX_CHANGED_SETTINGS),
       /** `true` when the change made an account easier to take over; absent otherwise. */
       weakened: z.boolean().optional(),
-      /** The tool that applied a config file; `null` when its record was removed. */
+      /**
+       * The tool that applied a config file; `null` when its record was removed. The one
+       * value in any payload that a client supplied (the `x-tula-managed-by` header): a
+       * bounded name, not secret-proof.
+       */
       managedBy: z.string().regex(CONFIG_TOOL_PATTERN).nullable().optional(),
       /** `true` when settings a config file manages were changed around it. */
       outsideConfig: z.boolean().optional(),
@@ -267,14 +337,14 @@ export interface EventOf<T extends ActivityType> {
  *
  * @example
  * ```ts
- * function handle(event: Event) {
+ * function handle(event: TulaEvent) {
  *   if (event.type === 'session.reuse_detected') {
  *     alertSecurity(event.data.userId)
  *   }
  * }
  * ```
  */
-export type Event = { [T in ActivityType]: EventOf<T> }[ActivityType]
+export type TulaEvent = { [T in ActivityType]: EventOf<T> }[ActivityType]
 
 function envelope<T extends ActivityType>(type: T) {
   const details = EVENT_DATA_SCHEMAS[type]
@@ -313,14 +383,14 @@ export const EVENT_SCHEMAS = Object.fromEntries(envelopes) as unknown as {
  *
  * @example
  * ```ts
- * const event = EventSchema.parse(JSON.parse(body))
+ * const event = TulaEventSchema.parse(JSON.parse(body))
  * ```
  */
-export const EventSchema = z
+export const TulaEventSchema = z
   .discriminatedUnion(
     'type',
     // Never empty: there is an envelope per activity type. The casts say what the mapped
     // list cannot: its members are the object schemas of `EVENT_SCHEMAS`, one per type.
     envelopes.map(([, schema]) => schema) as unknown as [z.ZodObject, ...z.ZodObject[]]
   )
-  .meta({ ref: 'Event' }) as unknown as z.ZodType<Event>
+  .meta({ ref: 'TulaEvent' }) as unknown as z.ZodType<TulaEvent>

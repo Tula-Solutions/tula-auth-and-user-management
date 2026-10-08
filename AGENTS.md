@@ -962,18 +962,25 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   activity type is those three things, added together.** `Audit.entry` checks each call
   site's `target` and `data` against them at compile time: a detail the contract has no
   field for is added to the schema first, as a decision, never passed along. A `data` field
-  is an id the server made, a value from a closed set (an enum, not a string), a boolean, a
-  number or, in the two cases ADR 0012 lists, a string bound by a pattern; never an email
-  address, a name, an IP address, a user agent, a token, a code, a hash or key material, and
-  never a free-form string. Within `EVENT_SCHEMA_VERSION` a
-  payload only grows (a new type, an optional field, an enum value); anything else is a new
-  version. `events.payload` is built only by `eventPayload` (`~/lib/event-payload`), in both
-  adapters: it keeps what the schema names and accepts, field by field, drops the rest and
-  never throws. The audit entry's `metadata` is not narrowed by it.
+  is an id the server made, a value from a closed set (an enum, not a string), a boolean or a
+  number; never an email address, a name, an IP address, a user agent, a token, a code, a
+  hash or key material, and never a free-form string. The two string fields that are not ids
+  (`changed` and `managedBy` of `environment.settings_updated`) are **bounded names, not
+  secret-proof**: a token-shaped string fits either pattern. What keeps a secret out of them
+  is that each has one producer, `Settings.changedKeys` and the validated `x-tula-managed-by`
+  header; a new string field needs that argument, not only a pattern. The union of all
+  events is `TulaEvent` / `TulaEventSchema` (never `Event`, which is the DOM's). Within
+  `EVENT_SCHEMA_VERSION` a payload only grows (a new type, an optional field, an enum
+  value); anything else is a new version. `events.payload` is built only by `eventPayload`
+  (`~/lib/event-payload`), in both adapters: it keeps what the schema names and accepts,
+  field by field, drops the rest, logs by name what it dropped and what is required and
+  missing, and never throws (an `occurredAt` that is not a time becomes the time now). The
+  audit entry's `metadata` is not narrowed by it.
   `apps/api/src/event-canary.test.ts` runs every conformance scenario with the wire tapped
-  and fails if anything a request carried, a response handed out as a secret or an email
-  held is found in a payload; `conformance.test.ts` holds every recorded payload to its
-  schema. After changing a schema run `bun run contract:generate` (the schemas are
+  (every request header, whatever its name) and fails if anything a request carried, a
+  response handed out as a secret or an email held is found in a payload; a client-supplied
+  value that is meant to be in one is an entry of that test's `MAY_APPEAR`, with the one
+  field it may be in. `conformance.test.ts` holds every recorded payload to its schema. After changing a schema run `bun run contract:generate` (the schemas are
   components of the OpenAPI document, added in `createApp` because no route refers to them)
   and `bun run dashboard:generate`.
 - **The activity is a required parameter, in the ports and in both adapters** (`Recorded` in

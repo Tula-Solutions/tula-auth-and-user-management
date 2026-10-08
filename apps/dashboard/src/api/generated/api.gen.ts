@@ -492,12 +492,12 @@ export const UserPasskeyRemovedEventDataMethod = {
 } as const;
 
 /**
- * A passkey was removed, or every passkey of a user by an admin reset.
+ * A passkey was removed by its owner (`method: user`, with `passkeyId`), or every passkey of a user by an admin reset (`method: admin_reset`, with `canStillSignIn`).
  */
 export interface UserPasskeyRemovedEventData {
+  method: UserPasskeyRemovedEventDataMethod;
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   passkeyId?: string;
-  method: UserPasskeyRemovedEventDataMethod;
   canStillSignIn?: boolean;
 }
 
@@ -508,7 +508,7 @@ export type UserPasskeyRemovedEventTarget = {
 };
 
 /**
- * A passkey was removed, or every passkey of a user by an admin reset.
+ * A passkey was removed by its owner (`method: user`, with `passkeyId`), or every passkey of a user by an admin reset (`method: admin_reset`, with `canStillSignIn`).
  */
 export interface UserPasskeyRemovedEvent {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -812,6 +812,7 @@ export interface EnvironmentSettingsUpdatedEventData {
      */
   revision: number;
   /**
+     * @maxItems 256
      * @items.maxLength 128
      * @items.pattern ^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$
      */
@@ -912,7 +913,7 @@ export interface OAuthProviderDeletedEvent {
   data: OAuthProviderDeletedEventData;
 }
 
-export type Event = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent;
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent;
 
 export interface StatusResponse {
   status: 'ok';

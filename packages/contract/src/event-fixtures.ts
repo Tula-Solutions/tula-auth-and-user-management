@@ -33,7 +33,8 @@ function eventId(n: number): string {
 /**
  * A valid example of every event type, keyed by type: for documentation, for a receiver's
  * tests and for sending a test delivery. Every optional field is present, so an example shows
- * the whole shape. Typed so that a type without an example does not compile.
+ * the whole shape (but for `user.passkey_removed`, whose fields depend on its `method`: the
+ * example is a removal by the owner). Typed so that a type without an example does not compile.
  *
  * Plain data: nothing here is a real id.
  *
@@ -178,7 +179,7 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: user,
     target: aboutUser,
-    data: { passkeyId: PASSKEY, method: 'user', canStillSignIn: true },
+    data: { passkeyId: PASSKEY, method: 'user' },
   },
   'user.passkey_counter_regressed': {
     id: eventId(16),

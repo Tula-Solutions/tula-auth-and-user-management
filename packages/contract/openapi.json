@@ -1099,17 +1099,17 @@
       "UserPasskeyRemovedEventData": {
         "type": "object",
         "properties": {
-          "passkeyId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
           "method": {
             "type": "string",
             "enum": [
               "user",
               "admin_reset"
             ]
+          },
+          "passkeyId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
           },
           "canStillSignIn": {
             "type": "boolean"
@@ -1118,7 +1118,7 @@
         "required": [
           "method"
         ],
-        "description": "A passkey was removed, or every passkey of a user by an admin reset."
+        "description": "A passkey was removed by its owner (`method: user`, with `passkeyId`), or every passkey of a user by an admin reset (`method: admin_reset`, with `canStillSignIn`)."
       },
       "UserPasskeyRemovedEvent": {
         "type": "object",
@@ -1175,7 +1175,7 @@
           "target",
           "data"
         ],
-        "description": "A passkey was removed, or every passkey of a user by an admin reset."
+        "description": "A passkey was removed by its owner (`method: user`, with `passkeyId`), or every passkey of a user by an admin reset (`method: admin_reset`, with `canStillSignIn`)."
       },
       "UserPasskeyCounterRegressedEventData": {
         "type": "object",
@@ -1802,6 +1802,7 @@
             "maximum": 9007199254740991
           },
           "changed": {
+            "maxItems": 256,
             "type": "array",
             "items": {
               "type": "string",
@@ -2046,7 +2047,7 @@
         ],
         "description": "An OAuth provider’s credentials were removed."
       },
-      "Event": {
+      "TulaEvent": {
         "oneOf": [
           {
             "$ref": "#/components/schemas/UserCreatedEvent"

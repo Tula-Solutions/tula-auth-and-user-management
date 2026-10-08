@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { ACTIVITY_TYPES, EVENT_DATA_SCHEMAS, EVENT_FIXTURES, EVENT_SCHEMAS } from '@tula/contract'
+import { generateSpecs } from 'hono-openapi'
 import { z } from 'zod'
 import { createApp, OPENAPI_PATH } from '~/index'
+import { documentation, eventSchemas } from '~/openapi'
 import { createTestDeps } from '~/testing'
 
 interface Operation {
@@ -92,9 +94,9 @@ describe('the event payloads in the OpenAPI document', () => {
     }
   })
 
-  test('`Event` is one of them, by reference, and nothing else', async () => {
+  test('`TulaEvent` is one of them, by reference, and nothing else', async () => {
     const { schemas } = (await document()).components
-    expect(schemas.Event?.oneOf?.map((one) => one.$ref).sort()).toEqual(
+    expect(schemas.TulaEvent?.oneOf?.map((one) => one.$ref).sort()).toEqual(
       ACTIVITY_TYPES.map((type) => component(EVENT_SCHEMAS[type])).sort()
     )
   })
@@ -108,6 +110,31 @@ describe('the event payloads in the OpenAPI document', () => {
     expect(components.schemas.ErrorEnvelope).toBeDefined()
     expect(components.schemas.AuditLog).toBeDefined()
     expect(components.securitySchemes.secretKey).toBeDefined()
+  })
+
+  /** The names two sets of components share with different content. */
+  function conflicts(one: Record<string, unknown>, other: Record<string, unknown>): string[] {
+    return Object.keys(one).filter(
+      (name) => name in other && JSON.stringify(one[name]) !== JSON.stringify(other[name])
+    )
+  }
+
+  // The two sets are merged by name and the routes' win: an event component that shared a
+  // name with a different route component would be replaced without a word.
+  test('a component the events and the routes both bring is the same in both', async () => {
+    const fromEvents = await eventSchemas()
+    const fromRoutes = (await generateSpecs(createApp(createTestDeps()), { documentation }))
+      .components.schemas as Record<string, unknown>
+    const shared = Object.keys(fromEvents).filter((name) => name in fromRoutes)
+    // Today: the enums an event's data reuses. The check is not vacuous.
+    expect(shared.sort()).toEqual(['OAuthProvider', 'SessionClient'])
+    expect(conflicts(fromEvents, fromRoutes)).toEqual([])
+    // And the routes alone bring no event component: these names are the events' own.
+    expect(Object.keys(fromRoutes).filter((name) => /Event(Data|Actor)?$/.test(name))).toEqual([])
+
+    expect(conflicts({ A: { type: 'string' }, B: 1 }, { A: { type: 'number' }, B: 1 })).toEqual([
+      'A',
+    ])
   })
 
   test('the document is built once and served again', async () => {

@@ -138,6 +138,48 @@ describe('eventPayload', () => {
     }
   })
 
+  test('says which required fields an activity left out, by name', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      const payload = eventPayload(activityOf('session.created', { data: {} }))
+      expect(payload.data).toEqual({})
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0]?.[1]).toEqual({
+        type: 'session.created',
+        dropped: [],
+        missing: ['client', 'userId'],
+      })
+      warn.mockClear()
+      // A required field whose value was refused is both: it was given, and it is not there.
+      eventPayload(activityOf('session.created', { data: { userId: CANARY, client: 'web' } }))
+      expect(warn.mock.calls[0]?.[1]).toEqual({
+        type: 'session.created',
+        dropped: ['userId'],
+        missing: ['userId'],
+      })
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(CANARY)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  // `toISOString` throws a RangeError for an invalid date, inside the transaction of the
+  // change being recorded.
+  test('an activity whose time is not a time still has a payload, and says so', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      const activity = activityOf('user.banned', { occurredAt: new Date(Number.NaN) })
+      expect(() => eventPayload(activity)).not.toThrow()
+      const payload = eventPayload(activity)
+      // The time the payload was built: the activity is recorded as it happens.
+      expect(Math.abs(Date.parse(payload.occurredAt) - Date.now())).toBeLessThan(5_000)
+      expect(EVENT_SCHEMAS['user.banned'].parse(payload)).toEqual(payload as never)
+      expect(JSON.stringify(warn.mock.calls)).toContain('occurredAt')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   test('copies what it keeps: a later change to the activity does not reach the payload', () => {
     const activity = activityOf('session.stepped_up')
     const payload = eventPayload(activity)

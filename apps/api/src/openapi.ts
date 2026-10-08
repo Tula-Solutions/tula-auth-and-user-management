@@ -1,4 +1,4 @@
-import { DASHBOARD_SESSION_COOKIE, ErrorEnvelopeSchema, EventSchema } from '@tula/contract'
+import { DASHBOARD_SESSION_COOKIE, ErrorEnvelopeSchema, TulaEventSchema } from '@tula/contract'
 import type { GenerateSpecOptions } from 'hono-openapi'
 import { resolver } from 'hono-openapi'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
@@ -212,7 +212,7 @@ export const documentation: GenerateSpecOptions['documentation'] = {
 }
 
 /**
- * The event payloads as OpenAPI components: `Event` (any event, told apart by `type`), one
+ * The event payloads as OpenAPI components: `TulaEvent` (any event, told apart by `type`), one
  * `<Name>Event` and `<Name>EventData` per activity type, and what they refer to.
  *
  * No route returns an event (a webhook delivers one to the operator's endpoint), so nothing
@@ -223,6 +223,6 @@ export const documentation: GenerateSpecOptions['documentation'] = {
  * @returns The schemas by component name.
  */
 export async function eventSchemas() {
-  const { components } = await resolver(EventSchema).toOpenAPISchema()
+  const { components } = await resolver(TulaEventSchema).toOpenAPISchema()
   return components?.schemas ?? {}
 }

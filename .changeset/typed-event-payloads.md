@@ -11,9 +11,12 @@ first delivery.
   of.
 - `EVENT_DATA_SCHEMAS`: the `data` of every event type. `EVENT_SCHEMAS`: the event itself,
   `{ id, type, schemaVersion, occurredAt, actor, target, data }`, with no IP address and no
-  user agent. `EventSchema` and the `Event` type are their union by `type`; `EventOf<T>` and
+  user agent. `TulaEventSchema` and the `TulaEvent` type are their union by `type` (not
+  `Event`, which is the DOM's); `EventOf<T>` and
   `EventData<T>` name one type's. A payload is an allow-list: ids, values from closed sets,
   booleans; never an email address, a token or a secret.
 - `EVENT_FIXTURES`: a valid example of every event type, as plain data.
-- `openapi.json` gains the schemas as components (`Event`, `<Name>Event`, `<Name>EventData`,
+- `MAX_CHANGED_SETTINGS` and `MAX_SETTING_NAME_LENGTH`: the bounds of the names an
+  `environment.settings_updated` event lists in `changed`. The set of names is open.
+- `openapi.json` gains the schemas as components (`TulaEvent`, `<Name>Event`, `<Name>EventData`,
   `EventActor`). No route changes.

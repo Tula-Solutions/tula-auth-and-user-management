@@ -93,12 +93,15 @@ of.
     delivery by it. The payload carries its own `id`, `type` and `occurredAt` (they are also
     columns of `events`) so that a delivery is this one value and nothing assembled later.
   - Every type has a `data` schema (`EVENT_DATA_SCHEMAS`), an envelope schema around it
-    (`EVENT_SCHEMAS`; `EventSchema` is their union by `type`), a target type
+    (`EVENT_SCHEMAS`; `TulaEventSchema` is their union by `type`), a target type
     (`EVENT_TARGET_TYPES`: what `target.id` is the id of) and an example (`EVENT_FIXTURES`),
     all in `@tula/contract`. The records are typed so that a type without one does not
     compile, and the contract's tests check the same at run time. The schemas are published
-    as components of the OpenAPI document (`Event`, `<Name>Event`, `<Name>EventData`); no
-    route returns one, so `createApp` adds them where the document is assembled.
+    as components of the OpenAPI document (`TulaEvent`, `<Name>Event`, `<Name>EventData`); no
+    route returns one, so `createApp` adds them where the document is assembled. The union
+    is `TulaEvent`, not `Event`: that name is the DOM's in every browser and worker, and a
+    published type cannot be renamed once receivers import it. A component the events and
+    the routes share by name (`OAuthProvider`, `SessionClient`) is held identical by a test.
   - `schemaVersion` is `EVENT_SCHEMA_VERSION` (1). **Within a version a payload only grows**:
     a later server may add a type, an optional field or a value to a closed set, and a
     receiver ignores what it does not know. Removing or renaming a field, making one
@@ -106,16 +109,37 @@ of.
   - **A payload is an allow-list.** A field is in a payload because the contract names it,
     never because a call site passed it. A `data` schema holds ids the server made (UUIDs),
     values from closed sets (enums: `method`, `reason`, `provider`, `client`, `kind`),
-    booleans, a revision number, and two strings bound by a pattern: the dotted **names** of
-    changed settings (never a value) and the name of the tool that manages them. Never an
-    email address, a name, an IP address, a user agent, a token, a code, a hash or key
-    material.
+    booleans and a revision number. Never an email address, a name, an IP address, a user
+    agent, a token, a code, a hash or key material.
+  - **Two strings are not ids, and their patterns do not make them secret-proof.**
+    `environment.settings_updated` carries `changed`, the dotted **names** of the settings
+    that changed (never a value), and `managedBy`, the name of the tool that applies a
+    config file. Both are bounded (a name of at most 128 characters of letters, digits, `_`,
+    `-` and dots, at most 256 of them; `CONFIG_TOOL_PATTERN`), and a token-shaped string
+    fits either. What keeps a secret out is that each has exactly one producer: `changed` is
+    built by `Settings.changedKeys` from the keys of the settings document, and `managedBy`
+    is the `x-tula-managed-by` header, validated when the request is read (the one value in
+    any payload that a client supplied). A new string field needs the same argument.
+  - **The names in `changed` are an open set.** They follow the settings document: a later
+    server lists settings this version does not have, and a name holds what an operator
+    chose where the document is keyed by it (a session profile:
+    `sessions.profiles.back-office.idleTimeout`). A receiver treats each name as opaque
+    text. A test in the settings service builds the largest document there can be (ten
+    profiles with 32-character names) and holds every one of its keys, and their number,
+    inside the bounds: a list that did not fit would be dropped from the payload whole.
+  - **`user.passkey_removed` is one type with two shapes**, told apart by `method`: `user`
+    (the owner removed one passkey) carries `passkeyId` and never `canStillSignIn`;
+    `admin_reset` (every passkey of the user was removed) carries `canStillSignIn` and never
+    `passkeyId`. The schema refuses any other combination; it is deliberately not two types.
   - **One function builds it**, `eventPayload` (`~/lib/event-payload`), called by the memory
     and the Postgres stores alike. It keeps a key of the activity's `data` only if the type's
     schema names it **and** that field's own schema accepts the value, so a named field
     cannot carry a string where an enum or an id belongs. What it refuses it drops and logs
-    by key (never by value); it never throws, because a record that cannot be written undoes
-    the change it records.
+    by key (never by value), together with the keys the schema requires and the payload
+    lacks; it never throws, because a record that cannot be written undoes the change it
+    records. An `occurredAt` that is not a time (an invalid `Date`, whose `toISOString`
+    throws) is replaced by the time the payload is built, and logged: an activity is
+    recorded as it happens, so that is the nearest true value.
   - **Call sites are checked at compile time.** `Audit.entry` takes a union discriminated by
     `type`: each type's `target.type` and `data` are the contract's, so recording a detail
     the contract has no field for does not compile. `Activity.data` itself stays loose (a
@@ -127,7 +151,13 @@ of.
     against the API in process with a recognisable address and password in every variable
     and the wire tapped: whatever a request carried, whatever a response handed out as a
     secret and whatever was emailed is then searched for in every recorded payload (and in
-    every audit entry's details). `conformance.test.ts` also holds every recorded payload to
+    every audit entry's details). Every request header is tapped, whatever its name, so a
+    header the API starts to read is covered without anyone listing it. A client-supplied
+    value that may be in a payload is an explicit entry of the test's `MAY_APPEAR`, with
+    the one field it may be in, and is a leak anywhere else: the managing tool's name
+    (`managedBy`), and a session profile's name, which a client sends in
+    `x-tula-session-profile` and which is in `changed` because an admin named a profile so
+    (tapping every header is what showed it). `conformance.test.ts` also holds every recorded payload to
     its schema and to "nothing was dropped", so a call site and the contract cannot drift.
   - A new activity type is three things: its name (and target type) in `event-types.ts`, a
     `data` schema in `EVENT_DATA_SCHEMAS` and an example in `EVENT_FIXTURES`.
@@ -194,8 +224,10 @@ of.
   profile names), the managing tool's name (`managedBy`, operator-supplied, bound by
   `CONFIG_TOOL_PATTERN`), and `canStillSignIn` on `user.passkey_removed`.
 - A payload is not validated as a whole when it is written (only field by field): an event
-  whose call site left out a required field is stored without it rather than refused. The
-  compiler and the conformance run are what keep that from happening.
+  whose call site left out a required field is stored without it rather than refused, and
+  the rule that pairs the fields of `user.passkey_removed` is not applied there either.
+  The missing fields are logged by name; the compiler and the conformance run (which parses
+  every recorded payload with its whole schema) are what keep it from happening.
 - Audit entries keep IP addresses after a user is deleted, and outlive the sessions they name
   (which are deleted 30 days after they end). The audit retention setting has to cover that.
 - Every write that records activity costs two more inserts in its transaction.

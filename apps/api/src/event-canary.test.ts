@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { loadScenarios, runScenario, type Scenario, type Target } from '@tula/conformance'
-import { EventSchema } from '@tula/contract'
+import { TulaEventSchema } from '@tula/contract'
 import { z } from 'zod'
 import { inProcessTarget } from '~/testing/in-process-target'
 
@@ -103,16 +103,53 @@ function vocabulary(): Set<string> {
       }
     }
   }
-  walk(z.toJSONSchema(EventSchema, { unrepresentable: 'any' }))
+  walk(z.toJSONSchema(TulaEventSchema, { unrepresentable: 'any' }))
   return words
 }
 
 const VOCABULARY = vocabulary()
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
 
+/**
+ * The request headers whose value may be found in a payload, and the one field it may be
+ * found in. A closed list, and a decision each (ADR 0012); such a value is not a canary, and
+ * anywhere but its own field it is a leak like any other ({@link withoutAllowed}).
+ *
+ * - `x-tula-managed-by`: the name of the tool that applies a config file (ADR 0030),
+ *   validated against `CONFIG_TOOL_PATTERN` before it is stored. The one client-supplied
+ *   string a payload is meant to carry.
+ * - `x-tula-session-profile`: the name of a session profile a client asks for. The header
+ *   itself reaches no payload. But a profile's name is a key of the settings document, which
+ *   an admin chose, and `changed` lists the names of changed settings: so the same string is
+ *   in a payload whenever that profile is added or edited, whether or not any client ever
+ *   sent the header. Found by tapping every header; kept here so that it is a recorded
+ *   decision and not an accident.
+ */
+const MAY_APPEAR: Record<string, { type: string; field: string }> = {
+  'x-tula-managed-by': { type: 'environment.settings_updated', field: 'managedBy' },
+  'x-tula-session-profile': { type: 'environment.settings_updated', field: 'changed' },
+}
+
+/** The recorded events without the fields {@link MAY_APPEAR} allows a client's value in. */
+function withoutAllowed(
+  events: readonly { type: string; data: Record<string, unknown> }[]
+): unknown[] {
+  return events.map((event) => {
+    const data = { ...event.data }
+    for (const { type, field } of Object.values(MAY_APPEAR)) {
+      if (event.type === type) {
+        delete data[field]
+      }
+    }
+    return { ...event, data }
+  })
+}
+
 /** Everything that crossed the wire and must not be in an event. */
 class Tap {
   readonly inputs = new Set<string>()
+  /** Values of the {@link MAY_APPEAR} headers: allowed in their own field, and only there. */
+  readonly mayAppear = new Set<string>()
   /** `METHOD /path` of every request, for the test that says which flows were exercised. */
   readonly requests = new Set<string>()
 
@@ -133,18 +170,18 @@ class Tap {
     const url = new URL(request.url)
     this.requests.add(`${request.method} ${url.pathname}`)
     this.addAll(parameters(url.search))
-    for (const header of [
-      'user-agent',
-      'x-forwarded-for',
-      'x-tula-attempt',
-      'x-tula-publishable-key',
-      'x-tula-config-hash',
-    ]) {
-      this.add(request.headers.get(header))
-    }
-    this.add(request.headers.get('authorization')?.replace(/^Bearer /, ''))
-    for (const cookie of (request.headers.get('cookie') ?? '').split(';')) {
-      this.add(cookie.split('=').slice(1).join('=').trim())
+    // Every header, not a list of the ones known to matter: a header the API starts reading
+    // later is then tapped without anyone remembering to add it here.
+    for (const [name, value] of request.headers) {
+      if (Object.hasOwn(MAY_APPEAR, name)) {
+        this.mayAppear.add(value)
+      } else if (name === 'authorization') {
+        this.add(value.replace(/^Bearer /, ''))
+      } else if (name === 'cookie') {
+        this.addAll(value.split(';').map((cookie) => cookie.split('=').slice(1).join('=').trim()))
+      } else {
+        this.add(value)
+      }
     }
     const body = await request.clone().text()
     const json = parseJson(body)
@@ -236,6 +273,8 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
 
       expect(JSON.stringify(events)).not.toMatch(MARKERS)
       expect(leaks(events, tap.inputs)).toEqual([])
+      // What a client supplied and a payload is meant to carry is in its own field only.
+      expect(leaks(withoutAllowed(events), tap.mayAppear)).toEqual([])
       // The audit entry's details are held to the same rule (its origin columns are not: the
       // IP address and user agent belong to the audit log, and only there).
       expect(JSON.stringify(details)).not.toMatch(MARKERS)
@@ -332,5 +371,43 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
     expect(tap.inputs.size).toBe(0)
     tap.add('hunter2')
     expect([...tap.inputs]).toEqual(['hunter2'])
+  })
+
+  // The header list is open: a header the API learns to read tomorrow is tapped today.
+  test('every request header is an input, whatever its name', async () => {
+    const tap = new Tap()
+    await tap.request(
+      new Request('http://tula.test/v1/client/config', {
+        headers: {
+          'x-a-header-nobody-listed': 'hunter2hunter2',
+          authorization: 'Bearer tula_sk_dev_abcdefgh',
+          cookie: 'tula_rt=first-cookie-value; other=second-cookie-value',
+          'x-tula-managed-by': 'some-tool',
+        },
+      })
+    )
+    expect([...tap.inputs].sort()).toEqual(
+      ['hunter2hunter2', 'tula_sk_dev_abcdefgh', 'first-cookie-value', 'second-cookie-value'].sort()
+    )
+    // The one header whose value is meant to reach a payload is kept apart, not ignored.
+    expect([...tap.mayAppear]).toEqual(['some-tool'])
+  })
+
+  test('the managing tool’s name reaches a payload as `managedBy`, and nowhere else', async () => {
+    const found = scenarios.find(
+      ({ scenario }) => scenario.name === 'settings managed by a config file'
+    )
+    if (!found) {
+      throw new Error('no such scenario')
+    }
+    const { tap, events } = await record(found.scenario)
+    expect([...tap.mayAppear]).toContain('conformance')
+    expect(events.map((event) => event.data.managedBy)).toContain('conformance')
+    expect(leaks(withoutAllowed(events), tap.mayAppear)).toEqual([])
+    // Anywhere else it is a leak like any other.
+    const elsewhere = [...events, { type: 'user.created', data: { method: 'conformance' } }]
+    expect(leaks(withoutAllowed(elsewhere), tap.mayAppear)).toHaveLength(1)
+    const wrongType = [...events, { type: 'user.created', data: { managedBy: 'conformance' } }]
+    expect(leaks(withoutAllowed(wrongType), tap.mayAppear)).toHaveLength(1)
   })
 })
