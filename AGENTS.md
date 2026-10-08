@@ -338,9 +338,13 @@ whose answer decides what happens next (step 2.3).
   makes no request to an endpoint**. `planProcess(role, mode)` (`~/process`) is the one place
   that decides, `container.ts` turns it into `config.deliversWebhooks`, and the webhook
   service reads nothing else: where it is false `Webhooks.run` returns before the job lock,
-  `deliverPending` does nothing, and `sendTest` and `redeliver` are refused before anything
-  is read with `not_implemented` (501) and `params.reason: 'worker_separate'`
-  (`requireDeliveryHere`). A new path that calls an endpoint checks `deliversWebhooks` first
+  `deliverPending` does nothing, and `sendTest` and `redeliver` are refused with
+  `not_implemented` (501) and `params.reason: 'worker_separate'`. **The refusal has a fixed
+  place on those two routes: after `secretKey()` (no key is still 401), before
+  `sendRateLimit` and before any validator** (`deliveredHere` in the router), so a refused
+  call is never a 429 or a 422 and spends nothing of the send bucket; the service refuses
+  again (`requireDeliveryHere`, before any store is read). Keep both, and that order. A new
+  path that calls an endpoint checks `deliversWebhooks` first
   and gets a test in `modules/webhook/worker-separate.test.ts`. A worker under `api` refuses
   to start (never let it run beside instances that deliver: the lock would keep it correct
   and the operator would believe traffic is separated). Never add a second variable, a
@@ -349,8 +353,15 @@ whose answer decides what happens next (step 2.3).
 - **The worker process serves health and nothing else** (`createWorkerApp`: `/v1/status`,
   `/v1/ready`, the contract's 404 for the rest), runs no migration, creates no signing key
   and imports no router: `worker.test.ts` walks `worker.ts`'s import graph and fails for a
-  router, the API app, the JWKS bootstrap or a migration. It is built by the same
-  `createContainer`, so `deps.outbound` is `{ tier }` there too. On `SIGTERM` it lets the
+  router, the API app, the JWKS bootstrap or a migration. The walk reads every way of
+  loading a module (a bare `import '…'`, `export … from`, `require`, `import()`) and fails
+  for a name computed at run time: never load a module in the worker's graph by a name that
+  is not written out. It is built by the same
+  `createContainer`, so `deps.outbound` is `{ tier }` there too. **The Compose `worker`
+  service is not given `TULA_ADMIN_TOKEN`**, nor anything else only the API reads and a
+  process starts without (`compose.test.ts` holds its environment to the API's minus a
+  named list): a new variable goes in `x-process-environment` only if the worker uses it or
+  `env.ts` demands it of every process. On `SIGTERM` it lets the
   round under way record the requests it is making and exits; what was not sent waits for
   the next round of any worker.
 - **"Nobody delivers" is said by the diagnostics, from the outbox** (`webhook_worker`, ADR
@@ -886,8 +897,9 @@ one environment across instances (a Postgres advisory lock): `Settings.replace` 
 a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)).
 
 **Background jobs** are service functions started on boot and on a timer by `startJobs`
-(`apps/api/src/jobs.ts`), the one scheduling path: `server.ts` and `worker.ts` both call it
-with the jobs their `ProcessPlan` names, and neither sets a timer of its own.
+(`apps/api/src/jobs.ts`), the one scheduling path: `server.ts` and `worker.ts` both call
+`bootJobs(container)`, which starts the jobs their `ProcessPlan` names; neither names a job
+or sets a timer of its own (`jobs.test.ts` reads both files).
 `deps.jobLock.runExclusive(job, fn)` lets one process through and the others skip
 the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are two,
 each with its own job name and lock id (`JOB_LOCK_IDS`: never renumber, only add):

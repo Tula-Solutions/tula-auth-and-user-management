@@ -1193,8 +1193,18 @@ reused for a second because nothing rate-limits this port) and the contract's 40
 everything else. No router of the API is reachable from the file (a test walks its import
 graph), it runs no migration and does not create signing keys.
 
-The schedule has one implementation, `startJobs` (`apps/api/src/jobs.ts`), which both
-entrypoints call with the plan's jobs: the delivery job still runs `Webhooks.run` every
+The schema is the API's, so a worker in a live tier is given what the schema demands of every
+process (Redis, a mail relay and sender, `hibp`, an https `PUBLIC_URL`) although it uses none
+of it: a second, looser schema for the worker would be a second place where "a live
+deployment" is defined. What the schema does not demand and the worker never reads, it is
+not given: the Compose `worker` service has no `TULA_ADMIN_TOKEN`, `OAUTH_MOCK_PROVIDER`,
+`CORS_ORIGINS`, `TRUST_PROXY` or `PASSWORD_POLICY` (a test holds its environment to the
+API's minus that list). The admin token is the one that matters: the worker is the process
+that talks to addresses tenants typed, and it has no route that would check the token.
+
+The schedule has one implementation, `startJobs` (`apps/api/src/jobs.ts`), reached by both
+entrypoints through `bootJobs(container)`, which hands it the plan's jobs (neither
+entrypoint names a job): the delivery job still runs `Webhooks.run` every
 `WEBHOOK_DELIVERY_INTERVAL_MS`, one round at a time per process, under the job lock
 `webhook_delivery` (advisory lock id 2, not renumbered). Several workers are several holders
 of that lock, as several API instances were: one is let through per round.
@@ -1216,8 +1226,16 @@ the process: rounds fail and are logged, `/v1/ready` answers 503.
   operators' addresses, and the documentation says so: the separation is of webhook
   deliveries, not of all outbound traffic.
 - **A test event and a delivery sent again are refused** in a process that does not deliver:
-  `not_implemented` (501) with the fixed `params.reason: 'worker_separate'`, before anything
-  is read. Both are requests the instance that takes the call makes itself. Allowing them
+  `not_implemented` (501) with the fixed `params.reason: 'worker_separate'`. The order on
+  both routes is: the per-IP admin limit, the key (`secretKey()`: a caller without one is
+  answered 401 and learns nothing about how the deployment is laid out), **the refusal**
+  (`deliveredHere` in the router), and only then the per-environment send limit and the
+  validation of the path and the body. So a refused call is refused every time (never a 429
+  from the send bucket, never a 422 for a body nobody would use) and spends nothing of the
+  send limit, which belongs to requests that are made. The service refuses again
+  (`requireDeliveryHere`, the first statement of `sendTest` and `redeliver`, before any
+  store is read), for a caller that is not the router. Both are requests the instance that
+  takes the call makes itself. Allowing them
   would make "an API instance makes no delivery" false exactly where an operator relies on
   it, and under an egress policy they would fail in a way that reads as the receiver's
   fault. *Not chosen: handing them to the worker* (a row the worker picks up, the caller

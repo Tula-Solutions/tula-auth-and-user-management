@@ -32,7 +32,8 @@ paths:
 - A background job is a service function `startJobs` (`src/jobs.ts`) starts on boot and on a
   timer, under `deps.jobLock.runExclusive(<its own job name>, …)`; a new job gets a new id
   in `JOB_LOCK_IDS` (never renumber) and a place in `planProcess` (`src/process.ts`) for the
-  role that runs it. Never set a timer for one in `server.ts` or `worker.ts`. It serves
+  role that runs it. Never set a timer for one, or name one, in `server.ts` or `worker.ts`:
+  both call `bootJobs(container)` and nothing else. It serves
   environments one at a time and a failure in one is logged and skipped
   (`modules/retention`, `modules/webhook`).
 - Whether this process makes webhook deliveries is `deps.config.deliversWebhooks` (from

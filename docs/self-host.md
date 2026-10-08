@@ -634,7 +634,7 @@ configure. `WEBHOOK_WORKER=separate` moves them into a **worker**: a second proc
 same image that does nothing else.
 
 ```sh
-# The API instances, as before, and the worker: the same image, the same environment.
+# The API instances, as before, and the worker: the same image, another command.
 docker run … -e WEBHOOK_WORKER=separate tula-api                          # each API instance
 docker run … -e WEBHOOK_WORKER=separate tula-api bun run src/worker.ts    # the worker
 ```
@@ -660,10 +660,17 @@ the default.
 
 **What the worker is.**
 
-- **The same image and the same environment as the API.** It reads the same variables under
-  the same rules, so give it what the API has: `DATABASE_URL` (the runtime role), the same
-  `TULA_MASTER_KEY` (it opens the endpoints' signing secrets), the same `ENVIRONMENT` (the
-  tier the address guard judges by) and `REDIS_URL` where the tier requires one.
+- **The same image, and less of the environment than the API.** What it uses: `DATABASE_URL`
+  (the runtime role), the same `TULA_MASTER_KEY` (it opens the endpoints' signing secrets),
+  the same `ENVIRONMENT` (the tier the address guard judges by), `WEBHOOK_WORKER` and
+  `LOG_LEVEL`. It checks its variables under the same rules as the API, so in `staging` and
+  `prod` it also has to be given what those rules demand of every process, though it never
+  uses them: `REDIS_URL`, `SMTP_URL`, `MAIL_FROM`, `BREACH_CHECK=hibp` and an https
+  `PUBLIC_URL`. **Do not give it `TULA_ADMIN_TOKEN`**: it serves no instance route, and the
+  deployment's most powerful credential should be in no container that has no use for it.
+  It has no use for `OAUTH_MOCK_PROVIDER`, `CORS_ORIGINS`, `TRUST_PROXY`, `PASSWORD_POLICY`,
+  `API_DOCS`, `DASHBOARD_DIR` or `INSTANCE_AUDIT_RETENTION_DAYS` either. The Compose file's
+  `worker` service is given exactly the first two lists.
 - **It takes no traffic.** It listens on `PORT` for `GET /v1/status` and `GET /v1/ready` and
   answers 404 to everything else: no sign-in route, no admin route, no dashboard. Do not
   publish the port and put no load balancer in front of it. `/v1/ready` checks the database
@@ -704,7 +711,7 @@ deployment delivers; the command says what a process is.
 | --- | --- | --- |
 | every process: `api` (or unset) | no | The API instances deliver. The default. |
 | every process: `separate` | yes | The worker delivers; no API instance makes a request to an endpoint. |
-| every process: `separate` | **no** | **Nothing is delivered.** Events wait in the outbox and are delivered, late, once a worker runs. Each API instance says at start-up `WEBHOOK_WORKER=separate: this API instance makes no webhook delivery`, and `tula doctor` fails `webhook_worker` once an event has waited a minute. |
+| every process: `separate` | **no** | **Nothing is delivered.** Events wait in the outbox and are delivered, late, once a worker runs. Each API instance says at start-up `WEBHOOK_WORKER=separate: this API instance makes no webhook delivery`, and `tula doctor` fails `webhook_worker` once an event has waited a minute. The same failure is what a worker that runs and cannot keep up, or cannot work, looks like: the check reads the outbox and says so. |
 | the worker: `api` (or unset) | it refuses to start | It exits with a message naming the variable: the API instances already deliver, and a worker beside them would separate nothing. |
 | API instances with different values | | Not detected. The instances with `api` deliver, so the separation is not in force. Set it in one place for all of them. |
 
