@@ -20,6 +20,14 @@ const CLIENT_MESSAGES = {
     'A path parameter is missing or is not a single path segment (empty, ".", "..", or it has a slash or a control character).',
   'client.browser':
     '@tula/admin holds a secret key and must not run in a browser. Call it from your server.',
+  'webhook.invalid_secret': 'The webhook secret is not a signing secret (whsec_…).',
+  'webhook.invalid_headers':
+    'The webhook-id, webhook-timestamp or webhook-signature header is missing, repeated or malformed.',
+  'webhook.timestamp_out_of_tolerance':
+    'The delivery’s timestamp is more than five minutes from this server’s clock.',
+  'webhook.invalid_signature': 'No signature of the delivery matches the secret.',
+  'webhook.invalid_payload':
+    'The delivery is signed correctly but its body is not the event it names.',
 } as const
 
 /**
@@ -27,7 +35,7 @@ const CLIENT_MESSAGES = {
  * `network.aborted`), an answer that is not the API's (`response.invalid`), or a client that
  * was refused before any request (`client.invalid_key`, `client.publishable_key`,
  * `client.invalid_url`, `client.browser`), or a call refused before its request
- * (`client.invalid_param`).
+ * (`client.invalid_param`), or a webhook delivery that `verifyWebhook` refused (`webhook.*`).
  *
  * @example
  * ```ts
