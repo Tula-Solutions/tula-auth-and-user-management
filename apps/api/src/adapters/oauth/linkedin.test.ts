@@ -408,6 +408,27 @@ describe('the userinfo answer', () => {
     }
   )
 
+  // Review finding F3. Every status but a 2xx is the one word `unavailable`, a 401 and a 403
+  // among them: what GitHub's adapter has always answered for its profile read. The access
+  // token is seconds old and was issued for this code, so a refusal says something about
+  // LinkedIn or the app's product, not about the user's grant.
+  test.each([400, 401, 403, 404, 429, 500, 502, 503])(
+    'userinfo answering %i is unavailable',
+    async (status) => {
+      const { exchange } = linkedin(idToken(), {
+        [USERINFO_URL]: () => jsonResponse(USERINFO, status),
+      })
+      expect(await failureOf(exchange())).toBe('unavailable')
+    }
+  )
+
+  test.each([200, 201, 206])('userinfo answering %i with an answer is read', async (status) => {
+    const { exchange } = linkedin(idToken(), {
+      [USERINFO_URL]: () => jsonResponse(USERINFO, status),
+    })
+    expect(await failureOf(exchange())).toBe('resolved')
+  })
+
   // Review finding F1, for the read LinkedIn shares with Discord.
   test.each([301, 302, 303, 307, 308])(
     'a %i from userinfo is not followed: the token goes nowhere else',

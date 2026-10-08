@@ -306,6 +306,30 @@ describe('refusals', () => {
     }
   )
 
+  // Review finding F3. Every status but a 2xx is the one word `unavailable`, a 401 and a 403
+  // among them: what GitHub's adapter has always answered for its profile read. The access
+  // token is seconds old and was issued for this code, so a refusal says something about
+  // Discord, not about the user's grant.
+  test.each([400, 401, 403, 404, 429, 500, 502, 503])(
+    'the profile endpoint answering %i is unavailable',
+    async (status) => {
+      discord({ [USER_URL]: () => jsonResponse(USER, status) })
+      expect(await failureOf(createDiscordProvider().exchange(credentials, exchangeInput))).toBe(
+        'unavailable'
+      )
+    }
+  )
+
+  test.each([200, 201, 206])(
+    'the profile endpoint answering %i with a user is read',
+    async (status) => {
+      discord({ [USER_URL]: () => jsonResponse(USER, status) })
+      expect(await failureOf(createDiscordProvider().exchange(credentials, exchangeInput))).toBe(
+        'resolved'
+      )
+    }
+  )
+
   // Review finding F1: nothing failed when `redirect: 'error'` was taken off the profile read.
   test.each([301, 302, 303, 307, 308])(
     'a %i from the profile endpoint is not followed: the token goes nowhere else',
