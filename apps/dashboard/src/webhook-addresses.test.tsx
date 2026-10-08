@@ -136,6 +136,44 @@ describe('an address with characters nobody can see', () => {
     expect(api.state.webhookEndpoints).toHaveLength(0)
   })
 
+  test('is written out under the field that holds it raw, when it is changed', async () => {
+    const api = installFakeApi()
+    api.state.webhookEndpoints.push(fakeWebhookEndpoint({ url: HIDDEN }))
+    const { user } = start(`${DEV_PATH}/webhooks`, { api })
+    await user.click(await screen.findByRole('button', { name: `Edit ${SHOWN}` }))
+    const field = within(dialog()).getByLabelText('Address') as HTMLInputElement
+    // The field holds the address as it is: that is what an edit changes.
+    expect(field.value).toBe(HIDDEN)
+    const note = within(dialog()).getByTestId('address-written-out')
+    expect(note.textContent).toBe(
+      `This address holds characters that cannot be seen, or that change how it reads. Written out, it is ${SHOWN}`
+    )
+    expect(isolated(note)).toEqual({ text: SHOWN, dir: 'ltr', wraps: true })
+    expect(unseen(note.textContent)).toBe(false)
+    // It is part of what the field is described by, so it is read with the field.
+    expect(field.getAttribute('aria-describedby')?.split(' ')).toContain(
+      note.closest('[id]')?.id ?? ''
+    )
+
+    // Once the address has nothing of the kind, the note is gone.
+    await user.clear(field)
+    await user.paste(PLAIN)
+    expect(within(dialog()).queryAllByTestId('address-written-out')).toHaveLength(0)
+  })
+
+  test('is written out as it is typed into a new endpoint’s form, and not for a plain one', async () => {
+    const { user } = start(`${DEV_PATH}/webhooks`)
+    await user.click(await screen.findByRole('button', { name: 'Add endpoint' }))
+    const field = within(dialog()).getByLabelText('Address')
+    await user.click(field)
+    await user.paste(HOME)
+    expect(within(dialog()).queryAllByTestId('address-written-out')).toHaveLength(0)
+    await user.paste('\u{200B}')
+    expect(isolated(within(dialog()).getByTestId('address-written-out')).text).toBe(
+      `${HOME}\\u{200B}`
+    )
+  })
+
   test('is written out on the endpoint’s own screen and on a delivery', async () => {
     const api = installFakeApi()
     const endpoint = fakeWebhookEndpoint({ url: HIDDEN })

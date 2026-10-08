@@ -5,6 +5,7 @@ import { fieldErrorMap, toApiError } from '~/api/errors'
 import { TextField } from '~/components/field'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Label } from '~/components/ui/label'
+import { Address, shownAddress } from './address'
 import { eventTypeNote } from './event-type-notes'
 import { type WebhookAction, webhookMessageFor } from './words'
 
@@ -89,7 +90,8 @@ export function orderedTypes(chosen: ReadonlySet<string>): ActivityType[] {
  * The address field of an endpoint's form.
  *
  * @param props - `value`, `onChange` and the field's `error`.
- * @returns The field.
+ * @returns The field, and under it the address written out when it holds a character that
+ *   cannot be seen or that is drawn on its neighbour.
  */
 export function AddressField({
   value,
@@ -100,6 +102,10 @@ export function AddressField({
   onChange: (value: string) => void
   error?: string
 }) {
+  // A text field draws its value raw: a character nobody can see stays unseen in it. What is
+  // sent is the value without the white space around it, so that is what is written out.
+  const sent = value.trim()
+  const written = shownAddress(sent)
   return (
     <TextField
       label='Address'
@@ -111,7 +117,18 @@ export function AddressField({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       error={error}
-      hint='Where events are posted. It must be https, with no user name or password, on a host the server can reach on the public internet.'
+      hint={
+        <>
+          Where events are posted. It must be https, with no user name or password, on a host the
+          server can reach on the public internet.
+          {written === sent ? null : (
+            <span data-testid='address-written-out' className='mt-1 block text-foreground'>
+              This address holds characters that cannot be seen, or that change how it reads.
+              Written out, it is <Address url={sent} />
+            </span>
+          )}
+        </>
+      }
     />
   )
 }

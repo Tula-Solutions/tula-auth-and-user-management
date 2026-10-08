@@ -92,10 +92,14 @@ deletes a workspace, project or environment yet.
   overlap is over.
 - **An address is shown so that it can be checked by eye.** A character nobody can see, or
   one that turns the text round (a zero-width space, a right-to-left override), is written
-  out as `\u{…}` with its code point, wherever the address appears; a backslash is written
-  out the same way, so two addresses are shown alike only when they are the same. To confirm
-  by typing, type what is shown. Letters of different scripts that look alike are not told
-  apart.
+  out as `\u{…}` with its code point, wherever the address appears; so is a mark that is
+  drawn on the character before it (a stroke laid over a slash, an accent that is a
+  character of its own), and a backslash, so two addresses are shown alike only when they
+  are the same. To confirm by typing, type what is shown. In the form that adds or changes
+  an endpoint the field holds the address as it is, and the written-out form appears under
+  it when the two differ. The price: an address that holds text of a script written with
+  such marks as itself, and not in Punycode or percent escapes, is shown with escapes in
+  it. Letters of different scripts that look alike are not told apart.
 - **An endpoint the server switched off says why**: it answered `410 Gone`, or requests to it
   failed for five days. Fix the receiver, send a test event, then switch the endpoint on.
 - **A test event changes nothing about an endpoint.** It carries `"test": true`, is sent

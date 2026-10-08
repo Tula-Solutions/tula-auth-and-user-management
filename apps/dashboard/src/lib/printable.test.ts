@@ -27,6 +27,19 @@ test.each([
   ['a variation selector', 'a\u{FE0F}b', 'a\\u{FE0F}b'],
   ['a combining grapheme joiner', 'a\u{34F}b', 'a\\u{34F}b'],
   ['a soft hyphen', 'a\u{AD}b', 'a\\u{AD}b'],
+  // A mark is drawn on the character before it, whatever that is.
+  ['a combining stroke laid over a slash', 'a.com/\u{338}b', 'a.com/\\u{338}b'],
+  ['a combining mark on a dot', 'a.\u{307}com', 'a.\\u{307}com'],
+  ['a run of combining marks', 'a\u{301}\u{301}\u{301}b', 'a\\u{301}\\u{301}\\u{301}b'],
+  ['an enclosing mark', 'a\u{20DD}b', 'a\\u{20DD}b'],
+  [
+    'a decomposed accent, which is drawn like the letter that has it built in',
+    'cafe\u{301}',
+    'cafe\\u{301}',
+  ],
+  // The cost, accepted: a script that writes its vowels as marks is not read fluently.
+  ['a vowel sign of a script that writes vowels as marks', '\u{915}\u{93F}', '\u{915}\\u{93F}'],
+  ['a mark beyond the basic plane', 'a\u{1D165}b', 'a\\u{1D165}b'],
   // Otherwise text that spells an escape would read the same as the character it names.
   ['a backslash, so that what is shown names one text only', 'a\\u{200B}b', 'a\\u{5C}u{200B}b'],
 ])('%s', (_name, text, shown) => {
@@ -44,4 +57,27 @@ test('two texts that differ only by a character nobody can see are shown differe
     )
   )
   expect(seen.size).toBe(5)
+})
+
+test('two texts that are drawn alike, one with a mark and one without, are shown differently', () => {
+  expect(printable('caf\u{E9}')).toBe('caf\u{E9}')
+  expect(printable('cafe\u{301}')).not.toBe(printable('caf\u{E9}'))
+  expect(printable('a/b')).not.toBe(printable('a/\u{338}b'))
+  // Nor can the written-out form be typed as text and read the same.
+  expect(printable('cafe\\u{301}')).toBe('cafe\\u{5C}u{301}')
+})
+
+test('what is written out can be read back to the one text it came from', () => {
+  const back = (shown: string) =>
+    shown.replace(/\\u\{([0-9A-F]+)\}/g, (_all, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16))
+    )
+  for (const text of [
+    'https://a.example/\u{338}x\\y z\u{200B}',
+    'cafe\u{301}\\u{301}',
+    '\u{915}\u{93F}\u{1D165}\u{FE0F}',
+    'plain',
+  ]) {
+    expect(back(printable(text))).toBe(text)
+  }
 })

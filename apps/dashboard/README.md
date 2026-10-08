@@ -115,15 +115,27 @@ has no way to call a client route.
   unavailable and says why; the submitting button says "Creating…" in words), and the list
   is refreshed by the mutation's own `onSuccess` (the hook's, not the one passed to
   `mutate()`, which is dropped with the component), so the list is right even after a
-  navigation. A navigation still loses the secret, and that is accepted: nothing of it may
+  navigation. That refresh is **started and not awaited** (`void refreshWebhooks(…)`, in
+  braces so that nothing is returned): the query client waits for whatever a hook-level
+  `onSuccess` returns before it marks the mutation successful and hands the answer to the
+  component, so a returned promise keeps the secret off the screen, and the dialog busy,
+  for as long as the list takes to come back. A navigation still loses the secret, and that is accepted: nothing of it may
   be shown under another page or environment. `src/secret-dialogs.test.tsx` holds each of
   these, and that a dialog opened again shows the form and no earlier secret.
+- **A confirmed change is sent once.** A confirmation that stays open while the lists are
+  read again keeps its button unavailable from the click until it closes (a state of the
+  component's own, not the mutation's `isPending`, which is false again as soon as the
+  request has succeeded); a refused request gives the button back. Otherwise a second
+  click in that moment sends a second `DELETE`. `src/webhooks.test.tsx` ("a confirmed
+  change is sent once") holds the list back and clicks twice.
 - **Server text that names something is shown so that it can be checked.** A webhook
   endpoint's address goes through `printable()` (`src/lib/printable.ts`: every character
-  nobody can see, by Unicode class, written out as `\u{…}`; a backslash too, so the shown
-  form names one text only) inside `<bdi dir="ltr">` (`features/webhooks/address.tsx`),
-  in headings, dialog titles, the text to type and every control's name. What is typed to
-  confirm is compared with what is shown.
+  nobody can see and every combining mark, by Unicode class, written out as `\u{…}`; a
+  backslash too, so the shown form names one text only) inside `<bdi dir="ltr">`
+  (`features/webhooks/address.tsx`), in headings, dialog titles, the text to type and
+  every control's name. What is typed to confirm is compared with what is shown. A text
+  field draws its value raw, so the address field of an endpoint's form says the
+  written-out form under it whenever that differs from what was typed.
 - **Server text is rendered as text.** No `dangerouslySetInnerHTML`; audit metadata is shown
   as a JSON string in a `<code>`.
 - **One save model for settings** (`features/settings/settings-editor.tsx`): load with the
