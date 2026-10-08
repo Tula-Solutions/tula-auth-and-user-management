@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { screen, waitFor, within } from '@testing-library/react'
 import { failure, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
-import { DEV_PATH, openDialogs, renderApp, type World } from '~/testing/harness'
+import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
 
 // The webhooks screens: an environment's endpoints, one endpoint's deliveries, one delivery's
 // attempts. Rendered as the whole app, against the fake API.
@@ -236,5 +236,166 @@ describe('adding an endpoint', () => {
       within(dialog()).getByRole('checkbox', { name: 'user.created' }).getAttribute('aria-checked')
     ).toBe('false')
     expect(alerts()).toEqual([])
+  })
+})
+
+const HOME = 'https://api.example.com/webhooks/tula'
+
+/** A fake API with one endpoint in an environment, and the app opened on its webhooks. */
+function withEndpoint(
+  overrides: Parameters<typeof fakeWebhookEndpoint>[0] = {},
+  path = DEV_PATH
+): World {
+  const api = installFakeApi()
+  api.state.webhookEndpoints.push(fakeWebhookEndpoint({ url: HOME, ...overrides }))
+  return start(`${path}/webhooks`, { api })
+}
+
+function patches(api: World['api']): unknown[] {
+  return api.calls.filter((call) => call.method === 'PATCH').map((call) => call.body)
+}
+
+describe('changing an endpoint', () => {
+  test('an edit sends only what changed, and nothing when nothing did', async () => {
+    const { user, api } = withEndpoint()
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Edit ${HOME}` }))
+    const address = within(dialog()).getByLabelText('Address') as HTMLInputElement
+    expect(address.value).toBe(HOME)
+    const box = (name: string) => within(dialog()).getByRole('checkbox', { name })
+    expect(box('user.created').getAttribute('aria-checked')).toBe('true')
+    expect(box('session.revoked').getAttribute('aria-checked')).toBe('true')
+    expect(box('api_key.created').getAttribute('aria-checked')).toBe('false')
+
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    expect(alerts()).toEqual(['Change the address or the event types first.'])
+    expect(patches(api)).toEqual([])
+
+    await user.click(box('session.revoked'))
+    await user.click(box('api_key.created'))
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await screen.findByText('Endpoint saved')
+    expect(patches(api)).toEqual([{ eventTypes: ['user.created', 'api_key.created'] }])
+    expect(within(await card(HOME)).getByText('user.created, api_key.created')).toBeTruthy()
+
+    // The address alone: refused by the guard in a sentence, then accepted.
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Edit ${HOME}` }))
+    const again = within(dialog()).getByLabelText('Address')
+    await user.clear(again)
+    await user.type(again, 'http://api.example.com/v2')
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(alerts()).toEqual(['The address must start with https://.']))
+    await user.clear(again)
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    expect(alerts()).toEqual(['Enter the address of your endpoint, starting with https://.'])
+    await user.type(again, 'https://api.example.com/v2')
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(patches(api).at(-1)).toEqual({ url: 'https://api.example.com/v2' })
+    await card('https://api.example.com/v2')
+  })
+
+  test('an event type this dashboard does not know is said, and kept unless the types change', async () => {
+    const { user, api } = withEndpoint({ eventTypes: ['user.created', 'invoice.paid'] })
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Edit ${HOME}` }))
+    expect(within(dialog()).getByTestId('unknown-types').textContent).toBe(
+      'This endpoint also subscribes to types this version of the dashboard does not know: invoice.paid. They stay as they are unless you change the event types here; a change replaces the whole list.'
+    )
+    const address = within(dialog()).getByLabelText('Address')
+    await user.type(address, '/v2')
+    await user.click(within(dialog()).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(patches(api)).toEqual([{ url: `${HOME}/v2` }])
+  })
+
+  test('switching off and on asks first and says what happens to events and pending deliveries', async () => {
+    const { user, api } = withEndpoint()
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Switch off ${HOME}` }))
+    expect(within(dialog()).getByRole('heading').textContent).toBe(`Switch off ${HOME}?`)
+    expect(dialog().textContent).toContain('events that happen while it is off are not sent later')
+    await user.click(within(dialog()).getByRole('button', { name: 'Switch off' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await screen.findByText('Endpoint switched off')
+    expect(patches(api)).toEqual([{ enabled: false }])
+    await waitFor(async () =>
+      expect(
+        within(await card(HOME))
+          .getByTestId('endpoint-state')
+          .getAttribute('data-state')
+      ).toBe('off')
+    )
+
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Switch on ${HOME}` }))
+    expect(dialog().textContent).toContain(
+      'Deliveries that were pending are tried again unless they are more than three days old.'
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Switch on' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await screen.findByText('Endpoint switched on')
+    expect(patches(api)).toEqual([{ enabled: false }, { enabled: true }])
+  })
+
+  test('an endpoint the server switched off is switched on the same way, and is active again', async () => {
+    const { user } = withEndpoint({
+      enabled: false,
+      disabledReason: 'gone',
+      failingSince: '2026-10-01T00:00:00.000Z',
+    })
+    const state = async () => within(await card(HOME)).getByTestId('endpoint-state')
+    expect((await state()).getAttribute('data-state')).toBe('off-by-server')
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Switch on ${HOME}` }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Switch on' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await waitFor(async () => expect((await state()).getAttribute('data-state')).toBe('active'))
+  })
+
+  test('a change the server refuses is said in the dialog, which stays open', async () => {
+    const { user, api } = withEndpoint()
+    api.override('PATCH', /^\/v1\/admin\/webhook-endpoints\/[^/]+$/, () =>
+      failure(503, 'service.unavailable', 'The service is unavailable. Try again shortly.')
+    )
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Switch off ${HOME}` }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Switch off' }))
+    await waitFor(() =>
+      expect(alerts()).toEqual(['The service is unavailable. Try again shortly.'])
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    // Opened again, the old failure is not shown.
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Switch off ${HOME}` }))
+    expect(alerts()).toEqual([])
+  })
+})
+
+describe('deleting an endpoint', () => {
+  test('the confirmation names the endpoint and says its deliveries and its log go with it', async () => {
+    const { user, api } = withEndpoint()
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Delete ${HOME}` }))
+    expect(within(dialog()).getByRole('heading').textContent).toBe(`Delete ${HOME}?`)
+    expect(dialog().textContent).toContain(
+      'Its signing secret, its pending deliveries and the log of everything delivered to it are deleted with it, and cannot be brought back.'
+    )
+    // Development: nothing to type.
+    expect(within(dialog()).queryAllByLabelText(/to confirm/)).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Delete endpoint' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await screen.findByText('Endpoint deleted')
+    await screen.findByText('No webhook endpoints yet')
+    expect(api.state.webhookEndpoints).toHaveLength(0)
+  })
+
+  test('in production the address must be typed', async () => {
+    const { user, api } = withEndpoint({ environmentId: IDS.production }, PROD_PATH)
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Delete ${HOME}` }))
+    const confirm = within(dialog()).getByRole('button', { name: 'Delete endpoint' })
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    await user.click(confirm)
+    await user.type(within(dialog()).getByLabelText(/to confirm/), 'https://api.example.com')
+    await user.click(confirm)
+    expect(api.calls.some((call) => call.method === 'DELETE')).toBe(false)
+    await user.type(within(dialog()).getByLabelText(/to confirm/), '/webhooks/tula')
+    await user.click(within(dialog()).getByRole('button', { name: 'Delete endpoint' }))
+    await screen.findByText('No webhook endpoints yet')
+    expect(api.state.webhookEndpoints).toHaveLength(0)
   })
 })

@@ -46,7 +46,9 @@ export function endpointProblems(issues: readonly Issue[], url: string): Endpoin
     } else if (issue.path[0] === 'eventTypes') {
       problems.eventTypes ??= 'Choose at least one event type.'
     } else {
-      problems.general ??= issue.message
+      // An issue of the whole body: an update that names no field.
+      problems.general ??=
+        issue.path.length === 0 ? 'Change the address or the event types first.' : issue.message
     }
   }
   return problems
