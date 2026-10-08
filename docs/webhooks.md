@@ -164,7 +164,9 @@ or the body.
   16 KiB counts as a failed delivery. Do the work the event causes after you have answered.
 - **Expect the same event twice.** Delivery is at least once: if the server sent a delivery
   and could not record that it did, it sends it again, with the same `webhook-id`. Keep the
-  ids you have handled (for at least the five-minute window) and answer a repeat with a 2xx.
+  ids you have handled for as long as a duplicate would matter, not only for the five-minute
+  window: a repeat carries a new timestamp and can come much later (after the server
+  restarts, say). Answer a repeat with a 2xx.
 - **Do not rely on order.** Events are sent oldest first, but nothing guarantees they arrive
   that way. Each carries `occurredAt`; when order matters, fetch the current state.
 - **Expect a delay of a few seconds.** The worker looks for new events every five seconds.
@@ -173,7 +175,9 @@ or the body.
 
 For each delivery: which endpoint and event, when it was tried, whether it was delivered, your
 answer's **status code**, how long it took, and, when there was no answer, a fixed word for
-why (`timeout`, `connection_failed`, `address_not_allowed`, …). **Nothing else of your answer
+why (`timeout`, `connection_failed`, `address_not_allowed`, …). An endpoint that lets a
+delivery run into the five-second deadline is not waited for again in the same round: what it
+was owed in that round is recorded as failed (`endpoint_unresponsive`) and not sent. **Nothing else of your answer
 is kept or logged**: no header and no body. The server's log never holds an endpoint's address
 or its secret.
 

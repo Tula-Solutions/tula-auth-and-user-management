@@ -1,4 +1,4 @@
-import { integer, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { index, integer, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints, tenantForeignKey } from '../tenant-columns'
 import { events } from './events'
@@ -16,7 +16,8 @@ export const WEBHOOK_DELIVERY_OUTCOMES = ['delivered', 'failed'] as const
  * header and no body, and there is no column for either. An endpoint's address can name
  * anything the outbound guard lets through; what it answered must not become readable here.
  * `failure_reason` is one of the server's own fixed words (the outbound guard's reason when
- * there was no answer, `signing_failed` when the secret could not be opened), never text from
+ * there was no answer, `signing_failed` when the secret could not be opened,
+ * `endpoint_unresponsive` when the endpoint had already timed out in the round), never text from
  * the receiver or the transport.
  *
  * Rows go with their endpoint and with their event (both foreign keys cascade).
@@ -41,6 +42,9 @@ export const webhookDeliveries = tula.table(
   },
   (t) => [
     unique('webhook_deliveries_endpoint_event_key').on(t.endpointId, t.eventId),
+    // What the worker asks for every batch (the rows of these events), and what the cascade
+    // from a deleted event needs: the unique key leads with the endpoint and serves neither.
+    index('webhook_deliveries_event_idx').on(t.environmentId, t.eventId),
     tenantForeignKey('webhook_deliveries_endpoint_fk', t, t.endpointId, webhookEndpoints),
     tenantForeignKey('webhook_deliveries_event_fk', t, t.eventId, events),
     ...tenantConstraints('webhook_deliveries', t),

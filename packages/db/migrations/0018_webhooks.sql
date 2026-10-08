@@ -41,6 +41,7 @@ ALTER TABLE "tula"."webhook_deliveries" ADD CONSTRAINT "webhook_deliveries_envir
 ALTER TABLE "tula"."webhook_endpoints" ADD CONSTRAINT "webhook_endpoints_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "tula"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tula"."webhook_endpoints" ADD CONSTRAINT "webhook_endpoints_environment_id_environments_id_fk" FOREIGN KEY ("environment_id") REFERENCES "tula"."environments"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tula"."webhook_endpoints" ADD CONSTRAINT "webhook_endpoints_environment_project_fk" FOREIGN KEY ("environment_id","project_id") REFERENCES "tula"."environments"("id","project_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "webhook_deliveries_event_idx" ON "tula"."webhook_deliveries" USING btree ("environment_id","event_id");--> statement-breakpoint
 CREATE INDEX "webhook_deliveries_environment_id_idx" ON "tula"."webhook_deliveries" USING btree ("environment_id");--> statement-breakpoint
 CREATE INDEX "webhook_endpoints_environment_id_idx" ON "tula"."webhook_endpoints" USING btree ("environment_id");--> statement-breakpoint
 CREATE INDEX "events_environment_undelivered_idx" ON "tula"."events" USING btree ("environment_id","occurred_at","id") WHERE delivered_at is null;--> statement-breakpoint

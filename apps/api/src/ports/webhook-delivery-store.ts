@@ -15,11 +15,12 @@ export interface PendingEvent {
 }
 
 /**
- * Why a delivery got no answer: the outbound guard's word, or `signing_failed` when the
- * endpoint's secret could not be opened and nothing was sent. Fixed words of the server's own,
- * never text from the receiver or the transport.
+ * Why a delivery got no answer: the outbound guard's word; `signing_failed` when the
+ * endpoint's secret could not be opened; or `endpoint_unresponsive` when the endpoint had
+ * already let a delivery run out its deadline in the same round. For the last two nothing was
+ * sent. Fixed words of the server's own, never text from the receiver or the transport.
  */
-export type WebhookFailureReason = OutboundFailure | 'signing_failed'
+export type WebhookFailureReason = OutboundFailure | 'signing_failed' | 'endpoint_unresponsive'
 
 /**
  * What became of sending one event to one endpoint.

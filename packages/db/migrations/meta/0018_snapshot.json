@@ -1,5 +1,5 @@
 {
-  "id": "afd56b10-dc43-4555-b633-628273c50303",
+  "id": "67fc93fc-8666-4893-bfd5-33b4034ed985",
   "prevId": "cc6256e2-af02-4d44-8197-ce7da829036e",
   "version": "7",
   "dialect": "postgresql",
@@ -3620,6 +3620,27 @@
         }
       },
       "indexes": {
+        "webhook_deliveries_event_idx": {
+          "name": "webhook_deliveries_event_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "webhook_deliveries_environment_id_idx": {
           "name": "webhook_deliveries_environment_id_idx",
           "columns": [

@@ -34,7 +34,8 @@ administrator removes an endpoint on the request path.
 
 **`webhook_deliveries`**: one row per endpoint and event (a unique key on the pair):
 `endpoint_id`, `event_id`, `attempted_at`, `outcome` (`delivered` or `failed`), `status_code`
-(or null), `duration_ms`, `failure_reason` (or null). Both references are tenant foreign keys
+(or null), `duration_ms`, `failure_reason` (or null), with an index on `(environment_id, event_id)` for
+the worker's per-batch lookup and for the cascade from a deleted event. Both references are tenant foreign keys
 (composite on `environment_id`, so a row cannot join one environment's endpoint to another's
 event) and cascade. The runtime role has `SELECT` and `INSERT` and nothing else: what happened
 to a delivery cannot be rewritten or removed by the API's role, and a row goes only with its
@@ -250,6 +251,31 @@ retention job. Environments are served one after another, so each has a time bud
 its budget is spent and what it has left waits for the next round. The list of endpoints is
 read again for every batch, so one switched off or removed stops being sent to; one removed
 while its delivery is under way leaves no row (the foreign key) and does not fail the round.
+
+**An endpoint that does not answer costs one deadline a round.** Deliveries within an
+environment are made one after another, so an endpoint that accepts the connection and never
+answers would otherwise take five seconds of the budget for every event and leave the
+environment's healthy endpoints about three events a round. After an endpoint lets one
+delivery run out its deadline, the rest of what it is owed **in that round** is recorded as
+`failed` with `endpoint_unresponsive` and no request is made; the next round tries it again.
+Only a timeout does this: an endpoint that answers with an error, or refuses the connection,
+fails fast and is tried for every event. Under one attempt per event those deliveries would
+have failed anyway; when retries exist they are the first candidates for one.
+
+**Clocks.** "Registered no later than the event happened" compares two timestamps that may
+come from two API instances. If the instance that recorded an event runs behind the one that
+registered the endpoint, an event from just after the registration can be judged to predate
+it: it is owed to nobody, marked delivered and never sent, with nothing recorded. The window
+is the instances' clock skew, right after a registration. Instances are expected to keep
+their clocks together (`tula doctor` has a clock check); no grace is applied, because a
+grace would send an endpoint events from before it existed.
+
+**A failure that is not the receiver's.** If recording a delivery fails (the database), or
+anything throws that is not the guard's own error, the environment's round ends and the event
+stays first in line. If that happened after the request was sent, the next round sends it
+again; a cause that persists would repeat that every round and hold back the environment's
+later events. No such cause is known, and nothing counts these failures yet: retries, which
+need exactly that count, are where a limit belongs.
 
 **Events while an endpoint is off are not sent later.** They are owed to nobody at the time
 and are marked delivered. Switching an endpoint off is how an operator stops deliveries, not

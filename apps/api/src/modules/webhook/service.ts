@@ -211,7 +211,8 @@ export async function create(
       ),
       enabled: input.enabled,
       // The instant of its own audit entry: an endpoint is sent the events from its creation
-      // on, and "from" must not depend on which of two clock readings came first.
+      // on, and within this instance "from" must not depend on which of two clock readings
+      // came first. Between instances it depends on their clocks agreeing (ADR 0034).
       createdAt: activity.occurredAt,
       updatedAt: activity.occurredAt,
     },
@@ -449,6 +450,11 @@ async function deliverEnvironment(
   signal: AbortSignal | undefined
 ): Promise<void> {
   const started = deps.clock.now().getTime()
+  // Endpoints that ran out a delivery's whole deadline in this round. Waiting that long again
+  // for every further event would spend the environment's budget on one endpoint and starve
+  // the others, so the rest of what such an endpoint is owed this round is recorded as not
+  // sent. The next round tries it afresh.
+  const unresponsive = new Set<string>()
   // Out of budget, or the server is shutting down: either way what is left waits.
   const outOfTime = () =>
     signal?.aborted === true ||
@@ -487,7 +493,18 @@ async function deliverEnvironment(
             stopped = true
             break
           }
-          const result = await attempt(deps, endpoint, event)
+          const result: Attempt = unresponsive.has(endpoint.id)
+            ? {
+                attemptedAt: deps.clock.now(),
+                outcome: 'failed',
+                statusCode: null,
+                durationMs: 0,
+                failureReason: 'endpoint_unresponsive',
+              }
+            : await attempt(deps, endpoint, event)
+          if (result.failureReason === 'timeout') {
+            unresponsive.add(endpoint.id)
+          }
           // `gone` (the endpoint was removed meanwhile) and `duplicate` (another worker's row)
           // both mean this endpoint is owed nothing more for this event.
           await deps.webhookDeliveries.insert({
@@ -533,6 +550,11 @@ async function deliverEnvironment(
  *
  * Delivery is at least once: a round that ends between sending and recording sends again, with
  * the same event id.
+ *
+ * An endpoint that lets a delivery run out its deadline is not waited for again in the same
+ * round: the rest of what it is owed in that round is recorded as failed
+ * (`endpoint_unresponsive`) without a request, so it cannot use up the budget its
+ * environment's other endpoints share.
  *
  * A failure in one environment is logged and skipped, and each environment has a time budget
  * ({@link WEBHOOK_ENVIRONMENT_BUDGET_MS}), so neither a broken nor a slow one keeps the

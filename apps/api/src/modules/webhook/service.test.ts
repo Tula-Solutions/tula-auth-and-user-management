@@ -1160,6 +1160,62 @@ describe('races and failures inside a round', () => {
   })
 })
 
+describe('an endpoint that does not answer', () => {
+  test('costs its environment one deadline a round, not one per event: the healthy endpoint gets everything', async () => {
+    quietLogs()
+    const hung = await register(tenant, { url: receiverUrl('/hung') })
+    const healthy = await register(tenant, { url: receiverUrl('/healthy') })
+    const events = Array.from({ length: 20 }, () => happen())
+    const real = Outbound.request
+    const request = spyOn(Outbound, 'request').mockImplementation(async (settings, url, init) => {
+      if (url.endsWith('/hung')) {
+        deps.clock.advance(Webhooks.WEBHOOK_DELIVERY_TIMEOUT_MS)
+        throw new Outbound.OutboundError('timeout')
+      }
+      return real(settings, url, init)
+    })
+    spies.push(request as never)
+
+    await Webhooks.deliverPending(deps)
+
+    expect(
+      received.filter((one) => one.path === '/healthy').map((one) => one.headers['webhook-id'])
+    ).toEqual(events)
+    // One real attempt at the endpoint that hangs; the rest of what it was owed this round
+    // is recorded as not sent, with a word of its own.
+    expect(request.mock.calls.filter(([, url]) => url.endsWith('/hung'))).toHaveLength(1)
+    const rows = (await deps.webhookDeliveries.listForEvents(tenant.environmentId, events)).filter(
+      (row) => row.endpointId === hung.id
+    )
+    expect(rows.map((row): string | null => row.failureReason).sort()).toEqual([
+      ...Array.from({ length: 19 }, () => 'endpoint_unresponsive'),
+      'timeout',
+    ])
+    expect(rows.every((row) => row.outcome === 'failed' && row.statusCode === null)).toBe(true)
+    expect(events.every((id) => outboxRow(id).deliveredAt !== null)).toBe(true)
+    expect(
+      (await deps.webhookDeliveries.listForEvents(tenant.environmentId, events)).filter(
+        (row) => row.endpointId === healthy.id && row.outcome === 'delivered'
+      )
+    ).toHaveLength(20)
+
+    // The next round tries it again: being skipped lasts one round.
+    happen()
+    await Webhooks.deliverPending(deps)
+    expect(request.mock.calls.filter(([, url]) => url.endsWith('/hung'))).toHaveLength(2)
+  })
+
+  test('an endpoint that answers with an error, or refuses the connection, is still tried for every event', async () => {
+    quietLogs()
+    await register()
+    happen()
+    happen()
+    respond = () => new Response('no', { status: 503 })
+    await Webhooks.deliverPending(deps)
+    expect(received).toHaveLength(2)
+  })
+})
+
 describe('stopping a round', () => {
   test('a round told to stop records the delivery under way and sends nothing more', async () => {
     await register(tenant, { url: receiverUrl('/dev') })

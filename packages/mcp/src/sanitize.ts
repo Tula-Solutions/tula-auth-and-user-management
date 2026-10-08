@@ -151,8 +151,8 @@ function jwtSpans(text: string): Span[] {
 
 /**
  * Shapes that are secrets wherever they turn up: a Tula secret key, a JWT, a password hash,
- * an authenticator URI or its `secret=`, a PEM block, a webhook signing secret. The projection already drops every field
- * that could hold one; this is for a secret that arrives inside a field that is kept (a user
+ * an authenticator URI or its `secret=`, a PEM block, a webhook signing secret. The projection
+ * already drops every field that could hold one; this is for a secret that arrives inside a field that is kept (a user
  * who pasted a key into their name, an API that one day answers differently).
  *
  * Each answers where its shape is, and costs time in proportion to the text: a pattern here
