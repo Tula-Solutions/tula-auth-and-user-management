@@ -178,11 +178,15 @@ The rules, each of which the plan shows before anything is written:
 
   | Option | |
   | --- | --- |
-  | `--secrets-file <path>` | write the secrets to a **new** file only you can read (mode 0600), as JSON: `[{ "id", "url", "secret" }]`. A file that is already there is never replaced (it may hold an earlier run's secrets), and nothing is written through a symbolic link or onto anything that is not a regular file. The file is claimed before the first write and rewritten after every endpoint, so a run that fails part-way has kept what it was given |
+  | `--secrets-file <path>` | write the secrets to a **new** file only you can read (mode 0600), as JSON: `[{ "id", "url", "secret" }]`. **Nothing that is at the path is ever replaced**: the file is created exclusively, in one step, before the first write, so a file that is there (whatever it holds, an earlier run's secrets or an empty list), a symbolic link, a named pipe or a directory is refused, also one that appears a moment before. It is rewritten after every endpoint, so a run that fails part-way has kept what it was given; before each rewrite it is read back, and if it no longer holds what this run wrote (somebody replaced it) it is not written over. That last check and the rewrite are two steps: a replacement made exactly between them is not protected. A file this run created and wrote nothing into is removed again |
   | `--show-secrets` | print each secret on standard output, under its endpoint's line (with `--json`: in `webhookSecrets`). Not for a pipeline whose log is kept |
   | `--discard-secrets` | keep nothing. Rotate the secret later to get one ([rotating a secret](webhooks.md#rotate-a-secret)); for the 24 hours of that rotation's overlap deliveries are also signed with the first secret, which nobody holds, and that is harmless |
 
-  Give the secret to the receiver, then delete the file.
+  Give the secret to the receiver, then delete the file. If a secret cannot be written to
+  the file after its endpoint was created (the disk is full), the run stops and says so in
+  those words: the endpoint exists, its secret was not kept, rotate it to get one. It is
+  printed then only if `--show-secrets` was given too, and the closing line counts only what
+  is in the file.
 - **Order.** Webhook endpoints are written **after** the settings and every provider:
   nothing about signing in waits for them, and an address the server refuses does not stop a
   settings change that was safe to make. Among themselves: changes to existing endpoints,
@@ -198,7 +202,8 @@ The rules, each of which the plan shows before anything is written:
   nothing, and the message gives the ids so that all but one can be removed by hand.
 - **Someone else's change.** Endpoints have no revision, so a webhook write cannot be made
   conditional the way the settings' is. Instead `apply` reads the endpoints once more just
-  before its first webhook write and stops, writing nothing to them, if an endpoint was
+  before its first webhook write (if that read fails, it says so and writes nothing to them)
+  and stops, writing nothing to them, if an endpoint was
   added, removed or changed (address, event types, switch) since the plan was made. That
   catches a change made while a person read the plan. It does **not** catch one made in the
   moment between that read and the writes: such a change to a field the plan also changes is
@@ -226,9 +231,15 @@ Webhooks
   ! creates 1 webhook endpoint: its signing secret is shown once, to the run that creates it (`tula apply` needs --secrets-file <path>, --show-secrets or --discard-secrets)
 ```
 
-An address is shown (it is in your file); a secret never is: no read of the API returns one.
-An address may itself carry a token in its path or query. It is then in the file, in the
-plan and in a pipeline's log: prefer the signature to a token in the address.
+**An address is printed**, by `tula diff` and `tula apply`, in the plan, in every line about
+its endpoint and so in a pipeline's log. A secret never is: no read of the API returns one.
+So an address must not hold a secret:
+
+- A user name or a password in front of the host (`https://user:password@host/…`) is refused
+  when the file is loaded, by position (`webhooks.1.url`) and without the value. The server
+  refuses such an address too, but `tula diff` would have printed it first.
+- A token in the path or the query is **not** refused (the server allows it) and is printed
+  like the rest of the address. Prefer the signature to a token in the address.
 
 ## Pointing the CLI at an environment
 

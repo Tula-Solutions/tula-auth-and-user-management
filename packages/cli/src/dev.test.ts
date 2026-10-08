@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { constants } from 'node:fs'
+import { mkdtemp, open, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { AdminFetch } from '@tula/admin'
 import { parseDevBlock, withDevBlock, withoutDevBlock } from './dev'
 import type { Host, RunOptions, RunResult } from './host'
 import { type CliIo, COMMANDS, runCli } from './index'
+import { createProcessHost } from './process-host'
 
 const PK = 'tula_pk_dev_devtestpublishable000000000000000000'
 const SK = 'tula_sk_dev_devtestsecret00000000000000000000000'
@@ -61,6 +66,11 @@ function fakeHost(options: FakeHostOptions = {}) {
       files.set(path, text)
       modes.set(path, '0600')
     },
+    createSecretFile: async (path, text) => {
+      files.set(path, text)
+      modes.set(path, '0600')
+    },
+    removeFile: async (path) => files.delete(path),
     restrictFile: async (path) => {
       const wider = files.has(path) && modes.get(path) !== '0600'
       if (files.has(path)) {
@@ -567,4 +577,43 @@ describe('tula dev down', () => {
     expect(run.code).toBe(1)
     expect(run.stderr).toContain('tula dev')
   })
+})
+
+describe('tula dev and a .env.local that is not a regular file (F1)', () => {
+  test.if(process.platform !== 'win32')(
+    'a named pipe at .env.local is refused at once, never read',
+    async () => {
+      const cwd = await mkdtemp(join(tmpdir(), 'tula-dev-pipe-'))
+      const pipe = join(cwd, '.env.local')
+      try {
+        // One process, with a timeout of its own.
+        expect(Bun.spawnSync(['mkfifo', pipe], { timeout: 5_000 }).exitCode).toBe(0)
+        // No Docker, but the real file system: the read is the real host's.
+        const real = createProcessHost({})
+        const host: Host = { ...fakeHost().host, readFile: real.readFile }
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const work = tula(['dev'], { host, cwd })
+        const run = await Promise.race([
+          work,
+          new Promise<'hung'>((resolve) => {
+            timer = setTimeout(() => resolve('hung'), 2_000)
+          }),
+        ])
+        clearTimeout(timer)
+        if (run === 'hung') {
+          // Let the read go, so the test leaves nothing waiting.
+          const writer = await open(pipe, constants.O_WRONLY | constants.O_NONBLOCK).catch(
+            () => undefined
+          )
+          await writer?.close()
+          await work.catch(() => undefined)
+          throw new Error('tula dev waited on the named pipe')
+        }
+        expect(run.code).toBe(1)
+        expect(run.stderr).toContain('.env.local is not a regular file')
+      } finally {
+        await rm(cwd, { recursive: true, force: true })
+      }
+    }
+  )
 })

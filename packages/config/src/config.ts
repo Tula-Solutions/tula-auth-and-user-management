@@ -117,8 +117,27 @@ const WebhookAddress = CreateWebhookEndpointRequestSchema.shape.url
 const WebhookEventTypes = CreateWebhookEndpointRequestSchema.shape.eventTypes
 const WebhookEnabled = UpdateWebhookEndpointRequestSchema.shape.enabled
 
+/** Whether an address has a user name or a password in front of its host. */
+function carriesCredentials(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.username !== '' || parsed.password !== ''
+  } catch {
+    // Not an address a parser reads: the server's guard is the judge of that, not this file.
+    return false
+  }
+}
+
 const WebhookEndpoint = z.strictObject({
-  url: WebhookAddress,
+  // The server refuses credentials in an address when the endpoint is registered. Here they
+  // are refused sooner: `tula diff` prints every address, into terminals and pipeline logs,
+  // before the server is ever asked. Only in the file's schema, not the contract's: the API
+  // answers such an address with its own error (`webhook.url_not_allowed`), which callers
+  // of the API already rely on.
+  url: WebhookAddress.refine((url) => !carriesCredentials(url), {
+    message:
+      'must not carry a user name or a password (user:password@host): the server refuses such an address, and an address is printed in plans and logs',
+  }),
   // A set: each type is checked where it was written, then repeats are dropped and the order
   // fixed, so that neither is a difference to `tula diff` or to the config's fingerprint.
   eventTypes: z

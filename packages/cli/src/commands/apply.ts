@@ -1,6 +1,7 @@
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { type AdminClient, ifMatch, isTulaAdminError } from '@tula/admin'
 import { type EnvironmentConfig, providerSecret, resolveSecret } from '@tula/config'
+import { MAX_WEBHOOK_URL_LENGTH } from '@tula/contract'
 import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula/contract/headers'
 import { type OptionSpec, UsageError } from '../args'
 import { MANAGING_TOOL, type Operation, orderOperations, type Plan, webhookSnapshot } from '../diff'
@@ -119,22 +120,33 @@ function secretChoice(context: CommandContext): SecretChoice {
   return choice
 }
 
-/** What a secrets file holds before the first secret: also how an abandoned run leaves it. */
+/** What a secrets file holds from the moment this run creates it until its first secret. */
 const NO_SECRETS = '[]\n'
 
 /**
- * The host, and proof that nothing is at the path yet: a file that is there may hold the
- * secrets of an earlier run, which nobody can read from the server again.
+ * The host, and an early look at the path, so that a run that cannot keep its secrets is
+ * refused before the question is asked. Only a courtesy: what makes "a new file only" true
+ * is the exclusive creation just before the first write (`Host.createSecretFile`).
  */
 async function secretsHost(context: CommandContext, file: string): Promise<Host> {
   const host = context.io.host
   if (!host) {
     throw new UsageError('--secrets-file needs a file system, which this run does not have.')
   }
-  const present = await host.readFile(file)
-  if (present !== null && present !== NO_SECRETS) {
+  let present: string | null
+  try {
+    // Refuses a link, a named pipe and a directory without opening them.
+    present = await host.readFile(file)
+  } catch (error) {
+    if (error instanceof UsageError) {
+      throw new UsageError(`--secrets-file: ${error.message} Nothing was changed.`)
+    }
+    throw error
+  }
+  // Whatever it holds, an empty list included: it is somebody's file.
+  if (present !== null) {
     throw new UsageError(
-      `--secrets-file: ${file} already exists. It may hold the signing secrets of an earlier run, which are shown only once: name a file that does not exist. Nothing was changed.`
+      `--secrets-file: ${basename(file)} already exists. It may hold the signing secrets of an earlier run, which are shown only once: name a file that does not exist. Nothing was changed.`
     )
   }
   return host
@@ -151,6 +163,17 @@ const NEEDS_SECRET_CHOICE = (created: number) =>
 
 /** Thrown inside the run when the endpoints are no longer what the plan read. */
 class StaleWebhooks extends Error {}
+
+/** Thrown inside the run when the endpoints could not be read again: no write was tried. */
+class UnreadWebhooks extends Error {
+  constructor(readonly reason: unknown) {
+    super('the webhook endpoints could not be read again')
+  }
+}
+
+const UNREAD_WEBHOOKS =
+  'The webhook endpoints could not be read again before the first write to them, so nothing ' +
+  'was written to them.'
 
 const STALE_WEBHOOKS =
   'The webhook endpoints were changed by someone else after this plan was made. Nothing was ' +
@@ -347,6 +370,8 @@ export const applyCommand: Command = {
     }
     const operations = orderOperations(plan)
     const created: CreatedSecret[] = []
+    /** Endpoints that exist and whose secret could be put nowhere: never the secret itself. */
+    const notKept: { id: string; url: string }[] = []
     const report = (applied: Operation[], failed: Operation | undefined, revision: number) => {
       if (json) {
         const notApplied = operations.slice(applied.length + (failed ? 1 : 0))
@@ -359,6 +384,7 @@ export const applyCommand: Command = {
               notApplied: notApplied.map(describeOperation),
               revisionAfter: revision,
               ...(choice.file !== undefined && created.length > 0 && { secretsFile: choice.file }),
+              ...(notKept.length > 0 && { secretsNotKept: notKept }),
               // Only because it was asked for: the one place a secret is ever printed.
               ...(choice.show && { webhookSecrets: created }),
             },
@@ -468,37 +494,60 @@ export const applyCommand: Command = {
       }
     }
 
-    const writeSecrets = (host: Host, path: string) =>
-      host.writeSecretFile(
-        path,
-        created.length === 0 ? NO_SECRETS : `${JSON.stringify(created, null, 2)}\n`
-      )
-    // The file is claimed before the first write: through a link, onto a pipe or into a
-    // directory that is not there, the run must fail now and not with a secret in its hands.
+    // What this run last wrote to its secrets file. The file is this run's from its exclusive
+    // creation, and stays so only while it still holds exactly this: before every rewrite it
+    // is read back, and a file that holds anything else (somebody replaced it) is not
+    // written over. That check and the rewrite are two steps, so a replacement made between
+    // them is not protected; the creation itself is one step and is.
+    let inFile = NO_SECRETS
+    /** How many of `created` are in the file. */
+    let written = 0
+    const keep = async (file: { host: Host; path: string }) => {
+      if ((await file.host.readFile(file.path)) !== inFile) {
+        throw new Error('the secrets file is no longer the one this run created')
+      }
+      const next = `${JSON.stringify(created, null, 2)}\n`
+      await file.host.writeSecretFile(file.path, next)
+      inFile = next
+      written = created.length
+    }
+    // The file is claimed before the first write: where it cannot be created, the run must
+    // fail now and not with a secret in its hands. Exclusive, so nothing already at the path
+    // (a file, a link, a pipe; put there a moment ago or long before) is ever replaced.
     if (secretsFile) {
       try {
-        await writeSecrets(secretsFile.host, secretsFile.path)
+        await secretsFile.host.createSecretFile(secretsFile.path, NO_SECRETS)
       } catch (error) {
-        const why = error instanceof UsageError ? error.message : 'It could not be written.'
+        const why = error instanceof UsageError ? error.message : 'It could not be created.'
         output.error(
           `${output.errorStyle.red('error:')} --secrets-file: ${why} Nothing was changed.`
         )
         return EXIT.error
       }
     }
-    /** Where the kept secrets are, or that none were kept: said however the run ends. */
-    const secretsNote = (say: (text: string) => void) => {
-      if (created.length === 0) {
+    /** A file this run created and put nothing into is not left behind. */
+    const release = async () => {
+      if (!secretsFile || written > 0) {
         return
       }
-      const count = `${created.length} signing ${created.length === 1 ? 'secret' : 'secrets'}`
-      if (secretsFile) {
+      try {
+        if ((await secretsFile.host.readFile(secretsFile.path)) === NO_SECRETS) {
+          await secretsFile.host.removeFile(secretsFile.path)
+        }
+      } catch {
+        // Not this run's any more, or not removable: an empty list is all that is left.
+      }
+    }
+    /** Where the kept secrets are, or that none were kept: said however the run ends. */
+    const secretsNote = (say: (text: string) => void) => {
+      const signing = (count: number) => `${count} signing ${count === 1 ? 'secret' : 'secrets'}`
+      if (secretsFile && written > 0) {
         say(
-          `Wrote ${count} to ${secretsFile.path} (mode 0600). It is not shown again: give it to the receiver, then delete the file.`
+          `Wrote ${signing(written)} to ${secretsFile.path} (mode 0600). It is not shown again: give it to the receiver, then delete the file.`
         )
-      } else if (choice.discard) {
+      } else if (choice.discard && created.length > 0) {
         say(
-          `${count} ${created.length === 1 ? 'was' : 'were'} not kept (--discard-secrets). To get one, rotate it: POST /v1/admin/webhook-endpoints/<id>/secret/rotate.`
+          `${signing(created.length)} ${created.length === 1 ? 'was' : 'were'} not kept (--discard-secrets). To get one, rotate it: POST /v1/admin/webhook-endpoints/<id>/secret/rotate.`
         )
       }
     }
@@ -506,7 +555,32 @@ export const applyCommand: Command = {
     const applied: Operation[] = []
     let revision = plan.revision
     let webhooksChecked = false
+    /** What was and was not applied, the note on the secrets, and the run's failing end. */
+    const stop = async (failed: Operation | undefined): Promise<number> => {
+      const notApplied = operations.slice(applied.length)
+      if (applied.length > 0) {
+        output.error('Applied before the failure:')
+        for (const done of applied) {
+          output.error(`  ${describeOperation(done)}`)
+        }
+      }
+      if (notApplied.length > 0) {
+        output.error('Not applied:')
+        for (const pending of notApplied) {
+          output.error(`  ${describeOperation(pending)}`)
+        }
+      }
+      if (applied.length > 0 && notApplied.length > 0) {
+        output.error('Run `tula apply` again to finish: it starts from what the server has now.')
+      }
+      secretsNote((text) => output.error(text))
+      await release()
+      report(applied, failed, revision)
+      return EXIT.error
+    }
     for (const operation of operations) {
+      /** An endpoint this operation created whose secret could not be put in the file. */
+      let unkept: CreatedSecret | undefined
       try {
         if (
           operation.kind === 'webhook.create' ||
@@ -517,7 +591,10 @@ export const applyCommand: Command = {
           // more, as late as possible, and the run stops if they are not what the plan read.
           // This narrows the window to the run's own writes; it does not close it.
           if (!webhooksChecked) {
-            const now = await target.admin.call('listWebhookEndpoints')
+            const now = await target.admin.call('listWebhookEndpoints').catch((reason) => {
+              // Not a failure of this operation: it was never tried.
+              throw new UnreadWebhooks(reason)
+            })
             if (webhookSnapshot(now.data.data) !== plan.webhooks.seen) {
               throw new StaleWebhooks()
             }
@@ -532,7 +609,11 @@ export const applyCommand: Command = {
             }
             created.push(made)
             if (secretsFile) {
-              await writeSecrets(secretsFile.host, secretsFile.path)
+              // The endpoint exists whatever happens to the file: a failure here is said as
+              // what it is, below, and never as a failed creation.
+              await keep(secretsFile).catch(() => {
+                unkept = made
+              })
             }
           }
         } else {
@@ -548,6 +629,9 @@ export const applyCommand: Command = {
           output.error(`${output.errorStyle.red('error:')} ${STALE}`)
         } else if (error instanceof StaleWebhooks) {
           output.error(`${output.errorStyle.red('error:')} ${STALE_WEBHOOKS}`)
+        } else if (error instanceof UnreadWebhooks) {
+          output.error(`${output.errorStyle.red('error:')} ${UNREAD_WEBHOOKS}`)
+          reportError(output, error.reason)
         } else {
           output.error(`Failed: ${describeOperation(operation)}`)
           // The API's own account of why, with the field paths of a validation error.
@@ -559,23 +643,7 @@ export const applyCommand: Command = {
             output.error(`  reason: ${printable(reason, 60)}`)
           }
         }
-        const notApplied = operations.slice(applied.length + 1)
-        if (applied.length > 0) {
-          output.error('Applied before the failure:')
-          for (const done of applied) {
-            output.error(`  ${describeOperation(done)}`)
-          }
-        }
-        output.error('Not applied:')
-        for (const pending of [operation, ...notApplied]) {
-          output.error(`  ${describeOperation(pending)}`)
-        }
-        if (applied.length > 0) {
-          output.error('Run `tula apply` again to finish: it starts from what the server has now.')
-        }
-        secretsNote((text) => output.error(text))
-        report(applied, operation, revision)
-        return EXIT.error
+        return stop(operation)
       }
       applied.push(operation)
       if (!json) {
@@ -584,6 +652,15 @@ export const applyCommand: Command = {
         if (made && choice.show) {
           output.line(`        signing secret, shown this once: ${made.secret}`)
         }
+      }
+      if (unkept !== undefined && secretsFile) {
+        const lost: CreatedSecret = unkept
+        notKept.push({ id: lost.id, url: lost.url })
+        output.error(
+          `${output.errorStyle.red('error:')} The webhook endpoint ${printable(lost.url, MAX_WEBHOOK_URL_LENGTH)} was created, but its signing secret could not be written to ${secretsFile.path}: it was not kept. ` +
+            `To get one, rotate it: POST /v1/admin/webhook-endpoints/${printable(lost.id, 40)}/secret/rotate.`
+        )
+        return stop(undefined)
       }
     }
     if (json) {
@@ -596,6 +673,7 @@ export const applyCommand: Command = {
       )
       secretsNote((text) => output.line(text))
     }
+    await release()
     return EXIT.ok
   },
 }

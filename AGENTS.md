@@ -161,13 +161,24 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   run-time test) **and never printed unasked**: the created endpoint's secret goes into the
   output's redaction before anything else runs, unless `--show-secrets`, and a plan that
   creates an endpoint without `--secrets-file`, `--show-secrets` or `--discard-secrets` is
-  refused before any write. The secrets file is written only through `Host.writeSecretFile`,
-  never over a file that is there, and is claimed before the first write. Under `--yes` a
+  refused before any write. The secrets file is **created exclusively**
+  (`Host.createSecretFile`: one step that asks and takes the name, so whatever is at the
+  path, a file with any content, a link, a pipe, is refused and left alone) before the
+  first write; the look at the path before the question is a courtesy, never the guarantee.
+  It is rewritten (`Host.writeSecretFile`) only while it still holds what this run last
+  wrote, and removed again if this run wrote nothing into it. **A created endpoint is
+  reported as created whatever happens to the file**: a secret that could not be written
+  is said as "not kept, rotate it", printed only with `--show-secrets`, and never counted
+  in "Wrote N". The two defences of a secret are tested apart: one test where redaction is
+  all that stands between it and an error the API echoes it in, one that the "shown this
+  once" line is absent without the flag. Under `--yes` a
   removal needs `--allow-webhook-removal`. Webhook writes come **after** the settings and
   every provider (updates, creations, removals; removals first only as far as the limit of
   ten forces), and the endpoints are read again before the first of them
   (`webhookSnapshot`): keep that read, and do not call it a guarantee (endpoints have no
-  revision). An address the server has twice and a plan over the limit are `planBlockers`:
+  revision); when the read itself fails the run says that, never that an operation failed.
+  An address with a user name or a password is refused by the config's schema, by
+  position: every address is printed. An address the server has twice and a plan over the limit are `planBlockers`:
   `diff` exits 1, `apply` writes nothing. Text from the server (an address, a
   `disabledReason`, an id) is printed through `printable()`. Every test of `apply` that
   creates an endpoint asserts the secret is absent from all output unless asked for.
@@ -178,7 +189,11 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   timeout, so unit tests need no Docker. `tula dev` writes keys only inside its marked block
   of `.env.local` (mode 0600, enforced on every run through `Host.restrictFile`, not only when
   the contents change; written through a temporary file opened exclusively under a random
-  name, and a symbolic link at the file is refused rather than written or re-moded through),
+  name, and a symbolic link at the file is refused rather than written or re-moded through;
+  **read** through `Host.readFile`, which refuses a link, a named pipe and a directory from
+  an `lstat` before any open and opens non-blocking with the kind checked again on the
+  handle, so no read of an operator's path can wait for ever: never read such a path with
+  a plain `readFile`),
   never changes a line outside it, mints nothing when the block's
   keys still work, and prints the secret key only with `--show-keys`. `tula doctor` renders
   the server's diagnostics and never connects to a dependency itself; text from the server is

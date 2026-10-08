@@ -192,7 +192,7 @@ Options of `tula apply` for [webhook endpoints in the file](config.md#webhook-en
 | Option | |
 | --- | --- |
 | `--allow-webhook-removal` | with `--yes`: apply a plan that removes a webhook endpoint (`--prune`), with its pending deliveries and its delivery log |
-| `--secrets-file <path>` | write the signing secret of each endpoint the run creates to a new file, mode 0600. Never replaces a file, never writes through a symbolic link |
+| `--secrets-file <path>` | write the signing secret of each endpoint the run creates to a new file, mode 0600. The file is created exclusively: whatever is at the path (a file, a symbolic link, a named pipe, a directory) is refused and left as it is |
 | `--show-secrets` | print those secrets on standard output. As with `tula dev --show-keys`, nothing is printed unless asked |
 | `--discard-secrets` | keep none; rotate later to get one |
 

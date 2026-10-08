@@ -178,9 +178,14 @@ group had already forced:
 
 - `--secrets-file` was exercised through the real host on macOS (mode 0600, an existing
   file, a symbolic link). Not on Linux in this step, and not on Windows, where modes do not
-  exist. A named pipe at the path was not tested here: `Host.readFile` is asked whether
-  something is there before the host's own refusal runs, and reading a pipe with no writer
-  waits. `tula dev` reads `.env.local` the same way.
+  exist. A named pipe, a directory and a link to a pipe at the path are tested (host,
+  `tula apply`, `tula dev`) since the review; on macOS only.
+- `Host.readFile` has two defences against a named pipe (the `lstat` before the open, and a
+  non-blocking open with the kind checked on the handle). Each alone refuses a pipe, so
+  removing either leaves every test green: the tests pin the outcome (refused, at once), not
+  each layer. The plain read they replaced was seen to hang.
+- The rewrite of the secrets file is guarded by reading it back first. A file replaced
+  between that read and the rename is overwritten; no test can hold that window open.
 - The CI example in `docs/config.md` (the step that hands the file to a secret store) is
   prose: no workflow runs it.
 

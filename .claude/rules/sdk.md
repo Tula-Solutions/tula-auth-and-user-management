@@ -278,7 +278,8 @@ paths:
   (`webhooks: [{ url, eventTypes, enabled? }]`) takes its fields from the contract's request
   schemas by `shape` and has **no** field for a secret: keep its `@ts-expect-error` and
   run-time tests too. Its problems are named by position (`webhooks.2.url`), never by
-  address. Event types are normalised on load (sorted, each once), and an environment
+  address, and an address with a user name or a password is refused here (not in the
+  contract: the API answers it with `webhook.url_not_allowed`). Event types are normalised on load (sorted, each once), and an environment
   without the list must keep hashing as it did (a test pins the value).
 - `@tula/cli`: commands take a `CommandContext` and write through `output`; no `console`, no
   `process.stdout` outside `process-io.ts` (built by `createProcessIo` from injectable parts,
@@ -289,8 +290,12 @@ paths:
   A plan that creates a webhook endpoint is refused before any write unless the run says
   what becomes of the signing secret (`--secrets-file`, `--show-secrets`,
   `--discard-secrets`); the secret is given to `output.redact` as soon as the API answers,
-  unless `--show-secrets`, and the file is written only through `Host.writeSecretFile`,
-  claimed before the first write, never over an existing file. Webhook operations are
+  unless `--show-secrets`. The file is created with `Host.createSecretFile` (exclusive;
+  anything at the path is refused) before the first write, rewritten with
+  `Host.writeSecretFile` only while it holds what the run last wrote, and removed if the
+  run put nothing in it; a secret that could not be written is reported as not kept, with
+  its endpoint as created. `Host.readFile` refuses anything that is not a regular file
+  without opening it: keep the named-pipe tests (host, `apply`, `dev`). Webhook operations are
   ordered after the settings and the providers, and the endpoints are read again before the
   first of them. `planBlockers` (an address the server has twice, more than ten endpoints)
   fail `diff` with exit 1 and stop `apply` before any write. Exit codes are `EXIT`

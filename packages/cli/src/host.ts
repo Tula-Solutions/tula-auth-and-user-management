@@ -65,6 +65,8 @@ export interface Host {
    *
    * @param path - Absolute path.
    * @returns The text, or `null` when the file does not exist.
+   * @throws UsageError when `path` is a symbolic link or anything else that is not a regular
+   *   file (a named pipe, a directory): refused before it is opened, so a read never waits.
    */
   readFile(path: string): Promise<string | null>
   /**
@@ -75,6 +77,23 @@ export interface Host {
    * @throws UsageError when `path` is a symbolic link: nothing is written through one.
    */
   writeSecretFile(path: string, text: string): Promise<void>
+  /**
+   * Create a file that must not exist yet, readable by its owner only (mode 0600). Asking and
+   * taking the name are one step, so nothing that appears at the path meanwhile is replaced.
+   *
+   * @param path - Absolute path.
+   * @param text - The contents.
+   * @throws UsageError when anything is at `path`: a file (whatever it holds), a directory, a
+   *   named pipe or a symbolic link. Nothing there is opened or changed.
+   */
+  createSecretFile(path: string, text: string): Promise<void>
+  /**
+   * Remove a file. A symbolic link at the path is removed itself, never what it points at.
+   *
+   * @param path - Absolute path.
+   * @returns Whether there was something to remove.
+   */
+  removeFile(path: string): Promise<boolean>
   /**
    * Make an existing file readable and writable by its owner only (mode 0600), leaving its
    * contents alone.

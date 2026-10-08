@@ -472,6 +472,52 @@ describe('webhooks', () => {
     expect(error.message).not.toContain('x y')
   })
 
+  test.each([
+    ['a user and a password', 'https://hookuser:hunter2secret@hooks.northline.app/tula'],
+    ['a user alone', 'https://hookuser@hooks.northline.app/tula'],
+    ['a password alone', 'https://:hunter2secret@hooks.northline.app/tula'],
+    ['in capitals and with a port', 'HTTPS://hookuser:hunter2secret@HOOKS.northline.app:8443/'],
+  ])('credentials in an address (%s) are refused by position, never repeated (F5)', (_, url) => {
+    const error = refusal(() =>
+      defineConfig({
+        environments: {
+          dev: {
+            webhooks: [
+              { url: HOOK, eventTypes: ['user.created'] },
+              { url, eventTypes: ['user.created'] },
+            ],
+          },
+        },
+      })
+    )
+    expect(error.issues).toEqual([
+      {
+        path: 'environments.dev.webhooks.1.url',
+        message:
+          'must not carry a user name or a password (user:password@host): the server refuses such an address, and an address is printed in plans and logs',
+      },
+    ])
+    expect(Bun.inspect(error)).not.toContain('hookuser')
+    expect(Bun.inspect(error)).not.toContain('hunter2secret')
+  })
+
+  test('an @ that is not credentials is an ordinary address', () => {
+    expect(
+      webhooksOf({
+        environments: {
+          dev: {
+            webhooks: [
+              {
+                url: 'https://hooks.northline.app/u/@team?to=a@b.example',
+                eventTypes: ['user.created'],
+              },
+            ],
+          },
+        },
+      })
+    ).toHaveLength(1)
+  })
+
   test('the same address twice is refused, naming both entries and not the address', () => {
     const error = refusal(() =>
       defineConfig({

@@ -185,6 +185,10 @@ request schemas (`CreateWebhookEndpointRequestSchema`'s `url` and `eventTypes`,
 `UpdateWebhookEndpointRequestSchema`'s `enabled`), taken by `shape`; nothing is declared a
 second time and the contract did not change.
 
+- **Credentials in an address are refused in the file's schema, not the contract's.** Every
+  address is printed in plans. The API refuses userinfo too, with `webhook.url_not_allowed`
+  from its guard; moving that into the contract's schema would turn it into a validation
+  error for every caller of the API, which this step does not need.
 - **Identity is the address, compared exactly.** An endpoint has no natural name, and an id
   in a file would have to be copied out of a server first. The API stores an address as it
   was typed and compares it as text (`Webhooks.update`: `input.url !== current.url`), and
@@ -217,10 +221,19 @@ second time and the contract did not change.
   run was asked to show it (as `tula dev` does for `--show-keys`). The operator gets it by
   asking: `--secrets-file <path>` (JSON, mode 0600, through the `Host` that `tula dev` writes
   `.env.local` with: a temporary file opened exclusively, a symbolic link and anything that
-  is not a regular file refused) or `--show-secrets`. A file that is already there is never
-  replaced; the file is claimed with an empty list before the first write, so a path that
-  cannot be written fails the run while it has written nothing, and it is rewritten after
-  each creation, so a run that fails later has kept what it was given. A plan that creates an
+  is not a regular file refused) or `--show-secrets`. **"A new file only" is one step**
+  (`Host.createSecretFile`, an exclusive create, added after review): a read followed by a
+  replace-by-rename would overwrite a file that appeared in between, another run's secrets
+  included. The claim happens before the first write, so a path that cannot be created
+  fails the run while it has written nothing. What identifies "the file this run created"
+  for the later rewrites is its content: the run remembers what it last wrote, reads the
+  file back before each rewrite and does not write over anything else. That is two steps and
+  is said as such; a file replaced exactly between them is not protected, and an identical
+  file is indistinguishable by construction. A claimed file the run wrote nothing into is
+  removed. A secret that cannot be written after its endpoint was created is not a failed
+  creation: the endpoint is reported as created and the secret as not kept. `Host.readFile`
+  now refuses whatever is not a regular file before opening it (a named pipe at the path
+  made the first version, and `tula dev`'s read of `.env.local`, wait for ever). A plan that creates an
   endpoint with neither option is refused before any write, with or without `--yes`: throwing
   a secret away silently and printing one unasked are both wrong. `--discard-secrets` is the
   explicit way to proceed without one; the operator rotates later, and the overlap then also

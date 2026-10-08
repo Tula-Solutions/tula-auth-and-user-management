@@ -266,12 +266,117 @@ describe('createProcessHost', () => {
       expect(await readdir(dir)).toEqual(['.env.local'])
     })
 
+    test.if(posix)('readFile refuses a named pipe at once, without opening it (F1)', async () => {
+      const path = pipe()
+      const started = Date.now()
+      const error = (await bounded(path, host.readFile(path))) as Error
+      expect(error).not.toBe('hung')
+      expect(Date.now() - started).toBeLessThan(500)
+      expect(error.name).toBe('UsageError')
+      expect(error.message).toContain('.env.local is not a regular file')
+      expect(error.message).not.toContain(dir)
+    })
+
+    test.if(posix)(
+      'readFile refuses a link to a named pipe: nothing is read through a link',
+      async () => {
+        const target = pipe()
+        const path = join(dir, 'link')
+        await symlink(target, path)
+        const error = (await bounded(target, host.readFile(path))) as Error
+        expect(error).not.toBe('hung')
+        expect(error.name).toBe('UsageError')
+        expect(error.message).toContain('link is a symbolic link')
+      }
+    )
+
+    test('readFile refuses a directory in fixed words, not with the system’s error', async () => {
+      const path = join(dir, '.env.local')
+      await mkdir(path)
+      const error = await host.readFile(path).then(
+        () => undefined,
+        (thrown: Error) => thrown
+      )
+      expect(error?.name).toBe('UsageError')
+      expect(error?.message).toContain('.env.local is not a regular file')
+      expect(error?.message).not.toContain('EISDIR')
+    })
+
+    test.if(posix)(
+      'createSecretFile refuses a named pipe, a directory and a link, and leaves each',
+      async () => {
+        const fifo = pipe()
+        const error = (await bounded(fifo, host.createSecretFile(fifo, 'x'))) as Error
+        expect(error.name).toBe('UsageError')
+        expect(error.message).toContain('.env.local already exists')
+        expect((await lstat(fifo)).isFIFO()).toBe(true)
+        await mkdir(join(dir, 'folder'))
+        await expect(host.createSecretFile(join(dir, 'folder'), 'x')).rejects.toThrow(
+          'already exists'
+        )
+        await symlink(join(dir, 'nowhere'), join(dir, 'dangling'))
+        await expect(host.createSecretFile(join(dir, 'dangling'), 'x')).rejects.toThrow(
+          'already exists'
+        )
+        expect((await readdir(dir)).sort()).toEqual(['.env.local', 'dangling', 'folder'])
+      }
+    )
+
     test('a directory at the path is refused too, by both', async () => {
       const path = join(dir, '.env.local')
       await mkdir(path)
       await expect(host.restrictFile(path)).rejects.toThrow('not a regular file')
       await expect(host.writeSecretFile(path, 'x')).rejects.toThrow('not a regular file')
       expect(await readdir(dir)).toEqual(['.env.local'])
+    })
+  })
+
+  describe('a file that must be new (F2)', () => {
+    test('createSecretFile makes the file, readable by its owner only', async () => {
+      const path = join(dir, 'secrets.json')
+      await host.createSecretFile(path, '[]\n')
+      expect(await readFile(path, 'utf8')).toBe('[]\n')
+      if (process.platform !== 'win32') {
+        expect((await stat(path)).mode & 0o777).toBe(0o600)
+      }
+    })
+
+    test('createSecretFile never replaces a file that is there, whatever it holds', async () => {
+      const path = join(dir, 'secrets.json')
+      for (const content of ['from an earlier run', '[]\n', '']) {
+        await writeFile(path, content)
+        const error = await host.createSecretFile(path, 'new').then(
+          () => undefined,
+          (thrown: Error) => thrown
+        )
+        expect(error?.name).toBe('UsageError')
+        expect(error?.message).toContain('secrets.json already exists')
+        expect(error?.message).not.toContain(dir)
+        expect(await readFile(path, 'utf8')).toBe(content)
+      }
+      expect(await readdir(dir)).toEqual(['secrets.json'])
+    })
+
+    test('two claims of one path at once: exactly one wins', async () => {
+      const path = join(dir, 'secrets.json')
+      const outcomes = await Promise.allSettled([
+        host.createSecretFile(path, 'one'),
+        host.createSecretFile(path, 'two'),
+      ])
+      expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(['fulfilled', 'rejected'])
+    })
+
+    test('removeFile removes a file, says whether it did, and never follows a link', async () => {
+      const path = join(dir, 'secrets.json')
+      expect(await host.removeFile(path)).toBe(false)
+      await writeFile(path, 'x')
+      expect(await host.removeFile(path)).toBe(true)
+      if (process.platform !== 'win32') {
+        await writeFile(join(dir, 'kept'), 'kept')
+        await symlink(join(dir, 'kept'), path)
+        expect(await host.removeFile(path)).toBe(true)
+        expect(await readFile(join(dir, 'kept'), 'utf8')).toBe('kept')
+      }
     })
   })
 

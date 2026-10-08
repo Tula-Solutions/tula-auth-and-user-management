@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { mkdir, mkdtemp, open, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AdminFetch } from '@tula/admin'
 import type { EnvironmentConfigInput } from '@tula/config'
 import { createApp } from '../../../apps/api/src/index'
 import { createTestDeps, seedApiKey, type TestDeps } from '../../../apps/api/src/testing'
+import type { Host } from './host'
 import { type CliIo, COMMANDS, runCli } from './index'
 import { createProcessHost } from './process-host'
 
@@ -86,6 +88,10 @@ interface RunOptions {
   intercept?: (method: string, path: string) => Response | undefined
   /** Collects the body of every write the run makes. */
   bodies?: string[]
+  /** Sees every answer the API itself gave: the method, the path and the body's text. */
+  observe?: (method: string, path: string, body: string) => void
+  /** In the real host's place. */
+  host?: Host
   /**
    * The run was asked to print a secret (`--show-secrets`): its output is kept out of what
    * the last test scans, and the test that sets this checks it itself.
@@ -104,7 +110,13 @@ async function tula(args: string[], options: RunOptions = {}): Promise<Run> {
     if (method !== 'GET' && typeof init?.body === 'string') {
       options.bodies?.push(init.body)
     }
-    return options.intercept?.(method, path) ?? app.request(url, init)
+    const answered = options.intercept?.(method, path)
+    if (answered) {
+      return answered
+    }
+    const response = await app.request(url, init)
+    options.observe?.(method, path, await response.clone().text())
+    return response
   }
   const code = await runCli(
     args,
@@ -124,7 +136,7 @@ async function tula(args: string[], options: RunOptions = {}): Promise<Run> {
       prompt: options.prompt,
       fetch,
       // The real host: a secrets file is written with the modes and refusals an operator gets.
-      host: createProcessHost({}),
+      host: options.host ?? createProcessHost({}),
     },
     COMMANDS
   )
@@ -645,6 +657,8 @@ describe('webhook endpoints in the config file', () => {
       `Wrote 1 signing secret to ${join(dir, 'hooks.json')} (mode 0600). It is not shown again: give it to the receiver, then delete the file.`
     )
     expect(applied.stdout + applied.stderr).not.toContain('whsec_')
+    // Not only the value: the line that would carry it is not written at all (F4).
+    expect(applied.stdout + applied.stderr).not.toContain('signing secret, shown this once')
     const [created] = await endpoints()
     expect(created).toMatchObject({ url: HOOK, eventTypes: TYPES, enabled: true })
     const file = join(dir, 'hooks.json')
@@ -1080,6 +1094,250 @@ describe('webhook endpoints in the config file', () => {
       applied: ['settings: replace', `webhook ${HOOK}/a: create`],
     })
     expect(Object.hasOwn(JSON.parse(quiet.stdout) as object, 'webhookSecrets')).toBe(false)
+  })
+})
+
+/** The real host, with some of its file methods replaced. */
+function hostWith(over: Partial<Host>): Host {
+  return { ...createProcessHost({}), ...over }
+}
+
+describe('the secrets file of tula apply, when the file system does not cooperate', () => {
+  beforeEach(() => {
+    deps.outbound.point('hooks.example.test', '93.184.216.34')
+  })
+
+  const posix = process.platform !== 'win32'
+
+  /** The run, or `'hung'` after two seconds; a pipe still being waited on is then released. */
+  async function bounded(work: Promise<Run>, pipe?: string): Promise<Run | 'hung'> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        work,
+        new Promise<'hung'>((resolve) => {
+          timer = setTimeout(() => resolve('hung'), 2_000)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+      if (pipe) {
+        const writer = await open(pipe, constants.O_WRONLY | constants.O_NONBLOCK).catch(
+          () => undefined
+        )
+        await writer?.close()
+      }
+      await work.catch(() => undefined)
+    }
+  }
+
+  test.if(posix)(
+    'a named pipe at --secrets-file is refused at once: no wait, no write (F1)',
+    async () => {
+      const config = await dev({ webhooks: [hook('a')] })
+      const pipe = join(dir, 'pipe.json')
+      // One process, with a timeout of its own: a child that never exits must not hang the run.
+      expect(Bun.spawnSync(['mkfifo', pipe], { timeout: 5_000 }).exitCode).toBe(0)
+      const run = await bounded(
+        tula(['apply', '--config', config, '--yes', '--secrets-file', 'pipe.json']),
+        pipe
+      )
+      if (run === 'hung') {
+        throw new Error('the run waited on the named pipe')
+      }
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('error: --secrets-file: pipe.json is not a regular file.')
+      expect(run.stderr).toContain('Nothing was changed.')
+      expect(writes(run)).toEqual([])
+      expect(await endpoints()).toEqual([])
+    }
+  )
+
+  test('a file that holds an empty list is a file that is there: not replaced (F2)', async () => {
+    const config = await dev({ webhooks: [hook('a')] })
+    await writeFile(join(dir, 'empty.json'), '[]\n')
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'empty.json'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('error: --secrets-file: empty.json already exists.')
+    expect(run.stderr).toContain('Nothing was changed.')
+    expect(writes(run)).toEqual([])
+    expect(await readFile(join(dir, 'empty.json'), 'utf8')).toBe('[]\n')
+  })
+
+  test('a directory at --secrets-file is refused in words, before any write (F1)', async () => {
+    const config = await dev({ webhooks: [hook('a')] })
+    await mkdir(join(dir, 'folder'))
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'folder'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('error: --secrets-file: folder is not a regular file.')
+    expect(run.stderr).not.toContain('EISDIR')
+    expect(run.stderr).toContain('Nothing was changed.')
+    expect(writes(run)).toEqual([])
+  })
+
+  test('a file that appears between the look and the claim is not replaced, and nothing is written (F2)', async () => {
+    const config = await dev({ webhooks: [hook('a')] })
+    const path = join(dir, 'hooks.json')
+    const real = createProcessHost({})
+    const host = hostWith({
+      readFile: async (file) => {
+        const seen = await real.readFile(file)
+        if (file === path && seen === null) {
+          // Another run got there first, and has already been given its secrets.
+          await writeFile(path, 'the secrets of another run')
+        }
+        return seen
+      },
+    })
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'hooks.json'], {
+      host,
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('error: --secrets-file: hooks.json already exists.')
+    expect(run.stderr).toContain('Nothing was changed.')
+    expect(writes(run)).toEqual([])
+    expect(await readFile(path, 'utf8')).toBe('the secrets of another run')
+    expect(await endpoints()).toEqual([])
+  })
+
+  test('a file swapped in after the claim is not replaced either: the run stops and says the secret was not kept (F2)', async () => {
+    const config = await dev({ webhooks: [hook('a')] })
+    const path = join(dir, 'hooks.json')
+    const real = createProcessHost({})
+    const host = hostWith({
+      createSecretFile: async (file, text) => {
+        await real.createSecretFile(file, text)
+        await rm(file)
+        await writeFile(file, 'not this run’s file')
+      },
+    })
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'hooks.json'], {
+      host,
+    })
+    expect(run.code).toBe(1)
+    expect(await readFile(path, 'utf8')).toBe('not this run’s file')
+    expect(run.stderr).toContain('its signing secret could not be written')
+    expect(run.stdout + run.stderr).not.toContain('whsec_')
+  })
+
+  const failingRewrite = () =>
+    hostWith({
+      writeSecretFile: async () => {
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+      },
+    })
+
+  test('an endpoint whose secret could not be written is reported as created, its secret as not kept, and never printed (F3)', async () => {
+    const config = await dev({ webhooks: [hook('a'), hook('b')] })
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'hooks.json'], {
+      host: failingRewrite(),
+    })
+    const [created] = await endpoints()
+    expect(run.code).toBe(1)
+    expect(await endpoints()).toHaveLength(1)
+    expect(run.stdout).toContain(`done  webhook ${HOOK}/a: create`)
+    expect(run.stderr).not.toContain(`Failed: webhook ${HOOK}/a: create`)
+    expect(run.stderr).toContain(
+      `error: The webhook endpoint ${HOOK}/a was created, but its signing secret could not be written to ${join(dir, 'hooks.json')}: it was not kept. ` +
+        `To get one, rotate it: POST /v1/admin/webhook-endpoints/${created?.id}/secret/rotate.\n` +
+        `Applied before the failure:\n  settings: replace\n  webhook ${HOOK}/a: create\n` +
+        `Not applied:\n  webhook ${HOOK}/b: create\n`
+    )
+    // The note counts what is in the file, and nothing is.
+    expect(run.stdout + run.stderr).not.toContain('Wrote ')
+    expect(run.stdout + run.stderr).not.toContain('whsec_')
+    expect(run.stdout + run.stderr).not.toContain('signing secret, shown this once')
+    // Claimed by this run and still empty: not left behind.
+    expect(await stat(join(dir, 'hooks.json')).catch(() => null)).toBeNull()
+  })
+
+  test('and with --show-secrets it is printed, exactly once, although the file failed (F3)', async () => {
+    const config = await dev({ webhooks: [hook('a'), hook('b')] })
+    const run = await tula(
+      ['apply', '--config', config, '--yes', '--secrets-file', 'hooks.json', '--show-secrets'],
+      { host: failingRewrite(), shown: true }
+    )
+    expect(run.code).toBe(1)
+    const shown = (run.stdout + run.stderr).match(new RegExp(WHSEC.source, 'g')) ?? []
+    expect(shown).toHaveLength(1)
+    expect(run.stdout).toContain(`signing secret, shown this once: ${shown[0]}`)
+    expect(run.stderr).toContain('it was not kept')
+    SECRETS.push(shown[0] as string)
+  })
+
+  test('a secret the run was not asked to show is removed from whatever is printed later, an API error that repeats it included (F4)', async () => {
+    const config = await dev({ webhooks: [hook('a'), hook('b')] })
+    let first: string | undefined
+    const run = await tula(['apply', '--config', config, '--yes', '--discard-secrets'], {
+      observe: (method, path, body) => {
+        if (method === 'POST' && path === '/v1/admin/webhook-endpoints') {
+          first = (JSON.parse(body) as { secret: string }).secret
+        }
+      },
+      intercept: (method) =>
+        method === 'POST' && first !== undefined
+          ? Response.json(
+              { status: 500, code: 'internal', detail: `the store said: ${first} is taken` },
+              { status: 500 }
+            )
+          : undefined,
+    })
+    expect(first).toMatch(WHSEC)
+    SECRETS.push(first as string)
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(`Failed: webhook ${HOOK}/b: create`)
+    expect(run.stderr).toContain('the store said: [redacted] is taken')
+    expect(run.stdout + run.stderr).not.toContain(first as string)
+  })
+
+  test('when the endpoints cannot be read again, the run says that, not that an operation failed; and its empty file is not left behind (F6)', async () => {
+    const config = await dev({ settings: { app: { name: 'Northline' } }, webhooks: [hook('a')] })
+    let lists = 0
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'hooks.json'], {
+      intercept: (method, path) => {
+        if (method !== 'GET' || path !== '/v1/admin/webhook-endpoints') {
+          return undefined
+        }
+        lists += 1
+        return lists === 1
+          ? undefined
+          : Response.json(
+              { status: 503, code: 'service.unavailable', detail: 'The service is unavailable.' },
+              { status: 503 }
+            )
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).not.toContain('Failed: webhook')
+    expect(run.stderr).toContain(
+      'error: The webhook endpoints could not be read again before the first write to them, so nothing was written to them.\n' +
+        'error: The service is unavailable. (service.unavailable, HTTP 503)\n' +
+        'Applied before the failure:\n  settings: replace\n' +
+        `Not applied:\n  webhook ${HOOK}/a: create\n`
+    )
+    expect(writes(run)).toEqual(['PUT /v1/admin/settings'])
+    expect(await stat(join(dir, 'hooks.json')).catch(() => null)).toBeNull()
+  })
+
+  test('a claimed file is removed only while it is this run’s and empty: a run that kept a secret leaves it', async () => {
+    const config = await dev({ webhooks: [hook('a'), hook('b')] })
+    let posts = 0
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'hooks.json'], {
+      intercept: (method) => {
+        posts += method === 'POST' ? 1 : 0
+        return method === 'POST' && posts === 2
+          ? Response.json(
+              { status: 503, code: 'service.unavailable', detail: 'The service is unavailable.' },
+              { status: 503 }
+            )
+          : undefined
+      },
+    })
+    expect(run.code).toBe(1)
+    const kept = JSON.parse(await readFile(join(dir, 'hooks.json'), 'utf8')) as Endpoint[]
+    expect(kept.map((entry) => entry.url)).toEqual([`${HOOK}/a`])
+    expect(run.stderr).toContain('Wrote 1 signing secret to')
+    SECRETS.push(kept[0]?.secret as string)
   })
 })
 
