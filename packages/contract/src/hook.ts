@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type CustomClaimValue, checkCustomClaims, MAX_CUSTOM_CLAIMS_BYTES } from './custom-claims'
 import { OAUTH_PROVIDERS } from './oauth'
 import { SessionClientSchema } from './session'
 import { MAX_WEBHOOK_URL_LENGTH } from './webhook'
@@ -14,14 +15,20 @@ import { MAX_WEBHOOK_URL_LENGTH } from './webhook'
 
 /**
  * The points at which the server can ask a hook. A closed list: an environment has at most one
- * hook per point. Later points are added here.
+ * hook per point.
+ *
+ * - `before_sign_up`: before a sign-up creates an account. Allows or denies.
+ * - `before_session`: before a sign-in (a sign-up's and a password reset's too) creates a
+ *   session, after every factor was proven. Allows or denies.
+ * - `before_token`: when a session is created and each time its user proves a factor again,
+ *   before the token is issued. Answers with claims for the token; it cannot deny.
  *
  * @example
  * ```ts
  * const point: HookPoint = HOOK_POINTS[0] // 'before_sign_up'
  * ```
  */
-export const HOOK_POINTS = ['before_sign_up'] as const
+export const HOOK_POINTS = ['before_sign_up', 'before_session', 'before_token'] as const
 
 /** One of {@link HOOK_POINTS}. */
 export const HookPointSchema = z.enum(HOOK_POINTS).meta({ ref: 'HookPoint' })
@@ -41,7 +48,25 @@ export type HookPoint = (typeof HOOK_POINTS)[number]
  */
 export const HOOK_QUESTION_TYPES = {
   before_sign_up: 'hook.before_sign_up',
+  before_session: 'hook.before_session',
+  before_token: 'hook.before_token',
 } as const satisfies Record<HookPoint, `hook.${HookPoint}`>
+
+/**
+ * What each point takes for an answer: a `decision` ({@link HookAnswerSchema}: allow, or deny
+ * with a code) or `claims` ({@link HookClaimsAnswerSchema}). A point takes one kind and never
+ * the other: a claims hook cannot deny, and a deciding hook cannot add a claim.
+ *
+ * @example
+ * ```ts
+ * HOOK_ANSWER_KINDS.before_token // 'claims'
+ * ```
+ */
+export const HOOK_ANSWER_KINDS = {
+  before_sign_up: 'decision',
+  before_session: 'decision',
+  before_token: 'claims',
+} as const satisfies Record<HookPoint, 'decision' | 'claims'>
 
 /**
  * The version of the hook questions: the `schemaVersion` of every question. Within a version a
@@ -104,8 +129,11 @@ export type HookFailureMode = (typeof HOOK_FAILURE_MODES)[number]
 /**
  * Why a call of a hook failed, as a hook's `lastFailureReason` says it. Fixed words of the
  * server's own: the first eight are the outbound guard's (the request was not made, or got no
- * usable answer), then an answer whose status was not 2xx, an answer that was not exactly
- * `{ "decision": … }`, and a signing secret the server could not open.
+ * usable answer), then an answer whose status was not 2xx, an answer that was not exactly the
+ * answer its point takes, and a signing secret the server could not open. The last two are a
+ * claims hook's alone: a claim that breaks a rule (a reserved name, a key outside the grammar,
+ * a value that is not one string, number or boolean), and claims over the size cap, by
+ * themselves or together with the claims of the session's JWT template.
  *
  * @example
  * ```ts
@@ -126,6 +154,8 @@ export const HOOK_FAILURE_REASONS = [
   'status_not_ok',
   'answer_invalid',
   'secret_unreadable',
+  'claims_invalid',
+  'claims_too_large',
 ] as const
 
 /** One of {@link HOOK_FAILURE_REASONS}. */
@@ -294,6 +324,96 @@ export const HookBeforeSignUpDataSchema = z
     description: 'What a hook is told about a sign-up before the account is created.',
   })
 
+/** A user's or a session's id, as the server made it. */
+const id = () => z.uuid()
+
+/** The name of a session's profile, as stored on the session (`web`, `mobile`, `back-office`). */
+const profile = () => z.string().min(1).max(32)
+
+/**
+ * What a session has proven, as its access token's `amr` says it (`pwd`, `email`, `otp`,
+ * `mfa`, `fed`, …): names the server made, never anything a request said. A set: the order
+ * means nothing. Bounded names, so that a later server's new method still parses.
+ */
+const amr = () => z.array(z.string().regex(/^[a-z][a-z0-9_]{0,31}$/)).max(16)
+
+/**
+ * The `data` of a `hook.before_session` question: who is about to get a session, and how
+ * they proved it. An allow-list, and strict.
+ *
+ * - `userId`: the user. Every factor the sign-in needed has been **proven** by the time the
+ *   question is asked.
+ * - `client`: the kind of client the sign-in was started from.
+ * - `profile`: the name of the session profile the session would get.
+ * - `amr`: what was proven, as the token's `amr` will say it. A set.
+ * - `signUp`: `true` when the session is the one a sign-up ends with (the account was created
+ *   by the same attempt), `false` for a sign-in and for a password reset.
+ * - `ipAddress`: the address the request that would create the session came from, as the
+ *   server knows it; `null` when it does not.
+ *
+ * **No email address**: the account exists, and its id names it (an operator reads the
+ * address from the admin API by that id). Never a password, a code, a token, an attempt's id
+ * or secret, a name or a user agent.
+ */
+export const HookBeforeSessionDataSchema = z
+  .strictObject({
+    userId: id(),
+    client: SessionClientSchema,
+    profile: profile(),
+    amr: amr(),
+    signUp: z.boolean(),
+    ipAddress: z.string().max(64).nullable(),
+  })
+  .meta({
+    ref: 'HookBeforeSessionData',
+    description: 'What a hook is told about a sign-in before its session is created.',
+  })
+
+/**
+ * The `data` of a `hook.before_token` question: the session whose token is about to carry the
+ * claims the hook answers with. An allow-list, and strict.
+ *
+ * - `userId`, `sessionId`: the user and the session. When the question is asked for a new
+ *   session, the session **does not exist yet** and may never (the environment's
+ *   concurrent-session rule can still refuse it): do not act on the id, only answer.
+ * - `client`: the kind of client the session was created from.
+ * - `profile`: the name of the session's profile.
+ * - `amr`: everything the session has proven so far, as the token's `amr` says it. A set.
+ *
+ * **No email address and no IP address.** The id names the user; and a claim that depends on
+ * where one request came from would be signed into every later token of the session, long
+ * after the request. Never a password, a code, a token or a user agent.
+ */
+export const HookBeforeTokenDataSchema = z
+  .strictObject({
+    userId: id(),
+    sessionId: id(),
+    client: SessionClientSchema,
+    profile: profile(),
+    amr: amr(),
+  })
+  .meta({
+    ref: 'HookBeforeTokenData',
+    description: 'What a hook is told about a session before its token is issued.',
+  })
+
+/** The envelope of a question around its `data`: the same four fields at every point. */
+function question<P extends HookPoint, D extends z.ZodObject>(
+  point: P,
+  data: D,
+  meta: { ref: string; description: string }
+) {
+  return z
+    .strictObject({
+      id: z.uuid(),
+      type: z.literal(HOOK_QUESTION_TYPES[point]),
+      schemaVersion: z.literal(HOOK_SCHEMA_VERSION),
+      occurredAt: z.iso.datetime(),
+      data,
+    })
+    .meta(meta)
+}
+
 /**
  * The question of each point: the envelope around its `data`.
  *
@@ -308,19 +428,21 @@ export const HookBeforeSignUpDataSchema = z
  * ```
  */
 export const HOOK_QUESTION_SCHEMAS = {
-  before_sign_up: z
-    .strictObject({
-      id: z.uuid(),
-      type: z.literal(HOOK_QUESTION_TYPES.before_sign_up),
-      schemaVersion: z.literal(HOOK_SCHEMA_VERSION),
-      occurredAt: z.iso.datetime(),
-      data: HookBeforeSignUpDataSchema,
-    })
-    .meta({
-      ref: 'HookBeforeSignUpQuestion',
-      description:
-        'What the server posts, signed, to the hook registered for `before_sign_up`, before it creates an account by a sign-up. Not an event: nothing has happened yet.',
-    }),
+  before_sign_up: question('before_sign_up', HookBeforeSignUpDataSchema, {
+    ref: 'HookBeforeSignUpQuestion',
+    description:
+      'What the server posts, signed, to the hook registered for `before_sign_up`, before it creates an account by a sign-up. Not an event: nothing has happened yet.',
+  }),
+  before_session: question('before_session', HookBeforeSessionDataSchema, {
+    ref: 'HookBeforeSessionQuestion',
+    description:
+      'What the server posts, signed, to the hook registered for `before_session`, after every factor of a sign-in was proven and before it creates the session. Not an event: nothing has happened yet.',
+  }),
+  before_token: question('before_token', HookBeforeTokenDataSchema, {
+    ref: 'HookBeforeTokenQuestion',
+    description:
+      'What the server posts, signed, to the hook registered for `before_token`, when a session is created and each time its user proves a factor again. The answer is the claims the session’s tokens carry until the next question. Not an event.',
+  }),
 } as const satisfies Record<HookPoint, z.ZodObject>
 
 /** The question asked at point `P`. */
@@ -338,7 +460,11 @@ export type HookQuestion = { [P in HookPoint]: HookQuestionOf<P> }[HookPoint]
  * ```
  */
 export const HookQuestionSchema = z
-  .discriminatedUnion('type', [HOOK_QUESTION_SCHEMAS.before_sign_up])
+  .discriminatedUnion('type', [
+    HOOK_QUESTION_SCHEMAS.before_sign_up,
+    HOOK_QUESTION_SCHEMAS.before_session,
+    HOOK_QUESTION_SCHEMAS.before_token,
+  ])
   .meta({ ref: 'HookQuestion' })
 
 /**
@@ -363,6 +489,33 @@ export const HOOK_QUESTION_FIXTURES: { readonly [P in HookPoint]: HookQuestionOf
       method: 'password',
       client: 'web',
       ipAddress: '203.0.113.7',
+    },
+  },
+  before_session: {
+    id: '0199c2f6-0000-7000-8000-000000000002',
+    type: 'hook.before_session',
+    schemaVersion: HOOK_SCHEMA_VERSION,
+    occurredAt: '2026-10-08T09:30:00.000Z',
+    data: {
+      userId: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01',
+      client: 'web',
+      profile: 'web',
+      amr: ['pwd', 'otp', 'mfa'],
+      signUp: false,
+      ipAddress: '203.0.113.7',
+    },
+  },
+  before_token: {
+    id: '0199c2f6-0000-7000-8000-000000000003',
+    type: 'hook.before_token',
+    schemaVersion: HOOK_SCHEMA_VERSION,
+    occurredAt: '2026-10-08T09:30:00.000Z',
+    data: {
+      userId: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01',
+      sessionId: '0199c2f4-7a12-7d4f-8c2b-6e3f9a5b7d02',
+      client: 'web',
+      profile: 'web',
+      amr: ['pwd', 'otp', 'mfa'],
     },
   },
 }
@@ -391,6 +544,91 @@ export const HookAnswerSchema = z
     }),
   ])
   .meta({ ref: 'HookAnswer' })
+
+/**
+ * The answer of a claims hook (`before_token`): the claims to issue under the namespace claim
+ * (`ext`) of the session's tokens, and **nothing else**.
+ *
+ * - `claims`: an object of at most {@link MAX_CUSTOM_CLAIMS_BYTES} bytes as JSON whose every
+ *   key passes `isCustomClaimKey` (letters, digits and underscores, at most 32, not a reserved
+ *   claim name) and whose every value is one string, number or boolean. `{}` is an answer and
+ *   means none.
+ *
+ * Any other key beside `claims` (a `decision` among them) is not an answer. A claim that
+ * breaks a rule fails the **whole** answer: nothing of it is issued, and the hook's failure
+ * mode decides. The claims sit inside `ext`, so no answer can set `sub`, `amr`, `auth_time`
+ * or any other claim Tula issues; a claims hook cannot deny, choose a user, mark an address
+ * verified or skip a second factor.
+ *
+ * This schema describes the shape and holds every rule but one: a schema library copies an
+ * object and drops a `__proto__` key on the way. The server judges the body as it was parsed,
+ * with {@link readHookClaimsAnswer}, which refuses that key too.
+ *
+ * @example
+ * ```ts
+ * return Response.json({ claims: { role: 'admin', plan: 'team' } } satisfies HookClaimsAnswer)
+ * ```
+ */
+export const HookClaimsAnswerSchema = z
+  .strictObject({
+    claims: z
+      .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+      .refine((claims) => 'claims' in checkCustomClaims(claims), {
+        message: `Every key must be a custom claim key that is not reserved, every value one string, number or boolean, and the whole at most ${MAX_CUSTOM_CLAIMS_BYTES} bytes as JSON.`,
+      }),
+  })
+  .meta({ ref: 'HookClaimsAnswer' })
+
+/** What a claims hook answers. */
+export type HookClaimsAnswer = z.infer<typeof HookClaimsAnswerSchema>
+
+/**
+ * What {@link readHookClaimsAnswer} found in a body: the claims, or which of the fixed failure
+ * words ({@link HOOK_FAILURE_REASONS}) says why there are none.
+ */
+export type HookClaimsRead =
+  | { claims: Record<string, CustomClaimValue> }
+  | { problem: 'answer_invalid' | 'claims_invalid' | 'claims_too_large' }
+
+/**
+ * Read a claims hook's answer from a parsed body, **as the server does**: the one definition
+ * of what such an answer is.
+ *
+ * - `answer_invalid`: not an object with exactly the one key `claims` holding a plain object.
+ * - `claims_invalid`: the shape is right and a claim is not: a reserved name, a key outside
+ *   the grammar (`__proto__` included), a value that is not one string, number or boolean.
+ * - `claims_too_large`: every claim is fine and together they are over the cap.
+ *
+ * Whole or nothing: no problem leaves some claims standing. Pass the value `JSON.parse`
+ * returned, not one a schema has rebuilt.
+ *
+ * @param body - The parsed body.
+ * @returns A copy of the claims (possibly none), or the problem.
+ *
+ * @example
+ * ```ts
+ * readHookClaimsAnswer({ claims: { role: 'admin' } }) // { claims: { role: 'admin' } }
+ * readHookClaimsAnswer({ claims: { sub: 'x' } }) // { problem: 'claims_invalid' }
+ * ```
+ */
+export function readHookClaimsAnswer(body: unknown): HookClaimsRead {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { problem: 'answer_invalid' }
+  }
+  const keys = Object.keys(body)
+  if (keys.length !== 1 || keys[0] !== 'claims') {
+    return { problem: 'answer_invalid' }
+  }
+  const { claims } = body as { claims: unknown }
+  if (typeof claims !== 'object' || claims === null || Array.isArray(claims)) {
+    return { problem: 'answer_invalid' }
+  }
+  const checked = checkCustomClaims(claims)
+  if ('claims' in checked) {
+    return checked
+  }
+  return { problem: checked.problem === 'too_large' ? 'claims_too_large' : 'claims_invalid' }
+}
 
 /** What a hook answers. */
 export type HookAnswer = z.infer<typeof HookAnswerSchema>
