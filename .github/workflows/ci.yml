@@ -18,7 +18,57 @@ concurrency:
 # Actions are referenced by tag on purpose: Dependabot follows them (.github/dependabot.yml).
 
 jobs:
+  # The same files are often checked more than once: `develop` and then the release pull
+  # request into `main`, or a branch fast-forwarded to a commit another branch already ran. A
+  # push that passes every job leaves a marker named after the git tree it checked (`passed`,
+  # at the end of this file); a later run of the identical tree finds it here and skips its
+  # jobs. The tree covers every file, this workflow included, so "identical" means no file a
+  # job reads has changed.
+  #
+  # Only a push writes a marker, and a push never reads Turborepo's cache (see `verify`), so a
+  # marker always stands for a run that did all the work. A pull request's run therefore never
+  # vouches for anything: the push that follows its merge runs in full.
+  #
+  # Two runs are never skipped: a push to `main` (a release is always checked in full), and a
+  # tree whose only marker came from a fork's run.
+  duplicate:
+    name: already passed?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tree: ${{ steps.look.outputs.tree }}
+      skip: ${{ steps.look.outputs.skip }}
+    steps:
+      # On a pull request this is the merge with the base branch: the tree the jobs would check.
+      - uses: actions/checkout@v7
+      - id: look
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          skip=false
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            echo "A push to main always runs in full."
+          # A lookup that fails is "no marker": the jobs run.
+          elif gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=ci-passed-$tree&per_page=100" \
+            --jq 'any(.artifacts[]; .expired == false and .workflow_run.head_repository_id == (env.REPOSITORY_ID | tonumber))' |
+            grep -qx true; then
+            skip=true
+            echo "Tree $tree has already passed every job: skipping them."
+          else
+            echo "Tree $tree has not passed yet: running every job."
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+        shell: bash -euo pipefail {0}
+
   verify:
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -50,7 +100,26 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
+      # Turborepo's record of the typecheck and test tasks that passed. A pull request starts
+      # from the newest one a push saved, and so redoes only the packages whose inputs changed
+      # since: quick feedback, as safe as those inputs are complete
+      # (.claude/hooks/turbo-inputs.test.ts). A push never reads it: what lands on `develop`
+      # and `main` is checked from scratch, and that run's record is the one saved, so the
+      # cache never carries anything a pull request wrote.
+      - name: Restore the Turborepo cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
       - run: bun run verify
+      - name: Save the Turborepo cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.sha }}
       - name: Create database roles (mirrors docker/postgres/init.sql)
         run: psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
       - run: bun run db:migrate
@@ -61,6 +130,8 @@ jobs:
   # (e2e/server.ts), driven by Playwright, with axe on every screen in light and dark. Its own
   # job, not part of `bun run verify`: it needs a browser download.
   e2e:
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -93,6 +164,8 @@ jobs:
   # (conformance/README.md, "Behind one address").
   self-host:
     name: self-host (${{ matrix.mode }})
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     # A full run is about ten minutes of waiting the scenarios ask for; through the one
     # address, about six more for the settings to reach the other instance after each change.
@@ -225,3 +298,23 @@ jobs:
       - name: Stack logs
         if: failure()
         run: docker compose --profile app logs --no-color
+
+  # The marker `duplicate` looks for. It needs every other job, with no status function in its
+  # condition, so it is written only when all of them succeeded, and never by a run that
+  # skipped them. Only a push writes one: its run read no cache, and a fork cannot push.
+  passed:
+    name: record the pass
+    needs: [duplicate, verify, e2e, self-host]
+    if: needs.duplicate.outputs.skip != 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          TREE: ${{ needs.duplicate.outputs.tree }}
+        run: echo "$TREE" > ci-passed.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-passed-${{ needs.duplicate.outputs.tree }}
+          path: ci-passed.txt
+          if-no-files-found: error
+          retention-days: 14
