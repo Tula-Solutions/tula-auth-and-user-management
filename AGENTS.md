@@ -254,7 +254,10 @@ whose answer decides what happens next (step 2.3).
   Neither `webhook_deliveries` nor `webhook_delivery_attempts` has a column for a header or a
   body and neither must get one; the one function that makes a request (`request` in the
   service) reads `answer.status` and drops the rest, `Retry-After` included. `failure_reason`
-  is one of the server's own fixed words. This is what keeps an endpoint from being a way to
+  is one of the server's own fixed words. An answer over the size cap is judged by its status
+  (the guard's `response_too_large` carries the status code and nothing else): a 2xx is a
+  delivery, anything else a failed request with that status. Never fail a delivery for the
+  size of a body nobody reads. This is what keeps an endpoint from being a way to
   read whatever answers at its address. A new delivery path gets the canary test (a
   recognisable string in the answer's headers and body, absent from every store, log and
   answer of the admin API).
@@ -296,23 +299,40 @@ whose answer decides what happens next (step 2.3).
   `WEBHOOK_MAX_CONCURRENT_DELIVERIES` lanes. Never send two events to one endpoint at once
   from the worker, and never let one lane's failure stop the others.
 - **The server switches an endpoint off for two reasons, as the `system` actor, recorded as
-  `webhook_endpoint.disabled`**: it answered `410` (`gone`), or every request has failed since
-  `failing_since` and that is `WEBHOOK_DISABLE_AFTER` ago (`failing`). The rule reads the
-  endpoint row the lane already holds and is looked at only when a request has just failed:
-  never add a scan. `failing_since` is set by the first failure after a success and cleared by
-  a success (`setFailingSince`, the one endpoint write with no `Activity`: ADR 0012).
-  Switching an endpoint on, or changing its address, resets both (`resetHealth`). Pending
+  `webhook_endpoint.disabled`**: it answered `410` (`gone`), or it has a **run** of failed
+  requests `WEBHOOK_DISABLE_AFTER` long (`failing`). A run is failed requests with no success
+  among them **and no silence between two of them longer than
+  `WEBHOOK_FAILURE_RUN_MAX_GAP_MS`** (the whole retry schedule with the most jitter, plus
+  `WEBHOOK_FAILURE_RUN_MARGIN`: about 34 hours; computed from the schedule's constants, never
+  a number of its own). `failing_since` is when the run began and `last_failed_at` when a
+  request last failed: a failure after a longer silence begins a new run instead of
+  continuing the old one, because an endpoint that was sent nothing has not been shown to be
+  still broken. Never judge by `failing_since` alone (one bad day, a fix and a hiccup a week
+  later must not switch an endpoint off). A success clears both. The rule reads the endpoint
+  row the lane already holds and is looked at only when a request has just failed: never add
+  a scan. Both columns are written by `setHealth`, the one endpoint write with no `Activity`
+  (ADR 0012). Switching an endpoint on, or changing its address, resets them and the reason
+  (`resetHealth`). Pending
   deliveries of an endpoint that is off are neither tried nor counted, and are given up only
   by age.
 - **A test event and a delivery sent again are requests on demand** (`Webhooks.sendTest`,
   `Webhooks.redeliver`): through the outbound guard, one request, no retry, behind
   `sendRateLimit` (its own per-environment bucket, mounted after `secretKey()`), answering
-  only `{ deliveryId, outcome, statusCode, durationMs, failureReason }`. Neither is audited
-  and neither moves `failing_since` or switches an endpoint off. A test event is the
+  only `{ deliveryId, outcome, statusCode, durationMs, failureReason }`. Neither is audited,
+  neither ever switches an endpoint off, and a **failed** one of either moves nothing. What
+  a success does differs, on purpose: a delivery sent again that gets through **ends the
+  endpoint's run of failures** (`clearHealth`: the receiver took a real event), and a test
+  event that gets through does **not** (it is no delivery of an event, and a receiver may
+  answer tests without doing what it does for a real one). A test event is the
   contract's fixture with a new id and **`test: true` inside the signed body**; it never
   touches the outbox, and the caller chooses the type and nothing else. Sending again appends
   an attempt to the **existing** delivery (never a second row) and is refused with
-  `webhook.cannot_redeliver` and a fixed `params.reason`. A delivery is always looked up under
+  `webhook.cannot_redeliver` and a fixed `params.reason` (`WEBHOOK_REDELIVER_REFUSALS`), one
+  of which is `attempt_limit`: a delivery never has more than `WEBHOOK_MAX_TOTAL_ATTEMPTS`
+  requests, so its log and the answer that returns it are bounded. The delivery list pages
+  and counts no further than `WEBHOOK_DELIVERY_LIST_WINDOW` rows (the query schema refuses a
+  page past it; the store's count takes `maxCount`): never an offset or a count over the
+  whole log. A delivery is always looked up under
   its endpoint and its environment (`find(environment, endpoint, id)`): keep the
   cross-environment tests.
 - **What is owed to nobody is settled in bulk, by one store call a batch**
@@ -1082,7 +1102,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   DNS changes. `Outbound.check` applies the same rules to an address that is being saved and
   sends nothing; the two share the functions that hold the rules, so a new rule is a rule of
   both and gets a row in both tables of the tests. Both take `deps.outbound`, which
-  `container.ts` builds as `{ tier }` and nothing else. Its error is a fixed word (`OutboundError.reason`): never store or show more
+  `container.ts` builds as `{ tier }` and nothing else. Its error is a fixed word (`OutboundError.reason`), and for an answer refused for its size also the answer's status code (`OutboundError.status`: the status line arrives before the body; a number, never a header or a byte of the body, and the socket is destroyed before the error is raised): never store or show more
   of an answer than a caller needs. A new refused range gets a row in the table of
   `lib/outbound.test.ts`.
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;

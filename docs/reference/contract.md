@@ -3698,11 +3698,12 @@ const id = request.headers.get(WEBHOOK_ID_HEADER)
 _constant_, defined in `packages/contract/src/webhook.ts`
 
 Why a delivery cannot be sent again, as `webhook.cannot_redeliver` says it in
-`params.reason`: the server is still retrying it, its endpoint is switched off, or its
-event's payload is no longer kept (also: it was a test event, which never had one).
+`params.reason`: the server is still retrying it, its endpoint is switched off, its
+event's payload is no longer kept (also: it was a test event, which never had one), or it
+has had as many requests as one delivery may have.
 
 ```ts
-const WEBHOOK_REDELIVER_REFUSALS: readonly ["delivery_pending", "endpoint_disabled", "event_gone"]
+const WEBHOOK_REDELIVER_REFUSALS: readonly ["delivery_pending", "endpoint_disabled", "event_gone", "attempt_limit"]
 ```
 
 **Example**

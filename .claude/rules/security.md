@@ -269,20 +269,30 @@ Before finishing any change here, confirm each item holds and has a test:
     millisecond early is too early), the eighth failure, and that a request sent and not
     recorded is sent again and not counted. `endpoint_unresponsive` and `signing_failed` mean
     nothing was sent: never an attempt row, never counted (test many more rounds than there
-    are attempts), bounded only by age. Switching an endpoint off: `410` at once, five days
-    of nothing but failures and not a millisecond less, one success resets it, re-enabling
-    resets it, and the `webhook_endpoint.disabled` entry is the `system`'s with no address or
+    are attempts), bounded only by age. Switching an endpoint off: `410` at once; a run of
+    failures five days long and not a millisecond less, where a run has no success and no
+    silence longer than `WEBHOOK_FAILURE_RUN_MAX_GAP_MS` (test the silence exactly at the
+    limit and a millisecond over, and one failed delivery, five quiet days, one failure:
+    still on); one success resets it, re-enabling resets it, and the `webhook_endpoint.disabled` entry is the `system`'s with no address or
     secret. A test event carries `test: true` inside the signed body, writes no outbox row
     and no audit entry, goes through the guard (test a name re-pointed at a private address),
     and its answer has five named fields and no canary. Sending again: the stored payload
     only, appended to the same delivery, refused while pending, for an endpoint that is off
     and for an event that is gone, and **impossible across environments** (their key with our
     endpoint id, with their own, and a sibling endpoint: 404, nothing sent). Both are behind
-    `sendRateLimit` (per environment, refuses when it cannot count). The retention deletes
+    `sendRateLimit` (per environment, refuses when it cannot count). A delivery sent again
+    that gets through clears the endpoint's run; a test event never does; a failed one of
+    either moves nothing. A delivery has at most `WEBHOOK_MAX_TOTAL_ATTEMPTS` requests
+    (`attempt_limit`), and the list is paged and counted inside
+    `WEBHOOK_DELIVERY_LIST_WINDOW`. An answer over the size cap is judged by its status code,
+    which is all the guard passes on: test a 2xx (delivered, once) and a non-2xx, with a
+    canary in the oversized body. The retention deletes
     are bounded in the database: test a recent event, an unsettled one, a pending delivery
     and a recent one against the store on PGlite, and that `created_at` and `occurred_at`
     cannot be updated to get past the floor.
-48. **The outbound guard (`lib/outbound.ts`):** every rule of `request` is a rule of `check`,
+48. **The outbound guard (`lib/outbound.ts`):** an error carries a fixed word and, for
+    `response_too_large` only, the answer's status code: never a header or a byte of a body.
+    Keep the test that the socket is destroyed when an answer streams past the cap. Every rule of `request` is a rule of `check`,
     and both share the functions that hold them; a new rule gets a row in both tables of
     `outbound.test.ts`. Its settings come from `deps.outbound` only, which `container.ts`
     builds as `{ tier }` and nothing else (a test holds that): never pass a resolver or a

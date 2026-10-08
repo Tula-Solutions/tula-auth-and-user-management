@@ -201,8 +201,10 @@ there. So:
 - nothing of an answer, an address or a secret is logged: a round's log line is counts, and a
   failure's is an environment id, an endpoint id and a fixed reason;
 - the answer body is capped at 16 KiB (`WEBHOOK_MAX_RESPONSE_BYTES`). Nothing is done with
-  it; the cap only bounds what a receiver can make the server take in. A larger answer is a
-  failed delivery (`response_too_large`) with no status.
+  it; the cap only bounds what a receiver can make the server take in. ~~A larger answer is a
+  failed delivery (`response_too_large`) with no status.~~ *Superseded (2026-10-08, review of
+  TULA-42): a larger answer is judged by its status code, which arrives before the body. See
+  "An answer over the cap" in the section on retries.*
 
 ### The worker
 
@@ -497,13 +499,35 @@ type, `webhook_endpoint.disabled`, whose `data` is `{ reason }`:
   the alternative is a day of retries against an address that has said it will never take
   them; a receiver that answers `410` by mistake finds the endpoint off, with the reason, and
   switches it back on.
-- **`failing`: every request to it has failed for five days** (`WEBHOOK_DISABLE_AFTER`). The
-  endpoint row has `failing_since`: set by the first failed request after a success, cleared
-  by the next success. When a request fails and `failing_since` is five days or more ago, the
-  endpoint is switched off. One bad hour, night or weekend does not trip it; one success
-  starts the count again. **No scan**: the rule reads one column of a row the worker already
-  holds, and is looked at only when a request has just failed. It follows that an endpoint
-  that is sent nothing is never switched off, which is right: nothing is being wasted on it.
+- **`failing`: a run of failed requests five days long** (`WEBHOOK_DISABLE_AFTER`). Stated
+  exactly: **failed requests for five days, with no success among them and no silence between
+  two consecutive failed requests longer than `WEBHOOK_FAILURE_RUN_MAX_GAP_MS`.** That limit
+  is the whole retry schedule with the most jitter plus a margin of one hour
+  (`WEBHOOK_FAILURE_RUN_MARGIN`): 34 hours 6 minutes with today's schedule, and computed from
+  the schedule's constants so that it cannot drift from them.
+
+  The endpoint row has two columns for it. `failing_since` is when the current run began,
+  `last_failed_at` when a request to it last failed. When a request fails: if there is no run,
+  or the previous failure is longer ago than the limit, a run begins now; otherwise the run
+  continues. Then `last_failed_at` becomes now, and if the run is five days old the endpoint
+  is switched off. A success clears both.
+
+  *Why the silence matters* (found in review; the first version of this rule compared only
+  `failing_since` with the latest failure). One event fails all eight requests over a day;
+  the operator fixes the receiver; nothing happens in the environment for five days, so
+  nothing tells the server the receiver works; then one event meets a single `500`. By
+  `failing_since` alone that is "failing for six days" and the endpoint was switched off
+  after nine requests, on a hiccup, and every later event was dropped. An endpoint that was
+  sent nothing has not been shown to be still broken. While an endpoint is failing *and being
+  sent things*, its failures are never further apart than one delivery's schedule: hence the
+  limit. A quiet environment whose endpoint really is broken is switched off only once
+  events come often enough to keep a run going for five days, which is the price of not
+  switching a working one off; a delivery to it is still retried and given up as usual.
+
+  One bad hour, night or weekend does not trip it; one success starts the count again. **No
+  scan**: the rule reads two columns of a row the worker already holds, and is looked at only
+  when a request has just failed. It follows that an endpoint that is sent nothing is never
+  switched off, which is right: nothing is being wasted on it.
 
 A new type rather than `webhook_endpoint.updated` with a reason: an operator subscribes to
 exactly this to be told ("your endpoint was switched off"), and an administrator's own change
@@ -513,11 +537,11 @@ payload about an endpoint, has no address and no secret. Additive: `EVENT_SCHEMA
 stays 1.
 
 The endpoint as the admin API shows it gains two fields, both additive: `disabledReason`
-(`failing`, `gone`, or `null` when it is on or an administrator switched it off) and
-`failingSince`.
+(`failing`, `gone`, or `null` when it is on or an administrator switched it off),
+`failingSince` and `lastFailedAt`.
 
 **Switching it on again** is the existing `PATCH` with `enabled: true`. It clears
-`failing_since` and `disabled_reason`; so does a change of address (a new address is a fresh
+`failing_since`, `last_failed_at` and `disabled_reason`; so does a change of address (a new address is a fresh
 start; a change of event types is not). It is recorded as any update is
 (`webhook_endpoint.updated`, `changed: ['enabled']`).
 
@@ -529,8 +553,8 @@ thing that does not stop is their age: a delivery queued more than three days ag
 (`expired`) whether its endpoint is on or off, so nothing waits for ever. Events from the time
 an endpoint is off are, as before, owed to nobody and never sent to it.
 
-`failing_since` is the worker's bookkeeping and is written with no `Activity`
-(`setFailingSince`, a method of its own that takes none; [ADR 0012](0012-events-and-audit-log.md)
+`failing_since` and `last_failed_at` are the worker's bookkeeping and are written with no
+`Activity` (`setHealth`, a method of its own that takes none; [ADR 0012](0012-events-and-audit-log.md)
 lists it). It changes nothing about who can do what; what it leads to, the endpoint being
 switched off, is recorded.
 
@@ -584,8 +608,11 @@ the time of the call and one more field, **`test: true`**, signed and sent like 
 - It goes through the outbound guard, is one request with no retry, and is recorded as a
   delivery flagged `test` with no event. **It never touches the outbox** and is not in the
   audit log.
-- It changes nothing about the endpoint: a failed test does not start `failing_since`, and a
-  `410` to a test does not switch the endpoint off. An endpoint that is off **can** be tested:
+- **It changes nothing about the endpoint, whichever way it ends.** A failed test does not
+  start or continue a run of failures, a `410` to a test does not switch the endpoint off,
+  and a test that gets through does **not** end a run. It is not the delivery of an event,
+  and a receiver may answer tests without doing what it does for a real one; only a real
+  event getting through says the endpoint works. An endpoint that is off **can** be tested:
   that is how an operator finds out whether to switch it back on.
 - The caller chooses the type and nothing else: not the address, not the payload.
 
@@ -594,7 +621,21 @@ the time of the call and one more field, **`test: true`**, signed and sent like 
 second delivery row for the same endpoint and event was the alternative; it would have needed
 the unique key to go, and would split one event's history over two rows. A 2xx makes the
 delivery `delivered`. A failure leaves its state as it was and is not retried: this is one
-request an administrator asked for, not a new run of the schedule. It is refused with
+request an administrator asked for, not a new run of the schedule.
+
+*What it does to the endpoint's run of failures* is not the same as a test, on purpose. **A
+delivery sent again that gets through ends the run** (`failing_since` and `last_failed_at`
+are cleared): the receiver took a real event, which is exactly what the run says it has not
+been doing. One that fails moves nothing, and neither it nor a `410` switches the endpoint
+off: a request made by hand is not the worker's evidence.
+
+*A delivery has at most twenty requests in all* (`WEBHOOK_MAX_TOTAL_ATTEMPTS`: the worker's
+eight and twelve by hand). Without a bound, ten a minute for ever would all land in one
+delivery's log, and reading that delivery returns its whole log. The check is made before the
+request; requests already in flight when the limit is reached are still recorded, and the
+rate limit (ten a minute per environment) bounds how many those can be.
+
+It is refused with
 `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`:
 
 | `reason` | |
@@ -602,6 +643,7 @@ request an administrator asked for, not a new run of the schedule. It is refused
 | `delivery_pending` | The worker still has it and will send it. |
 | `endpoint_disabled` | Nothing is sent to an endpoint that is off (a test is the exception, above). |
 | `event_gone` | The event is past its retention period, or the delivery is a test, which never had one. |
+| `attempt_limit` | The delivery has had twenty requests. |
 
 One code with a reason, as `webhook.url_not_allowed` has, rather than three codes: every
 contract code and its message is in `@tula/core`'s table and so in every browser bundle, and
@@ -610,6 +652,23 @@ three more put it eight bytes over its budget.
 **The answer of both** is the delivery's id, the outcome, the status code, the duration and,
 when there was no answer, one of the server's fixed words. Nothing else of the receiver's
 answer is read or kept, as everywhere.
+
+**An answer over the cap** (16 KiB) is judged by its status code. The outbound guard knows
+the status before it reads a body, so its `response_too_large` failure now carries the status
+(a number, and nothing else of the answer; the socket is destroyed as before and nothing past
+the cap is read). A 2xx whose body was too large **is a delivery**: the receiver took the
+event. Any other status is an ordinary failed request with that status. Before this, such an
+answer was a failure with no status, which with retries meant a healthy receiver with a
+chatty answer was sent the same event eight times, had it given up, never had its run of
+failures cleared and was in the end switched off.
+
+**The list is a window, not the whole log.** `GET /:id/deliveries` pages through the newest
+10,000 matching deliveries (`WEBHOOK_DELIVERY_LIST_WINDOW`: 500 pages of the default size). A
+page past it (`page` × `size`) is refused with `validation.failed`, and `meta.totalCount` is
+counted over at most that many rows, read through the same index as the page. An endpoint's
+log can hold ninety days of deliveries; an offset or a count over millions of rows is not
+something an admin call should be able to ask for, and what an operator wants from further
+back is found with the filters.
 
 **Their own rate limit.** Ten a minute per environment (`WEBHOOK_SEND_RATE_LIMIT`), one bucket
 for both, mounted after `secretKey()` so that it is counted by the environment the key
@@ -640,6 +699,10 @@ endpoint being switched off, or on, is audited: that changes where events go.)
   bounded by `events_retention_floor`: only an event that is settled (`delivered_at` set) and
   that happened more than a day ago. `occurred_at` is no longer updatable, so the floor cannot
   be got past by backdating.
+- **`webhook_endpoints`** gains `failing_since`, `last_failed_at` and `disabled_reason`, all
+  `NULL` for the endpoints that exist: no run is on record, and an endpoint's first failed
+  request under this version begins one. The runtime role already holds `UPDATE` on the
+  table (an administrator changes an endpoint on the request path): no grant changes.
 - **`webhook_deliveries.event_id` is no longer a foreign key**, and may be `NULL` (a test
   event). A settled event is deleted after thirty days and the record of its deliveries is
   kept for ninety ([ADR 0017](0017-retention.md)); the cascade that tied the two would have
@@ -732,6 +795,11 @@ Still, and by design:
 - **Deleting a delivery with its event (one period for both).** Simpler, and it would keep the
   cascade; rejected because the payload and the log have different reasons to be kept and
   different costs.
+- **Judging a run by `failing_since` alone.** The first version; it switched off an endpoint
+  that had one bad day and, a quiet week later, one hiccup.
+- **A shorter limit on the silence** (the longest single wait, twelve hours). It would break
+  a run between two requests of one delivery if a round were late; the whole schedule is the
+  bound that needs no argument about timing.
 - **Disabling after N consecutive given-up deliveries.** It trips on volume rather than time:
   a busy endpoint that is down for an hour gives up nothing, and a quiet one that is down for
   a month gives up two.

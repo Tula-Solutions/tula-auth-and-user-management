@@ -78,9 +78,10 @@ await admin.call('deleteWebhookEndpoint', { params: { id: endpoint.id } })
 | `POST /v1/admin/webhook-endpoints/:id/test` | [Send a test event](#send-a-test-event). |
 | `POST /v1/admin/webhook-endpoints/:id/deliveries/:deliveryId/redeliver` | [Send a delivery again](#send-a-delivery-again). |
 
-An endpoint also says how it is doing: `failingSince` is the time of the first failed request
-since its last success (`null` when the last one got through), and `disabledReason` says why
-the **server** switched it off, if it did.
+An endpoint also says how it is doing: `failingSince` is when its current run of failed
+requests began and `lastFailedAt` when a request last failed (both `null` when the last
+request that got an answer got through), and `disabledReason` says why the **server**
+switched it off, if it did.
 
 While an endpoint is switched off nothing is sent to it, and the events of that time are
 **not** sent when it is switched on again. Every registration, change and removal is in the
@@ -179,9 +180,10 @@ or the body.
 ## Answer it
 
 - **Answer with a 2xx, quickly, and with a small body.** The server waits five seconds. Any
-  other status, no answer in time, a redirect (never followed) or an answer larger than
-  16 KiB is a failed request, and the server [tries again](#retries). Do the work the event
-  causes after you have answered.
+  other status, no answer in time or a redirect (never followed) is a failed request, and the
+  server [tries again](#retries). The server reads at most 16 KiB of your answer and judges
+  it by its status code alone: a 2xx with a larger body is still a delivery, and the body is
+  cut off unread. Do the work the event causes after you have answered.
 - **Expect the same event more than once.** A retry carries the same `webhook-id` as the
   request before it, and so does a delivery an administrator sends again. Delivery is also at
   least once in the strict sense: if the server sent a request and could not record that it
@@ -219,8 +221,9 @@ After the eighth failed request the delivery is **given up**: it stays in the
 hand. A 2xx at any point ends it as `delivered`.
 
 What counts as a failed request: any status that is not 2xx (a redirect included), no answer
-within five seconds, a connection that could not be made, an address the server
-[may not call](#how-the-server-calls-you), and an answer over 16 KiB.
+within five seconds, a connection that could not be made, and an address the server
+[may not call](#how-the-server-calls-you). The size of your answer is never the reason: an
+answer over 16 KiB counts by its status code.
 
 Two things can make a delivery wait **without a request being made**. Neither counts as one of
 the eight, and the log says which it was:
@@ -247,8 +250,15 @@ The server switches an endpoint off by itself in two cases, and says which in th
 
 | `disabledReason` | When |
 | --- | --- |
-| `failing` | **Every request to it has failed for five days.** Counted from the first failure after its last success (`failingSince`) to a later failure. An hour, a night or a weekend of failures does not do it, and one success starts the count again. |
+| `failing` | **Requests to it have failed for five days, with no success among them and no silence between two of them longer than 34 hours.** `failingSince` is when that run began. An hour, a night or a weekend of failures does not do it; one success ends the run; and a failure that comes after more than 34 hours without one begins a new run instead of continuing the old one. |
 | `gone` | **It answered `410 Gone`.** At once. |
+
+The 34 hours are the whole [retry schedule](#retries) with its jitter, plus an hour: while an
+endpoint is failing and being sent events, its failed requests are never further apart than
+that. A longer silence means the server sent it nothing for a while, and then it has no
+evidence that the endpoint stayed broken. So one event that fails all eight requests, a quiet
+week, and one more failure is two short runs, not six days of failing, and the endpoint stays
+on.
 
 It is recorded in the audit log as `webhook_endpoint.disabled`, done by the `system`, with the
 reason. That is also an event: subscribe **another** endpoint, or watch the audit log, to be
@@ -291,6 +301,9 @@ for (const delivery of failed.data) {
 
 `GET /v1/admin/webhook-endpoints/:id/deliveries` lists an endpoint's deliveries, newest first,
 in pages (`page`, `size`, like the other admin lists), filtered by `state` and `eventType`.
+It pages through the newest **10,000** matching deliveries: a page past that (`page` × `size`)
+is refused with `validation.failed`, and `meta.totalCount` stops at 10,000. Use the filters to
+reach further back.
 There is one delivery per event the endpoint was owed, and one per test event:
 
 | Field | |
@@ -312,7 +325,6 @@ answer, a fixed word for why:
 | `timeout` | No answer in five seconds. |
 | `connection_failed` | The connection could not be made, or broke. |
 | `resolve_failed`, `address_not_allowed`, `scheme_not_allowed`, `invalid_url` | The outbound guard refused the address as it is now. |
-| `response_too_large` | The answer was over 16 KiB. |
 | `endpoint_unresponsive`, `signing_failed` | On the delivery only, never on an attempt: [no request was made](#retries). |
 | `expired` | Given up after three days pending. |
 | `event_gone` | Given up because the event no longer exists. |
@@ -363,6 +375,8 @@ event never has the field.
   was no answer. **Nothing else of your answer is read or kept.**
 - It is one request, never retried, recorded in the [delivery log](#the-delivery-log) with
   `test: true`. It is not in the audit log and is not an event anyone else receives.
+- A test that gets through does **not** clear `failingSince`: it is not the delivery of an
+  event. (A real delivery [sent again](#send-a-delivery-again) that gets through does.)
 - It changes nothing about the endpoint: a failed test does not count towards
   [switching it off](#when-an-endpoint-is-switched-off), and it can be sent to an endpoint
   that is off.
@@ -396,6 +410,9 @@ for a past delivery, now: the event exactly as it was stored, to the endpoint it
 with the **same `webhook-id`** and a new timestamp. A receiver that has already handled the
 event drops it by its id, as it would a retry.
 
+- A request that gets through ends the endpoint's run of failures (`failingSince` becomes
+  `null`): your endpoint took a real event. One that fails changes nothing about the endpoint.
+- A delivery can have **twenty requests in all**, the server's eight included.
 - The request is added to the delivery's own attempts, as the next number. A 2xx makes the
   delivery `delivered`. A failure leaves its state as it was and is **not** retried.
 - The answer is the same as a test event's: the outcome, a status code, a duration.
@@ -406,6 +423,7 @@ event drops it by its id, as it would a retry.
   | `delivery_pending` | The server is still retrying it and will send it. |
   | `endpoint_disabled` | The endpoint is switched off. Switch it on first. |
   | `event_gone` | The event is no longer kept (older than 30 days), or the delivery is a test event. |
+  | `attempt_limit` | The delivery has had twenty requests. |
 
 - It is not in the audit log; the attempt is its record.
 

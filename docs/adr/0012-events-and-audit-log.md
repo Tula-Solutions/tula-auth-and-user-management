@@ -209,9 +209,9 @@ of.
   of rows that had already ended ([ADR 0017](0017-retention.md)); and what the webhook worker
   writes ([ADR 0034](0034-webhooks.md)): a delivery row and its attempts, which are themselves
   the record of the delivery, an event's `delivered_at` (`WebhookDeliveryStore` has no method
-  that takes an activity), and since when an endpoint has been failing
-  (`WebhookEndpointStore.setFailingSince`, a method of its own that takes none: bookkeeping
-  that changes no one's access). Sending a test event and sending a delivery again are not
+  that takes an activity), and an endpoint's run of failed requests (when it began and when
+  a request last failed: `WebhookEndpointStore.setHealth`, a method of its own that takes
+  none: bookkeeping that changes no one's access). Sending a test event and sending a delivery again are not
   recorded either: each is a delivery row. Registering, changing and removing an endpoint *are*
   recorded, and so is the server switching one off (`webhook_endpoint.disabled`, by the
   `system` actor). None of these

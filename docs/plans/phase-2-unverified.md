@@ -68,7 +68,20 @@ not run). They stay above as they were written.
 | **Scenario `49-webhook-retried-after-a-500` against a live server** | In process, with the test clock for the wait and one round of the real worker per `webhook` step (part of `bun run verify`). It is written to run unchanged against `bun run dev` with `CONFORMANCE_WEBHOOK_RECEIVER_HOST=127.0.0.1` (its waits are real sleeps there, nine seconds in all); that run was **not made**. Against a live server the steps that read the log right after a delivery rely on a one-second wait for the server to have recorded the answer, which was chosen, not measured. |
 | **The change to CI's `self-host` jobs** (the exact set of two skipped scenario names; `2 skipped` in the summary line) | The shell lines were extracted from `ci.yml` and run against six sample logs (both names, one name, another name in place of one, a third, none). The workflow itself only runs on GitHub and was not run. |
 
+### After the review
+
+| What | What was run instead |
+| --- | --- |
+| **The run-of-failures rule over real days** | The test clock: the review's case (eight failed requests, five quiet days, one failure), steady daily failures to the millisecond, and a silence exactly at and one millisecond over the limit. |
+| **An answer over the cap from a real receiver** (a framework's default error page, a proxy's HTML) | A loopback listener answering a body over 16 KiB with a chosen status, declared and streamed, and a `node:http` server that streams without end, which sees its connection closed. Chunked answers from a real proxy were not tried. |
+| **The capped count on a large table** | PGlite with five rows and a ceiling of three. That the planner reads the capped subquery through `webhook_deliveries_endpoint_log_idx` on millions of rows, and what a rare `state` or `eventType` filter costs inside one endpoint's log, was not measured. |
+| **The cap on a delivery's attempts under concurrent calls** | One call after another. Calls already in flight when the limit is reached are still recorded; the per-environment rate limit bounds them, which was reasoned, not run. |
+
 ### Not test-first
+
+(Of the first pass of this step. The fixes after the review were each written test first and
+seen to fail, with the exceptions named in the report: tests that confirm behaviour the
+review asked to keep.)
 
 The tests of the stores, the service, the router and the retention job were written **with**
 the implementation, in the same sitting, and mostly passed on their first run; they were not
