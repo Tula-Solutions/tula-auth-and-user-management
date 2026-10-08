@@ -1,0 +1,154 @@
+import { afterAll } from 'bun:test'
+import { environmentSettings, flowAttempts, withTenant } from '@tula/db'
+import { eq } from 'drizzle-orm'
+import { describeActivityLog } from '~/adapters/activity-log.suite'
+import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
+import { describeFactorStore } from '~/adapters/factor-store.suite'
+import { describeFlowAttemptStore } from '~/adapters/flow-attempt-store.suite'
+import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
+import { describePasskeyStore } from '~/adapters/passkey-store.suite'
+import { PostgresActivityLog } from '~/adapters/postgres/activity'
+import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
+import { PostgresEnvironmentSettingsStore } from '~/adapters/postgres/environment-settings'
+import { PostgresFactorStore } from '~/adapters/postgres/factors'
+import { PostgresFlowAttemptStore } from '~/adapters/postgres/flow-attempts'
+import {
+  type IntegrationTenant,
+  openIntegrationDatabase,
+} from '~/adapters/postgres/integration-support'
+import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
+import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
+import { PostgresSessionStore } from '~/adapters/postgres/sessions'
+import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
+import { PostgresUserRepository } from '~/adapters/postgres/users'
+import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
+import { describeSessionStore } from '~/adapters/session-store.suite'
+import { describeUserRepository } from '~/adapters/user-repository.suite'
+import { describeVerificationTokenStore } from '~/adapters/verification-token-store.suite'
+
+/**
+ * The stores' behaviour suites against a real Postgres server, over a pool of several
+ * connections as the runtime login.
+ *
+ * `bun test` runs the same suites on PGlite, which is one session: every "concurrent" call
+ * there takes its turn on a single connection. Here the calls a suite starts together run on
+ * separate sessions, so row locks, `ON CONFLICT` waits and READ COMMITTED snapshots are the
+ * server's own. The control-plane suite is left out: it counts every workspace of the
+ * deployment, so it needs a database of its own.
+ *
+ * Uses the database of `docker compose up -d`. Everything is created under tenants of its own
+ * and removed afterwards.
+ */
+const database = openIntegrationDatabase()
+const { db } = database.first
+
+afterAll(() => database.close())
+
+let shared: Promise<{ a: IntegrationTenant; b: IntegrationTenant }> | undefined
+
+/** The two tenants most suites share: made once, on first use. */
+function tenants(): Promise<{ a: IntegrationTenant; b: IntegrationTenant }> {
+  shared ??= (async () => ({
+    a: await database.tenant(),
+    b: await database.tenant('production'),
+  }))()
+  return shared
+}
+
+const log = new PostgresActivityLog(db)
+
+describeUserRepository('PostgresUserRepository on a real server', async () => ({
+  users: new PostgresUserRepository(db),
+  ...(await tenants()),
+}))
+
+describeSessionStore('PostgresSessionStore on a real server', async () => ({
+  store: new PostgresSessionStore(db),
+  log,
+  ...(await tenants()),
+}))
+
+describeFactorStore('PostgresFactorStore on a real server', async () => ({
+  store: new PostgresFactorStore(db),
+  log,
+  ...(await tenants()),
+}))
+
+describeFlowAttemptStore('PostgresFlowAttemptStore on a real server', async () => ({
+  store: new PostgresFlowAttemptStore(db),
+  ...(await tenants()),
+}))
+
+describePasskeyStore('PostgresPasskeyStore on a real server', async () => ({
+  store: new PostgresPasskeyStore(db),
+  log,
+  ...(await tenants()),
+}))
+
+/** A tenant that can also make the flow attempt a verification token belongs to. */
+function withFlowAttempt(tenant: IntegrationTenant) {
+  return {
+    ...tenant,
+    flowAttempt: () =>
+      withTenant(db, tenant.environmentId, async (tx) => {
+        const id = Bun.randomUUIDv7()
+        await tx.insert(flowAttempts).values({
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          kind: 'sign_up',
+          status: 'needs_email_verification',
+          identifier: 'maya@northline.app',
+          expiresAt: new Date('2026-01-01T00:10:00Z'),
+        })
+        return id
+      }),
+  }
+}
+
+describeVerificationTokenStore('PostgresVerificationTokenStore on a real server', async () => {
+  const { a, b } = await tenants()
+  return {
+    store: new PostgresVerificationTokenStore(db),
+    a: withFlowAttempt(a),
+    b: withFlowAttempt(b),
+  }
+})
+
+// Fresh tenants per test: these suites count rows per environment.
+describeOAuthProviderStore('PostgresOAuthProviderStore on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresOAuthProviderStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    a,
+    b,
+  }
+})
+
+describeEnvironmentSettingsStore('PostgresEnvironmentSettingsStore on a real server', async () => ({
+  store: new PostgresEnvironmentSettingsStore(db),
+  log,
+  freshTenant: () => database.tenant(),
+  storeManager: async (tenant, manager) => {
+    await withTenant(db, tenant.environmentId, (tx) =>
+      tx
+        .update(environmentSettings)
+        .set({ managedBy: manager as Record<string, unknown> })
+        .where(eq(environmentSettings.environmentId, tenant.environmentId))
+    )
+  },
+}))
+
+describeActivityLog('Postgres stores on a real server', async () => ({
+  log,
+  sessions: new PostgresSessionStore(db),
+  users: new PostgresUserRepository(db),
+  apiKeys: new PostgresApiKeyRepository(db),
+  signingKeys: new PostgresSigningKeyStore(db),
+  ...(await tenants()),
+  freshTenant: () => database.tenant(),
+}))

@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { NextRequest } from 'next/server'
 import { authenticate, requestFromHeaders } from './helpers'
 import { tulaMiddleware } from './middleware'
@@ -686,7 +686,29 @@ describe('a forged header from the browser', () => {
   })
 })
 
-describe('the scheme auth() reads cookies under, with no URL to go by', () => {
+// A Next.js server never hands `auth()` a request without `x-forwarded-proto`: where the proxy
+// in front of it sent none, it fills the header in from its own socket
+// (`next/dist/server/base-server.js`: `req.headers['x-forwarded-proto'] ??= isHttps ? 'https' :
+// 'http'`, and the same for the host, the port and the address). Behind a proxy that ends TLS
+// that is `http` for a page the browser loaded over https. These are the header sets it
+// produces.
+describe('the scheme cookies are read under where no app URL is configured', () => {
+  /** The headers of a request as Next.js gives them to a Server Component. */
+  function nextHeaders(
+    proto: 'http' | 'https',
+    cookie: string,
+    host = 'app.example.com'
+  ): Record<string, string> {
+    return {
+      host,
+      'x-forwarded-host': host,
+      'x-forwarded-port': proto === 'https' ? '443' : '3000',
+      'x-forwarded-proto': proto,
+      'x-forwarded-for': '10.0.0.7',
+      cookie,
+    }
+  }
+
   /** What `auth()` says in a Server Component whose request had these headers. */
   function auth(
     api: FakeApi,
@@ -696,13 +718,11 @@ describe('the scheme auth() reads cookies under, with no URL to go by', () => {
     return authenticate(requestFromHeaders(new Headers(headers)), { ...api.options, ...extra })
   }
 
-  test('a __Host- cookie with no forwarded scheme and no app URL means https: signed in', async () => {
+  test('a __Host- cookie means https although Next.js filled in x-forwarded-proto: http', async () => {
     const api = createFakeApi([signer])
-    // What the middleware and the handler wrote for a request whose own URL was https.
-    const result = await auth(api, {
-      host: 'app.example.com',
-      cookie: `__Host-tula_at=${await signer.sign()}`,
-    })
+    // TLS ends at a proxy that sends no X-Forwarded-Proto; the middleware and the handler,
+    // given `appUrl` as an option, wrote the `__Host-` names.
+    const result = await auth(api, nextHeaders('http', `__Host-tula_at=${await signer.sign()}`))
     expect(result.isSignedIn).toBe(true)
     expect(result.userId).toBe('user_1')
   })
@@ -712,78 +732,267 @@ describe('the scheme auth() reads cookies under, with no URL to go by', () => {
     async (other) => {
       const api = createFakeApi([signer])
       // The unprefixed token is valid, and is not read: one name per request, never both.
-      const result = await auth(api, {
-        host: 'app.example.com',
-        cookie: `${other}; tula_at=${await signer.sign()}`,
-      })
+      const result = await auth(
+        api,
+        nextHeaders('http', `${other}; tula_at=${await signer.sign()}`)
+      )
       expect(result.isSignedIn).toBe(false)
     }
   )
 
   test('with both names present only the __Host- one is read', async () => {
     const api = createFakeApi([signer])
-    const planted = await auth(api, {
-      host: 'app.example.com',
-      cookie: `__Host-tula_at=${await stranger.sign()}; tula_at=${await signer.sign()}`,
-    })
+    const planted = await auth(
+      api,
+      nextHeaders('http', `__Host-tula_at=${await stranger.sign()}; tula_at=${await signer.sign()}`)
+    )
     expect(planted.isSignedIn).toBe(false)
-    const real = await auth(api, {
-      host: 'app.example.com',
-      cookie: `tula_at=${await stranger.sign()}; __Host-tula_at=${await signer.sign()}`,
-    })
+    const real = await auth(
+      api,
+      nextHeaders('http', `tula_at=${await stranger.sign()}; __Host-tula_at=${await signer.sign()}`)
+    )
     expect(real.isSignedIn).toBe(true)
   })
 
-  test('only the unprefixed cookie, no forwarded scheme, no app URL: read as before', async () => {
+  test('a token under the __Host- name is still verified: a hand-built cookie signs nobody in', async () => {
     const api = createFakeApi([signer])
-    const result = await auth(api, {
-      host: 'localhost:3000',
-      cookie: `tula_at=${await signer.sign()}`,
-    })
+    const result = await auth(api, nextHeaders('http', `__Host-tula_at=${await stranger.sign()}`))
+    expect(result.isSignedIn).toBe(false)
+  })
+
+  test('plain http with only the unprefixed cookie reads the unprefixed name', async () => {
+    const api = createFakeApi([signer])
+    const result = await auth(
+      api,
+      nextHeaders('http', `tula_at=${await signer.sign()}`, 'localhost:3000')
+    )
     expect(result.isSignedIn).toBe(true)
   })
 
   test('a cookie whose name only resembles the SDK’s decides nothing', async () => {
     const api = createFakeApi([signer])
-    const result = await auth(api, {
-      host: 'localhost:3000',
-      cookie: `__Host-other=1; x__Host-tula_at=1; tula_at=${await signer.sign()}`,
-    })
+    const result = await auth(
+      api,
+      nextHeaders(
+        'http',
+        `__Host-other=1; x__Host-tula_at=1; tula_at=${await signer.sign()}`,
+        'localhost:3000'
+      )
+    )
     expect(result.isSignedIn).toBe(true)
   })
 
-  test('x-forwarded-proto is believed before the cookies', async () => {
+  test('a forwarded https means https, whatever cookies are there', async () => {
     const api = createFakeApi([signer])
     const token = await signer.sign()
-    const overHttp = { host: 'app.example.com', 'x-forwarded-proto': 'http' }
-    expect((await auth(api, { ...overHttp, cookie: `__Host-tula_at=${token}` })).isSignedIn).toBe(
-      false
-    )
-    expect((await auth(api, { ...overHttp, cookie: `tula_at=${token}` })).isSignedIn).toBe(true)
-    const overHttps = { host: 'app.example.com', 'x-forwarded-proto': 'https' }
-    expect((await auth(api, { ...overHttps, cookie: `tula_at=${token}` })).isSignedIn).toBe(false)
-    expect((await auth(api, { ...overHttps, cookie: `__Host-tula_at=${token}` })).isSignedIn).toBe(
-      true
-    )
+    expect((await auth(api, nextHeaders('https', `tula_at=${token}`))).isSignedIn).toBe(false)
+    expect((await auth(api, nextHeaders('https', `__Host-tula_at=${token}`))).isSignedIn).toBe(true)
   })
 
   test('the configured app URL is believed before everything', async () => {
     const api = createFakeApi([signer])
     const token = await signer.sign()
     const http = { appUrl: 'http://app.example.com' }
-    const headers = { host: 'app.example.com', 'x-forwarded-proto': 'https' }
     expect(
-      (await auth(api, { ...headers, cookie: `__Host-tula_at=${token}` }, http)).isSignedIn
+      (await auth(api, nextHeaders('https', `__Host-tula_at=${token}`), http)).isSignedIn
     ).toBe(false)
-    expect((await auth(api, { ...headers, cookie: `tula_at=${token}` }, http)).isSignedIn).toBe(
-      true
-    )
-    const https = { appUrl: 'https://app.example.com' }
-    expect((await auth(api, { host: 'x', cookie: `tula_at=${token}` }, https)).isSignedIn).toBe(
+    expect((await auth(api, nextHeaders('http', `__Host-tula_at=${token}`), http)).isSignedIn).toBe(
       false
     )
+    expect((await auth(api, nextHeaders('https', `tula_at=${token}`), http)).isSignedIn).toBe(true)
+    const https = { appUrl: 'https://app.example.com' }
+    expect((await auth(api, nextHeaders('http', `tula_at=${token}`), https)).isSignedIn).toBe(false)
     expect(
-      (await auth(api, { host: 'x', cookie: `__Host-tula_at=${token}` }, https)).isSignedIn
+      (await auth(api, nextHeaders('http', `__Host-tula_at=${token}`), https)).isSignedIn
     ).toBe(true)
+  })
+
+  test('headers with no forwarded scheme at all (not a Next.js server) go by the cookie too', async () => {
+    const api = createFakeApi([signer])
+    const token = await signer.sign()
+    const bare = (cookie: string) => ({ host: 'app.example.com', cookie })
+    expect((await auth(api, bare(`__Host-tula_at=${token}`))).isSignedIn).toBe(true)
+    expect((await auth(api, bare(`tula_at=${token}`))).isSignedIn).toBe(true)
+  })
+
+  // The interceptor and `auth()` must not disagree, or a protected page and the sign-in page
+  // send the browser to each other without end.
+  test('the interceptor reads the same names as auth() for the same request', async () => {
+    const api = createFakeApi([signer])
+    const middleware = protect(api)
+    const signedIn = nextHeaders('http', `__Host-tula_at=${await signer.sign()}`)
+    expect(isNext(await middleware(get('/dashboard', signedIn)))).toBe(true)
+    expect((await auth(api, signedIn)).isSignedIn).toBe(true)
+
+    const planted = nextHeaders('http', `__Host-tula_rt=r1; tula_at=${await signer.sign()}`)
+    const refused = await middleware(get('/dashboard', planted))
+    expect(isNext(refused)).toBe(false)
+    expect((await auth(api, planted)).isSignedIn).toBe(false)
+  })
+})
+
+// `localhost` shares cookies across ports: an app signed in over http there keeps plain-named
+// cookies, and another https app can leave a `__Host-tula_*` one. The `__Host-` names are then
+// read; when the interceptor changes them, the plain ones must go too, or they are read again
+// (by `auth()` in the same request, and by everything on the next one).
+describe('where a __Host- cookie chose the names, the interceptor expires the plain-named cookies with any change', () => {
+  const PLAIN_EXPIRED = [
+    'tula_at=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    'tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+    'tula_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+  ]
+  const headers = (cookie: string, proto: 'http' | 'https' = 'http') => ({
+    'x-forwarded-proto': proto,
+    cookie,
+  })
+
+  test('a refused refresh signs the request out for auth() too, and expires both sets', async () => {
+    const api = createFakeApi([signer])
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json({ status: 401, code: 'session.revoked', detail: 'x' }, { status: 401 })
+    )
+    const earlier = `theme=dark; tula_rt=old; tula_at=${await signer.sign()}; __Host-tula_rt=stray`
+    const response = await protect(api)(get('/', headers(earlier)))
+    expect(isNext(response)).toBe(true)
+    expect(response.headers.getSetCookie().sort()).toEqual(
+      [
+        '__Host-tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure',
+        ...PLAIN_EXPIRED,
+      ].sort()
+    )
+    // The page is not handed the earlier session under the plain names.
+    expect(overridden(response).get('cookie')).toBe('theme=dark')
+    expect((await authAfter(api, response)).isSignedIn).toBe(false)
+  })
+
+  test('a refresh writes the __Host- cookies and expires the plain ones', async () => {
+    const api = createFakeApi([signer])
+    const fresh = await signer.sign()
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json(
+        {
+          sessionId: 'sess_1',
+          accessToken: fresh,
+          accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        { headers: { 'set-cookie': `tula_rt_${ENV}=r2; Max-Age=600` } }
+      )
+    )
+    const response = await protect(api)(
+      get('/dashboard', headers('tula_rt=old; tula_at=old.access.token; __Host-tula_rt=r1'))
+    )
+    expect(isNext(response)).toBe(true)
+    const cookies = response.headers.getSetCookie()
+    expect(cookies).toContain(
+      '__Host-tula_rt=r2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600; Secure'
+    )
+    expect(cookies.filter((line) => line.startsWith('tula_')).sort()).toEqual(PLAIN_EXPIRED)
+    expect(overridden(response).get('cookie')).toBe(`__Host-tula_rt=r2; __Host-tula_at=${fresh}`)
+  })
+
+  test('a request that changes nothing expires nothing', async () => {
+    const api = createFakeApi([signer])
+    const response = await protect(api)(
+      get('/dashboard', headers(`tula_rt=old; __Host-tula_at=${await signer.sign()}`))
+    )
+    expect(isNext(response)).toBe(true)
+    expect(response.headers.getSetCookie()).toEqual([])
+  })
+
+  test.each([
+    ['a configured app URL', { appUrl: 'https://localhost:3000' }, 'http'],
+    ['a forwarded https', {}, 'https'],
+  ] as const)('with %s nothing extra is cleared', async (_name, options, proto) => {
+    const api = createFakeApi([signer])
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json({ status: 401, code: 'session.revoked', detail: 'x' }, { status: 401 })
+    )
+    const response = await protect(
+      api,
+      options
+    )(get('/', headers('tula_rt=planted; tula_at=planted; __Host-tula_rt=r1', proto)))
+    expect(response.headers.getSetCookie()).toEqual([
+      '__Host-tula_rt=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure',
+    ])
+  })
+})
+
+// Next.js 15 runs `middleware.ts` in its Edge runtime, whose `Request` is not the platform's:
+// built from another `Request`, it keeps that one's URL and nothing else
+// (`next/dist/server/web/sandbox/context.js`: `super(url, init)`). A call to the API that is
+// copied that way arrives as a `GET` with no headers and no body.
+describe('where a Request built from a Request keeps only its URL (the Edge runtime of Next.js 15)', () => {
+  const Native = globalThis.Request
+
+  /** The sandbox's constructor, as Next.js 15.5 ships it. */
+  class EdgeRequest extends Native {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      super(typeof input !== 'string' && 'url' in input ? input.url : String(input), init)
+    }
+  }
+
+  beforeEach(() => {
+    globalThis.Request = EdgeRequest as typeof Request
+  })
+
+  afterEach(() => {
+    globalThis.Request = Native
+  })
+
+  test('the refresh still reaches the API as a POST with its cookie, key and origin, and the cookies rotate', async () => {
+    const api = createFakeApi([signer])
+    const fresh = await signer.sign()
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json(
+        {
+          sessionId: 'sess_1',
+          accessToken: fresh,
+          accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        {
+          headers: {
+            'set-cookie': `tula_rt_${ENV}=r2; Max-Age=600; Path=/v1/client/sessions; HttpOnly`,
+          },
+        }
+      )
+    )
+    const response = await protect(api)(get('/dashboard', { cookie: 'tula_rt=r1' }))
+    expect(
+      api.requests.map((request) => `${request.method} ${new URL(request.url).pathname}`)
+    ).toContain('POST /v1/client/sessions/refresh')
+    const sent = api.requests.find((request) => request.method === 'POST') as Request
+    expect(sent.headers.get('origin')).toBe(APP)
+    expect(sent.headers.get('x-tula-publishable-key')).toBe(KEY)
+    expect(sent.headers.get('cookie')).toBe(`__Secure-tula_rt_${ENV}=r1; tula_rt_${ENV}=r1`)
+    expect(sent.redirect).toBe('manual')
+    expect(await sent.text()).toBe('{}')
+
+    expect(isNext(response)).toBe(true)
+    expect(response.headers.getSetCookie()).toContain(
+      'tula_rt=r2; Path=/; HttpOnly; SameSite=Lax; Max-Age=600'
+    )
+    expect((await authAfter(api, response)).userId).toBe('user_1')
+  })
+
+  test('a stateful session is still verified with the secret key and the cookie’s value', async () => {
+    const api = createFakeApi([signer], { secretKey: SECRET })
+    api.on('POST /v1/admin/sessions/verify', () =>
+      Response.json({
+        iss: `${API}/v1/environments/${ENV}`,
+        sub: 'user_7',
+        aud: ENV,
+        sid: 'sess_7',
+        exp: Math.floor(Date.now() / 1000) + 60,
+        iat: Math.floor(Date.now() / 1000),
+        amr: ['pwd'],
+      })
+    )
+    const response = await protect(api)(get('/dashboard', { cookie: 'tula_session=sess-token' }))
+    const sent = api.requests[0] as Request
+    expect(sent.method).toBe('POST')
+    expect(sent.headers.get('authorization')).toBe(`Bearer ${SECRET}`)
+    expect(await sent.json()).toEqual({ token: 'sess-token' })
+    expect(isNext(response)).toBe(true)
+    expect((await authAfter(api, response)).userId).toBe('user_7')
   })
 })

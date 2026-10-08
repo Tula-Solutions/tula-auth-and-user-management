@@ -6,7 +6,13 @@ import {
 } from '@tula/contract/headers'
 import { appOrigin, resolveConfig, type TulaConfig, type TulaServerOptions } from './config'
 import { clearCookieLine, isCookieValue, readUpstreamCookie, setCookieLine } from './cookies'
-import { apiHeaders, callApi, issuedSession, readRequestCookies } from './upstream'
+import {
+  apiHeaders,
+  callApi,
+  issuedSession,
+  readRequestCookies,
+  supersededCookieLines,
+} from './upstream'
 
 // The route handler: the app's own origin answering for the API's client routes.
 //
@@ -178,6 +184,38 @@ function fromThisApp(request: Request, config: TulaConfig): boolean {
   return origin === appOrigin(request, config)
 }
 
+/**
+ * Say, once, why every write is being refused where that is most likely a missing setting.
+ *
+ * With no app URL configured the app's origin is worked out from the request, and behind a
+ * proxy that ends TLS without sending `X-Forwarded-Proto` it comes out as `http://<host>`
+ * (Next.js fills the header in from its own socket). The browser's `Origin` is then
+ * `https://<host>`, no write passes the same-origin check and nobody can sign in. Only that
+ * exact case is reported: the request's own host over https. The text is fixed, because the
+ * host and the `Origin` of a request are its sender's to choose.
+ */
+function explainRefusal(request: Request, config: TulaConfig): void {
+  if (config.appOrigin || request.headers.get('sec-fetch-site') === 'cross-site') {
+    return
+  }
+  const assumed = new URL(appOrigin(request, config))
+  if (
+    assumed.protocol !== 'http:' ||
+    request.headers.get('origin') !== new URL(`https://${assumed.host}`).origin
+  ) {
+    return
+  }
+  config.warn(
+    'origin-scheme',
+    'a request whose Origin is this host over https was refused (request.origin_not_allowed), ' +
+      "because this server takes the app's origin to be the same host over http. No app URL " +
+      'is configured and no proxy said the scheme: most likely a proxy in front of this ' +
+      'server ends TLS and sends no X-Forwarded-Proto (Next.js then assumes http). Set ' +
+      "TULA_APP_URL (or `appUrl`) to the app's public origin, or have the proxy send " +
+      'X-Forwarded-Proto: https. Until then no sign-in or other write gets through.'
+  )
+}
+
 async function forward(request: Request, config: TulaConfig): Promise<Response> {
   const url = new URL(request.url)
   const path = clientPath(url, config.path)
@@ -185,6 +223,7 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
     return refusal(404, 'resource.not_found', 'The requested resource does not exist.')
   }
   if (!fromThisApp(request, config)) {
+    explainRefusal(request, config)
     return refusal(
       403,
       'request.origin_not_allowed',
@@ -210,15 +249,12 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
 
   let upstream: Response
   try {
-    upstream = await callApi(
-      config,
-      new Request(`${config.apiUrl}${path}${url.search}`, {
-        method: request.method,
-        headers,
-        // The body is streamed through, not read: it may hold a password.
-        ...(body && { body: body.stream, duplex: 'half' }),
-      } as RequestInit)
-    )
+    upstream = await callApi(config, `${config.apiUrl}${path}${url.search}`, {
+      method: request.method,
+      headers,
+      // The body is streamed through, not read: it may hold a password.
+      ...(body && { body: body.stream, duplex: 'half' }),
+    } as RequestInit)
   } catch {
     if (body?.exceeded()) {
       return tooLarge()
@@ -317,6 +353,14 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
         : setCookieLine(name, change.value, { secure, maxAge: change.maxAge })
     )
   }
+  if (changes.size > 0) {
+    // Where a `__Host-` cookie alone chose the names, this app's earlier cookies may sit under
+    // the plain ones. They go with any change, or they would be read again once the `__Host-`
+    // ones are cleared: the session the visitor just signed out of, or the previous user's.
+    for (const line of supersededCookieLines(cookies)) {
+      out.append('set-cookie', line)
+    }
+  }
 
   if (text === null) {
     return new Response(upstream.body, { status: upstream.status, headers: out })
@@ -333,7 +377,9 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
  * pages, keep the API's refresh and session cookies as first-party cookies of the app, and
  * put the access token in an `HttpOnly` cookie so that the middleware and `auth()` can tell
  * who is signed in. A sign-in replaces whatever session the browser held: the cookies of the
- * other kind (token cookies against a `stateful` session's cookie) are removed with it.
+ * other kind (token cookies against a `stateful` session's cookie) are removed with it, and
+ * so are plain-named cookies where the `__Host-` names are in use only because a `__Host-`
+ * cookie arrived (no app URL, no forwarded `https`).
  *
  * The API sees this server's address for every visitor, and they share one per-IP rate limit,
  * unless both hold: this handler knows the visitor's address (`trustedProxyHops`, or

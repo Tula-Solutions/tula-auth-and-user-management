@@ -359,6 +359,9 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   `SameSite=Lax`, `Path=/`, no `Domain`, `Secure` and `__Host-` over https. Write them only
   with `setCookieLine` / `clearCookieLine` (`packages/nextjs/src/cookies.ts`), never copy an
   attribute from the API's cookie, and read only the name for the request's own scheme.
+  Where that scheme was taken from a `__Host-` cookie on the request (no app URL, no forwarded
+  `https`), every answer that sets or clears a cookie also expires the plain-named ones
+  (`supersededCookieLines`): a session signed out of must not come back under the other name.
 - **A session is verified, never assumed.** `verifyAccessToken` (`EdDSA` only, `kid`, `iss`,
   `aud`, `exp`, `sub`, `sid`) runs in the middleware and again in `auth()`. The one header
   that carries claims (`x-tula-auth`, stateful sessions) is honoured only with this app's HMAC
@@ -369,10 +372,25 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   `safeRedirectPath` checks the value it **returns**: the URL parser turns `/.//host` into
   `//host`, so a check of the input alone is not enough. Keep its table and the test that
   builds paths from dot, encoded and empty segments.
-- **`auth()` and `currentUser()` see no URL.** The scheme they read cookies under is, in
-  order: the configured app URL (`TULA_APP_URL`, the recommended way), `X-Forwarded-Proto`,
-  and otherwise https exactly when the request carries one of the SDK's `__Host-` cookies
-  (`requestFromHeaders`). Never read both names for one request.
+- **Cookie names are chosen in one place, `readRequestCookies`, for the interceptor, the
+  handler and the server helpers alike** (`auth()` and `currentUser()` see no URL and build a
+  stand-in with `requestFromHeaders`). The scheme is, in order: the configured app URL
+  (`TULA_APP_URL`, the recommended way; it wins over everything); a forwarded `https`; and
+  otherwise https exactly when the request carries one of the SDK's `__Host-` cookies,
+  **even if `X-Forwarded-Proto` says `http`**. Next.js writes `x-forwarded-proto` itself from
+  its own socket when no proxy sent it, so the header is never absent and `http` in it is not
+  evidence; a browser stores a `__Host-` cookie only from an https response of that exact
+  host. Never read both names for one request, and write tests of this with the header sets
+  Next.js really produces (the forwarded scheme always present). **The app's origin never
+  follows a cookie** (`appOrigin`: the handler's same-origin check, the `Origin` of a
+  refresh): with no app URL and no forwarded `https` the handler refuses every write behind a
+  TLS-terminating proxy, on purpose, and says why once (`explainRefusal`, fixed text).
+- **A call to the API is built once, from its URL and parts** (`callApi(config, url, init)`).
+  Never build a `Request` from another `Request` in this package: the Edge runtime of
+  Next.js 15 keeps only the URL of the one it is given, so a copied `POST` reaches the API as
+  a bare `GET` (`middleware.test.ts` runs the refresh and the stateful check under such a
+  `Request`). `package.test.ts` lists every `new Request(` of the sources with its first
+  argument: a new one is added there on purpose, after checking it is a string or a `URL`.
 - **The middleware imports no Node API** (it runs in the Edge runtime on Next.js 15), and the
   client entry (`src/index.ts`, `src/provider.tsx`) imports nothing that reads the server
   configuration: `package.test.ts` builds the package and checks both, and that the client

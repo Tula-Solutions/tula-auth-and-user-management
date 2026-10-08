@@ -75,6 +75,16 @@ const SKIPPED =
   /(^|\/)(node_modules|dist|out|coverage|\.next|\.turbo|test-results|playwright-report)\//
 
 /**
+ * Whether a path a file names is build output (or lies inside it). Such a path exists on a
+ * machine where the build was run and not on a fresh checkout, is ignored by git and so can
+ * be in no cache key: counting it made this guard pass in CI and fail next to a built
+ * dashboard (`apps/api/src/lib/dashboard-files.ts` names `apps/dashboard/dist`).
+ */
+function isBuilt(path: string): boolean {
+  return SKIPPED.test(`${path}/`)
+}
+
+/**
  * A string literal that is a relative path: `./x` or `../x`. Covers `import`, `export … from`,
  * `import()`, `require()`, tsconfig `paths`/`extends`/`include`, and a path joined to
  * `import.meta.dir`. A path built from separate `'..'` arguments is {@link climbsOut}'s.
@@ -118,6 +128,7 @@ async function outsideReferences(workspace: Workspace): Promise<Map<string, stri
         path !== workspace.dir &&
         !path.startsWith(`${workspace.dir}/`) &&
         !path.includes('node_modules/') &&
+        !isBuilt(path) &&
         !references.has(path)
       ) {
         references.set(path, from)
@@ -245,6 +256,20 @@ describe('a cached task is invalidated by every file it reaches', () => {
         dependsOn: expect.arrayContaining([TRANSIT]),
       })
     }
+  })
+
+  test.each([
+    ['apps/dashboard/dist', true],
+    ['apps/dashboard/dist/index.html', true],
+    ['examples/nextjs-app-router/.next', true],
+    ['packages/react/coverage/lcov.info', true],
+    ['apps/dashboard/src', false],
+    ['packages/contract/openapi.json', false],
+    ['conformance/scenarios', false],
+    // A name that only starts like one of them is a source directory.
+    ['packages/distribution/src', false],
+  ])('build output is in no cache key, whether or not it was built here: %s', (path, built) => {
+    expect(isBuilt(path)).toBe(built)
   })
 
   test.each(all.map((one) => one.dir))(

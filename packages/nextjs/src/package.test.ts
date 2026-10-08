@@ -89,3 +89,47 @@ describe('the sources of the client entry', () => {
     expect(source).not.toContain('process')
   })
 })
+
+// The Edge runtime of Next.js 15, where `middleware.ts` runs, has a `Request` of its own:
+// built from another `Request` it keeps that one's URL and nothing else (no method, no
+// headers, no body), so a copied `POST` reaches the API as a bare `GET`. Nothing in a unit
+// test shows it, because Bun's `Request` copies everything. So every `new Request(` in the
+// sources is listed here with its first argument, which must be a string or a URL.
+describe('a Request is never built from another Request', () => {
+  /**
+   * Every construction in the sources, by file: the text of its first argument.
+   *
+   * Adding one is deliberate: check that the first argument is a string or a `URL`, never a
+   * `Request` (pass the URL and the parts instead, as `callApi` does), then list it here
+   * with what it is.
+   */
+  const CONSTRUCTIONS: Record<string, string[]> = {
+    // A JSDoc example: a string literal.
+    'config.ts': ["'http://localhost:3000/dashboard'"],
+    // The stand-in `auth()` reads headers through: a string literal.
+    'helpers.ts': ["'http://localhost/'"],
+    // `callApi`'s `url: string`: the one place a call to the API is built.
+    'upstream.ts': ['url'],
+    // jose's `customFetch` hands over the URL it would fetch (a string) and its init.
+    'verify.ts': ['url'],
+  }
+
+  test('every `new Request(` in src/ is one of the listed ones, built from a URL', async () => {
+    const found: Record<string, string[]> = {}
+    const files = (await readdir(import.meta.dir)).filter(
+      (file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file)
+    )
+    expect(files.length).toBeGreaterThan(5)
+    for (const file of files.sort()) {
+      const source = await Bun.file(join(import.meta.dir, file)).text()
+      // Also `new NextRequest(`: it is the same class underneath.
+      const firsts = [...source.matchAll(/new\s+(?:Next)?Request\s*\(\s*([^,)]*)/g)].map((match) =>
+        (match[1] ?? '').trim()
+      )
+      if (firsts.length > 0) {
+        found[file] = firsts
+      }
+    }
+    expect(found).toEqual(CONSTRUCTIONS)
+  })
+})
