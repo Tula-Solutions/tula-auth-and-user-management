@@ -17,6 +17,7 @@ import {
   type SessionRecord,
   type SessionRevokeReason,
   type SessionStore,
+  sameMethods,
 } from '~/ports/session-store'
 
 const sessionColumns = {
@@ -34,6 +35,7 @@ const sessionColumns = {
   absoluteExpiresAt: sessions.absoluteExpiresAt,
   factorVerifiedAt: sessions.factorVerifiedAt,
   authMethods: sessions.authMethods,
+  hookClaims: sessions.hookClaims,
   revokedAt: sessions.revokedAt,
   revokeReason: sessions.revokeReason,
   createdAt: sessions.createdAt,
@@ -364,11 +366,18 @@ export class PostgresSessionStore implements SessionStore {
       if (!current) {
         return null
       }
+      const { claims, ifAuthMethods } = authentication.hookClaims
+      // Judged on the locked row: the claims were answered for exactly these methods, and a
+      // step-up that got in between must not be given them.
+      if (ifAuthMethods && !sameMethods(current.authMethods, ifAuthMethods)) {
+        return null
+      }
       const [updated] = await tx
         .update(sessions)
         .set({
           factorVerifiedAt: at,
           authMethods: mergeAuthMethods(current.authMethods, authentication.methods),
+          hookClaims: claims,
           updatedAt: at,
         })
         .where(and(eq(sessions.id, id), eq(sessions.environmentId, environmentId)))

@@ -229,6 +229,20 @@ export const EVENT_DATA_SCHEMAS = {
   'session.created': data('SessionCreated', 'A user signed in.', {
     userId: id(),
     client: SessionClientSchema,
+    /**
+     * `true` when the environment's `before_session` hook could not be asked, or did not
+     * answer as the contract says, and the session was created anyway because the hook's
+     * failure mode is `allow`. Absent otherwise: when the hook allowed it and when there is
+     * none.
+     */
+    hookBypassed: z.boolean().optional(),
+    /**
+     * `true` when the environment's `before_token` hook failed in the same way and the
+     * session's tokens are issued **without** that hook's claims, because its failure mode is
+     * `allow`. Absent otherwise. Named for the claims and not for the token, so that nothing
+     * that flags a field by its name takes a boolean for a credential.
+     */
+    claimsHookBypassed: z.boolean().optional(),
   }),
   'session.revoked': data('SessionRevoked', 'A session was ended before it expired.', {
     userId: id(),
@@ -254,6 +268,12 @@ export const EVENT_DATA_SCHEMAS = {
       userId: id(),
       /** What was proven, as the access token’s `amr` names it. A set: order means nothing. */
       methods: z.array(z.enum(AUTHENTICATION_METHODS)).max(AUTHENTICATION_METHODS.length),
+      /**
+       * `true` when the environment's `before_token` hook failed at this step-up and the
+       * session's tokens are issued without that hook's claims from now on, because its
+       * failure mode is `allow`. Absent otherwise.
+       */
+      claimsHookBypassed: z.boolean().optional(),
     }
   ),
   'api_key.created': data('ApiKeyCreated', 'An API key was created.', {

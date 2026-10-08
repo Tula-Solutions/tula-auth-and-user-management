@@ -1,4 +1,9 @@
-import { type HookAnswer, HookQuestionSchema, TulaEventSchema } from '@tula/contract'
+import {
+  type HookAnswer,
+  type HookClaimsAnswer,
+  HookQuestionSchema,
+  TulaEventSchema,
+} from '@tula/contract'
 import {
   signWebhook,
   WEBHOOK_ID_HEADER,
@@ -23,7 +28,7 @@ export interface ReceivedDelivery {
  * body of a `200`), with a bare status, or not at all (`hang`: the request is left open until
  * the receiver stops, which is how a scenario plays an endpoint that never answers).
  */
-export type HookScript = HookAnswer | { status: number } | 'hang'
+export type HookScript = HookAnswer | HookClaimsAnswer | { status: number } | 'hang'
 
 /**
  * The operator's backend of a scenario: an HTTP listener on a port the system picks, which

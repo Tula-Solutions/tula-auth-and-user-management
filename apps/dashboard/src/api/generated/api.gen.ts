@@ -585,6 +585,8 @@ export interface SessionCreatedEventData {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   userId: string;
   client: SessionClient;
+  hookBypassed?: boolean;
+  claimsHookBypassed?: boolean;
 }
 
 export type SessionCreatedEventTarget = {
@@ -706,6 +708,7 @@ export interface SessionSteppedUpEventData {
   userId: string;
   /** @maxItems 8 */
   methods: SessionSteppedUpEventDataMethodsItem[];
+  claimsHookBypassed?: boolean;
 }
 
 export type SessionSteppedUpEventTarget = {
@@ -1142,6 +1145,8 @@ export type HookCreatedEventDataPoint = typeof HookCreatedEventDataPoint[keyof t
 
 export const HookCreatedEventDataPoint = {
   before_sign_up: 'before_sign_up',
+  before_session: 'before_session',
+  before_token: 'before_token',
 } as const;
 
 export type HookCreatedEventDataFailureMode = typeof HookCreatedEventDataFailureMode[keyof typeof HookCreatedEventDataFailureMode];
@@ -1189,6 +1194,8 @@ export type HookUpdatedEventDataPoint = typeof HookUpdatedEventDataPoint[keyof t
 
 export const HookUpdatedEventDataPoint = {
   before_sign_up: 'before_sign_up',
+  before_session: 'before_session',
+  before_token: 'before_token',
 } as const;
 
 export type HookUpdatedEventDataChangedItem = typeof HookUpdatedEventDataChangedItem[keyof typeof HookUpdatedEventDataChangedItem];
@@ -1241,6 +1248,8 @@ export type HookDeletedEventDataPoint = typeof HookDeletedEventDataPoint[keyof t
 
 export const HookDeletedEventDataPoint = {
   before_sign_up: 'before_sign_up',
+  before_session: 'before_session',
+  before_token: 'before_token',
 } as const;
 
 /**
@@ -1313,7 +1322,75 @@ export interface HookBeforeSignUpQuestion {
   data: HookBeforeSignUpData;
 }
 
-export type HookQuestion = HookBeforeSignUpQuestion;
+/**
+ * What a hook is told about a sign-in before its session is created.
+ */
+export interface HookBeforeSessionData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  client: SessionClient;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     */
+  profile: string;
+  /**
+     * @maxItems 16
+     * @items.pattern ^[a-z][a-z0-9_]{0,31}$
+     */
+  amr: string[];
+  signUp: boolean;
+  ipAddress: string | null;
+}
+
+/**
+ * What the server posts, signed, to the hook registered for `before_session`, after every factor of a sign-in was proven and before it creates the session. Not an event: nothing has happened yet.
+ */
+export interface HookBeforeSessionQuestion {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.before_session';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  data: HookBeforeSessionData;
+}
+
+/**
+ * What a hook is told about a session before its token is issued.
+ */
+export interface HookBeforeTokenData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  sessionId: string;
+  client: SessionClient;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     */
+  profile: string;
+  /**
+     * @maxItems 16
+     * @items.pattern ^[a-z][a-z0-9_]{0,31}$
+     */
+  amr: string[];
+}
+
+/**
+ * What the server posts, signed, to the hook registered for `before_token`, when a session is created and each time its user proves a factor again. The answer is the claims the session’s tokens carry until the next question. Not an event.
+ */
+export interface HookBeforeTokenQuestion {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.before_token';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  data: HookBeforeTokenData;
+}
+
+export type HookQuestion = HookBeforeSignUpQuestion | HookBeforeSessionQuestion | HookBeforeTokenQuestion;
 
 export type HookAnswer = {
   decision: 'allow';
@@ -1322,6 +1399,12 @@ export type HookAnswer = {
   /** @pattern ^[a-z0-9_]{1,64}$ */
   code?: string;
 };
+
+export type HookClaimsAnswerClaims = {[key: string]: string | number | boolean};
+
+export interface HookClaimsAnswer {
+  claims: HookClaimsAnswerClaims;
+}
 
 export interface StatusResponse {
   status: 'ok';
@@ -3161,6 +3244,8 @@ export type CreateHookRequestPoint = typeof CreateHookRequestPoint[keyof typeof 
 
 export const CreateHookRequestPoint = {
   before_sign_up: 'before_sign_up',
+  before_session: 'before_session',
+  before_token: 'before_token',
 } as const;
 
 export type CreateHookRequestFailureMode = typeof CreateHookRequestFailureMode[keyof typeof CreateHookRequestFailureMode];

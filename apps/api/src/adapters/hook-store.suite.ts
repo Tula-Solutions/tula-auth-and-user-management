@@ -108,6 +108,30 @@ export function describeHookStore(name: string, setup: () => Promise<HookSuiteCo
       expect(await ctx.recorded()).toEqual(['hook.created'])
     })
 
+    test('an environment has a hook for each point, found by its own point and by no other', async () => {
+      const env = ctx.a.environmentId
+      const points = ['before_sign_up', 'before_session', 'before_token'] as const
+      const stored = []
+      for (const point of points) {
+        const record = hook(ctx.a, { point })
+        expect(await ctx.store.insert(record, Audit.none('fixture'))).toEqual(record)
+        stored.push(record)
+      }
+      for (const [index, point] of points.entries()) {
+        expect(await ctx.store.findByPoint(env, point)).toEqual(stored[index] ?? null)
+        // One of each at most.
+        expect(await ctx.store.insert(hook(ctx.a, { point }), Audit.none('fixture'))).toBeNull()
+      }
+      expect((await ctx.store.list(env)).map((record) => record.point)).toEqual([...points])
+      // A failure is noted on the hook that failed and on no other.
+      await ctx.store.noteFailure(env, stored[2]?.id ?? '', later, 'claims_invalid')
+      expect((await ctx.store.findByPoint(env, 'before_token'))?.lastFailureReason).toBe(
+        'claims_invalid'
+      )
+      expect((await ctx.store.findByPoint(env, 'before_session'))?.lastFailureReason).toBeNull()
+      expect(await ctx.store.findByPoint(ctx.b.environmentId, 'before_token')).toBeNull()
+    })
+
     test('of two registrations at once exactly one is stored', async () => {
       const [one, two] = [hook(ctx.a), hook(ctx.a)]
       const rows = await Promise.all([

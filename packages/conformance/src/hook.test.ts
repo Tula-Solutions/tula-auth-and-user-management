@@ -143,6 +143,8 @@ describe('a hook step in a scenario', () => {
     [{ receiver: 'r', answer: 'hang' }],
     [{ receiver: 'r', answer: { status: 500 } }],
     [{ receiver: 'r', answer: { decision: 'deny', code: 'no' } }],
+    [{ receiver: 'r', captureUrl: 'url', answer: { claims: { plan: 'pro', seats: 5 } } }],
+    [{ receiver: 'r', answer: { claims: {} } }],
     [{ receiver: 'r', expect: { secret: '{{secret}}', body: { type: 'hook.before_sign_up' } } }],
     [{ receiver: 'r', expect: { nothing: true } }],
   ])('%p is a step', (hook) => {
@@ -152,6 +154,8 @@ describe('a hook step in a scenario', () => {
   test.each([
     ['nothing to do', { receiver: 'r' }],
     ['an answer the contract does not have', { receiver: 'r', answer: { decision: 'maybe' } }],
+    ['claims under a reserved name', { receiver: 'r', answer: { claims: { sub: 'x' } } }],
+    ['claims beside a decision', { receiver: 'r', answer: { claims: {}, decision: 'allow' } }],
     [
       'an answer with an extra key',
       { receiver: 'r', answer: { decision: 'allow', verified: true } },

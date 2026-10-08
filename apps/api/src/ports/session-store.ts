@@ -43,6 +43,16 @@ export interface SessionRecord {
   factorVerifiedAt: Date | null
   /** Every method proven for this session so far (the access token's `amr`). */
   authMethods: string[]
+  /**
+   * What the environment's `before_token` hook last answered for this session (ADR 0035), or
+   * `null` for none. Asked when the session is created and at each authentication after it,
+   * and issued from here in between: a refresh asks nobody.
+   *
+   * **Untrusted when read**: `unknown` values on purpose. The service checked them when it
+   * wrote them and checks them again before it issues them (`CustomClaims.stored`), because a
+   * row is not only what this version of the service wrote.
+   */
+  hookClaims: Record<string, unknown> | null
   revokedAt: Date | null
   revokeReason: SessionRevokeReason | null
   createdAt: Date
@@ -63,13 +73,13 @@ export interface RefreshTokenRecord {
 
 /**
  * A session to store. Without `factorVerifiedAt` and `authMethods` it has proven nothing;
- * without a `type` it is `hybrid`.
+ * without a `type` it is `hybrid`; without `hookClaims` it has none.
  */
 export type NewSession = Omit<
   SessionRecord,
-  'revokedAt' | 'revokeReason' | 'factorVerifiedAt' | 'authMethods' | 'type'
+  'revokedAt' | 'revokeReason' | 'factorVerifiedAt' | 'authMethods' | 'type' | 'hookClaims'
 > &
-  Partial<Pick<SessionRecord, 'factorVerifiedAt' | 'authMethods' | 'type'>>
+  Partial<Pick<SessionRecord, 'factorVerifiedAt' | 'authMethods' | 'type' | 'hookClaims'>>
 
 /**
  * The concurrent-session rule a new session is created under (ADR 0028).
@@ -106,6 +116,39 @@ export interface Authentication {
   at: Date
   /** What was proven; added to the session's `authMethods` (no duplicates, order kept). */
   methods: readonly string[]
+  /**
+   * The session's hook claims from now on. **Required**: an authentication always replaces
+   * what was stored (the claims were answered for what the session had proven before), so
+   * every caller says what with, even when that is nothing.
+   */
+  hookClaims: HookClaimsWrite
+}
+
+/** What an authentication stores as the session's hook claims. */
+export interface HookClaimsWrite {
+  /** The claims the hook answered just now; `null` for none. */
+  claims: Record<string, unknown> | null
+  /**
+   * The methods the session had proven when the hook was asked (before this authentication's
+   * are added). When given, **nothing at all is written** unless the session's methods are
+   * still exactly these, as a set: another authentication got in between, and the claims
+   * would be for a session that no longer is what the hook was told. Left out when no hook
+   * was asked: "none" is right whatever the session has proven.
+   */
+  ifAuthMethods?: readonly string[]
+}
+
+/**
+ * Whether two lists of methods are the same set. Shared by every adapter so they agree on
+ * when {@link HookClaimsWrite.ifAuthMethods} holds.
+ *
+ * @param x - One list.
+ * @param y - The other.
+ * @returns `true` when each holds exactly the other's members, in any order.
+ */
+export function sameMethods(x: readonly string[], y: readonly string[]): boolean {
+  const [left, right] = [new Set(x), new Set(y)]
+  return left.size === right.size && [...left].every((method) => right.has(method))
 }
 
 /**
@@ -337,14 +380,17 @@ export interface SessionStore {
 
   /**
    * Record that the user proved a factor again for a session: move `factorVerifiedAt` to
-   * `authentication.at` and add its methods ({@link mergeAuthMethods}). Guarded: only a session
-   * that is still active at that moment is changed.
+   * `authentication.at`, add its methods ({@link mergeAuthMethods}) and replace the session's
+   * hook claims, all in one write. Guarded: only a session that is still active at that
+   * moment is changed, and, when `authentication.hookClaims.ifAuthMethods` is given, only one
+   * whose methods are still those ({@link sameMethods}).
    *
    * @param environmentId - The session's environment.
    * @param id - Session id.
-   * @param authentication - When, and what was proven.
+   * @param authentication - When, what was proven, and the hook claims from now on.
    * @param activity - Recorded in the same transaction, only if the session was changed.
-   * @returns The updated session, or `null` when it does not exist or has ended.
+   * @returns The updated session, or `null` when nothing was written: it does not exist, has
+   *   ended, or has proven something else than `ifAuthMethods` says.
    */
   recordAuthentication(
     environmentId: string,

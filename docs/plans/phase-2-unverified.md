@@ -231,6 +231,27 @@ outbound guard in the `local` tier. Not verified:
 
 Tests seen to fail first, and the ones that were not, are listed in the step's report.
 
+## Step 2.3, hooks before a session and before a token (TULA-53, [ADR 0035](../adr/0035-hooks.md#2026-10-08-hooks-before-a-session-and-before-a-token-tula-53))
+
+What was built is tested against a receiver in the test's own process, through the real
+outbound guard in the `local` tier. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| Migration `0022` on a real PostgreSQL server | Applied only to PGlite, by the package's own tests (the column, the check refusing a non-object and an oversized value, the runtime role writing it). `db:migrate` was **not run**, and neither was `packages/db/src/rls.integration.ts`. |
+| The session store's new behaviour on a real server | The shared suite (claims stored at creation, replaced at a step-up, the compare-and-set on what the session had proven, a bad stored value read as none, another environment's row untouched) runs on the memory adapter and on PGlite. `apps/api/src/adapters/postgres/stores.integration.ts` was **not run**. Two step-ups of one session racing on a real server are therefore unobserved; the test of it interleaves them by hand on the memory adapter. |
+| The three conformance scenarios against a live server | `54`, `55` and `56` ran in process only. A containerised target skips them by name; they were not run against a server on the same host. The change to `.github/workflows/ci.yml` (eight names, two counts) was edited and read, and **no workflow was run**. |
+| A real operator endpoint over `https` | As for the first hook: every call in the tests is plain `http` to loopback. |
+| How long a sign-in really waits | The bound (two calls, each inside its deadline) is asserted with 100 ms deadlines: a sign-in behind a hook that hangs ends within a second and a half. The worst case in `docs/hooks.md` (10 seconds, 15 for a sign-up) is arithmetic from the constants, not a measurement, and nothing was measured under load. A request that waits on a hook holds its place for that long; what many of them do to the API was not tried. |
+| A sign-in refused by the concurrent-session rule or by the late second-factor check after the hooks were asked | Read in the code and stated in the ADR (the hooks may be asked about a session that is then not created); **no test** drives `refuse_newest` or that check behind a hook. |
+| What a refused sign-in looks like in a browser | `@tula/react` and the example apps were not run. No component changed; the screens show the message `@tula/core` has for `hook.denied` / `hook.unavailable`, whose text became neutral ("This was not allowed.") because it is now shown at a sign-in too. No Playwright project was run. |
+| `auth().customClaims` in a running Next.js app | Proven by `packages/nextjs/src/real-api.test.ts` against the real API in process (a token session through the middleware's refresh, a stateful session through the sealed header), not in `next start` and not in the `nextjs` Playwright project. |
+| Rolling back past `0022` | Reasoned, not tried: an earlier version ignores the column, and may fail to list a hook registered for a point it does not know. `docs/self-host.md` says to remove those hooks first. |
+| The dashboard | Its generated client was regenerated and its tests run by `verify`; no screen shows or edits a hook (TULA-59), and the app was not opened. |
+| Review round 1: a template that outgrew stored hook claims | A refresh, its replay in the grace window, both ways through a stateful check and a grown address, on memory adapters. `POST /v1/admin/sessions/verify` and the Next.js helper go through the same `customClaims` and were **not** driven with an outgrown template. |
+
+Tests seen to fail first, and the ones that were not, are listed in the step's report.
+
 ## JWT templates (TULA-10, [ADR 0036](../adr/0036-jwt-templates.md))
 
 Custom claims are tested through the API in process (memory adapters), the conformance

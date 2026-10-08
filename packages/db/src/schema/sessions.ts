@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { index, inet, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { check, index, inet, jsonb, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import {
   tenantColumns,
@@ -61,12 +61,28 @@ export const sessions = tula.table(
     factorVerifiedAt: timestamp('factor_verified_at', { withTimezone: true }),
     /** Every method proven for this session so far: the access token's `amr`. */
     authMethods: text('auth_methods').array().notNull().default(sql`'{}'::text[]`),
+    /**
+     * The claims the environment's `before_token` hook last answered for this session (ADR
+     * 0035): asked when the session is created and each time its user proves a factor again,
+     * and issued from here at every refresh in between, so that a refresh asks nobody.
+     * `null` when there are none: no hook, a hook that answered with none, or one that failed
+     * and lets through on failure.
+     *
+     * The service holds the rules (key grammar, reserved names, the 1,024-byte cap) when it
+     * writes and **again when it reads**; the check below is only the table's own bound, so
+     * that no write of any kind makes a session row an unbounded document.
+     */
+    hookClaims: jsonb('hook_claims').$type<Record<string, unknown>>(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokeReason: text('revoke_reason', { enum: SESSION_REVOKE_REASONS }),
     ...timestamps(),
   },
   (t) => [
     index('sessions_user_id_idx').on(t.userId),
+    check(
+      'sessions_hook_claims_bounds',
+      sql`${t.hookClaims} is null or (jsonb_typeof(${t.hookClaims}) = 'object' and octet_length(${t.hookClaims}::text) <= 4096)`
+    ),
     tenantParentKey('sessions', t),
     tenantForeignKey('sessions_user_fk', t, t.userId, users),
     ...tenantConstraints('sessions', t),

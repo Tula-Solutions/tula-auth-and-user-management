@@ -35,6 +35,7 @@ export {
 export {
   HOOK_QUESTION_TYPE_NAMES,
   type TulaHookAnswer,
+  type TulaHookClaimsAnswer,
   type TulaHookQuestion,
   verifyHook,
 } from './hook'

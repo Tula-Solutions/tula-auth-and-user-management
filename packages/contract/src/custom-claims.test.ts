@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   CUSTOM_CLAIMS_CLAIM,
+  checkCustomClaims,
   customClaimsBytes,
   isCustomClaimKey,
   MAX_CUSTOM_CLAIM_KEY_LENGTH,
@@ -147,5 +148,60 @@ describe('reading custom claims from verified claims', () => {
   test('an inherited namespace claim is not read', () => {
     const claims = Object.create({ ext: { role: 'admin' } }) as Record<string, unknown>
     expect(readCustomClaims(claims)).toBeNull()
+  })
+})
+
+describe('checking claims a source outside the settings hands over', () => {
+  test('a plain object of scalars is the claims, as a copy with own keys only', () => {
+    const given = { role: 'admin', seats: 3, staff: false }
+    const checked = checkCustomClaims(given)
+    expect(checked).toEqual({ claims: { role: 'admin', seats: 3, staff: false } })
+    given.role = 'owner'
+    expect(checked).toEqual({ claims: { role: 'admin', seats: 3, staff: false } })
+  })
+
+  test('no claims is an answer too: an empty object', () => {
+    expect(checkCustomClaims({})).toEqual({ claims: {} })
+  })
+
+  test.each([
+    ['nothing', undefined],
+    ['null', null],
+    ['a string', 'role=admin'],
+    ['a list', [{ role: 'admin' }]],
+    ['an instance of a class', new Date(0)],
+    ['a nested object', { role: { name: 'admin' } }],
+    ['a list value', { roles: ['admin'] }],
+    ['a null value', { role: null }],
+    ['a number JSON cannot hold', { n: Number.NaN }],
+    ['a key outside the grammar', { 'my-claim': 1 }],
+    ['an empty key', { '': 1 }],
+    ['a key that is too long', { ['k'.repeat(MAX_CUSTOM_CLAIM_KEY_LENGTH + 1)]: 1 }],
+    ['a `__proto__` key', JSON.parse('{"__proto__":{"admin":true}}')],
+    ['a `__proto__` key beside a good one', JSON.parse('{"role":"a","__proto__":"x"}')],
+    ['a `constructor` key', JSON.parse('{"constructor":"x"}')],
+    ['a `prototype` key', { prototype: 'x' }],
+  ])('%s is invalid, whole', (_label, value) => {
+    expect(checkCustomClaims(value)).toEqual({ problem: 'invalid' })
+  })
+
+  test.each(RESERVED_CLAIM_NAMES.map((name) => [name]))(
+    'the reserved name %s is invalid, also beside good claims',
+    (name) => {
+      expect(checkCustomClaims({ [name]: 'x' })).toEqual({ problem: 'invalid' })
+      expect(checkCustomClaims({ role: 'admin', [name]: 'x' })).toEqual({ problem: 'invalid' })
+    }
+  )
+
+  test('the cap is the namespace claim’s: at it is fine, one byte over is too large', () => {
+    // {"a":"…"} is 8 bytes around the string.
+    const at = { a: 'x'.repeat(1016) }
+    expect(customClaimsBytes(at)).toBe(1024)
+    expect(checkCustomClaims(at)).toEqual({ claims: at })
+    expect(checkCustomClaims({ a: 'x'.repeat(1017) })).toEqual({ problem: 'too_large' })
+  })
+
+  test('invalid is said before too large: nothing of a bad answer is measured', () => {
+    expect(checkCustomClaims({ sub: 'x'.repeat(4096) })).toEqual({ problem: 'invalid' })
   })
 })

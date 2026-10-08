@@ -338,6 +338,31 @@ Before finishing any change here, confirm each item holds and has a test:
     store, a log line or an error (canary in the answer's headers and body), and no log line
     holds the address asked about. `allow` on failure, switching a hook off and removing one
     that is on are recorded with `weakened: true`.
+    **`before_session`** is asked in `finish` only. Test, side by side, a wrong and a right
+    password, a locked account and a sign-in waiting on a second factor: the receiver is
+    called only for the one whose every factor is proven, and the answers before that are
+    the same with and without a hook. A denial and a failure under `deny` leave no session,
+    no token, no `Set-Cookie`, no `session.created` and no new-device notice; a hang ends in
+    bounded time and sets `lastFailedAt` / `lastFailureReason`. A refresh and a step-up do
+    not ask it. **`before_token`**: an answer with `sub`, `amr`, `emailVerified`, `userId`
+    or `__proto__`, a nested value, a key beside `claims`, or claims over the cap with the
+    template is a failure in both modes and never partly applied; the token of a session
+    made with such an answer under `allow` equals one made without a hook. A refresh, a
+    refresh in the grace window and a stateful request make no call and do not read the
+    hook store; a step-up asks again and replaces what is stored (also with nothing, when
+    the hook is gone or failed under `allow`), and under `deny` a failed call fails the
+    step-up and leaves `amr`, `auth_time` and the claims as they were. Stored claims that
+    break a rule are issued as none. Two step-ups at once never store claims of neither,
+    and a step-up that keeps losing asks exactly `STEP_UP_ATTEMPTS` times and then answers
+    503 with nothing changed (mutate the constant both ways). A template that outgrows a
+    session's stored claims costs the template's claims, never the hook's: test the
+    refresh, its replay in the grace window and both ways through a stateful check, and an
+    address that grew. `before_session`'s question has no email address; `before_token`'s
+    has neither an email nor an IP address. An enrolment inside a sign-in that a hook then
+    refuses leaves the factor absent, no backup code valid and no new session, and the
+    user's earlier sessions ended and denylisted (they end before the factor is on, as
+    ADR 0025 orders it: pinned, not fixed).
+    A backup code used for a refused sign-in is spent (nine left): pinned, not fixed.
 50. **JWT templates (ADR 0036):** custom claims are issued only under `ext`, only from the
     closed source list or an operator's constant, and only through `CustomClaims.build`.
     Test: every reserved name and every malformed key refused at save, with the field's
@@ -348,7 +373,7 @@ Before finishing any change here, confirm each item holds and has a test:
     name reaches a claim (canary); a template changed between sign-in and refresh; another
     environment's template never applied; a stale settings cache on another instance; a
     stored document with an unknown source or a dangling name still signs in; over the cap
-    at build drops the whole namespace and logs no value; a stateful session's answer
+    at build drops the whole namespace of a template alone and logs no value; a stateful session's answer
     carries the same claims; a refresh reads the user once. For a reader: a forged or
     malformed `ext` (not an object, an array, a reserved key, a nested value, over the cap)
     is absent, in a token and in the sealed header, with and without the middleware.

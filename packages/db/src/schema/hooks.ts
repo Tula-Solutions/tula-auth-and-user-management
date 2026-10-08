@@ -27,7 +27,7 @@ export const hooks = tula.table(
     id: primaryKey(),
     ...tenantColumns(),
     /** When it is asked. Names from the contract's `HOOK_POINTS`. */
-    point: text('point', { enum: ['before_sign_up'] }).notNull(),
+    point: text('point', { enum: ['before_sign_up', 'before_session', 'before_token'] }).notNull(),
     url: text('url').notNull(),
     secret: text('secret').notNull(),
     /** A hook that is off is not asked. */

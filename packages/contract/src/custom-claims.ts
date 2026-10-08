@@ -190,6 +190,54 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * What {@link checkCustomClaims} found: the claims, or why they are not claims.
+ *
+ * - `invalid`: not a plain object, a key that fails {@link isCustomClaimKey} (a reserved
+ *   name and `__proto__` among them), or a value that is not one string, number or boolean.
+ * - `too_large`: every claim is fine and together they are over
+ *   {@link MAX_CUSTOM_CLAIMS_BYTES}.
+ */
+export type CustomClaimsCheck =
+  | { claims: Record<string, CustomClaimValue> }
+  | { problem: 'invalid' | 'too_large' }
+
+/**
+ * Judge claims that did not come from the environment's settings (a hook's answer), **whole**:
+ * either every one of them can be issued under the namespace claim, or none is.
+ *
+ * Nothing is repaired and nothing is left out: one bad key makes the whole value `invalid`.
+ * Give it the value as it was parsed (`JSON.parse`), not one a schema library has rebuilt:
+ * the keys are read as the object's **own** keys, so a `__proto__` key a parser kept is seen
+ * and refused, where a library that copies objects would have dropped it silently. An empty
+ * object is fine and means no claims.
+ *
+ * @param value - The candidate claims.
+ * @returns A copy of the claims (own keys only, no prototype reachable), or the problem.
+ *
+ * @example
+ * ```ts
+ * checkCustomClaims({ role: 'admin' }) // { claims: { role: 'admin' } }
+ * checkCustomClaims({ sub: 'someone-else' }) // { problem: 'invalid' }
+ * ```
+ */
+export function checkCustomClaims(value: unknown): CustomClaimsCheck {
+  if (!isPlainObject(value)) {
+    return { problem: 'invalid' }
+  }
+  const entries: [string, CustomClaimValue][] = []
+  for (const key of Object.keys(value)) {
+    const claim = value[key]
+    if (!isCustomClaimKey(key) || !isCustomClaimValue(claim)) {
+      return { problem: 'invalid' }
+    }
+    entries.push([key, claim])
+  }
+  // `fromEntries` defines own properties: no key can reach a prototype.
+  const claims: Record<string, CustomClaimValue> = Object.fromEntries(entries)
+  return customClaimsBytes(claims) > MAX_CUSTOM_CLAIMS_BYTES ? { problem: 'too_large' } : { claims }
+}
+
+/**
  * Read the custom claims out of a session's claims, for an SDK to hand to an application.
  *
  * Call it only with claims that were **verified** (a token's signature and issuer, or the
