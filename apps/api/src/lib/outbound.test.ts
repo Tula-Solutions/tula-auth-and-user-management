@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Tier } from '~/env'
 import {
+  check,
   isPublicAddress,
   type OutboundDeps,
   OutboundError,
@@ -604,5 +605,185 @@ describe('request', () => {
         await refusal(request(local(resolve), `https://hook.example.test:${secure?.port}/in`))
       ).toBe('connection_failed')
     })
+  })
+})
+
+describe('check', () => {
+  /** Proof that a check sends nothing: a listener on the address the names resolve to. */
+  let received = 0
+  const listener = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    fetch() {
+      received += 1
+      return new Response('ok')
+    },
+  })
+  const port = listener.port
+
+  beforeEach(() => {
+    received = 0
+  })
+  afterAll(() => listener.stop(true))
+
+  test('accepts an https name that resolves to public addresses, resolving it once', async () => {
+    const { resolve, asked } = fakeResolver('93.184.216.34', '2606:4700:4700::1111')
+    expect(
+      await refusal(check({ tier: 'prod', resolve }, 'https://hook.example.test/in'))
+    ).toBeNull()
+    expect(asked).toEqual(['hook.example.test'])
+  })
+
+  test('accepts a public address written in the URL without asking the resolver', async () => {
+    const { resolve, asked } = fakeResolver('10.0.0.1')
+    expect(await refusal(check({ tier: 'prod', resolve }, 'https://93.184.216.34/in'))).toBeNull()
+    expect(asked).toEqual([])
+  })
+
+  test('in the local tier accepts http and a loopback listener, and connects to nothing', async () => {
+    const { resolve } = fakeResolver('127.0.0.1')
+    const deps: OutboundDeps = { tier: 'local', resolve }
+    expect(await refusal(check(deps, `http://hook.example.test:${port}/in`))).toBeNull()
+    expect(await refusal(check(deps, `http://127.0.0.1:${port}/in`))).toBeNull()
+    expect(await refusal(check(deps, `http://[::1]:${port}/in`))).toBeNull()
+    expect(received).toBe(0)
+  })
+
+  test.each(LIVE_TIERS)('refuses a loopback listener in the %s tier', async (tier) => {
+    const { resolve } = fakeResolver('127.0.0.1')
+    const urls = [
+      `https://hook.example.test:${port}/in`,
+      `https://127.0.0.1:${port}/in`,
+      `https://localhost:${port}/in`,
+    ]
+    for (const url of urls) {
+      expect(await refusal(check({ tier, resolve }, url))).toBe('address_not_allowed')
+    }
+    expect(received).toBe(0)
+  })
+
+  test('refuses localhost through the system resolver', async () => {
+    expect(await refusal(check({ tier: 'prod' }, `https://localhost:${port}/in`))).toBe(
+      'address_not_allowed'
+    )
+    expect(received).toBe(0)
+  })
+
+  test.each(LIVE_TIERS)('refuses http in the %s tier, before resolving', async (tier) => {
+    const { resolve, asked } = fakeResolver('93.184.216.34')
+    expect(await refusal(check({ tier, resolve }, 'http://hook.example.test/in'))).toBe(
+      'scheme_not_allowed'
+    )
+    expect(asked).toEqual([])
+  })
+
+  test.each(REFUSED_ADDRESSES)('refuses a name that resolves to %s (%s)', async (address) => {
+    const { resolve } = fakeResolver(address)
+    expect(await refusal(check({ tier: 'prod', resolve }, 'https://hook.example.test/'))).toBe(
+      'address_not_allowed'
+    )
+  })
+
+  test.each(REFUSED_ADDRESSES)('refuses %s written in the URL (%s)', async (address) => {
+    const { resolve, asked } = fakeResolver('93.184.216.34')
+    const host = address.includes(':') ? `[${address}]` : address
+    expect(await refusal(check({ tier: 'prod', resolve }, `https://${host}/`))).toBe(
+      'address_not_allowed'
+    )
+    expect(asked).toEqual([])
+  })
+
+  test.each([
+    ['https://2130706433/', 'a decimal number'],
+    ['https://0x7f.1/', 'hex and short'],
+    ['https://0177.0.0.1/', 'octal'],
+    ['https://[::ffff:127.0.0.1]/', 'IPv4-mapped'],
+  ])('refuses loopback spelled as %s (%s)', async (url) => {
+    const { resolve } = fakeResolver('93.184.216.34')
+    expect(await refusal(check({ tier: 'prod', resolve }, url))).toBe('address_not_allowed')
+  })
+
+  test('refuses a name when any of its addresses is refused', async () => {
+    const { resolve } = fakeResolver('93.184.216.34', '10.0.0.5')
+    expect(await refusal(check({ tier: 'prod', resolve }, 'https://hook.example.test/'))).toBe(
+      'address_not_allowed'
+    )
+  })
+
+  test.each([['10.0.0.5'], ['192.168.1.10'], ['169.254.169.254'], ['fd00:ec2::254']])(
+    'the local tier still refuses %s',
+    async (address) => {
+      const { resolve } = fakeResolver(address)
+      expect(await refusal(check({ tier: 'local', resolve }, 'http://hook.example.test/'))).toBe(
+        'address_not_allowed'
+      )
+    }
+  )
+
+  test.each([
+    ['not a url', 'invalid_url'],
+    ['', 'invalid_url'],
+    ['/relative', 'invalid_url'],
+    ['ftp://hook.example.test/', 'invalid_url'],
+    ['file:///etc/passwd', 'invalid_url'],
+    ['javascript:alert(1)', 'invalid_url'],
+    ['https://user:secret@hook.example.test/', 'invalid_url'],
+    ['https://user@hook.example.test/', 'invalid_url'],
+  ] as const)('refuses %s as %s', async (url, reason) => {
+    const { resolve, asked } = fakeResolver('93.184.216.34')
+    expect(await refusal(check({ tier: 'prod', resolve }, url))).toBe(reason)
+    expect(asked).toEqual([])
+  })
+
+  test('a name that does not resolve is resolve_failed', async () => {
+    const failing = async () => {
+      throw new Error('getaddrinfo ENOTFOUND canary-host')
+    }
+    const url = 'https://hook.example.test/'
+    expect(await refusal(check({ tier: 'prod', resolve: failing }, url))).toBe('resolve_failed')
+    expect(await refusal(check({ tier: 'prod', resolve: fakeResolver().resolve }, url))).toBe(
+      'resolve_failed'
+    )
+  })
+
+  test('the deadline covers a resolver that never answers', async () => {
+    const never = () => new Promise<readonly string[]>(() => undefined)
+    expect(
+      await refusal(check({ tier: 'prod', resolve: never }, 'https://hook.example.test/', 30))
+    ).toBe('timeout')
+  })
+
+  test.each([[0], [-1], [1.5], [Number.NaN], [Number.POSITIVE_INFINITY]])(
+    'a deadline of %p is refused before the name is resolved',
+    async (timeoutMs) => {
+      const { resolve, asked } = fakeResolver('93.184.216.34')
+      expect(
+        await refusal(check({ tier: 'prod', resolve }, 'https://hook.example.test/', timeoutMs))
+      ).toBe('invalid_request')
+      expect(asked).toEqual([])
+    }
+  )
+
+  test('an error says nothing of the URL or the address', async () => {
+    const { resolve } = fakeResolver('10.11.12.13')
+    const error = await check(
+      { tier: 'prod', resolve },
+      'https://canary-host.example.test/canary-path?canary-query'
+    ).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(OutboundError)
+    const text = `${String(error)} ${JSON.stringify(error)} ${(error as Error).stack}`
+    expect(text).not.toContain('canary')
+    expect(text).not.toContain('10.11.12.13')
+  })
+
+  test('what passed a check is judged again by the request: a name moved to a private address is refused', async () => {
+    let addresses = ['127.0.0.1']
+    const deps: OutboundDeps = { tier: 'local', resolve: async () => addresses }
+    const url = `http://hook.example.test:${port}/in`
+    expect(await refusal(check(deps, url))).toBeNull()
+    addresses = ['10.0.0.5']
+    expect(await refusal(request(deps, url))).toBe('address_not_allowed')
+    expect(received).toBe(0)
   })
 })
