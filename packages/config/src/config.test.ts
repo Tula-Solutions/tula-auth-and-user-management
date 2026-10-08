@@ -391,6 +391,22 @@ describe('the example config', () => {
       },
     ])
     expect(selectEnvironment(config, 'dev').webhooks).toBeUndefined()
+    // The same for hooks, each entry with the API's defaults filled in.
+    expect(prod.hooks).toEqual({
+      before_sign_up: {
+        url: 'https://api.northline.app/hooks/tula/sign-up',
+        enabled: true,
+        deadlineMs: 2000,
+        failureMode: 'deny',
+      },
+      before_token: {
+        url: 'https://api.northline.app/hooks/tula/claims',
+        enabled: true,
+        deadlineMs: 1000,
+        failureMode: 'deny',
+      },
+    })
+    expect(selectEnvironment(config, 'dev').hooks).toBeUndefined()
   })
 })
 
