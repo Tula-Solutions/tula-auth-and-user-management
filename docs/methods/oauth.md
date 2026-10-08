@@ -1,6 +1,6 @@
-# Google, GitHub and Apple (OAuth)
+# Google, GitHub, Apple and Microsoft (OAuth)
 
-"Continue with Google", GitHub or Apple, and connecting or disconnecting those accounts in
+"Continue with Google", GitHub, Apple or Microsoft, and connecting or disconnecting those accounts in
 the account page. Each environment uses its own credentials; none ship with Tula.
 The reasoning (the callback, the ticket, when accounts are linked) is in
 [ADR 0026](../adr/0026-oauth.md).
@@ -18,7 +18,8 @@ Three things per provider, in this order:
    not on your app, and is exactly `PUBLIC_URL/v1/oauth/callback/<provider>`, for example
    `https://auth.example.com/v1/oauth/callback/google`. `GET /v1/admin/oauth-providers` lists
    it as `callbackUrl`. Checklists: [Google](../providers/google.md),
-   [GitHub](../providers/github.md), [Apple](../providers/apple.md).
+   [GitHub](../providers/github.md), [Apple](../providers/apple.md),
+   [Microsoft](../providers/microsoft.md).
 2. **Give Tula the credentials.**
 3. **Allow your app's landing page** (the page that renders `<OAuthCallback>`) in
    `urls.allowedRedirectUrls`, exactly.
@@ -28,10 +29,11 @@ Three things per provider, in this order:
 | Google | `PUBLIC_URL/v1/oauth/callback/google` | `openid`, `email`, `profile` | client id, client secret |
 | GitHub | `PUBLIC_URL/v1/oauth/callback/github` | `read:user`, `user:email` | client id, client secret |
 | Apple | `PUBLIC_URL/v1/oauth/callback/apple` (https and a real domain; not `localhost`) | name and email | Services ID, team id, key id, the `.p8` key |
+| Microsoft | `PUBLIC_URL/v1/oauth/callback/microsoft` | `openid`, `profile`, `email` | client id, client secret, the tenant (`common`, `organizations`, `consumers` or a tenant id) |
 
 | Where | How |
 | --- | --- |
-| Dashboard | **Sign-in methods**: configure Google, GitHub and Apple. A saved secret is write-only. |
+| Dashboard | **Sign-in methods**: configure Google, GitHub, Apple and Microsoft. A saved secret is write-only. |
 | `tula.config.ts` | `providers`, with every secret as `env('NAME')`, then `tula apply`. |
 | Admin API | `PUT /v1/admin/oauth-providers/<provider>`. |
 
@@ -49,6 +51,12 @@ providers: {
     keyId: 'K1L2M3N4O5',
     // The whole .p8 file's contents, in a variable.
     privateKey: env('APPLE_PRIVATE_KEY'),
+  },
+  microsoft: {
+    clientId: '6731de76-14a6-49ae-97bc-6eba6914391e',
+    clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+    // Which accounts may sign in: 'common', 'organizations', 'consumers' or a tenant id.
+    tenant: 'organizations',
   },
 },
 ```
@@ -84,6 +92,10 @@ reads the switch from its `.env`.
 - A provider account whose address already belongs to a Tula user is connected to that user
   only when both sides have verified the address; otherwise the user is told an account
   exists and to sign in to it first.
+- With Microsoft an address counts as verified only when the token carries the
+  verified-domain claim (`xms_edov`), which the operator adds to the app registration. A
+  token without it signs in an account Tula already knows and nothing else: no sign-up, no
+  automatic link ([the checklist](../providers/microsoft.md#what-the-address-proves)).
 
 ## Security properties and limits
 
@@ -92,15 +104,18 @@ reads the switch from its `.env`.
 - The ticket is honoured only in the tab that started, together with a binding kept in that
   tab's `sessionStorage` (`tula.oauth.<attempt id>`; not a token). This is what stops a
   sign-in being planted in someone else's browser.
-- The provider's authorization code is bound to the sign-in that asked for it. With Google
-  and GitHub that is PKCE (an S256 `code_challenge` on the way out, the `code_verifier` with
-  the token request; the verifier never leaves the server); with Google and Apple it is also
-  the `nonce` in the signed ID token. Apple documents no PKCE and gets none. GitHub's PKCE
+- The provider's authorization code is bound to the sign-in that asked for it. With Google,
+  GitHub and Microsoft that is PKCE (an S256 `code_challenge` on the way out, the
+  `code_verifier` with the token request; the verifier never leaves the server); with Google,
+  Apple and Microsoft it is also the `nonce` in the signed ID token. Apple documents no PKCE and gets none. GitHub's PKCE
   was tested against the built-in mock provider and the requests the adapter builds, not
   against github.com.
 - A provider sign-in is a **first** factor: a user with two-step verification is still asked
   for the second step.
 - A provider address that the provider does not assert as verified is refused.
+- A Microsoft account is its tenant id and object id, never its address, and its token's
+  issuer must be the one of the tenant the token itself names. Neither was run against
+  Microsoft: the checks are tested with tokens the tests sign.
 - No provider token is stored. Credentials are sealed with `TULA_MASTER_KEY` and never
   returned.
 - Connecting an account needs a recent sign-in ([step-up](two-step-verification.md)).

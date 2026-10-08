@@ -139,6 +139,8 @@ Before finishing any change here, confirm each item holds and has a test:
     Tula address verified too, else `oauth.account_exists`. Unique violations (two callbacks
     for one new identity, a link racing a deletion) end in a contract error or a sign-in, never
     a 500. Removing the last way to sign in is refused inside the store's transaction.
+    The table is stated once per provider in `modules/oauth/linking-table.test.ts`: a new
+    provider adds its rows (the test fails for one that has none).
 28. **OAuth first factor:** the exchange goes through `Factors.requiredFor` like every first
     factor. Test that a user with a second factor gets `needs_second_factor` and no tokens.
 29. **Provider credentials and tokens:** client secrets and Apple keys are sealed
@@ -148,6 +150,11 @@ Before finishing any change here, confirm each item holds and has a test:
     returns a profile and nothing else. ID tokens: `RS256` only, issuer, audience, expiry and
     the attempt's nonce (test each, and `alg: none`, a foreign key, a tampered payload).
     Subjects are stable ids (`sub`, GitHub's numeric id), never a login or an address.
+    **A Microsoft token** (`adapters/oauth/microsoft.ts`) is accepted only with `iss` equal
+    to `https://login.microsoftonline.com/<tid>/v2.0` for its own `tid`, a signing key whose
+    `issuer` covers that issuer, and a tenant the configured `tenant` accepts; the account
+    is `<tid>:<oid>`, never `sub` or an address; the address is verified only with
+    `xms_edov === true`. Test each refusal with a locally signed token.
 30. **The mock provider** exists only with `ENVIRONMENT=local` and `OAUTH_MOCK_PROVIDER=true`:
     `env.ts` refuses it elsewhere, and with a `PUBLIC_URL` that is not loopback; the container
     logs a warning at boot while it is on; the routes are not mounted otherwise; and the consent

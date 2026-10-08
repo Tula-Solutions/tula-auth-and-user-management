@@ -161,6 +161,7 @@ export interface EnvironmentConfig {
     google?: Required<OAuthClientConfig>
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
+    microsoft?: Required<MicrosoftProviderConfig>
   }
   /**
    * The webhook endpoints, when the file manages them: each address once, its event types
@@ -261,6 +262,39 @@ export interface LoadedConfig {
 const loaded: LoadedConfig = await loadConfig('tula.config.ts')
 ```
 
+### `MicrosoftProviderConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+Microsoft's credentials for one environment.
+
+```ts
+export interface MicrosoftProviderConfig {
+  /** The application (client) id of the app registration. Not a secret. */
+  clientId: string
+  /** The client secret's value, by reference: `env('NAME')`. */
+  clientSecret: SecretRef
+  /**
+   * Which Microsoft accounts may sign in: `common` (any), `organizations` (work and school
+   * accounts), `consumers` (personal accounts) or one tenant's id. Not a secret. A domain
+   * name is refused: a token names its tenant by id.
+   */
+  tenant: MicrosoftTenant
+  /** Whether sign-in offers the provider. Defaults to `true`. */
+  enabled?: boolean
+}
+```
+
+**Example**
+
+```ts
+const microsoft: MicrosoftProviderConfig = {
+  clientId: '6731de76-14a6-49ae-97bc-6eba6914391e',
+  clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+  tenant: 'organizations',
+}
+```
+
 ### `OAuthClientConfig`
 
 _interface_, defined in `packages/config/src/config.ts`
@@ -299,6 +333,8 @@ export interface ProvidersConfig {
   github?: OAuthClientConfig
   /** Sign in with Apple. */
   apple?: AppleProviderConfig
+  /** Microsoft (Entra ID and personal accounts). */
+  microsoft?: MicrosoftProviderConfig
 }
 ```
 
@@ -636,7 +672,7 @@ export function providerSecret(
 
 **Returns**
 
-Its `clientSecret` (Google, GitHub) or `privateKey` (Apple), or `undefined` when the
+Its `clientSecret` (Google, GitHub, Microsoft) or `privateKey` (Apple), or `undefined` when the
 file does not configure the provider.
 
 **Example**

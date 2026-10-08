@@ -1085,7 +1085,7 @@ nothing.
 
 ### OAuth providers
 
-Sign-in with Google, GitHub and Apple ([ADR 0026](docs/adr/0026-oauth.md)) lives in
+Sign-in with Google, GitHub, Apple and Microsoft ([ADR 0026](docs/adr/0026-oauth.md)) lives in
 `modules/oauth` (provider credentials, account resolution and linking, the callback and
 identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchangeOAuth`).
 
@@ -1098,9 +1098,10 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   `adapters/oauth/` (`arctic` + `jose`). An adapter returns a profile and nothing else: no
   provider token leaves it or is stored. Unit tests use `FakeOAuthProvider`
   (`createTestDeps().oauth.google.profile = …`).
-- **A provider's code is bound to the attempt.** Google and GitHub send PKCE (the S256
-  challenge of the attempt's `codeVerifier` on the authorization URL, the verifier on the
-  token request); Google and Apple check the attempt's `nonce` in the ID token. Apple
+- **A provider's code is bound to the attempt.** Google, GitHub and Microsoft send PKCE (the
+  S256 challenge of the attempt's `codeVerifier` on the authorization URL, the verifier on
+  the token request); Google, Apple and Microsoft check the attempt's `nonce` in the ID
+  token. Apple
   documents no PKCE and is sent none. The callback refuses an attempt with no verifier before
   it reaches an adapter, and the mock provider checks the verifier for every provider. A new
   provider sends PKCE unless its documentation rules it out, and the ADR says which.
@@ -1112,7 +1113,20 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   scenarios, SDK journeys and browser tests use it. Never loosen its guards.
 - **Which account a provider identity signs in to is decided in one place**,
   `OAuth.resolveAccount`, and only at the exchange (after the binding is checked), never in
-  the callback. "Can still sign in" is `OAuth.canStillSignIn`.
+  the callback. "Can still sign in" is `OAuth.canStillSignIn`. **The linking outcome is
+  stated per provider** in `modules/oauth/linking-table.test.ts`, which fails for an entry
+  of `OAUTH_PROVIDERS` with no rows: a new provider adds its rows and what its "verified"
+  rests on, never a rule of its own.
+- **A Microsoft account is `<tid>:<oid>`, its issuer is its own tenant's, and its address is
+  verified only by `xms_edov`** (`adapters/oauth/microsoft.ts`). Never identify one by
+  `sub`, `email`, `preferred_username` or `upn`. `iss` must equal
+  `https://login.microsoftonline.com/<tid>/v2.0` built from the token's own `tid`, the
+  signing key's `issuer` must cover it (a key without one is refused), and the tenant must
+  be one the environment's `tenant` accepts; every failure is the same `invalid_token`.
+  `emailVerified` is `xms_edov === true` and nothing looser. `tenant` is required, has no
+  default, is an alias or a GUID (never a domain name), and is not a secret. A new refusal
+  gets a row in the table of `adapters/oauth/microsoft.test.ts`, with a token the test
+  signs.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider
   routes enforce it, not the settings schema.
 

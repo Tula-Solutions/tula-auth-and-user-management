@@ -5,7 +5,7 @@ and prebuilt UI, first-class native mobile, and data you own.
 
 > **Status: Phase 1 is built; nothing is published.** There is no package on npm and no image
 > in a registry: everything runs from a checkout of this repository. Sign-in with Google,
-> GitHub and Apple has only ever been run against a built-in mock provider, and passkeys only
+> GitHub, Apple and Microsoft has only ever been run against a built-in mock provider, and passkeys only
 > against a virtual authenticator ([everything that was not verified against the real
 > thing](docs/plans/phase-1-unverified.md)). Not ready for production.
 
@@ -13,7 +13,7 @@ and prebuilt UI, first-class native mobile, and data you own.
 
 - **Sign-in methods**, each switched on per environment: [password](docs/methods/password.md)
   (sign-up, reset, policy), [emailed code](docs/methods/email-code.md) and
-  [emailed link](docs/methods/email-link.md), [Google, GitHub and Apple](docs/methods/oauth.md),
+  [emailed link](docs/methods/email-link.md), [Google, GitHub, Apple and Microsoft](docs/methods/oauth.md),
   [passkeys](docs/methods/passkeys.md), and
   [two-step verification](docs/methods/two-step-verification.md) (authenticator app, backup
   codes, step-up).
@@ -153,7 +153,7 @@ Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
 - [x] `@tula/core`, `@tula/react`, `@tula/nextjs`
 - [x] Emailed codes and same-browser links; sign-up without a password
 - [x] Two-step verification: authenticator app, backup codes, step-up
-- [x] Google, GitHub and Apple (tested against a mock provider only)
+- [x] Google, GitHub, Apple and Microsoft (tested against a mock provider only)
 - [x] Passkeys (tested against a virtual authenticator only)
 - [x] Session profiles, stateful sessions, the concurrent-session limit
 - [x] Settings as code, the CLI, `create-tula`, the dashboard, the MCP server

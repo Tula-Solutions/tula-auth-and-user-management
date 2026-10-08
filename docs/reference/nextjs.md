@@ -900,7 +900,7 @@ export interface TulaClient {
      */
     withPasskey(request?: PasskeyRequest): Promise<SignInFlow>
     /**
-     * "Continue with Google, GitHub or Apple": a sign-in that creates the account when the
+     * "Continue with Google, GitHub, Apple or Microsoft": a sign-in that creates the account when the
      * provider's verified address has none.
      *
      * Asks the API for the provider's URL, keeps the round trip's binding for this tab
@@ -1179,7 +1179,7 @@ export interface TulaClient {
        */
       remove(input: { passkeyId: string }): Promise<void>
     }
-    /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
+    /** The provider accounts (Google, GitHub, Apple, Microsoft) connected to the signed-in user. */
     readonly identities: {
       /**
        * @returns The connected accounts, oldest first.
@@ -1464,7 +1464,7 @@ export interface TulaLocalization {
     /** The link back to `<SignIn>`. */
     signIn: string
   }
-  /** Signing in with a provider (Google, GitHub, Apple), and the page it returns to. */
+  /** Signing in with a provider (Google, GitHub, Apple, Microsoft), and the page it returns to. */
   oauth: {
     /** `{provider}` is the provider's name. */
     continueWith: string

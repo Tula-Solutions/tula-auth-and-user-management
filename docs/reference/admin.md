@@ -679,7 +679,7 @@ export interface Schemas {
   }
   HookBeforeSignUpData: {
     email: string
-    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple'
+    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft'
     client: Schemas['SessionClient']
     ipAddress: string | null
   }
@@ -795,7 +795,8 @@ export interface Schemas {
   }
   JwtTemplateSource: 'user.email' | 'user.email_verified' | 'user.created_at' | 'session.client' | 'session.created_at'
   MfaPolicy: 'off' | 'optional' | 'required'
-  OAuthProvider: 'google' | 'github' | 'apple'
+  MicrosoftTenant: string
+  OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft'
   OAuthProviderDeletedEvent: {
     id: string
     type: 'oauth_provider.deleted'
@@ -819,6 +820,7 @@ export interface Schemas {
     clientId: string | null
     teamId: string | null
     keyId: string | null
+    tenant: string | null
     callbackUrl: string
     updatedAt: string | null
   }
@@ -831,6 +833,7 @@ export interface Schemas {
     teamId?: string
     keyId?: string
     privateKey?: string
+    tenant?: Schemas['MicrosoftTenant']
     enabled?: boolean
   }
   OAuthProviderUpdatedEvent: {
@@ -848,7 +851,7 @@ export interface Schemas {
   }
   OAuthProviderUpdatedEventData: {
     provider: Schemas['OAuthProvider']
-    changed: ('clientId' | 'secret' | 'teamId' | 'keyId' | 'enabled')[]
+    changed: ('clientId' | 'secret' | 'teamId' | 'keyId' | 'tenant' | 'enabled')[]
     created?: boolean
   }
   PaginationMeta: {
@@ -1162,7 +1165,7 @@ export interface Schemas {
     test?: true
   }
   UserCreatedEventData: {
-    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple'
+    method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft'
     emailVerified: boolean
     passwordless?: boolean
     hookBypassed?: boolean
