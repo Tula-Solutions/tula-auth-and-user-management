@@ -44,11 +44,14 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
   // `gcTime: 0`: the mutation's result (which holds the key) is not kept by the query client
   // after this component lets go of it.
   // The list is refreshed by the mutation itself, so it is right even when this dialog has
-  // gone before the answer came.
+  // gone before the answer came. Started, never awaited: the query client waits for what
+  // this returns before it hands over the answer, and the key must not wait for a list.
   const create = useCreateApiKey({
     mutation: {
       gcTime: 0,
-      onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/v1/admin/api-keys'] }),
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: ['/v1/admin/api-keys'] })
+      },
     },
     request: useEnvironmentRequest(),
   })

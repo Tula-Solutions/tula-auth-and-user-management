@@ -45,7 +45,14 @@ export function RotateSecretDialog({
   const rotate = useRotateWebhookSecret({
     // The refresh belongs to the mutation, not to this component: the card must show the
     // overlap even when the dialog has gone before the answer came.
-    mutation: { gcTime: 0, onSuccess: () => refreshWebhooks(queryClient) },
+    mutation: {
+      gcTime: 0,
+      // Started, never awaited: the query client waits for what this returns before it
+      // hands over the answer, and the secret must not wait for a list.
+      onSuccess: () => {
+        void refreshWebhooks(queryClient)
+      },
+    },
     request: useEnvironmentRequest(),
   })
   const [rotated, setRotated] = useState<{ secret: string; overlapEndsAt: string } | null>(null)

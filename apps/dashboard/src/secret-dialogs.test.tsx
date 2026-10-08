@@ -174,6 +174,82 @@ describe('a dialog whose answer carries a secret cannot be left while its reques
   })
 })
 
+// The refresh of the list is started by the answer and not waited for: a list that is slow to
+// come, or never comes, must not keep the one answer that carries the secret off the screen.
+describe('the secret is shown as soon as the answer arrives, whatever the list’s refresh does', () => {
+  const posts = (path: string) => (at: string, _headers: Headers, method: string) =>
+    method === 'POST' && (at === path || (path.startsWith('*') && at.endsWith(path.slice(1))))
+  const lists = (path: string) => (at: string, _headers: Headers, method: string) =>
+    method === 'GET' && at === path
+
+  /** With the list's refresh still unanswered, the dialog holds this many of `testId`. */
+  async function expectShownBeforeTheList(
+    list: ReturnType<typeof holdAnswers>,
+    testId: string
+  ): Promise<string> {
+    await waitFor(() => expect(list.held()).toBe(1))
+    await waitFor(() => expect(within(dialog()).queryAllByTestId(testId)).toHaveLength(1), {
+      timeout: 1000,
+    })
+    expect(list.held()).toBe(1)
+    return within(dialog()).getByTestId(testId).textContent ?? ''
+  }
+
+  test('a new webhook endpoint', async () => {
+    const { user } = start(`${DEV_PATH}/webhooks`)
+    await user.click(await screen.findByRole('button', { name: 'Add endpoint' }))
+    await user.type(within(dialog()).getByLabelText('Address'), HOME)
+    await user.click(within(dialog()).getByRole('checkbox', { name: 'user.created' }))
+    const list = holdAnswers(lists('/v1/admin/webhook-endpoints'))
+    const post = holdAnswers(posts('/v1/admin/webhook-endpoints'))
+    await user.click(button('Add endpoint'))
+    await waitFor(() => expect(post.held()).toBe(1))
+    await act(() => post.release())
+    expect(await expectShownBeforeTheList(list, 'webhook-secret')).toStartWith('whsec_')
+    // The way out is there too: the dialog is not kept busy by the list.
+    expect(button('I have copied it').getAttribute('aria-disabled')).not.toBe('true')
+    expect(screen.queryAllByRole('heading', { level: 2, name: HOME })).toHaveLength(0)
+
+    await act(() => list.release())
+    await screen.findByRole('heading', { level: 2, name: HOME })
+  })
+
+  test('a rotated secret', async () => {
+    const api = installFakeApi()
+    api.state.webhookEndpoints.push(fakeWebhookEndpoint({ url: HOME }))
+    const { user } = start(`${DEV_PATH}/webhooks`, { api })
+    await user.click(await screen.findByRole('button', { name: `Rotate the secret of ${HOME}` }))
+    const list = holdAnswers(lists('/v1/admin/webhook-endpoints'))
+    const post = holdAnswers(posts('*/secret/rotate'))
+    await user.click(button('Rotate secret'))
+    await waitFor(() => expect(post.held()).toBe(1))
+    await act(() => post.release())
+    expect(await expectShownBeforeTheList(list, 'webhook-secret')).toStartWith('whsec_')
+    expect(screen.queryAllByTestId('rotation-overlap')).toHaveLength(0)
+
+    await act(() => list.release())
+    await waitFor(() => expect(screen.queryAllByTestId('rotation-overlap')).toHaveLength(1))
+  })
+
+  test('a new API key', async () => {
+    const { user } = start(`${DEV_PATH}/api-keys`)
+    await user.click(await screen.findByRole('button', { name: 'Create key' }))
+    await user.type(within(dialog()).getByLabelText('Name'), 'Web app')
+    const list = holdAnswers(lists('/v1/admin/api-keys'))
+    const post = holdAnswers(posts('/v1/admin/api-keys'))
+    await user.click(button('Create key'))
+    await waitFor(() => expect(post.held()).toBe(1))
+    await act(() => post.release())
+    expect(await expectShownBeforeTheList(list, 'created-key')).toStartWith('tula_pk_')
+    const rows = () =>
+      screen.queryAllByRole('row').filter((row) => row.textContent?.includes('Web app'))
+    expect(rows()).toHaveLength(0)
+
+    await act(() => list.release())
+    await waitFor(() => expect(rows()).toHaveLength(1))
+  })
+})
+
 describe('a secret is forgotten when its dialog closes, with no reload in between', () => {
   test('adding a second endpoint starts from the empty form', async () => {
     const { user } = start(`${DEV_PATH}/webhooks`)

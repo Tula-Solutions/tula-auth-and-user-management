@@ -36,7 +36,14 @@ import { SecretOnce } from './secret-once'
 export function CreateEndpointDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const queryClient = useQueryClient()
   const create = useCreateWebhookEndpoint({
-    mutation: { gcTime: 0, onSuccess: () => refreshWebhooks(queryClient) },
+    mutation: {
+      gcTime: 0,
+      // Started, never awaited: the query client waits for what this returns before it
+      // hands over the answer, and the secret must not wait for a list.
+      onSuccess: () => {
+        void refreshWebhooks(queryClient)
+      },
+    },
     request: useEnvironmentRequest(),
   })
   const [url, setUrl] = useState('')
