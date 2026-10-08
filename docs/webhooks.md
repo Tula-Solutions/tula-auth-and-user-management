@@ -260,6 +260,17 @@ evidence that the endpoint stayed broken. So one event that fails all eight requ
 week, and one more failure is two short runs, not six days of failing, and the endpoint stays
 on.
 
+**The other side of that: an endpoint that is dead but rarely sent anything is never switched
+off.** A run only keeps going while events keep coming: one event's retries last 27 hours 35
+minutes, and the next event has to fail within 34 hours of the last of them. So a dead
+endpoint is switched off only if it is owed an event at least about every **two and a half
+days** (those two added together); in a quieter environment each delivery to it is retried,
+given up and left in the log as `failed`, and the endpoint stays on. Nothing is lost that
+would not be lost anyway, but nobody is told. If an endpoint is gone for good, either have
+whatever still answers at its address answer `410 Gone`, or switch the endpoint off or remove
+it yourself; and look at `failingSince` and the [delivery log](#the-delivery-log) rather than
+wait for the server to act.
+
 It is recorded in the audit log as `webhook_endpoint.disabled`, done by the `system`, with the
 reason. That is also an event: subscribe **another** endpoint, or watch the audit log, to be
 told when one of yours is switched off.

@@ -311,7 +311,12 @@ whose answer decides what happens next (step 2.3).
   later must not switch an endpoint off). A success clears both. The rule reads the endpoint
   row the lane already holds and is looked at only when a request has just failed: never add
   a scan. Both columns are written by `setHealth`, the one endpoint write with no `Activity`
-  (ADR 0012). Switching an endpoint on, or changing its address, resets them and the reason
+  (ADR 0012), and **a failure writes them only over what the lane read** (`setHealth` is a
+  compare-and-set; on a miss the worker reads the row again and applies the rule to it):
+  an administrator's reset, or a delivery sent again that got through, during a round must
+  never be undone by the lane's next failure. Only a success writes blindly. A dead endpoint
+  that is owed an event less often than the retry span plus that limit (about two and a half
+  days) is never switched off: accepted, and said in `docs/webhooks.md`. Switching an endpoint on, or changing its address, resets them and the reason
   (`resetHealth`). Pending
   deliveries of an endpoint that is off are neither tried nor counted, and are given up only
   by age.
@@ -1223,6 +1228,12 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   five-second default); `bun run test:harness` fails for a `bunfig.toml` that sets one and for
   a dashboard script without the flag. Run that package's tests through its scripts: a bare
   `bun test` in `apps/dashboard` has the default.
+- **`toMatchObject` does not compare dates in Bun** (seen on 1.4.2):
+  `expect({ at: new Date(1) }).toMatchObject({ at: new Date(2) })` passes. `toEqual` does
+  compare them. An assertion about *when* written with `toMatchObject` asserts nothing, which
+  is how a boundary test of the webhook worker passed with its comparison turned round. Pass
+  both sides through `comparable()` (`~/testing/comparable`: dates become ISO strings), or
+  use `toEqual`. The webhook tests do; other test files have not been checked for it.
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
 - Route tests call `createApp(createTestDeps()).request(...)`.

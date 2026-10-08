@@ -273,7 +273,9 @@ Before finishing any change here, confirm each item holds and has a test:
     failures five days long and not a millisecond less, where a run has no success and no
     silence longer than `WEBHOOK_FAILURE_RUN_MAX_GAP_MS` (test the silence exactly at the
     limit and a millisecond over, and one failed delivery, five quiet days, one failure:
-    still on); one success resets it, re-enabling resets it, and the `webhook_endpoint.disabled` entry is the `system`'s with no address or
+    still on); one success resets it, re-enabling resets it, and a reset made while a round is sending
+    is not undone by that round's next failure (`setHealth` compares what was read: test the
+    stale write in the store suite and the round in the service), and the `webhook_endpoint.disabled` entry is the `system`'s with no address or
     secret. A test event carries `test: true` inside the signed body, writes no outbox row
     and no audit entry, goes through the guard (test a name re-pointed at a private address),
     and its answer has five named fields and no canary. Sending again: the stored payload

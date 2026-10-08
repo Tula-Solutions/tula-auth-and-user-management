@@ -77,6 +77,9 @@ not run). They stay above as they were written.
 | **The capped count on a large table** | PGlite with five rows and a ceiling of three. That the planner reads the capped subquery through `webhook_deliveries_endpoint_log_idx` on millions of rows, and what a rare `state` or `eventType` filter costs inside one endpoint's log, was not measured. |
 | **The cap on a delivery's attempts under concurrent calls** | One call after another. Calls already in flight when the limit is reached are still recorded; the per-environment rate limit bounds them, which was reasoned, not run. |
 
+| **The compare-and-set of an endpoint's run against a concurrent administrator** | In the store suite (memory and PGlite) as a stale write after a reset, one call after the other, and in the service with the reset made from inside the receiver's handler while the request is in flight. Two real sessions meeting on the row were not run by this step; the comparison is in the `UPDATE`'s own `WHERE`, so the row lock orders them. |
+| **Dates in the tests of other modules** | Bun's `toMatchObject` does not compare dates. The webhook tests and the shared webhook store suite now compare them (`comparable()`), and nothing that had passed turned out wrong but one boundary. **No other test file was checked.** |
+
 ### Not test-first
 
 (Of the first pass of this step. The fixes after the review were each written test first and

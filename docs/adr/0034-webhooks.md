@@ -520,9 +520,25 @@ type, `webhook_endpoint.disabled`, whose `data` is `{ reason }`:
   after nine requests, on a hiccup, and every later event was dropped. An endpoint that was
   sent nothing has not been shown to be still broken. While an endpoint is failing *and being
   sent things*, its failures are never further apart than one delivery's schedule: hence the
-  limit. A quiet environment whose endpoint really is broken is switched off only once
-  events come often enough to keep a run going for five days, which is the price of not
-  switching a working one off; a delivery to it is still retried and given up as usual.
+  limit. **The price, measured in review:** a dead endpoint that is owed an event less often
+  than about every two and a half days (one event's retry span, 27 h 35 min, plus the limit,
+  34 h 6 min: 61 h 41 min) never has a run five days long and is **never switched off**. Each
+  delivery to it is still retried and given up as usual, and stays in the log as `failed`.
+  That is accepted: the rule exists to stop the server wasting requests on an endpoint and to
+  tell its operator, and an endpoint that costs eight requests every few days is neither
+  expensive nor, by this evidence alone, certainly dead. The guide says so and names the ways
+  out (answer `410`, or switch it off or remove it). A test holds both sides: events every two
+  days switch a dead endpoint off, every four days do not.
+
+  *The write is a compare-and-set* (found in the second round of review). The lane computes
+  the run from the endpoint row it read when it began. Meanwhile an administrator may have
+  switched the endpoint on again or changed its address, or a delivery sent again may have
+  got through; each ends the run. Written blindly, the lane's next failure brought the old
+  run back, and could switch off an endpoint seconds after it was reset. `setHealth` now
+  writes only if the row still holds what was read (both columns, compared in the `UPDATE`
+  itself); on a miss the worker reads the row again and applies the rule to what is there,
+  so a reset run is followed by a new one that begins at this failure. A success clears the
+  run whatever it finds.
 
   One bad hour, night or weekend does not trip it; one success starts the count again. **No
   scan**: the rule reads two columns of a row the worker already holds, and is looked at only
