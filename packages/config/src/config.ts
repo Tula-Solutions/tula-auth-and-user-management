@@ -1,8 +1,12 @@
 import {
+  type ActivityType,
+  CreateWebhookEndpointRequestSchema,
   type EnvironmentSettingsInput,
   EnvironmentSettingsInputSchema,
+  MAX_WEBHOOK_ENDPOINTS,
   OAUTH_PROVIDERS,
   type OAuthProvider,
+  UpdateWebhookEndpointRequestSchema,
 } from '@tula/contract'
 import { z } from 'zod'
 import { ConfigError, type ConfigIssue, invalidConfig } from './errors'
@@ -106,10 +110,71 @@ const Providers = z.strictObject({
   apple: AppleProvider.optional(),
 })
 
+// An endpoint's fields are the admin API's own (`POST` and `PATCH
+// /v1/admin/webhook-endpoints`): the address and the event types as a registration takes
+// them, `enabled` as a change does, with no default. Nothing is declared a second time here.
+const WebhookAddress = CreateWebhookEndpointRequestSchema.shape.url
+const WebhookEventTypes = CreateWebhookEndpointRequestSchema.shape.eventTypes
+const WebhookEnabled = UpdateWebhookEndpointRequestSchema.shape.enabled
+
+/** Whether an address has a user name or a password in front of its host. */
+function carriesCredentials(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.username !== '' || parsed.password !== ''
+  } catch {
+    // Not an address a parser reads: the server's guard is the judge of that, not this file.
+    return false
+  }
+}
+
+const WebhookEndpoint = z.strictObject({
+  // The server refuses credentials in an address when the endpoint is registered. Here they
+  // are refused sooner: `tula diff` prints every address, into terminals and pipeline logs,
+  // before the server is ever asked. Only in the file's schema, not the contract's: the API
+  // answers such an address with its own error (`webhook.url_not_allowed`), which callers
+  // of the API already rely on.
+  url: WebhookAddress.refine((url) => !carriesCredentials(url), {
+    message:
+      'must not carry a user name or a password (user:password@host): the server refuses such an address, and an address is printed in plans and logs',
+  }),
+  // A set: each type is checked where it was written, then repeats are dropped and the order
+  // fixed, so that neither is a difference to `tula diff` or to the config's fingerprint.
+  eventTypes: z
+    .array(WebhookEventTypes.element)
+    .transform((types) => [...new Set(types)].sort())
+    .pipe(WebhookEventTypes),
+  enabled: WebhookEnabled,
+})
+
+const Webhooks = z.array(WebhookEndpoint).superRefine((endpoints, context) => {
+  if (endpoints.length > MAX_WEBHOOK_ENDPOINTS) {
+    context.addIssue({
+      code: 'custom',
+      message: `an environment has at most ${MAX_WEBHOOK_ENDPOINTS} webhook endpoints`,
+    })
+  }
+  const firstAt = new Map<string, number>()
+  endpoints.forEach((endpoint, index) => {
+    const first = firstAt.get(endpoint.url)
+    if (first === undefined) {
+      firstAt.set(endpoint.url, index)
+      return
+    }
+    // By position, never by value: an address may carry a token in its path or query.
+    context.addIssue({
+      code: 'custom',
+      path: [index, 'url'],
+      message: `the same address as webhooks.${first}: an endpoint is identified by its address, so each is listed once`,
+    })
+  })
+})
+
 const Environment = z.strictObject({
   kind: z.enum(['development', 'production']).optional(),
   settings: EnvironmentSettingsInputSchema.prefault({}),
   providers: Providers.prefault({}),
+  webhooks: Webhooks.optional(),
 })
 
 const Config = z.strictObject({
@@ -193,6 +258,38 @@ export interface ProvidersConfig {
 }
 
 /**
+ * One webhook endpoint of an environment: where its events are posted, and which.
+ *
+ * There is no field for the signing secret, on purpose: the server makes it and returns it
+ * once, when `tula apply` registers the endpoint (`--secrets-file`, `--show-secrets`). A
+ * `secret` key does not compile and is refused when the file is loaded.
+ *
+ * An endpoint has no name: it is **its address**. `tula` matches an entry to the server's
+ * endpoint with exactly the same `url`, so changing the address means a new endpoint (a new
+ * secret) and, with `--prune`, the removal of the old one.
+ *
+ * @example
+ * ```ts
+ * const endpoint: WebhookEndpointConfig = {
+ *   url: 'https://api.northline.app/webhooks/tula',
+ *   eventTypes: ['user.created', 'user.deleted'],
+ * }
+ * ```
+ */
+export interface WebhookEndpointConfig {
+  /** Where events are posted: `https`, no credentials, a host the server may call. */
+  url: string
+  /** The event types delivered to it: a set, so order and repeats mean nothing. At least one. */
+  eventTypes: ActivityType[]
+  /**
+   * Whether events are delivered. Left out, the switch is **not managed**: a new endpoint
+   * starts switched on and an existing one is left as the server has it, including one the
+   * server switched off because it kept failing. Written, `tula apply` sets it.
+   */
+  enabled?: boolean
+}
+
+/**
  * The settings document of one environment, as it is written in a config file: every field
  * optional. It is the body of `PUT /v1/admin/settings` (`EnvironmentSettingsInput`).
  *
@@ -229,6 +326,13 @@ export interface EnvironmentConfigInput {
   settings?: EnvironmentSettingsConfig
   /** The OAuth providers the file manages. */
   providers?: ProvidersConfig
+  /**
+   * The webhook endpoints. Left out, webhooks are **not managed** by the file: `tula` neither
+   * reads nor changes them. Written (an empty list included), the list is what the
+   * environment should have; an endpoint the server has and the list does not is left alone
+   * and shown as unmanaged, and `tula apply --prune` removes it.
+   */
+  webhooks?: WebhookEndpointConfig[]
 }
 
 /**
@@ -267,6 +371,11 @@ export interface EnvironmentConfig {
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
   }
+  /**
+   * The webhook endpoints, when the file manages them: each address once, its event types
+   * sorted and without repeats. Absent when the file does not mention webhooks.
+   */
+  webhooks?: WebhookEndpointConfig[]
 }
 
 /**
@@ -505,8 +614,10 @@ function canonical(value: unknown): unknown {
  * writes, so the dashboard and a later `tula diff` can say which version of the file is in
  * force.
  *
- * It covers the settings and the providers as written, with each secret as the **name** of its
- * variable: no secret value is hashed, so the fingerprint reveals nothing about one.
+ * It covers the settings, the providers and the webhook endpoints as written, with each
+ * secret as the **name** of its variable: no secret value is hashed, so the fingerprint
+ * reveals nothing about one. An endpoint's event types count as a set, and an environment
+ * that does not mention webhooks hashes as it did before they could be written.
  *
  * @param environment - The environment's validated config.
  * @returns `sha256:` and 64 hex characters. The same for the same content in any key order.

@@ -12,5 +12,5 @@ To change a page, change the JSDoc and run `bun run docs:generate`; `bun run doc
 | [`@tula/react`](react.md) | `@tula/react` | 57 |
 | [`@tula/nextjs`](nextjs.md) | `@tula/nextjs`, `@tula/nextjs/server`, `@tula/nextjs/middleware`, `@tula/nextjs/handlers` | 76 |
 | [`@tula/admin`](admin.md) | `@tula/admin` | 35 |
-| [`@tula/config`](config.md) | `@tula/config` | 27 |
+| [`@tula/config`](config.md) | `@tula/config` | 28 |
 | [`@tula/contract`](contract.md) | `@tula/contract`, `@tula/contract/error-codes`, `@tula/contract/event-types`, `@tula/contract/headers`, `@tula/contract/issuer`, `@tula/contract/password-rules`, `@tula/contract/theme`, `@tula/contract/webhook-signature` | 393 |

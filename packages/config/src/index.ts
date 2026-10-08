@@ -19,6 +19,7 @@ export {
   selectEnvironment,
   type TulaConfig,
   type TulaConfigInput,
+  type WebhookEndpointConfig,
 } from './config'
 export {
   ConfigError,

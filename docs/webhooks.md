@@ -676,9 +676,16 @@ For the operator of the server:
   that brought retries: see [Upgrading](self-host.md#upgrading), migrations `0018` and `0019`.
   The one that brought secret rotation (`0020`) adds two empty columns and blocks nothing.
 
+## Endpoints in `tula.config.ts`
+
+Endpoints can be declared in the config file and applied with `tula diff` and `tula apply`:
+an address, its event types and, optionally, the switch. The file never holds a secret; a
+new endpoint's secret is handed to the run that creates it (`--secrets-file`). Rotation, test
+events and sending again are not in the file: they are acts, done through the admin API. See
+[Webhook endpoints in config.md](config.md#webhook-endpoints).
+
 ## Not built yet
 
-- **Endpoints in `tula.config.ts`** (`tula diff`, `tula apply`).
 - **A dashboard screen** for endpoints and their delivery log.
 - **Settings for the schedule**: the waits, the number of requests and the periods are fixed.
 - **Sending again in bulk**: one delivery per call.

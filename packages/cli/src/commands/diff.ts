@@ -1,5 +1,11 @@
 import { type Command, EXIT } from '../framework'
-import { applyRequirements, planToJson, renderPlan } from '../render'
+import {
+  applyRequirements,
+  OVER_LIMIT_ADVICE,
+  planBlockers,
+  planToJson,
+  renderPlan,
+} from '../render'
 import { PLAN_OPTIONS, prepare } from './shared'
 
 /**
@@ -17,9 +23,11 @@ export const diffCommand: Command = {
   summary: 'Show what `tula apply` would change. Writes nothing.',
   usage: 'tula diff [--env <name>] [--config <path>] [--prune] [--rotate-secrets] [--json]',
   description:
-    'Compares tula.config.ts with the environment’s settings and OAuth providers and prints ' +
-    'the plan: what would be added, changed and removed, by path. Secrets are never shown.\n\n' +
-    'Exit codes: 0 no changes, 2 changes pending, 1 an error.',
+    'Compares tula.config.ts with the environment’s settings, OAuth providers and (when the ' +
+    'file lists them) webhook endpoints, and prints the plan: what would be added, changed ' +
+    'and removed, by path. Secrets are never shown.\n\n' +
+    'Exit codes: 0 no changes, 2 changes pending, 1 an error. A plan that cannot be ' +
+    'applied (a webhook address the server has twice, too many endpoints) is an error.',
   options: PLAN_OPTIONS,
   run: async (context) => {
     const { name, target, plan } = await prepare(context)
@@ -44,6 +52,23 @@ export const diffCommand: Command = {
           '`tula apply --yes` refuses this plan without --allow-weaker: it weakens security.'
         )
       }
+      if (needs.allowWebhookRemoval) {
+        context.output.line(
+          '`tula apply --yes` refuses this plan without --allow-webhook-removal: it removes a webhook endpoint and its delivery log.'
+        )
+      }
+    }
+    // A plan no run can carry out is not "changes pending": it is an error to put right.
+    const blockers = planBlockers(plan)
+    for (const blocker of blockers) {
+      const advice =
+        plan.webhooks.overLimit !== null && blocker.includes('may have')
+          ? ` ${OVER_LIMIT_ADVICE}`
+          : ''
+      context.output.error(`${context.output.errorStyle.red('error:')} ${blocker}${advice}`)
+    }
+    if (blockers.length > 0) {
+      return EXIT.error
     }
     return plan.changes ? EXIT.changes : EXIT.ok
   },

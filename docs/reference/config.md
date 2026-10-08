@@ -162,6 +162,11 @@ export interface EnvironmentConfig {
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
   }
+  /**
+   * The webhook endpoints, when the file manages them: each address once, its event types
+   * sorted and without repeats. Absent when the file does not mention webhooks.
+   */
+  webhooks?: WebhookEndpointConfig[]
 }
 ```
 
@@ -185,6 +190,13 @@ export interface EnvironmentConfigInput {
   settings?: EnvironmentSettingsConfig
   /** The OAuth providers the file manages. */
   providers?: ProvidersConfig
+  /**
+   * The webhook endpoints. Left out, webhooks are **not managed** by the file: `tula` neither
+   * reads nor changes them. Written (an empty list included), the list is what the
+   * environment should have; an endpoint the server has and the list does not is left alone
+   * and shown as unmanaged, and `tula apply --prune` removes it.
+   */
+  webhooks?: WebhookEndpointConfig[]
 }
 ```
 
@@ -355,6 +367,44 @@ export interface TulaConfigInput {
 const config: TulaConfigInput = { environments: { dev: {}, prod: { kind: 'production' } } }
 ```
 
+### `WebhookEndpointConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+One webhook endpoint of an environment: where its events are posted, and which.
+
+There is no field for the signing secret, on purpose: the server makes it and returns it
+once, when `tula apply` registers the endpoint (`--secrets-file`, `--show-secrets`). A
+`secret` key does not compile and is refused when the file is loaded.
+
+An endpoint has no name: it is **its address**. `tula` matches an entry to the server's
+endpoint with exactly the same `url`, so changing the address means a new endpoint (a new
+secret) and, with `--prune`, the removal of the old one.
+
+```ts
+export interface WebhookEndpointConfig {
+  /** Where events are posted: `https`, no credentials, a host the server may call. */
+  url: string
+  /** The event types delivered to it: a set, so order and repeats mean nothing. At least one. */
+  eventTypes: ActivityType[]
+  /**
+   * Whether events are delivered. Left out, the switch is **not managed**: a new endpoint
+   * starts switched on and an existing one is left as the server has it, including one the
+   * server switched off because it kept failing. Written, `tula apply` sets it.
+   */
+  enabled?: boolean
+}
+```
+
+**Example**
+
+```ts
+const endpoint: WebhookEndpointConfig = {
+  url: 'https://api.northline.app/webhooks/tula',
+  eventTypes: ['user.created', 'user.deleted'],
+}
+```
+
 ### `defineConfig`
 
 _function_, defined in `packages/config/src/config.ts`
@@ -441,8 +491,10 @@ A fingerprint of one environment's config: what `tula apply` records with the se
 writes, so the dashboard and a later `tula diff` can say which version of the file is in
 force.
 
-It covers the settings and the providers as written, with each secret as the **name** of its
-variable: no secret value is hashed, so the fingerprint reveals nothing about one.
+It covers the settings, the providers and the webhook endpoints as written, with each
+secret as the **name** of its variable: no secret value is hashed, so the fingerprint
+reveals nothing about one. An endpoint's event types count as a set, and an environment
+that does not mention webhooks hashes as it did before they could be written.
 
 ```ts
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string>

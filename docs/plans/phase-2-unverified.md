@@ -160,3 +160,56 @@ group had already forced:
   because the store's statement refuses the same thing; and removing the verifier's check of
   the `v1` label changes nothing, because an entry is compared whole, label included.
 
+
+## Step 2.2, endpoints in the config file (TULA-44, [ADR 0030](../adr/0030-config-and-apply.md#webhook-endpoints-in-the-file-added-2026-10-08-tula-44))
+
+### The server as it is deployed
+
+- `tula diff` and `tula apply` were run against the API **in process** on memory adapters
+  (`packages/cli/src/real-api.test.ts`), with the outbound guard's resolver faked. They were
+  not run against a deployed server, a Postgres store or a real name server: an address the
+  real guard refuses for a reason the fake cannot produce was not seen.
+- A config with a `webhooks` list against a server **older than webhooks** (no
+  `/v1/admin/webhook-endpoints`) was not run. It is expected to fail on the list request,
+  with the API's 404 and nothing written; a file without the list asks nothing about
+  endpoints and is unaffected.
+
+### The secrets file
+
+- `--secrets-file` was exercised through the real host on macOS (mode 0600, an existing
+  file, a symbolic link). Not on Linux in this step, and not on Windows, where modes do not
+  exist. A named pipe, a directory and a link to a pipe at the path are tested (host,
+  `tula apply`, `tula dev`) since the review; on macOS only.
+- `Host.readFile` has two defences against a named pipe (the `lstat` before the open, and a
+  non-blocking open with the kind checked on the handle). Each alone refuses a pipe, so
+  removing either leaves every test green: the tests pin the outcome (refused, at once), not
+  each layer. The plain read they replaced was seen to hang.
+- The rewrite of the secrets file is guarded by reading it back first. A file replaced
+  between that read and the rename is overwritten; no test can hold that window open.
+- The CI example in `docs/config.md` (the step that hands the file to a secret store) is
+  prose: no workflow runs it.
+
+### What is not guaranteed
+
+- A change someone else makes to an endpoint between the run's second read and its writes is
+  not detected (endpoints have no revision). The test changes an endpoint while the question
+  is on screen, which the second read catches; the narrower race is not testable without a
+  conditional write in the API.
+
+### Not test-first
+
+Every behaviour had its test written and seen to fail before the code, with these exceptions:
+
+- `a secret written in the file is refused before any request, and not repeated` and
+  `a file without a webhooks list does not read the endpoints, and --prune does not touch
+  them` (real API): both passed on their first run, the first because the config package was
+  already done, the second because not reading is what the CLI did before.
+- `packages/cli/src/render-webhooks.test.ts` (the plan's wording for a re-enabled endpoint, a
+  changed address, plurals, and what a server sent being made printable) was written after
+  the renderer and passed on its first run.
+- The rows of the `planWebhooks` table and of the write-order table failed together, for a
+  missing export, not one by one; no single rule was mutated afterwards to see its own row
+  fail.
+- The last test of `real-api.test.ts` (nothing shaped like `whsec_…` in any run's output)
+  cannot fail for the redaction alone: no line of the CLI prints a secret unasked with or
+  without it. It holds the outcome, not the net.
