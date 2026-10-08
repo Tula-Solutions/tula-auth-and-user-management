@@ -318,7 +318,8 @@ against an environment whose Google credentials you want to keep. They add about
 
 ### The webhook scenarios need a receiver the server can reach
 
-`47-webhook-delivered-and-signed` and `49-webhook-retried-after-a-500` each register a
+`47-webhook-delivered-and-signed`, `49-webhook-retried-after-a-500` and
+`50-webhook-secret-rotated-with-an-overlap` each register a
 listener the runner starts as a webhook endpoint, and the server has to be able to call it. The server calls an operator's address only through
 its outbound guard, which refuses private and loopback addresses and plain `http`, except
 loopback and `http` in the `local` tier. So against a live server they run only where
@@ -327,9 +328,9 @@ that server is in the `local` tier **on the runner's own machine** (`bun run dev
 says why (`needs a webhook receiver the server can reach`): a server in a container sees the
 runner's machine at a private address, and a remote one would need a public `https` listener.
 The guard is never loosened to make a scenario run. CI's `self-host` jobs run the server in
-containers and therefore skip these two, **and only these two, by name**: the job compares
+containers and therefore skip these three, **and only these three, by name**: the job compares
 the set of skipped scenarios with that list and fails on any difference, in either direction.
-Both run in process as part of `bun run verify`, through the real guard and a real socket on
+All three run in process as part of `bun run verify`, through the real guard and a real socket on
 loopback.
 
 `49` needs time to pass for the retry. In process its `wait` steps move the test's clock and

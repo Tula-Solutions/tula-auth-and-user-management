@@ -288,7 +288,26 @@ Before finishing any change here, confirm each item holds and has a test:
     (`attempt_limit`), and the list is paged and counted inside
     `WEBHOOK_DELIVERY_LIST_WINDOW`. An answer over the size cap is judged by its status code,
     which is all the guard passes on: test a 2xx (delivered, once) and a non-2xx, with a
-    canary in the oversized body. The retention deletes
+    canary in the oversized body. **Secret rotation (TULA-43):** the new secret is the
+    server's, returned once (`no-store`), and nothing of either secret is in a read, an audit
+    entry, an event payload, a log line or an error (test with both secrets and their base64
+    parts, and that no response field is even named like a secret). During the overlap every
+    delivery carries two signatures, the current secret's first; test the end of the overlap
+    one millisecond before and at it **on the clock alone** (no round has cleared the row),
+    a previous secret that expires mid-round, and that a test event and a delivery sent
+    again sign the same way. Never three: test a rotation during an overlap (409,
+    `rotation_in_progress`, nothing changed or recorded), two at once (one wins, in the
+    service and in the store suite), and the instant the overlap ends (allowed). The early
+    end: with and without an overlap under way, and at the instant it ended by itself. Both
+    are impossible across environments with the answer an unknown id gets. Bindings: an
+    existing row sealed the old way still opens; the current ciphertext in the previous slot
+    and the previous one in the current slot do not; nor one from another endpoint or
+    environment. A previous secret that does not open: delivered with one signature, said
+    once per endpoint per round; a current one that does not: nothing sent, and no rotation
+    (`secret_unreadable`). The expired ciphertext is deleted by the next round, on an
+    endpoint that is off too, unrecorded and without moving `updatedAt`. `verifyWebhook`
+    with a list: either secret, both orders, an empty list, a third secret, a malformed
+    entry beside a good one, and one HMAC per secret whichever matched. The retention deletes
     are bounded in the database: test a recent event, an unsettled one, a pending delivery
     and a recent one against the store on PGlite, and that `created_at` and `occurred_at`
     cannot be updated to get past the floor.

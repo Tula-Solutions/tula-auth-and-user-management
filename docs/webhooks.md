@@ -11,7 +11,8 @@ hours, on a [fixed schedule](#retries). After that the server gives the delivery
 endpoint that takes nothing for five days is [switched off](#when-an-endpoint-is-switched-off).
 Every delivery and every request made for it can be [read](#the-delivery-log), a
 [test event](#send-a-test-event) can be sent at any time, and a past delivery can be
-[sent again](#send-a-delivery-again) by hand. What is still missing is listed
+[sent again](#send-a-delivery-again) by hand. An endpoint's signing secret can be
+[replaced](#rotate-a-secret) without losing a delivery. What is still missing is listed
 [at the end](#not-built-yet).
 
 ## Register an endpoint
@@ -51,8 +52,9 @@ curl -X POST https://auth.example.com/v1/admin/webhook-endpoints \
 - **`enabled`** defaults to `true`.
 
 The answer (`201`) is the endpoint and its **signing secret**, `whsec_…`. **It is shown once.**
-The server keeps it encrypted and no call returns it again; if you lose it, remove the
-endpoint and register a new one. An environment holds at most ten endpoints.
+The server keeps it encrypted and no call returns it again; if you lose it,
+[rotate it](#rotate-a-secret), which issues a new one. An environment holds at most ten
+endpoints.
 
 Only events that happen **after** the endpoint was registered are sent to it.
 
@@ -77,17 +79,21 @@ await admin.call('deleteWebhookEndpoint', { params: { id: endpoint.id } })
 | `GET /v1/admin/webhook-endpoints/:id/deliveries/:deliveryId` | One delivery with every request made for it. |
 | `POST /v1/admin/webhook-endpoints/:id/test` | [Send a test event](#send-a-test-event). |
 | `POST /v1/admin/webhook-endpoints/:id/deliveries/:deliveryId/redeliver` | [Send a delivery again](#send-a-delivery-again). |
+| `POST /v1/admin/webhook-endpoints/:id/secret/rotate` | [Replace the signing secret](#rotate-a-secret); the old one keeps signing beside the new one for 24 hours. |
+| `DELETE /v1/admin/webhook-endpoints/:id/secret/previous` | [End that overlap now](#when-a-secret-has-leaked). |
 
 An endpoint also says how it is doing: `failingSince` is when its current run of failed
 requests began and `lastFailedAt` when a request last failed (both `null` when the last
 request that got an answer got through), and `disabledReason` says why the **server**
-switched it off, if it did.
+switched it off, if it did. `rotationOverlapEndsAt` is set while a
+[secret rotation](#rotate-a-secret) is under way: until that time two secrets sign.
 
 While an endpoint is switched off nothing is sent to it, and the events of that time are
 **not** sent when it is switched on again. Every registration, change and removal is in the
 audit log (`webhook_endpoint.created`, `.updated`, `.deleted`), by count and field name: never
 with the address or the secret. So is the server switching one off
-(`webhook_endpoint.disabled`).
+(`webhook_endpoint.disabled`), a secret being replaced (`webhook_endpoint.secret_rotated`) and
+the overlap of a replacement being ended early (`webhook_endpoint.previous_secret_revoked`).
 
 ## What a delivery looks like
 
@@ -170,12 +176,163 @@ the typed event otherwise. Its errors are `TulaAdminError`s with a `code`
 `webhook.invalid_secret`, `webhook.invalid_payload`) and never contain the secret, a signature
 or the body.
 
+The secret may be **a list of two**, for the time [a secret is being replaced](#rotate-a-secret):
+the delivery is accepted when either signed it. Every entry of the list must be a signing
+secret; an empty list, a third secret or a malformed entry is `webhook.invalid_secret` on
+every delivery, so that a secret pasted wrong is noticed at once and not on the day the other
+one stops signing.
+
 - **Give it the body exactly as it arrived.** The signature is over the bytes. A framework
   that parses JSON for you and hands you an object has already lost them: read the raw text
   (`await request.text()`, `express.raw({ type: 'application/json' })`, …).
 - **Keep your server's clock right.** The five minutes are measured against it.
 - **In another language**, use any Standard Webhooks library with the `whsec_…` secret as it
   is, or compute the HMAC yourself as the table above says and compare in constant time.
+
+## Rotate a secret
+
+Replace an endpoint's signing secret whenever you like (on a schedule, when someone who knew it
+leaves, when you are not sure where it has been) **without losing a delivery**. The new secret
+does not take over at once: for **24 hours** the server signs every delivery with the new
+secret *and* the one it replaces, so your receiver verifies with whichever it holds while you
+deploy the new one.
+
+**1. Rotate.**
+
+<!-- snippet: examples/docs-snippets/admin.ts#webhook-rotate -->
+```ts
+const { data: rotated } = await admin.call('rotateWebhookSecret', {
+  params: { id: endpointId },
+})
+// The only time the new secret is returned. Keep the one you had beside it: until
+// `rotationOverlapEndsAt` (24 hours from now) every delivery is signed with both.
+await storeSecrets({ current: rotated.secret, previousUntil: rotated.rotationOverlapEndsAt })
+```
+<!-- /snippet -->
+
+`POST /v1/admin/webhook-endpoints/:id/secret/rotate` takes no body: the server makes the
+secret, as at registration. The answer is the endpoint with its **new** secret, shown this
+once, and `rotationOverlapEndsAt`: when the previous secret stops signing. Nothing has broken
+at this point. Your receiver still has the old secret, and the old secret still signs.
+
+From now on a delivery's `webhook-signature` has two entries, the new secret's first:
+
+```
+webhook-signature: v1,<signature with the new secret> v1,<signature with the previous secret>
+```
+
+**2. Deploy the new secret to your receiver, inside the 24 hours.** Give it both secrets, so
+that it does not matter in which order things reach it:
+
+<!-- snippet: examples/docs-snippets/admin.ts#webhook-verify-rotating -->
+```ts
+// While a secret is being replaced the receiver holds two: the new one and, until the
+// overlap has ended, the one before it. A delivery is accepted if either signed it.
+export async function verifyWhileRotating(request: Request): Promise<TulaWebhookEvent> {
+  const secrets = previousWebhookSecret ? [webhookSecret, previousWebhookSecret] : webhookSecret
+  return verifyWebhook(await request.text(), request.headers, secrets)
+}
+```
+<!-- /snippet -->
+
+A receiver with only the new secret verifies too, as does a Standard Webhooks library in
+another language: each accepts a delivery when any one entry is right for its secret.
+
+**3. After `rotationOverlapEndsAt`, take the old secret out of your receiver.** From that
+instant the server signs with the new secret only, and a few seconds later its own copy of
+the old one is deleted. A secret left in a receiver's list stays good for anyone who holds
+it, so do take it out.
+
+What to know:
+
+- **The overlap is 24 hours and is not a setting.** The previous secret stops signing at that
+  instant by the server's clock, whether or not anything else has happened.
+- **A retry is signed when it is sent**, not when its event happened. A delivery first tried
+  during the overlap and retried after it carries the new secret's signature only: the
+  receiver must have the new secret by the end of the overlap.
+- **An endpoint never has three secrets.** While a previous secret is still signing, another
+  rotation is refused with `webhook.rotation_refused` (409); `params.reason` says why:
+
+  | `reason` | |
+  | --- | --- |
+  | `rotation_in_progress` | A previous secret is still signing. Wait for `rotationOverlapEndsAt`, or [end the overlap](#when-a-secret-has-leaked) first. |
+  | `no_rotation_in_progress` | (Ending an overlap.) No previous secret is signing: there is nothing to end. |
+  | `secret_unreadable` | The server cannot open the endpoint's current secret, so it could not keep it signing beside a new one. A `TULA_MASTER_KEY` to put right first; see [`signing_failed`](#retries). |
+
+- A read or a list of the endpoint shows `rotationOverlapEndsAt` while two secrets sign, and
+  `null` otherwise. **No call ever returns a secret again**, the previous one included.
+- [Test events](#send-a-test-event) and deliveries [sent again](#send-a-delivery-again) are
+  signed the same way as the worker's.
+- An endpoint that is switched off can be rotated.
+- For a few seconds after a rotation, a round of deliveries that was already under way may
+  still sign with the old secret alone. With the order above that is never a problem: your
+  receiver keeps the old secret until the overlap has ended.
+- It is in the audit log as `webhook_endpoint.secret_rotated`, with `rotationOverlapEndsAt`
+  and nothing of either secret. **Consider subscribing an endpoint to it**: a rotation you
+  did not make means someone else holds one of your secret keys, and has just been handed a
+  secret your receiver will come to trust.
+
+### When a secret has leaked
+
+What protects you from a leaked signing secret is your **receiver no longer accepting it**.
+Everything below is about getting there without dropping deliveries.
+
+**The secret in use has leaked** (the usual case):
+
+1. Rotate, and deploy the new secret to your receiver straight away, **without** the old one.
+   (During the overlap the server signs with both, so a receiver that holds only the new one
+   loses nothing.) From this deployment on, a forged delivery is refused.
+2. End the overlap, so that the server stops signing with the leaked secret and deletes it:
+
+<!-- snippet: examples/docs-snippets/admin.ts#webhook-revoke-previous -->
+```ts
+// Once the receiver verifies with the new secret: stop the old one signing now, instead of
+// at the end of the 24 hours. Then take it out of the receiver.
+try {
+  await admin.call('revokePreviousWebhookSecret', { params: { id: endpointId } })
+} catch (error) {
+  // 409 `webhook.rotation_refused`, `params.reason: 'no_rotation_in_progress'`: the overlap
+  // had already ended, and the old secret signs nothing.
+  if (!isTulaAdminError(error) || error.code !== 'webhook.rotation_refused') {
+    throw error
+  }
+}
+```
+<!-- /snippet -->
+
+`DELETE /v1/admin/webhook-endpoints/:id/secret/previous` answers the endpoint with
+`rotationOverlapEndsAt: null`, and is in the audit log as
+`webhook_endpoint.previous_secret_revoked`. Deliveries a round was already making may still
+carry the old signature beside the new one for a few seconds; that gives nothing away.
+
+**The new secret leaked during an overlap** (it was pasted somewhere it should not have
+been). An endpoint has two secrets at most, so the leaked one is replaced in two steps:
+
+1. Make sure your receiver verifies with the new (leaked) secret, then end the overlap as
+   above. The original secret is now gone.
+2. Rotate again. The leaked secret is now the *previous* one; deploy the newest secret to the
+   receiver **without** the leaked one, then end this overlap too.
+
+Until the receiver has been deployed without the leaked secret, it accepts deliveries signed
+with it: do the two steps promptly. If you would rather not have the leaked secret accepted
+for even that long and can afford a gap, remove the endpoint and register it again; its
+pending deliveries and its log go with it.
+
+### When the answer of a rotation was lost
+
+The new secret is shown once. If the answer never reached you (a dropped connection, a script
+that failed before storing it), the server now holds a secret nobody has, and when the overlap
+ends it will be the only one that signs. **Do not wait for that.** Inside the 24 hours:
+
+1. End the overlap (`DELETE …/secret/previous`). The secret your receiver holds stops signing;
+   from here on its deliveries fail verification and are [retried](#retries).
+2. Rotate again at once, and store the answer this time. The lost secret is now the previous
+   one; nobody holds it, so it signs for nobody.
+3. Deploy the newest secret to the receiver. The deliveries that failed in between arrive
+   with their next retry (the first two come after five seconds and five minutes).
+
+This is the one case where a rotation costs a delay: nothing is lost as long as step 3
+happens well inside the retry schedule, about a day.
 
 ## Answer it
 
@@ -238,7 +395,8 @@ the eight, and the log says which it was:
   signing secret could not be opened; nothing was sent to the endpoint this round`, with the
   endpoint's id and a count, and should check that every API instance has the same
   `TULA_MASTER_KEY`, the one the deployment has always had (`tula doctor`). If the key is
-  gone for good, remove the endpoint and register it again: that issues a new secret.
+  gone for good, remove the endpoint and register it again: that issues a new secret. (A
+  secret the server cannot open cannot be [rotated](#rotate-a-secret) either.)
 
 Whatever keeps it waiting, a delivery that has been pending for **three days** is given up
 (`expired`). Nothing waits for ever.
@@ -491,6 +649,18 @@ For the operator of the server:
 - The endpoints' secrets are encrypted with `TULA_MASTER_KEY`. If the key changes, nothing is
   sent (`signing_failed`, with a line in the log naming the endpoint's id) until the key is
   right again or the endpoints are registered again. Deliveries wait for up to three days.
+- During a [secret rotation](#rotate-a-secret) an endpoint has a second encrypted secret, the
+  previous one, sealed for its own place in the row: a ciphertext copied from one of the two
+  columns to the other, or from another endpoint, does not open. If the **previous** secret
+  cannot be opened while the current one can, deliveries are still made, signed with the
+  current secret alone, and the log has one line per endpoint per round that sends something:
+  `webhook previous signing secret could not be opened; deliveries to the endpoint carry the
+  current secret’s signature only`. A receiver that still holds only the old secret refuses
+  those deliveries (they are retried on the schedule) until it is given the new one.
+- The worker deletes a previous secret from its row in the first round after its overlap has
+  ended (every five seconds; the round's log line counts them as `secretsExpired`). The secret
+  has stopped signing by then regardless: that is decided from the stored time at every
+  request, not by the deletion.
 - A round sends to an environment's endpoints side by side, **five requests at a time**, one
   per endpoint, **fifty deliveries per endpoint per round**, each with a five-second deadline,
   within fifteen seconds per environment. Environments are served one after another.
@@ -504,10 +674,10 @@ For the operator of the server:
   events are only marked, in bulk, up to 100,000 per environment every five seconds. The
   migration before it blocks writes to the outbox table while it runs, and so does the one
   that brought retries: see [Upgrading](self-host.md#upgrading), migrations `0018` and `0019`.
+  The one that brought secret rotation (`0020`) adds two empty columns and blocks nothing.
 
 ## Not built yet
 
-- **Rotating a secret** without a gap (the verifier already accepts either of two signatures).
 - **Endpoints in `tula.config.ts`** (`tula diff`, `tula apply`).
 - **A dashboard screen** for endpoints and their delivery log.
 - **Settings for the schedule**: the waits, the number of requests and the periods are fixed.

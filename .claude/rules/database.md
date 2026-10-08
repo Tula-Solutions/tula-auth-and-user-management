@@ -30,7 +30,11 @@ paths:
   SELECT, INSERT, UPDATE of its eight state columns only (not the endpoint, the event, the
   type, the test flag or `created_at`) and DELETE inside `webhook_deliveries_retention_floor`
   (not `pending` and more than seven days old); `webhook_delivery_attempts` is append-only,
-  SELECT and INSERT, and goes only by cascade from its delivery. Neither of the last two has
+  SELECT and INSERT, and goes only by cascade from its delivery. `webhook_endpoints`
+  (migration 0020) holds two sealed secrets at most: `secret`, and `previous_secret` with
+  `previous_secret_expires_at`, set and cleared together (the check
+  `webhook_endpoints_previous_secret_whole`); the role's table-level UPDATE from 0018 covers
+  them, and no grant changed. Neither of the last two has
   a column for anything of a receiver's answer beyond a status code. Three tables have a
   second policy (`audit_logs`, `events`, `webhook_deliveries`), and a second policy is always
   restrictive and `FOR DELETE`. `webhook_deliveries.event_id` is deliberately **not** a

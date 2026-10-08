@@ -211,10 +211,15 @@ of.
   the record of the delivery, an event's `delivered_at` (`WebhookDeliveryStore` has no method
   that takes an activity), and an endpoint's run of failed requests (when it began and when
   a request last failed: `WebhookEndpointStore.setHealth`, a method of its own that takes
-  none: bookkeeping that changes no one's access). Sending a test event and sending a delivery again are not
+  none: bookkeeping that changes no one's access), and the deletion of an endpoint's previous
+  signing secret once its rotation's overlap has ended
+  (`WebhookEndpointStore.clearExpiredPreviousSecrets`, which takes none: the secret stopped
+  signing at that end by the clock, and the rotation that set the end is what is recorded).
+  Sending a test event and sending a delivery again are not
   recorded either: each is a delivery row. Registering, changing and removing an endpoint *are*
   recorded, and so is the server switching one off (`webhook_endpoint.disabled`, by the
-  `system` actor). None of these
+  `system` actor), a secret being replaced (`webhook_endpoint.secret_rotated`) and its
+  overlap being ended early (`webhook_endpoint.previous_secret_revoked`). None of these
   store methods takes an activity. The retention job's delete of **audit entries** past an environment's
   period is not recorded either (`deleteAuditBefore` takes no activity): an entry cannot
   record its own end, and one per run would grow the log the period bounds. What is recorded

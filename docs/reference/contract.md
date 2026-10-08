@@ -2664,6 +2664,28 @@ Result of revoking the user's other sessions.
 const RevokedSessionsSchema: z.ZodObject<{ revoked: z.ZodNumber; }, z.core.$strip>
 ```
 
+### `RotatedWebhookSecret`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+An endpoint with its new signing secret, as a rotation answers.
+
+```ts
+export type RotatedWebhookSecret = z.infer<typeof RotatedWebhookSecretSchema>
+```
+
+### `RotatedWebhookSecretSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+An endpoint whose signing secret was just replaced. `secret` is the **new** secret
+(`whsec_…`), in this response only. The previous secret is not returned (the receiver has
+it); it keeps signing beside the new one until `rotationOverlapEndsAt`.
+
+```ts
+const RotatedWebhookSecretSchema
+```
+
 ### `SECRET_KEY_PREFIX`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -3711,6 +3733,28 @@ const WEBHOOK_REDELIVER_REFUSALS: readonly ["delivery_pending", "endpoint_disabl
 ```ts
 if (error.code === 'webhook.cannot_redeliver' && error.params?.reason === 'event_gone') {
   // too late to send this one again
+}
+```
+
+### `WEBHOOK_ROTATION_REFUSALS`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Why a signing secret cannot be replaced, or its overlap ended, as
+`webhook.rotation_refused` says it in `params.reason`: a rotation is already under way (two
+secrets sign, and there are never three), none is under way (there is no previous secret to
+revoke), or the server could not open the endpoint's current secret and so cannot keep it
+signing beside a new one.
+
+```ts
+const WEBHOOK_ROTATION_REFUSALS: readonly ["rotation_in_progress", "no_rotation_in_progress", "secret_unreadable"]
+```
+
+**Example**
+
+```ts
+if (error.code === 'webhook.rotation_refused' && error.params?.reason === 'rotation_in_progress') {
+  // wait for the overlap to end, or revoke the previous secret first
 }
 ```
 

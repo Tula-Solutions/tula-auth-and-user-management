@@ -6,6 +6,9 @@
   That section changes four decisions of this record (one attempt per delivery, when an event
   is settled, the insert-only delivery table, the cascade from an event to its deliveries);
   the paragraphs it supersedes are marked.
+- Amended: 2026-10-08, by the third step of 2.2 (TULA-43): [Secret rotation](#secret-rotation-added-2026-10-08-tula-43).
+  It adds to this record and supersedes one sentence of it (a delivery's header now carries
+  two signatures during a rotation).
 
 ## Context
 
@@ -90,7 +93,9 @@ receiver in a language Tula has no SDK for can use an existing verifier:
 
 The body is the stored payload written out once; exactly that text is signed and sent. The
 header is defined as a space-separated list so that two secrets can sign during a rotation;
-this step sends one entry, and the verifier already accepts any one of several.
+this step sends one entry, and the verifier already accepts any one of several. *(Since
+[Secret rotation](#secret-rotation-added-2026-10-08-tula-43) a delivery carries two entries
+while a rotation's overlap lasts.)*
 
 The names, the prefix, the tolerance and the signing function are one Zod-free module of the
 contract, `@tula/contract/webhook-signature` (web platform APIs only), used by the server to
@@ -794,7 +799,27 @@ Still, and by design:
   sent again next round with nothing counted. A cause that persists would repeat that every
   round, as the first step noted; what bounds it now is the three-day age.
 
+### What a lost answer costs
+
+The new secret is in one HTTP answer and nowhere else. If that answer is lost, the server
+holds a current secret nobody has, another rotation is refused for 24 hours, and at the end of
+them that secret would be the only one signing. The way out is the two calls an emergency
+uses, in this order: end the overlap (the receiver's secret stops; its deliveries now fail
+verification and are retried), rotate again (the lost secret becomes the previous one, and
+signs for nobody), deploy. **Deliveries are delayed by as long as that deployment takes, not
+lost**, as long as it is inside the retry schedule. The guide has the steps. This is the price
+of refusing a rotation during an overlap, and it is stated rather than designed away; the
+alternative that would remove it is the first one below.
+
 ### Alternatives considered for this step
+
+- **A rotation during an overlap replaces the *newer* secret and keeps the older one to its
+  original end** ("roll again"). Still never three, it never drops the secret receivers are
+  known to hold, and it would make both the leaked-new-secret case and the lost-answer case
+  one call with no delay. Not chosen: a receiver that has already moved to the new secret
+  alone is cut off by it without warning, the same call would then mean two different things
+  depending on a clock, and the ticket's owner leaned towards refusing. It is the change to
+  make if the lost answer turns out to happen in practice.
 
 - **Keep delivering inside the walk of the outbox, with a retry count on the event.**
   Rejected: head-of-line blocking, as above.
@@ -820,6 +845,305 @@ Still, and by design:
   a busy endpoint that is down for an hour gives up nothing, and a quiet one that is down for
   a month gives up two.
 
+## Secret rotation (added 2026-10-08, TULA-43)
+
+The third step of 2.2. An operator replaces an endpoint's signing secret **without dropping a
+delivery**: the new secret signs beside the one it replaces for a fixed overlap, so the
+receiver can be given the new one after the rotation and before the old one stops.
+
+### What a rotation is
+
+`POST /v1/admin/webhook-endpoints/:id/secret/rotate`, behind `secretKey()` like every admin
+route. It takes no body and reads none: the server makes the secret, exactly as at
+registration (32 bytes from the CSPRNG, `whsec_` + base64), and returns it **once**, in this
+answer (`Cache-Control: no-store`), with `rotationOverlapEndsAt`: when the previous secret
+stops signing. The previous secret is not returned (the receiver has it).
+
+From the instant the rotation commits until `rotationOverlapEndsAt`, every delivery's
+`webhook-signature` has **two entries, separated by a space: the current secret's first, then
+the previous secret's.** A receiver on the old secret, on the new one, or on both verifies.
+After that instant there is one entry, the current secret's.
+
+*The order of work is rotate first, then deploy.* The server makes the secret, so there is
+nothing to give a receiver until the rotation has answered; the overlap is what makes that
+order safe. (A design where the operator supplies the next secret ahead of time would allow
+"deploy both, then rotate", and was not chosen for the reason the first step gave: a
+server-made secret is always 256 random bits and never one in use elsewhere.)
+
+### The overlap: 24 hours, a constant
+
+`WEBHOOK_SECRET_OVERLAP`. Long enough to get a secret into a receiver through an ordinary
+deployment (a review, a release window, a colleague in another time zone); short enough that
+a secret which is being replaced because it may have leaked stops being worth anything soon.
+It is a constant and not a setting for the reason the retry schedule is: a receiver's operator
+can be told what to expect, and a setting is a promise to support every value. An operator
+for whom a day is too long ends the overlap by hand (below); one for whom it is too short has
+no remedy in this step, which is accepted: a rotation is something the operator starts, at a
+time of their choosing.
+
+### Never more than two secrets
+
+While a previous secret still signs, **another rotation is refused**: `webhook.rotation_refused`
+(409), `params.reason: rotation_in_progress`. The two alternatives were considered and
+rejected:
+
+- *Keep three* (or more): a mistake, or a script in a loop, piles secrets up; the header
+  grows towards the verifier's bound of eight entries; and "which secrets are valid" stops
+  being something an operator can hold in their head.
+- *Drop the oldest silently* and let the newest take the previous one's place: a receiver that
+  still holds only the oldest secret is cut off at that instant, with no warning, by a call
+  whose name says "without dropping a delivery".
+
+Refusing makes the operator say what they mean. The case that needs a second rotation at once
+(the **new** secret leaked) is served by ending the overlap first, an explicit and recorded
+act, and then rotating: two calls instead of one, and nothing silent.
+
+The rule is enforced twice: the service refuses before it opens anything, and
+`WebhookEndpointStore.rotateSecret` is a compare-and-set in one statement (the row's current
+ciphertext is still the one read, **and** no previous secret is still signing at the
+rotation's instant). Of two rotations that arrive together, on one instance or two, one
+writes and the other is refused; the previous slot can only ever receive the secret that was
+signing. Two entries are 95 characters: far inside `verifyWebhook`'s bounds (8 entries, 1,024
+characters).
+
+### Ending the overlap early
+
+`DELETE /v1/admin/webhook-endpoints/:id/secret/previous`: the previous secret stops signing
+and its ciphertext is deleted, in one statement. It answers the endpoint
+(`rotationOverlapEndsAt: null`). With no previous secret signing (never rotated, the overlap
+already over, already ended) it is refused: `webhook.rotation_refused`,
+`no_rotation_in_progress`. Refused rather than answered as a success: the caller is told that
+nothing was revoked, and nothing is recorded for a call that changed nothing.
+
+It exists for a leaked **previous** secret, which is the usual emergency ("the secret is in a
+log somewhere: rotate"), and to make another rotation possible at once.
+
+*What it does and does not buy.* The server signing with a leaked secret gives an attacker
+nothing they did not have; what protects a receiver is the receiver no longer accepting it.
+Ending the overlap takes the secret out of the database and tells the operator, in the audit
+log, that from here on only one secret is good. The guide says to deploy the receiver without
+the old secret first.
+
+### Storage and binding (migration `0020`)
+
+Two nullable columns on `webhook_endpoints`: `previous_secret` (sealed) and
+`previous_secret_expires_at`, set and cleared together (a `CHECK`,
+`webhook_endpoints_previous_secret_whole`): a previous secret with no end would sign for
+ever, and an end with no secret would say a rotation is under way that nothing can sign for.
+Both are `NULL` for every existing endpoint. The runtime role already holds `UPDATE` on the
+table: **no grant changes.**
+
+**The previous secret has its own binding.** The current secret is sealed, as it always was,
+bound to `<environment>:<endpoint>`; nothing about it changes, so **every secret stored
+before this step opens exactly as before** (a test seals one the old way and delivers and
+rotates with it). The previous secret is sealed bound to `<environment>:<endpoint>:previous`.
+A rotation therefore opens the current secret and seals it again for the previous slot. With
+the slot in the binding, a ciphertext cannot be moved:
+
+| Moved | Result |
+| --- | --- |
+| the current secret's ciphertext into `previous_secret` | does not open; deliveries are signed with the current secret alone |
+| the previous secret's ciphertext into `secret` | does not open; `signing_failed`, nothing is sent |
+| either, from another endpoint or another environment | does not open |
+
+The first row matters most: without it, whoever can write the row could make a secret outlive
+its own rotation by copying it into the previous slot with a far end date.
+
+*Accepted residual.* Successive current secrets of one endpoint share a binding, so an **old
+ciphertext of the same slot** put back into the same row opens. That takes write access to
+the row and a copy of the old ciphertext (a backup): someone with both can do worse. A
+generation number in the binding would close it at the price of a counter column and of
+making existing rows a special case; not done.
+
+**A secret the server cannot open cannot be rotated** (`secret_unreadable`, 409). The
+replaced secret has to be opened to be sealed for its new slot; if it cannot, it could not be
+kept signing, and "rotation" would cut off every receiver at once. That is a
+`TULA_MASTER_KEY` to put right first. Rotating as a way *out* of a lost key was considered
+(it would spare removing and re-registering the endpoint) and rejected: on a deployment where
+one instance has the wrong key, a rotation that happened to reach that instance would seal
+the new secret under a key the other instances do not have.
+
+### When the previous secret stops, and when it is removed
+
+Two different instants, on purpose.
+
+- **It stops signing at `previous_secret_expires_at`, decided at each request.** The one
+  function that builds the header (`signatures`) compares the instant the request is made,
+  which is also where its `webhook-timestamp` comes from, with the stored end: strictly
+  before, both sign; at it or after, the current secret alone. No job has to have run. A
+  lane that opened its keys before the end and sends after it signs with one secret.
+- **Its ciphertext is deleted by the worker's next round**: a new first pass of
+  `deliverEnvironment`, one statement per environment
+  (`clearExpiredPreviousSecrets(environment, now, limit)`), which runs whether the endpoint
+  is on or off and whether or not anything is due. So an expired secret is in the database
+  for one round's interval, five seconds, and not "until someone looks". The worker and not
+  the retention job, because the worker already visits every environment's endpoints every
+  few seconds and retention runs far less often. The delete is the worker's housekeeping and
+  takes no `Activity` ([ADR 0012](0012-events-and-audit-log.md)): what changed who can sign
+  was the rotation, which is recorded with the end it set.
+
+A read (`GET`, the list) shows `rotationOverlapEndsAt` only while the overlap is under way by
+the clock; a row whose previous secret has expired and not yet been cleared reads as having
+one secret, and may be rotated again at once.
+
+### One signing path
+
+The worker, a test event and a delivery sent again all make their request through `request`,
+which calls `signatures`. There is no second place that writes the header.
+
+### What is guaranteed around a rotation
+
+- **Before it commits**: one signature, the old secret's.
+- **After it commits**: two signatures, new then old, on every delivery whose endpoint row was
+  read after the commit. A round of the worker that was already serving the endpoint holds
+  the row it read before and signs with the **old secret alone** until it ends (at most the
+  round's cap: fifty deliveries, fifteen seconds).
+- **So a delivery carries the old secret's signature alone, or both; never the new secret's
+  alone** until the overlap ends or is ended. A receiver that has not been given the new
+  secret yet always verifies. (A test holds the rotation committing from inside the
+  receiver's handler, mid-lane.)
+- **At the end of the overlap**: the old secret's signature is on no request made at or after
+  that instant by this instance's clock. Instances are expected to keep their clocks together
+  (as for everything else here): the end is written by the instance that took the rotation
+  and judged by the one that holds the worker's lock.
+- **A retry is signed when it is sent.** A delivery first tried during the overlap and retried
+  after it has the new secret's signature only. The receiver must hold the new secret by the
+  end of the overlap; that is what the overlap is for, and the guide says so.
+- **When the overlap is ended early**: no request whose endpoint row is read after that
+  commit carries the old signature. A round already serving the endpoint may still add it
+  for the rest of that round. Accepted, for the reason above: it gives nothing away.
+
+### A previous secret that cannot be opened
+
+If the **current** secret opens and the **previous** one does not, the delivery is made,
+signed with the current secret alone, and the server logs one line per endpoint per round
+that sends something (ids only). The alternative, sending nothing (`signing_failed`), would
+punish every receiver that has already moved to the new secret for a fault in a secret that
+is on its way out. A receiver still on the old secret refuses these deliveries, which are
+retried on the schedule; the operator's remedy is the key, or deploying the new secret.
+
+If the current secret does not open, nothing changes: `signing_failed`, nothing sent, no
+attempt counted. **The previous secret never signs alone.**
+
+### An endpoint that is switched off
+
+Can be rotated, and its overlap ended. A suspected leak is a reason to switch an endpoint
+off, and the secret is replaced before it is switched on again; pending deliveries are signed
+when they are sent.
+
+### Audit and events
+
+Two new activity types, both the administrator's act, both with the endpoint as target:
+
+| Type | `data` |
+| --- | --- |
+| `webhook_endpoint.secret_rotated` | `rotationOverlapEndsAt` |
+| `webhook_endpoint.previous_secret_revoked` | nothing |
+
+Two types rather than one with an `action` field, for the reason `webhook_endpoint.disabled`
+is its own type: an operator subscribes to exactly the thing they want to be told. And
+`secret_rotated` is worth subscribing to: a rotation hands a new signing secret to whoever
+made the call, so **a rotation the operator did not make means a stolen secret key and a
+forged-event path into the receiver**.
+
+**Nothing of a secret is in either**, not a prefix and not a fingerprint. A fingerprint would
+let an operator match a secret in hand against the log, which is convenient, and would also
+be a value derived from the secret travelling to every other subscribed endpoint and sitting
+in the audit log for as long as it is kept; the time is enough to tell two rotations apart.
+
+*The field is named for the overlap, not for the secret* (`rotationOverlapEndsAt`, where the
+column is `previous_secret_expires_at`). Anything that scrubs or flags by key name
+(`secret`, `token`, `key`) would take a time under such a key for a credential; this
+codebase's own canary test of the event payloads did, the first time it ran. No value that is
+not a secret sits under a key that reads like one.
+
+Additive: `EVENT_SCHEMA_VERSION` stays 1.
+
+### The admin API, and its limit
+
+| | |
+| --- | --- |
+| `POST /:id/secret/rotate` | Replace the secret. `200` with the endpoint, the new secret and `rotationOverlapEndsAt`. |
+| `DELETE /:id/secret/previous` | End the overlap. `200` with the endpoint. |
+
+One error code for both refusals, `webhook.rotation_refused`, with a fixed word in
+`params.reason` (`WEBHOOK_ROTATION_REFUSALS`), as `webhook.cannot_redeliver` has: every
+contract code is in `@tula/core`'s table, and this one leaves that bundle 42 bytes under its
+budget.
+
+An endpoint of another environment is `404` for both, with the body an unknown id gets.
+
+*No rate limit of their own.* Like the other writes to an endpoint (`POST`, `PATCH`,
+`DELETE`), they are behind the general admin limit and nothing else. The bucket that test
+events and redelivery have exists because those calls make the server call an address;
+these do not. What bounds them is the rule itself: one rotation per endpoint per overlap,
+and each rotate-then-revoke cycle is two audited calls by someone who holds a secret key.
+
+### The receiving side
+
+`verifyWebhook(body, headers, secret, options?)` now takes **one secret or a list of at most
+two** (`WEBHOOK_MAX_SECRETS`). It computes the signature each secret would have made, all of
+them, and compares every entry of the header with every one, gathering the results without a
+branch: neither which entry nor which secret was right can be read from how long it took.
+The error codes are the ones it had, and an error names no secret and no position in the
+list.
+
+- *Two, not "a few".* The server never signs with more than two. A third secret in a
+  receiver's list is one that should have been taken out, and a secret left in a list stays
+  good for whoever holds it; refusing it makes that visible.
+- *Every entry must be a signing secret.* An empty list, or a list with one malformed entry
+  beside a good one, is `webhook.invalid_secret` on every delivery. A verifier that quietly
+  used the entries it liked would hide a new secret pasted wrong until the day the old one
+  stops signing.
+
+### Conformance
+
+`50-webhook-secret-rotated-with-an-overlap` (needs a receiver): one signature before; rotate;
+a read shows the overlap and no secret; a second rotation is refused; a delivery and a test
+event during the overlap verify with either secret and carry two signatures; the audit log
+has the rotation and no secret; the overlap is ended; the next delivery has one signature,
+which verifies with the new secret and not the old; a new rotation is then possible, and the
+first secret never signs again. The `webhook` step's `expect` gains `alsoSecrets`,
+`notSecrets` and `signatures`.
+
+**What it does not stage is the overlap ending by itself**: 24 hours, which a `wait` step
+would really sleep against a live server. That instant (one millisecond before and at it) and
+the worker's deletion of the ciphertext are API tests on a controlled clock, and the
+scenario's description says so. CI's `self-host` jobs skip this scenario for the reason they
+skip `47` and `49`; their check is now the exact set of three names.
+
+### Consequences of this step
+
+- A secret can be replaced on a schedule or after a leak with no gap in deliveries.
+- **During a rotation a delivery's `webhook-signature` has two entries.** A receiver that
+  uses `verifyWebhook` or a Standard Webhooks library reads that; one that hand-rolled a
+  comparison of the whole header value with a single signature breaks on the first delivery
+  after a rotation. The guide has said "accept the delivery if any one is right" since the
+  first step.
+- Each round of the worker makes one more statement per environment, an `UPDATE` that
+  usually matches nothing.
+- An endpoint's row holds two secrets for up to 24 hours (and about five seconds).
+- A deployment with a wrong `TULA_MASTER_KEY` cannot rotate.
+
+### Alternatives considered for this step
+
+- **A separate table of secrets per endpoint** (id, sealed secret, `not_after`). The general
+  form, and what an asymmetric scheme would want. Rejected for now: it invites "more than
+  two", every delivery would read a second table, and two columns say everything this step
+  needs.
+- **Letting the caller choose the overlap**, or pass zero for "now". One more thing whose safe
+  range has to be argued; "now" is the second call.
+- **Removing the expired secret in the retention job.** It would leave the ciphertext in the
+  database for hours.
+- **Removing it lazily, on the next write to the row.** An endpoint that is never touched
+  again would keep it for good.
+- **Stopping the old secret only when the cleanup has run** (no clock check at signing). Then
+  "when does the old secret stop" depends on the worker's health, and an instance that cannot
+  take the job lock extends a leaked secret's life.
+- **Answering the early end with a success when there is nothing to end.** Either it records
+  a revocation that revoked nothing, or it records nothing and answers two different outcomes
+  alike.
+
 ## Not built yet
 
 Each is a later step of 2.2 and is named so that its absence is not mistaken for a decision.
@@ -827,7 +1151,7 @@ Struck out: built since, in the section above.
 
 - ~~**Retries**, backoff and giving up; disabling an endpoint that keeps failing.~~
 - ~~**The delivery log's admin routes**, "send a test event" and "redeliver".~~
-- **Secret rotation** with an overlap (the verifier already accepts either signature).
+- ~~**Secret rotation** with an overlap (the verifier already accepts either signature).~~
 - **Endpoints in `tula.config.ts`**, `tula diff` and `tula apply`.
 - **The dashboard's webhooks screen.**
 - **The worker as its own service**, and more than one environment at a time. (A cap on

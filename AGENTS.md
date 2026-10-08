@@ -241,6 +241,37 @@ whose answer decides what happens next (step 2.3).
   returned by a read, a list or an update, never in a log line, an audit entry, an event
   payload or an error. A secret that cannot be opened puts its endpoint's deliveries
   off (`signing_failed`, no attempt counted), and is never a failed round.
+- **A secret is replaced with an overlap, and an endpoint never has three**
+  (`Webhooks.rotateSecret`, `POST …/:id/secret/rotate`). The new secret is the server's to
+  make and is returned once; the one it replaces moves to the **previous slot** and signs
+  beside it for `WEBHOOK_SECRET_OVERLAP` (24 hours, a constant). A rotation while a previous
+  secret still signs is refused (`webhook.rotation_refused`, `rotation_in_progress`), in the
+  service and again in the store's statement (`rotateSecret` is a compare-and-set on the
+  stored ciphertext and on "no previous secret still signs"): never keep a third, and never
+  drop the oldest silently. `Webhooks.revokePreviousSecret` (`DELETE …/:id/secret/previous`)
+  ends an overlap early and is what makes a second rotation possible at once.
+- **The previous secret is sealed for its own slot** (`previousAad`: environment, endpoint id
+  and the word `previous`), so a ciphertext cannot be moved between the two columns, and a
+  rotation opens the current secret and seals it again. The current secret's binding is what
+  it has always been: never change it, existing rows must keep opening (a test seals one the
+  old way). A current secret that cannot be opened cannot be rotated (`secret_unreadable`).
+- **A delivery is signed in one place, `signatures`, reached only through `request`** (the
+  worker, a test event and a delivery sent again): the current secret's signature first,
+  then, separated by a space, the previous secret's while its overlap lasts. **Whether the
+  previous secret signs is decided there, at each request, from its stored end and
+  `deps.clock`** (strictly before the end), never from whether anything has cleared it away.
+  Its ciphertext is deleted by the worker's first pass of the next round
+  (`clearExpiredPreviousSecrets`, unrecorded: ADR 0012), on endpoints that are on or off.
+  Never add a second place that writes the header, never more than two entries, and never
+  let the previous secret sign alone: when the current one does not open nothing is sent,
+  and when only the previous one does not open the delivery is made with one signature and
+  said once per endpoint per round.
+- **Nothing of a secret in the record of a rotation**: `webhook_endpoint.secret_rotated`
+  carries `rotationOverlapEndsAt` and nothing else, `webhook_endpoint.previous_secret_revoked`
+  nothing at all. Not a prefix, not a fingerprint. **No value that is not a secret goes under
+  a key that reads like one** (`secret`, `token`, `key`): the time is named for the overlap,
+  on the endpoint and in the event, because anything that scrubs or flags by key name (the
+  event canary test among them) would take it for a credential.
 - **An endpoint's address is not written anywhere it could travel.** Not in an audit entry,
   not in an event payload (they go to every other subscribed endpoint), not in a log line. A
   change is recorded as `changed: ['url']`.
@@ -354,7 +385,11 @@ whose answer decides what happens next (step 2.3).
   `(endpoint_id, event_id)` makes a second delivery row a no-op. Order is not guaranteed.
   Docs and the verifier's JSDoc tell a receiver to drop repeats by id, to order by
   `occurredAt` and to check `test`.
-- **`verifyWebhook` (`@tula/admin`) is Zod-free and web-platform only**, refuses a wrong or
+- **`verifyWebhook` (`@tula/admin`) is Zod-free and web-platform only**, takes one secret or
+  a list of at most `WEBHOOK_MAX_SECRETS` (two: what the server ever signs with; an empty
+  list, a third or a malformed entry beside a good one is `webhook.invalid_secret`), computes
+  every secret's signature before comparing anything and compares every entry with every one
+  without a branch, refuses a wrong or
   missing signature (constant-time, every entry compared), a malformed header, a
   `webhook-id` or `webhook-timestamp` sent twice (as a list in a plain record, or joined with
   a comma by a `Headers` object) and a timestamp more than five minutes away in either
@@ -364,8 +399,8 @@ whose answer decides what happens next (step 2.3).
   one is marked `needsWebhookReceiver` and skipped by a target without one; a live server in
   a container cannot reach the runner's loopback, and the answer to that is the skip, never a
   looser guard. CI's `self-host` jobs check the **exact set of skipped scenarios by name**
-  (`.github/workflows/ci.yml`): a new scenario with a receiver is added to that list, never
-  covered by a count. What cannot be shown over HTTP (a name re-pointed between save and delivery)
+  (`.github/workflows/ci.yml`): a new scenario with a receiver is added to that list (and
+  to the count in the two summary lines beside it), never covered by a count alone. What cannot be shown over HTTP (a name re-pointed between save and delivery)
   is an API test, and the scenario's description says so.
 - A new event type, a new store method that changes an endpoint, or a new kind of secret
   follows the existing rules: a schema and a fixture in the contract, an `Activity` and a

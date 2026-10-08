@@ -100,3 +100,63 @@ is one code with a reason), and the handful of assertions that were wrong on the
 | `verifyWebhook` on Node, Deno and edge runtimes | Bun, plus `typecheck:portable` (web platform types only: no `Buffer`, no `node:` import). It uses `crypto.subtle`, `TextDecoder`, `atob` and `btoa`. |
 | `verifyWebhook` behind a real framework's body handling (Express, Fastify, Next.js route handlers) | Called with the text and with the bytes a `Request` gave. The warning about parsed bodies in [webhooks.md](../webhooks.md) is from how those frameworks are documented to behave, not from running them. |
 | `@tula/contract/webhook-signature` in React Native | Not applicable in practice (a signing secret has no place on a device), but the entry point is exported to every consumer of the contract: it references `crypto.subtle`, `atob` and `btoa` only inside its functions, so importing it does not fail where they are missing. Not run there. |
+
+## Step 2.2, secret rotation (TULA-43, [ADR 0034](../adr/0034-webhooks.md#secret-rotation-added-2026-10-08-tula-43))
+
+### External services
+
+| What | What it was tested against instead |
+| --- | --- |
+| **Two signatures in one header, read by a Standard Webhooks library** (any language, the JavaScript reference included) | `verifyWebhook` (`@tula/admin`) and the conformance runner's own check, both built on the contract's `signWebhook`. That the reference libraries split the header on spaces and accept any one right entry is from their source as read for the first step (2026-10-08); **no library was handed a two-signature delivery made by this server**, and the specification was not re-read for this step. |
+| **A receiver that compares the whole header with one signature** (hand-rolled) | Nothing: it breaks on the first delivery after a rotation, by design of the scheme. The guide has said "accept the delivery if any one is right" since the first step; no real receiver was surveyed. |
+| **A real rollout**: rotate, deploy a receiver with both secrets through a pipeline, wait a day, deploy again without the old one | The same sequence in one process on a clock the test moves (`rotation.test.ts`, `webhook-real-api.test.ts`), and over HTTP in scenario `50` with the overlap ended early instead of waited out. **Nobody waited 24 hours.** |
+
+### The server as it is deployed
+
+| What | What was run instead |
+| --- | --- |
+| **Migration `0020` on a real PostgreSQL with existing endpoints** | Applied on PGlite by every test that builds a database; a test inserts an endpoint with no previous secret and checks the pair constraint both ways, on insert and on update, as the runtime role. Not run against a real server, and not against a database that holds endpoints from before it (the columns are nullable and the check is trivially true of them). |
+| **The three new store methods against a real PostgreSQL** | PGlite, where the shared suite passes for both adapters. `stores.integration.ts` runs the same suite and so has the new tests, and was **not run**: this checkout has no database settings. |
+| **Two rotations meeting on one row from two sessions** | The suite's "two rotations at once" runs on PGlite's single session and on the memory store, where the calls take turns. On a real server it is the row lock of the `UPDATE` that orders them, and the second statement's `WHERE` (the stored secret is still the one read; no previous secret still signs) is then judged against the first one's row: reasoned from how `UPDATE … WHERE` re-checks under `READ COMMITTED`, not exercised. |
+| **A rotation on one instance while another instance's worker is mid-round** | One process: the rotation is made from inside the receiver's handler while the lane's request is in flight, so the lane goes on with the row it read. Two processes were not run. |
+| **Clock skew between the instance that takes a rotation and the one that signs** | Not run. The end of the overlap is written by one instance's clock and judged by another's; a skew of *s* seconds moves the instant the old secret stops by *s*, in either direction. |
+| **The cleanup of an expired secret within five seconds, on a deployment** | One round of the worker on the test clock, a millisecond before the end and at it. The five seconds are the worker's timer in `server.ts`, which no test of this step runs. |
+| **A wrong `TULA_MASTER_KEY` on one of several instances during a rotation** | A ciphertext that does not open, placed in the row by the test. Two real instances with different keys were not run: a rotation that reaches the instance with the wrong key is refused (`secret_unreadable`) only if that instance cannot open the current secret, which is the case tested. |
+| **Scenario `50-webhook-secret-rotated-with-an-overlap` against a live server** | In process, one round of the real worker per `webhook` step (part of `bun run verify`). It is written to run unchanged against `bun run dev` with `CONFORMANCE_WEBHOOK_RECEIVER_HOST=127.0.0.1`; that run was **not made**. Against a live server its `webhook` steps wait for the server's own worker; a round that was already serving the endpoint when the rotation committed signs with the old secret alone, which the scenario's first delivery after the rotation would report as a missing signature. The scenario creates its event *after* the rotation has answered, and such an event is queued by a pass that precedes the round's read of the endpoints, so it cannot be served from a row read before the rotation: reasoned, not observed. |
+| **The change to CI's `self-host` jobs** (the exact set of three skipped scenario names; `3 skipped` in the two summary lines) | The shell lines were copied from `ci.yml` and run against seven sample logs (all three names; the two older ones only; two of three; three with another name in place of one; a fourth; none; the three names with `2 skipped` in the summary). The workflow itself only runs on GitHub and was not run. |
+| **The dashboard** | Its generated hooks changed (`api.gen.ts`); no hand-written dashboard source was touched and its Playwright project was not run. The dashboard has no webhooks screen. |
+
+### What a test does not prove
+
+| What | Why |
+| --- | --- |
+| **That `verifyWebhook` takes the same time whichever secret matched** | A test counts the HMACs made (one per secret, whether the first matched, the second, both or neither) and the code gathers the comparisons without a branch. No timing was measured, and JavaScript gives no guarantee about how a string comparison is compiled. |
+| **That nothing of a secret is ever logged** | The logger is replaced by a spy in the tests that rotate, deliver, fail a delivery, end an overlap and hit an unreadable secret, and everything it was given is searched for both secrets and their base64 parts. That covers the log calls those paths make, not a driver or a framework logging on its own. |
+
+### Not test-first
+
+Every behaviour of this step had its test written and **seen to fail** before the code, with
+these exceptions, each a test of something that already held or that the first test of its
+group had already forced:
+
+- `a secret stored before rotation existed still opens, signs and can be rotated`: its first
+  half (an existing row opens and signs) passed before any change, as it must; that is the
+  point of it. Its second half failed until rotation existed.
+- The two real-API tests in `packages/admin/src/webhook-real-api.test.ts`: written after the
+  routes and the verifier, as an end-to-end confirmation. They passed on their first run.
+- `a delivery of the overlap verifies with either secret and has exactly two signatures`
+  (conformance): passed before the step could check anything, because an unknown argument was
+  ignored; the tests beside it, which expect a problem to be reported, failed first.
+- Scenario `50`: passed on its first run in process (the server was built by then). It was
+  then seen to fail with the server broken two ways (the previous secret never signing; the
+  early end leaving it in place).
+- The `@ts-expect-error` lines for the two new store methods compile only because the
+  methods require an activity; they were seen to fail (as unused directives) with the
+  parameter made optional.
+- Each boundary in time (`<` against `<=`, in the service and in both stores) was mutated
+  once and seen to fail a test, as were the slot binding, the header's order, the cleanup
+  pass and the verifier's guards. Two mutations survive by construction and are said here:
+  removing the service's own "a rotation is under way" check leaves every test passing,
+  because the store's statement refuses the same thing; and removing the verifier's check of
+  the `v1` label changes nothing, because an entry is compared whole, label included.
+
