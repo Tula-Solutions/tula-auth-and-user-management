@@ -907,6 +907,19 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   that makes many store calls takes the deadline's `AbortSignal` and looks at it between
   them, the scan is never started on top of one still running, and concurrent callers share
   one run (`Instance.diagnostics`): keep all three.
+- **An address an operator typed is called only through `Outbound.request`** (`~/lib/outbound`):
+  webhooks and hooks, and nothing else, never `fetch`. It allows `https` only (`http` in the
+  `local` tier), resolves the host once and connects to that address (a second lookup could be
+  rebound), refuses a name unless **every** address it resolves to is public (loopback,
+  private, link-local, carrier-grade NAT, cloud metadata and the IPv6 forms that carry such an
+  IPv4 address are refused; loopback alone is allowed in the `local` tier), follows no
+  redirect, takes no proxy from the environment, checks the certificate whatever
+  `NODE_TLS_REJECT_UNAUTHORIZED` says, and has one deadline and a response cap. It
+  is built on `node:https`, not `fetch`, because Bun's `fetch` takes a proxy from the
+  environment whatever it is told. Call it at delivery time, not only when a URL is saved:
+  DNS changes. Its error is a fixed word (`OutboundError.reason`): never store or show more
+  of an answer than a caller needs. A new refused range gets a row in the table of
+  `lib/outbound.test.ts`.
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
   don't rely on it — don't pass them in.
 - Rate-limit every credential-accepting endpoint (per IP, identifier and environment). Anything
@@ -969,7 +982,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
 - Treat every change under
   `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane}`,
   `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
-  `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
+  `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
   it needs tests for the failure paths, not just the happy path.
 
@@ -1112,7 +1125,8 @@ apps/api/src/
 ├── openapi.ts        # shared OpenAPI responses, security requirements, document info
 ├── testing.ts        # createTestDeps(): memory adapters + FixedClock
 ├── lib/              # logger, crypto, keyed-hash, secret-box, email, cors, client-ip, actor,
-│                     # device (the family a user agent belongs to), safe-error
+│                     # device (the family a user agent belongs to), safe-error,
+│                     # outbound (the guarded request to an operator's address)
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/, oauth/
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
