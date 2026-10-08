@@ -427,6 +427,27 @@ const CONFIG_UNMANAGED: "none"
 headers[CONFIG_MANAGED_BY_HEADER] = CONFIG_UNMANAGED
 ```
 
+### `CUSTOM_CLAIMS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The one top-level claim every custom claim is nested under (ADR 0036).
+
+An operator's claims never sit beside Tula's own, so a claim Tula adds later cannot collide
+with a customer's, and a template cannot set a claim Tula's servers or SDKs act on. `ext`
+("extension") is three bytes in every token, and is not a registered claim name (IANA's
+"JSON Web Token Claims" registry, read in October 2026) nor one OpenID Connect defines.
+
+```ts
+const CUSTOM_CLAIMS_CLAIM: "ext"
+```
+
+**Example**
+
+```ts
+const role = payload[CUSTOM_CLAIMS_CLAIM]?.role // payload.ext.role
+```
+
 ### `ChangePasswordRequest`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -616,6 +637,37 @@ profile screen needs to know about how they sign in. Never a credential.
 
 ```ts
 const CurrentUserSchema
+```
+
+### `CustomClaimValue`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What a custom claim's value can be: one string, number or boolean. Never a list or an object.
+
+```ts
+export type CustomClaimValue = string | number | boolean
+```
+
+### `CustomClaims`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+The custom claims of a verified session, as an SDK hands them to an application: a frozen
+map from claim key to value.
+
+The values are typed `unknown` because only the operator knows what their template puts
+under each key: narrow before use. At run time each is a string, a number or a boolean.
+
+```ts
+export type CustomClaims = Readonly<Record<string, unknown>>
+```
+
+**Example**
+
+```ts
+const { customClaims } = await auth()
+const isAdmin = customClaims.role === 'admin' // a missing claim is `undefined`: "no"
 ```
 
 ### `DASHBOARD_HEADER`
@@ -2044,6 +2096,34 @@ What an instance action was about.
 export type InstanceAuditTargetType = (typeof INSTANCE_AUDIT_TARGET_TYPES)[number]
 ```
 
+### `JWT_TEMPLATE_SOURCES`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+What a template's claim can be read from, besides a constant (ADR 0036). A closed list:
+things the server itself knows about the user and the session, never something a request
+said.
+
+- `user.email`: the user's address in its normalised form (trimmed, ASCII letters
+  lowercased), which is the form Tula matches addresses by. A string.
+- `user.email_verified`: whether that address has been proven. A boolean.
+- `user.created_at`: when the account was created, in seconds since the epoch. A number.
+- `session.client`: the kind of client the session was started from (`web`, `ios`,
+  `android`, `server`). A string.
+- `session.created_at`: when the session was signed in to, in seconds since the epoch.
+  Unlike `auth_time` a step-up does not move it. A number.
+
+Deliberately absent: the user id (it is `sub`), names (text the user chose), anything
+secret, and the session's IP address and user agent (what a request claimed about itself
+when the session began: personal data, not facts the server knows, and stale by the next
+request).
+
+Later servers may add sources: additive.
+
+```ts
+const JWT_TEMPLATE_SOURCES
+```
+
 ### `Jwk`
 
 _type_, defined in `packages/contract/src/tokens.ts`
@@ -2082,6 +2162,84 @@ The public key set served at `/.well-known/jwks.json`.
 
 ```ts
 const JwksSchema
+```
+
+### `JwtTemplate`
+
+_type_, defined in `packages/contract/src/jwt-template.ts`
+
+A JWT template.
+
+```ts
+export type JwtTemplate = z.infer<typeof JwtTemplateSchema>
+```
+
+### `JwtTemplateClaim`
+
+_type_, defined in `packages/contract/src/jwt-template.ts`
+
+Where one custom claim's value comes from.
+
+```ts
+export type JwtTemplateClaim = z.infer<typeof JwtTemplateClaimSchema>
+```
+
+### `JwtTemplateClaimSchema`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+Where one custom claim's value comes from: **exactly one** source.
+
+- `{ from: … }`: one of {@link JWT_TEMPLATE_SOURCES}, read from the user and the session
+  each time a token is issued.
+- `{ value: … }`: a constant: a string of at most
+  {@link MAX_CUSTOM_CLAIM_CONSTANT_LENGTH} characters, a number or a boolean. Every session
+  of the profile gets it. It says what the operator typed, not something Tula checked.
+
+There is no expression language, no concatenation and no nesting: a value is one source.
+
+```ts
+const JwtTemplateClaimSchema
+```
+
+### `JwtTemplateSchema`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+A JWT template: a named set of custom claims an environment adds to the sessions of the
+profiles that use it (ADR 0036).
+
+The claims are issued under the one namespace claim `ext`, in a `hybrid` session's access
+token and in what the server answers for a `stateful` session. They are read again from the
+user and the session every time a token is issued. A source that has no value for a user
+leaves its key out; a template with no claim adds nothing at all.
+
+Refused: an unknown key, more than {@link MAX_JWT_TEMPLATE_CLAIMS} claims, and a template
+whose claims **could** take more than `MAX_CUSTOM_CLAIMS_BYTES` as JSON
+({@link jwtTemplateMaxBytes}).
+
+```ts
+const JwtTemplateSchema
+```
+
+### `JwtTemplateSource`
+
+_type_, defined in `packages/contract/src/jwt-template.ts`
+
+One of {@link JWT_TEMPLATE_SOURCES}.
+
+```ts
+export type JwtTemplateSource = z.infer<typeof JwtTemplateSourceSchema>
+```
+
+### `JwtTemplateSourceSchema`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+One of {@link JWT_TEMPLATE_SOURCES}.
+
+```ts
+const JwtTemplateSourceSchema: z.ZodEnum<{}>
 ```
 
 ### `MAX_ACCESS_TOKEN_TTL`
@@ -2153,6 +2311,42 @@ const MAX_CHANGED_SETTINGS: 256
 names.slice(0, MAX_CHANGED_SETTINGS)
 ```
 
+### `MAX_CUSTOM_CLAIMS_BYTES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The most bytes the namespace claim's value may take as JSON (UTF-8), whatever puts claims
+in it.
+
+An access token is sent with every request and `@tula/nextjs` keeps it in a cookie, where a
+browser allows about 4,096 bytes for the name and the value together. A token without
+custom claims is about 700 bytes; this cap adds at most 1,366 (base64url), which leaves
+room for a long issuer URL.
+
+```ts
+const MAX_CUSTOM_CLAIMS_BYTES: 1024
+```
+
+### `MAX_CUSTOM_CLAIM_CONSTANT_LENGTH`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Longest string a template may set as a constant, in characters.
+
+```ts
+const MAX_CUSTOM_CLAIM_CONSTANT_LENGTH: 256
+```
+
+### `MAX_CUSTOM_CLAIM_KEY_LENGTH`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Longest custom claim key, in characters.
+
+```ts
+const MAX_CUSTOM_CLAIM_KEY_LENGTH: 32
+```
+
 ### `MAX_CUSTOM_SESSION_PROFILES`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -2171,6 +2365,38 @@ Longest duration accepted anywhere in config: 10 years.
 
 ```ts
 const MAX_DURATION_MS: number
+```
+
+### `MAX_EMAIL_CLAIM_BYTES`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+The most bytes a `user.email` claim's value can take as JSON: every character of the longest
+address escaped, and the two quotes. A true upper bound, not an estimate: a template is
+refused when its claims **could** exceed {@link MAX_CUSTOM_CLAIMS_BYTES}.
+
+```ts
+const MAX_EMAIL_CLAIM_BYTES: number
+```
+
+### `MAX_JWT_TEMPLATES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most JWT templates an environment may define.
+
+```ts
+const MAX_JWT_TEMPLATES: 10
+```
+
+### `MAX_JWT_TEMPLATE_CLAIMS`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most claims one JWT template may define.
+
+```ts
+const MAX_JWT_TEMPLATE_CLAIMS: 16
 ```
 
 ### `MAX_PAGE_SIZE`
@@ -2389,6 +2615,19 @@ Whether users can, or must, protect their account with a second factor.
 
 ```ts
 const MfaPolicySchema: z.ZodEnum<{}>
+```
+
+### `NamedJwtTemplate`
+
+_interface_, defined in `packages/contract/src/jwt-template.ts`
+
+A template together with the name it is stored under.
+
+```ts
+export interface NamedJwtTemplate {
+  name: string
+  template: JwtTemplate
+}
 ```
 
 ### `NamedSessionProfile`
@@ -3081,6 +3320,27 @@ Prefix of refresh tokens, so secret scanners and humans can recognise one.
 const REFRESH_TOKEN_PREFIX: "tula_rt_"
 ```
 
+### `RESERVED_CLAIM_NAMES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Claim names a custom claim's key may never be: every claim Tula's tokens carry, the
+registered claims a verifier acts on, `cnf` (reserved for device binding) and the namespace
+claim itself.
+
+A custom claim lives inside {@link CUSTOM_CLAIMS_CLAIM}, so it could not overwrite one of
+these anyway. They are refused so that nobody reads `claims.ext.sub` as the subject.
+
+```ts
+const RESERVED_CLAIM_NAMES
+```
+
+**Example**
+
+```ts
+RESERVED_CLAIM_NAMES.includes('sub') // true
+```
+
 ### `RedirectUrlSchema`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
@@ -3413,6 +3673,10 @@ The `sessions` section of an environment's settings, as `PUT /v1/admin/settings`
   take the defaults); up to {@link MAX_CUSTOM_SESSION_PROFILES} more may be added under
   kebab-case names.
 - `maxPerUser` and `onLimit`: the concurrent-session rule.
+- `jwtTemplates`: named sets of custom claims (ADR 0036), at most
+  {@link MAX_JWT_TEMPLATES}; a profile uses one by naming it in its `jwtTemplate`. A profile
+  that names a template the document does not have is refused, so a template in use cannot
+  be removed without first unsetting it on every profile that names it.
 
 ```ts
 const SessionSettingsSchema
@@ -3686,7 +3950,9 @@ export interface StoredEnvironmentSettingsRead {
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
 
-The `sessions` section of a stored settings document: unknown keys are dropped.
+The `sessions` section of a stored settings document: unknown keys are dropped, and so is a
+template (or a claim of one) this version would not accept. A profile that names a template
+that is not there is read as stored and gets no custom claims (`jwtTemplateOfProfile`).
 
 ```ts
 const StoredSessionSettingsSchema
@@ -4552,6 +4818,29 @@ export function contrastRatio(foreground: string, background: string): number
 contrastRatio('#ffffff', '#5b4cf0') >= 4.5 // white text on the default primary passes AA
 ```
 
+### `customClaimsBytes`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+How many bytes custom claims take in a token: the UTF-8 length of their JSON, which is what
+{@link MAX_CUSTOM_CLAIMS_BYTES} caps.
+
+```ts
+export function customClaimsBytes(claims: Readonly<Record<string, CustomClaimValue>>): number
+```
+
+**Parameters**
+
+- `claims`: The value of the namespace claim.
+
+**Returns** The byte count.
+
+**Example**
+
+```ts
+customClaimsBytes({ role: 'admin' }) // 16: {"role":"admin"}
+```
+
 ### `darkCssVariable`
 
 _function_, defined in `packages/contract/src/theme.ts`
@@ -4770,6 +5059,55 @@ hookWeakenings({ enabled: true, failureMode: 'deny' }, { enabled: true, failureM
 // ['failureMode']
 ```
 
+### `isCustomClaimKey`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a string can be the key of a custom claim: ASCII letters, digits and underscores,
+not starting with a digit, at most {@link MAX_CUSTOM_CLAIM_KEY_LENGTH} characters, and none
+of {@link RESERVED_CLAIM_NAMES}, `__proto__`, `constructor` or `prototype`.
+
+```ts
+export function isCustomClaimKey(key: unknown): key is string
+```
+
+**Parameters**
+
+- `key`: The candidate.
+
+**Returns** `true` when it can be a key.
+
+**Example**
+
+```ts
+isCustomClaimKey('role') // true
+isCustomClaimKey('sub') // false: reserved
+isCustomClaimKey('my-claim') // false: a hyphen
+```
+
+### `isCustomClaimValue`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a value can be a custom claim's: a string, a boolean, or a number JSON can hold.
+
+```ts
+export function isCustomClaimValue(value: unknown): value is CustomClaimValue
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a string, a boolean and a finite number.
+
+**Example**
+
+```ts
+isCustomClaimValue('admin') // true
+isCustomClaimValue(['admin']) // false
+```
+
 ### `isRelyingPartyId`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -4857,6 +5195,63 @@ export function jwksUrl(issuer: string): string
 ```ts
 jwksUrl('https://auth.example.com/v1/environments/env_1')
 // 'https://auth.example.com/v1/environments/env_1/.well-known/jwks.json'
+```
+
+### `jwtTemplateMaxBytes`
+
+_function_, defined in `packages/contract/src/jwt-template.ts`
+
+The most bytes the namespace claim can take for a template, as JSON: constants as they are,
+and every other source at its own maximum (an address at {@link MAX_EMAIL_CLAIM_BYTES}).
+
+It is an upper bound over every user and session, which is what lets a template be refused
+when it is saved instead of a token going out without its claims later.
+
+```ts
+export function jwtTemplateMaxBytes(template: {
+  claims: Readonly<Record<string, JwtTemplateClaim>>
+}): number
+```
+
+**Parameters**
+
+- `template`: The template.
+
+**Returns** The byte count; `2` for a template with no claim.
+
+**Example**
+
+```ts
+jwtTemplateMaxBytes({ claims: { role: { value: 'admin' } } }) // 16
+```
+
+### `jwtTemplateOfProfile`
+
+_function_, defined in `packages/contract/src/jwt-template.ts`
+
+The template a profile's sessions use, as configured now.
+
+```ts
+export function jwtTemplateOfProfile(
+  settings: Pick<SessionSettings, 'jwtTemplates'>,
+  profile: Pick<SessionProfile, 'jwtTemplate'>
+): NamedJwtTemplate | null
+```
+
+**Parameters**
+
+- `settings`: The environment's `sessions` settings.
+- `profile`: The profile.
+
+**Returns**
+
+The template and its name; `null` when the profile names none, or names one that
+no longer exists (possible only in a stored document: a save is refused).
+
+**Example**
+
+```ts
+jwtTemplateOfProfile(settings.sessions, settings.sessions.profiles.web)?.name // 'app'
 ```
 
 ### `normalizePassword`
@@ -4959,6 +5354,39 @@ export function profileOfSession(
 profileOfSession(settings.sessions, { profile: 'deleted-one', client: 'web' }).name // 'web'
 ```
 
+### `readCustomClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Read the custom claims out of a session's claims, for an SDK to hand to an application.
+
+Call it only with claims that were **verified** (a token's signature and issuer, or the
+API's own answer): this checks a shape, not where the claims came from.
+
+The namespace claim is returned only when it is exactly what a Tula server issues: a plain
+object, not empty, at most {@link MAX_CUSTOM_CLAIMS_BYTES} as JSON, whose every key passes
+{@link isCustomClaimKey} and whose every value is a string, a boolean or a finite number.
+Anything else is **absent as a whole**, never passed through and never repaired: an
+application must not be handed an object of a shape it did not expect under a name it
+trusts. Treat an absent claim as "no".
+
+```ts
+export function readCustomClaims(claims: unknown): CustomClaims | null
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns** A frozen copy of the custom claims, or `null` when there are none.
+
+**Example**
+
+```ts
+readCustomClaims({ sub: 'u1', ext: { role: 'admin' } }) // { role: 'admin' }
+readCustomClaims({ sub: 'u1', ext: ['admin'] }) // null
+```
+
 ### `readStoredEnvironmentSettings`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -4994,6 +5422,34 @@ stores can do that: every document is validated in full before it is written.
 ```ts
 readStoredEnvironmentSettings({ urls: { allowedOrigins: ['http://app.lan'] } })
 // { settings: { …, urls: { allowedOrigins: [], … } }, dropped: 1 }
+```
+
+### `readStoredJwtTemplate`
+
+_function_, defined in `packages/contract/src/jwt-template.ts`
+
+Read one stored template, leaving out what this version does not accept.
+
+A stored document must never fail a read (settings are read on the request path), and a
+newer server may have stored a source this one does not know before a rollback. Such a claim
+is left out: to an application a missing claim is "no". A template that is over a cap even
+so is left out whole, because cutting it down would choose which claims survive.
+
+```ts
+export function readStoredJwtTemplate(stored: unknown): JwtTemplate | null
+```
+
+**Parameters**
+
+- `stored`: The stored value.
+
+**Returns** The template, or `null` when it is not one.
+
+**Example**
+
+```ts
+readStoredJwtTemplate({ claims: { a: { value: 1 }, b: { from: 'later.source' } } })
+// { claims: { a: { value: 1 } } }
 ```
 
 ### `resolveSessionProfile`
@@ -5052,7 +5508,11 @@ A path is listed when:
   longer be told);
 - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
 - `sessions.maxPerUser`, `sessions.profiles.<name>`: sessions live longer or can be had
-  more freely (a raised or removed limit, a looser profile, one clients may now select).
+  more freely (a raised or removed limit, a looser profile, one clients may now select);
+- `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or
+  one of their claims changes its source or its constant (ADR 0036). It is listed because
+  an application decides on those claims: taking one away can lock users out, and opens up
+  an application that reads a missing claim as permission.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
@@ -5191,6 +5651,244 @@ export function webhookSecretBytes(secret: string): Uint8Array<ArrayBuffer> | nu
 
 ```ts
 const key = webhookSecretBytes(process.env.TULA_WEBHOOK_SECRET ?? '')
+```
+
+## `@tula/contract/custom-claims`
+
+Source: `packages/contract/src/custom-claims.ts`
+
+### `CUSTOM_CLAIMS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The one top-level claim every custom claim is nested under (ADR 0036).
+
+An operator's claims never sit beside Tula's own, so a claim Tula adds later cannot collide
+with a customer's, and a template cannot set a claim Tula's servers or SDKs act on. `ext`
+("extension") is three bytes in every token, and is not a registered claim name (IANA's
+"JSON Web Token Claims" registry, read in October 2026) nor one OpenID Connect defines.
+
+```ts
+const CUSTOM_CLAIMS_CLAIM: "ext"
+```
+
+**Example**
+
+```ts
+const role = payload[CUSTOM_CLAIMS_CLAIM]?.role // payload.ext.role
+```
+
+### `CustomClaimValue`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What a custom claim's value can be: one string, number or boolean. Never a list or an object.
+
+```ts
+export type CustomClaimValue = string | number | boolean
+```
+
+### `CustomClaims`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+The custom claims of a verified session, as an SDK hands them to an application: a frozen
+map from claim key to value.
+
+The values are typed `unknown` because only the operator knows what their template puts
+under each key: narrow before use. At run time each is a string, a number or a boolean.
+
+```ts
+export type CustomClaims = Readonly<Record<string, unknown>>
+```
+
+**Example**
+
+```ts
+const { customClaims } = await auth()
+const isAdmin = customClaims.role === 'admin' // a missing claim is `undefined`: "no"
+```
+
+### `MAX_CUSTOM_CLAIMS_BYTES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The most bytes the namespace claim's value may take as JSON (UTF-8), whatever puts claims
+in it.
+
+An access token is sent with every request and `@tula/nextjs` keeps it in a cookie, where a
+browser allows about 4,096 bytes for the name and the value together. A token without
+custom claims is about 700 bytes; this cap adds at most 1,366 (base64url), which leaves
+room for a long issuer URL.
+
+```ts
+const MAX_CUSTOM_CLAIMS_BYTES: 1024
+```
+
+### `MAX_CUSTOM_CLAIM_CONSTANT_LENGTH`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Longest string a template may set as a constant, in characters.
+
+```ts
+const MAX_CUSTOM_CLAIM_CONSTANT_LENGTH: 256
+```
+
+### `MAX_CUSTOM_CLAIM_KEY_LENGTH`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Longest custom claim key, in characters.
+
+```ts
+const MAX_CUSTOM_CLAIM_KEY_LENGTH: 32
+```
+
+### `MAX_JWT_TEMPLATES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most JWT templates an environment may define.
+
+```ts
+const MAX_JWT_TEMPLATES: 10
+```
+
+### `MAX_JWT_TEMPLATE_CLAIMS`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most claims one JWT template may define.
+
+```ts
+const MAX_JWT_TEMPLATE_CLAIMS: 16
+```
+
+### `RESERVED_CLAIM_NAMES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Claim names a custom claim's key may never be: every claim Tula's tokens carry, the
+registered claims a verifier acts on, `cnf` (reserved for device binding) and the namespace
+claim itself.
+
+A custom claim lives inside {@link CUSTOM_CLAIMS_CLAIM}, so it could not overwrite one of
+these anyway. They are refused so that nobody reads `claims.ext.sub` as the subject.
+
+```ts
+const RESERVED_CLAIM_NAMES
+```
+
+**Example**
+
+```ts
+RESERVED_CLAIM_NAMES.includes('sub') // true
+```
+
+### `customClaimsBytes`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+How many bytes custom claims take in a token: the UTF-8 length of their JSON, which is what
+{@link MAX_CUSTOM_CLAIMS_BYTES} caps.
+
+```ts
+export function customClaimsBytes(claims: Readonly<Record<string, CustomClaimValue>>): number
+```
+
+**Parameters**
+
+- `claims`: The value of the namespace claim.
+
+**Returns** The byte count.
+
+**Example**
+
+```ts
+customClaimsBytes({ role: 'admin' }) // 16: {"role":"admin"}
+```
+
+### `isCustomClaimKey`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a string can be the key of a custom claim: ASCII letters, digits and underscores,
+not starting with a digit, at most {@link MAX_CUSTOM_CLAIM_KEY_LENGTH} characters, and none
+of {@link RESERVED_CLAIM_NAMES}, `__proto__`, `constructor` or `prototype`.
+
+```ts
+export function isCustomClaimKey(key: unknown): key is string
+```
+
+**Parameters**
+
+- `key`: The candidate.
+
+**Returns** `true` when it can be a key.
+
+**Example**
+
+```ts
+isCustomClaimKey('role') // true
+isCustomClaimKey('sub') // false: reserved
+isCustomClaimKey('my-claim') // false: a hyphen
+```
+
+### `isCustomClaimValue`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a value can be a custom claim's: a string, a boolean, or a number JSON can hold.
+
+```ts
+export function isCustomClaimValue(value: unknown): value is CustomClaimValue
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a string, a boolean and a finite number.
+
+**Example**
+
+```ts
+isCustomClaimValue('admin') // true
+isCustomClaimValue(['admin']) // false
+```
+
+### `readCustomClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Read the custom claims out of a session's claims, for an SDK to hand to an application.
+
+Call it only with claims that were **verified** (a token's signature and issuer, or the
+API's own answer): this checks a shape, not where the claims came from.
+
+The namespace claim is returned only when it is exactly what a Tula server issues: a plain
+object, not empty, at most {@link MAX_CUSTOM_CLAIMS_BYTES} as JSON, whose every key passes
+{@link isCustomClaimKey} and whose every value is a string, a boolean or a finite number.
+Anything else is **absent as a whole**, never passed through and never repaired: an
+application must not be handed an object of a shape it did not expect under a name it
+trusts. Treat an absent claim as "no".
+
+```ts
+export function readCustomClaims(claims: unknown): CustomClaims | null
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns** A frozen copy of the custom claims, or `null` when there are none.
+
+**Example**
+
+```ts
+readCustomClaims({ sub: 'u1', ext: { role: 'admin' } }) // { role: 'admin' }
+readCustomClaims({ sub: 'u1', ext: ['admin'] }) // null
 ```
 
 ## `@tula/contract/error-codes`

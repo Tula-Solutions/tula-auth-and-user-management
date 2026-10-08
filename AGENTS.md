@@ -122,7 +122,7 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 - A change to a publishable package comes with a changeset (`bunx changeset`).
 - **`@tula/core` must not pull Zod into an application's bundle.** Import run-time values from
   the contract's Zod-free entry points (`@tula/contract/error-codes`, `/event-types`,
-  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`) and types from
+  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`) and types from
   `src/generated`. Anything
   an SDK needs at run time goes in a contract module that does not import Zod.
   `packages/contract/src/entry-points.test.ts` bundles every subpath but the index and fails
@@ -492,6 +492,57 @@ one point so far is `before_sign_up`.
   other's bodies: a question has a type from a closed list and no `actor` or `target`.
 - The `hook` conformance step uses the `webhook` step's receiver; a scenario with one sets
   `needsWebhookReceiver` and is added, by name, to the skipped set in `.github/workflows/ci.yml`.
+
+### JWT templates and custom claims (`modules/session/custom-claims.ts`, see ADR 0036)
+
+A **JWT template** is a named set of **custom claims** in an environment's settings
+(`sessions.jwtTemplates`); a session profile names the one its sessions use (`jwtTemplate`).
+
+- **Custom claims live under the one namespace claim `ext`** (`CUSTOM_CLAIMS_CLAIM` in
+  `@tula/contract/custom-claims`, a Zod-free entry point). Never put a template's claim at the
+  top level of a token, and never add a second namespace.
+- **A claim Tula sets is reserved, inside `ext` too** (`RESERVED_CLAIM_NAMES`). A new
+  top-level claim of the access token is added to that list in the same change: the test "the
+  claims a server sets are all reserved" signs a real token and fails otherwise. `cnf` stays
+  reserved for device binding.
+- **A claim's source is a closed list of things the server knows** (`JWT_TEMPLATE_SOURCES`:
+  the user's normalised address, whether it is verified, two times, the client kind) **or an
+  operator's constant**. Never a value from a request (a header, a body, the IP address, the
+  user agent), never a name or other text a user chose besides their own address, never a
+  secret, and no expression, concatenation or nesting. A new source is added to the list, to
+  `SOURCE_MAX_BYTES` with a true upper bound of its JSON, and to the canary test ("nothing
+  the request said").
+- **The cap is `MAX_CUSTOM_CLAIMS_BYTES` (1,024), enforced twice.** At save a template is
+  refused when its claims *could* exceed it (`jwtTemplateMaxBytes`, every source at its
+  maximum). At build `CustomClaims.build` checks again and, over the cap, drops the **whole**
+  namespace and logs the template's name and the byte count, never a value. Never truncate,
+  never raise the cap for a feature: it is what keeps `tula_at` inside a browser's cookie
+  limit (a test in `packages/nextjs/src/real-api.test.ts` measures it).
+- **Claims are read at every issue and stored nowhere.** `Sessions` builds them wherever it
+  signs a token or answers for a stateful session, from the settings as configured now. A
+  refresh uses the user row `rejectBanned` already loaded and **gains no read**; the other
+  paths read the user only when `CustomClaims.needsUser(template)`. Keep the tests that count
+  those reads.
+- **No value means no key, and no claim means no `ext`.** Never `null`, never `{}`. A token
+  of a profile without a template has exactly the claim set of before (a snapshot test).
+- **A later source of claims (a hook) goes through `CustomClaims.build`'s `extra`**: the same
+  namespace, key grammar, reserved names, scalar values and cap. Never merge claims into a
+  token by another path.
+- **A reader treats a malformed `ext` as absent, whole** (`readCustomClaims`): not a plain
+  object, a reserved or malformed key, a value that is not a scalar, over the cap.
+  `@tula/nextjs` sets `SessionClaims.ext` and `auth().customClaims` only from it, for a token
+  and for the sealed `x-tula-auth` header alike.
+- **A profile names a template that exists**: the session settings schema refuses a document
+  whose profile names a missing template, which is also what refuses removing one in use.
+  Reading is tolerant (`readStoredJwtTemplate`, `jwtTemplateOfProfile`): an unknown source is
+  left out, an over-cap template and a dangling name mean no claims, never a failed read.
+- **The audit entry and the `settings.updated` event name no template.** Every change under
+  `sessions.jwtTemplates` is the one key `sessions.jwtTemplates`: a template's name is also a
+  value in the document, a claim's key says what an application authorizes on, and a
+  constant is the operator's value. The event-canary test holds it; never weaken that test.
+- **Taking a claim away from a profile's sessions, or redefining one, is a weakening**
+  (`settingsWeakenings`: `sessions.profiles.<name>.jwtTemplate`), shared by the audit entry,
+  the dashboard's confirmation and `tula apply --yes`.
 
 ### React SDK (see ADR 0022)
 
@@ -1093,7 +1144,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   rules, the control plane and how the app is served: [ADR 0032](docs/adr/0032-dashboard.md);
   the MCP server, what it may return and why it has no write tools:
   [ADR 0033](docs/adr/0033-mcp-server.md); webhooks: [ADR 0034](docs/adr/0034-webhooks.md);
-  hooks, where one is asked and what it cannot do: [ADR 0035](docs/adr/0035-hooks.md); webhooks (endpoints, the signing secret, the
+  hooks, where one is asked and what it cannot do: [ADR 0035](docs/adr/0035-hooks.md);
+  JWT templates, the `ext` namespace, reserved claims and the size cap:
+  [ADR 0036](docs/adr/0036-jwt-templates.md); webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`

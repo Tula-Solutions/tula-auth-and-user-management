@@ -219,7 +219,7 @@ explicit `maxAgeSeconds` keeps it.
 ## Deferred
 
 - The other session types of the business plan (`stateless`, `long-lived`, `kiosk`).
-- JWT templates and custom claims: a hook surface that needs its own design (Phase 2, with
-  webhooks).
+- JWT templates and custom claims: decided since, in [ADR 0036](0036-jwt-templates.md). A
+  profile names its template (`jwtTemplate`).
 - A stateful session for native clients. (A cookie `Domain` was decided against in ADR 0029.)
 - Showing a profile's limits in `GET /v1/client/config` (nothing needs them yet).

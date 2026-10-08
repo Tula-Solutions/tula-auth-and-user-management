@@ -230,3 +230,18 @@ outbound guard in the `local` tier. Not verified:
 | `verifyHook` behind a real framework's body handling | Called with text and with bytes, as `verifyWebhook` was. |
 
 Tests seen to fail first, and the ones that were not, are listed in the step's report.
+
+## JWT templates (TULA-10, [ADR 0036](../adr/0036-jwt-templates.md))
+
+Custom claims are tested through the API in process (memory adapters), the conformance
+scenario, the `@tula/core` journey, `@tula/nextjs` and the CLI against that API, and the
+dashboard in a browser. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| A real PostgreSQL server | No table and no migration changed: templates are part of the settings document. The integration tests (`*.integration.ts`) were **not run**: they migrate the local development database, which a worktree must not do. That the stored JSON round-trips through the real `jsonb` column is therefore covered only by the lenient stored schema's own tests. |
+| The conformance scenario against a live server | `jwt template custom claims` ran in process only. |
+| Another instance's stale settings cache | Simulated with two caches over one store in one process (`modules/settings/jwt-templates.test.ts`), not with two API processes and Redis. |
+| The cookie budget in a browser | The token and the `__Host-tula_at` cookie's name and value are measured in `packages/nextjs/src/real-api.test.ts` (2,097 bytes at the cap). No browser was asked to store a cookie of that size together with its attributes. |
+| The Next.js example | It does not show a custom claim: `auth().customClaims` is tested against the real API in process, for a token and for a stateful session, not on a page in a browser. |
+| A third party's JWT library | The token with `ext` is verified by the API's own verifier and by `@tula/nextjs`. No other verifier was tried. |

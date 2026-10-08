@@ -296,12 +296,19 @@ Changes pending. Run `tula apply` to make them.
 
 - `+` added, `~` changed, `-` removed, by path. Allowed origins and redirect URLs are sets:
   their order is not a change, and a change shows the entries added and removed.
+- JWT templates (`sessions.jwtTemplates`) are a set by name, and a template's claims a set by
+  key: their order is not a change. A claim is one value: a changed claim is one line at
+  `sessions.jwtTemplates.<name>.claims.<key>` with the claim before and after, never a line
+  for its `from` or `value` alone. A file with no template, and a profile with no
+  `jwtTemplate`, hash as they did before templates existed.
 - A secret is never shown. A provider line says `secret set from $NAME` or
   `stored secret kept`. `diff` does not even read the variable.
 - `! weakens security` uses the server's own definition (the one behind the audit log's
   `weakened` flag): a weaker password policy, a security notice switched off, an MFA policy
-  moved towards `off`, sessions that live longer, an audit retention period set or
-  shortened. `tula apply --yes` refuses such a plan without `--allow-weaker`, and `diff`
+  moved towards `off`, sessions that live longer, custom claims taken away from a profile's
+  sessions or redefined (`sessions.profiles.<name>.jwtTemplate`: a backend reads a missing
+  claim as "no"; adding a template or a claim, and editing a template no profile uses, are
+  ordinary changes), an audit retention period set or shortened. `tula apply --yes` refuses such a plan without `--allow-weaker`, and `diff`
   says so under the plan.
 - `audit.retentionDays` is flagged **when applying would delete entries**: the file sets a
   period where the server keeps entries for ever (`null`, which is also what leaving it out
