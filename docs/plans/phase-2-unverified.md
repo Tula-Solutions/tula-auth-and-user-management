@@ -263,7 +263,10 @@ delivery row and a failing `webhook_worker` after an owed event had waited over 
 endpoint's secret, counted in the worker's log and in neither instance's. Also seen there:
 an API container gets `ConnectionRefused` at the receiver's address; a worker given
 `WEBHOOK_WORKER=api` prints its refusal and exits 1; `docker compose stop worker` ends the
-worker with exit code 0. Not verified:
+worker with exit code 0. The check was run once more, the same way on a fresh stack, after
+review round 1 (the refusal moved in front of the send limit; the worker given less of the
+environment): it passed, and the running worker container had none of `TULA_ADMIN_TOKEN`,
+`OAUTH_MOCK_PROVIDER`, `CORS_ORIGINS`, `TRUST_PROXY` and `PASSWORD_POLICY` set. Not verified:
 
 | What | What was run instead |
 | --- | --- |
