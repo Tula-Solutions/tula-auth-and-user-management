@@ -8,6 +8,7 @@ import * as Flows from '~/modules/flow/service'
 import * as Retention from '~/modules/retention/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
+import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const DAY = 86_400_000
@@ -148,6 +149,8 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      webhookDeliveries: 0,
+      events: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -229,6 +232,8 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      webhookDeliveries: 0,
+      events: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -274,6 +279,8 @@ describe('purge', () => {
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
           auditLogs: 0,
+          webhookDeliveries: 0,
+          events: 0,
         },
       ],
     ])
@@ -517,6 +524,8 @@ describe('purge', () => {
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
       auditLogs: 0,
+      webhookDeliveries: 0,
+      events: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -894,6 +903,8 @@ describe('run', () => {
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
           auditLogs: 0,
+          webhookDeliveries: 0,
+          events: 0,
         },
       ],
     ])
@@ -923,6 +934,8 @@ describe('run', () => {
         passkeyChallenges: 0,
         instanceAuditLogs: 0,
         auditLogs: 0,
+        webhookDeliveries: 0,
+        events: 0,
       },
     ])
   })
@@ -933,5 +946,270 @@ describe('run', () => {
     )
     await expect(Retention.run(deps)).rejects.toThrow('database unavailable')
     expect(await Retention.run(deps)).toMatchObject({ environments: 2 })
+  })
+})
+
+describe('the webhook worker’s leavings', () => {
+  /** Record that something happened. Returns the event's id. */
+  function happen(scope: Tenant = tenant): string {
+    const activity = Audit.entry(deps, scope, {
+      type: 'user.deleted',
+      actor: TEST_ACTOR,
+      target: { type: 'user', id: deps.ids.next() },
+    })
+    deps.activityLog.record([activity])
+    return activity.id
+  }
+
+  const exists = (eventId: string) => deps.activityLog.outbox.some((row) => row.id === eventId)
+
+  /** Mark an event settled, as the worker does, at the clock's time. */
+  const settle = (eventId: string, scope: Tenant = tenant) =>
+    deps.webhookDeliveries.markDelivered(scope.environmentId, [eventId], deps.clock.now())
+
+  /** An endpoint nothing is ever sent to here: the store only needs it to exist. */
+  async function endpoint(scope: Tenant = tenant): Promise<string> {
+    const id = deps.ids.next()
+    await deps.webhookEndpoints.insert(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        url: 'https://hooks.example.com/tula',
+        eventTypes: ['user.deleted'],
+        secret: 'sealed',
+        enabled: true,
+        disabledReason: null,
+        failingSince: null,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
+    return id
+  }
+
+  /** Queue a delivery of an event now, and end it or leave it pending. */
+  async function delivery(
+    endpointId: string,
+    eventId: string,
+    end: 'delivered' | 'failed' | null,
+    scope: Tenant = tenant
+  ): Promise<string> {
+    const id = deps.ids.next()
+    await deps.webhookDeliveries.enqueue([
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        endpointId,
+        eventId,
+        eventType: 'user.deleted',
+        at: deps.clock.now(),
+      },
+    ])
+    if (end) {
+      await deps.webhookDeliveries.recordAttempt(
+        scope.environmentId,
+        id,
+        {
+          id: deps.ids.next(),
+          attemptedAt: deps.clock.now(),
+          statusCode: end === 'delivered' ? 204 : 500,
+          durationMs: 1,
+          failureReason: null,
+        },
+        { state: end, nextAttemptAt: null, completedAt: deps.clock.now() },
+        'pending'
+      )
+    }
+    return id
+  }
+
+  const deliveryExists = (id: string) => deps.webhookDeliveries.rows.some((row) => row.id === id)
+
+  test('a settled event is deleted thirty days after it was settled, not a moment sooner', async () => {
+    const eventId = happen()
+    deps.clock.advance('2d')
+    await settle(eventId)
+    deps.clock.advance(Retention.SETTLED_EVENT_RETENTION)
+    // Exactly thirty days after it was settled (thirty-two after it happened): kept.
+    expect(await Retention.purge(deps)).toMatchObject({ events: 0, failed: 0 })
+    expect(exists(eventId)).toBe(true)
+    deps.clock.advance(1)
+    expect(await Retention.purge(deps)).toMatchObject({ events: 1, failed: 0 })
+    expect(exists(eventId)).toBe(false)
+  })
+
+  test('an event no worker has settled is never deleted, however old', async () => {
+    const eventId = happen()
+    deps.clock.advance('400d')
+    expect(await Retention.purge(deps)).toMatchObject({ events: 0 })
+    expect(exists(eventId)).toBe(true)
+  })
+
+  test('deleting an event leaves its audit entry, and deleting an audit entry leaves its event', async () => {
+    const eventId = happen()
+    await settle(eventId)
+    deps.clock.advance('31d')
+    await Retention.purge(deps)
+    expect(exists(eventId)).toBe(false)
+    expect(deps.activityLog.entries.map((entry) => entry.id)).toContain(eventId)
+  })
+
+  test('an event is kept while a delivery of it is still pending, and goes once that delivery has ended', async () => {
+    const at = await endpoint()
+    const eventId = happen()
+    const pending = await delivery(at, eventId, null)
+    await settle(eventId)
+    deps.clock.advance('31d')
+    expect(await Retention.purge(deps)).toMatchObject({ events: 0 })
+    expect(exists(eventId)).toBe(true)
+    await deps.webhookDeliveries.giveUp(
+      tenant.environmentId,
+      [pending],
+      'expired',
+      deps.clock.now()
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ events: 1 })
+    expect(exists(eventId)).toBe(false)
+  })
+
+  test('the record of a delivery outlives its event: it is read, with its attempts, until ninety days are up', async () => {
+    const at = await endpoint()
+    const eventId = happen()
+    const id = await delivery(at, eventId, 'failed')
+    await settle(eventId)
+    deps.clock.advance('31d')
+    expect(await Retention.purge(deps)).toMatchObject({ events: 1, webhookDeliveries: 0 })
+    expect(exists(eventId)).toBe(false)
+    // The log is whole: which event, what was tried, how it ended.
+    expect(await Webhooks.getDelivery(deps, tenant, at, id)).toMatchObject({
+      eventId,
+      eventType: 'user.deleted',
+      state: 'failed',
+      attempts: [{ attempt: 1, statusCode: 500 }],
+    })
+    // And "send it again" says plainly that there is nothing left to send.
+    const error = await Webhooks.redeliver(deps, tenant, at, id).then(
+      () => null,
+      (caught: unknown) => caught
+    )
+    expect(error).toBeInstanceOf(ServiceException)
+    expect(error).toMatchObject({
+      code: 'webhook.cannot_redeliver',
+      params: { reason: 'event_gone' },
+    })
+
+    deps.clock.advance('59d')
+    expect(await Retention.purge(deps)).toMatchObject({ webhookDeliveries: 0 })
+    expect(deliveryExists(id)).toBe(true)
+    deps.clock.advance(1)
+    expect(await Retention.purge(deps)).toMatchObject({ webhookDeliveries: 1 })
+    expect(deliveryExists(id)).toBe(false)
+    expect(deps.webhookDeliveries.attemptsOf(id)).toEqual([])
+  })
+
+  test('a delivery that is still pending is never deleted, however old', async () => {
+    const at = await endpoint()
+    const id = await delivery(at, happen(), null)
+    deps.clock.advance('400d')
+    expect(await Retention.purge(deps)).toMatchObject({ webhookDeliveries: 0 })
+    expect(deliveryExists(id)).toBe(true)
+  })
+
+  test('both purges go in bounded batches through the stores, one environment at a time', async () => {
+    const events = spyOn(deps.webhookDeliveries, 'deleteSettledEvents')
+    const deliveries = spyOn(deps.webhookDeliveries, 'deleteEndedBefore')
+    spies.push(events as never, deliveries as never)
+    await Retention.purge(deps)
+    for (const calls of [events.mock.calls, deliveries.mock.calls]) {
+      expect(calls.map(([environment]) => environment).sort()).toEqual(
+        [tenant.environmentId, otherTenant.environmentId].sort()
+      )
+      expect(calls.every(([, , limit]) => limit === Retention.RETENTION_BATCH_SIZE)).toBe(true)
+    }
+    const age = (calls: [string, Date, number][]) =>
+      calls.map(([, before]) => deps.clock.now().getTime() - before.getTime())
+    expect(new Set(age(events.mock.calls))).toEqual(
+      new Set([durationToMs(Retention.SETTLED_EVENT_RETENTION)])
+    )
+    expect(new Set(age(deliveries.mock.calls))).toEqual(
+      new Set([durationToMs(Retention.ENDED_DELIVERY_RETENTION)])
+    )
+  })
+
+  test('a backlog larger than a batch is drained in one run', async () => {
+    const at = await endpoint()
+    const count = Retention.RETENTION_BATCH_SIZE + 20
+    for (let index = 0; index < count; index++) {
+      const eventId = happen()
+      await delivery(at, eventId, 'delivered')
+      await settle(eventId)
+    }
+    deps.clock.advance('91d')
+    expect(await Retention.purge(deps)).toMatchObject({ events: count, webhookDeliveries: count })
+    expect(deps.activityLog.outbox).toEqual([])
+    expect(deps.webhookDeliveries.rows).toEqual([])
+  })
+
+  test('one environment’s purge never touches another’s events or deliveries', async () => {
+    const mine = happen(tenant)
+    const theirs = happen(otherTenant)
+    const theirDelivery = await delivery(
+      await endpoint(otherTenant),
+      theirs,
+      'delivered',
+      otherTenant
+    )
+    await settle(mine)
+    await settle(theirs, otherTenant)
+    deps.clock.advance('91d')
+    const purgeEvents = deps.webhookDeliveries.deleteSettledEvents.bind(deps.webhookDeliveries)
+    spies.push(
+      spyOn(deps.webhookDeliveries, 'deleteSettledEvents').mockImplementation(
+        async (environment, before, limit) =>
+          environment === otherTenant.environmentId ? 0 : purgeEvents(environment, before, limit)
+      ) as never
+    )
+    const purgeDeliveries = deps.webhookDeliveries.deleteEndedBefore.bind(deps.webhookDeliveries)
+    spies.push(
+      spyOn(deps.webhookDeliveries, 'deleteEndedBefore').mockImplementation(
+        async (environment, before, limit) =>
+          environment === otherTenant.environmentId
+            ? 0
+            : purgeDeliveries(environment, before, limit)
+      ) as never
+    )
+    await Retention.purge(deps)
+    expect(exists(mine)).toBe(false)
+    expect(exists(theirs)).toBe(true)
+    expect(deliveryExists(theirDelivery)).toBe(true)
+  })
+
+  test('the periods: a delivery can be sent again for a month, and its record is read for three', () => {
+    const events = durationToMs(Retention.SETTLED_EVENT_RETENTION)
+    const deliveries = durationToMs(Retention.ENDED_DELIVERY_RETENTION)
+    expect(events).toBe(30 * DAY)
+    expect(deliveries).toBe(90 * DAY)
+    // The log outlives the payload, and both outlive everything the worker itself still does.
+    expect(deliveries).toBeGreaterThan(events)
+    expect(events).toBeGreaterThan(durationToMs(Webhooks.WEBHOOK_DELIVERY_MAX_AGE))
+    // Above the floors the database keeps (migration 0019): a day for an event, a week for a
+    // delivery. The job never asks for less.
+    expect(events).toBeGreaterThan(DAY)
+    expect(deliveries).toBeGreaterThan(7 * DAY)
+  })
+
+  test('a run that removed only events and deliveries is worth a log line', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    spies.push(info as never)
+    const eventId = happen()
+    await settle(eventId)
+    deps.clock.advance('31d')
+    await Retention.run(deps)
+    expect(info.mock.calls).toEqual([
+      ['retention run finished', expect.objectContaining({ events: 1, webhookDeliveries: 0 })],
+    ])
   })
 })

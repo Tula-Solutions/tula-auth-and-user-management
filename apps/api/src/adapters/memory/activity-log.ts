@@ -67,6 +67,22 @@ export class MemoryActivityLog implements ActivityLog {
   }
 
   /**
+   * Remove rows from {@link MemoryActivityLog.outbox}: what the retention job's delete of
+   * settled events does to `tula.events`. {@link MemoryActivityLog.events} is a test's view of
+   * everything that was ever recorded and keeps its payloads.
+   *
+   * @param ids - The events to remove.
+   */
+  dropEvents(ids: ReadonlySet<string>): void {
+    // In place: the delivery store and the tests hold this very array.
+    for (let index = this.outbox.length - 1; index >= 0; index--) {
+      if (ids.has((this.outbox[index] as OutboxRow).id)) {
+        this.outbox.splice(index, 1)
+      }
+    }
+  }
+
+  /**
    * @param type - An activity type.
    * @returns Every recorded activity of that type, oldest first.
    */

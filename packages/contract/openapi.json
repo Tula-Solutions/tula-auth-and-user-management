@@ -188,6 +188,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -250,6 +254,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserEmailVerifiedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -312,6 +320,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserBannedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -374,6 +386,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserUnbannedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -436,6 +452,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserDeletedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -517,6 +537,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserPasswordChangedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -589,6 +613,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserMfaEnabledEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -663,6 +691,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserMfaDisabledEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -725,6 +757,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserBackupCodesRegeneratedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -787,6 +823,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserBackupCodeUsedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -872,6 +912,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserIdentityLinkedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -941,6 +985,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserIdentityUnlinkedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1016,6 +1064,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserPasskeyAddedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1087,6 +1139,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserPasskeyRenamedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1168,6 +1224,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserPasskeyRemovedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1239,6 +1299,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/UserPasskeyCounterRegressedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1323,6 +1387,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/SessionCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1407,6 +1475,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/SessionRevokedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1483,6 +1555,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/SessionReuseDetectedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1572,6 +1648,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/SessionSteppedUpEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1645,6 +1725,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/ApiKeyCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1707,6 +1791,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/ApiKeyRevokedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1784,6 +1872,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/SigningKeyRotatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1882,6 +1974,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/EnvironmentSettingsUpdatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -1969,6 +2065,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/OAuthProviderUpdatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2038,6 +2138,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/OAuthProviderDeletedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2057,7 +2161,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 29
+            "maximum": 30
           },
           "enabled": {
             "type": "boolean"
@@ -2113,6 +2217,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/WebhookEndpointCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2192,6 +2300,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/WebhookEndpointUpdatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2254,6 +2366,10 @@
           },
           "data": {
             "$ref": "#/components/schemas/WebhookEndpointDeletedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
           }
         },
         "required": [
@@ -2266,6 +2382,83 @@
           "data"
         ],
         "description": "A webhook endpoint was removed; nothing more is delivered to it."
+      },
+      "WebhookEndpointDisabledEventData": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "failing",
+              "gone"
+            ]
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "description": "The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again."
+      },
+      "WebhookEndpointDisabledEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "webhook_endpoint.disabled"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "webhook_endpoint"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/WebhookEndpointDisabledEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again."
       },
       "TulaEvent": {
         "oneOf": [
@@ -2355,6 +2548,9 @@
           },
           {
             "$ref": "#/components/schemas/WebhookEndpointDeletedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/WebhookEndpointDisabledEvent"
           }
         ]
       },
@@ -2422,6 +2618,7 @@
           "oauth.already_linked",
           "identity.last_sign_in_method",
           "webhook.url_not_allowed",
+          "webhook.cannot_redeliver",
           "passkey.registration_failed",
           "passkey.already_registered",
           "passkey.limit_reached",
@@ -4600,7 +4797,8 @@
           "oauth_provider.deleted",
           "webhook_endpoint.created",
           "webhook_endpoint.updated",
-          "webhook_endpoint.deleted"
+          "webhook_endpoint.deleted",
+          "webhook_endpoint.disabled"
         ]
       },
       "AuditLogQuery": {
@@ -5749,6 +5947,24 @@
           "enabled": {
             "type": "boolean"
           },
+          "disabledReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failingSince": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -5765,6 +5981,8 @@
           "url",
           "eventTypes",
           "enabled",
+          "disabledReason",
+          "failingSince",
           "createdAt",
           "updatedAt"
         ]
@@ -5803,6 +6021,24 @@
           "enabled": {
             "type": "boolean"
           },
+          "disabledReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failingSince": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -5823,6 +6059,8 @@
           "url",
           "eventTypes",
           "enabled",
+          "disabledReason",
+          "failingSince",
           "createdAt",
           "updatedAt",
           "secret"
@@ -5839,7 +6077,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 29,
+            "maxItems": 30,
             "type": "array",
             "items": {
               "type": "string",
@@ -5872,7 +6110,8 @@
                 "oauth_provider.deleted",
                 "webhook_endpoint.created",
                 "webhook_endpoint.updated",
-                "webhook_endpoint.deleted"
+                "webhook_endpoint.deleted",
+                "webhook_endpoint.disabled"
               ]
             }
           },
@@ -5898,7 +6137,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 29,
+            "maxItems": 30,
             "type": "array",
             "items": {
               "type": "string",
@@ -5931,7 +6170,8 @@
                 "oauth_provider.deleted",
                 "webhook_endpoint.created",
                 "webhook_endpoint.updated",
-                "webhook_endpoint.deleted"
+                "webhook_endpoint.deleted",
+                "webhook_endpoint.disabled"
               ]
             }
           },
@@ -5939,6 +6179,425 @@
             "type": "boolean"
           }
         },
+        "additionalProperties": false
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "endpointId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "eventId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "test": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "nextAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "statusCode": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "endpointId",
+          "eventId",
+          "eventType",
+          "test",
+          "state",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastAttemptAt",
+          "statusCode",
+          "failureReason",
+          "completedAt",
+          "createdAt"
+        ]
+      },
+      "WebhookDeliveryList": {
+        "type": "object",
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookDelivery"
+            }
+          }
+        },
+        "required": [
+          "meta",
+          "data"
+        ]
+      },
+      "WebhookDeliveryQuery": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "delivered",
+              "failed"
+            ]
+          },
+          "eventType": {
+            "$ref": "#/components/schemas/ActivityType"
+          },
+          "page": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "size": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "WebhookDeliveryAttempt": {
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "attemptedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "statusCode": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failureReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "attempt",
+          "attemptedAt",
+          "statusCode",
+          "durationMs",
+          "failureReason"
+        ]
+      },
+      "WebhookDeliveryDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "endpointId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "eventId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "test": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "nextAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "statusCode": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WebhookDeliveryAttempt"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "endpointId",
+          "eventId",
+          "eventType",
+          "test",
+          "state",
+          "attemptCount",
+          "nextAttemptAt",
+          "lastAttemptAt",
+          "statusCode",
+          "failureReason",
+          "completedAt",
+          "createdAt",
+          "attempts"
+        ]
+      },
+      "WebhookSendResult": {
+        "type": "object",
+        "properties": {
+          "deliveryId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "delivered",
+              "failed"
+            ]
+          },
+          "statusCode": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failureReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "deliveryId",
+          "outcome",
+          "statusCode",
+          "durationMs",
+          "failureReason"
+        ]
+      },
+      "SendTestWebhookRequest": {
+        "type": "object",
+        "properties": {
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "user.created",
+              "user.email_verified",
+              "user.banned",
+              "user.unbanned",
+              "user.deleted",
+              "user.password_changed",
+              "user.mfa_enabled",
+              "user.mfa_disabled",
+              "user.backup_codes_regenerated",
+              "user.backup_code_used",
+              "user.identity_linked",
+              "user.identity_unlinked",
+              "user.passkey_added",
+              "user.passkey_renamed",
+              "user.passkey_removed",
+              "user.passkey_counter_regressed",
+              "session.created",
+              "session.revoked",
+              "session.reuse_detected",
+              "session.stepped_up",
+              "api_key.created",
+              "api_key.revoked",
+              "signing_key.rotated",
+              "environment.settings_updated",
+              "oauth_provider.updated",
+              "oauth_provider.deleted",
+              "webhook_endpoint.created",
+              "webhook_endpoint.updated",
+              "webhook_endpoint.deleted",
+              "webhook_endpoint.disabled"
+            ]
+          }
+        },
+        "required": [
+          "eventType"
+        ],
         "additionalProperties": false
       },
       "DiagnosticStatus": {
@@ -17321,7 +17980,7 @@
           "Webhooks"
         ],
         "summary": "Change a webhook endpoint",
-        "description": "Changes the address, the event types or whether the endpoint is on; a field left out keeps its value. While an endpoint is off nothing is delivered to it, and the events of that time are not sent later. The signing secret cannot be changed here. Recorded in the audit log by the names of the fields that changed, never their values. An address the server may not call is refused with `webhook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.",
+        "description": "Changes the address, the event types or whether the endpoint is on; a field left out keeps its value. While an endpoint is off nothing is delivered to it, and the events of that time are not sent later. Switching it on (also after the server switched it off: see `disabledReason`) forgets why it was off and since when it was failing; deliveries that were pending are tried again unless they are more than three days old. The signing secret cannot be changed here. Recorded in the audit log by the names of the fields that changed, never their values. An address the server may not call is refused with `webhook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.",
         "security": [
           {
             "secretKey": []
@@ -17559,6 +18218,583 @@
           {
             "in": "path",
             "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/admin/webhook-endpoints/{id}/deliveries": {
+      "get": {
+        "operationId": "listWebhookDeliveries",
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List an endpoint’s deliveries",
+        "description": "The deliveries of one endpoint, newest first: one per event it was owed, and one per test event. Each says where it stands (`pending`, `delivered`, `failed`), how many requests were made and how the latest ended. Filter by `state` and `eventType`. Deliveries are kept for 90 days.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of deliveries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "delivered",
+                "failed"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "eventType",
+            "schema": {
+              "$ref": "#/components/schemas/ActivityType"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ]
+      }
+    },
+    "/v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}": {
+      "get": {
+        "operationId": "getWebhookDelivery",
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Get a delivery and its attempts",
+        "description": "One delivery with every request the server made for it, oldest first. An attempt is a time, a status code or one of the server’s fixed words, and a duration: never a header or a body of the receiver’s answer.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The delivery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookDeliveryDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "deliveryId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/admin/webhook-endpoints/{id}/test": {
+      "post": {
+        "operationId": "sendTestWebhook",
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Send a test event",
+        "description": "Sends one test event of the chosen type to the endpoint, now, signed like every delivery. The event is an example with a new id and **`\"test\": true`** inside the signed body, which no real event has: nothing it describes happened, and a receiver should check the field before acting. It is one request with no retry, recorded as a delivery flagged `test`; it is not written to the audit log and does not count towards switching the endpoint off. An endpoint that is off can be tested. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What became of the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSendResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendTestWebhookRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}/redeliver": {
+      "post": {
+        "operationId": "redeliverWebhook",
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Send a delivery again",
+        "description": "Makes one more request for a past delivery, now: the event’s stored payload, to the endpoint it was owed to, with the same `webhook-id` (a receiver that drops repeats by id will drop it). The request is added to the delivery’s own attempts. A 2xx makes the delivery `delivered`; a failure leaves it as it was and is not retried. Refused with `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`: `delivery_pending` while the server is still retrying the delivery, `endpoint_disabled` for an endpoint that is switched off, and `event_gone` once the event is no longer kept (30 days) or for a test event. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What became of the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookSendResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "deliveryId",
             "schema": {
               "type": "string",
               "format": "uuid",

@@ -318,4 +318,13 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     target: aboutWebhookEndpoint,
     data: {},
   },
+  'webhook_endpoint.disabled': {
+    id: eventId(30),
+    type: 'webhook_endpoint.disabled',
+    schemaVersion,
+    occurredAt,
+    actor: system,
+    target: aboutWebhookEndpoint,
+    data: { reason: 'failing' },
+  },
 }

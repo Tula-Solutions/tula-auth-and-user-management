@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { ServiceUnavailableError } from '~/exceptions'
 import { createApp } from '~/index'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
+import * as Webhooks from '~/modules/webhook/service'
 import {
   createInstanceTestDeps,
   dashboardHeaders,
@@ -71,6 +73,10 @@ describe('authentication', () => {
     ['GET', `${PATH}/${id}`],
     ['PATCH', `${PATH}/${id}`],
     ['DELETE', `${PATH}/${id}`],
+    ['GET', `${PATH}/${id}/deliveries`],
+    ['GET', `${PATH}/${id}/deliveries/${id}`],
+    ['POST', `${PATH}/${id}/test`],
+    ['POST', `${PATH}/${id}/deliveries/${id}/redeliver`],
   ] as const
 
   test.each(routes)('%s %s requires a secret key', async (method, path) => {
@@ -109,6 +115,8 @@ describe('POST /v1/admin/webhook-endpoints', () => {
       url: URL_OK,
       eventTypes: ['user.created'],
       enabled: true,
+      disabledReason: null,
+      failingSince: null,
       secret: expect.stringMatching(/^whsec_[A-Za-z0-9+/]{43}=$/),
       createdAt: deps.clock.now().toISOString(),
       updatedAt: deps.clock.now().toISOString(),
@@ -270,4 +278,319 @@ describe('reading, changing and removing', () => {
       expect(res.status).toBe(422)
     }
   )
+})
+
+// The routes below make the server call an address: a listener in this process, on loopback,
+// which the `local` tier allows. Everything still goes through the real outbound guard.
+let receivedBodies: string[] = []
+let respond: () => Response = () => new Response(null, { status: 204 })
+const listener = Bun.serve({
+  port: 0,
+  hostname: '127.0.0.1',
+  async fetch(req) {
+    receivedBodies.push(await req.text())
+    return respond()
+  },
+})
+afterAll(() => listener.stop(true))
+const RECEIVER = () => `http://127.0.0.1:${listener.port}/hook`
+
+let users = 0
+
+/** Register an endpoint at the listener, make a user and run one round. */
+async function delivered(status = 204) {
+  receivedBodies = []
+  respond = () => new Response('canary-body', { status, headers: { 'x-canary': 'canary-header' } })
+  const { body: endpoint } = await create({ url: RECEIVER(), eventTypes: ['user.created'] })
+  users += 1
+  const created = await call('POST', '/v1/admin/users', SK, { email: `ada${users}@example.com` })
+  expect(created.status).toBe(201)
+  await Webhooks.deliverPending(deps)
+  const list = await call('GET', `${PATH}/${endpoint.id}/deliveries`)
+  const page = (await list.json()) as { data: { id: string; eventId: string }[] }
+  return { endpoint, delivery: page.data[0] as { id: string; eventId: string } }
+}
+
+describe('GET /v1/admin/webhook-endpoints/:id/deliveries', () => {
+  test('an endpoint with no deliveries has an empty first page', async () => {
+    const { body: endpoint } = await create()
+    const res = await call('GET', `${PATH}/${endpoint.id}/deliveries`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      meta: { totalCount: 0, totalPages: 0, page: 1, perPage: 20 },
+      data: [],
+    })
+  })
+
+  test('lists what was delivered, by state, with nothing of the receiver’s answer', async () => {
+    const { endpoint, delivery } = await delivered(500)
+    const res = await call('GET', `${PATH}/${endpoint.id}/deliveries?state=pending&size=5`)
+    const text = await res.text()
+    expect(JSON.parse(text)).toEqual({
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 5 },
+      data: [
+        {
+          id: delivery.id,
+          endpointId: endpoint.id,
+          eventId: delivery.eventId,
+          eventType: 'user.created',
+          test: false,
+          state: 'pending',
+          attemptCount: 1,
+          nextAttemptAt: new Date(deps.clock.now().getTime() + 5_000).toISOString(),
+          lastAttemptAt: deps.clock.now().toISOString(),
+          statusCode: 500,
+          failureReason: null,
+          completedAt: null,
+          createdAt: deps.clock.now().toISOString(),
+        },
+      ],
+    })
+    expect(text).not.toContain('canary')
+    for (const query of ['state=delivered', 'eventType=user.deleted', 'page=2']) {
+      const other = await call('GET', `${PATH}/${endpoint.id}/deliveries?${query}`)
+      expect(((await other.json()) as { data: unknown[] }).data).toEqual([])
+    }
+  })
+
+  test.each(['state=sent', 'eventType=user.exploded', 'page=0', 'size=1000', 'size=x'])(
+    'refuses the query %s',
+    async (query) => {
+      const { body: endpoint } = await create()
+      expect((await call('GET', `${PATH}/${endpoint.id}/deliveries?${query}`)).status).toBe(422)
+    }
+  )
+
+  test('another environment’s key finds neither the list nor a delivery', async () => {
+    const { endpoint, delivery } = await delivered()
+    const base = `${PATH}/${endpoint.id}/deliveries`
+    expect((await call('GET', base, PROD_SK)).status).toBe(404)
+    expect((await call('GET', `${base}/${delivery.id}`, PROD_SK)).status).toBe(404)
+    expect((await call('GET', `${PATH}/${delivery.id}/deliveries`)).status).toBe(404)
+  })
+})
+
+describe('GET /v1/admin/webhook-endpoints/:id/deliveries/:deliveryId', () => {
+  test('answers the delivery with its attempts: a status code and a duration each', async () => {
+    const { endpoint, delivery } = await delivered(503)
+    const res = await call('GET', `${PATH}/${endpoint.id}/deliveries/${delivery.id}`)
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(JSON.parse(text)).toMatchObject({
+      id: delivery.id,
+      state: 'pending',
+      attemptCount: 1,
+      attempts: [
+        {
+          attempt: 1,
+          attemptedAt: deps.clock.now().toISOString(),
+          statusCode: 503,
+          durationMs: 0,
+          failureReason: null,
+        },
+      ],
+    })
+    expect(text).not.toContain('canary')
+  })
+
+  test('an unknown delivery is not found, and an id that is not a UUID is a validation error', async () => {
+    const { body: endpoint } = await create()
+    const base = `${PATH}/${endpoint.id}/deliveries`
+    expect((await call('GET', `${base}/${endpoint.id}`)).status).toBe(404)
+    expect((await call('GET', `${base}/nope`)).status).toBe(422)
+    expect((await call('GET', `${PATH}/nope/deliveries`)).status).toBe(422)
+  })
+})
+
+describe('POST /v1/admin/webhook-endpoints/:id/test', () => {
+  const send = (id: string, body: unknown = { eventType: 'user.created' }, key = SK) =>
+    call('POST', `${PATH}/${id}/test`, key, body)
+
+  test('sends a signed test event and answers the outcome, a status code and a duration only', async () => {
+    receivedBodies = []
+    respond = () =>
+      new Response('canary-body', { status: 202, headers: { 'x-canary': 'canary-header' } })
+    const { body: endpoint } = await create({ url: RECEIVER(), eventTypes: ['user.deleted'] })
+    const audit = deps.activityLog.entries.length
+    const res = await send(endpoint.id)
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(JSON.parse(text)).toEqual({
+      deliveryId: expect.any(String),
+      outcome: 'delivered',
+      statusCode: 202,
+      durationMs: 0,
+      failureReason: null,
+    })
+    expect(text).not.toContain('canary')
+    expect(receivedBodies).toHaveLength(1)
+    expect(JSON.parse(receivedBodies[0] as string)).toMatchObject({
+      type: 'user.created',
+      test: true,
+    })
+    // Not something that happened: no audit entry, no event.
+    expect(deps.activityLog.entries).toHaveLength(audit)
+    const { deliveryId } = JSON.parse(text) as { deliveryId: string }
+    const detail = await call('GET', `${PATH}/${endpoint.id}/deliveries/${deliveryId}`)
+    expect(await detail.json()).toMatchObject({ test: true, eventId: null, state: 'delivered' })
+  })
+
+  test('an address that refuses the connection is a failed outcome, not an error', async () => {
+    const { body: endpoint } = await create()
+    const res = await send(endpoint.id)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      outcome: 'failed',
+      statusCode: null,
+      failureReason: 'connection_failed',
+    })
+  })
+
+  test.each([
+    ['no type', {}],
+    ['an unknown type', { eventType: 'user.exploded' }],
+    ['an address of the caller’s', { eventType: 'user.created', url: 'https://example.com/' }],
+    ['a payload of the caller’s', { eventType: 'user.created', data: { userId: 'x' } }],
+  ])('refuses %s', async (_, body) => {
+    receivedBodies = []
+    const { body: endpoint } = await create({ url: RECEIVER(), eventTypes: ['user.created'] })
+    expect((await send(endpoint.id, body)).status).toBe(422)
+    expect(receivedBodies).toEqual([])
+  })
+
+  test('another environment’s key cannot test an endpoint, and an unknown one is not found', async () => {
+    receivedBodies = []
+    const { body: endpoint } = await create({ url: RECEIVER(), eventTypes: ['user.created'] })
+    expect((await send(endpoint.id, undefined, PROD_SK)).status).toBe(404)
+    expect((await send(TEST_TENANT.environmentId)).status).toBe(404)
+    expect((await send('nope')).status).toBe(422)
+    expect(receivedBodies).toEqual([])
+  })
+
+  test('is limited per environment in a bucket of its own, shared with sending a delivery again', async () => {
+    const { endpoint, delivery } = await delivered()
+    receivedBodies = []
+    for (let count = 0; count < Webhooks.WEBHOOK_SEND_RATE_LIMIT - 1; count++) {
+      expect((await send(endpoint.id)).status).toBe(200)
+    }
+    const again = await call('POST', `${PATH}/${endpoint.id}/deliveries/${delivery.id}/redeliver`)
+    expect(again.status).toBe(200)
+    expect(receivedBodies).toHaveLength(Webhooks.WEBHOOK_SEND_RATE_LIMIT)
+
+    const refused = await send(endpoint.id)
+    expect(refused.status).toBe(429)
+    expect(await refused.json()).toMatchObject({ code: 'rate_limited' })
+    expect(refused.headers.get('retry-after')).not.toBeNull()
+    expect(
+      (await call('POST', `${PATH}/${endpoint.id}/deliveries/${delivery.id}/redeliver`)).status
+    ).toBe(429)
+    // Nothing more was sent, and the rest of the admin API is not held up by it.
+    expect(receivedBodies).toHaveLength(Webhooks.WEBHOOK_SEND_RATE_LIMIT)
+    expect((await call('GET', `${PATH}/${endpoint.id}/deliveries`)).status).toBe(200)
+    // Another environment has its own allowance.
+    const theirs = await create({ url: RECEIVER(), eventTypes: ['user.created'] }, PROD_SK)
+    expect((await send(theirs.body.id, undefined, PROD_SK)).status).toBe(200)
+    // And it comes back with the next minute.
+    deps.clock.advance('1m')
+    expect((await send(endpoint.id)).status).toBe(200)
+  })
+
+  test('a wrong key does not use up an environment’s allowance', async () => {
+    const { body: endpoint } = await create({ url: RECEIVER(), eventTypes: ['user.created'] })
+    for (let count = 0; count < Webhooks.WEBHOOK_SEND_RATE_LIMIT + 5; count++) {
+      expect(
+        (await send(endpoint.id, undefined, 'tula_sk_dev_wrong0000000000000000000000000000000'))
+          .status
+      ).toBe(401)
+    }
+    expect((await send(endpoint.id)).status).toBe(200)
+  })
+
+  test('when the limiter cannot count, nothing is sent', async () => {
+    receivedBodies = []
+    const { body: endpoint } = await create({ url: RECEIVER(), eventTypes: ['user.created'] })
+    const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
+    const down = spyOn(deps.rateLimiter, 'hit').mockImplementation(
+      async (bucket, limit, window) => {
+        if (bucket.startsWith('webhook_send:')) {
+          throw new ServiceUnavailableError()
+        }
+        return hit(bucket, limit, window)
+      }
+    )
+    const res = await send(endpoint.id)
+    down.mockRestore()
+    expect(res.status).toBe(503)
+    expect(receivedBodies).toEqual([])
+  })
+})
+
+describe('POST /v1/admin/webhook-endpoints/:id/deliveries/:deliveryId/redeliver', () => {
+  const again = (endpointId: string, deliveryId: string, key = SK) =>
+    call('POST', `${PATH}/${endpointId}/deliveries/${deliveryId}/redeliver`, key)
+
+  test('sends the stored event once more and answers the outcome', async () => {
+    const { endpoint, delivery } = await delivered()
+    const first = receivedBodies[0]
+    respond = () => new Response('canary-body', { status: 200 })
+    const res = await again(endpoint.id, delivery.id)
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(JSON.parse(text)).toEqual({
+      deliveryId: delivery.id,
+      outcome: 'delivered',
+      statusCode: 200,
+      durationMs: 0,
+      failureReason: null,
+    })
+    expect(text).not.toContain('canary')
+    expect(receivedBodies).toEqual([first as string, first as string])
+    const detail = await call('GET', `${PATH}/${endpoint.id}/deliveries/${delivery.id}`)
+    expect(await detail.json()).toMatchObject({ attemptCount: 2, state: 'delivered' })
+  })
+
+  test('is refused while the delivery is pending, and for an endpoint that is off', async () => {
+    const { endpoint, delivery } = await delivered(500)
+    const pending = await again(endpoint.id, delivery.id)
+    expect(pending.status).toBe(409)
+    expect(await pending.json()).toMatchObject({
+      code: 'webhook.cannot_redeliver',
+      params: { reason: 'delivery_pending' },
+    })
+
+    const other = await delivered()
+    await call('PATCH', `${PATH}/${other.endpoint.id}`, SK, { enabled: false })
+    receivedBodies = []
+    const off = await again(other.endpoint.id, other.delivery.id)
+    expect(off.status).toBe(409)
+    expect(await off.json()).toMatchObject({
+      code: 'webhook.cannot_redeliver',
+      params: { reason: 'endpoint_disabled' },
+    })
+    expect(receivedBodies).toEqual([])
+  })
+
+  test('another environment’s key cannot send a delivery again, with any endpoint id', async () => {
+    const { endpoint, delivery } = await delivered()
+    const theirs = await create({ url: RECEIVER(), eventTypes: ['user.created'] }, PROD_SK)
+    receivedBodies = []
+    expect((await again(endpoint.id, delivery.id, PROD_SK)).status).toBe(404)
+    expect((await again(theirs.body.id, delivery.id, PROD_SK)).status).toBe(404)
+    expect((await again(endpoint.id, endpoint.id)).status).toBe(404)
+    expect((await again(endpoint.id, 'nope')).status).toBe(422)
+    expect(receivedBodies).toEqual([])
+  })
+
+  test('the dashboard’s session can read the log and send again', async () => {
+    const { endpoint, delivery } = await delivered()
+    const cookie = await dashboardSignIn(app)
+    const headers = dashboardHeaders(cookie, TEST_TENANT.environmentId)
+    const list = await app.request(`${PATH}/${endpoint.id}/deliveries`, { headers })
+    expect(list.status).toBe(200)
+    const sent = await app.request(`${PATH}/${endpoint.id}/deliveries/${delivery.id}/redeliver`, {
+      method: 'POST',
+      headers,
+    })
+    expect(sent.status).toBe(200)
+  })
 })

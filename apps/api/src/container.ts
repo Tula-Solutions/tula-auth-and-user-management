@@ -173,6 +173,8 @@ export function createContainer(env: Env): Container {
     // The tier and nothing else: the system resolver and the system's certificate authorities.
     // Nothing in the configuration can hand the guard a resolver or a certificate to trust.
     outbound: { tier: env.ENVIRONMENT },
+    // From the CSPRNG like everything else here, though nothing depends on it being secret.
+    jitter: () => (crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) / 2 ** 32,
     probes: redis ? [databaseProbe(database.db), redisProbe(redis)] : [databaseProbe(database.db)],
     diagnostics: createDiagnostics({
       db: database.db,

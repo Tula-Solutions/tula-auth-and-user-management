@@ -1,6 +1,7 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
+  WebhookDisabledReason,
   WebhookEndpointChanges,
   WebhookEndpointRecord,
   WebhookEndpointStore,
@@ -72,6 +73,8 @@ export class MemoryWebhookEndpointStore implements WebhookEndpointStore {
       url: changes.url ?? record.url,
       eventTypes: changes.eventTypes ? [...changes.eventTypes] : record.eventTypes,
       enabled: changes.enabled ?? record.enabled,
+      disabledReason: changes.resetHealth ? null : record.disabledReason,
+      failingSince: changes.resetHealth ? null : record.failingSince,
       updatedAt,
     }
     this.#records.set(id, next)
@@ -85,5 +88,36 @@ export class MemoryWebhookEndpointStore implements WebhookEndpointStore {
     const deleted = this.has(environmentId, id) && this.#records.delete(id)
     this.#activityLog.record(deleted && activity ? [activity] : [])
     return deleted
+  }
+
+  /** @inheritdoc */
+  async setFailingSince(environmentId: string, id: string, since: Date | null): Promise<void> {
+    const record = this.#records.get(id)
+    if (!record || record.environmentId !== environmentId) {
+      return
+    }
+    if (since === null) {
+      record.failingSince = null
+    } else if (record.failingSince === null) {
+      record.failingSince = new Date(since)
+    }
+  }
+
+  /** @inheritdoc */
+  async disable(
+    environmentId: string,
+    id: string,
+    reason: WebhookDisabledReason,
+    at: Date,
+    recorded: Recorded
+  ): Promise<boolean> {
+    const activity = activityOf(recorded)
+    const record = this.#records.get(id)
+    if (!record || record.environmentId !== environmentId || !record.enabled) {
+      return false
+    }
+    this.#records.set(id, { ...record, enabled: false, disabledReason: reason, updatedAt: at })
+    this.#activityLog.record(activity ? [activity] : [])
+    return true
   }
 }

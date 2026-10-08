@@ -162,6 +162,12 @@ describeWebhookStores('Postgres on a real server', async () => {
       )
       return row?.deliveredAt ?? null
     },
+    eventExists: async (tenant, eventId) =>
+      (
+        await withTenant(db, tenant.environmentId, (tx) =>
+          tx.select({ id: events.id }).from(events).where(eq(events.id, eventId))
+        )
+      ).length === 1,
     a,
     b,
   }

@@ -64,6 +64,9 @@ export const ACTIVITY_TYPES = [
   'webhook_endpoint.created',
   'webhook_endpoint.updated',
   'webhook_endpoint.deleted',
+  // The server switched an endpoint off by itself: its deliveries kept failing, or it answered
+  // `410 Gone`. `reason` says which. Switching it back on is a `webhook_endpoint.updated`.
+  'webhook_endpoint.disabled',
 ] as const
 
 /** A recorded action type: one of {@link ACTIVITY_TYPES}. */
@@ -127,6 +130,7 @@ export const EVENT_TARGET_TYPES = {
   'webhook_endpoint.created': 'webhook_endpoint',
   'webhook_endpoint.updated': 'webhook_endpoint',
   'webhook_endpoint.deleted': 'webhook_endpoint',
+  'webhook_endpoint.disabled': 'webhook_endpoint',
 } as const satisfies Record<ActivityType, AuditTargetType>
 
 /** What an event of type `T` is about. */

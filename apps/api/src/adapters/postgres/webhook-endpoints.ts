@@ -1,8 +1,9 @@
 import { type Database, webhookEndpoints, withTenant } from '@tula/db'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
+  WebhookDisabledReason,
   WebhookEndpointChanges,
   WebhookEndpointRecord,
   WebhookEndpointStore,
@@ -16,6 +17,8 @@ const columns = {
   eventTypes: webhookEndpoints.eventTypes,
   secret: webhookEndpoints.secret,
   enabled: webhookEndpoints.enabled,
+  disabledReason: webhookEndpoints.disabledReason,
+  failingSince: webhookEndpoints.failingSince,
   createdAt: webhookEndpoints.createdAt,
   updatedAt: webhookEndpoints.updatedAt,
 }
@@ -77,6 +80,7 @@ export class PostgresWebhookEndpointStore implements WebhookEndpointStore {
           url: changes.url,
           eventTypes: changes.eventTypes,
           enabled: changes.enabled,
+          ...(changes.resetHealth ? { disabledReason: null, failingSince: null } : {}),
           updatedAt,
         })
         .where(and(eq(webhookEndpoints.environmentId, environmentId), eq(webhookEndpoints.id, id)))
@@ -98,6 +102,58 @@ export class PostgresWebhookEndpointStore implements WebhookEndpointStore {
       const deleted = rows.length === 1
       await recordActivity(tx, deleted && activity ? [activity] : [])
       return deleted
+    })
+  }
+
+  /** @inheritdoc */
+  async setFailingSince(environmentId: string, id: string, since: Date | null): Promise<void> {
+    const endpoint = and(
+      eq(webhookEndpoints.environmentId, environmentId),
+      eq(webhookEndpoints.id, id)
+    )
+    await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(webhookEndpoints)
+        // `updated_at` is set to itself: the column updates itself on every write otherwise,
+        // and no administrator changed the endpoint.
+        .set({ failingSince: since, updatedAt: sql`${webhookEndpoints.updatedAt}` })
+        // The first failure of a run stands; a success clears whatever is there.
+        .where(
+          and(
+            endpoint,
+            since === null
+              ? isNotNull(webhookEndpoints.failingSince)
+              : isNull(webhookEndpoints.failingSince)
+          )
+        )
+    )
+  }
+
+  /** @inheritdoc */
+  async disable(
+    environmentId: string,
+    id: string,
+    reason: WebhookDisabledReason,
+    at: Date,
+    recorded: Recorded
+  ): Promise<boolean> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .update(webhookEndpoints)
+        .set({ enabled: false, disabledReason: reason, updatedAt: at })
+        .where(
+          and(
+            eq(webhookEndpoints.environmentId, environmentId),
+            eq(webhookEndpoints.id, id),
+            // Guarded: an endpoint an administrator has just switched off is left as they left it.
+            eq(webhookEndpoints.enabled, true)
+          )
+        )
+        .returning({ id: webhookEndpoints.id })
+      const disabled = rows.length === 1
+      await recordActivity(tx, disabled && activity ? [activity] : [])
+      return disabled
     })
   }
 }

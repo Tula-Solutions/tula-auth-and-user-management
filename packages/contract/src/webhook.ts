@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ACTIVITY_TYPES } from './event-types'
+import { PaginationMetaSchema } from './user'
 
 // The admin API's view of a webhook endpoint (ADR 0034): where an environment's events are
 // delivered, signed. How a delivery is signed is in the Zod-free `./webhook-signature`.
@@ -67,6 +68,17 @@ export const WebhookEndpointSchema = z
     eventTypes: z.array(z.string()),
     /** Nothing is delivered while this is off; events from that time are not sent later. */
     enabled: z.boolean(),
+    /**
+     * Why the **server** switched the endpoint off: `failing` (every delivery failed for days)
+     * or `gone` (it answered `410 Gone`). `null` while it is on, and when an administrator
+     * switched it off. A plain string: a later server may know another reason.
+     */
+    disabledReason: z.string().nullable(),
+    /**
+     * Since when every delivery to the endpoint has failed, or `null` when the last one that
+     * got an answer succeeded. An endpoint that keeps failing is switched off.
+     */
+    failingSince: z.iso.datetime().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -112,6 +124,123 @@ export const UpdateWebhookEndpointRequestSchema = z
   })
   .meta({ ref: 'UpdateWebhookEndpointRequest' })
 
+/**
+ * Why a delivery cannot be sent again, as `webhook.cannot_redeliver` says it in
+ * `params.reason`: the server is still retrying it, its endpoint is switched off, or its
+ * event's payload is no longer kept (also: it was a test event, which never had one).
+ *
+ * @example
+ * ```ts
+ * if (error.code === 'webhook.cannot_redeliver' && error.params?.reason === 'event_gone') {
+ *   // too late to send this one again
+ * }
+ * ```
+ */
+export const WEBHOOK_REDELIVER_REFUSALS = [
+  'delivery_pending',
+  'endpoint_disabled',
+  'event_gone',
+] as const
+
+/**
+ * Where a delivery stands: `pending` (not yet delivered, and the server will try, or try
+ * again), `delivered` (the receiver answered 2xx) or `failed` (given up).
+ *
+ * @example
+ * ```ts
+ * const state: (typeof WEBHOOK_DELIVERY_STATES)[number] = 'pending'
+ * ```
+ */
+export const WEBHOOK_DELIVERY_STATES = ['pending', 'delivered', 'failed'] as const
+
+/**
+ * One request the server made for a delivery. **Nothing of the receiver's answer is here but
+ * its status code and how long it took**: no header and no body, which the server never keeps.
+ */
+export const WebhookDeliveryAttemptSchema = z
+  .object({
+    /** 1 for the first request of the delivery, counting up. */
+    attempt: z.number().int().min(1),
+    attemptedAt: z.iso.datetime(),
+    /** The receiver's HTTP status; `null` when there was no answer. */
+    statusCode: z.number().int().nullable(),
+    /** Milliseconds from sending to the answer, or to giving up. */
+    durationMs: z.number().int().min(0),
+    /**
+     * Why there was no answer: one of the server's own fixed words (`timeout`,
+     * `connection_failed`, `address_not_allowed`, …). `null` when the receiver answered.
+     */
+    failureReason: z.string().nullable(),
+  })
+  .meta({ ref: 'WebhookDeliveryAttempt' })
+
+/**
+ * The delivery of one event to one endpoint: where it stands, and how its last try ended.
+ *
+ * `statusCode` and `failureReason` describe the latest thing that happened to it.
+ * `failureReason` can be a word for which **no request was made** (`endpoint_unresponsive`,
+ * `signing_failed`, `expired`, `event_gone`): those are not attempts and are not counted in
+ * `attemptCount`.
+ */
+export const WebhookDeliverySchema = z
+  .object({
+    id: z.uuid(),
+    endpointId: z.uuid(),
+    /** The event's id, which is the delivery's `webhook-id`. `null` for a test event. */
+    eventId: z.uuid().nullable(),
+    /** The event's type. A plain string: a later server may record a type this one lacks. */
+    eventType: z.string(),
+    /** `true` for a test event an administrator asked for: nothing it describes happened. */
+    test: z.boolean(),
+    /** One of {@link WEBHOOK_DELIVERY_STATES} today. */
+    state: z.string(),
+    /** Requests made so far. */
+    attemptCount: z.number().int().min(0),
+    /** When the server tries next; `null` unless the delivery is `pending`. */
+    nextAttemptAt: z.iso.datetime().nullable(),
+    lastAttemptAt: z.iso.datetime().nullable(),
+    statusCode: z.number().int().nullable(),
+    failureReason: z.string().nullable(),
+    /** When it was delivered or given up; `null` while `pending`. */
+    completedAt: z.iso.datetime().nullable(),
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'WebhookDelivery' })
+
+/** One delivery with every request made for it, oldest first. */
+export const WebhookDeliveryDetailSchema = WebhookDeliverySchema.extend({
+  attempts: z.array(WebhookDeliveryAttemptSchema),
+}).meta({ ref: 'WebhookDeliveryDetail' })
+
+/** One page of an endpoint's deliveries, newest first. */
+export const WebhookDeliveryListSchema = z
+  .object({ meta: PaginationMetaSchema, data: z.array(WebhookDeliverySchema) })
+  .meta({ ref: 'WebhookDeliveryList' })
+
+/**
+ * Body of `POST /v1/admin/webhook-endpoints/{id}/test`: the type of the example event to send.
+ */
+export const SendTestWebhookRequestSchema = z
+  .strictObject({ eventType: z.enum(ACTIVITY_TYPES) })
+  .meta({ ref: 'SendTestWebhookRequest' })
+
+/**
+ * What became of a request the server made on demand (a test event, or a delivery sent again).
+ * Of the receiver's answer only the status code and the duration: never a header or a body.
+ */
+export const WebhookSendResultSchema = z
+  .object({
+    /** The delivery this request is recorded under. */
+    deliveryId: z.uuid(),
+    /** `delivered` when the receiver answered 2xx. */
+    outcome: z.enum(['delivered', 'failed']),
+    statusCode: z.number().int().nullable(),
+    durationMs: z.number().int().min(0),
+    /** One of the server's fixed words when there was no answer; otherwise `null`. */
+    failureReason: z.string().nullable(),
+  })
+  .meta({ ref: 'WebhookSendResult' })
+
 /** A listed webhook endpoint. */
 export type WebhookEndpoint = z.infer<typeof WebhookEndpointSchema>
 /** A newly registered webhook endpoint, with its signing secret. */
@@ -122,3 +251,17 @@ export type WebhookEndpointList = z.infer<typeof WebhookEndpointListSchema>
 export type CreateWebhookEndpointRequest = z.infer<typeof CreateWebhookEndpointRequestSchema>
 /** Update-endpoint request body. */
 export type UpdateWebhookEndpointRequest = z.infer<typeof UpdateWebhookEndpointRequestSchema>
+/** Where a delivery stands. */
+export type WebhookDeliveryState = (typeof WEBHOOK_DELIVERY_STATES)[number]
+/** One request made for a delivery. */
+export type WebhookDeliveryAttempt = z.infer<typeof WebhookDeliveryAttemptSchema>
+/** The delivery of one event to one endpoint. */
+export type WebhookDelivery = z.infer<typeof WebhookDeliverySchema>
+/** A delivery with its attempts. */
+export type WebhookDeliveryDetail = z.infer<typeof WebhookDeliveryDetailSchema>
+/** A page of deliveries. */
+export type WebhookDeliveryList = z.infer<typeof WebhookDeliveryListSchema>
+/** Send-test-event request body. */
+export type SendTestWebhookRequest = z.infer<typeof SendTestWebhookRequestSchema>
+/** The outcome of a request made on demand. */
+export type WebhookSendResult = z.infer<typeof WebhookSendResultSchema>
