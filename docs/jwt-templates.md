@@ -103,6 +103,14 @@ about itself can become a claim. Not available, on purpose: the user's id (it is
 backend trusts), anything secret, and the session's IP address and user agent (personal data
 that a request claimed when the session began, and stale by the next one).
 
+**A `user.*` source on a stateful profile costs a database read on every request.** A
+stateful session is checked against the database on each authenticated request, and with a
+`user.*` source in its template that check also reads the user, every time: one more read
+per request, for as long as the profile uses the template. The `session.*` sources and
+constants cost nothing, on either session type. On a hybrid profile a `user.*` source costs
+one read at sign-in and at a step-up, and none at a refresh
+([What it costs](#what-it-costs)).
+
 A constant says what **you** typed: `plan: { value: 'team' }` gives every session of that
 profile `"plan": "team"`. It is useful to tell profiles apart (`{ value: 'back-office' }` on
 the profile your staff tool asks for); it is not a per-user role. Per-user claims need a
@@ -182,9 +190,14 @@ backend, and a claim read in the browser decides nothing.
   token about 2,080 characters, which with `@tula/nextjs` is a `tula_at` cookie of about 2,100
   bytes: inside the 4,096 a browser stores, with about 2,000 to spare. The cap is what keeps
   it there; it is not configurable.
-- **Database reads.** A refresh reads the user already, and gains no read. A sign-in, a
-  step-up and a stateful session's request read the user once more **only** when the template
-  has a `user.*` source.
+- **Database reads.** Only a template with a `user.*` source costs any; `session.*` sources
+  and constants cost none.
+
+  | When | Extra reads with a `user.*` source |
+  | --- | --- |
+  | A refresh (hybrid) | None: it reads the user already. |
+  | A sign-in or a step-up | One. |
+  | **Every authenticated request of a stateful session** | **One, each time.** A stateful profile already reads the session per request; this makes it two. |
 
 ## Not built
 

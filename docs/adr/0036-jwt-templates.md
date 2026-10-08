@@ -136,6 +136,9 @@ copy to reason about.
 **A refresh gains no database read.** It already loads the user to refuse a banned one, and
 that row is what the claims are read from. A sign-in, a step-up and a stateful request load
 the user **only** when the profile's template has a `user.*` source (`CustomClaims.needsUser`).
+For a stateful session that is one more read on **every** authenticated request (the fast
+path of `Sessions.authenticate`), on top of the session read the type already costs; the
+docs say so where an operator chooses a source.
 A test counts the user reads of a refresh, a sign-in and a stateful check, with and without
 such a template.
 
