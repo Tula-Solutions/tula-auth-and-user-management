@@ -148,6 +148,13 @@
       "when": 1791459080887,
       "tag": "0020_webhook_secret_rotation",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791465054344,
+      "tag": "0021_hooks",
+      "breakpoints": true
     }
   ]
 }

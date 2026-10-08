@@ -72,6 +72,12 @@ export const ACTIVITY_TYPES = [
   'webhook_endpoint.secret_rotated',
   // An administrator ended that overlap early: the previous secret stopped signing at once.
   'webhook_endpoint.previous_secret_revoked',
+  // A hook registered, changed or removed (ADR 0035). `changed` lists field names; neither
+  // the hook's address nor its signing secret is ever in an event. `weakened` says the change
+  // lets through what the hook used to stop.
+  'hook.created',
+  'hook.updated',
+  'hook.deleted',
 ] as const
 
 /** A recorded action type: one of {@link ACTIVITY_TYPES}. */
@@ -98,7 +104,8 @@ export const EVENT_SCHEMA_VERSION = 1
  *
  * An event about a user's credentials targets the `user` (the passkey or session concerned
  * is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
- * endpoint has an id of its own, as an API key does, so it is its own kind of target.
+ * endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
+ * is a hook.
  *
  * @example
  * ```ts
@@ -138,6 +145,9 @@ export const EVENT_TARGET_TYPES = {
   'webhook_endpoint.disabled': 'webhook_endpoint',
   'webhook_endpoint.secret_rotated': 'webhook_endpoint',
   'webhook_endpoint.previous_secret_revoked': 'webhook_endpoint',
+  'hook.created': 'hook',
+  'hook.updated': 'hook',
+  'hook.deleted': 'hook',
 } as const satisfies Record<ActivityType, AuditTargetType>
 
 /** What an event of type `T` is about. */

@@ -205,6 +205,19 @@ export const ERROR_DEFINITIONS = {
     message: 'The signing secret cannot be changed now.',
   },
 
+  // Hooks (ADR 0035). The operator's `before_sign_up` hook refused the sign-up; `params.code`
+  // is the hook's own message code when it gave one, for the app to turn into words. Answered
+  // only where the address was already proven, so it says nothing about any account.
+  'hook.denied': { status: 403, message: 'This sign-up was not allowed.' },
+  // The hook could not be asked or gave no usable answer, and it refuses on failure. Nothing
+  // was created; signing up again later may work.
+  'hook.unavailable': {
+    status: 503,
+    message: 'Sign-up is unavailable right now. Try again later.',
+  },
+  // A hook's address is not one the server may call: as `webhook.url_not_allowed`.
+  'hook.url_not_allowed': { status: 422, message: 'The server cannot call that address.' },
+
   // Passkeys (ADR 0027). A failed passkey sign-in is always `auth.invalid_credentials`.
   'passkey.registration_failed': {
     status: 422,
