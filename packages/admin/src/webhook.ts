@@ -174,7 +174,9 @@ function isEvent(value: unknown, id: string): value is TulaWebhookEvent {
     typeof value.occurredAt === 'string' &&
     isRecord(value.actor) &&
     isRecord(value.target) &&
-    isRecord(value.data)
+    isRecord(value.data) &&
+    // A test event says `true`; a real one has no such key. Anything else is neither.
+    (value.test === undefined || value.test === true)
   )
 }
 
@@ -197,7 +199,14 @@ function isEvent(value: unknown, id: string): value is TulaWebhookEvent {
  * object your framework parsed and you wrote out again. The signature is over the bytes.
  *
  * Delivery is at least once. The same event can arrive again with the same `id` (the
- * `webhook-id` header): keep the ids you have handled and drop a repeat.
+ * `webhook-id` header): a delivery you answered with anything but a 2xx is sent again, up to
+ * eight times over about a day, and an administrator can send one again by hand. Keep the ids
+ * you have handled and drop a repeat. Events can arrive out of order (a retry of an older one
+ * after a newer one): order them by `occurredAt`.
+ *
+ * **Check `event.test` before acting.** A test event (one an administrator asked the server to
+ * send) is a real, signed delivery of an example: nothing it describes happened. It carries
+ * `test: true` inside the signed body; a real event has no such field.
  *
  * Runs on any server runtime (it uses Web Crypto). Never call it from a browser: it takes the
  * endpoint's secret.
@@ -225,7 +234,7 @@ function isEvent(value: unknown, id: string): value is TulaWebhookEvent {
  *   } catch {
  *     return new Response(null, { status: 400 })
  *   }
- *   if (await alreadyHandled(event.id)) {
+ *   if (event.test || (await alreadyHandled(event.id))) {
  *     return new Response(null, { status: 204 })
  *   }
  *   if (event.type === 'user.created') {

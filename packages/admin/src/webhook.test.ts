@@ -329,9 +329,25 @@ describe('verifyWebhook', () => {
       'an event with another id than the delivery’s',
       JSON.stringify({ ...event, id: EVENT_FIXTURES['user.deleted'].id }),
     ],
+    // `test` is `true` on a test event and absent on a real one: nothing else is either.
+    ['an event whose test mark is false', JSON.stringify({ ...event, test: false })],
+    ['an event whose test mark is a word', JSON.stringify({ ...event, test: 'true' })],
+    ['an event whose test mark is null', JSON.stringify({ ...event, test: null })],
   ])('refuses a correctly signed body that is %s', async (_, body) => {
     const headers = await delivery({ 'webhook-signature': await sign(SECRET, { body }) })
     expect((await failure(verify(headers, { body }))).code).toBe('webhook.invalid_payload')
+  })
+
+  test('returns a test event with its mark, so a receiver can tell it from a real one', async () => {
+    const body = JSON.stringify({ ...event, test: true })
+    const headers = await delivery({ 'webhook-signature': await sign(SECRET, { body }) })
+    const verified = await verify(headers, { body })
+    expect(verified.test).toBe(true)
+    expect((await verify(await delivery())).test).toBeUndefined()
+    // The mark is inside what is signed: adding it to a real delivery breaks the signature.
+    expect((await failure(verify(await delivery(), { body }))).code).toBe(
+      'webhook.invalid_signature'
+    )
   })
 
   test('returns an event of a type this version does not know: a later server may send one', async () => {
