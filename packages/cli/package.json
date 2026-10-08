@@ -1,6 +1,7 @@
 {
   "name": "@tula/cli",
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "description": "The tula command line: `tula dev`, `tula doctor`, `tula policy test`, `tula mcp`, and `tula diff` / `tula apply`, which keep an environment's settings and OAuth providers in step with tula.config.ts.",

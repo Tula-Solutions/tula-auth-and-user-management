@@ -67,6 +67,10 @@ async function stageAndPack(dir: string, versions: ReadonlyMap<string, string>):
       await cp(join(source, entry), join(staged, entry), { recursive: true })
     }
   }
+  // One licence for the whole repository: a package without its own copy ships the root's.
+  if (!(await exists(join(staged, 'LICENSE')))) {
+    await cp(join(root, 'LICENSE'), join(staged, 'LICENSE'))
+  }
   await Bun.write(
     join(staged, 'package.json'),
     `${JSON.stringify(publishManifest(manifest, versions), null, 2)}\n`
