@@ -85,6 +85,15 @@ has no way to call a client route.
     reach `@tula/contract`'s schemas (they would be built before the switch). That is why
     the delivery list's search reader is `features/webhooks/delivery-search.ts`, which
     takes its lists from the generated client, and not part of the screen's module.
+    **The rule**: a route file's `validateSearch` and `beforeLoad`, and anything they import
+    at module level, however far down, must not reach `zod` or `@tula/contract`'s schema
+    modules (the contract's Zod-free entry points, such as `@tula/contract/event-types`,
+    are fine). The screen itself may: the router's plugin splits a route's `component`
+    into a chunk that is loaded after the switch. Nothing in happy-dom notices a violation,
+    so a test walks the imports: "what a route file runs before its screen is loaded stays
+    free of Zod" in `src/features/webhooks/words.test.ts`, with the walker in
+    `src/testing/entry-imports.ts`. A new route file with a `validateSearch` or a
+    `beforeLoad` that imports anything is added to that test's list.
   - Dialogs are the platform's `<dialog>` (`components/modal.tsx`). Radix's dialog locks
     scrolling by injecting a `<style>` element, which `style-src 'self'` refuses; so does
     its select (shadcn's `native-select` is used instead) and every toast library looked at
@@ -97,6 +106,24 @@ has no way to call a client route.
   client keeps a mutation's variables. Nothing is written to `localStorage` or
   `sessionStorage` (the router's scroll restoration is off for that reason), and no secret
   goes into the address or a log.
+- **A dialog whose answer carries a secret cannot be dismissed while its request is in
+  flight.** A new API key, a new webhook endpoint's signing secret and a rotated one are
+  made by the server before it answers, and are returned once: a dialog that was closed
+  meanwhile would leave a key or an endpoint nobody has the secret of. So the dialog is
+  `busy` for that time (`Modal`'s prop: Escape is refused, and a close the browser forces is
+  undone), its buttons are `SecretRequestActions` (Cancel stays focusable, is marked
+  unavailable and says why; the submitting button says "Creating…" in words), and the list
+  is refreshed by the mutation's own `onSuccess` (the hook's, not the one passed to
+  `mutate()`, which is dropped with the component), so the list is right even after a
+  navigation. A navigation still loses the secret, and that is accepted: nothing of it may
+  be shown under another page or environment. `src/secret-dialogs.test.tsx` holds each of
+  these, and that a dialog opened again shows the form and no earlier secret.
+- **Server text that names something is shown so that it can be checked.** A webhook
+  endpoint's address goes through `printable()` (`src/lib/printable.ts`: every character
+  nobody can see, by Unicode class, written out as `\u{…}`; a backslash too, so the shown
+  form names one text only) inside `<bdi dir="ltr">` (`features/webhooks/address.tsx`),
+  in headings, dialog titles, the text to type and every control's name. What is typed to
+  confirm is compared with what is shown.
 - **Server text is rendered as text.** No `dangerouslySetInnerHTML`; audit metadata is shown
   as a JSON string in a `<code>`.
 - **One save model for settings** (`features/settings/settings-editor.tsx`): load with the

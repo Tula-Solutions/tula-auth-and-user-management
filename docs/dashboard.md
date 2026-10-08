@@ -79,17 +79,39 @@ deletes a workspace, project or environment yet.
   providers) is refused by the server, and the dashboard says so.
 - **A webhook signing secret is shown once**, when the endpoint is added and when its secret
   is rotated. Copy it from the dialog; closing the dialog discards it, and the API cannot
-  show it again. If it is lost, rotate.
+  show it again. If it is lost, rotate. While the request is under way the dialog cannot be
+  closed (Cancel says why, Escape does nothing): the server has made the secret by the time
+  it answers, and the answer is the only place it is. The same holds for a new API key.
+  Leaving the page during that moment still loses the secret; the endpoint is then in the
+  list, and its secret is rotated to get one.
 - **Rotating a webhook secret breaks nothing at once.** For 24 hours every delivery is signed
   with the new secret and the previous one, and the endpoint's card says until when. "End
   the overlap now" stops the previous secret at once: use it once your receiver has the new
-  one, or when the old one leaked. A second rotation waits until the overlap is over.
+  one, or when the old one leaked. It names the endpoint and, in a production environment,
+  asks for its address to be typed, as deleting does. A second rotation waits until the
+  overlap is over.
+- **An address is shown so that it can be checked by eye.** A character nobody can see, or
+  one that turns the text round (a zero-width space, a right-to-left override), is written
+  out as `\u{…}` with its code point, wherever the address appears; a backslash is written
+  out the same way, so two addresses are shown alike only when they are the same. To confirm
+  by typing, type what is shown. Letters of different scripts that look alike are not told
+  apart.
 - **An endpoint the server switched off says why**: it answered `410 Gone`, or requests to it
   failed for five days. Fix the receiver, send a test event, then switch the endpoint on.
 - **A test event changes nothing about an endpoint.** It carries `"test": true`, is sent
   once, and neither counts as a failure nor ends a run of failures. "Send again" on a
   delivery is one request too, with the same event and id; if it gets through it does end
-  the run. Both share a limit of ten requests a minute per environment.
+  the run. Both share a limit of ten requests a minute per environment, beside the admin
+  API's general one; a refusal for too many requests says how long to wait, not which of
+  the two it was, because the server's answer does not say.
+- **An address that names nothing reads "not found"**: an endpoint or a delivery that was
+  deleted, one of another environment, and an id that is no id at all (a mistyped address)
+  alike, with the way back to the list. A page past the newest 10,000 deliveries, which the
+  server does not page beyond, is read as the first page.
+- **Some event types are explained where they are chosen**: the three `hook.*` types are
+  about hooks (a question asked before a sign-up), not webhooks, and say so; so do
+  `signing_key.rotated`, `webhook_endpoint.secret_rotated`, `webhook_endpoint.disabled` and
+  `session.reuse_detected`.
 - **Deleting an endpoint deletes its delivery log** and its pending deliveries with it.
 
 More about webhooks: [webhooks.md](webhooks.md).

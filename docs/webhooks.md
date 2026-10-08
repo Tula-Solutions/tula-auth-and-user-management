@@ -693,11 +693,14 @@ calls the routes this page describes and adds nothing of its own:
 - **The list** shows each endpoint's address, its event types and how it is doing, in
   words: active, active but failing (and since when), switched off by an operator, or
   switched off by the server with the reason. From an endpoint's card you add, edit, switch
-  off and on, rotate the secret, send a test event and delete. Deleting names the endpoint
-  by its address and, in a production environment, asks for the address to be typed.
+  off and on, rotate the secret, send a test event and delete. Deleting, and ending an
+  overlap, name the endpoint by its address and, in a production environment, ask for the
+  address to be typed. An address is shown with any character nobody can see written out
+  (`\u{200B}`), so that the one you confirm is the one you read.
 - **A signing secret is shown once**, in the dialog that follows adding an endpoint or
-  rotating its secret, and is gone when the dialog closes. While a rotation's overlap lasts
-  the card says until when two secrets sign, and offers "End the overlap now".
+  rotating its secret, and is gone when the dialog closes. The dialog cannot be closed while
+  its request is under way: the answer is the only place the secret is. While a rotation's
+  overlap lasts the card says until when two secrets sign, and offers "End the overlap now".
 - **An endpoint's deliveries** are a paged table (state, event type, when it was queued, how
   many requests, the last result), filtered by state and event type; the filters and the
   page are in the address, so a view can be shared.
