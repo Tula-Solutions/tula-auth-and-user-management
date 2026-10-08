@@ -45,7 +45,7 @@ export const PLAN_OPTIONS = {
   prune: {
     type: 'boolean',
     description:
-      'Delete providers, and remove webhook endpoints, that the server has and the file does not list (default: leave them). A file with no webhooks list keeps every endpoint.',
+      'Delete providers, and remove webhook endpoints and hooks, that the server has and the file does not list (default: leave them). A file with no webhooks list keeps every endpoint, and one with no hooks key every hook.',
   },
   'rotate-secrets': {
     type: 'boolean',
@@ -68,15 +68,15 @@ export interface Prepared {
 
 /**
  * Read an environment's settings (with their revision and manager), its providers and, when
- * the config manages them, its webhook endpoints.
+ * the config manages them, its webhook endpoints and its hooks.
  *
  * @param admin - The admin client.
- * @param options - `webhooks`: whether to read the webhook endpoints too.
+ * @param options - `webhooks`, `hooks`: whether to read the webhook endpoints and the hooks.
  * @returns The server's state.
  */
 export async function readRemote(
   admin: AdminClient,
-  options: { webhooks: boolean }
+  options: { webhooks: boolean; hooks: boolean }
 ): Promise<RemoteState> {
   const settings = await admin.call('getEnvironmentSettings')
   const providers = await admin.call('listOAuthProviders')
@@ -85,6 +85,8 @@ export async function readRemote(
   const webhooks = options.webhooks
     ? (await admin.call('listWebhookEndpoints')).data.data
     : undefined
+  // The same for hooks: read only for a config that has a `hooks` key.
+  const hooks = options.hooks ? (await admin.call('listHooks')).data.data : undefined
   // An older server does not report a manager: the field is then absent, not null.
   const managedBy = (settings.data as { managedBy?: SettingsManagedBy | null }).managedBy
   return {
@@ -94,6 +96,7 @@ export async function readRemote(
     managedBy,
     providers: providers.data.data,
     ...(webhooks !== undefined && { webhooks }),
+    ...(hooks !== undefined && { hooks }),
   }
 }
 
@@ -112,7 +115,10 @@ export async function prepare(context: CommandContext): Promise<Prepared> {
   const environment = selectEnvironment(config, requested)
   const name = requested ?? (Object.keys(config.environments)[0] as string)
   const target = await resolveTarget({ name, environment, flags, io, output })
-  const remote = await readRemote(target.admin, { webhooks: environment.webhooks !== undefined })
+  const remote = await readRemote(target.admin, {
+    webhooks: environment.webhooks !== undefined,
+    hooks: environment.hooks !== undefined,
+  })
   const plan = buildPlan(remote, environment, {
     configHash: await hashEnvironmentConfig(environment),
     prune: flags.prune === true,

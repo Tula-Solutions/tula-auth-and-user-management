@@ -791,6 +791,7 @@ describe('settings this version does not know', () => {
       allowWeaker: false,
       allowWebhookRemoval: false,
       webhookSecrets: false,
+      hookSecrets: false,
     })
   })
 })
@@ -940,6 +941,7 @@ describe('a plan that weakens security', () => {
       allowWeaker: true,
       allowWebhookRemoval: false,
       webhookSecrets: false,
+      hookSecrets: false,
     })
   })
 })

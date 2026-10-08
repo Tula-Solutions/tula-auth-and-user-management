@@ -24,7 +24,7 @@ export const diffCommand: Command = {
   usage: 'tula diff [--env <name>] [--config <path>] [--prune] [--rotate-secrets] [--json]',
   description:
     'Compares tula.config.ts with the environment’s settings, OAuth providers and (when the ' +
-    'file lists them) webhook endpoints, and prints the plan: what would be added, changed ' +
+    'file lists them) webhook endpoints and hooks, and prints the plan: what would be added, changed ' +
     'and removed, by path. Secrets are never shown.\n\n' +
     'Exit codes: 0 no changes, 2 changes pending, 1 an error. A plan that cannot be ' +
     'applied (a webhook address the server has twice, too many endpoints) is an error.',

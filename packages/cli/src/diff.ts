@@ -3,7 +3,12 @@ import { type EnvironmentConfig, providerSecret } from '@tula/config'
 import {
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
+  HOOK_FIELDS,
+  HOOK_POINTS,
+  type HookPoint,
+  type HookStrength,
   hasEnabledSignInMethod,
+  hookWeakenings,
   MAX_WEBHOOK_ENDPOINTS,
   OAUTH_PROVIDERS,
   type OAuthProvider,
@@ -189,6 +194,214 @@ export interface RemoteState {
    * they are then not even read.
    */
   webhooks?: readonly RemoteWebhook[]
+  /**
+   * The hooks, oldest first. Left out when the config does not manage hooks: they are then
+   * not even read.
+   */
+  hooks?: readonly RemoteHook[]
+}
+
+/**
+ * A hook as the admin API lists it. Never with its signing secret: no read returns one.
+ *
+ * @example
+ * ```ts
+ * const { data } = await admin.call('listHooks')
+ * const hooks: RemoteHook[] = data.data
+ * ```
+ */
+export type RemoteHook = AdminSchemas['Hook']
+
+/**
+ * What a run does with one hook.
+ *
+ * @example
+ * ```ts
+ * const change: HookChange = planHooks(remote.hooks, environment.hooks, {}).hooks[0]
+ * ```
+ */
+export interface HookChange {
+  /** The point, which is what names a hook: an environment has at most one per point. */
+  point: string
+  /** The server's id of the hook. Absent for one to create. */
+  id?: string
+  /** The hook's address: the file's for an entry of the file, the server's otherwise. */
+  url: string
+  /**
+   * `create`, `update`, `delete`; `none` when it already is as the config says; `unmanaged`
+   * when the server has it and the config has no entry for its point (left alone without
+   * `--prune`); `unknown` when its point is one this version of the CLI does not know, which
+   * no file can name and no run touches, `--prune` or not.
+   */
+  action: 'create' | 'update' | 'delete' | 'none' | 'unmanaged' | 'unknown'
+  /** The differences in `url`, `enabled`, `deadlineMs` and `failureMode`, in that order. */
+  fields: Change[]
+  /**
+   * Where the change lets through what the hook stops, as the contract's `hookWeakenings`
+   * judges it: `hooks.<point>.failureMode`, `hooks.<point>.enabled`, or `hooks.<point>` for
+   * the removal of a hook that is on. Part of the plan's `weakened`.
+   */
+  weakened: string[]
+}
+
+/**
+ * What a run does with an environment's hooks.
+ *
+ * @example
+ * ```ts
+ * if (plan.hooks.managed) {
+ *   // the file has a `hooks` key: the server's hooks were read
+ * }
+ * ```
+ */
+export interface HookPlan {
+  /** Whether the config has a `hooks` key at all. Without one nothing is read or changed. */
+  managed: boolean
+  /** One entry per point the file or the server has a hook for, in the contract's order. */
+  hooks: HookChange[]
+  /**
+   * What the plan read of the server's hooks ({@link hookSnapshot}): `tula apply` reads them
+   * again before its first write to one and stops if this no longer matches.
+   */
+  seen: string
+}
+
+/**
+ * A fingerprint of the fields of an environment's hooks that a plan reads: each hook's id,
+ * point, address, switch, deadline and failure mode. The server guards each write with what
+ * it read itself a moment before; this is what a run compares to notice that someone changed
+ * a hook after the **plan** was made, so that what the plan called a weakening (or did not)
+ * is still true of what it writes over. When a call last failed is left out: it does not
+ * change what a plan does.
+ *
+ * @param hooks - The hooks as the server lists them.
+ * @returns The same text for the same hooks in any order.
+ *
+ * @example
+ * ```ts
+ * if (hookSnapshot(now.data.data) !== plan.hooks.seen) {
+ *   // changed since the plan was made
+ * }
+ * ```
+ */
+export function hookSnapshot(hooks: readonly RemoteHook[]): string {
+  return JSON.stringify(
+    hooks
+      .map((hook) => [
+        hook.id,
+        hook.point,
+        hook.url,
+        hook.enabled,
+        hook.deadlineMs,
+        hook.failureMode,
+      ])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  )
+}
+
+/** What of the server's hook decides how much it protects, as the contract judges it. */
+function strengthOf(hook: Pick<RemoteHook, 'enabled' | 'failureMode'>): HookStrength {
+  // A mode a later server knows and this version does not is read as the strict one, so a
+  // change to `allow` is still flagged.
+  return { enabled: hook.enabled, failureMode: hook.failureMode === 'allow' ? 'allow' : 'deny' }
+}
+
+/**
+ * Decide what to do with each hook.
+ *
+ * A hook is named by its **point**: an environment has at most one per point, so an entry of
+ * the file is matched to the server's hook for the same point, and a changed address is a
+ * change of that hook (its signing secret stays). An entry is whole: what it leaves out is
+ * the API's default, and every field is compared.
+ *
+ * As with providers and webhook endpoints, a hook for a point the file has no entry for is
+ * left alone (`unmanaged`) unless `prune` asks for it to be removed, and a file with no
+ * `hooks` key at all manages nothing: not even `prune` touches a hook then.
+ *
+ * Which change is a weakening is decided by the contract's `hookWeakenings`, the same
+ * function the server records `weakened` with and the dashboard asks with.
+ *
+ * @param remote - The hooks as the server lists them; ignored when `desired` is absent.
+ * @param desired - The config's hooks, or `undefined` when the file does not manage hooks.
+ * @param options - `prune`.
+ * @returns The plan for the hooks.
+ *
+ * @example
+ * ```ts
+ * planHooks(remote.hooks, environment.hooks, { prune: true }).hooks
+ * ```
+ */
+export function planHooks(
+  remote: readonly RemoteHook[] | undefined,
+  desired: EnvironmentConfig['hooks'],
+  options: Pick<PlanOptions, 'prune'>
+): HookPlan {
+  if (desired === undefined) {
+    return { managed: false, hooks: [], seen: hookSnapshot([]) }
+  }
+  const existing = remote ?? []
+  const known: ReadonlySet<string> = new Set(HOOK_POINTS)
+  const hooks: HookChange[] = []
+  for (const point of HOOK_POINTS) {
+    const current = existing.find((hook) => hook.point === point)
+    const entry = Object.hasOwn(desired, point) ? desired[point] : undefined
+    if (!entry) {
+      if (current) {
+        const removed = options.prune === true
+        hooks.push({
+          point,
+          id: current.id,
+          url: current.url,
+          action: removed ? 'delete' : 'unmanaged',
+          fields: [],
+          weakened:
+            removed && hookWeakenings(strengthOf(current), null).length > 0
+              ? [`hooks.${point}`]
+              : [],
+        })
+      }
+      continue
+    }
+    const weakened = hookWeakenings(current ? strengthOf(current) : null, entry).map(
+      (field) => `hooks.${point}.${field}`
+    )
+    if (!current) {
+      hooks.push({
+        point,
+        url: entry.url,
+        action: 'create',
+        fields: HOOK_FIELDS.map((path) => ({ path, kind: 'added', after: entry[path] })),
+        weakened,
+      })
+      continue
+    }
+    const fields = HOOK_FIELDS.flatMap((path): Change[] =>
+      current[path] === entry[path]
+        ? []
+        : [{ path, kind: 'changed', before: current[path], after: entry[path] }]
+    )
+    hooks.push({
+      point,
+      id: current.id,
+      url: entry.url,
+      action: fields.length > 0 ? 'update' : 'none',
+      fields,
+      weakened,
+    })
+  }
+  for (const hook of existing) {
+    if (!known.has(hook.point)) {
+      hooks.push({
+        point: hook.point,
+        id: hook.id,
+        url: hook.url,
+        action: 'unknown',
+        fields: [],
+        weakened: [],
+      })
+    }
+  }
+  return { managed: true, hooks, seen: hookSnapshot(existing) }
 }
 
 /**
@@ -605,7 +818,10 @@ export interface Plan {
   revision: number
   /** The differences in the settings document. */
   settings: Change[]
-  /** Paths where the settings get weaker (the contract's `settingsWeakenings`). */
+  /**
+   * Paths where the run weakens security: the settings' (the contract's
+   * `settingsWeakenings`), then the hooks' (`hookWeakenings`, as `hooks.<point>…`).
+   */
   weakened: string[]
   /** Settings the file leaves out whose default is the deployment's: kept as the server has them. */
   kept: string[]
@@ -615,6 +831,8 @@ export interface Plan {
   providers: ProviderChange[]
   /** What happens to each webhook endpoint, when the config manages them. */
   webhooks: WebhookPlan
+  /** What happens to each hook, when the config manages them. */
+  hooks: HookPlan
   /** Whether the server records this config as the settings' manager. */
   marker: MarkerPlan
   /** The document a replace would send. */
@@ -697,15 +915,20 @@ export function buildPlan(
     .map((change) => change.path)
   const providers = planProviders(remote.providers, environment.providers, options)
   const webhooks = planWebhooks(remote.webhooks, environment.webhooks, options)
+  const hooks = planHooks(remote.hooks, environment.hooks, options)
   const marker = planMarker(remote, options.configHash)
   return {
     revision: remote.revision,
     settings,
-    weakened: weakenings(remote.settings, body),
+    weakened: [
+      ...weakenings(remote.settings, body),
+      ...hooks.hooks.flatMap((hook) => hook.weakened),
+    ],
     kept,
     unknown,
     providers,
     webhooks,
+    hooks,
     marker,
     body,
     changes:
@@ -716,7 +939,8 @@ export function buildPlan(
       // says, though `tula apply` will not be the one to put it right.
       webhooks.endpoints.some((endpoint) =>
         ['create', 'update', 'delete', 'ambiguous'].includes(endpoint.action)
-      ),
+      ) ||
+      hooks.hooks.some((hook) => ['create', 'update', 'delete'].includes(hook.action)),
   }
 }
 
@@ -737,6 +961,9 @@ export type Operation =
   | { kind: 'webhook.create'; url: string; change: WebhookChange }
   | { kind: 'webhook.update'; url: string; id: string; change: WebhookChange }
   | { kind: 'webhook.delete'; url: string; id: string; change: WebhookChange }
+  | { kind: 'hook.create'; point: HookPoint; change: HookChange }
+  | { kind: 'hook.update'; point: HookPoint; id: string; change: HookChange }
+  | { kind: 'hook.delete'; point: HookPoint; id: string; change: HookChange }
 
 /**
  * The writes of a plan, in an order in which every intermediate state is one the server
@@ -754,7 +981,7 @@ export type Operation =
  * that turned out stale stops the run before anything was written. Only when the file
  * switches every native method off do the settings wait for the providers they rely on.
  *
- * **Webhook endpoints come last**, after the settings and every provider. Nothing about
+ * **Webhook endpoints come after the settings and every provider.** Nothing about
  * signing in depends on them, and a registration is the write most likely to be refused for
  * a reason outside the file (the server could not resolve the address, the environment is at
  * its limit): a failure there must find the settings and the providers already as the file
@@ -764,6 +991,16 @@ export type Operation =
  * (`MAX_WEBHOOK_ENDPOINTS`): when the new endpoints do not fit beside the ones being removed,
  * exactly as many removals as it takes (`plan.webhooks.removedFirst`, oldest first) go before
  * the creations.
+ *
+ * **Hooks come last**, after the webhook endpoints: an endpoint the same run registers is
+ * then there to be told of what the run does to a hook (`hook.updated` with `weakened`),
+ * since an event is owed only to endpoints registered before it happened. A hook's
+ * registration can be refused for the same outside reasons as an endpoint's. Among
+ * themselves, so that a run that stops half-way leaves the environment no laxer than it has
+ * to: new hooks, then changes that loosen nothing, then changes that loosen one (switched
+ * off, `allow`), then removals. Hooks at different points do not depend on each other and
+ * each write is one request, so no intermediate state is laxer than both the start and the
+ * end.
  *
  * @param plan - The plan.
  * @returns The writes, in order; empty when the plan changes nothing.
@@ -793,7 +1030,34 @@ export function orderOperations(plan: Plan): Operation[] {
   const signIn = hasEnabledSignInMethod(plan.body)
     ? [...settings, ...adding, ...removing, ...deleting]
     : [...adding, ...settings, ...removing, ...deleting]
-  return [...signIn, ...orderWebhooks(plan.webhooks)]
+  return [...signIn, ...orderWebhooks(plan.webhooks), ...orderHooks(plan.hooks)]
+}
+
+function isHookPoint(point: string): point is HookPoint {
+  return (HOOK_POINTS as readonly string[]).includes(point)
+}
+
+function orderHooks(hooks: HookPlan): Operation[] {
+  const creates: Operation[] = []
+  const tightening: Operation[] = []
+  const loosening: Operation[] = []
+  const removals: Operation[] = []
+  for (const change of hooks.hooks) {
+    const { point, id } = change
+    // A point this version does not know is never written to.
+    if (!isHookPoint(point)) {
+      continue
+    }
+    if (change.action === 'create') {
+      creates.push({ kind: 'hook.create', point, change })
+    } else if (id !== undefined && change.action === 'update') {
+      const bucket = change.weakened.length > 0 ? loosening : tightening
+      bucket.push({ kind: 'hook.update', point, id, change })
+    } else if (id !== undefined && change.action === 'delete') {
+      removals.push({ kind: 'hook.delete', point, id, change })
+    }
+  }
+  return [...creates, ...tightening, ...loosening, ...removals]
 }
 
 function orderWebhooks(webhooks: WebhookPlan): Operation[] {
