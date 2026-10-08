@@ -258,6 +258,42 @@ describe('starting an OAuth sign-in', () => {
     expect(await codeOf(res)).toBe('request.origin_not_allowed')
   })
 
+  // A bug in an adapter is not a provider that is off: it stays the logged 500 it always
+  // was. What changed is only that the URL is built before the attempt is stored.
+  test.each(['google', 'github', 'apple', 'microsoft'] as const)(
+    '%s: an adapter that throws something of its own while building the URL is a 500, with no attempt stored',
+    async (provider) => {
+      const bodies = {
+        google: {},
+        github: {},
+        apple: {
+          clientSecret: undefined,
+          teamId: 'TEAM123456',
+          keyId: 'KEY1234567',
+          privateKey: await applePrivateKey(),
+        },
+        microsoft: { tenant: 'common' },
+      }
+      expect((await configure(provider, bodies[provider])).status).toBe(200)
+      const built = spyOn(deps.oauth[provider], 'authorizationUrl').mockImplementation(() => {
+        throw new TypeError('a bug in the adapter')
+      })
+      const created = spyOn(deps.flowAttempts, 'create')
+      const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+      try {
+        const res = await client('POST', '/sign-ins/oauth', { provider, redirectUrl: REDIRECT })
+        expect(res.status).toBe(500)
+        expect(await codeOf(res)).toBe('internal')
+        expect(built).toHaveBeenCalledTimes(1)
+        expect(created).not.toHaveBeenCalled()
+      } finally {
+        built.mockRestore()
+        created.mockRestore()
+        logged.mockRestore()
+      }
+    }
+  )
+
   test('a sign-in start and the client config offer the enabled providers', async () => {
     await configure('apple', {
       clientSecret: undefined,
@@ -1118,6 +1154,7 @@ describe('admin: provider credentials', () => {
         clientId: 'google-client-id',
         teamId: null,
         keyId: null,
+        tenant: null,
         callbackUrl: 'http://localhost:3003/v1/oauth/callback/google',
         updatedAt: expect.any(String),
       },
@@ -1131,6 +1168,12 @@ describe('admin: provider credentials', () => {
         provider: 'apple',
         configured: false,
         callbackUrl: 'http://localhost:3003/v1/oauth/callback/apple',
+      }),
+      expect.objectContaining({
+        provider: 'microsoft',
+        configured: false,
+        tenant: null,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/microsoft',
       }),
     ])
   })

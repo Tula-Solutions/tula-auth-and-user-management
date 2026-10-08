@@ -115,7 +115,7 @@ page, `useEmailLinkCallback()` returns `{ status, error }` with the same outcome
 A link works only in the browser that asked for it, by design: someone who types another
 person's address must not be signed in because that person clicked the genuine email.
 
-### Signing in with Google, GitHub or Apple
+### Signing in with Google, GitHub, Apple or Microsoft
 
 `<SignIn>` and `<SignUp>` draw a "Continue with …" button for every OAuth provider the
 environment has enabled (`GET /v1/client/config` → `signIn.oauth`), once the app says where the
@@ -142,9 +142,11 @@ browser, an account now connected). `useOAuthCallback()` returns the same as
 to sign in.
 
 The buttons are neutral, themeable buttons with each provider's mark and name. They follow the
-providers' basic rules (Google's "G" in its own colours, GitHub's and Apple's marks in the text
-colour, "Continue with …") but are **not the providers' own button artwork**: check Google's
-and Apple's branding guidelines against your theme before you ship, and remember that App Store
+providers' basic rules (Google's "G" and Microsoft's four squares in their own colours,
+GitHub's and Apple's marks in the text colour, "Continue with …") but are **not the
+providers' own button artwork**: check Google's, Apple's and Microsoft's branding guidelines
+against your theme before you ship (Microsoft's own button says "Sign in with Microsoft" in
+a fixed size, font and colours), and remember that App Store
 Review requires an iOS app that offers another social sign-in to offer Sign in with Apple.
 
 ### Passkeys

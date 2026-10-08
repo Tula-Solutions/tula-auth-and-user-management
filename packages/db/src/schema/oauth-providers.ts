@@ -4,7 +4,7 @@ import { tenantColumns, tenantConstraints } from '../tenant-columns'
 import { tula } from './pg-schema'
 
 /** The OAuth providers an environment can configure (ADR 0026). */
-export const OAUTH_PROVIDERS = ['google', 'github', 'apple'] as const
+export const OAUTH_PROVIDERS = ['google', 'github', 'apple', 'microsoft'] as const
 
 /** What a provider needs besides a client id and a secret. Never a secret itself. */
 export interface OAuthProviderConfig {
@@ -12,6 +12,8 @@ export interface OAuthProviderConfig {
   teamId?: string
   /** Apple: the id of the key the client-secret JWT is signed with. */
   keyId?: string
+  /** Microsoft: which accounts may sign in (`common`, `organizations`, `consumers`, a tenant id). */
+  tenant?: string
 }
 
 /**

@@ -682,6 +682,7 @@ describe('settings', () => {
             clientId: 'gh-client',
             teamId: null,
             keyId: null,
+            tenant: null,
             callbackUrl: 'http://localhost:3003/v1/client/oauth/github/callback',
             updatedAt: '2026-10-04T12:00:00.000Z',
           },

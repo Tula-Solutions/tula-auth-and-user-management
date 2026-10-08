@@ -4,7 +4,7 @@ Tula's API is one container image, a PostgreSQL database and, for more than one 
 Redis. This guide covers trying it locally with Docker Compose, and what to change for a real
 deployment.
 
-Phase 1 status: passwords, emailed codes and links, Google, GitHub and Apple, passkeys,
+Phase 1 status: passwords, emailed codes and links, Google, GitHub, Apple and Microsoft, passkeys,
 two-step verification, session profiles, user administration and the audit log (one page per
 method under [methods/](README.md#sign-in-methods)). Administration is through the dashboard at
 `/dashboard` ([dashboard.md](dashboard.md)), settings as code (`tula apply`,
@@ -15,7 +15,7 @@ stand-in (real providers, a physical passkey authenticator, and more) is listed 
 
 Contents: [try it locally](#try-it-locally) · [the server's settings](#settings) ·
 [an environment's settings](#settings-of-an-environment) ·
-[providers](#signing-in-with-google-github-or-apple) · [sessions](#sessions) ·
+[providers](#signing-in-with-a-provider) · [sessions](#sessions) ·
 [passkeys](#passkeys) · [`tula doctor`](#checking-a-deployment-tula-doctor) ·
 [the dashboard](#the-dashboard) · [running it for real](#running-it-for-real) (the database,
 https and the proxy, Redis and several instances, retention) · [upgrading](#upgrading).
@@ -316,7 +316,7 @@ Switching a sign-in method or an OAuth provider off takes up to 5 seconds to rea
 instance with Redis and up to 30 without: settings are cached per instance. What each migration
 needs from you is under [Upgrading](#upgrading).
 
-## Signing in with Google, GitHub or Apple
+## Signing in with a provider
 
 Each environment uses **its own** OAuth credentials; none ship with Tula
 ([ADR 0026](adr/0026-oauth.md)). For each provider: register an app with the provider using the
@@ -324,7 +324,9 @@ redirect URI `GET /v1/admin/oauth-providers` lists as `callbackUrl`
 (`PUBLIC_URL/v1/oauth/callback/<provider>`), store the credentials with
 `PUT /v1/admin/oauth-providers/<provider>`, and add your app's landing page to
 `urls.allowedRedirectUrls`. Step-by-step: [Google](providers/google.md),
-[GitHub](providers/github.md), [Apple](providers/apple.md). The secret is stored encrypted
+[GitHub](providers/github.md), [Apple](providers/apple.md),
+[Microsoft](providers/microsoft.md) (which also takes a `tenant`: which Microsoft accounts
+may sign in). The secret is stored encrypted
 with `TULA_MASTER_KEY` and never returned; no provider token is stored at all.
 `DELETE /v1/admin/oauth-providers/<provider>` removes the credentials (users keep their
 connected accounts). To try the flow without credentials, see `OAUTH_MOCK_PROVIDER` above.

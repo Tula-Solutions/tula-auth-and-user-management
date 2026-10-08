@@ -409,7 +409,7 @@ endpoint really needs.
 
 - a sign-up with a password, after the emailed code was accepted;
 - a sign-up without a password, at the same step;
-- a first sign-in with Google, GitHub or Apple that would create an account.
+- a first sign-in with Google, GitHub, Apple or Microsoft that would create an account.
 
 **Not asked:**
 

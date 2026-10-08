@@ -314,7 +314,20 @@ export const OAuthStepSchema = z
         email: z.string().optional(),
         /** The provider's id for the account. Derived from the address when left out. */
         subject: z.string().optional(),
-        /** The provider reports the address as unverified. */
+        /**
+         * Microsoft only: the tenant id (`tid`) of the account, a GUID. Left out, the mock
+         * provider uses a tenant the environment's `tenant` accepts.
+         */
+        tenantId: z.string().optional(),
+        /**
+         * Microsoft only: the object id (`oid`) of the account, a GUID. Derived from the address
+         * when left out. The account is the pair of the two; `subject` is not read.
+         */
+        objectId: z.string().optional(),
+        /**
+         * The provider reports the address as unverified. For Microsoft: the token carries no
+         * verified-domain claim (`xms_edov`).
+         */
         unverified: z.boolean().optional(),
         /** The user cancels at the provider. */
         deny: z.boolean().optional(),
@@ -518,12 +531,15 @@ export const StepSchema = z
 /**
  * A variable's starting value: a literal, or a value generated fresh for each run. `email` is a
  * unique address; `password` is a long random one that meets every built-in policy and is in no
- * breach list; `phone` is a United States number in E.164 form from the range kept for
- * fiction (`+1 NXX 555 01XX`), so that per-number limits start clean and no real phone is
- * ever named.
+ * breach list; `uuid` is a random lower-case GUID (a Microsoft tenant id or object id);
+ * `phone` is a United States number in E.164 form from the range kept for fiction
+ * (`+1 NXX 555 01XX`), so that per-number limits start clean and no real phone is ever named.
  */
 export const VariableSchema = z
-  .union([z.string(), z.object({ generate: z.enum(['email', 'password', 'phone']) }).strict()])
+  .union([
+    z.string(),
+    z.object({ generate: z.enum(['email', 'password', 'uuid', 'phone']) }).strict(),
+  ])
   .meta({ ref: 'ConformanceVariable' })
 
 /**

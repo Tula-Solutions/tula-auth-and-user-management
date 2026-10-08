@@ -10,6 +10,7 @@ export {
   type HooksConfig,
   hashEnvironmentConfig,
   isSecretRef,
+  type MicrosoftProviderConfig,
   type OAuthClientConfig,
   type ProvidersConfig,
   parseConfig,

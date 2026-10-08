@@ -9,7 +9,7 @@ import { inProcessTarget } from '~/testing/in-process-target'
 //
 // Every conformance scenario is run against the real API in process, with two changes:
 //
-//   - every generated address and password is a recognisable canary instead;
+//   - every generated address, password and GUID is a recognisable canary instead;
 //   - the wire is tapped: whatever a request carried (body, query, credentials, cookies, user
 //     agent, client address), whatever a response handed out as a secret (tokens, attempt
 //     secrets, keys, TOTP secrets, backup codes, tickets, cookies) and whatever was emailed
@@ -19,8 +19,13 @@ import { inProcessTarget } from '~/testing/in-process-target'
 // all of it. What a payload may hold is listed in `@tula/contract`'s event schemas: ids the
 // server made, values from closed sets, and the names (never the values) of changed settings.
 
-/** In every canary address and password; never in anything the server makes. */
-const MARKERS = /canary|s3cretpass/i
+/**
+ * In every canary address, password and GUID; never in anything the server makes. A canary
+ * GUID (a Microsoft tenant id or object id, which a provider supplies) ends in twelve fixed
+ * hex digits: the tap takes anything GUID-shaped for one of the server's own ids and does not
+ * look for it, so the marker is the only thing that finds one.
+ */
+const MARKERS = /canary|s3cretpass|c0ffeec0ffee/i
 
 /** What every canary phone number starts with: a fictional United States number. */
 const CANARY_PHONE_PREFIX = '+12025550'
@@ -35,6 +40,9 @@ function withCanaries(scenario: Scenario): Scenario {
       // A number has no room for a marker: a fixed, recognisable one per variable, which
       // the tap collects from the request that carries it.
       return [name, `${CANARY_PHONE_PREFIX}${String(index).padStart(2, '0')}`]
+    }
+    if (value.generate === 'uuid') {
+      return [name, `${index.toString(16).padStart(8, '0')}-c0de-4c0d-8c0d-c0ffeec0ffee`]
     }
     return [
       name,

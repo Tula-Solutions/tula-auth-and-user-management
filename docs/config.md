@@ -77,10 +77,13 @@ export default defineConfig({
   (`EnvironmentSettingsInput` in `@tula/contract`). It is typed, so an editor completes it,
   and validated when the file is loaded: a mistake is reported with its path
   (`environments.prod.settings.pasword: unknown key`) before anything is sent.
-- **`providers`** are Google, GitHub and Apple. A client id is written in the file. A secret
-  is **never** written: `clientSecret` and `privateKey` only accept `env('NAME')`, the name of
-  an environment variable. A string there does not compile, and a file that holds one is
-  refused when it is loaded.
+- **`providers`** are Google, GitHub, Apple and Microsoft. A client id is written in the
+  file. A secret is **never** written: `clientSecret` and `privateKey` only accept
+  `env('NAME')`, the name of an environment variable. A string there does not compile, and a
+  file that holds one is refused when it is loaded. Microsoft also takes a `tenant`, which is
+  not a secret and is written in the file: `common`, `organizations`, `consumers` or one
+  tenant's id ([what each means](providers/microsoft.md#the-tenant)). It is required, and a
+  domain name is refused.
 - **`kind`** is optional. With it, `tula` refuses a secret key of the other kind
   (`tula_sk_dev_…` for a `production` entry) before it sends anything.
 - The file is TypeScript: share settings between environments with a constant and a spread.
@@ -493,7 +496,12 @@ tula apply --env prod --yes    # no question: for CI
 - **Provider secrets** are read from their variables when the provider is written: when it is
   created, when its client id (or Apple's team or key id) changes, or with `--rotate-secrets`.
   A missing variable stops the run before anything is written. Switching a provider on or off
-  does not need its secret.
+  does not need its secret, and neither does a change of Microsoft's `tenant`: the app
+  registration, and so its secret, is the same. The tenant is compared in lower case, as the
+  server stores it. A change of `tenant` is **not** counted as a weaker policy, a wider one
+  included (one organization's id to `organizations` or `common`): `apply --yes` makes it
+  without `--allow-weaker`, though it admits accounts from more directories, so read that
+  line of the plan (a sign-up still needs Microsoft's verified-domain claim).
 - Errors show the API's code and, for a refused document, each field's path:
 
   ```

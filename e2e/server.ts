@@ -255,7 +255,7 @@ async function enableProviders(body: unknown): Promise<Response> {
   }
   const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
   const actor = { type: 'system', id: null, ipAddress: null, userAgent: null } as const
-  for (const provider of ['google', 'github', 'apple'] as const) {
+  for (const provider of ['google', 'github', 'apple', 'microsoft'] as const) {
     if (wanted.includes(provider)) {
       await OAuth.update(
         deps,
@@ -269,7 +269,13 @@ async function enableProviders(body: unknown): Promise<Response> {
               privateKey: APPLE_KEY,
               enabled: true,
             }
-          : { clientId: `e2e-${provider}`, clientSecret: 'e2e-client-secret', enabled: true },
+          : {
+              clientId: `e2e-${provider}`,
+              clientSecret: 'e2e-client-secret',
+              enabled: true,
+              // Any Microsoft account: the tests choose the tenant at the consent page.
+              ...(provider === 'microsoft' && { tenant: 'common' }),
+            },
         actor
       )
     } else if (await deps.oauthProviders.find(tenant.environmentId, provider)) {

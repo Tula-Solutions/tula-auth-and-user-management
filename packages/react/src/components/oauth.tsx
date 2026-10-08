@@ -9,7 +9,7 @@ import { useStepUp } from '../hooks/use-step-up'
 import { formatText } from '../localization'
 import { go, safeUrl } from '../navigation'
 import { SignedInNotice, useCompletion, useEnrolmentCompletion } from './flow-screens'
-import { AppleMark, GitHubMark, GoogleMark } from './icons'
+import { AppleMark, GitHubMark, GoogleMark, MicrosoftMark } from './icons'
 import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
 import { SwitchLink } from './sign-in'
 import {
@@ -29,6 +29,7 @@ const PROVIDERS = {
   google: { name: 'Google', mark: <GoogleMark /> },
   github: { name: 'GitHub', mark: <GitHubMark /> },
   apple: { name: 'Apple', mark: <AppleMark /> },
+  microsoft: { name: 'Microsoft', mark: <MicrosoftMark /> },
 } as const satisfies Record<string, { name: string; mark: ReactNode }>
 
 type KnownProvider = keyof typeof PROVIDERS
@@ -67,7 +68,8 @@ function resolveCallbackUrl(url: string | undefined): string | null {
 }
 
 /**
- * "Continue with Google / GitHub / Apple": one button per provider the environment offers.
+ * "Continue with Google / GitHub / Apple / Microsoft": one button per provider the environment
+ * offers.
  *
  * Each is a neutral button with the provider's mark and its name as text, so the name is what
  * a screen reader announces. Choosing one asks the API for the provider's page and sends the
@@ -76,11 +78,14 @@ function resolveCallbackUrl(url: string | undefined): string | null {
  * binding.
  *
  * **Brand rules an app must check itself before shipping.** These buttons follow each
- * provider's basic rules as far as a neutral, themeable button can (Google's "G" in its own
- * colours on a neutral surface; GitHub's and Apple's marks in the text colour; "Continue with
- * …" wording). They are not the providers' own button artwork: Google's and Apple's review
- * guidelines (and the App Store's rule that an app offering other social sign-ins also offers
- * Sign in with Apple) apply to your app, with your theme, and are yours to verify.
+ * provider's basic rules as far as a neutral, themeable button can (Google's "G" and
+ * Microsoft's four squares in their own colours on a neutral surface; GitHub's and Apple's
+ * marks in the text colour; "Continue with …" wording). They are not the providers' own
+ * button artwork: Google's, Apple's and Microsoft's guidelines (and the App Store's rule that
+ * an app offering other social sign-ins also offers Sign in with Apple) apply to your app,
+ * with your theme, and are yours to verify. Microsoft's own button says "Sign in with
+ * Microsoft" in a fixed size, font and pair of colours; this one keeps the wording, the
+ * surface and the type of the theme, as the other providers' do.
  *
  * @param props.callbackUrl - The page that renders `<OAuthCallback>`.
  * @param props.placement - Whether the divider is drawn `before` or `after` the buttons.

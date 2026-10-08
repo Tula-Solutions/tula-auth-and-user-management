@@ -127,9 +127,12 @@ describe('what @tula/react costs a browser bundle', () => {
    * about 0.25 kB is the client's (three routes, `user.phone`, four error messages) and the
    * rest the profile's section (the number form, the code form, the summary with change and
    * remove, and their strings). No dependency was added, and the contract's phone number
-   * rules are not in the bundle: the server judges a number.
+   * rules are not in the bundle: the server judges a number. Together with the Microsoft
+   * button (TULA-12, about 0.1 kB, which landed without a change to the budget) it measures
+   * 47,475 bytes, and the budget moved by those 111 bytes, to 47,911, so the room left is
+   * what it was.
    */
-  const GZIP_BUDGET_BYTES = 47_800
+  const GZIP_BUDGET_BYTES = 47_911
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

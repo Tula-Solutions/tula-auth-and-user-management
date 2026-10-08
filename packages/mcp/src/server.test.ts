@@ -320,6 +320,7 @@ describe('the read tools', () => {
           clientId: 'client-id.apps.example',
           teamId: null,
           keyId: null,
+          tenant: null,
           callbackUrl: 'https://auth.example.com/v1/client/oauth/google/callback',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },

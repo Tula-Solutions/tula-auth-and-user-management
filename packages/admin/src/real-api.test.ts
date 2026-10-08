@@ -99,6 +99,7 @@ describe('@tula/admin against the API', () => {
       'apple',
       'github',
       'google',
+      'microsoft',
     ])
     const secret = 'in-process-client-secret-value'
     const set = await admin.call('updateOAuthProvider', {
@@ -110,6 +111,38 @@ describe('@tula/admin against the API', () => {
     const removed = await admin.call('deleteOAuthProvider', { params: { provider: 'github' } })
     expect(removed.status).toBe(204)
     expect(removed.data).toBeUndefined()
+  })
+
+  test('Microsoft: the tenant is typed, required, returned lower-cased, and the secret is not', async () => {
+    const { admin } = await world()
+    const secret = 'in-process-microsoft-secret-value'
+    const missing = await failure(
+      admin.call('updateOAuthProvider', {
+        params: { provider: 'microsoft' },
+        body: { clientId: 'ms-client', clientSecret: secret },
+      })
+    )
+    expect(missing.status).toBe(422)
+    expect(JSON.stringify(missing)).not.toContain(secret)
+    const set = await admin.call('updateOAuthProvider', {
+      params: { provider: 'microsoft' },
+      body: {
+        clientId: 'ms-client',
+        clientSecret: secret,
+        tenant: '72F988BF-86F1-41AF-91AB-2D7CD011DB47',
+      },
+    })
+    expect(set.data.tenant).toBe('72f988bf-86f1-41af-91ab-2d7cd011db47')
+    expect(JSON.stringify(set.data)).not.toContain(secret)
+    const listed = await admin.call('listOAuthProviders')
+    expect(listed.data.data.map((provider) => [provider.provider, provider.tenant]).sort()).toEqual(
+      [
+        ['apple', null],
+        ['github', null],
+        ['google', null],
+        ['microsoft', '72f988bf-86f1-41af-91ab-2d7cd011db47'],
+      ]
+    )
   })
 
   test('query parameters reach the API', async () => {

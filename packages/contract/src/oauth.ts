@@ -2,10 +2,42 @@ import { z } from 'zod'
 import { FlowAttemptSchema } from './flow'
 
 /** The OAuth providers an environment can configure with its own credentials (ADR 0026). */
-export const OAUTH_PROVIDERS = ['google', 'github', 'apple'] as const
+export const OAUTH_PROVIDERS = ['google', 'github', 'apple', 'microsoft'] as const
 
 /** One of {@link OAUTH_PROVIDERS}. */
 export const OAuthProviderSchema = z.enum(OAUTH_PROVIDERS).meta({ ref: 'OAuthProvider' })
+
+/**
+ * The authorities of the Microsoft identity platform that are not one organization: any
+ * Microsoft account (`common`), any work or school account (`organizations`), personal
+ * accounts only (`consumers`).
+ */
+export const MICROSOFT_TENANT_ALIASES = ['common', 'organizations', 'consumers'] as const
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * Which Microsoft accounts may sign in: one of {@link MICROSOFT_TENANT_ALIASES}, or the id (a
+ * GUID, lower-cased) of the one organization whose accounts are accepted. Not a secret.
+ *
+ * A domain name (`contoso.onmicrosoft.com`) is refused on purpose: a sign-in is checked
+ * against the tenant id in the token, and only an id can be compared with it.
+ *
+ * @example
+ * ```ts
+ * MicrosoftTenantSchema.parse('common') // 'common'
+ * MicrosoftTenantSchema.parse('72F988BF-86F1-41AF-91AB-2D7CD011DB47') // lower-cased
+ * ```
+ */
+export const MicrosoftTenantSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine(
+    (value) => (MICROSOFT_TENANT_ALIASES as readonly string[]).includes(value) || GUID.test(value),
+    { message: 'must be common, organizations, consumers or a tenant id (a GUID)' }
+  )
+  .meta({ ref: 'MicrosoftTenant' })
 
 /** Longest redirect URL, ticket or binding a request may carry. */
 const MAX_OAUTH_FIELD_LENGTH = 2048
@@ -98,6 +130,11 @@ export const OAuthProviderSettingsSchema = z
     teamId: z.string().nullable(),
     /** Apple only: the id of the signing key. */
     keyId: z.string().nullable(),
+    /**
+     * Microsoft only: which accounts may sign in (`common`, `organizations`, `consumers` or a
+     * tenant id). `null` for every other provider and while Microsoft is not configured.
+     */
+    tenant: z.string().nullable(),
     callbackUrl: z.url(),
     updatedAt: z.iso.datetime().nullable(),
   })
@@ -116,6 +153,8 @@ const credential = (max: number) => z.string().trim().min(1).max(max)
  * - Google and GitHub: `clientId` and `clientSecret`.
  * - Apple: `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file's
  *   contents, PKCS#8 PEM).
+ * - Microsoft: `clientId` (the application id), `clientSecret` and `tenant`
+ *   ({@link MicrosoftTenantSchema}: which accounts may sign in).
  *
  * The secret (`clientSecret` or `privateKey`) may be left out when the provider is already
  * configured: the stored one is kept. It is stored sealed and never returned.
@@ -127,12 +166,15 @@ export const OAuthProviderUpdateSchema = z
     teamId: credential(64).optional(),
     keyId: credential(64).optional(),
     privateKey: credential(8192).optional(),
+    tenant: MicrosoftTenantSchema.optional(),
     enabled: z.boolean().default(true),
   })
   .meta({ ref: 'OAuthProviderUpdate' })
 
 /** An OAuth provider. */
 export type OAuthProvider = z.infer<typeof OAuthProviderSchema>
+/** Which Microsoft accounts may sign in. */
+export type MicrosoftTenant = z.infer<typeof MicrosoftTenantSchema>
 /** OAuth start request body. */
 export type OAuthStartRequest = z.infer<typeof OAuthStartRequestSchema>
 /** OAuth start response. */

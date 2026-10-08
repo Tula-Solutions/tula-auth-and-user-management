@@ -606,6 +606,51 @@ describe('apply', () => {
     })
   })
 
+  test('Microsoft is written with its tenant, and a change of tenant keeps the stored secret', async () => {
+    const microsoft = (tenant: string) => ({
+      dev: {
+        providers: {
+          microsoft: {
+            clientId: 'ms-client',
+            clientSecret: { $env: 'MICROSOFT_CLIENT_SECRET' },
+            tenant,
+          },
+        },
+      },
+    })
+    const secret = 'ms-secret-do-not-print'
+    const environment = {
+      TULA_API_URL: BASE_URL,
+      TULA_SECRET_KEY: SECRET_KEY,
+      MICROSOFT_CLIENT_SECRET: secret,
+    }
+    const first = await configFile(microsoft('organizations'))
+    const plan = await tula(['diff', '--config', first], { env: environment })
+    expect(plan.stdout).toContain('+ microsoft: create')
+    expect(plan.stdout).toContain('tenant')
+    expect(plan.stdout).toContain('organizations')
+    const run = await tula(['apply', '--config', first, '-y'], { env: environment })
+    expect(run.code).toBe(0)
+    expect(run.stdout + run.stderr).not.toContain(secret)
+    expect(api.providers.get('microsoft')).toEqual({
+      clientId: 'ms-client',
+      teamId: null,
+      keyId: null,
+      tenant: 'organizations',
+      enabled: true,
+      secret,
+    } as never)
+
+    // The variable is not set for the second run: the secret is not needed, and not sent.
+    const second = await configFile(microsoft('common'))
+    const changed = await tula(['apply', '--config', second, '-y'])
+    expect(changed.code).toBe(0)
+    expect(changed.stdout).toContain('~ microsoft: update')
+    expect(api.providers.get('microsoft')).toMatchObject({ tenant: 'common', secret })
+    const again = await tula(['diff', '--config', second])
+    expect(again.code).toBe(0)
+  })
+
   test('when providers go first, a revision that moved is caught before any of them is written', async () => {
     const config = await configFile({
       dev: {

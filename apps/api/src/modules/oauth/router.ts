@@ -75,7 +75,7 @@ router.get(
     tags: ['OAuth'],
     summary: 'List OAuth providers',
     description:
-      'Every provider (Google, GitHub, Apple), configured or not: whether credentials are ' +
+      'Every provider (Google, GitHub, Apple, Microsoft), configured or not: whether credentials are ' +
       'stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to ' +
       'paste into the provider’s console exactly. Never a secret.',
     security: openapi.security.admin,
@@ -106,7 +106,9 @@ router.put(
     description:
       'Stores the environment’s own credentials for the provider and whether sign-in offers ' +
       'it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the ' +
-      'Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM). The secret is ' +
+      'Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM); Microsoft ' +
+      'takes `clientId`, `clientSecret` and `tenant` (`common`, `organizations`, `consumers` ' +
+      'or a tenant id: which accounts may sign in). The secret is ' +
       'stored encrypted and never returned; leave it out to keep the stored one. Recorded in ' +
       'the audit log by key, never by value. `enabled: false` is refused (422) when it would ' +
       'leave the environment with no way to sign in.',
@@ -264,7 +266,7 @@ router.get(
     tags: ['OAuth'],
     summary: 'List my connected accounts',
     description:
-      'The provider accounts (Google, GitHub, Apple) connected to the signed-in user. Never ' +
+      'The provider accounts (Google, GitHub, Apple, Microsoft) connected to the signed-in user. Never ' +
       'the provider’s own id for an account.',
     security: openapi.security.session,
     responses: {

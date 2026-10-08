@@ -11,6 +11,7 @@ import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { createAppleProvider } from '~/adapters/oauth/apple'
 import { createGitHubProvider } from '~/adapters/oauth/github'
 import { createGoogleProvider } from '~/adapters/oauth/google'
+import { createMicrosoftProvider } from '~/adapters/oauth/microsoft'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
@@ -182,6 +183,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
           google: createGoogleProvider(),
           github: createGitHubProvider(),
           apple: createAppleProvider(),
+          microsoft: createMicrosoftProvider(),
         },
     activityLog: new PostgresActivityLog(database.db),
     revokedSessions: redis

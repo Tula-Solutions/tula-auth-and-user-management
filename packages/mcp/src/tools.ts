@@ -211,7 +211,8 @@ const SETTINGS = S.object({
   }),
 })
 
-// `clientId`, `teamId` and `keyId` are public identifiers the provider's own console shows.
+// `clientId`, `teamId` and `keyId` are public identifiers the provider's own console shows,
+// and Microsoft's `tenant` is an alias or a tenant id every one of its tokens carries.
 // The client secret and Apple's private key are write-only in the API and are not named here.
 const OAUTH_PROVIDER = S.object({
   provider: S.string(40),
@@ -220,6 +221,7 @@ const OAUTH_PROVIDER = S.object({
   clientId: S.string(300),
   teamId: S.string(40),
   keyId: S.string(40),
+  tenant: S.string(40),
   callbackUrl: S.string(500),
   updatedAt: S.string(40),
 })

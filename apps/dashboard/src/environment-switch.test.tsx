@@ -181,6 +181,37 @@ describe('switching environment', () => {
     expect(puts[0]?.body.sessions).toMatchObject({ jwtTemplates: { prod: { claims: {} } } })
   })
 
+  test('a half-typed Microsoft tenant and secret do not follow the operator to another environment', async () => {
+    const current = start(`${DEV_PATH}/sign-in-methods`)
+    const { user, api } = current
+    const card = () =>
+      screen.getByRole('heading', { name: 'Microsoft' }).closest('li') as HTMLElement
+    const select = () => within(card()).getByLabelText('Who can sign in') as HTMLSelectElement
+    await screen.findByRole('heading', { name: 'Microsoft' })
+    await user.type(within(card()).getByLabelText('Application (client) ID'), 'dev-ms-client')
+    await user.selectOptions(select(), 'tenant')
+    await user.type(within(card()).getByLabelText('Directory (tenant) ID'), 'dev-tenant-half')
+    await user.type(within(card()).getByLabelText('Client secret'), 'dev-ms-secret-half')
+
+    await switchToProduction(current, '/sign-in-methods')
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/oauth-providers').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await screen.findByRole('heading', { name: 'Microsoft' })
+
+    await waitFor(() => expect(select().value).toBe(''))
+    expect(within(card()).queryByLabelText('Directory (tenant) ID') === null).toBe(true)
+    expect(
+      (within(card()).getByLabelText('Application (client) ID') as HTMLInputElement).value
+    ).toBe('')
+    const page = document.documentElement.outerHTML
+    expect(page.includes('dev-ms-secret-half')).toBe(false)
+    expect(page.includes('dev-tenant-half')).toBe(false)
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/microsoft')).toHaveLength(0)
+  })
+
   test('a half-typed provider secret does not follow the operator to another environment', async () => {
     const current = start(`${DEV_PATH}/sign-in-methods`)
     const { user, api } = current

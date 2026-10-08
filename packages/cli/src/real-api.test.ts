@@ -178,10 +178,19 @@ async function state(): Promise<State> {
 }
 
 async function providers(): Promise<
-  Record<string, { configured: boolean; enabled: boolean; clientId: string | null }>
+  Record<
+    string,
+    { configured: boolean; enabled: boolean; clientId: string | null; tenant: string | null }
+  >
 > {
   const body = (await (await admin('/v1/admin/oauth-providers')).json()) as {
-    data: { provider: string; configured: boolean; enabled: boolean; clientId: string | null }[]
+    data: {
+      provider: string
+      configured: boolean
+      enabled: boolean
+      clientId: string | null
+      tenant: string | null
+    }[]
   }
   return Object.fromEntries(body.data.map((entry) => [entry.provider, entry]))
 }
@@ -370,6 +379,45 @@ describe('tula diff / tula apply against the API', () => {
     expect(await providers()).toMatchObject({
       apple: { configured: true, enabled: true, clientId: 'app.northline.web' },
     })
+  })
+
+  test('Microsoft is created with its tenant, which a second run finds unchanged', async () => {
+    const microsoft = (tenant: string) =>
+      dev({
+        providers: {
+          microsoft: {
+            clientId: 'ms-client',
+            clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+            tenant,
+          },
+        },
+      })
+    const secret = 'real-api-microsoft-secret'
+    const withSecret = { env: { MICROSOFT_CLIENT_SECRET: secret } }
+    // Written in capitals in the file: the server stores it lower-cased, and so does the file.
+    const config = await microsoft('72F988BF-86F1-41AF-91AB-2D7CD011DB47')
+    const plan = await tula(['diff', '--config', config], withSecret)
+    expect(plan.stdout).toContain('+ microsoft: create')
+    expect(plan.stdout).toContain('secret set from $MICROSOFT_CLIENT_SECRET')
+    const run = await tula(['apply', '--config', config, '--yes'], withSecret)
+    expect(run.code).toBe(0)
+    expect(run.stdout + run.stderr).not.toContain(secret)
+    expect(await providers()).toMatchObject({
+      microsoft: {
+        configured: true,
+        enabled: true,
+        clientId: 'ms-client',
+        tenant: '72f988bf-86f1-41af-91ab-2d7cd011db47',
+      },
+    })
+    expect((await tula(['diff', '--config', config])).code).toBe(0)
+
+    // Another tenant: an update that needs no secret.
+    const widened = await microsoft('organizations')
+    const change = await tula(['apply', '--config', widened, '--yes'])
+    expect(change.code).toBe(0)
+    expect(writes(change)).toContain('PUT /v1/admin/oauth-providers/microsoft')
+    expect((await providers()).microsoft?.tenant).toBe('organizations')
   })
 
   test('a secret whose variable is not set stops the run before anything is written', async () => {

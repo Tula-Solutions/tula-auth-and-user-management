@@ -87,7 +87,7 @@ export interface MfaChangedMessage {
 }
 
 /**
- * Tells an account's owner that a provider account (Google, GitHub, Apple) was connected to it
+ * Tells an account's owner that a provider account (Google, GitHub, Apple, Microsoft) was connected to it
  * or disconnected from it (ADR 0026). Never carries anything of the provider account itself.
  */
 export interface IdentityChangedMessage {
@@ -95,7 +95,7 @@ export interface IdentityChangedMessage {
   /** Connected, or disconnected. */
   change: 'linked' | 'unlinked'
   /** Which provider. One of a fixed set of names, never text from the provider. */
-  provider: 'google' | 'github' | 'apple'
+  provider: 'google' | 'github' | 'apple' | 'microsoft'
   /** When it happened. */
   at: Date
 }
@@ -291,6 +291,7 @@ const PROVIDER_NAMES: Record<IdentityChangedMessage['provider'], string> = {
   google: 'Google',
   github: 'GitHub',
   apple: 'Apple',
+  microsoft: 'Microsoft',
 }
 
 /** The copy of a connected-account notice. */

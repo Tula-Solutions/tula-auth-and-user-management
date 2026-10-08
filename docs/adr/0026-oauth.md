@@ -1,4 +1,4 @@
-# ADR 0026 — OAuth sign-in: Google, GitHub, Apple
+# ADR 0026 — OAuth sign-in: Google, GitHub, Apple, Microsoft
 
 - Status: accepted
 - Date: 2026-10-03
@@ -75,6 +75,9 @@ else. Adapters are stateless; credentials are passed per call.
   Apple's code is bound to the attempt by the `nonce` in the signed ID token (a code that
   belongs to another sign-in yields a token with another nonce, refused), by the single-use
   `state` and by the client-secret JWT.
+- **Microsoft** (Phase 2, TULA-12): OIDC with PKCE and a nonce, on `arctic`'s
+  `MicrosoftEntraId` and the shared `jose` verifier. Everything about it that differs from
+  Google is in "Microsoft: the tenant, the issuer and the address" below.
 - `arctic` calls the global `fetch` and takes no injected one. The adapters therefore use the
   global `fetch` throughout, looked up at call time, and their tests stub it (`spyOn`) with
   locally generated keys: no test touches the network.
@@ -205,6 +208,84 @@ transaction with the user row locked.
 `(user, provider)`. A create or link that loses is looked at again once and ends as a sign-in;
 never a 500.
 
+**The table holds for every provider, and a test says so per provider.**
+`modules/oauth/linking-table.test.ts` states the outcome of every combination (the provider's
+address verified, unverified or absent; the Tula account verified, unverified or absent; the
+identity known or new) once for each entry of the contract's `OAUTH_PROVIDERS`, with what
+that provider's "verified" rests on, and fails for a provider that has no rows. A new
+provider adds its rows there; it does not get a rule of its own.
+
+### Microsoft: the tenant, the issuer and the address
+
+Phase 2 (TULA-12). Scopes `openid profile email` and nothing else; no Graph call.
+
+- **The tenant is a credential field, required, with no default.** `tenant` is `common`,
+  `organizations`, `consumers` or one tenant's id (a GUID; a domain name is refused, because
+  a token names its tenant by id and ids are what is compared). It is stored in the
+  provider's `config` beside nothing secret, returned by the list, and recorded on a change
+  as the name `tenant` in `oauth_provider.updated.changed`, never its value. A default of
+  `common` was considered and not taken: it would let every Microsoft account on earth sign
+  in to an environment whose operator only typed a client id. No migration: `config` is
+  `jsonb` and the provider column is text. The admin route stores only such a value; a row
+  that holds anything else (changed in the database) is not repaired: `OAuth.credentials`
+  answers `auth.method_disabled`, at the point and in the words of a provider that is off,
+  so a start makes no attempt and an anonymous caller learns nothing about why, and the
+  field's name is logged for the operator. **Such a row is not counted as a way to sign in**
+  (`isSignInMethod`, behind `OAuth.enabledProviders` and the settings' "at least one
+  sign-in method"): it is not offered, an identity of it is no way in for a user, and it
+  cannot be what lets the last working method be switched off; the admin list still shows it
+  as stored, `enabled` included, so it can be repaired. "Enabled" is not "usable" in one
+  other case, which is left as it was: a provider whose stored secret no longer opens (a
+  changed master key) is still counted, because telling means opening the secret on every
+  count; the diagnostics' master-key check is what reports it.
+- **An account is `<tid>:<oid>`**, both GUIDs, lower-cased. Never `sub` (pairwise: another
+  value for every application, so it would not survive a new app registration), and never
+  `email`, `preferred_username` or `upn`, which a tenant's administrator sets. The object id
+  alone is not enough: it is unique within a tenant only. A token without a well-formed
+  `tid` and `oid` is refused.
+- **The issuer is checked against the token's own tenant.** With `common`, `organizations`
+  and `consumers` there is no one issuer to compare with: Microsoft's metadata gives
+  `https://login.microsoftonline.com/{tenantid}/v2.0`. The adapter verifies the signature
+  against the configured authority's keys, then requires `tid` to be a GUID and `iss` to
+  be exactly that template with the token's `tid` in it, then that the signing key is one
+  Microsoft publishes for that issuer (each key carries an `issuer`, templated or, for the
+  personal-account tenant, exact: Microsoft's "Validate the signing key issuer"), then that
+  the tenant is one the configured value accepts (the tenant itself for a GUID; the
+  personal-account tenant `9188040d-6c67-4c5b-b112-36a304b66dad` and only it for
+  `consumers`; every tenant but it for `organizations`). Without the first of these a
+  token signed by any tenant's key would be accepted with another tenant's `tid` typed into
+  it; without the key rule, a personal-account key could sign for an organization. **A key
+  with no `issuer` is refused**: Microsoft's keys document has one on each, and accepting a
+  key that says nothing about whom it signs for would undo the rule. Every failure is the
+  one `invalid_token` (`oauth.provider_error` to the client), carrying nothing of the token.
+- **The address is verified only with `xms_edov` exactly `true`.** `email` in a Microsoft
+  token is what the tenant's administrator stored; Microsoft's claims reference says it
+  "isn't guaranteed to be correct" and gives `xms_edov` ("whether the user's email domain
+  owner has been verified") as the claim to rely on. Absent, `false`, the string `"true"` or
+  `1`: unverified. The table above then applies unchanged: an unverified provider address
+  is `oauth.email_unverified` **before any lookup**, so a Microsoft token without the claim
+  signs in an identity that is already known and nothing else. It creates no account and is
+  linked to none, and the answer is the same whether or not the address has an account.
+  That is stricter than the ticket's wording ("automatic linking does not happen") and is
+  what the existing rule gives; a path that created an account with an unverified address
+  for Microsoft alone would be a second linking rule, and was not added. The cost is real:
+  an operator who has not added the optional claim to the app registration gets no
+  Microsoft sign-ups, and the user's message ("verify it with the provider") points at
+  something the user cannot do. `docs/providers/microsoft.md` says so in its checklist.
+  **Whether a personal account's token carries the claim is not known**: the reference
+  speaks of a domain owner, which a personal account does not have in the same sense, and
+  no such token was seen. If it does not, `consumers` admits accounts that can be
+  connected from a profile and can never sign up.
+- **PKCE is sent** (S256), and the nonce is checked in the ID token.
+- **The mock provider serves it** with a tenant id and an object id on its consent page and
+  a box that leaves the verified-domain claim out, and refuses an account of a tenant the
+  configured `tenant` does not accept, as the adapter does. Its guards are unchanged.
+- **Not exercised against Microsoft.** No tenant, no credentials, no real token. The
+  adapter's refusals are tested with tokens the tests sign with their own keys, published
+  through a stubbed keys document that carries `issuer` the way Microsoft's documentation
+  shows it. That `xms_edov` arrives as a JSON boolean, that every key carries `issuer`, and
+  what the portal calls each step are read from the documentation, not observed.
+
 ### The mock provider
 
 `OAUTH_MOCK_PROVIDER=true` serves every provider from a built-in adapter whose "consent page"
@@ -250,11 +331,15 @@ production code. The adapters' verifiers are covered by unit tests with local ke
 
 - An environment's first OAuth sign-in needs set-up outside Tula: an app at the provider with
   the callback URL registered (`docs/providers/`), and the app's landing URL on the allow-list.
-- **Real Google, GitHub and Apple were not exercised**: there are no credentials. Everything
+- **Real Google, GitHub, Apple and Microsoft were not exercised**: there are no credentials. Everything
   up to the provider's endpoints is covered against the mock and with stubbed HTTP.
 - GitHub sign-in sends PKCE, and that was checked against the mock provider and stubbed
   HTTP only: nothing here has seen github.com refuse a wrong verifier. Apple sign-in has no
   PKCE (Apple documents none); its code is bound by the ID token's nonce.
+- **Microsoft sign-up depends on a claim the operator has to switch on** (`xms_edov`):
+  without it every new Microsoft account is `oauth.email_unverified`. Whether to let such an
+  account in with an unverified address instead is an open product question; it would
+  change the linking table for every provider or add a second rule for one.
 - A user who signs up through a provider has no password; removing that provider leaves them
   to a password reset. A provider's changed email never changes the Tula address.
 - A sign-in start reads the environment's providers (one indexed read, not cached).

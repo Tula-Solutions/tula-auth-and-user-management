@@ -7,6 +7,8 @@ import {
   type HookFailureMode,
   type HookPoint,
   MAX_WEBHOOK_ENDPOINTS,
+  type MicrosoftTenant,
+  MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   UpdateWebhookEndpointRequestSchema,
@@ -107,10 +109,21 @@ const AppleProvider = z.strictObject({
   enabled: z.boolean().default(true),
 })
 
+// The tenant is the admin API's own field (`PUT /v1/admin/oauth-providers/microsoft`): an
+// alias or a tenant id, lower-cased. It is required, as it is there: which accounts may sign
+// in is a decision, and a default would make it for the operator.
+const MicrosoftProvider = z.strictObject({
+  clientId: text(512),
+  clientSecret: Secret,
+  tenant: MicrosoftTenantSchema,
+  enabled: z.boolean().default(true),
+})
+
 const Providers = z.strictObject({
   google: ClientProvider.optional(),
   github: ClientProvider.optional(),
   apple: AppleProvider.optional(),
+  microsoft: MicrosoftProvider.optional(),
 })
 
 // An endpoint's fields are the admin API's own (`POST` and `PATCH
@@ -266,6 +279,33 @@ export interface AppleProviderConfig {
 }
 
 /**
+ * Microsoft's credentials for one environment.
+ *
+ * @example
+ * ```ts
+ * const microsoft: MicrosoftProviderConfig = {
+ *   clientId: '6731de76-14a6-49ae-97bc-6eba6914391e',
+ *   clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+ *   tenant: 'organizations',
+ * }
+ * ```
+ */
+export interface MicrosoftProviderConfig {
+  /** The application (client) id of the app registration. Not a secret. */
+  clientId: string
+  /** The client secret's value, by reference: `env('NAME')`. */
+  clientSecret: SecretRef
+  /**
+   * Which Microsoft accounts may sign in: `common` (any), `organizations` (work and school
+   * accounts), `consumers` (personal accounts) or one tenant's id. Not a secret. A domain
+   * name is refused: a token names its tenant by id.
+   */
+  tenant: MicrosoftTenant
+  /** Whether sign-in offers the provider. Defaults to `true`. */
+  enabled?: boolean
+}
+
+/**
  * The OAuth providers of one environment. A provider left out is not managed by the file:
  * `tula apply` leaves it alone unless it is run with `--prune`.
  *
@@ -281,6 +321,8 @@ export interface ProvidersConfig {
   github?: OAuthClientConfig
   /** Sign in with Apple. */
   apple?: AppleProviderConfig
+  /** Microsoft (Entra ID and personal accounts). */
+  microsoft?: MicrosoftProviderConfig
 }
 
 /**
@@ -445,6 +487,7 @@ export interface EnvironmentConfig {
     google?: Required<OAuthClientConfig>
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
+    microsoft?: Required<MicrosoftProviderConfig>
   }
   /**
    * The webhook endpoints, when the file manages them: each address once, its event types
@@ -635,7 +678,7 @@ export function requiredSecrets(
  *
  * @param providers - The providers of one environment.
  * @param provider - The provider.
- * @returns Its `clientSecret` (Google, GitHub) or `privateKey` (Apple), or `undefined` when the
+ * @returns Its `clientSecret` (Google, GitHub, Microsoft) or `privateKey` (Apple), or `undefined` when the
  *   file does not configure the provider.
  *
  * @example

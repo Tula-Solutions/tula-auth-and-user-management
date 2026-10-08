@@ -436,7 +436,7 @@ export async function expectAccessible(page: Page, state: string): Promise<void>
  */
 export async function useProviders(
   request: APIRequestContext,
-  providers: ('google' | 'github' | 'apple')[] = []
+  providers: ('google' | 'github' | 'apple' | 'microsoft')[] = []
 ): Promise<void> {
   const response = await request.post(`${API_URL}/__test/oauth`, { data: { providers } })
   expect(response.ok()).toBe(true)
@@ -448,15 +448,31 @@ export async function useProviders(
  */
 export async function consentAtProvider(
   page: Page,
-  consent: { email: string; unverified?: boolean; subject?: string; cancel?: boolean }
+  consent: {
+    email: string
+    /** For Microsoft: leave the verified-domain claim out of the token. */
+    unverified?: boolean
+    subject?: string
+    /** Microsoft only: the tenant id (`tid`) and object id (`oid`) of the account. */
+    tenantId?: string
+    objectId?: string
+    cancel?: boolean
+  }
 ): Promise<void> {
   await expect(page.getByRole('heading', { name: /^Mock .* sign-in$/ })).toBeVisible()
   await page.getByLabel('Email address the provider reports').fill(consent.email)
   if (consent.subject) {
     await page.getByLabel(/^Account id/).fill(consent.subject)
   }
+  if (consent.tenantId) {
+    await page.getByLabel('Tenant id (tid)').fill(consent.tenantId)
+  }
+  if (consent.objectId) {
+    await page.getByLabel(/^Object id/).fill(consent.objectId)
+  }
   if (consent.unverified) {
-    await page.getByLabel('Report the email as unverified').check()
+    // "Report the email as unverified", or for Microsoft the claim that is left out.
+    await page.getByLabel(/unverified$/).check()
   }
   await page.getByRole('button', { name: consent.cancel ? 'Cancel' : 'Continue' }).click()
 }
