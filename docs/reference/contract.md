@@ -1006,7 +1006,8 @@ otherwise silently reset the password policy to its default.
 - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
   may leave it out (`optional`, which needs `emailCode`).
 - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
-- `audit.retentionDays`: how long audit entries are kept.
+- `audit.retentionDays`: how many days audit entries are kept before the server deletes
+  them for good; `null` (the default) keeps them for ever.
 - `notifications`: which security notices are emailed to an account's owner
   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
 - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
@@ -3980,7 +3981,7 @@ resolveSessionProfile(settings.sessions, { client: 'web', requested: 'admin' }).
 _function_, defined in `packages/contract/src/settings-weakening.ts`
 
 Where replacing `before` with `after` makes an account easier to take over, or a takeover
-harder to notice. It is the one definition of "weakened": the server's audit entry carries
+harder to notice or to look into afterwards. It is the one definition of "weakened": the server's audit entry carries
 `weakened: true` exactly when this is not empty, and `tula diff` warns with these paths
 before anything is applied.
 
@@ -3990,6 +3991,9 @@ A path is listed when:
   was on (a required character kind, `disallowUserInfo`, `disallowCommon`,
   `blockSequences`), asks for fewer character classes, allows longer runs of one character
   (a higher `maxRepeatedChars`, or none), or remembers fewer previous passwords (`history`);
+- `audit.retentionDays`: a period is set where there was none, or is made shorter. The
+  server then deletes the audit entries older than it, for good: the record of what
+  happened gets shorter. A longer period, or none where there was one, is not listed;
 - `notifications.*`: a security notice that was on is switched off (the owner would no
   longer be told);
 - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);

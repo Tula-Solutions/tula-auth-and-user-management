@@ -288,6 +288,25 @@ describe('buildPlan', () => {
     expect(result.weakened).toEqual(['mfa.policy'])
   })
 
+  test.each([
+    ['a period where the server keeps entries for ever', null, 365, ['audit.retentionDays']],
+    ['a shorter period', 365, 30, ['audit.retentionDays']],
+    ['a longer period', 30, 365, []],
+    ['the same period', 30, 30, []],
+    ['no period (left out of the file) where there was one', 365, null, []],
+  ] as [string, number | null, number | null, string[]][])(
+    'audit retention: %s is flagged only when older entries would be deleted',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.audit.retentionDays = was
+        }),
+      })
+      const file = is === null ? {} : { settings: { audit: { retentionDays: is } } }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
   test('weakenings are the contract’s: a shorter password and a longer session are both flagged', () => {
     const result = plan({
       settings: {

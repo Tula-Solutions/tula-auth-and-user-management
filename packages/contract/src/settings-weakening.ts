@@ -80,6 +80,15 @@ function passwordWeakenings(was: PasswordPolicy, is: PasswordPolicy): string[] {
 }
 
 /**
+ * Whether the new audit retention period deletes entries the old one kept: a period where
+ * there was none (`null` keeps entries for ever), or a shorter one. A longer period, the same
+ * one, or none where there was one deletes nothing more.
+ */
+function shorterRetention(was: number | null, is: number | null): boolean {
+  return is !== null && (was === null || is < was)
+}
+
+/**
  * Where the `sessions` section got weaker:
  *
  * - the concurrent-session limit was raised or removed;
@@ -126,7 +135,7 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
 
 /**
  * Where replacing `before` with `after` makes an account easier to take over, or a takeover
- * harder to notice. It is the one definition of "weakened": the server's audit entry carries
+ * harder to notice or to look into afterwards. It is the one definition of "weakened": the server's audit entry carries
  * `weakened: true` exactly when this is not empty, and `tula diff` warns with these paths
  * before anything is applied.
  *
@@ -136,6 +145,9 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
  *   was on (a required character kind, `disallowUserInfo`, `disallowCommon`,
  *   `blockSequences`), asks for fewer character classes, allows longer runs of one character
  *   (a higher `maxRepeatedChars`, or none), or remembers fewer previous passwords (`history`);
+ * - `audit.retentionDays`: a period is set where there was none, or is made shorter. The
+ *   server then deletes the audit entries older than it, for good: the record of what
+ *   happened gets shorter. A longer period, or none where there was one, is not listed;
  * - `notifications.*`: a security notice that was on is switched off (the owner would no
  *   longer be told);
  * - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
@@ -161,6 +173,9 @@ export function settingsWeakenings(
   after: EnvironmentSettings
 ): string[] {
   const paths = passwordWeakenings(before.password, after.password)
+  if (shorterRetention(before.audit.retentionDays, after.audit.retentionDays)) {
+    paths.push('audit.retentionDays')
+  }
   for (const notice of NOTICES) {
     if (before.notifications[notice] && !after.notifications[notice]) {
       paths.push(`notifications.${notice}`)

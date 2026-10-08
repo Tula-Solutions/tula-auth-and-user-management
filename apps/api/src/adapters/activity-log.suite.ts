@@ -555,5 +555,84 @@ export function describeActivityLog(
         expect(all.entries.some((entry) => ids.includes(entry.id))).toBe(false)
       })
     })
+
+    describe('deleteAuditBefore', () => {
+      // Long ago on purpose: the database refuses to give up an entry of the last day
+      // (`audit_logs_retention_floor`), and these tests are about the cutoff they pass.
+      const cutoff = new Date('2001-01-01T00:00:00.000Z')
+      const before = (ms: number) => new Date(cutoff.getTime() - ms)
+
+      /** Records one entry per instant about one fresh user; returns their ids in that order. */
+      async function entriesAt(tenant: ActivitySuiteTenant, instants: Date[]) {
+        const userId = await seedUser(tenant)
+        const ids: string[] = []
+        for (const [index, occurredAt] of instants.entries()) {
+          const entry = activity(
+            tenant,
+            index % 2 === 0 ? 'user.banned' : 'user.unbanned',
+            { type: 'user', id: userId },
+            { occurredAt }
+          )
+          await ctx.users.setBanned(
+            tenant.environmentId,
+            userId,
+            index % 2 === 0 ? now : null,
+            now,
+            entry
+          )
+          ids.push(entry.id)
+        }
+        return ids
+      }
+
+      /** The ids left in an environment's log. */
+      async function left(tenant: ActivitySuiteTenant): Promise<string[]> {
+        const { entries } = await ctx.log.listAudit(tenant.environmentId, { page: 1, size: 100 })
+        return entries.map((entry) => entry.id)
+      }
+
+      test('deletes entries older than the cutoff and keeps one at the cutoff or after it', async () => {
+        const tenant = await ctx.freshTenant()
+        const [old, older, atCutoff, after, recent] = (await entriesAt(tenant, [
+          before(1),
+          before(86_400_000),
+          cutoff,
+          new Date(cutoff.getTime() + 1),
+          now,
+        ])) as [string, string, string, string, string]
+        expect(await ctx.log.deleteAuditBefore(tenant.environmentId, cutoff, 100)).toBe(2)
+        const remaining = await left(tenant)
+        expect(remaining).not.toContain(old)
+        expect(remaining).not.toContain(older)
+        expect(remaining).toEqual([recent, after, atCutoff])
+        // Nothing more to do: a second call deletes nothing.
+        expect(await ctx.log.deleteAuditBefore(tenant.environmentId, cutoff, 100)).toBe(0)
+        expect(await left(tenant)).toEqual([recent, after, atCutoff])
+      })
+
+      test('deletes at most the limit per call, oldest first', async () => {
+        const tenant = await ctx.freshTenant()
+        const [newest] = await entriesAt(tenant, [before(1_000), before(2_000), before(3_000)])
+        expect(await ctx.log.deleteAuditBefore(tenant.environmentId, cutoff, 2)).toBe(2)
+        expect(await left(tenant)).toEqual([newest as string])
+        expect(await ctx.log.deleteAuditBefore(tenant.environmentId, cutoff, 2)).toBe(1)
+        expect(await ctx.log.deleteAuditBefore(tenant.environmentId, cutoff, 2)).toBe(0)
+        expect(await left(tenant)).toEqual([])
+      })
+
+      test('one environment’s purge never deletes another environment’s entries', async () => {
+        const [mine, theirs] = [await ctx.freshTenant(), await ctx.freshTenant()]
+        const kept = await entriesAt(theirs, [before(1_000), before(2_000)])
+        await entriesAt(mine, [before(1_000)])
+        expect(await ctx.log.deleteAuditBefore(mine.environmentId, cutoff, 100)).toBe(1)
+        expect(await left(mine)).toEqual([])
+        expect((await left(theirs)).sort()).toEqual([...kept].sort())
+      })
+
+      test('an environment with no entries has nothing to delete', async () => {
+        const tenant = await ctx.freshTenant()
+        expect(await ctx.log.deleteAuditBefore(tenant.environmentId, now, 100)).toBe(0)
+      })
+    })
   })
 }

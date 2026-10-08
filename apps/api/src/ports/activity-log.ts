@@ -137,8 +137,11 @@ export interface AuditCriteria {
 }
 
 /**
- * Reads the audit log. Writing has no method here on purpose: activity is only ever written by
- * a store, inside the transaction of the change it records.
+ * Reads the audit log, and lets the retention job end it.
+ *
+ * Writing has no method here on purpose: activity is only ever written by a store, inside the
+ * transaction of the change it records. Nothing changes an entry, and the one thing that
+ * removes one is {@link ActivityLog.deleteAuditBefore}.
  */
 export interface ActivityLog {
   /**
@@ -150,4 +153,24 @@ export interface ActivityLog {
     environmentId: string,
     criteria: AuditCriteria
   ): Promise<{ entries: AuditEntry[]; totalCount: number }>
+
+  /**
+   * Delete one environment's audit entries that are past its retention period, one batch at a
+   * time, oldest first. **For the retention job only** (`modules/retention`, ADR 0017), which
+   * derives the cutoff from the environment's `audit.retentionDays` and calls nothing when no
+   * period is set. Deletion is permanent, and it is not itself recorded (ADR 0012).
+   *
+   * Only audit entries go: the outbox events that share their ids are a delivery queue with
+   * its own end of life.
+   *
+   * The database is a second bound on what a call can remove: in Postgres, row-level security
+   * confines it to `environmentId` and refuses any entry of the last day, whatever `before`
+   * says (`audit_logs_retention_floor`).
+   *
+   * @param environmentId - The environment whose entries to delete. No other is touched.
+   * @param before - Entries that occurred before this instant are deleted; one at it is kept.
+   * @param limit - The most entries one call deletes.
+   * @returns How many were deleted.
+   */
+  deleteAuditBefore(environmentId: string, before: Date, limit: number): Promise<number>
 }

@@ -449,9 +449,23 @@ describe('settings', () => {
     await user.type(origin, 'https://app.example.com')
     await user.click(screen.getByRole('button', { name: 'Add origin' }))
     await screen.findByText('That one is already in the list.')
+    expect(
+      screen.getByText(
+        /Older entries are then deleted for good, starting with the next retention run/
+      )
+    ).toBeDefined()
+    expect(screen.queryByText(/within ten minutes/)).toBeNull()
     await user.type(screen.getByLabelText('Keep audit entries for (days)'), '30')
     await user.type(screen.getByLabelText('Support email (optional)'), 'help@example.com')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    // A period where there was none deletes older entries: the editor asks, in those words.
+    expect(dialog().textContent).toContain('This deletes older audit entries for good')
+    expect(dialog().textContent).not.toContain('weakens security')
+    expect(dialog().textContent).toContain(
+      'Audit entries older than the new period are deleted for good, starting with the next retention run'
+    )
+    expect(api.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
     await screen.findByText('Settings saved')
     expect(api.state.settings.settings.urls.allowedOrigins).toEqual(['https://app.example.com'])
     expect(api.state.settings.settings.audit.retentionDays).toBe(30)

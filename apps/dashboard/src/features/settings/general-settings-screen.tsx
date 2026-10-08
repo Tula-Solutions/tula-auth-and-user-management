@@ -139,7 +139,7 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
             }))
           }
           error={errors['audit.retentionDays']}
-          hint={`1 to ${MAX_AUDIT_RETENTION_DAYS}. Empty: keep them for good.`}
+          hint={`1 to ${MAX_AUDIT_RETENTION_DAYS}. Empty: keep them for good. Older entries are then deleted for good, starting with the next retention run (every ten minutes).`}
         />
       </Section>
     </>

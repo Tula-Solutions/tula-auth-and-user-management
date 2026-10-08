@@ -7,6 +7,7 @@ import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/service'
 import * as Retention from '~/modules/retention/service'
 import * as Sessions from '~/modules/session/service'
+import * as Settings from '~/modules/settings/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const DAY = 86_400_000
@@ -146,6 +147,7 @@ describe('purge', () => {
       pendingFactors: 0,
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
+      auditLogs: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -226,6 +228,7 @@ describe('purge', () => {
       pendingFactors: 2,
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
+      auditLogs: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -270,6 +273,7 @@ describe('purge', () => {
           pendingFactors: 1,
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
+          auditLogs: 0,
         },
       ],
     ])
@@ -403,7 +407,7 @@ describe('purge', () => {
     expect((refused as ServiceException).status).toBe(401)
   })
 
-  test('never deletes an audit entry', async () => {
+  test('an environment that saved no settings keeps its audit entries: the default is for ever', async () => {
     const tokens = await Sessions.create(deps, tenant, {
       userId: USER,
       client: 'ios',
@@ -512,6 +516,7 @@ describe('purge', () => {
       pendingFactors: 0,
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
+      auditLogs: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -548,6 +553,284 @@ describe('purge', () => {
     expect(report.sessions).toBe(
       2 * Retention.RETENTION_MAX_BATCHES * Retention.RETENTION_BATCH_SIZE
     )
+  })
+})
+
+test('the retention job is the only code of the server that deletes audit entries', async () => {
+  // Deleting evidence has one door (AGENTS.md, ADR 0012): a second caller, with a cutoff of
+  // its own, would not be bound by the environment's period.
+  const callers: string[] = []
+  const source = new URL('../..', import.meta.url).pathname
+  for await (const file of new Bun.Glob('**/*.ts').scan(source)) {
+    const isTest = /\.(test|suite|integration)\.ts$/.test(file) || file === 'testing.ts'
+    // Where the method is declared and implemented, and the instance audit log's own purge
+    // of the same name (another port, reached only as `controlPlane.deleteAuditBefore`).
+    const declares = /^(ports|adapters\/[^/]+)\/(activity|control-plane)/.test(file)
+    if (isTest || declares) {
+      continue
+    }
+    const text = await Bun.file(`${source}${file}`).text()
+    if (/(?<!controlPlane\.)deleteAuditBefore\b/.test(text)) {
+      callers.push(file)
+    }
+  }
+  expect(callers).toEqual(['modules/retention/service.ts'])
+})
+
+describe('audit retention', () => {
+  /** Record one audit entry in an environment, at the test clock's current time. */
+  function auditEntry(scope: Tenant): string {
+    const id = deps.ids.next()
+    deps.activityLog.record([
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        type: 'user.created',
+        actor: { type: 'system', id: null },
+        target: { type: 'user', id: USER },
+        ipAddress: null,
+        userAgent: null,
+        data: {},
+        occurredAt: deps.clock.now(),
+      },
+    ])
+    return id
+  }
+
+  /** Store an environment's settings with this audit retention period, as they would sit. */
+  function keepAuditFor(scope: Tenant, retentionDays: unknown): void {
+    deps.environmentSettings.seed(scope.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        audit: { retentionDays: retentionDays as number | null },
+      },
+    })
+  }
+
+  const auditIds = (scope: Tenant) =>
+    deps.activityLog.entries
+      .filter((entry) => entry.environmentId === scope.environmentId)
+      .map((entry) => entry.id)
+
+  test('deletes an environment’s entries older than its period, and none sooner', async () => {
+    keepAuditFor(tenant, 30)
+    const old = auditEntry(tenant)
+    deps.clock.advance(DAY)
+    const younger = auditEntry(tenant)
+
+    // Exactly as old as the period: kept. One millisecond older: gone.
+    deps.clock.advance(29 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(0)
+    expect(auditIds(tenant)).toEqual([old, younger])
+    deps.clock.advance(1)
+    expect(await Retention.purge(deps)).toMatchObject({ auditLogs: 1, failed: 0 })
+    expect(auditIds(tenant)).toEqual([younger])
+  })
+
+  test('the period set through the admin API is the one applied', async () => {
+    const old = auditEntry(tenant)
+    await Settings.replace(
+      deps,
+      tenant,
+      {
+        expectedRevision: 0,
+        settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, audit: { retentionDays: 7 } },
+      },
+      TEST_ACTOR
+    )
+    deps.clock.advance(7 * DAY + 1)
+    // The entry that says the period was set is as old as the one it dooms: both go.
+    expect((await Retention.purge(deps)).auditLogs).toBe(2)
+    expect(auditIds(tenant)).not.toContain(old)
+  })
+
+  test('an environment whose period is `null` keeps every entry, however old', async () => {
+    keepAuditFor(tenant, null)
+    const entry = auditEntry(tenant)
+    const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(deleteAudit)
+    deps.clock.advance(4_000 * DAY)
+    expect(await Retention.purge(deps)).toMatchObject({ auditLogs: 0, failed: 0 })
+    expect(auditIds(tenant)).toEqual([entry])
+    // Not "a delete that matched nothing": no delete is asked for at all.
+    expect(deleteAudit).not.toHaveBeenCalled()
+  })
+
+  test('two environments with different periods are each purged by their own', async () => {
+    keepAuditFor(tenant, 7)
+    keepAuditFor(otherTenant, 90)
+    auditEntry(tenant)
+    const long = auditEntry(otherTenant)
+
+    deps.clock.advance(8 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(1)
+    expect(auditIds(tenant)).toEqual([])
+    expect(auditIds(otherTenant)).toEqual([long])
+
+    deps.clock.advance(83 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(1)
+    expect(auditIds(otherTenant)).toEqual([])
+  })
+
+  test('one environment’s period never deletes another environment’s entries', async () => {
+    keepAuditFor(tenant, 1)
+    const mine = auditEntry(tenant)
+    const theirs = auditEntry(otherTenant)
+    const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(deleteAudit)
+    deps.clock.advance(400 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(1)
+    expect(auditIds(tenant)).not.toContain(mine)
+    expect(auditIds(otherTenant)).toEqual([theirs])
+    expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
+      tenant.environmentId,
+    ])
+  })
+
+  test.each([
+    ['zero', 0],
+    ['negative', -30],
+    ['a fraction of a day', 0.5],
+    ['not a number', Number.NaN],
+    ['infinite', Number.POSITIVE_INFINITY],
+    ['a string', '30'],
+    ['missing', undefined],
+  ])('a stored period that is %s deletes nothing', async (_, stored) => {
+    // The admin API refuses these; this is a document changed by hand, or by another version.
+    keepAuditFor(tenant, stored)
+    const entry = auditEntry(tenant)
+    const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(deleteAudit)
+    deps.clock.advance(4_000 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(0)
+    expect(auditIds(tenant)).toEqual([entry])
+    expect(deleteAudit).not.toHaveBeenCalled()
+  })
+
+  test('reads the period from the source, past this instance’s settings cache', async () => {
+    // A period lengthened on another instance must not be undercut by a stale copy here:
+    // unlike every other setting, acting on an old value destroys something.
+    const get = spyOn(deps.environmentSettings, 'get')
+    spies.push(get)
+    await Retention.purge(deps)
+    // The memory store declares one parameter (it has no cache to read past): widen the calls.
+    expect(get.mock.calls as unknown[][]).toEqual([
+      [tenant.environmentId, true],
+      [otherTenant.environmentId, true],
+    ])
+  })
+
+  test('settings that cannot be read keep that environment’s entries; the others are purged', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    keepAuditFor(tenant, 1)
+    keepAuditFor(otherTenant, 1)
+    const kept = auditEntry(tenant)
+    auditEntry(otherTenant)
+    deps.clock.advance(10 * DAY)
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    spies.push(
+      spyOn(deps.environmentSettings, 'get').mockImplementation(async (environmentId) => {
+        if (environmentId === tenant.environmentId) {
+          throw new Error('settings store is down')
+        }
+        return get(environmentId)
+      })
+    )
+    const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(deleteAudit)
+    expect(await Retention.purge(deps)).toMatchObject({ environments: 2, failed: 1, auditLogs: 1 })
+    expect(auditIds(tenant)).toEqual([kept])
+    expect(auditIds(otherTenant)).toEqual([])
+    expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
+      otherTenant.environmentId,
+    ])
+    expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
+      environmentId: tenant.environmentId,
+      err: expect.anything(),
+    })
+  })
+
+  test('a failing audit purge in one environment does not stop the others', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    keepAuditFor(tenant, 1)
+    keepAuditFor(otherTenant, 1)
+    const kept = auditEntry(tenant)
+    auditEntry(otherTenant)
+    deps.clock.advance(10 * DAY)
+    const deleteAudit = deps.activityLog.deleteAuditBefore.bind(deps.activityLog)
+    spies.push(
+      spyOn(deps.activityLog, 'deleteAuditBefore').mockImplementation(
+        async (environmentId, before, limit) => {
+          if (environmentId === tenant.environmentId) {
+            throw new Error('the audit store refused')
+          }
+          return deleteAudit(environmentId, before, limit)
+        }
+      )
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ environments: 2, failed: 1, auditLogs: 1 })
+    expect(auditIds(tenant)).toEqual([kept])
+    expect(auditIds(otherTenant)).toEqual([])
+  })
+
+  test('an environment whose pass failed before its audit purge is finished by the next run', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    keepAuditFor(tenant, 1)
+    auditEntry(tenant)
+    deps.clock.advance(10 * DAY)
+    spies.push(
+      spyOn(deps.sessions, 'deleteEnded').mockRejectedValueOnce(new Error('sessions store is down'))
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, auditLogs: 0 })
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 0, auditLogs: 1 })
+  })
+
+  test('deletes in batches, and stops at the run’s ceiling', async () => {
+    keepAuditFor(tenant, 1)
+    const total = Retention.RETENTION_BATCH_SIZE + 3
+    for (let index = 0; index < total; index++) {
+      auditEntry(tenant)
+    }
+    deps.clock.advance(2 * DAY)
+    const batches = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(batches)
+    expect((await Retention.purge(deps)).auditLogs).toBe(total)
+    expect(batches.mock.calls.map(([, , limit]) => limit)).toEqual([
+      Retention.RETENTION_BATCH_SIZE,
+      Retention.RETENTION_BATCH_SIZE,
+    ])
+    const cutoff = new Date(deps.clock.now().getTime() - DAY)
+    expect(batches.mock.calls.map(([, before]) => before)).toEqual([cutoff, cutoff])
+
+    batches.mockImplementation(async (_environmentId, _before, limit) => limit)
+    expect((await Retention.purge(deps)).auditLogs).toBe(
+      Retention.RETENTION_MAX_BATCHES * Retention.RETENTION_BATCH_SIZE
+    )
+  })
+
+  test('says in the server log which environment lost entries, how many and under what period', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    const debug = spyOn(logger, 'debug').mockImplementation(() => undefined)
+    spies.push(info, debug)
+    keepAuditFor(tenant, 30)
+    keepAuditFor(otherTenant, 30)
+    auditEntry(tenant)
+    auditEntry(tenant)
+    deps.clock.advance(31 * DAY)
+    await Retention.run(deps)
+    // The deleted entries cannot say so themselves: this line is the record that they went.
+    expect(info.mock.calls).toEqual([
+      [
+        'audit entries past the retention period deleted',
+        { environmentId: tenant.environmentId, retentionDays: 30, deleted: 2 },
+      ],
+      ['retention run finished', expect.objectContaining({ auditLogs: 2 })],
+    ])
   })
 })
 
@@ -610,6 +893,7 @@ describe('run', () => {
           pendingFactors: 0,
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
+          auditLogs: 0,
         },
       ],
     ])
@@ -638,6 +922,7 @@ describe('run', () => {
         pendingFactors: 0,
         passkeyChallenges: 0,
         instanceAuditLogs: 0,
+        auditLogs: 0,
       },
     ])
   })

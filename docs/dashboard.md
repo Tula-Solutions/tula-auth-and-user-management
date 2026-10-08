@@ -85,6 +85,12 @@ Every settings screen works the same way: change the form, then **Save changes**
   minimum password, a switched-off security notice, a looser two-step policy, longer
   sessions) asks for confirmation and lists what gets weaker. The audit entry records
   `weakened: true`.
+- **This deletes older audit entries for good.** Setting an audit retention period where
+  there was none, or a shorter one, asks in those words: starting with its next retention
+  run (they run every ten minutes, and a large backlog takes several) the server deletes
+  every audit entry of the environment older than the new period, and nothing brings them
+  back. A longer period, or none, saves without asking. It is recorded
+  as a weakening too.
 - **Managed by a config file.** When the settings were applied with `tula apply`
   ([config.md](config.md)), a banner says so on every settings screen. You can still edit
   them, after a confirmation; the change is then reported as drift, and the next
@@ -99,7 +105,8 @@ Filter the audit log by "Actor type: instance_admin" to see what was done from t
 Failed sign-ins to the dashboard are in the instance audit log, at most one entry a minute
 per address; each says how many failures from that address in the minute before were not
 recorded one by one. The instance audit log is kept for `INSTANCE_AUDIT_RETENTION_DAYS`
-(a year by default); an environment's audit log is kept for good.
+(a year by default); an environment's audit log is kept for good unless its settings give
+it a retention period, and entries older than that are then deleted permanently.
 
 ## Switching and signing out
 

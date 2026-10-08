@@ -37,10 +37,12 @@ presenting a purged token is answered like any unknown token. Refresh tokens are
 one by one: their rows reference each other, so a chain only goes with its session, by the
 foreign-key cascade.
 
-**An environment's audit entries are never deleted by this job** (the instance audit log is
-another matter: see below). Their retention is a per-environment setting
-since step 1.2 (`audit.retentionDays`, default: keep; [ADR 0018](0018-environment-settings.md)),
-which is stored and validated but not acted on yet: this job still deletes no audit entry.
+**An environment's audit entries are deleted once they are older than the period the
+environment set, and never otherwise** (`audit.retentionDays`,
+[ADR 0018](0018-environment-settings.md); changed on 2026-10-08, see
+[Audit entries](#audit-entries-added-2026-10-08) below). The default is `null`: keep them for
+ever. Until that change the setting was stored and validated and this job deleted no audit
+entry.
 
 **Outbox events are not deleted yet.** The plan was to delete *delivered* events older than 30
 days. The `events` table has a `delivered_at` column, but nothing sets it: delivery is the
@@ -60,7 +62,8 @@ batches per table, per environment, per run (`RETENTION_MAX_BATCHES`). A backlog
 run holds row locks for longer than one batch.
 
 **It runs as the API's own database role.** The runtime role already had `DELETE` on the four
-tables involved, always under row-level security, so no grant changed. (An earlier rule said
+tables involved, always under row-level security, so no grant changed (the two audit logs
+came later, each with a grant of its own: see below). (An earlier rule said
 purges would run as the schema owner; the API has no owner connection, and running tenant
 deletes under row-level security is the stronger arrangement.)
 
@@ -99,8 +102,121 @@ in batches, oldest first. It runs once per pass, outside the per-environment loo
 is logged, counted in `failed`, and does not stop the environments' purge. The runtime role
 gained `DELETE` on that table for it (migration `0016`), and still has no `UPDATE`.
 
-An environment's audit log (`audit_logs`) is unchanged: never deleted by this job, and the
-runtime role cannot delete from it.
+When this was added an environment's audit log (`audit_logs`) was left as it was: never
+deleted by this job, the runtime role unable to delete from it. That changed with the next
+section.
+
+### Audit entries (added 2026-10-08)
+
+Approved by the repository's owner on 2026-10-08 (TULA-9). It replaces "an environment's audit
+entries are never deleted by this job" above and "append-only for the server" in
+[ADR 0012](0012-events-and-audit-log.md).
+
+**What is deleted.** In each environment whose settings hold a number in `audit.retentionDays`
+(1 to 3650), the rows of `audit_logs` that occurred more than that many days before the run.
+An entry exactly as old as the period is kept, like the instance audit log's. Nothing else:
+not the outbox event that shares the entry's id (still no delete until something delivers
+events), and no entry of an environment whose period is `null`, which is the default and
+what an environment that never saved settings has. The deletion is permanent; there is no
+archive and no undo. An operator who needs the entries longer than the period exports them
+first (`GET /v1/admin/audit-logs`).
+
+**Why.** The setting has existed since step 1.2 and did nothing, which is worse than not
+having it: an operator who set 90 days had every reason to believe 90 days was what was
+kept. Audit entries hold IP addresses and user agents and outlive the users and sessions
+they name, so a deployment under a data-retention rule needs an end it can state; and a
+table that only grows is a cost that eventually decides for the operator. The default stays
+"for ever" because deleting evidence must be something an operator asked for.
+
+**How.** `ActivityLog.deleteAuditBefore(environmentId, before, limit)`, in the memory and
+Postgres adapters and the shared suite, is the purge method of this table, the same shape as
+the others: per environment, inside `withTenant`, 500 rows a call, oldest first on the
+`(environment_id, occurred_at)` index, repeated up to the run's ceiling. It is the last step of
+an environment's pass, inside the same failure boundary: a failure anywhere in the pass is
+logged, counted and retried on the next run, and the other environments are still purged.
+
+Three things are particular to it, because it is the one purge whose rows did not end by
+themselves:
+
+- *The period is read past the settings cache* (`Settings.get(deps, scope, true)`), one query
+  per environment per run. Every other reader accepts settings that trail a change by up to
+  30 seconds; here, a period lengthened a moment ago on another instance would be undercut
+  by the stale one, and what that deletes cannot be put back.
+- *Anything but a whole number of days, 1 or more, means "keep"* (`auditCutoff`). The admin
+  API stores nothing else, but a document is `jsonb` that a hand or another version can
+  change, and zero or a negative number would otherwise put the cutoff at or after "now".
+  Settings that cannot be read at all fail the environment's pass and keep its entries.
+- *It says what it did.* A run that deleted entries logs, per environment, the environment's
+  id, the period applied and the count (`audit entries past the retention period deleted`,
+  at `info`), beside the run's one line, which now has an `auditLogs` count.
+
+**The grant, and what bounds it.** The runtime role had `SELECT` and `INSERT` on `audit_logs`
+and nothing else (migration `0003`). Migration `0017` grants it `DELETE`. The table is no
+longer append-only for that role; what it still cannot do, and what limits the delete, is
+held by the database and not only by this job:
+
+| Bound | Held by |
+| --- | --- |
+| Only the environment in scope; nothing at all outside a tenant scope | `audit_logs_tenant_isolation`, the `FOR ALL` policy every tenant table has, under forced row-level security. It covered `DELETE` already; no policy was widened. |
+| No entry of the last day, whatever the statement asks | `audit_logs_retention_floor`, a **restrictive** policy `FOR DELETE` added by `0017`: `occurred_at < now() - interval '1 day'`. One day is the shortest period that can be set, so the job never asks for less; a bug in it, or anything else that runs as the runtime role, cannot erase what happened in the last 24 hours. |
+| An entry cannot be changed, or moved back in time to get under that floor | No `UPDATE` grant, as before. |
+| The table cannot be emptied in one statement | No `TRUNCATE` grant, as before. |
+
+The floor is the database's clock (`now()`), the job's cutoff the API's; a skew between them
+can only delay the delete of an entry that is about a day old, never hasten one. The memory
+adapter has no such floor: it is a property of the database, tested on PGlite and on a real
+server (`packages/db/src/boundaries.test.ts`, `adapters/postgres/activity.test.ts`, the shared
+suite in `stores.integration.ts`). It is the only table with a second policy, and the test
+that counted "exactly one policy per tenant table" now counts one *permissive* policy per
+table and names this one as the only other.
+
+**What the one-day floor bounds, and what it does not.** It bounds a bad *cutoff*: a
+statement that asks for entries younger than a day gets none of them, whoever wrote it. It
+does not bound a bad *period*. A period of one day is a valid setting, and with it everything
+older than a day goes; the floor has no opinion on whether the environment's period was
+meant. Someone who holds a secret key, a dashboard session or the runtime role can set an
+environment's period to one day and wait for the next runs. Two clocks are involved, too: the
+job's cutoff and the policy's `now()` are read when the purge runs (the API's clock and the
+database's), while `occurred_at` was written earlier by whichever instance recorded the
+entry, from its own clock. An entry stamped in the future by an instance whose clock ran
+ahead is kept longer than the period; one stamped in the past is deleted sooner, and the
+floor moves with the stamp, not with when the row was really written. The floor is a guard
+against a wrong statement, not proof of an entry's age.
+
+**A shorter period asks first.** Because a bad period is the case nothing in the database
+stops, setting a period where there was none, or shortening one, is a weakening in the
+contract's one definition (`settingsWeakenings` lists `audit.retentionDays`; lengthening it,
+keeping it or removing it is not one). So the audit entry of such a change carries
+`weakened: true`, `tula diff` warns and adds "deletes audit entries older than N days, for
+good", `tula apply --yes` refuses the plan without `--allow-weaker`, and the dashboard's
+editor asks before saving, in the words "This deletes older audit entries for good". There
+is no opt-in switch beside the setting and no dry-run pass: nothing has been released, so
+no deployment holds a number it set while the setting did nothing; the upgrade note in
+`docs/self-host.md` and the changeset say to check all the same.
+
+**The record of who shortened it does not last.** The change is recorded as
+`environment.settings_updated` (the key `audit.retentionDays`, `weakened: true`, the actor),
+but that entry is in the log the period governs: once it is older than the new period it is
+deleted like any other. From then on the only trace that entries were deleted, and under
+what period, is the server's log line of each purge (environment id, period, count), which
+names no actor. Keep the API's logs for at least as long as the audit log would have been
+kept, and ship them somewhere the API's own credentials cannot rewrite. A summarising audit
+entry that the purge spares is the open question under "Not recorded as activity" below.
+
+**Not recorded as activity.** The deletes write no audit entry and no event, like every
+other delete of this job ([ADR 0012](0012-events-and-audit-log.md), "What is deliberately not
+recorded"). An entry per deleted row is absurd; an entry per run would add 144 rows a day to
+each environment's log for doing nothing new, in the log the period exists to bound, and
+would itself be deleted a period later. The decision an operator made is the change of the
+setting, and that is recorded. Whether a purge should also leave one summarising entry
+("N entries older than D were deleted") is left open on purpose: it needs a new activity
+type, and how types are defined is being changed elsewhere.
+
+**Nothing reads old entries.** The only reader of `audit_logs` is the admin list
+(`Audit.list`, and the MCP and dashboard views over it). "A new device"
+([ADR 0023](0023-security-notices.md)) is decided from the session table, lockouts and rate
+limits from their own stores, the passkey counter from the passkey row. No behaviour changes
+when old entries go; what changes is what an operator can look up.
 
 ## Consequences
 
@@ -121,4 +237,9 @@ runtime role cannot delete from it.
   adapter and prove the SQL is valid.
 - The purge finds its rows through each table's `environment_id` index and filters the rest.
   If a table grows large enough for that to matter, an index on the cutoff column is the fix.
-- `events` and `audit_logs` still grow without bound until Phase 2 and step 1.2 respectively.
+- `events` still grows without bound until Phase 2. `audit_logs` grows without bound in every
+  environment that has not set `audit.retentionDays`, which is the default.
+- A session's audit entries can now be gone before or after its row, depending on the
+  environment's period; neither waits for the other.
+- An idle pass costs one more query per environment (the fresh settings read), and one more
+  where a period is set.

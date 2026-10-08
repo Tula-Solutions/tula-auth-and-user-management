@@ -164,6 +164,40 @@ describe('settingsWeakenings', () => {
     }
   )
 
+  test.each([
+    ['a period where there was none', null, 365, true],
+    ['a shorter period', 365, 30, true],
+    ['the shortest period, from none', null, 1, true],
+    ['a longer period', 30, 365, false],
+    ['the same period', 30, 30, false],
+    ['no period where there was one', 365, null, false],
+    ['none, as before', null, null, false],
+  ] as [string, number | null, number | null, boolean][])(
+    'audit retention: %s (%p to %p) is a weakening: %p',
+    (_name, was, is, weaker) => {
+      const before = changed((s) => {
+        s.audit.retentionDays = was
+      })
+      const after = changed((s) => {
+        s.audit.retentionDays = is
+      })
+      expect(settingsWeakenings(before, after)).toEqual(weaker ? ['audit.retentionDays'] : [])
+    }
+  )
+
+  test('the audit period is listed in document order, between the password and the notices', () => {
+    const after = changed((s) => {
+      s.password.minLength = 10
+      s.audit.retentionDays = 30
+      s.notifications.newSignIn = false
+    })
+    expect(settingsWeakenings(base, after)).toEqual([
+      'password.minLength',
+      'audit.retentionDays',
+      'notifications.newSignIn',
+    ])
+  })
+
   test('a new profile clients may select that outlives web is a weakening; a tighter one is not', () => {
     const loose = changed((s) => {
       s.sessions.profiles.kiosk = {

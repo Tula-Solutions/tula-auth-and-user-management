@@ -120,6 +120,13 @@
       "when": 1791120645639,
       "tag": "0016_instance_audit_logs_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791441587722,
+      "tag": "0017_audit_logs_retention",
+      "breakpoints": true
     }
   ]
 }

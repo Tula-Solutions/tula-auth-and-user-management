@@ -4,7 +4,7 @@ import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula/contract/hea
 import { type OptionSpec, UsageError } from '../args'
 import { MANAGING_TOOL, type Operation, orderOperations, type Plan } from '../diff'
 import { type Command, type CommandContext, EXIT, reportError } from '../framework'
-import { describeOperation, planToJson, renderPlan } from '../render'
+import { deletedAuditAge, describeOperation, planToJson, renderPlan } from '../render'
 import { PLAN_OPTIONS, prepare } from './shared'
 
 const APPLY_OPTIONS = {
@@ -30,6 +30,23 @@ const APPLY_OPTIONS = {
       'Apply only if the settings are still at this revision (the one `tula diff` printed).',
   },
 } as const satisfies Record<string, OptionSpec>
+
+/**
+ * What the question at a terminal says first when the plan is one to think twice about.
+ * A plan that sets or shortens the audit retention period says what it destroys, in those
+ * words: "weakens security" alone would undersell a deletion that cannot be undone.
+ */
+function warningBeforeQuestion(plan: Plan): string {
+  const paths = plan.weakened.join(', ')
+  const doomed = deletedAuditAge(plan)
+  if (doomed === null) {
+    return paths ? `This WEAKENS security (${paths}). ` : ''
+  }
+  const deletes = `DELETES audit entries older than ${doomed} days, for good`
+  return plan.weakened.length === 1
+    ? `This ${deletes} (${paths}). `
+    : `This WEAKENS security (${paths}) and ${deletes}. `
+}
 
 /** The secrets a run will write, read from the environment before anything is changed. */
 function resolveSecrets(
@@ -234,10 +251,8 @@ export const applyCommand: Command = {
           'Not at a terminal, so there is nobody to confirm: pass --yes to apply without asking. Nothing was changed.'
         )
       }
-      const weakening =
-        plan.weakened.length > 0 ? `This WEAKENS security (${plan.weakened.join(', ')}). ` : ''
       const answer = await io.prompt(
-        `${weakening}Apply these changes to "${name}" at ${target.apiUrl}? Type yes to continue: `
+        `${warningBeforeQuestion(plan)}Apply these changes to "${name}" at ${target.apiUrl}? Type yes to continue: `
       )
       if (answer.trim().toLowerCase() !== 'yes') {
         output.error('Cancelled. Nothing was changed.')

@@ -260,7 +260,12 @@ export const EVENT_DATA_SCHEMAS = {
             .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/)
         )
         .max(MAX_CHANGED_SETTINGS),
-      /** `true` when the change made an account easier to take over; absent otherwise. */
+      /**
+       * `true` when the change weakened a security setting or shortened what is kept (a
+       * weaker password policy, a security notice switched off, a looser MFA policy, longer
+       * sessions, an audit retention period set or shortened), by the definition of
+       * `settingsWeakenings`; absent otherwise.
+       */
       weakened: z.boolean().optional(),
       /**
        * The tool that applied a config file; `null` when its record was removed. The one

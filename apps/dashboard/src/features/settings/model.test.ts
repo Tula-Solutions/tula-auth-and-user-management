@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import { ApiError } from '~/api/errors'
-import { classifyFailure, describeWeakening, etag, planSave, type SettingsDocument } from './model'
+import {
+  classifyFailure,
+  confirmationTitle,
+  describeWeakening,
+  etag,
+  planSave,
+  type SettingsDocument,
+} from './model'
 
 const base = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS) as SettingsDocument
 
@@ -85,6 +92,39 @@ describe('planSave', () => {
     const plan = planSave(base, broken as unknown as SettingsDocument, null)
     expect(plan.dirty).toBe(true)
     expect(plan.weakenings).toEqual([])
+  })
+})
+
+describe('an audit retention period', () => {
+  const withPeriod = (retentionDays: number | null): SettingsDocument =>
+    ({ ...structuredClone(DEFAULT_ENVIRONMENT_SETTINGS), audit: { retentionDays } }) as never
+
+  test.each([
+    ['set where there was none', null, 30, true],
+    ['shortened', 365, 30, true],
+    ['lengthened', 30, 365, false],
+    ['removed', 30, null, false],
+  ] as [string, number | null, number | null, boolean][])(
+    '%s asks first: %p to %p is %p',
+    (_name, was, is, asks) => {
+      const plan = planSave(withPeriod(was), withPeriod(is), null)
+      expect(plan.weakenings).toEqual(asks ? ['audit.retentionDays'] : [])
+      expect(plan.needsConfirmation).toBe(asks)
+    }
+  )
+
+  test('is described as what it is: a deletion that cannot be undone', () => {
+    expect(describeWeakening('audit.retentionDays')).toBe(
+      'Audit entries older than the new period are deleted for good, starting with the next retention run'
+    )
+    expect(confirmationTitle(['audit.retentionDays'])).toBe(
+      'This deletes older audit entries for good. Save anyway?'
+    )
+    expect(confirmationTitle(['mfa.policy', 'audit.retentionDays'])).toBe(
+      'This weakens security and deletes older audit entries for good. Save anyway?'
+    )
+    expect(confirmationTitle(['mfa.policy'])).toBe('This weakens security. Save anyway?')
+    expect(confirmationTitle([])).toBe('Change settings managed by a config file?')
   })
 })
 

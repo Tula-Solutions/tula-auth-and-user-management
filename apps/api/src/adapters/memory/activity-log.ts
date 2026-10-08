@@ -70,4 +70,31 @@ export class MemoryActivityLog implements ActivityLog {
       totalCount: matches.length,
     }
   }
+
+  /**
+   * @inheritdoc
+   *
+   * Removes from {@link MemoryActivityLog.entries} (the audit log) only. The outbox,
+   * {@link MemoryActivityLog.events}, is left as it is, as in Postgres: an event has its own
+   * end of life.
+   */
+  async deleteAuditBefore(environmentId: string, before: Date, limit: number): Promise<number> {
+    const doomed = new Set(
+      this.entries
+        .filter(
+          (entry) =>
+            entry.environmentId === environmentId && entry.occurredAt.getTime() < before.getTime()
+        )
+        .sort((x, y) => x.occurredAt.getTime() - y.occurredAt.getTime() || x.id.localeCompare(y.id))
+        .slice(0, limit)
+        .map((entry) => entry.id)
+    )
+    // In place: the stores and the tests hold this very array.
+    for (let index = this.entries.length - 1; index >= 0; index--) {
+      if (doomed.has((this.entries[index] as Activity).id)) {
+        this.entries.splice(index, 1)
+      }
+    }
+    return doomed.size
+  }
 }

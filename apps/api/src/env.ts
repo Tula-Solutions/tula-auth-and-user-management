@@ -168,7 +168,8 @@ const fields = z.object({
   /**
    * Days an instance audit entry (dashboard sign-ins, workspaces, projects) is kept before the
    * retention job deletes it. At least 30: the log is what an operator reads after an
-   * incident. Environments' audit logs are not affected: they are never deleted (ADR 0017).
+   * incident. Environments' audit logs are not affected: each has its own period, the
+   * `audit.retentionDays` setting (ADR 0017).
    */
   INSTANCE_AUDIT_RETENTION_DAYS: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),

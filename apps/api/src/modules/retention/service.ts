@@ -2,6 +2,7 @@ import { durationToMs } from '@tula/contract'
 import type { Deps } from '~/dependencies'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
+import * as Settings from '~/modules/settings/service'
 
 /**
  * How long a session is kept after it ended (was revoked, or passed its idle or absolute
@@ -21,7 +22,7 @@ export const EXPIRED_VERIFICATION_TOKEN_RETENTION = '1h'
 /**
  * How often the retention job runs. Expired sign-up attempts hold the hash of a password that
  * was never used, so they should not outlive their expiry by long; the other tables only need
- * a daily pass, and an idle pass costs three indexed queries per environment.
+ * a daily pass, and an idle pass costs a handful of indexed queries per environment.
  */
 export const RETENTION_INTERVAL_MS = 10 * 60_000
 
@@ -50,6 +51,8 @@ export interface RetentionCounts {
   passkeyChallenges: number
   /** Instance audit entries older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`. */
   instanceAuditLogs: number
+  /** Environments' audit entries older than their own `audit.retentionDays`. */
+  auditLogs: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -69,6 +72,8 @@ type RetentionDeps = Pick<
   | 'factors'
   | 'passkeys'
   | 'controlPlane'
+  | 'activityLog'
+  | 'environmentSettings'
   | 'config'
   | 'clock'
 >
@@ -87,6 +92,66 @@ async function drain(deleteBatch: (limit: number) => Promise<number>): Promise<n
 }
 
 /**
+ * The instant before which an environment's audit entries are past its retention period.
+ *
+ * `null` (the setting's default) means "keep for ever". So does anything that is not a whole
+ * number of days, one or more: the admin API stores nothing else, and a document changed by
+ * hand must never read as "delete everything" (zero or a negative period would put the cutoff
+ * at or after now).
+ *
+ * @param retentionDays - The environment's `audit.retentionDays`, as stored.
+ * @param now - The run's time.
+ * @returns The cutoff, or `null` when nothing is to be deleted.
+ */
+function auditCutoff(retentionDays: unknown, now: Date): Date | null {
+  if (typeof retentionDays !== 'number' || !Number.isInteger(retentionDays) || retentionDays < 1) {
+    return null
+  }
+  return new Date(now.getTime() - retentionDays * DAY_MS)
+}
+
+/**
+ * Delete one environment's audit entries that are older than its `audit.retentionDays`.
+ *
+ * The period is read from the source, past this instance's settings cache: every other setting
+ * may trail a change by a few seconds, but acting on a period that was lengthened a moment ago
+ * on another instance would delete what the operator has just asked to keep.
+ *
+ * The deletes are not audit entries themselves (ADR 0012): an entry cannot record its own end,
+ * and one entry per run would grow the log the period is there to bound. What is on record is
+ * the change of the setting (`environment.settings_updated`, with `audit.retentionDays` among
+ * its changed keys) and a line in the server's log each time entries go.
+ *
+ * @param deps - The settings store, config, the audit log.
+ * @param environmentId - The environment.
+ * @param now - The run's time.
+ * @returns How many entries were deleted: 0 when the environment keeps its entries for ever.
+ */
+async function purgeAudit(
+  deps: Pick<RetentionDeps, 'environmentSettings' | 'config' | 'activityLog'>,
+  environmentId: string,
+  now: Date
+): Promise<number> {
+  const { settings } = await Settings.get(deps, { environmentId }, true)
+  const retentionDays: unknown = settings.audit?.retentionDays
+  const before = auditCutoff(retentionDays, now)
+  if (!before) {
+    return 0
+  }
+  const deleted = await drain((limit) =>
+    deps.activityLog.deleteAuditBefore(environmentId, before, limit)
+  )
+  if (deleted > 0) {
+    logger.info('audit entries past the retention period deleted', {
+      environmentId,
+      retentionDays,
+      deleted,
+    })
+  }
+  return deleted
+}
+
+/**
  * Delete what no longer has a use, in every environment:
  *
  * - flow attempts past their expiry (with their verification tokens);
@@ -94,19 +159,21 @@ async function drain(deleteBatch: (limit: number) => Promise<number>): Promise<n
  * - sessions that ended more than {@link ENDED_SESSION_RETENTION} ago, with their refresh
  *   tokens;
  * - authenticator enrolments that were never confirmed and lapsed more than
- *   {@link EXPIRED_VERIFICATION_TOKEN_RETENTION} ago (a sealed secret nobody will use).
+ *   {@link EXPIRED_VERIFICATION_TOKEN_RETENTION} ago (a sealed secret nobody will use);
+ * - audit entries older than the environment's own `audit.retentionDays`, where it has set one
+ *   (the default, `null`, keeps them for ever).
  *
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
  *
- * An environment's audit entries are never deleted here, and neither are outbox events: nothing delivers events
- * yet (Phase 2), so none is safe to drop (ADR 0017).
+ * Outbox events are never deleted here: nothing delivers events yet (Phase 2), so none is safe
+ * to drop (ADR 0017). That includes the events of audit entries this job deletes.
  *
  * A failure in one environment is logged and skipped, so it cannot keep the environments after
  * it from being purged. Each environment is purged through its own tenant-scoped store calls:
  * one environment's purge cannot touch another's rows.
  *
- * @param deps - Environments, the three stores and the clock.
+ * @param deps - Environments, the stores, the settings store and the clock.
  * @returns What was deleted. Counts from an environment that failed part-way are included.
  */
 export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
@@ -122,10 +189,11 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     pendingFactors: 0,
     passkeyChallenges: 0,
     instanceAuditLogs: 0,
+    auditLogs: 0,
   }
-  // The instance audit log belongs to no environment. It is the one audit log with an end:
-  // anyone who can reach the sign-in can add to it, so it is kept for a period the
-  // deployment sets, not for ever. An environment's audit log is never deleted here.
+  // The instance audit log belongs to no environment, and its period is the deployment's:
+  // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
+  // audit log ends only where the environment has set a period (below).
   try {
     const auditBefore = new Date(now.getTime() - deps.config.instanceAuditRetentionDays * DAY_MS)
     report.instanceAuditLogs = await drain((limit) =>
@@ -154,6 +222,9 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       report.passkeyChallenges += await drain((limit) =>
         deps.passkeys.deleteExpiredChallenges(id, now, limit)
       )
+      // Last, and the only step whose rows did not end by themselves: the environment chose
+      // how long its audit entries are kept. One that cannot be read, or purged, keeps them.
+      report.auditLogs += await purgeAudit(deps, id, now)
     } catch (error) {
       report.failed += 1
       logger.warn('retention failed in one environment', {
@@ -189,7 +260,8 @@ export async function run(
     report.sessions +
     report.pendingFactors +
     report.passkeyChallenges +
-    report.instanceAuditLogs
+    report.instanceAuditLogs +
+    report.auditLogs
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

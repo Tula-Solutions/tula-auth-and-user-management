@@ -578,6 +578,36 @@ describe('weakened', () => {
     })
   })
 
+  test.each([
+    [null, 365, true],
+    [365, 30, true],
+    [30, 365, false],
+    [30, 30, false],
+    [365, null, false],
+  ] as [number | null, number | null, boolean][])(
+    'the audit retention period from %p to %p → %p',
+    (was, is, expected) => {
+      expect(
+        Settings.weakened(
+          document({ audit: { retentionDays: was } }),
+          document({ audit: { retentionDays: is } })
+        )
+      ).toBe(expected)
+    }
+  )
+
+  test('setting or shortening the audit period is flagged in the audit entry; lengthening it is not', async () => {
+    const last = () => deps.activityLog.ofType('environment.settings_updated').at(-1)?.data
+    await replace(0, document({ audit: { retentionDays: 365 } }))
+    expect(last()).toEqual({ revision: 1, changed: ['audit.retentionDays'], weakened: true })
+    await replace(1, document({ audit: { retentionDays: 30 } }))
+    expect(last()).toEqual({ revision: 2, changed: ['audit.retentionDays'], weakened: true })
+    await replace(2, document({ audit: { retentionDays: 90 } }))
+    expect(last()).toEqual({ revision: 3, changed: ['audit.retentionDays'] })
+    await replace(3, document({ audit: { retentionDays: null } }))
+    expect(last()).toEqual({ revision: 4, changed: ['audit.retentionDays'] })
+  })
+
   test('switching a security notice off is flagged in the audit entry, switching it on is not', async () => {
     const off = document({
       notifications: {

@@ -120,6 +120,13 @@ test('general settings: list editors validate with the contract, and a save is k
   await page.getByRole('button', { name: 'Add URL' }).click()
   await page.getByLabel('Keep audit entries for (days)').fill('90')
   await page.getByRole('button', { name: 'Save changes' }).click()
+  // A period where there was none deletes what is older, so the save asks first and says so.
+  await expect(dialog(page)).toContainText('This deletes older audit entries for good')
+  await expect(dialog(page)).toContainText(
+    'Audit entries older than the new period are deleted for good'
+  )
+  await expectScreenAccessible(page, 'audit retention confirmation')
+  await dialog(page).getByRole('button', { name: 'Save anyway' }).click()
   await expect(page.getByText('Settings saved')).toBeVisible()
 
   await page.reload()

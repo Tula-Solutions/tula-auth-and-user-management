@@ -60,7 +60,12 @@ export function planSave(
   }
 }
 
+/** The one weakening that destroys something when it is saved. */
+const AUDIT_RETENTION = 'audit.retentionDays'
+
 const WEAKENINGS: Record<string, string> = {
+  [AUDIT_RETENTION]:
+    'Audit entries older than the new period are deleted for good, starting with the next retention run',
   'password.minLength': 'Passwords may be shorter',
   'password.breachCheck': 'Breached passwords are checked less strictly',
   'password.requireLowercase': 'A lowercase letter is no longer required',
@@ -93,6 +98,28 @@ export function describeWeakening(path: string): string {
     return `Sessions of the “${profile[1]}” profile last longer or are easier to get`
   }
   return WEAKENINGS[path] ?? path
+}
+
+/**
+ * The question the editor asks before a save that needs a confirmation.
+ *
+ * A shorter audit retention period is said as what it is, a deletion that cannot be undone,
+ * and not only as "weaker": the operator must not learn it from the list underneath.
+ *
+ * @param weakenings - The paths from {@link SavePlan.weakenings}.
+ * @returns The dialog's title; with nothing weaker, the question about managed settings.
+ */
+export function confirmationTitle(weakenings: readonly string[]): string {
+  if (weakenings.length === 0) {
+    return 'Change settings managed by a config file?'
+  }
+  const deletes = weakenings.includes(AUDIT_RETENTION)
+  if (deletes && weakenings.length === 1) {
+    return 'This deletes older audit entries for good. Save anyway?'
+  }
+  return deletes
+    ? 'This weakens security and deletes older audit entries for good. Save anyway?'
+    : 'This weakens security. Save anyway?'
 }
 
 /**

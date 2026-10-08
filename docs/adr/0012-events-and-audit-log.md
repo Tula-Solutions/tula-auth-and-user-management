@@ -17,7 +17,8 @@ of.
   an origin (IP and user agent) and a few details. It is written to `events` (the outbox: type
   and payload, `delivered_at` null) and to `audit_logs` (actor, target, origin, metadata). The
   two rows share an id. They are separate tables because their lives differ: events are a
-  delivery queue that can be trimmed once delivered; audit entries are kept.
+  delivery queue that can be trimmed once delivered; audit entries are kept for as long as
+  the environment says (for ever, unless it sets a period).
 - **Written in the same transaction as the change.** Stores take the activity as an argument of
   the write it describes (`deps.users.delete(env, id, activity)`), and insert it inside that
   write's transaction. The change and its record either both happen or neither does: if the
@@ -176,11 +177,21 @@ of.
 - **The origin is validated where the record is built.** `audit_logs.ip_address` is `inet`; a
   value that is not an address would fail the insert and, by the rule above, undo the change.
   Anything that does not parse is stored as `null`; the user agent is cut at 512 characters.
-- **Append-only for the server.** The runtime database role has only `SELECT` and `INSERT` on
-  `audit_logs` (and no `DELETE` on `events`), and both tables are under the same fail-closed
-  row-level security as the rest of the tenant data. The schema owner is not restricted:
-  deleting an environment, project or workspace as the owner deletes its audit log with it, so
-  export first.
+- **Never rewritten, and deleted only past the environment's retention period** (changed on
+  2026-10-08, approved by the repository's owner; until then: "append-only for the server",
+  with `SELECT` and `INSERT` only). The audit log is no longer append-only for the runtime
+  database role: it has `SELECT`, `INSERT` and, since migration `0017`, `DELETE` on
+  `audit_logs`, so that the retention job can delete an environment's entries older than its
+  `audit.retentionDays` ([ADR 0017](0017-retention.md#audit-entries-added-2026-10-08)). An
+  environment that sets no period (the default) keeps every entry. What bounds the new
+  privilege is in the database: the table's fail-closed tenant policy confines a delete to
+  the environment in scope; a second, restrictive policy (`audit_logs_retention_floor`)
+  refuses any entry younger than one day, the shortest period that can be set; and the role
+  still has no `UPDATE` (an entry cannot be changed, or backdated to get under that floor)
+  and no `TRUNCATE`. `ActivityLog.deleteAuditBefore` is the only code that deletes, and the
+  retention job its only caller (a test holds that). `events` is unchanged: no `DELETE`, under
+  the same row-level security. The schema owner is not restricted: deleting an environment,
+  project or workspace as the owner deletes its audit log with it, so export first.
 - **Reading.** `GET /v1/admin/audit-logs` (secret key) lists an environment's entries newest
   first, with the usual `page`/`size` paging and exact-match filters `action`, `actorId` and
   `targetId`; the target and actor filters each have an index. In the response `action`,
@@ -195,7 +206,12 @@ of.
   is only started (it counts as nothing until confirmed, which is recorded); transient rows
   (flow attempts, verification tokens, WebAuthn challenges); and the retention job's deletes
   of rows that had already ended ([ADR 0017](0017-retention.md)). None of these store methods
-  takes an activity. Workspaces, projects and
+  takes an activity. The retention job's delete of **audit entries** past an environment's
+  period is not recorded either (`deleteAuditBefore` takes no activity): an entry cannot
+  record its own end, and one per run would grow the log the period bounds. What is recorded
+  is the decision, the change of `audit.retentionDays` (`environment.settings_updated`);
+  each purge that deleted something is a line in the server's log with the environment, the
+  period and the count. A summarising activity type for it is an open question. Workspaces, projects and
   environments are created by the seed script, outside the API. Rotating keys *is* recorded.
 - **Large batches are split.** Ending every session of one user can produce thousands of
   entries; they are inserted 500 per statement, inside the same transaction.
@@ -206,10 +222,11 @@ of.
   for the ban and one for ending their sessions; a crash between them leaves the ban recorded
   and the sessions still open, which the ban check on refresh then closes (and records).
 - Nothing reads the outbox yet. Events accumulate undelivered until the webhook worker (Phase 2)
-  ships. The retention job ([ADR 0017](0017-retention.md)) deletes neither table's rows: no
-  event is safe to drop before something has delivered it, so the outbox purge lands with that
-  worker, and audit retention becomes a per-environment setting (default: keep). Both tables
-  therefore still grow without bound.
+  ships. The retention job ([ADR 0017](0017-retention.md)) deletes no event: none is safe to
+  drop before something has delivered it, so the outbox purge lands with that worker, and the
+  outbox still grows without bound. Audit entries are deleted where an environment has set
+  `audit.retentionDays`, and kept for ever where it has not (the default). An event therefore
+  outlives the audit entry it shares an id with.
 - Not recorded: token refreshes (about one a minute per session), failed sign-ins, lockouts and
   rate-limit refusals. They have no write to share a transaction with, and they are
   attacker-driven, so recording them needs its own volume limits first.
@@ -233,7 +250,14 @@ of.
   and the conformance run (which parses every recorded payload with its whole schema) are
   what keep it from happening.
 - Audit entries keep IP addresses after a user is deleted, and outlive the sessions they name
-  (which are deleted 30 days after they end). The audit retention setting has to cover that.
+  (which are deleted 30 days after they end). The audit retention setting is what covers
+  that: with a period set, an entry and the address in it are gone once it is older.
+- With a period set, the log no longer answers "what happened" beyond it, and the entry that
+  records who set or shortened the period (`environment.settings_updated`, `weakened: true`)
+  is deleted by that period like any other. After that the server's log line of each purge
+  is the only durable trace, and it names no actor: keep the API's logs, outside the reach of
+  the API's credentials. A deployment that needs longer than it keeps exports the entries
+  first.
 - Every write that records activity costs two more inserts in its transaction.
 - The list uses offset paging, like the user list: entries written while a client pages shift
   later pages by that many rows, and deep pages are slow. Filtering by `action` alone scans the

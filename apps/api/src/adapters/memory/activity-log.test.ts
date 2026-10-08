@@ -78,3 +78,22 @@ test('MemoryActivityLog keeps the outbox the Postgres stores write: the typed ev
   // The audit entry keeps what it was given.
   expect(log.entries[0]?.data).toEqual(entry.data)
 })
+
+test('a purge removes audit entries only: their outbox events stay, as in Postgres', async () => {
+  const log = new MemoryActivityLog()
+  const old: Activity = {
+    id: Bun.randomUUIDv7(),
+    ...tenant('00000000-0000-7000-8000-00000000e001'),
+    type: 'user.banned',
+    actor: { type: 'system', id: null },
+    target: { type: 'user', id: '00000000-0000-7000-8000-0000000000a1' },
+    ipAddress: null,
+    userAgent: null,
+    data: {},
+    occurredAt: new Date('2000-06-01T00:00:00.000Z'),
+  }
+  log.record([old])
+  expect(await log.deleteAuditBefore(old.environmentId, new Date('2001-01-01'), 100)).toBe(1)
+  expect(log.entries).toEqual([])
+  expect(log.events.map((event) => event.id)).toEqual([old.id])
+})

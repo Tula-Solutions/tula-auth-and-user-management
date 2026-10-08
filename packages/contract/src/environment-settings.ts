@@ -207,8 +207,11 @@ const Urls = z.object({
 
 const Audit = z.object({
   /**
-   * Days an audit entry is kept; `null` (the default) keeps entries for ever. Validated and
-   * stored only: the retention job does not delete audit entries yet (ADR 0018).
+   * Days an audit entry is kept; `null` (the default) keeps entries for ever. With a number
+   * set, the server's retention job deletes the environment's entries older than that,
+   * permanently (ADR 0017). **Saving a period, or a shorter one, deletes the older entries
+   * for good**, starting with the server's next retention run (they run every ten minutes; a
+   * large backlog takes several), which is why `settingsWeakenings` lists it.
    */
   retentionDays: z.number().int().min(1).max(MAX_AUDIT_RETENTION_DAYS).nullable().default(null),
 })
@@ -376,7 +379,8 @@ const minLengthFloor = {
  * - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
  *   may leave it out (`optional`, which needs `emailCode`).
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
- * - `audit.retentionDays`: how long audit entries are kept.
+ * - `audit.retentionDays`: how many days audit entries are kept before the server deletes
+ *   them for good; `null` (the default) keeps them for ever.
  * - `notifications`: which security notices are emailed to an account's owner
  *   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
  * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or

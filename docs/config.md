@@ -160,8 +160,18 @@ Changes pending. Run `tula apply` to make them.
   `stored secret kept`. `diff` does not even read the variable.
 - `! weakens security` uses the server's own definition (the one behind the audit log's
   `weakened` flag): a weaker password policy, a security notice switched off, an MFA policy
-  moved towards `off`, sessions that live longer. `tula apply --yes` refuses such a plan
-  without `--allow-weaker`, and `diff` says so under the plan.
+  moved towards `off`, sessions that live longer, an audit retention period set or
+  shortened. `tula apply --yes` refuses such a plan without `--allow-weaker`, and `diff`
+  says so under the plan.
+- `audit.retentionDays` is flagged **when applying would delete entries**: the file sets a
+  period where the server keeps entries for ever (`null`, which is also what leaving it out
+  means), or a shorter period than the server has. A longer period, the same one, or none
+  where there was one is an ordinary change. The plan then has a second line,
+  `! deletes audit entries older than N days, for good, starting with the next retention run
+  (every ten minutes; a large backlog takes several)`: nothing brings them back. At a
+  terminal the question `tula apply` asks says so too ("This DELETES audit entries older
+  than N days, for good"). The
+  first apply of a file that sets a period to an environment that has none is such a plan.
 - `! the server has settings this version of tula does not know (…)`: the server is newer
   than the CLI. Applying would reset those settings to their defaults, so `tula apply` refuses
   without `--allow-unknown`. Upgrade `tula` instead.

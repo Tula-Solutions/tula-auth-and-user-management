@@ -18,6 +18,7 @@ import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environm
 import { useScope } from '~/state/scope'
 import {
   classifyFailure,
+  confirmationTitle,
   describeWeakening,
   etag,
   planSave,
@@ -286,11 +287,7 @@ export function SettingsFrame({ title, description, children, after }: SettingsF
               </form>
               <ConfirmDialog
                 open={editor.confirming !== null}
-                title={
-                  editor.confirming && editor.confirming.weakenings.length > 0
-                    ? 'This weakens security. Save anyway?'
-                    : 'Change settings managed by a config file?'
-                }
+                title={confirmationTitle(editor.confirming?.weakenings ?? [])}
                 confirmLabel='Save anyway'
                 destructive
                 onConfirm={editor.confirm}
