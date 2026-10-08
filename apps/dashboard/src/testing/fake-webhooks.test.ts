@@ -337,3 +337,43 @@ describe('a delivery sent again is recorded as `recordAttempt` records it', () =
     expect(await again()).toEqual({ reason: 'event_gone' })
   })
 })
+
+describe('a deployment whose worker is a service of its own', () => {
+  const REFUSAL = {
+    status: 501,
+    code: 'not_implemented',
+    detail:
+      'This deployment sends webhooks from a separate worker (WEBHOOK_WORKER=separate). A test event or a delivery sent again cannot be asked of an API instance yet.',
+    params: { reason: 'worker_separate' },
+  }
+
+  test('refuses both requests on demand, whatever the id or the body, and records nothing', async () => {
+    const { api: fake, endpoint, delivery } = setUp()
+    fake.state.webhookWorkerSeparate = true
+    const before = structuredClone(fake.state.webhookDeliveries)
+    const answers = await Promise.all([
+      call('POST', `${ROOT}/${endpoint.id}/test`, { eventType: 'user.created' }),
+      // Like the router's `deliveredHere`: before the validators and before any lookup.
+      call('POST', `${ROOT}/not-an-id/test`, { eventType: 'no.such_type' }),
+      call('POST', `${ROOT}/${NO_SUCH}/test`, { eventType: 'user.created' }),
+      call('POST', `${ROOT}/${endpoint.id}/deliveries/${delivery.id}/redeliver`),
+      call('POST', `${ROOT}/${endpoint.id}/deliveries/not-an-id/redeliver`),
+    ])
+    expect(answers.map((answer) => answer.status)).toEqual([501, 501, 501, 501, 501])
+    expect(new Set(answers.map((answer) => JSON.stringify(answer.body)))).toEqual(
+      new Set([JSON.stringify(REFUSAL)])
+    )
+    expect(fake.state.webhookDeliveries).toEqual(before)
+  })
+
+  test('is not the default, and nothing else is refused by it', async () => {
+    const { api: fake, endpoint, delivery } = setUp()
+    expect(fake.state.webhookWorkerSeparate).toBe(false)
+    const sent = await call('POST', `${ROOT}/${endpoint.id}/test`, { eventType: 'user.created' })
+    expect(sent.status).toBe(200)
+    fake.state.webhookWorkerSeparate = true
+    expect((await call('GET', ROOT)).status).toBe(200)
+    expect((await call('GET', `${ROOT}/${endpoint.id}/deliveries/${delivery.id}`)).status).toBe(200)
+    expect((await call('PATCH', `${ROOT}/${endpoint.id}`, { enabled: false })).status).toBe(200)
+  })
+})

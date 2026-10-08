@@ -656,6 +656,52 @@ describe('sending a test event', () => {
     )
     expect(within(dialog()).queryAllByTestId('send-result')).toHaveLength(0)
   })
+
+  test('where the worker is a service of its own, the refusal is said in words and nothing is sent twice', async () => {
+    const { user, api } = withEndpoint()
+    api.state.webhookWorkerSeparate = true
+    const open = within(await card(HOME)).getByRole('button', {
+      name: `Send a test event to ${HOME}`,
+    })
+    await user.click(open)
+    const send = within(dialog()).getByRole('button', { name: 'Send test event' })
+    await user.click(send)
+    await waitFor(() =>
+      expect(alerts()).toEqual([
+        'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are still delivered: to see a delivery, cause an event (create a test user, for example) and look at this endpoint’s deliveries.',
+      ])
+    )
+    // No result, no delivery, and the request was made once: a refusal is not retried.
+    expect(within(dialog()).queryAllByTestId('send-result')).toHaveLength(0)
+    expect(api.state.webhookDeliveries).toEqual([])
+    expect(api.calls.filter((call) => call.path.endsWith('/test'))).toHaveLength(1)
+    expect(patches(api)).toEqual([])
+    // The dialog is as it was: open, its button no longer pending.
+    expect(openDialogs()).toBe(1)
+    expect((send as HTMLButtonElement).disabled).toBe(false)
+
+    await user.click(within(dialog()).getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    // Opened again, the refusal of the last try is not shown, and nothing was sent meanwhile.
+    await user.click(open)
+    expect(alerts()).toEqual([])
+    expect(api.calls.filter((call) => call.path.endsWith('/test'))).toHaveLength(1)
+  })
+
+  test.each([
+    ['no reason', undefined],
+    ['a reason this dashboard does not know', { reason: 'a_later_word' }],
+  ])('another “not available” answer (%s) keeps the server’s sentence', async (_name, params) => {
+    const { user, api } = withEndpoint()
+    api.override('POST', /\/test$/, () =>
+      failure(501, 'not_implemented', 'This capability is not available yet.', undefined, params)
+    )
+    await user.click(
+      within(await card(HOME)).getByRole('button', { name: `Send a test event to ${HOME}` })
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Send test event' }))
+    await waitFor(() => expect(alerts()).toEqual(['This capability is not available yet.']))
+  })
 })
 
 /** The cells of a table's body rows, as text, without the cells listed in `skip`. */
@@ -1058,6 +1104,49 @@ describe('one delivery', () => {
     await waitFor(() =>
       expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toEqual([
         'Too many requests. Try again in 12 seconds. Test events and deliveries sent again also have an allowance of their own, for the whole environment.',
+      ])
+    )
+  })
+
+  test('where the worker is a service of its own, sending again is refused in words and nothing is sent twice', async () => {
+    const { user, api, endpoint, delivery } = withDelivery(FAILED, {
+      failingSince: '2026-10-03T08:00:00.000Z',
+    })
+    api.state.webhookWorkerSeparate = true
+    const again = await screen.findByRole('button', { name: 'Send again' })
+    await user.click(again)
+    await waitFor(() =>
+      expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toEqual([
+        'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. Real events are still delivered, and a delivery that is pending is still retried by the worker.',
+      ])
+    )
+    // No result, and one request: a refusal is not retried.
+    expect(screen.queryAllByTestId('send-result')).toHaveLength(0)
+    expect(
+      api.callsTo(
+        'POST',
+        `/v1/admin/webhook-endpoints/${endpoint.id}/deliveries/${delivery.id}/redeliver`
+      )
+    ).toHaveLength(1)
+    // The delivery and the endpoint are as they were, and the button is there to use.
+    expect(
+      bodyRows(screen.getByRole('table', { name: 'Requests made for this delivery' }), [1])
+    ).toHaveLength(3)
+    expect(fact('State')?.textContent).toBe('Failed')
+    expect(fact('Requests made')?.textContent).toBe('3')
+    expect(api.state.webhookEndpoints[0]?.failingSince).toBe('2026-10-03T08:00:00.000Z')
+    expect((again as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  test('another “not available” answer to sending again keeps the server’s sentence', async () => {
+    const { user, api } = withDelivery(FAILED)
+    api.override('POST', /\/redeliver$/, () =>
+      failure(501, 'not_implemented', 'This capability is not available yet.')
+    )
+    await user.click(await screen.findByRole('button', { name: 'Send again' }))
+    await waitFor(() =>
+      expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toEqual([
+        'This capability is not available yet.',
       ])
     )
   })

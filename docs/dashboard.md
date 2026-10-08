@@ -108,6 +108,12 @@ deletes a workspace, project or environment yet.
   the run. Both share a limit of ten requests a minute per environment, beside the admin
   API's general one; a refusal for too many requests says how long to wait, not which of
   the two it was, because the server's answer does not say.
+- **Where the webhook worker is a service of its own** (`WEBHOOK_WORKER=separate`,
+  [self-host.md](self-host.md#the-webhook-worker-as-its-own-service)), a test event and
+  "Send again" are refused, and the dashboard says so in words: this deployment delivers
+  webhooks from a separate worker, so neither can be done from here, and real events are
+  still delivered. Nothing is sent and nothing is recorded. To see a delivery there, cause
+  an event (create a test user) and look at the endpoint's deliveries.
 - **An address that names nothing reads "not found"**: an endpoint or a delivery that was
   deleted, one of another environment, and an id that is no id at all (a mistyped address)
   alike, with the way back to the list. A page past the newest 10,000 deliveries, which the

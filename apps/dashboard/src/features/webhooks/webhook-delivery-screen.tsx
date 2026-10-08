@@ -135,7 +135,7 @@ function SendAgain({ delivery }: { delivery: WebhookDeliveryDetail }) {
       </ActionButton>
       {redeliver.error ? (
         <p role='alert' className='text-sm text-destructive'>
-          {webhookMessageFor(redeliver.error, 'send')}
+          {webhookMessageFor(redeliver.error, 'redeliver')}
         </p>
       ) : null}
       {result ? <SendResult result={result} /> : null}

@@ -210,16 +210,69 @@ describe('a refusal in words', () => {
     // one for the admin API (per address) or the one for requests made on demand.
     const limited = (retryAfter: number | null) =>
       new ApiError({ status: 429, code: 'rate_limited', detail: 'Too many requests.', retryAfter })
-    expect(webhookMessageFor(limited(7), 'send')).toBe(
+    expect(webhookMessageFor(limited(7), 'redeliver')).toBe(
       'Too many requests. Try again in 7 seconds. Test events and deliveries sent again also have an allowance of their own, for the whole environment.'
     )
-    expect(webhookMessageFor(limited(null), 'send')).toBe(
+    expect(webhookMessageFor(limited(7), 'test')).toBe(
+      'Too many requests. Try again in 7 seconds. Test events and deliveries sent again also have an allowance of their own, for the whole environment.'
+    )
+    expect(webhookMessageFor(limited(null), 'redeliver')).toBe(
       'Too many requests. Wait a moment, then try again. Test events and deliveries sent again also have an allowance of their own, for the whole environment.'
     )
     expect(webhookMessageFor(limited(7))).toBe('Too many requests. Try again in 7 seconds.')
-    for (const action of ['send', 'other'] as const) {
+    for (const action of ['test', 'redeliver', 'other'] as const) {
       expect(webhookMessageFor(limited(7), action)).not.toMatch(/\bten\b|\b10\b|a minute/)
     }
+  })
+
+  describe('where the webhook worker is a service of its own', () => {
+    const DETAIL = 'The server’s own description.'
+    const unavailable = (params?: Record<string, unknown>) =>
+      new ApiError({ status: 501, code: 'not_implemented', detail: DETAIL, params })
+    const TEST =
+      'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are still delivered: to see a delivery, cause an event (create a test user, for example) and look at this endpoint’s deliveries.'
+    const AGAIN =
+      'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. Real events are still delivered, and a delivery that is pending is still retried by the worker.'
+
+    test('a test event and a delivery sent again each say so, in their own words', () => {
+      const refused = unavailable({ reason: 'worker_separate' })
+      expect(webhookMessageFor(refused, 'test')).toBe(TEST)
+      expect(webhookMessageFor(refused, 'redeliver')).toBe(AGAIN)
+      for (const sentence of [TEST, AGAIN]) {
+        // A webhook is never called a hook, and no setting's name is the explanation.
+        expect(sentence).not.toMatch(/\bhooks?\b|WEBHOOK_WORKER|not_implemented|501/)
+      }
+    })
+
+    test('no other action has such a sentence', () => {
+      const refused = unavailable({ reason: 'worker_separate' })
+      expect(webhookMessageFor(refused)).toBe(DETAIL)
+      expect(webhookMessageFor(refused, 'create')).toBe(DETAIL)
+    })
+
+    test.each([
+      ['no params', undefined],
+      ['no reason', {}],
+      ['a reason this version does not know', { reason: 'a_later_word' }],
+      ['a reason that is no string', { reason: 42 }],
+      ['a reason in a list', { reason: ['worker_separate'] }],
+      ['a reason that is not the answer’s own', Object.create({ reason: 'worker_separate' })],
+      ['the name of something every object has', { reason: 'constructor' }],
+    ])('any other `not_implemented` (%s) keeps the general sentence', (_name, params) => {
+      for (const action of ['test', 'redeliver'] as const) {
+        expect(webhookMessageFor(unavailable(params), action)).toBe(DETAIL)
+      }
+    })
+
+    test('another code with that reason is not taken for it', () => {
+      const other = new ApiError({
+        status: 503,
+        code: 'service.unavailable',
+        detail: DETAIL,
+        params: { reason: 'worker_separate' },
+      })
+      expect(webhookMessageFor(other, 'test')).toBe(DETAIL)
+    })
   })
 
   test.each([
