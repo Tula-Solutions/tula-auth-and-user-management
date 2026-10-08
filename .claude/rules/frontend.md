@@ -36,6 +36,10 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   the request again.
 - An address from the server is shown through `features/webhooks/address.tsx` (`printable()`
   inside `<bdi dir="ltr">`), also in a dialog's title and in the text to type to confirm.
+- Hooks (`features/hooks`) are not webhooks: never the word "webhook" for one. A change
+  the contract's `hookWeakenings` names is asked about first (`WeakeningQuestion`, a stage
+  of the dialog, typed in production); do not write a second rule. Show of a hook's calls
+  only the last failure the server keeps, and say that is all.
 - The address holds the selection and every filter; route files read parameters and pass
   them to a screen as props. Call `syncScope` in the `beforeLoad` of a route that has scope
   parameters.

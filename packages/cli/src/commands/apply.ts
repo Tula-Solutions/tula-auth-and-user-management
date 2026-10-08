@@ -1,16 +1,24 @@
 import { basename, resolve } from 'node:path'
 import { type AdminClient, ifMatch, isTulaAdminError } from '@tula/admin'
 import { type EnvironmentConfig, providerSecret, resolveSecret } from '@tula/config'
-import { MAX_WEBHOOK_URL_LENGTH } from '@tula/contract'
+import { type HookPoint, MAX_WEBHOOK_URL_LENGTH } from '@tula/contract'
 import { CONFIG_HASH_HEADER, CONFIG_MANAGED_BY_HEADER } from '@tula/contract/headers'
 import { type OptionSpec, UsageError } from '../args'
-import { MANAGING_TOOL, type Operation, orderOperations, type Plan, webhookSnapshot } from '../diff'
+import {
+  hookSnapshot,
+  MANAGING_TOOL,
+  type Operation,
+  orderOperations,
+  type Plan,
+  webhookSnapshot,
+} from '../diff'
 import { printable } from '../doctor'
 import { type Command, type CommandContext, EXIT, reportError } from '../framework'
 import type { Host } from '../host'
 import {
   deletedAuditAge,
   describeOperation,
+  hookCounts,
   OVER_LIMIT_ADVICE,
   planBlockers,
   planToJson,
@@ -45,16 +53,16 @@ const APPLY_OPTIONS = {
     type: 'string',
     value: '<path>',
     description:
-      'Write the signing secret of each webhook endpoint the run creates to this new file (JSON, mode 0600). The server shows a secret only once.',
+      'Write the signing secret of each webhook endpoint and each hook the run creates to this new file (JSON, mode 0600). The server shows a secret only once.',
   },
   'show-secrets': {
     type: 'boolean',
-    description: 'Print the signing secret of each webhook endpoint the run creates.',
+    description: 'Print the signing secret of each webhook endpoint and each hook the run creates.',
   },
   'discard-secrets': {
     type: 'boolean',
     description:
-      'Create webhook endpoints without keeping their signing secrets (rotate one later to get it).',
+      'Create webhook endpoints and hooks without keeping their signing secrets (rotate an endpoint’s later to get one; a hook has to be removed and added again).',
   },
   'expect-revision': {
     type: 'string',
@@ -84,11 +92,26 @@ function warningBeforeQuestion(plan: Plan): string {
     : `This WEAKENS security (${paths}) and ${deletes}. ${removes}`
 }
 
-/** The signing secret of an endpoint a run created: what the server answered, once. */
+/**
+ * The signing secret of a webhook endpoint or a hook a run created: what the server answered,
+ * once. This is also an entry of the secrets file: an endpoint's is `{ id, url, secret }`, as
+ * it has always been, and a hook's begins with `hook`, its point, which is how a reader tells
+ * the two apart.
+ */
 interface CreatedSecret {
+  /** The point, for a hook's secret; absent for a webhook endpoint's. */
+  hook?: HookPoint
   id: string
   url: string
   secret: string
+}
+
+/** The secrets of the webhook endpoints among what a run created, and those of the hooks. */
+function byKind(created: readonly CreatedSecret[]) {
+  return {
+    webhooks: created.filter((entry) => entry.hook === undefined),
+    hooks: created.filter((entry) => entry.hook !== undefined),
+  }
 }
 
 /** What the operator asked to be done with the secrets of the endpoints a run creates. */
@@ -152,14 +175,36 @@ async function secretsHost(context: CommandContext, file: string): Promise<Host>
   return host
 }
 
-const NEEDS_SECRET_CHOICE = (created: number) =>
-  `This plan creates ${created} webhook ${created === 1 ? 'endpoint' : 'endpoints'}, and the server shows ` +
-  `${created === 1 ? 'its signing secret' : 'each signing secret'} only once, in its answer to this run. ` +
-  `Nothing was changed. Say what to do with ${created === 1 ? 'it' : 'them'}:\n` +
-  '  --secrets-file <path>  write to a new file only you can read (mode 0600)\n' +
-  '  --show-secrets         print on standard output\n' +
-  '  --discard-secrets      keep nothing. To get a secret later, rotate it: for the 24 hours of ' +
-  'the overlap deliveries are then also signed with the first secret, which nobody holds. That is harmless.'
+/** How a secret that was not kept is got later, by what the run creates. */
+const LATER = {
+  webhook:
+    'To get a secret later, rotate it: for the 24 hours of the overlap deliveries are then ' +
+    'also signed with the first secret, which nobody holds. That is harmless.',
+  hook:
+    'A hook’s secret cannot be rotated: to get one later, remove the hook and add it again ' +
+    '(its receiver cannot verify a question until then).',
+}
+
+const NEEDS_SECRET_CHOICE = (endpoints: number, hooks: number) => {
+  const created = endpoints + hooks
+  const what = [
+    endpoints > 0 ? `${endpoints} webhook ${endpoints === 1 ? 'endpoint' : 'endpoints'}` : '',
+    hooks > 0 ? `${hooks} ${hooks === 1 ? 'hook' : 'hooks'}` : '',
+  ]
+    .filter((part) => part !== '')
+    .join(' and ')
+  const later = [endpoints > 0 ? LATER.webhook : '', hooks > 0 ? LATER.hook : '']
+    .filter((part) => part !== '')
+    .join(' ')
+  return (
+    `This plan creates ${what}, and the server shows ` +
+    `${created === 1 ? 'its signing secret' : 'each signing secret'} only once, in its answer to this run. ` +
+    `Nothing was changed. Say what to do with ${created === 1 ? 'it' : 'them'}:\n` +
+    '  --secrets-file <path>  write to a new file only you can read (mode 0600)\n' +
+    '  --show-secrets         print on standard output\n' +
+    `  --discard-secrets      keep nothing. ${later}`
+  )
+}
 
 /** Thrown inside the run when the endpoints are no longer what the plan read. */
 class StaleWebhooks extends Error {}
@@ -178,6 +223,66 @@ const UNREAD_WEBHOOKS =
 const STALE_WEBHOOKS =
   'The webhook endpoints were changed by someone else after this plan was made. Nothing was ' +
   'written to them. Run `tula diff` again and review the new plan.'
+
+/** Thrown inside the run when the hooks are no longer what the plan read. */
+class StaleHooks extends Error {}
+
+/** Thrown inside the run when the hooks could not be read again: no write was tried. */
+class UnreadHooks extends Error {
+  constructor(readonly reason: unknown) {
+    super('the hooks could not be read again')
+  }
+}
+
+const UNREAD_HOOKS =
+  'The hooks could not be read again before the first write to them, so nothing was written ' +
+  'to them.'
+
+const STALE_HOOKS =
+  'The hooks were changed by someone else after this plan was made. Nothing was written to ' +
+  'them. Run `tula diff` again and review the new plan.'
+
+/**
+ * One write to a hook: what the file says for a registration, only what differs for a
+ * change. The body never has a field for a secret: the server makes it and answers it once.
+ */
+async function runHookOperation(
+  admin: AdminClient,
+  environment: EnvironmentConfig,
+  operation: Extract<Operation, { kind: `hook.${string}` }>
+): Promise<CreatedSecret | undefined> {
+  if (operation.kind === 'hook.delete') {
+    await admin.call('deleteHook', { params: { id: operation.id } })
+    return undefined
+  }
+  const desired = environment.hooks?.[operation.point]
+  if (!desired) {
+    throw new Error('a hook operation has no entry in the config')
+  }
+  if (operation.kind === 'hook.update') {
+    const changed = (path: string) => operation.change.fields.some((field) => field.path === path)
+    await admin.call('updateHook', {
+      params: { id: operation.id },
+      body: {
+        ...(changed('url') && { url: desired.url }),
+        ...(changed('enabled') && { enabled: desired.enabled }),
+        ...(changed('deadlineMs') && { deadlineMs: desired.deadlineMs }),
+        ...(changed('failureMode') && { failureMode: desired.failureMode }),
+      },
+    })
+    return undefined
+  }
+  const answer = await admin.call('createHook', {
+    body: {
+      point: operation.point,
+      url: desired.url,
+      enabled: desired.enabled,
+      deadlineMs: desired.deadlineMs,
+      failureMode: desired.failureMode,
+    },
+  })
+  return { hook: operation.point, id: answer.data.id, url: desired.url, secret: answer.data.secret }
+}
 
 /** The secrets a run will write, read from the environment before anything is changed. */
 function resolveSecrets(
@@ -248,7 +353,7 @@ async function runOperation(
   plan: Plan,
   environment: EnvironmentConfig,
   secrets: ReadonlyMap<string, string>,
-  operation: Exclude<Operation, { kind: `webhook.${string}` }>
+  operation: Exclude<Operation, { kind: `webhook.${string}` | `hook.${string}` }>
 ): Promise<number | undefined> {
   if (operation.kind === 'settings') {
     const answer = await admin.call('replaceEnvironmentSettings', {
@@ -314,14 +419,16 @@ const STALE =
   'the settings. Run `tula diff` again and review the new plan.'
 
 /**
- * `tula apply`: make an environment's settings and providers what the config file says.
+ * `tula apply`: make an environment's settings, providers, webhook endpoints and hooks what
+ * the config file says.
  *
  * It prints the same plan as `tula diff`, asks before changing anything (`--yes` skips the
  * question; without it a run that is not at a terminal refuses instead of hanging), and
  * refuses two plans unless told otherwise: one that would reset settings this version does not
  * know (`--allow-unknown`), and, under `--yes`, where nobody reads the warning, one that
- * weakens security (`--allow-weaker`) or removes a webhook endpoint
- * (`--allow-webhook-removal`). A plan that creates a webhook endpoint needs a word on its
+ * weakens security (`--allow-weaker`: the settings' weakenings and the hooks') or removes a
+ * webhook endpoint (`--allow-webhook-removal`). A plan that creates a webhook endpoint or a
+ * hook needs a word on its
  * signing secret, which the server shows once (`--secrets-file`, `--show-secrets`,
  * `--discard-secrets`); the secret is redacted from all output unless it was asked for. It
  * replaces the settings with `If-Match` on the revision the plan was made against, so a change
@@ -341,10 +448,10 @@ export const applyCommand: Command = {
   description:
     'Prints the plan, asks for confirmation, then replaces the environment’s settings (only if ' +
     'nobody changed them since the plan was made) and creates, updates or deletes OAuth ' +
-    'providers and, when the file lists them, webhook endpoints. Provider secrets are read ' +
-    'from the environment variables the config names. A new webhook endpoint’s signing secret ' +
-    'is made by the server and shown once: the run needs --secrets-file, --show-secrets or ' +
-    '--discard-secrets.\n\n' +
+    'providers and, when the file lists them, webhook endpoints and hooks. Provider secrets ' +
+    'are read from the environment variables the config names. The signing secret of a new ' +
+    'webhook endpoint or a new hook is made by the server and shown once: the run needs ' +
+    '--secrets-file, --show-secrets or --discard-secrets.\n\n' +
     'It refuses a plan that would reset settings this version of tula does not know (unless ' +
     '--allow-unknown), and with --yes a plan that weakens security (unless --allow-weaker) or ' +
     'removes a webhook endpoint (unless --allow-webhook-removal).\n\n' +
@@ -370,8 +477,11 @@ export const applyCommand: Command = {
     }
     const operations = orderOperations(plan)
     const created: CreatedSecret[] = []
-    /** Endpoints that exist and whose secret could be put nowhere: never the secret itself. */
-    const notKept: { id: string; url: string }[] = []
+    /**
+     * Endpoints and hooks that exist and whose secret could be put nowhere: never the secret
+     * itself. A hook's entry has its point.
+     */
+    const notKept: { hook?: HookPoint; id: string; url: string }[] = []
     const report = (applied: Operation[], failed: Operation | undefined, revision: number) => {
       if (json) {
         const notApplied = operations.slice(applied.length + (failed ? 1 : 0))
@@ -386,7 +496,10 @@ export const applyCommand: Command = {
               ...(choice.file !== undefined && created.length > 0 && { secretsFile: choice.file }),
               ...(notKept.length > 0 && { secretsNotKept: notKept }),
               // Only because it was asked for: the one place a secret is ever printed.
-              ...(choice.show && { webhookSecrets: created }),
+              ...(choice.show && {
+                webhookSecrets: byKind(created).webhooks,
+                hookSecrets: byKind(created).hooks,
+              }),
             },
             null,
             2
@@ -455,9 +568,12 @@ export const applyCommand: Command = {
     }
     // The server answers a new endpoint's secret once. A run that was not told what to do
     // with it would throw it away without a word, or print it without being asked: neither.
-    const creating = webhookCounts(plan).created
+    // A hook's is the same: one answer, once.
+    const endpoints = webhookCounts(plan).created
+    const hooks = hookCounts(plan).created
+    const creating = endpoints + hooks
     if (creating > 0 && !choice.show && !choice.discard && choice.file === undefined) {
-      output.error(`${output.errorStyle.red('error:')} ${NEEDS_SECRET_CHOICE(creating)}`)
+      output.error(`${output.errorStyle.red('error:')} ${NEEDS_SECRET_CHOICE(endpoints, hooks)}`)
       return EXIT.error
     }
     const secretsFile =
@@ -546,15 +662,25 @@ export const applyCommand: Command = {
           `Wrote ${signing(written)} to ${secretsFile.path} (mode 0600). It is not shown again: give it to the receiver, then delete the file.`
         )
       } else if (choice.discard && created.length > 0) {
-        say(
-          `${signing(created.length)} ${created.length === 1 ? 'was' : 'were'} not kept (--discard-secrets). To get one, rotate it: POST /v1/admin/webhook-endpoints/<id>/secret/rotate.`
-        )
+        const { webhooks, hooks } = byKind(created)
+        const were = (count: number) => (count === 1 ? 'was' : 'were')
+        if (webhooks.length > 0) {
+          say(
+            `${signing(webhooks.length)} ${were(webhooks.length)} not kept (--discard-secrets). To get one, rotate it: POST /v1/admin/webhook-endpoints/<id>/secret/rotate.`
+          )
+        }
+        if (hooks.length > 0) {
+          say(
+            `${signing(hooks.length)} of ${hooks.length === 1 ? 'a hook' : 'hooks'} ${were(hooks.length)} not kept (--discard-secrets). A hook’s secret cannot be rotated: to get one, remove the hook and apply again.`
+          )
+        }
       }
     }
 
     const applied: Operation[] = []
     let revision = plan.revision
     let webhooksChecked = false
+    let hooksChecked = false
     /** What was and was not applied, the note on the secrets, and the run's failing end. */
     const stop = async (failed: Operation | undefined): Promise<number> => {
       const notApplied = operations.slice(applied.length)
@@ -579,10 +705,49 @@ export const applyCommand: Command = {
       return EXIT.error
     }
     for (const operation of operations) {
-      /** An endpoint this operation created whose secret could not be put in the file. */
+      /** What this operation created whose secret could not be put in the file. */
       let unkept: CreatedSecret | undefined
+      /** Take the secret the server just answered: redact it, then keep it where asked. */
+      const take = async (made: CreatedSecret) => {
+        // Before anything else can print: unless it was asked for, no line of this run
+        // may carry it, whatever goes wrong next.
+        if (!choice.show) {
+          output.redact(made.secret)
+        }
+        created.push(made)
+        if (secretsFile) {
+          // The endpoint or the hook exists whatever happens to the file: a failure here is
+          // said as what it is, below, and never as a failed creation.
+          await keep(secretsFile).catch(() => {
+            unkept = made
+          })
+        }
+      }
       try {
         if (
+          operation.kind === 'hook.create' ||
+          operation.kind === 'hook.update' ||
+          operation.kind === 'hook.delete'
+        ) {
+          // The server guards a hook's write with what it read itself a moment before, not
+          // with what this plan read. So the hooks are read once more, as late as possible:
+          // what the plan called a weakening, or did not, must still be true of what it
+          // writes over. This narrows the window to the run's own writes.
+          if (!hooksChecked) {
+            const now = await target.admin.call('listHooks').catch((reason) => {
+              // Not a failure of this operation: it was never tried.
+              throw new UnreadHooks(reason)
+            })
+            if (hookSnapshot(now.data.data) !== plan.hooks.seen) {
+              throw new StaleHooks()
+            }
+            hooksChecked = true
+          }
+          const made = await runHookOperation(target.admin, environment, operation)
+          if (made) {
+            await take(made)
+          }
+        } else if (
           operation.kind === 'webhook.create' ||
           operation.kind === 'webhook.update' ||
           operation.kind === 'webhook.delete'
@@ -602,19 +767,7 @@ export const applyCommand: Command = {
           }
           const made = await runWebhookOperation(target.admin, environment, operation)
           if (made) {
-            // Before anything else can print: unless it was asked for, no line of this run
-            // may carry it, whatever goes wrong next.
-            if (!choice.show) {
-              output.redact(made.secret)
-            }
-            created.push(made)
-            if (secretsFile) {
-              // The endpoint exists whatever happens to the file: a failure here is said as
-              // what it is, below, and never as a failed creation.
-              await keep(secretsFile).catch(() => {
-                unkept = made
-              })
-            }
+            await take(made)
           }
         } else {
           revision =
@@ -632,6 +785,11 @@ export const applyCommand: Command = {
         } else if (error instanceof UnreadWebhooks) {
           output.error(`${output.errorStyle.red('error:')} ${UNREAD_WEBHOOKS}`)
           reportError(output, error.reason)
+        } else if (error instanceof StaleHooks) {
+          output.error(`${output.errorStyle.red('error:')} ${STALE_HOOKS}`)
+        } else if (error instanceof UnreadHooks) {
+          output.error(`${output.errorStyle.red('error:')} ${UNREAD_HOOKS}`)
+          reportError(output, error.reason)
         } else {
           output.error(`Failed: ${describeOperation(operation)}`)
           // The API's own account of why, with the field paths of a validation error.
@@ -639,7 +797,12 @@ export const applyCommand: Command = {
           // For an address the server will not call, its fixed word for which rule: all it
           // gives, and nothing of the address or of what its name resolved to.
           const reason = isTulaAdminError(error) ? error.params.reason : undefined
-          if (operation.kind === 'webhook.create' && typeof reason === 'string') {
+          // A hook's address is judged when it is registered and when it is changed.
+          const judged =
+            operation.kind === 'webhook.create' ||
+            operation.kind === 'hook.create' ||
+            operation.kind === 'hook.update'
+          if (judged && typeof reason === 'string') {
             output.error(`  reason: ${printable(reason, 60)}`)
           }
         }
@@ -648,17 +811,29 @@ export const applyCommand: Command = {
       applied.push(operation)
       if (!json) {
         output.line(output.style.green(`  done  ${describeOperation(operation)}`))
-        const made = operation.kind === 'webhook.create' ? created.at(-1) : undefined
+        const creates = operation.kind === 'webhook.create' || operation.kind === 'hook.create'
+        const made = creates ? created.at(-1) : undefined
         if (made && choice.show) {
           output.line(`        signing secret, shown this once: ${made.secret}`)
         }
       }
       if (unkept !== undefined && secretsFile) {
         const lost: CreatedSecret = unkept
-        notKept.push({ id: lost.id, url: lost.url })
+        const what =
+          lost.hook === undefined
+            ? `The webhook endpoint ${printable(lost.url, MAX_WEBHOOK_URL_LENGTH)}`
+            : `The hook ${lost.hook}`
+        const later =
+          lost.hook === undefined
+            ? `To get one, rotate it: POST /v1/admin/webhook-endpoints/${printable(lost.id, 40)}/secret/rotate.`
+            : 'A hook’s secret cannot be rotated: to get one, remove the hook and apply again.'
+        notKept.push({
+          ...(lost.hook !== undefined && { hook: lost.hook }),
+          id: lost.id,
+          url: lost.url,
+        })
         output.error(
-          `${output.errorStyle.red('error:')} The webhook endpoint ${printable(lost.url, MAX_WEBHOOK_URL_LENGTH)} was created, but its signing secret could not be written to ${secretsFile.path}: it was not kept. ` +
-            `To get one, rotate it: POST /v1/admin/webhook-endpoints/${printable(lost.id, 40)}/secret/rotate.`
+          `${output.errorStyle.red('error:')} ${what} was created, but its signing secret could not be written to ${secretsFile.path}: it was not kept. ${later}`
         )
         return stop(undefined)
       }

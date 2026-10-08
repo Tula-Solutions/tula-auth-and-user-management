@@ -391,6 +391,22 @@ describe('the example config', () => {
       },
     ])
     expect(selectEnvironment(config, 'dev').webhooks).toBeUndefined()
+    // The same for hooks, each entry with the API's defaults filled in.
+    expect(prod.hooks).toEqual({
+      before_sign_up: {
+        url: 'https://api.northline.app/hooks/tula/sign-up',
+        enabled: true,
+        deadlineMs: 2000,
+        failureMode: 'deny',
+      },
+      before_token: {
+        url: 'https://api.northline.app/hooks/tula/claims',
+        enabled: true,
+        deadlineMs: 1000,
+        failureMode: 'deny',
+      },
+    })
+    expect(selectEnvironment(config, 'dev').hooks).toBeUndefined()
   })
 })
 
@@ -684,5 +700,171 @@ describe('JWT templates', () => {
       },
     })
     expect(other).toBe(one)
+  })
+})
+
+describe('hooks', () => {
+  const ASK = 'https://api.northline.app/hooks/tula'
+
+  function hooksOf(input: TulaConfigInput) {
+    return defineConfig(input).environments.dev?.hooks
+  }
+
+  test('an environment without the key does not manage hooks: the key stays absent', () => {
+    const dev = defineConfig({ environments: { dev: {} } }).environments.dev
+    expect(dev && Object.hasOwn(dev, 'hooks')).toBe(false)
+    expect(hooksOf({ environments: { dev: { hooks: {} } } })).toEqual({})
+  })
+
+  test('a hook is keyed by its point; what is left out takes the API’s defaults', () => {
+    expect(
+      hooksOf({
+        environments: {
+          dev: {
+            hooks: {
+              before_sign_up: { url: ASK },
+              before_token: {
+                url: `${ASK}/claims`,
+                deadlineMs: 500,
+                failureMode: 'allow',
+                enabled: false,
+              },
+            },
+          },
+        },
+      })
+    ).toEqual({
+      // The contract's defaults (`CreateHookRequestSchema`): on, two seconds, refuse on failure.
+      before_sign_up: { url: ASK, enabled: true, deadlineMs: 2000, failureMode: 'deny' },
+      before_token: {
+        url: `${ASK}/claims`,
+        enabled: false,
+        deadlineMs: 500,
+        failureMode: 'allow',
+      },
+    })
+  })
+
+  test('a secret is a type error and a run-time error that does not repeat it', () => {
+    const literal = 'whsec_bGl0ZXJhbC1ob29rLXNlY3JldC12YWx1ZTEyMw'
+    const error = refusal(() =>
+      defineConfig({
+        environments: {
+          dev: {
+            hooks: {
+              // @ts-expect-error a hook has no secret field: the server makes the secret
+              before_sign_up: { url: ASK, secret: literal },
+            },
+          },
+        },
+      })
+    )
+    expect(error.code).toBe('config.invalid')
+    expect(error.issues).toEqual([
+      { path: 'environments.dev.hooks.before_sign_up.secret', message: 'unknown key' },
+    ])
+    expect(Bun.inspect(error)).not.toContain(literal)
+  })
+
+  test.each([
+    ['a point the contract does not define', { before_refresh: { url: ASK } }, 'before_refresh'],
+    ['no address', { before_session: {} }, 'before_session.url'],
+    [
+      'an address with a space',
+      { before_session: { url: 'https://a.example/x y' } },
+      'before_session.url',
+    ],
+    [
+      'a deadline under the least',
+      { before_sign_up: { url: ASK, deadlineMs: 99 } },
+      'before_sign_up.deadlineMs',
+    ],
+    [
+      'a deadline over the most',
+      { before_sign_up: { url: ASK, deadlineMs: 5001 } },
+      'before_sign_up.deadlineMs',
+    ],
+    [
+      'a failure mode that is neither',
+      { before_token: { url: ASK, failureMode: 'open' } },
+      'before_token.failureMode',
+    ],
+    [
+      'enabled that is not a boolean',
+      { before_token: { url: ASK, enabled: 'yes' } },
+      'before_token.enabled',
+    ],
+    ['a list in place of the points', [{ point: 'before_sign_up', url: ASK }], ''],
+  ])('refuses %s, by path, without repeating a value', (_, hooks, path) => {
+    const error = refusal(() => defineConfig({ environments: { dev: { hooks: hooks as never } } }))
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      path === '' ? 'environments.dev.hooks' : `environments.dev.hooks.${path}`,
+    ])
+    expect(error.message).not.toContain('x y')
+    expect(error.message).not.toContain('open')
+  })
+
+  test.each([
+    ['a user and a password', 'https://hookuser:hunter2secret@api.northline.app/hooks'],
+    ['a user alone', 'https://hookuser@api.northline.app/hooks'],
+    ['a password alone', 'https://:hunter2secret@api.northline.app/hooks'],
+  ])('credentials in an address (%s) are refused by position, never repeated', (_, url) => {
+    const error = refusal(() =>
+      defineConfig({
+        environments: { dev: { hooks: { before_sign_up: { url: ASK }, before_session: { url } } } },
+      })
+    )
+    expect(error.issues).toEqual([
+      {
+        path: 'environments.dev.hooks.before_session.url',
+        message:
+          'must not carry a user name or a password (user:password@host): the server refuses such an address, and an address is printed in plans and logs',
+      },
+    ])
+    expect(Bun.inspect(error)).not.toContain('hookuser')
+    expect(Bun.inspect(error)).not.toContain('hunter2secret')
+  })
+
+  test('the fingerprint covers every field of a hook, and an absent key adds nothing', async () => {
+    const hash = async (input: TulaConfigInput) => {
+      const dev = defineConfig(input).environments.dev
+      if (!dev) {
+        throw new Error('fixture')
+      }
+      return hashEnvironmentConfig(dev)
+    }
+    const one = await hash({ environments: { dev: { hooks: { before_sign_up: { url: ASK } } } } })
+    // A default written out is the same file.
+    expect(
+      await hash({
+        environments: {
+          dev: {
+            hooks: {
+              before_sign_up: { failureMode: 'deny', deadlineMs: 2000, enabled: true, url: ASK },
+            },
+          },
+        },
+      })
+    ).toBe(one)
+    for (const other of [
+      { url: `${ASK}/2` },
+      { url: ASK, failureMode: 'allow' as const },
+      { url: ASK, deadlineMs: 2001 },
+      { url: ASK, enabled: false },
+    ]) {
+      expect(await hash({ environments: { dev: { hooks: { before_sign_up: other } } } })).not.toBe(
+        one
+      )
+    }
+    expect(
+      await hash({ environments: { dev: { hooks: { before_session: { url: ASK } } } } })
+    ).not.toBe(one)
+    // What an empty entry hashed to before hooks could be written: the value the webhooks'
+    // test pins. No environment already applied shows a new version of its file.
+    const unmanaged = await hash({ environments: { dev: {} } })
+    expect(unmanaged).toBe(
+      'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    )
+    expect(await hash({ environments: { dev: { hooks: {} } } })).not.toBe(unmanaged)
   })
 })

@@ -1,8 +1,11 @@
 import {
   type ActivityType,
+  CreateHookRequestSchema,
   CreateWebhookEndpointRequestSchema,
   type EnvironmentSettingsInput,
   EnvironmentSettingsInputSchema,
+  type HookFailureMode,
+  type HookPoint,
   MAX_WEBHOOK_ENDPOINTS,
   OAUTH_PROVIDERS,
   type OAuthProvider,
@@ -128,16 +131,16 @@ function carriesCredentials(url: string): boolean {
   }
 }
 
+const CREDENTIALS_MESSAGE =
+  'must not carry a user name or a password (user:password@host): the server refuses such an address, and an address is printed in plans and logs'
+
 const WebhookEndpoint = z.strictObject({
   // The server refuses credentials in an address when the endpoint is registered. Here they
   // are refused sooner: `tula diff` prints every address, into terminals and pipeline logs,
   // before the server is ever asked. Only in the file's schema, not the contract's: the API
   // answers such an address with its own error (`webhook.url_not_allowed`), which callers
   // of the API already rely on.
-  url: WebhookAddress.refine((url) => !carriesCredentials(url), {
-    message:
-      'must not carry a user name or a password (user:password@host): the server refuses such an address, and an address is printed in plans and logs',
-  }),
+  url: WebhookAddress.refine((url) => !carriesCredentials(url), { message: CREDENTIALS_MESSAGE }),
   // A set: each type is checked where it was written, then repeats are dropped and the order
   // fixed, so that neither is a difference to `tula diff` or to the config's fingerprint.
   eventTypes: z
@@ -170,11 +173,34 @@ const Webhooks = z.array(WebhookEndpoint).superRefine((endpoints, context) => {
   })
 })
 
+// A hook's fields are the admin API's own (`POST /v1/admin/hooks`), with its defaults: a
+// hook in the file is whole, so what an entry leaves out is what a registration that leaves
+// it out gets (on, two seconds, refuse on failure). There is no point field: the key is the
+// point. And no secret field: the server makes the secret.
+const HookEntry = z.strictObject({
+  // Refused here for the same reason as a webhook endpoint's: every address is printed.
+  url: CreateHookRequestSchema.shape.url.refine((url) => !carriesCredentials(url), {
+    message: CREDENTIALS_MESSAGE,
+  }),
+  enabled: CreateHookRequestSchema.shape.enabled,
+  deadlineMs: CreateHookRequestSchema.shape.deadlineMs,
+  failureMode: CreateHookRequestSchema.shape.failureMode,
+})
+
+// One key per point of the contract's `HOOK_POINTS`, and no other: an environment has at
+// most one hook per point, so the point is what names a hook in the file.
+const Hooks = z.strictObject({
+  before_sign_up: HookEntry.optional(),
+  before_session: HookEntry.optional(),
+  before_token: HookEntry.optional(),
+} satisfies Record<HookPoint, unknown>)
+
 const Environment = z.strictObject({
   kind: z.enum(['development', 'production']).optional(),
   settings: EnvironmentSettingsInputSchema.prefault({}),
   providers: Providers.prefault({}),
   webhooks: Webhooks.optional(),
+  hooks: Hooks.optional(),
 })
 
 const Config = z.strictObject({
@@ -290,6 +316,48 @@ export interface WebhookEndpointConfig {
 }
 
 /**
+ * One hook of an environment: the address the server asks at a point, and what a call that
+ * fails does.
+ *
+ * There is no field for the signing secret, on purpose: the server makes it and returns it
+ * once, when `tula apply` registers the hook (`--secrets-file`, `--show-secrets`). A `secret`
+ * key does not compile and is refused when the file is loaded.
+ *
+ * A hook is named by its **point** (the key it is written under), so a changed address is the
+ * same hook with the same secret.
+ *
+ * @example
+ * ```ts
+ * const hook: HookConfig = { url: 'https://api.northline.app/hooks/sign-up', deadlineMs: 1500 }
+ * ```
+ */
+export interface HookConfig {
+  /** Where the question is posted: `https`, no credentials, a host the server may call. */
+  url: string
+  /** Whether the hook is asked. Defaults to `true`. Switching one off is a weakening. */
+  enabled?: boolean
+  /** How long the server waits for the answer, in milliseconds: 100 to 5000. Defaults to 2000. */
+  deadlineMs?: number
+  /**
+   * What a call that fails does: `deny` (the default) refuses what was asked about, `allow`
+   * lets it happen as if there were no hook. `allow` is a weakening: `tula diff` flags it and
+   * `tula apply --yes` needs `--allow-weaker`.
+   */
+  failureMode?: HookFailureMode
+}
+
+/**
+ * The hooks of one environment, by point. A point left out is not managed by the file:
+ * `tula apply` leaves the server's hook for it alone unless it is run with `--prune`.
+ *
+ * @example
+ * ```ts
+ * const hooks: HooksConfig = { before_sign_up: { url: 'https://api.northline.app/hooks/sign-up' } }
+ * ```
+ */
+export type HooksConfig = Partial<Record<HookPoint, HookConfig>>
+
+/**
  * The settings document of one environment, as it is written in a config file: every field
  * optional. It is the body of `PUT /v1/admin/settings` (`EnvironmentSettingsInput`).
  *
@@ -333,6 +401,13 @@ export interface EnvironmentConfigInput {
    * and shown as unmanaged, and `tula apply --prune` removes it.
    */
   webhooks?: WebhookEndpointConfig[]
+  /**
+   * The hooks, by point. Left out, hooks are **not managed** by the file: `tula` neither reads
+   * nor changes them. Written (an empty object included), a point with an entry is made what
+   * the entry says; a hook the server has for a point without one is left alone and shown as
+   * unmanaged, and `tula apply --prune` removes it.
+   */
+  hooks?: HooksConfig
 }
 
 /**
@@ -376,6 +451,11 @@ export interface EnvironmentConfig {
    * sorted and without repeats. Absent when the file does not mention webhooks.
    */
   webhooks?: WebhookEndpointConfig[]
+  /**
+   * The hooks, by point, when the file manages them: every field of each filled in. Absent
+   * when the file does not mention hooks.
+   */
+  hooks?: Partial<Record<HookPoint, Required<HookConfig>>>
 }
 
 /**
@@ -644,10 +724,11 @@ function withoutUnusedTemplates(environment: EnvironmentConfig): unknown {
  * writes, so the dashboard and a later `tula diff` can say which version of the file is in
  * force.
  *
- * It covers the settings, the providers and the webhook endpoints as written, with each
- * secret as the **name** of its variable: no secret value is hashed, so the fingerprint
+ * It covers the settings, the providers, the webhook endpoints and the hooks as written, with
+ * each secret as the **name** of its variable: no secret value is hashed, so the fingerprint
  * reveals nothing about one. An endpoint's event types count as a set, and an environment
- * that does not mention webhooks hashes as it did before they could be written. So does one
+ * that does not mention webhooks or hooks hashes as it did before they could be written (a
+ * hook's defaults count as written). So does one
  * that defines no JWT template and whose profiles name none; the order templates and their
  * claims are written in never counts.
  *

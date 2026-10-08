@@ -1,5 +1,5 @@
 import { MAX_WEBHOOK_ENDPOINTS, MAX_WEBHOOK_URL_LENGTH } from '@tula/contract'
-import type { Change, Operation, Plan, ProviderChange, WebhookChange } from './diff'
+import type { Change, HookChange, Operation, Plan, ProviderChange, WebhookChange } from './diff'
 import { printable } from './doctor'
 import type { Output } from './output'
 
@@ -123,6 +123,63 @@ function webhookLine(output: Output, change: WebhookChange): string {
     default:
       return style.dim(`  = ${url}: unchanged`)
   }
+}
+
+/** A hook's point for a person: one of the contract's, or whatever a later server sent. */
+function pointName(point: string): string {
+  return printable(point, 60)
+}
+
+function hookFields(change: HookChange): string[] {
+  return change.fields.map((field) => {
+    // An address is shown whole and as it is, like an endpoint's; the server's through
+    // `printable()`, which is what `address` does.
+    const value = (entry: unknown) => (field.path === 'url' ? address(String(entry)) : show(entry))
+    return field.kind === 'added'
+      ? `${field.path} ${value(field.after)}`
+      : `${field.path} ${value(field.before)} → ${value(field.after)}`
+  })
+}
+
+function hookLine(output: Output, change: HookChange): string {
+  const { style } = output
+  const point = pointName(change.point)
+  const fields = hookFields(change).join(', ')
+  switch (change.action) {
+    case 'create':
+      return style.green(`  + ${point}: create (${fields}; a signing secret is made, shown once)`)
+    case 'update':
+      return style.yellow(`  ~ ${point}: update (${fields})`)
+    case 'delete':
+      return style.red(`  - ${point}: remove (${address(change.url)}), with its signing secret`)
+    case 'unmanaged':
+      return style.dim(
+        `  = ${point}: unmanaged (on the server, not in the file; --prune removes it)`
+      )
+    case 'unknown':
+      return style.dim(
+        `  = ${point}: a point this version of tula does not know (left alone, also with --prune)`
+      )
+    default:
+      return style.dim(`  = ${point}: unchanged`)
+  }
+}
+
+/**
+ * How many hooks a plan creates and removes.
+ *
+ * @param plan - The plan.
+ * @returns The two counts.
+ *
+ * @example
+ * ```ts
+ * hookCounts(plan) // { created: 1, removed: 0 }
+ * ```
+ */
+export function hookCounts(plan: Pick<Plan, 'hooks'>): { created: number; removed: number } {
+  const count = (action: HookChange['action']) =>
+    plan.hooks.hooks.filter((hook) => hook.action === action).length
+  return { created: count('create'), removed: count('delete') }
 }
 
 /**
@@ -252,6 +309,12 @@ export function planWarnings(plan: Plan): string[] {
       `creates ${created} webhook ${plural(created, 'endpoint: its signing secret is', 'endpoints: each signing secret is')} shown once, to the run that creates it (\`tula apply\` needs --secrets-file <path>, --show-secrets or --discard-secrets)`
     )
   }
+  const hooks = hookCounts(plan).created
+  if (hooks > 0) {
+    warnings.push(
+      `creates ${hooks} ${plural(hooks, 'hook: its signing secret is', 'hooks: each signing secret is')} shown once, to the run that creates it (\`tula apply\` needs --secrets-file <path>, --show-secrets or --discard-secrets)`
+    )
+  }
   for (const change of plan.webhooks.endpoints) {
     if (change.reenables !== undefined) {
       warnings.push(
@@ -286,8 +349,8 @@ export function planWarnings(plan: Plan): string[] {
  * What `tula apply` will not do to a plan without being told to: reset settings this version
  * does not know (`--allow-unknown`); when nobody is asked (`--yes`), weaken security
  * (`--allow-weaker`) or remove a webhook endpoint with its delivery log
- * (`--allow-webhook-removal`); and create a webhook endpoint without a word on what becomes
- * of its signing secret (`--secrets-file`, `--show-secrets` or `--discard-secrets`).
+ * (`--allow-webhook-removal`); and create a webhook endpoint or a hook without a word on what
+ * becomes of its signing secret (`--secrets-file`, `--show-secrets` or `--discard-secrets`).
  *
  * @param plan - The plan.
  * @returns Which of them the plan needs.
@@ -295,7 +358,8 @@ export function planWarnings(plan: Plan): string[] {
  * @example
  * ```ts
  * applyRequirements(plan)
- * // { allowUnknown: false, allowWeaker: true, allowWebhookRemoval: false, webhookSecrets: false }
+ * // { allowUnknown: false, allowWeaker: true, allowWebhookRemoval: false,
+ * //   webhookSecrets: false, hookSecrets: false }
  * ```
  */
 export function applyRequirements(plan: Plan): {
@@ -303,6 +367,7 @@ export function applyRequirements(plan: Plan): {
   allowWeaker: boolean
   allowWebhookRemoval: boolean
   webhookSecrets: boolean
+  hookSecrets: boolean
 } {
   const { created, removed } = webhookCounts(plan)
   return {
@@ -310,6 +375,7 @@ export function applyRequirements(plan: Plan): {
     allowWeaker: plan.weakened.length > 0,
     allowWebhookRemoval: removed > 0,
     webhookSecrets: created > 0,
+    hookSecrets: hookCounts(plan).created > 0,
   }
 }
 
@@ -335,7 +401,8 @@ export function removedWebhooks(plan: Pick<Plan, 'webhooks'>): string | null {
  * One line that says what a write does.
  *
  * @param operation - The write.
- * @returns E.g. `settings: replace`, `provider google: create`, `webhook https://…: remove`.
+ * @returns E.g. `settings: replace`, `provider google: create`, `webhook https://…: remove`,
+ *   `hook before_sign_up: update`.
  *
  * @example
  * ```ts
@@ -345,6 +412,14 @@ export function removedWebhooks(plan: Pick<Plan, 'webhooks'>): string | null {
 export function describeOperation(operation: Operation): string {
   if (operation.kind === 'settings') {
     return 'settings: replace'
+  }
+  if (
+    operation.kind === 'hook.create' ||
+    operation.kind === 'hook.update' ||
+    operation.kind === 'hook.delete'
+  ) {
+    const did = { 'hook.create': 'create', 'hook.update': 'update', 'hook.delete': 'remove' }
+    return `hook ${operation.point}: ${did[operation.kind]}`
   }
   if (operation.kind === 'provider.delete') {
     return `provider ${operation.provider}: delete`
@@ -424,6 +499,16 @@ export function renderPlan(
       )
     }
   }
+  if (plan.hooks.managed) {
+    output.line()
+    output.line(style.bold('Hooks'))
+    if (plan.hooks.hooks.length === 0) {
+      output.line(style.dim('  none in the file, none on the server'))
+    }
+    for (const change of plan.hooks.hooks) {
+      output.line(hookLine(output, change))
+    }
+  }
   const warnings = planWarnings(plan)
   if (warnings.length > 0) {
     output.line()
@@ -437,7 +522,7 @@ export function renderPlan(
 /**
  * A plan for a machine: the same content as {@link renderPlan}, as plain data. A provider's
  * secret appears as `set` or `keep` and the name of its variable, never as a value; a webhook
- * endpoint's secret does not appear at all (no read returns one).
+ * endpoint's and a hook's secret do not appear at all (no read returns one).
  *
  * @param target - The environment's name in the config and the API's URL.
  * @param plan - The plan.
@@ -468,6 +553,7 @@ export function planToJson(
       removedFirst: plan.webhooks.removedFirst,
       overLimit: plan.webhooks.overLimit,
     },
+    hooks: { managed: plan.hooks.managed, hooks: plan.hooks.hooks },
     blockers: planBlockers(plan),
     managedBy: {
       supported: plan.marker.supported,

@@ -104,7 +104,8 @@ deletes it.
 
 **Webhook endpoints** follow the same rule, one level up: a file with no `webhooks` list does
 not manage them at all, and a list manages exactly what it names
-([Webhook endpoints](#webhook-endpoints)).
+([Webhook endpoints](#webhook-endpoints)). So do **hooks**, under a `hooks` key
+([Hooks](#hooks)).
 
 ## Webhook endpoints
 
@@ -241,6 +242,109 @@ So an address must not hold a secret:
 - A token in the path or the query is **not** refused (the server allows it) and is printed
   like the rest of the address. Prefer the signature to a token in the address.
 
+## Hooks
+
+An environment's [hooks](hooks.md) can be written in the file, by the point each is asked
+at. A hook is a question whose answer decides what happens next; it is not a webhook, and
+the two keys are managed apart.
+
+<!-- snippet: examples/tula-config/tula.config.ts#hooks -->
+```ts
+// The questions this environment asks before it acts, by point: at most one hook per
+// point. There is no secret to write here either. What an entry leaves out is the
+// API's default: on, a deadline of two seconds, and `failureMode: 'deny'` (a call that
+// fails refuses what was asked about). `dev` has no `hooks` key: its hooks are not
+// managed by this file.
+hooks: {
+  before_sign_up: { url: 'https://api.northline.app/hooks/tula/sign-up' },
+  before_token: { url: 'https://api.northline.app/hooks/tula/claims', deadlineMs: 1000 },
+},
+```
+<!-- /snippet -->
+
+- **No `hooks` key: not managed.** `tula` does not read the environment's hooks, never
+  changes one and says nothing about them, also with `--prune`. A file written before hooks
+  could be in it keeps the fingerprint it had. `hooks: {}` is different: it manages the
+  hooks and says there should be none (and, with `--prune`, removes the ones there are).
+- **A hook is its point.** An environment has at most one hook per point, so the point is
+  what a hook in the file is matched to. Changing the address of a point's hook is an
+  **update**: the hook keeps its id and its signing secret. (A webhook endpoint is its
+  address; a hook is not.)
+- **What an entry leaves out is the API's default**, and is managed: `enabled: true`,
+  `deadlineMs: 2000`, `failureMode: 'deny'`. An entry is the whole hook. **A change made in
+  the dashboard to a hook's switch, deadline or failure mode is reverted by the next
+  `tula apply`, and `tula diff` shows it in the plan first.** So a hook someone
+  switched off in the dashboard is switched on again by a file that does not say
+  `enabled: false`, and a hook set to `allow` there goes back to `deny`. A check that
+  silently stays off or loosened would be the worse surprise.
+- **A point the file leaves out is left alone** and shown as *unmanaged*, as a provider is.
+  `--prune` removes its hook.
+- **A point this version of `tula` does not know** (a later server's) is shown and never
+  touched, also with `--prune`.
+- **There is no secret in the file.** The entry has no field for one: a `secret` key does
+  not compile and is refused when the file is loaded. The server makes the signing secret
+  when the hook is registered and shows it once, to the run that creates it. `tula apply`
+  treats it exactly as it treats a new webhook endpoint's
+  ([above](#webhook-endpoints)): a plan that creates a hook is refused, before anything is
+  written, without `--secrets-file <path>`, `--show-secrets` or `--discard-secrets`; the
+  secret is removed from every line the run writes unless `--show-secrets` was given; and a
+  secret that could not be written to the file is said as not kept, with its hook reported
+  as created.
+- **One secrets file for both.** The file is one JSON list. A webhook endpoint's entry is
+  `{ "id", "url", "secret" }`, as it has always been; a hook's begins with the point:
+  `{ "hook": "before_sign_up", "id", "url", "secret" }`. A run that creates only endpoints
+  writes what it wrote before hooks existed. With `--json --show-secrets` the hooks' secrets
+  are in `hookSecrets`, beside `webhookSecrets`.
+- **A hook's secret cannot be rotated.** With `--discard-secrets`, or after a secret that
+  was not kept, the only way to get one is to remove the hook and add it again. Until then
+  its receiver cannot verify a question, so with `failureMode: 'deny'` what the hook guards
+  is refused. Prefer `--secrets-file`.
+- **What weakens.** The rule is the server's own (`hookWeakenings`, the one behind the audit
+  log's `weakened`), and the plan lists each case under `! weakens security` by its path:
+
+  | In the plan | Path | |
+  | --- | --- | --- |
+  | a hook created with, or changed to, `failureMode: 'allow'` | `hooks.<point>.failureMode` | a call that fails no longer refuses |
+  | a hook switched off (`enabled: false` where it was on) | `hooks.<point>.enabled` | the check is gone |
+  | a hook that is on, removed (`--prune`) | `hooks.<point>` | the check is gone |
+
+  `tula apply --yes` refuses such a plan, before any write, without `--allow-weaker`. There
+  is no separate flag for removing a hook: unlike a webhook endpoint's, a hook's removal
+  deletes no log, and what it costs is exactly the weakening. **Adding a hook that refuses
+  on failure (`deny`, the default) is not a weakening**, and neither is removing one that
+  was already off, switching one on, or going from `allow` to `deny`. Adding a `deny` hook
+  is still a change to who can sign in: if its endpoint does not answer, every sign-up or
+  sign-in it guards is refused from that moment. Deploy the receiver first.
+- **Order.** Hooks are written last: after the settings, every provider and every webhook
+  endpoint. An endpoint registered in the same run is then there for the `hook.*` events
+  the hook writes produce, and an address the server refuses for a hook does not stop
+  anything about signing in. Among themselves: new hooks, then changes that weaken nothing,
+  then changes that weaken, then removals. What tightens is in place before anything is
+  loosened, so a run that fails part-way has not left the environment weaker than the file
+  says and weaker than it was.
+- **Someone else's change.** Hooks have no revision either. `apply` reads them once more
+  just before its first hook write and stops, writing nothing to them, if one was added,
+  removed or changed (address, switch, deadline, failure mode) since the plan was made; if
+  that read fails it says so and writes nothing to them. As for webhook endpoints, that
+  catches a change made while a person read the plan and not one made in the moment between
+  the read and the writes. The server refuses a write to a hook that changed between its
+  own read and write (`resource.conflict`), which is reported as a failed operation.
+- **An address is printed**, as an endpoint's is, and one with a user name or a password is
+  refused when the file is loaded, by position (`hooks.before_sign_up.url`) and without the
+  value.
+
+In the plan:
+
+```
+Hooks
+  ~ before_sign_up: update (deadlineMs 2000 → 800, failureMode "deny" → "allow")
+  + before_session: create (url https://api.northline.app/hooks/tula/session, enabled true, deadlineMs 2000, failureMode "deny"; a signing secret is made, shown once)
+  - before_token: remove (https://api.northline.app/hooks/tula/claims), with its signing secret
+
+  ! weakens security: hooks.before_sign_up.failureMode, hooks.before_token (`tula apply --yes` needs --allow-weaker)
+  ! creates 1 hook: its signing secret is shown once, to the run that creates it (`tula apply` needs --secrets-file <path>, --show-secrets or --discard-secrets)
+```
+
 ## Pointing the CLI at an environment
 
 The environment a run changes is decided by the **secret key**, not by the name in the file.
@@ -310,6 +414,10 @@ Changes pending. Run `tula apply` to make them.
   claim as "no"; adding a template or a claim, and editing a template no profile uses, are
   ordinary changes), an audit retention period set or shortened. `tula apply --yes` refuses such a plan without `--allow-weaker`, and `diff`
   says so under the plan.
+- A [hook](#hooks) is flagged by the same rule the server records it by: created with or
+  changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off
+  (`hooks.<point>.enabled`), or removed while it is on (`hooks.<point>`). The settings'
+  paths come first in the list, then the hooks'.
 - `audit.retentionDays` is flagged **when applying would delete entries**: the file sets a
   period where the server keeps entries for ever (`null`, which is also what leaving it out
   means), or a shorter period than the server has. A longer period, the same one, or none
@@ -325,10 +433,12 @@ Changes pending. Run `tula apply` to make them.
 - `! the settings were changed outside the config file since the last apply`: someone saved
   in the dashboard or through the API. The differences are in the plan.
 - `--json` prints the same plan as data: `weakened` and `unknown` list the paths, `webhooks`
-  holds the endpoints, `blockers` the reasons the plan cannot be applied at all, and
+  holds the endpoints, `hooks` the hooks (`{ "managed", "hooks" }`), `blockers` the reasons
+  the plan cannot be applied at all, and
   `applyRequires` (`{ "allowUnknown": false, "allowWeaker": true, "allowWebhookRemoval":
-  false, "webhookSecrets": false }`) says what `apply` will ask for: the three flags, and a
-  word on the signing secrets of the endpoints it creates.
+  false, "webhookSecrets": false, "hookSecrets": false }`) says what `apply` will ask for:
+  the three flags, and a word on the signing secrets of the endpoints and of the hooks it
+  creates.
 
 | Exit code | Meaning |
 | --- | --- |
@@ -391,13 +501,13 @@ tula apply --env prod --yes    # no question: for CI
 | `--env`, `-e <name>` | the entry in the file; may be left out when it has one |
 | `--config`, `-c <path>` | default `tula.config.ts` in the current directory |
 | `--yes`, `-y` | apply without asking |
-| `--prune` | delete providers, and remove webhook endpoints, that the server has and the file does not list |
+| `--prune` | delete providers, and remove webhook endpoints and hooks, that the server has and the file does not list |
 | `--rotate-secrets` | send every managed provider's secret again |
 | `--expect-revision <n>` | apply only if the settings are still at this revision |
-| `--allow-weaker` | with `--yes`: apply a plan that weakens security |
+| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, or a [hook](#hooks)) |
 | `--allow-unknown` | apply although the server has settings this version does not know (they are reset) |
 | `--allow-webhook-removal` | with `--yes`: apply a plan that removes a webhook endpoint, with its pending deliveries and its delivery log |
-| `--secrets-file <path>` | write the signing secrets of the webhook endpoints the run creates to a new file (mode 0600) |
+| `--secrets-file <path>` | write the signing secrets of the webhook endpoints and the hooks the run creates to a new file (mode 0600) |
 | `--show-secrets` | print them |
 | `--discard-secrets` | keep none of them |
 | `--insecure-http` | allow a plain http API URL that is not localhost (a private network you trust) |

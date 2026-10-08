@@ -6,6 +6,8 @@ export {
   type EnvironmentKind,
   type EnvironmentSettingsConfig,
   env,
+  type HookConfig,
+  type HooksConfig,
   hashEnvironmentConfig,
   isSecretRef,
   type OAuthClientConfig,
