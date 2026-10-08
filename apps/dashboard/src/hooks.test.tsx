@@ -126,7 +126,7 @@ describe('the list of points', () => {
     expect(never.getAttribute('data-outcome')).toBe('none')
     // What the server does not record is said, so that silence is not read as "never asked".
     expect(never.textContent).toBe(
-      'No call of it has failed.Only the last call that failed is recorded. A call that was answered, with an allow or a denial, leaves no record here.'
+      'No failed call is recorded.Only the last call that failed is recorded. A call that was answered, with an allow or a denial, leaves no record here.'
     )
 
     const session = await card('before_session')

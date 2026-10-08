@@ -188,7 +188,7 @@ export type FailureOutcome = 'none' | 'timed-out' | 'failed'
  * nothing else: a call that was answered, with an allow or a denial, leaves no record.
  *
  * @param hook - The hook's `lastFailedAt` and `lastFailureReason`.
- * @returns `none` when no call has failed; `timed-out` for no answer in time; else `failed`.
+ * @returns `none` when no failed call is recorded; `timed-out` for no answer in time; else `failed`.
  */
 export function failureOutcome(
   hook: Pick<Hook, 'lastFailedAt' | 'lastFailureReason'>

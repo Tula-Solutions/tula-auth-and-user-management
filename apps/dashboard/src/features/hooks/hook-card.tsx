@@ -70,7 +70,7 @@ export function LastFailure({ hook }: { hook: Hook }) {
   return (
     <div data-testid='hook-last-failure' data-outcome={outcome} className='flex flex-col gap-0.5'>
       {outcome === 'none' ? (
-        <span>No call of it has failed.</span>
+        <span>No failed call is recorded.</span>
       ) : (
         <>
           <span>
