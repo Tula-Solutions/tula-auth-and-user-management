@@ -1,6 +1,7 @@
 {
   "name": "@tula/admin",
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "description": "Tula's typed admin API client for servers and tooling: every /v1/admin operation, generated from the OpenAPI contract. Takes a secret key; never for a browser.",

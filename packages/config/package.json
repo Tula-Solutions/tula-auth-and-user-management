@@ -1,6 +1,7 @@
 {
   "name": "@tula/config",
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "description": "Tula's config file: defineConfig() for tula.config.ts, validated with the contract's schemas. Environment settings and OAuth providers as code; secrets only by env-var reference.",

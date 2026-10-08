@@ -154,6 +154,10 @@ Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
 Phase 2 ([draft plan](docs/plans/phase-2.md)) adds native SDKs and Expo, webhooks, SMS codes
 and more providers; Phase 3 organizations, roles, invitations and importers.
 
+## License
+
+[Apache-2.0](LICENSE).
+
 ## Contributing
 
 Read [`AGENTS.md`](AGENTS.md) first. It is the canonical standard for every contributor, human or

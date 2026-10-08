@@ -1,6 +1,7 @@
 {
   "name": "@tula/nextjs",
   "version": "0.0.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "description": "Tula's Next.js SDK: a same-origin proxy route handler, middleware that verifies sessions offline, server helpers and the React components for the App Router.",
