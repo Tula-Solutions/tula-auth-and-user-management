@@ -352,7 +352,16 @@ Before finishing any change here, confirm each item holds and has a test:
     hook store; a step-up asks again and replaces what is stored (also with nothing, when
     the hook is gone or failed under `allow`), and under `deny` a failed call fails the
     step-up and leaves `amr`, `auth_time` and the claims as they were. Stored claims that
-    break a rule are issued as none. Two step-ups at once never store claims of neither.
+    break a rule are issued as none. Two step-ups at once never store claims of neither,
+    and a step-up that keeps losing asks exactly `STEP_UP_ATTEMPTS` times and then answers
+    503 with nothing changed (mutate the constant both ways). A template that outgrows a
+    session's stored claims costs the template's claims, never the hook's: test the
+    refresh, its replay in the grace window and both ways through a stateful check, and an
+    address that grew. `before_session`'s question has no email address; `before_token`'s
+    has neither an email nor an IP address. An enrolment inside a sign-in that a hook then
+    refuses leaves the user's earlier sessions alive and not denylisted, the factor absent
+    and no backup code valid; one that completes ends them, after the new session exists.
+    A backup code used for a refused sign-in is spent (nine left): pinned, not fixed.
 50. **JWT templates (ADR 0036):** custom claims are issued only under `ext`, only from the
     closed source list or an operator's constant, and only through `CustomClaims.build`.
     Test: every reserved name and every malformed key refused at save, with the field's
@@ -363,7 +372,7 @@ Before finishing any change here, confirm each item holds and has a test:
     name reaches a claim (canary); a template changed between sign-in and refresh; another
     environment's template never applied; a stale settings cache on another instance; a
     stored document with an unknown source or a dangling name still signs in; over the cap
-    at build drops the whole namespace and logs no value; a stateful session's answer
+    at build drops the whole namespace of a template alone and logs no value; a stateful session's answer
     carries the same claims; a refresh reads the user once. For a reader: a forged or
     malformed `ext` (not an object, an array, a reserved key, a nested value, over the cap)
     is absent, in a token and in the sealed header, with and without the middleware.

@@ -506,10 +506,20 @@ for `before_sign_up` and hold for all three unless they name it.
   (the user starts again): that cost is stated in `docs/hooks.md`. Never move the question
   before the attempt's compare-and-set (a parallel submit would ask twice), and never after
   `Sessions.create` (a refused sign-in would leave a live session).
-- **The question of `before_session` and `before_token` holds no address of any kind**: ids,
-  the client kind, the profile's name, `amr`, `signUp`, and for `before_session` the IP
-  address (`HookBeforeSessionDataSchema`, `HookBeforeTokenDataSchema`, strict). Never a
-  password, a code, a token, the attempt's id or the user agent.
+- **Neither later question holds an email address, and `before_token`'s holds no IP address
+  either**: ids, the client kind, the profile's name and `amr` in both; `signUp` and the
+  request's IP address in `before_session` only (`HookBeforeSessionDataSchema`,
+  `HookBeforeTokenDataSchema`, strict). A claim is stored and issued with every later
+  token, so it must not depend on the address of one request. Never a password, a code, a
+  token, the attempt's id or the user agent in either.
+- **An enrolment inside a sign-in ends the user's other sessions only after `finish`
+  returned** (`Mfa.confirmTotp` with `sweep: 'caller'`, then `Mfa.endSessionsWithoutFactor`
+  keeping the new session). A sign-in that a hook, the claims hook or the session limit
+  then refuses removes the factor again and leaves every earlier session alive: never sweep
+  before the attempt is known to complete. The standalone confirmation still sweeps first.
+- **A proof is spent before a hook is asked and is never given back**: a backup code, a time
+  step, an emailed code, a passkey's counter. Never reorder to save one, and never un-spend
+  one. A test pins the backup code (nine left after a refused sign-in).
 - **`before_token` is asked when a session is created and when it proves a factor again, and
   never at a refresh.** `Sessions.create` and `Sessions.recordAuthentication` are the only
   callers of `Hooks.beforeToken`; the answer is stored on the session (`sessions.hook_claims`)
@@ -562,7 +572,9 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
 - **The cap is `MAX_CUSTOM_CLAIMS_BYTES` (1,024), enforced twice.** At save a template is
   refused when its claims *could* exceed it (`jwtTemplateMaxBytes`, every source at its
   maximum). At build `CustomClaims.build` checks again and, over the cap, drops the **whole**
-  namespace and logs the template's name and the byte count, never a value. Never truncate,
+  namespace (of a template alone; beside a hook's stored claims, the template's part: see
+  the `before_token` rule below) and logs the template's name and the byte count, never a
+  value. Never truncate,
   never raise the cap for a feature: it is what keeps `tula_at` inside a browser's cookie
   limit (a test in `packages/nextjs/src/real-api.test.ts` measures it).
 - **A template's claims are read at every issue and stored nowhere** (a hook's are stored on
@@ -575,9 +587,14 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
   of a profile without a template has exactly the claim set of before (a snapshot test).
 - **The `before_token` hook's claims go through `CustomClaims.build`'s `extra`** (ADR 0035):
   the same namespace, key grammar, reserved names, scalar values and cap, and the hook's
-  value wins a key the template also sets. Over the cap at build (a template that grew
-  after the claims were stored) the whole namespace is dropped, as for a template alone.
-  Never merge claims into a token by another path.
+  value wins a key the template also sets. **Over the cap at issue (a template saved, or an
+  address grown, after the claims were stored) the hook's claims are issued and all of the
+  template's are left out**, logged by environment, template name and byte counts: a
+  template alone cannot exceed the cap, the two together can, and dropping the hook's
+  claims would fail open for an application that reads a restriction as a present claim.
+  Everything goes only when one source alone is over the cap. When the hook *answers*, not
+  fitting beside the template is still its failure (`claims_too_large`). Never merge claims
+  into a token by another path.
 - **A reader treats a malformed `ext` as absent, whole** (`readCustomClaims`): not a plain
   object, a reserved or malformed key, a value that is not a scalar, over the cap.
   `@tula/nextjs` sets `SessionClaims.ext` and `auth().customClaims` only from it, for a token

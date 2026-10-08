@@ -215,6 +215,10 @@ one entry of `extra`, read from the session's row and judged again there
 ([ADR 0035](0035-hooks.md#2026-10-08-hooks-before-a-session-and-before-a-token-tula-53)).
 "Read at every issue, never stored" above remains true of a template's claims; a hook's are
 stored on the session and are not read from the hook again until the session steps up.
+"Dropped whole beyond it" is true of a template alone and is **not** what happens to the two
+together: over the cap at issue, the hook's claims are issued and all of the template's are
+left out (ADR 0035, "The cap is on the merged claims"). A template alone cannot exceed the
+cap; a template beside stored hook claims can.
 
 ## Consequences
 

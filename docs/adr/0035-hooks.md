@@ -472,10 +472,32 @@ every sign-in).
 
 **The cap is on the merged claims.** When the hook answers, the service measures its claims
 together with the template's as configured at that moment (`CustomClaims.fits`): over the
-cap is `claims_too_large`, a failed call. If the template changes later so that the two no
-longer fit, `build` does at refresh what it already did for a template alone: the whole
-namespace is dropped and a warning names the template and the sizes (ADR 0036). A refresh is
-never failed for it.
+cap is `claims_too_large`, a failed call. A refresh is never failed for the cap.
+
+**Later, the hook's claims are kept and the template's are left out** (review round 1,
+2026-10-08; this replaces "the whole namespace is dropped", which was wrong). A template
+alone cannot exceed the cap and a hook's claims alone cannot, but the two together can: an
+operator saves a larger template, or the user's address grows, after the hook answered.
+Dropping all of `ext` then, as the first version did, removed the hook's claims from every
+existing session until its next step-up, and an application that reads a restriction as a
+present claim (`restricted: true`, a tenant id) failed open. So at issue, over the cap,
+`CustomClaims.build` issues the hook's stored claims alone and leaves out **all** of the
+template's (not the keys that did not fit: which of a template's claims a token carries
+must not depend on their sizes), and logs the environment, the template's name and the two
+byte counts, once per issue, with no key and no value. The row is not rewritten: when the
+template shrinks, both are issued again. Only when a source alone is over the cap (which
+the rules above exclude: a stored value that fails its own check is dropped by
+`CustomClaims.stored` before any merge) does everything go.
+
+The two moments differ on purpose. **When the hook answers**, claims that do not fit beside
+the template are still the hook's failure (`claims_too_large`): there is someone to tell,
+the failure shows on the hook where the operator looks, nothing is stored, and the hook's
+`failureMode` decides. **When a template outgrows claims already stored** there is no call
+to fail and nobody at the request to tell, so the more specific source is kept. Rejected:
+"hook kept, template dropped" at answer time too (an operator would never learn that their
+hook and their template do not fit together, and under `deny` they chose to be told), and
+refusing a template at save because some session's stored claims would not fit beside it
+(a save would then depend on every session's row).
 
 ### `before_token`: when it is asked, and what "inputs" means
 
@@ -594,6 +616,51 @@ test runs the three new scenarios unmodified.
   test proves it returns a hook's claim, for a token session (through a refresh) and a
   stateful one.
 - `@tula/core`: no code changed; it stays Zod-free and within its bundle budget.
+
+### What a refusal costs that is easy to miss (review round 1, 2026-10-08)
+
+**Single-use proofs are spent before the hook is asked**: a backup code, an authenticator's
+time step, an emailed code, a passkey's counter. The order is not changed: asking before the
+proof is what the design rules out (whether a hook was asked would then say something to
+someone who cannot sign in), and giving a spent proof back invites its replay. The sharp
+case is the default `deny` during an outage of the operator's endpoint: every sign-in with
+a backup code burns one of ten and signs nobody in. `docs/hooks.md` says so, with the
+advice that follows (an operator who cannot keep the endpoint up should weigh `allow`; a
+refused user should not retry with backup codes). A test pins it (a refused sign-in with a
+backup code leaves nine), so that a change is a decision.
+
+**An enrolment inside a sign-in no longer ends the user's other sessions before the
+attempt is known to complete.** `Mfa.confirmTotp` ended them before it turned the factor
+on; `finish` then asked `before_session`; a denial or a failure removed the factor again
+but not the sweep, so a refused sign-in signed the user out everywhere. The
+concurrent-session rule could already cause that; a hook made it reachable at will. Now
+the flow tells `confirmTotp` to leave the sweep to it (`sweep: 'caller'`) and ends the other
+sessions **after** `finish` returned, keeping the new one
+(`Mfa.endSessionsWithoutFactor`). A refused `finish` leaves the factor absent, its backup
+codes gone and every earlier session alive and not denylisted. The standalone confirmation
+from a signed-in session is unchanged (sweep, confirm, sweep again).
+
+What this costs, accepted:
+
+- For the time `finish` takes (at most the two hooks' deadlines) the factor is on beside
+  sessions that did not prove it. Before, they were ended first, so that a failed sweep
+  left nothing changed.
+- The sweep after `finish` can fail (the store). It is logged and not retried: the session
+  exists and the backup codes, shown once, must still reach the user. The standalone path's
+  second sweep has always had this shape. When `finish` failed **and** the factor could not
+  be removed again, the sweep is still attempted, because the factor stayed on.
+- Under a concurrent-session rule that refuses the newest session, a user at the limit
+  could, before, complete an enrolling sign-in because the sweep had made room. Now that
+  sign-in is refused with `session.limit_reached` like any other at the limit, and the
+  enrolment is undone.
+
+Rejected: asking `before_session` before the sweep, inside the confirmation. The code is
+checked there, so the hook would be asked either before the factor is proven (ruled out) or
+from a callback between the proof and the sweep, with the attempt spent before the factor
+is confirmed; and the claims hook, which is asked as the session is created, would still
+fail after the sweep. Ending the sessions once the new one exists covers every reason
+`finish` can fail with one rule. "No session before the second factor" and "a hook is
+asked only after every factor is proven" are untouched: `finish` is as it was.
 
 ### Conformance
 

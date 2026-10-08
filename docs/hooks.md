@@ -195,7 +195,9 @@ next to (and under the same rules as) the claims of the profile's
   [jwt-templates.md](jwt-templates.md#rules));
 - a value is one string, number or boolean: no object, no list, no `null`;
 - **the whole of `ext` is at most 1,024 bytes** as JSON: your claims *together with* the
-  template's;
+  template's. Over that when you answer is a failed call (`claims_too_large`). If the two
+  stop fitting later (a larger template is saved, an address grows), your claims are still
+  issued and the template's are left out ([jwt-templates.md](jwt-templates.md#claims-from-a-hook));
 - where your hook and the template set the same key, **yours wins**. A template is the
   profile's default for everybody; your answer is about this user.
 
@@ -450,8 +452,22 @@ A denial or a failure is known only after the last proof was accepted, so that p
 **spent** and the attempt has **ended**:
 
 - an emailed code is used; an authenticator's code cannot be used again for its time step; a
-  **backup code is gone** and is not given back;
+  passkey's counter has moved; a **backup code is gone** and is not given back;
 - the client starts a new sign-in. For `hook.unavailable` that is the retry.
+
+**Backup codes are the sharp case.** A user has ten. Under the default `failureMode: "deny"`,
+while your endpoint is down every sign-in that uses a backup code burns one and signs
+nobody in; a user who keeps trying can use up all ten during one outage and then needs an
+administrator. The order is deliberate (asking you before the proof would tell someone who
+cannot sign in something about the account, and giving a spent code back would let it be
+replayed), so what follows is advice:
+
+- if you cannot keep the endpoint up, weigh `failureMode: "allow"` for `before_session`
+  against what the check is for: a check that locks users out of their recovery codes when
+  your service is down may cost more than it protects;
+- tell a user who is refused (`hook.denied`, `hook.unavailable`) **not to try again with a
+  backup code**: an authenticator's next code costs nothing, a backup code is one of ten;
+- watch `lastFailedAt` on the hook.
 
 The other choice was to keep the attempt open for a retry. It would have meant a step that
 can be repeated after its proof was accepted, and for a sign-up or an in-flow enrolment a
@@ -469,6 +485,13 @@ unchanged, nothing recorded. The code that proved the step-up is spent; the user
 One case asks your endpoint about a session that then does not exist: an environment whose
 concurrent-session rule refuses the newest session (`session.limit_reached`) refuses it
 after both hooks were asked.
+
+**A refused sign-in does not sign the user out elsewhere.** Where the environment requires
+two-step verification and the user sets up an authenticator inside the sign-in, their other
+sessions end because they were made without it; they end only once the new session exists.
+If a hook refuses that sign-in, the authenticator is removed again, its backup codes with
+it, and the sessions the user had are still there. They set it up again at their next
+sign-in.
 
 ## What a hook cannot do
 

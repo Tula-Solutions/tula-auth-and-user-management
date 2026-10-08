@@ -153,10 +153,16 @@ keys and values and **inside the same 1,024 bytes**: the cap is on the two toget
 - **Claims that do not fit are a failed call**, not a cut one: if the hook's claims and the
   template's together are over the cap when the hook answers, the hook's `failureMode`
   decides (by default the sign-in is refused, and the hook shows
-  `lastFailureReason: "claims_too_large"`). If you later grow the template so that a
-  session's stored claims no longer fit beside it, that session's tokens are issued with
-  **no** `ext` at all, and a warning is logged, until the template shrinks or the session
-  signs in again. Leave room: a template near the cap leaves none for a hook.
+  `lastFailureReason: "claims_too_large"`).
+- **If the two stop fitting later, the hook's claims stay and the template's go.** That
+  happens when you save a larger template, or a user's address grows, after the hook
+  answered for a session. That session's tokens are then issued with the hook's claims and
+  **none** of the template's (all of them, not only the ones that did not fit), and a
+  warning is logged with the template's name and the sizes, until the template shrinks or
+  the session signs in again. The hook's claims are kept because they are about this user
+  and may be a restriction your application reads as a present claim. Leave room: a
+  template near the cap leaves none for a hook, and do not let an application depend on a
+  template's claim being there when a hook is registered.
 - A profile needs no template for a hook's claims to be issued.
 
 ## When a change takes effect
