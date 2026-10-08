@@ -288,6 +288,30 @@ describe('renderAdminApi', () => {
     expect(source.slice(source.indexOf('export const INSTANCE_OPERATIONS'))).toContain('getHealth')
   })
 
+  test('renders the event a webhook delivers, though no operation returns it', () => {
+    const base = adminDocument()
+    base.components.schemas.ThingMadeEvent = {
+      type: 'object',
+      properties: {
+        type: { type: 'string', const: 'thing.made' },
+        data: { $ref: '#/components/schemas/Part' },
+      },
+      required: ['type', 'data'],
+    }
+    base.components.schemas.TulaEvent = {
+      oneOf: [{ $ref: '#/components/schemas/ThingMadeEvent' }],
+    }
+    const source = renderAdminApi(base)
+    expect(source).toContain("  TulaEvent: Schemas['ThingMadeEvent']")
+    expect(source).toContain("    type: 'thing.made'")
+    // The client half has no use for it: a browser receives no webhook.
+    expect(renderClientApi(base)).not.toContain('TulaEvent')
+  })
+
+  test('a document without events still renders', () => {
+    expect(renderAdminApi(adminDocument())).not.toContain('TulaEvent')
+  })
+
   test('an instance operation that does not take the admin token fails the generation', () => {
     const base = adminDocument()
     base.paths['/v1/instance/health'] = {

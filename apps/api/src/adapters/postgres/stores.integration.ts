@@ -1,5 +1,5 @@
 import { afterAll } from 'bun:test'
-import { environmentSettings, flowAttempts, withTenant } from '@tula/db'
+import { environmentSettings, events, flowAttempts, withTenant } from '@tula/db'
 import { eq } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
@@ -22,9 +22,12 @@ import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
+import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-deliveries'
+import { PostgresWebhookEndpointStore } from '~/adapters/postgres/webhook-endpoints'
 import { describeSessionStore } from '~/adapters/session-store.suite'
 import { describeUserRepository } from '~/adapters/user-repository.suite'
 import { describeVerificationTokenStore } from '~/adapters/verification-token-store.suite'
+import { describeWebhookStores } from '~/adapters/webhook-store.suite'
 
 /**
  * The stores' behaviour suites against a real Postgres server, over a pool of several
@@ -124,6 +127,41 @@ describeOAuthProviderStore('PostgresOAuthProviderStore on a real server', async 
       (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
         .map((entry) => entry.type)
         .reverse(),
+    a,
+    b,
+  }
+})
+
+// Fresh tenants per test, for the same reason. On a real server the duplicate delivery of one
+// endpoint and event is a wait on the unique index, and the insert for an endpoint that was
+// just removed is the foreign key's own refusal.
+describeWebhookStores('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    endpoints: new PostgresWebhookEndpointStore(db),
+    deliveries: new PostgresWebhookDeliveryStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    seedEvent: async (tenant, event) => {
+      const id = Bun.randomUUIDv7()
+      await withTenant(db, tenant.environmentId, (tx) =>
+        tx.insert(events).values({
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          ...event,
+        })
+      )
+      return id
+    },
+    deliveredAt: async (tenant, eventId) => {
+      const [row] = await withTenant(db, tenant.environmentId, (tx) =>
+        tx.select({ deliveredAt: events.deliveredAt }).from(events).where(eq(events.id, eventId))
+      )
+      return row?.deliveredAt ?? null
+    },
     a,
     b,
   }

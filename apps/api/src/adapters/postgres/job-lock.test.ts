@@ -50,7 +50,18 @@ describe('PostgresJobLock', () => {
     expect(database.keys).toEqual([[ADVISORY_LOCK_NAMESPACE, 1]])
   })
 
+  test('each job has a key of its own', async () => {
+    const database = fakeDatabase()
+    const lock = new PostgresJobLock(database.withAdvisoryLock)
+    await lock.runExclusive('retention', async () => 1)
+    await lock.runExclusive('webhook_delivery', async () => 1)
+    expect(database.keys).toEqual([
+      [ADVISORY_LOCK_NAMESPACE, 1],
+      [ADVISORY_LOCK_NAMESPACE, 2],
+    ])
+  })
+
   test('job ids never change: instances of two versions must agree during an upgrade', () => {
-    expect(JOB_LOCK_IDS).toEqual({ retention: 1 })
+    expect(JOB_LOCK_IDS).toEqual({ retention: 1, webhook_delivery: 2 })
   })
 })

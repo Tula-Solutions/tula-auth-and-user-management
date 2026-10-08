@@ -1,6 +1,7 @@
 import type { AccessTokenClaims, PasswordPolicy } from '@tula/contract'
 import type { Tier } from '~/env'
 import type { KeyedHash } from '~/lib/keyed-hash'
+import type { OutboundDeps } from '~/lib/outbound'
 import type { SecretBox } from '~/lib/secret-box'
 import type { ActivityLog } from '~/ports/activity-log'
 import type { ApiKeyRepository } from '~/ports/api-key-repository'
@@ -27,6 +28,8 @@ import type { SessionStore } from '~/ports/session-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 import type { UserRepository } from '~/ports/user-repository'
 import type { VerificationTokenStore } from '~/ports/verification-token-store'
+import type { WebhookDeliveryStore } from '~/ports/webhook-delivery-store'
+import type { WebhookEndpointStore } from '~/ports/webhook-endpoint-store'
 
 /** Settings the app reads at request time. Built from `Env` in the container. */
 export interface AppConfig {
@@ -113,8 +116,18 @@ export interface Deps {
   secretBox: SecretBox
   /** HMACs for low-entropy secrets (codes), with keys derived from `TULA_MASTER_KEY`. */
   keyedHash: KeyedHash
-  /** Lets one API instance at a time run a background job (retention). */
+  /** Lets one API instance at a time run a background job (retention, webhook delivery). */
   jobLock: JobLock
+  /** Where an environment's events are delivered, and the sealed secret each is signed with. */
+  webhookEndpoints: WebhookEndpointStore
+  /** The outbox's waiting events and the record of what became of sending them. */
+  webhookDeliveries: WebhookDeliveryStore
+  /**
+   * What the outbound guard (`~/lib/outbound`) judges an operator's address by: the tier, and
+   * in tests a resolver. Pass it to `Outbound.check` and `Outbound.request`; never build one
+   * at a call site.
+   */
+  outbound: OutboundDeps
   /**
    * Makes writes that share an invariant across stores take turns, per environment (the
    * settings document and the OAuth providers: "at least one sign-in method").

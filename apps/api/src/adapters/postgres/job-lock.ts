@@ -6,7 +6,10 @@ import type { ExclusiveJob, JobLock, JobOutcome } from '~/ports/job-lock'
  * namespace). Fixed forever: instances of different versions must agree on them during a
  * rolling upgrade, so never renumber, only add.
  */
-export const JOB_LOCK_IDS: Readonly<Record<ExclusiveJob, number>> = { retention: 1 }
+export const JOB_LOCK_IDS: Readonly<Record<ExclusiveJob, number>> = {
+  retention: 1,
+  webhook_delivery: 2,
+}
 
 /**
  * A job lock on a Postgres session-level advisory lock, so it excludes every API instance

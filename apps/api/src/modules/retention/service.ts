@@ -166,8 +166,10 @@ async function purgeAudit(
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
  *
- * Outbox events are never deleted here: nothing delivers events yet (Phase 2), so none is safe
- * to drop (ADR 0017). That includes the events of audit entries this job deletes.
+ * Outbox events are never deleted here, and nor are webhook delivery rows: the webhook worker
+ * marks events delivered (ADR 0034), and deleting the delivered ones, with the grant and the
+ * policy that needs, is a later step (ADR 0017). That includes the events of audit entries
+ * this job deletes.
  *
  * A failure in one environment is logged and skipped, so it cannot keep the environments after
  * it from being purged. Each environment is purged through its own tenant-scoped store calls:

@@ -5,10 +5,11 @@ import { PostgresJobLock } from '~/adapters/postgres/job-lock'
 
 /**
  * The job lock against a real Postgres, with two pools standing in for two API instances: the
- * run that proves only one instance runs the retention job. PGlite cannot show it (one session).
+ * run that proves only one instance runs a job (retention, webhook delivery), and that one job
+ * does not hold up the other. PGlite cannot show it (one session).
  *
- * Uses the database of `docker compose up -d` as the runtime login. It takes the real retention
- * lock, so an API running against the same database skips a round while a test holds it.
+ * Uses the database of `docker compose up -d` as the runtime login. It takes the real locks,
+ * so an API running against the same database skips a round while a test holds one.
  */
 const url = process.env.DATABASE_URL
 if (!url) {

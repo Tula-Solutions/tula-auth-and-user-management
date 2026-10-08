@@ -28,6 +28,8 @@ import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
+import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-deliveries'
+import { PostgresWebhookEndpointStore } from '~/adapters/postgres/webhook-endpoints'
 import { connectRedis, redisProbe } from '~/adapters/redis/connection'
 import { RedisLockout } from '~/adapters/redis/lockout'
 import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
@@ -166,6 +168,11 @@ export function createContainer(env: Env): Container {
     // On Postgres even when Redis is configured: the jobs it guards are database work.
     jobLock: new PostgresJobLock(database.withAdvisoryLock),
     environmentLock: new PostgresEnvironmentLock(database.withAdvisoryLock),
+    webhookEndpoints: new PostgresWebhookEndpointStore(database.db),
+    webhookDeliveries: new PostgresWebhookDeliveryStore(database.db),
+    // The tier and nothing else: the system resolver and the system's certificate authorities.
+    // Nothing in the configuration can hand the guard a resolver or a certificate to trust.
+    outbound: { tier: env.ENVIRONMENT },
     probes: redis ? [databaseProbe(database.db), redisProbe(redis)] : [databaseProbe(database.db)],
     diagnostics: createDiagnostics({
       db: database.db,
