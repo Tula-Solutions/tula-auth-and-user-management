@@ -27,6 +27,13 @@ export const CLOCK_SKEW_FAIL_MS = 30_000
  */
 export const MAX_ENVIRONMENTS_CHECKED = 200
 
+/**
+ * How long an event may wait to be queued for delivery before the `webhook_worker` check
+ * says so. A delivery round runs every five seconds and settles every waiting event, owed to
+ * an endpoint or to nobody: one that has waited twelve rounds was not looked at by any.
+ */
+export const WEBHOOK_WAITING_TOO_LONG_MS = 60_000
+
 type DiagnosticsDeps = Pick<
   Deps,
   | 'config'
@@ -36,6 +43,7 @@ type DiagnosticsDeps = Pick<
   | 'signingKeys'
   | 'oauthProviders'
   | 'secretBox'
+  | 'webhookDeliveries'
 >
 
 /** The database's answer, with the API's own clock at the moment it arrived. */
@@ -54,6 +62,12 @@ interface Stored {
   signingKeys: number
   providerCredentials: number
   enabledProviders: OAuthProvider[]
+  /**
+   * Of the environments checked, those whose oldest event still waiting to be queued for
+   * delivery has waited {@link WEBHOOK_WAITING_TOO_LONG_MS} or longer; `null` when the events
+   * could not be read.
+   */
+  overdue: number | null
 }
 
 /**
@@ -186,6 +200,7 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     signingKeys: 0,
     providerCredentials: 0,
     enabledProviders: [],
+    overdue: 0,
   }
   for (const environment of environments) {
     signal.throwIfAborted()
@@ -215,8 +230,34 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
         stored.enabledProviders.push(provider.provider)
       }
     }
+    if (stored.overdue !== null) {
+      stored.overdue = await overdueAfter(deps, environment.id, stored.overdue)
+    }
   }
   return stored
+}
+
+/**
+ * Count an environment in when its oldest event still waiting to be queued for delivery has
+ * waited too long. One row is read, and only its time is looked at.
+ *
+ * A failure here is the outbox's, not the stored secrets': it is logged, the count becomes
+ * `null` (the `webhook_worker` check then says it could not look) and the rest of the scan
+ * goes on.
+ */
+async function overdueAfter(
+  deps: DiagnosticsDeps,
+  environmentId: string,
+  overdue: number
+): Promise<number | null> {
+  try {
+    const [oldest] = await deps.webhookDeliveries.pendingEvents(environmentId, 1)
+    const waited = oldest ? deps.clock.now().getTime() - oldest.occurredAt.getTime() : 0
+    return overdue + (waited >= WEBHOOK_WAITING_TOO_LONG_MS ? 1 : 0)
+  } catch (error) {
+    logger.warn('diagnostic check failed', { check: 'webhook_worker', reason: errorReason(error) })
+    return null
+  }
 }
 
 /** The scan of stored secrets still running for a deployment, keyed by its diagnostics port. */
@@ -379,9 +420,74 @@ function redirectUriCheck(
 }
 
 /**
+ * Whether webhook deliveries are being made, judged by what waits (ADR 0034, "The worker as
+ * its own service").
+ *
+ * An API instance cannot see a worker process, and with `WEBHOOK_WORKER=separate` it makes no
+ * delivery itself. What it can see is the outbox: every delivery round settles every waiting
+ * event, so one that has waited a minute was looked at by no round. That catches the
+ * deployment where every process says `separate` and no worker was started, and a worker that
+ * runs and cannot work, as soon as something has happened; with nothing waiting it says `ok`
+ * and says that it did not look at the worker. Where the API instances deliver, the same
+ * finding is a warning: the job runs in the process that answers, so it is behind, not absent.
+ *
+ * Counts only: never an event, an environment's id or a payload.
+ */
+function webhookWorkerCheck(
+  config: Deps['config'],
+  stored: { value: Stored } | null
+): DiagnosticCheck {
+  const id = 'webhook_worker'
+  const overdue = stored?.value.overdue ?? null
+  if (!stored || overdue === null) {
+    return {
+      id,
+      status: 'skipped',
+      summary: 'Not checked: the events waiting for delivery could not be read from the database.',
+    }
+  }
+  const { environments, checked } = stored.value
+  const truncated = checked < environments
+  const scope = `the first ${checked} of ${environments}`
+  if (overdue > 0) {
+    const where = `in ${plural(overdue, 'environment')}${truncated ? ` of ${scope}` : ''}`
+    return config.deliversWebhooks
+      ? {
+          id,
+          status: 'warn',
+          summary: `Events have waited a minute or more to be queued for delivery, ${where}: the delivery job is behind or failing.`,
+          fix: 'WEBHOOK_WORKER is `api`, so every API instance runs the delivery job. Look in the API’s log for `could not run the webhook delivery job` and `webhook delivery failed in one environment`, and check that the database is reachable and not overloaded.',
+        }
+      : {
+          id,
+          status: 'fail',
+          summary: `Events have waited a minute or more to be queued for delivery, ${where}: nothing is delivering them.`,
+          fix: 'WEBHOOK_WORKER is `separate`, so no API instance makes a delivery: a worker process must be running. Start one (the same image with the command `bun run src/worker.ts`; with Compose, `docker compose --profile app --profile worker up -d`) and read its log, or set WEBHOOK_WORKER=api on every instance and restart them.',
+        }
+  }
+  if (truncated) {
+    const rest = environments - checked
+    return {
+      id,
+      status: 'warn',
+      summary: `Only ${scope} environments were looked at: no event of theirs has waited a minute or more to be queued for delivery. The other ${rest} ${rest === 1 ? 'was' : 'were'} not read.`,
+      fix: `One run reads the waiting events of the ${MAX_ENVIRONMENTS_CHECKED} oldest environments only. If deliveries of a newer environment do not arrive, look at its delivery log and at the log of the process that delivers.`,
+    }
+  }
+  return {
+    id,
+    status: 'ok',
+    summary: config.deliversWebhooks
+      ? 'No event has waited a minute or more to be queued for delivery. WEBHOOK_WORKER is `api`: the API instances make the deliveries.'
+      : 'No event has waited a minute or more to be queued for delivery. WEBHOOK_WORKER is `separate`: a worker process makes the deliveries. This check sees what waits, not the worker.',
+  }
+}
+
+/**
  * Check what actually goes wrong in a deployment: the database and its migrations, the master
- * key against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, and the
- * redirect URI each enabled OAuth provider must have registered.
+ * key against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, the
+ * redirect URI each enabled OAuth provider must have registered, and whether events are
+ * waiting for a webhook worker that is not taking them.
  *
  * Every check runs at once and is cut off after `timeoutMs`; the scan of stored secrets stops
  * at its deadline and is never started while an earlier one is still running. Callers that
@@ -454,6 +560,7 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
       clockCheck(database),
       publicUrlCheck(loopback, publicUrl),
       redirectUriCheck(config, stored),
+      webhookWorkerCheck(config, stored),
     ],
   }
 }

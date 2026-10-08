@@ -19757,7 +19757,7 @@
           "Webhooks"
         ],
         "summary": "Send a test event",
-        "description": "Sends one test event of the chosen type to the endpoint, now, signed like every delivery. The event is an example with a new id and **`\"test\": true`** inside the signed body, which no real event has: nothing it describes happened, and a receiver should check the field before acting. It is one request with no retry, recorded as a delivery flagged `test`; it is not written to the audit log and changes nothing about the endpoint: a failed test does not count towards switching it off, and one that gets through does not clear `failingSince`. An endpoint that is off can be tested. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.",
+        "description": "Sends one test event of the chosen type to the endpoint, now, signed like every delivery. The event is an example with a new id and **`\"test\": true`** inside the signed body, which no real event has: nothing it describes happened, and a receiver should check the field before acting. It is one request with no retry, recorded as a delivery flagged `test`; it is not written to the audit log and changes nothing about the endpoint: a failed test does not count towards switching it off, and one that gets through does not clear `failingSince`. An endpoint that is off can be tested. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment. In a deployment whose webhook worker is its own service (`WEBHOOK_WORKER=separate`) an API instance calls no webhook endpoint, and this request is refused with `not_implemented` (501), `params.reason`: `worker_separate`.",
         "security": [
           {
             "secretKey": []
@@ -19857,6 +19857,16 @@
               }
             }
           },
+          "501": {
+            "description": "Capability not implemented yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
           "503": {
             "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
             "content": {
@@ -19899,7 +19909,7 @@
           "Webhooks"
         ],
         "summary": "Send a delivery again",
-        "description": "Makes one more request for a past delivery, now: the event’s stored payload, to the endpoint it was owed to, with the same `webhook-id` (a receiver that drops repeats by id will drop it). The request is added to the delivery’s own attempts. A 2xx makes the delivery `delivered`; a failure leaves it as it was and is not retried. Refused with `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`: `delivery_pending` while the server is still retrying the delivery, `endpoint_disabled` for an endpoint that is switched off, `event_gone` once the event is no longer kept (30 days) or for a test event, and `attempt_limit` once the delivery has had 20 requests in all. A request that gets through also ends the endpoint’s run of failures (`failingSince`). The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.",
+        "description": "Makes one more request for a past delivery, now: the event’s stored payload, to the endpoint it was owed to, with the same `webhook-id` (a receiver that drops repeats by id will drop it). The request is added to the delivery’s own attempts. A 2xx makes the delivery `delivered`; a failure leaves it as it was and is not retried. Refused with `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`: `delivery_pending` while the server is still retrying the delivery, `endpoint_disabled` for an endpoint that is switched off, `event_gone` once the event is no longer kept (30 days) or for a test event, and `attempt_limit` once the delivery has had 20 requests in all. A request that gets through also ends the endpoint’s run of failures (`failingSince`). The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment. In a deployment whose webhook worker is its own service (`WEBHOOK_WORKER=separate`) an API instance calls no webhook endpoint, and this request is refused with `not_implemented` (501), `params.reason`: `worker_separate`.",
         "security": [
           {
             "secretKey": []
@@ -19991,6 +20001,16 @@
           },
           "500": {
             "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Capability not implemented yet.",
             "content": {
               "application/json": {
                 "schema": {
