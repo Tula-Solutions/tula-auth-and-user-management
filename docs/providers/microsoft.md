@@ -6,6 +6,21 @@
 > and the token checks below are what the code does; the portal steps are written from
 > Microsoft's documentation and have not been clicked through.
 
+> **Required: the `xms_edov` optional claim (step 4). Without it nobody can sign up with
+> Microsoft.** Tula counts a Microsoft address as verified only when the ID token carries
+> `xms_edov: true`. A token without it signs in a Microsoft account Tula already knows and
+> nothing else: every new account is refused with `oauth.email_unverified`, no user is
+> created and no existing user is linked. Adding the claim is part of the setup, not an
+> optimisation.
+>
+> **Personal accounts (`consumers`, and the personal accounts `common` lets in): unknown.**
+> The Microsoft documentation this was written from describes `xms_edov` for an address
+> whose *domain owner* was verified, which is a property of an organization's tenant. It
+> does not say whether a personal account's token (outlook.com, hotmail.com, or a personal
+> account on any other address) ever carries the claim, and no such token was looked at.
+> Until someone checks with a real personal account, assume that **personal accounts may
+> not be able to sign up at all**, and test it before you offer `consumers` or `common`.
+
 What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)). It covers
 Microsoft Entra ID (work and school accounts) and personal Microsoft accounts.
 
@@ -25,9 +40,9 @@ Microsoft Entra ID (work and school accounts) and personal Microsoft accounts.
      **Manifest**, under `optionalClaims.idToken`, as `{ "name": "xms_edov" }`),
    - `given_name` and `family_name` if you want the user's name filled in.
 
-   **Without `xms_edov` every address counts as unverified**, and then nobody can sign *up*
-   with Microsoft and no Microsoft account is linked to an existing user by its address. See
-   "What the address proves" below.
+   **This step is required.** Without `xms_edov` every address counts as unverified: nobody
+   can sign *up* with Microsoft and no Microsoft account is linked to an existing user by
+   its address. See "What the address proves" below.
 5. **API permissions**: the delegated Microsoft Graph permissions `openid`, `profile` and
    `email`. Tula asks for nothing else and calls no Microsoft API with the token.
 6. **Give Tula the credentials**, with the tenant that matches step 2:
@@ -109,6 +124,9 @@ without the claim: there the session is the proof, not the address.
 
 ## Limits
 
+- Whether a personal Microsoft account's token carries `xms_edov` is not known (see the
+  top of this page). If it does not, personal accounts cannot sign up, and can only be
+  connected by a user who is already signed in.
 - Not run against Microsoft: no real tenant, no real token. Whether `xms_edov` is sent as a
   JSON boolean was taken from Microsoft's optional-claims reference ("Boolean value"); a
   token that carried it as the string `"true"` or the number `1` would be read as unverified.

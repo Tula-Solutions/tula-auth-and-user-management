@@ -2,6 +2,7 @@ import { MAX_WEBHOOK_ENDPOINTS } from '@tula/contract'
 import { messageFor, toApiError } from '~/api/errors'
 import type { WebhookEndpoint, WebhookSendResult } from '~/api/generated/api.gen'
 import { formatDateTime } from '~/lib/format'
+import { own } from '~/lib/own'
 
 // Every sentence the webhooks screens say about a state, a refusal or a failure. The server
 // answers with fixed words (`gone`, `rotation_in_progress`, `timeout`); what an operator reads
@@ -57,7 +58,7 @@ export function endpointState(
     kind: 'off-by-server',
     label: 'Switched off by the server',
     detail:
-      SERVER_REASONS[endpoint.disabledReason] ??
+      own(SERVER_REASONS, endpoint.disabledReason) ??
       `The server stopped sending to it. The server’s reason: ${endpoint.disabledReason}`,
   }
 }
@@ -75,7 +76,7 @@ const DELIVERY_STATES: Record<string, string> = {
  * @returns The word; an unknown state as it is.
  */
 export function deliveryStateLabel(state: string): string {
-  return DELIVERY_STATES[state] ?? state
+  return own(DELIVERY_STATES, state) ?? state
 }
 
 const FAILURE_REASONS: Record<string, string> = {
@@ -103,7 +104,7 @@ const FAILURE_REASONS: Record<string, string> = {
  * @returns The sentence; for a word this version does not know, a sentence that quotes it.
  */
 export function failureReasonText(reason: string): string {
-  return FAILURE_REASONS[reason] ?? `The server gave this reason: ${reason}`
+  return own(FAILURE_REASONS, reason) ?? `The server gave this reason: ${reason}`
 }
 
 /**

@@ -9,6 +9,7 @@ import { EnvironmentProvider } from '~/features/shell/environment-context'
 import { useScope } from '~/state/scope'
 import {
   type FakeApi,
+  fakeHook,
   fakeWebhookDelivery,
   fakeWebhookEndpoint,
   IDS,
@@ -79,6 +80,7 @@ function queueMutationsWhileOffline(current: World) {
 
 const ENVIRONMENT = 'x-tula-environment'
 const WEBHOOK_ADDRESS = 'https://api.example.com/webhooks/tula'
+const HOOK_ADDRESS = 'https://api.example.com/hooks/tula/sign-up'
 
 /**
  * Give the fake one settings document per environment, with the same revision in both: the
@@ -338,6 +340,81 @@ describe('switching environment', () => {
     expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
     expect(api.state.webhookEndpoints).toHaveLength(2)
   })
+
+  test('a hook’s signing secret on screen and a typed address do not follow the operator', async () => {
+    const current = start(`${DEV_PATH}/hooks`)
+    const { user, router, location, api } = current
+    await user.click(await screen.findByRole('button', { name: 'Add a hook for before_sign_up' }))
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('Address'), HOOK_ADDRESS)
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add hook' }))
+    const secret = (await screen.findByTestId('hook-secret')).textContent ?? ''
+    expect(secret).toStartWith('whsec_')
+
+    // The secret's dialog is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/hooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/hooks`))
+    await waitFor(() => expect(screen.queryAllByTestId('hook-none')).toHaveLength(3))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes(secret)).toBe(false)
+    expect(document.documentElement.outerHTML.includes(HOOK_ADDRESS)).toBe(false)
+
+    // A half-typed address and a question opened for production are not there when
+    // development is opened again.
+    await user.click(screen.getByRole('button', { name: 'Add a hook for before_session' }))
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Address'),
+      'https://prod.example.com/half'
+    )
+    await user.selectOptions(
+      within(screen.getByRole('dialog')).getByLabelText('When a call fails'),
+      'allow'
+    )
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add hook' }))
+    await screen.findByRole('heading', { name: 'Let it through when a call fails?' })
+    await act(() => router.navigate({ href: `${DEV_PATH}/hooks` }))
+    await screen.findByText(HOOK_ADDRESS)
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await user.click(screen.getByRole('button', { name: 'Add a hook for before_session' }))
+    const form = within(screen.getByRole('dialog'))
+    expect((form.getByLabelText('Address') as HTMLInputElement).value).toBe('')
+    expect((form.getByLabelText('When a call fails') as HTMLSelectElement).value).toBe('deny')
+    expect(
+      api.callsTo('POST', '/v1/admin/hooks').map((call) => call.headers.get(ENVIRONMENT))
+    ).toEqual([IDS.development])
+  })
+
+  test.each([
+    ['removal', 'Remove the hook for before_sign_up'],
+    ['switching off', 'Switch off the hook for before_sign_up'],
+  ])('an open %s of a hook does not survive a switch', async (_name, opener) => {
+    const api = installFakeApi()
+    // The worst case: production has a hook at the same point and (which no real server
+    // does) of the same id. A card that was kept would be this one's, with the confirmation
+    // still open on it.
+    const development = fakeHook({ url: HOOK_ADDRESS })
+    api.state.hooks.push(development, { ...development, environmentId: IDS.production })
+    const current = start(`${DEV_PATH}/hooks`, { api })
+    const { user, router, location } = current
+    const listed = () => api.callsTo('GET', '/v1/admin/hooks').at(-1)?.headers.get(ENVIRONMENT)
+    // Production's list is already known, so nothing has to load on the way there.
+    await act(() => router.navigate({ href: `${PROD_PATH}/hooks` }))
+    await screen.findByRole('button', { name: opener })
+    await act(() => router.navigate({ href: `${DEV_PATH}/hooks` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/hooks`))
+    await waitFor(() => expect(listed()).toBe(IDS.development))
+    await user.click(await screen.findByRole('button', { name: opener }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/hooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/hooks`))
+    await waitFor(() => expect(listed()).toBe(IDS.production))
+    await screen.findByRole('button', { name: opener })
+    expect(openDialogs()).toBe(0)
+    expect(
+      api.calls.filter((call) => call.method === 'DELETE' || call.method === 'PATCH')
+    ).toHaveLength(0)
+    expect(api.state.hooks.map((hook) => hook.enabled)).toEqual([true, true])
+  })
 })
 
 // The router keeps a route's component when only `$endpointId` or `$deliveryId` changes, and
@@ -502,6 +579,45 @@ describe.each([
       api.state.webhookEndpoints.filter((endpoint) => endpoint.environmentId === IDS.production)
     ).toEqual([])
     expect(screen.queryAllByTestId('webhook-secret')).toHaveLength(0)
+  })
+
+  test.each([
+    ['refusing on failure', 'deny'],
+    ['letting through on failure, confirmed', 'allow'],
+  ])('a hook (%s) is never registered in production', async (_name, mode) => {
+    const current = start(`${DEV_PATH}/hooks`)
+    if (queued) {
+      queueMutationsWhileOffline(current)
+    }
+    const { user, api, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Add a hook for before_sign_up' }))
+    const adding = screen.getByRole('dialog')
+    await user.type(within(adding).getByLabelText('Address'), HOOK_ADDRESS)
+    await user.selectOptions(within(adding).getByLabelText('When a call fails'), mode)
+    if (mode === 'allow') {
+      await user.click(within(adding).getByRole('button', { name: 'Add hook' }))
+      await within(adding).findByRole('heading', { name: 'Let it through when a call fails?' })
+    }
+
+    const online = goOffline()
+    await user.click(within(adding).getByRole('button', { name: 'Add hook' }))
+    if (!queued) {
+      await within(adding).findByText(/The API did not answer/)
+    }
+    await act(() => router.navigate({ href: `${PROD_PATH}/hooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/hooks`))
+    online()
+
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/hooks').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await waitFor(() => expect(screen.queryAllByTestId('hook-none')).toHaveLength(3))
+    const sent = api.callsTo('POST', '/v1/admin/hooks').map((call) => call.headers.get(ENVIRONMENT))
+    expect(sent.filter((environment) => environment !== IDS.development)).toEqual([])
+    expect(api.state.hooks.filter((hook) => hook.environmentId === IDS.production)).toEqual([])
+    expect(screen.queryAllByTestId('hook-secret')).toHaveLength(0)
   })
 })
 

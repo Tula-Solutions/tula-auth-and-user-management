@@ -1211,6 +1211,7 @@ describe('webhook endpoints in the config file', () => {
       allowWeaker: false,
       allowWebhookRemoval: true,
       webhookSecrets: true,
+      hookSecrets: false,
     })
     const quiet = await tula(['apply', '--config', config, '--yes', '--json', '--discard-secrets'])
     expect(quiet.code).toBe(0)
@@ -1463,6 +1464,585 @@ describe('the secrets file of tula apply, when the file system does not cooperat
     expect(kept.map((entry) => entry.url)).toEqual([`${HOOK}/a`])
     expect(run.stderr).toContain('Wrote 1 signing secret to')
     SECRETS.push(kept[0]?.secret as string)
+  })
+})
+
+const ASK = 'https://ask.example.test/tula'
+
+interface ListedHook {
+  id: string
+  point: string
+  url: string
+  enabled: boolean
+  deadlineMs: number
+  failureMode: string
+  secret?: string
+}
+
+async function hooks(): Promise<ListedHook[]> {
+  const body = (await (await admin('/v1/admin/hooks')).json()) as { data: ListedHook[] }
+  return body.data
+}
+
+/** Register a hook the way a person would, outside the file. Its secret is never to be printed. */
+async function registerHook(point: string, over: Record<string, unknown> = {}): Promise<string> {
+  const res = await admin('/v1/admin/hooks', {
+    method: 'POST',
+    body: JSON.stringify({ point, url: `${ASK}/${point}`, ...over }),
+  })
+  expect(res.status).toBe(201)
+  const created = (await res.json()) as ListedHook
+  SECRETS.push(created.secret as string)
+  return created.id
+}
+
+async function patchHook(id: string, body: Record<string, unknown>): Promise<void> {
+  const res = await admin(`/v1/admin/hooks/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+  expect(res.status).toBe(200)
+}
+
+/** The run's writes to hooks, ids masked. */
+const hookWrites = (run: Run) =>
+  writes(run)
+    .filter((request) => request.includes('/v1/admin/hooks'))
+    .map((request) => request.replace(/[0-9a-f-]{36}/, '<id>'))
+
+/** What the audit log holds for hook changes, newest first: the action and its `metadata`. */
+async function hookAudit(action: string): Promise<Record<string, unknown>[]> {
+  const log = (await (await admin(`/v1/admin/audit-logs?action=${action}`)).json()) as {
+    data: { metadata: Record<string, unknown> }[]
+  }
+  return log.data.map((entry) => entry.metadata)
+}
+
+describe('hooks in the config file', () => {
+  beforeEach(() => {
+    deps.outbound.point('ask.example.test', '93.184.216.34')
+    deps.outbound.point('hooks.example.test', '93.184.216.34')
+  })
+
+  test('a hook is planned (exit 2), created, its secret kept in the file under its point, and then nothing is left', async () => {
+    const config = await dev({ hooks: { before_sign_up: { url: `${ASK}/sign-up` } } })
+
+    const before = await tula(['diff', '--config', config])
+    expect(before.code).toBe(2)
+    expect(before.stdout).toContain(
+      `Hooks\n  + before_sign_up: create (url ${ASK}/sign-up, enabled true, deadlineMs 2000, failureMode "deny"; a signing secret is made, shown once)\n`
+    )
+    expect(before.stdout).toContain(
+      '! creates 1 hook: its signing secret is shown once, to the run that creates it (`tula apply` needs --secrets-file <path>, --show-secrets or --discard-secrets)'
+    )
+    // Registering a hook that refuses on failure is the operator's choice, not a weakening.
+    expect(before.stdout).not.toContain('weakens security')
+    expect(writes(before)).toEqual([])
+    expect(await hooks()).toEqual([])
+
+    const applied = await tula([
+      'apply',
+      '--config',
+      config,
+      '--yes',
+      '--secrets-file',
+      'kept.json',
+    ])
+    expect(applied.code).toBe(0)
+    expect(writes(applied)).toEqual(['PUT /v1/admin/settings', 'POST /v1/admin/hooks'])
+    expect(applied.stdout).toContain('done  hook before_sign_up: create')
+    expect(applied.stdout).toContain(
+      `Wrote 1 signing secret to ${join(dir, 'kept.json')} (mode 0600). It is not shown again: give it to the receiver, then delete the file.`
+    )
+    expect(applied.stdout + applied.stderr).not.toContain('whsec_')
+    expect(applied.stdout + applied.stderr).not.toContain('signing secret, shown this once')
+    const [created] = await hooks()
+    expect(created).toMatchObject({
+      point: 'before_sign_up',
+      url: `${ASK}/sign-up`,
+      enabled: true,
+      deadlineMs: 2000,
+      failureMode: 'deny',
+    })
+    const file = join(dir, 'kept.json')
+    expect((await stat(file)).mode & 0o777).toBe(0o600)
+    const kept = JSON.parse(await readFile(file, 'utf8')) as Record<string, string>[]
+    expect(kept).toHaveLength(1)
+    // A hook's entry says so first: its point.
+    expect(Object.keys(kept[0] ?? {})).toEqual(['hook', 'id', 'url', 'secret'])
+    expect(kept[0]).toMatchObject({
+      hook: 'before_sign_up',
+      id: created?.id as string,
+      url: `${ASK}/sign-up`,
+    })
+    expect(kept[0]?.secret).toMatch(new RegExp(`^${WHSEC.source}$`))
+    SECRETS.push(kept[0]?.secret as string)
+
+    const after = await tula(['diff', '--config', config])
+    expect(after.code).toBe(0)
+    expect(after.stdout).toContain('= before_sign_up: unchanged')
+    const second = await tula(['apply', '--config', config, '--yes'])
+    expect(second.stdout).toContain('No changes')
+    expect(writes(second)).toEqual([])
+  })
+
+  test('one secrets file for both kinds: an endpoint’s entry is what it has always been, a hook’s begins with its point', async () => {
+    const config = await dev({
+      webhooks: [hook('a')],
+      hooks: { before_session: { url: `${ASK}/session` } },
+    })
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'kept.json'])
+    expect(run.code).toBe(0)
+    // Hooks after the endpoints: an endpoint this run registers is there to hear of them.
+    expect(writes(run)).toEqual([
+      'PUT /v1/admin/settings',
+      'POST /v1/admin/webhook-endpoints',
+      'POST /v1/admin/hooks',
+    ])
+    expect(run.stdout).toContain(`Wrote 2 signing secrets to ${join(dir, 'kept.json')}`)
+    const text = await readFile(join(dir, 'kept.json'), 'utf8')
+    const kept = JSON.parse(text) as Record<string, string>[]
+    const [endpoint] = await endpoints()
+    const [asked] = await hooks()
+    for (const entry of kept) {
+      SECRETS.push(entry.secret as string)
+    }
+    // The whole file, as text: what a webhook-only run wrote before hooks could be in it is
+    // what such an entry still is.
+    expect(text).toBe(
+      `${JSON.stringify(
+        [
+          { id: endpoint?.id, url: `${HOOK}/a`, secret: kept[0]?.secret },
+          { hook: 'before_session', id: asked?.id, url: `${ASK}/session`, secret: kept[1]?.secret },
+        ],
+        null,
+        2
+      )}\n`
+    )
+    expect(run.stdout + run.stderr).not.toContain('whsec_')
+  })
+
+  test('a webhook-only run writes the file it always wrote', async () => {
+    const config = await dev({ webhooks: [hook('a')], hooks: {} })
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'kept.json'])
+    expect(run.code).toBe(0)
+    const text = await readFile(join(dir, 'kept.json'), 'utf8')
+    const [endpoint] = await endpoints()
+    const secret = (JSON.parse(text) as { secret: string }[])[0]?.secret as string
+    SECRETS.push(secret)
+    expect(text).toBe(
+      `[\n  {\n    "id": "${endpoint?.id}",\n    "url": "${HOOK}/a",\n    "secret": "${secret}"\n  }\n]\n`
+    )
+  })
+
+  test('a plan that creates a hook is refused before any write until the run is told what to do with the secret', async () => {
+    const one = await dev({
+      settings: { app: { name: 'Northline' } },
+      hooks: { before_sign_up: { url: `${ASK}/sign-up` } },
+    })
+    const run = await tula(['apply', '--config', one, '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(
+      'error: This plan creates 1 hook, and the server shows its signing secret only once, in its answer to this run. Nothing was changed. Say what to do with it:'
+    )
+    expect(run.stderr).toContain(
+      '--discard-secrets      keep nothing. A hook’s secret cannot be rotated: to get one later, remove the hook and add it again (its receiver cannot verify a question until then).'
+    )
+    expect(writes(run)).toEqual([])
+
+    const both = await dev({
+      webhooks: [hook('a'), hook('b')],
+      hooks: { before_sign_up: { url: `${ASK}/sign-up` } },
+    })
+    const mixed = await tula(['apply', '--config', both, '--yes'])
+    expect(mixed.code).toBe(1)
+    expect(mixed.stderr).toContain(
+      'error: This plan creates 2 webhook endpoints and 1 hook, and the server shows each signing secret only once, in its answer to this run. Nothing was changed. Say what to do with them:'
+    )
+    expect(writes(mixed)).toEqual([])
+    expect(await hooks()).toEqual([])
+    expect(await endpoints()).toEqual([])
+    expect((await state()).revision).toBe(0)
+  })
+
+  test('--show-secrets prints a hook’s secret once; --discard-secrets keeps nothing and says what that costs', async () => {
+    const shownConfig = await dev({ hooks: { before_sign_up: { url: `${ASK}/sign-up` } } })
+    const shown = await tula(['apply', '--config', shownConfig, '--yes', '--show-secrets'], {
+      shown: true,
+    })
+    expect(shown.code).toBe(0)
+    const printed = shown.stdout.match(new RegExp(WHSEC.source, 'g')) ?? []
+    expect(printed).toHaveLength(1)
+    expect(shown.stdout).toContain(
+      `done  hook before_sign_up: create\n        signing secret, shown this once: ${printed[0]}`
+    )
+    expect(shown.stderr).not.toContain('whsec_')
+    SECRETS.push(printed[0] as string)
+
+    const quietConfig = await dev({
+      hooks: {
+        before_sign_up: { url: `${ASK}/sign-up` },
+        before_token: { url: `${ASK}/token` },
+      },
+    })
+    const quiet = await tula(['apply', '--config', quietConfig, '--yes', '--discard-secrets'])
+    expect(quiet.code).toBe(0)
+    expect(quiet.stdout + quiet.stderr).not.toContain('whsec_')
+    expect(quiet.stdout).toContain(
+      '1 signing secret of a hook was not kept (--discard-secrets). A hook’s secret cannot be rotated: to get one, remove the hook and apply again.'
+    )
+    expect((await hooks()).map((entry) => entry.point)).toEqual(['before_sign_up', 'before_token'])
+  })
+
+  test('“allow on failure” is flagged as weaker by diff, and not applied by --yes alone: nothing is written', async () => {
+    const id = await registerHook('before_sign_up')
+    const strict = await dev({ hooks: { before_sign_up: { url: `${ASK}/before_sign_up` } } })
+    await tula(['apply', '--config', strict, '--yes'])
+    const before = await state()
+    const loose = await dev({
+      hooks: { before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' } },
+    })
+
+    const plan = await tula(['diff', '--config', loose])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain('~ before_sign_up: update (failureMode "deny" → "allow")')
+    expect(plan.stdout).toContain(
+      '! weakens security: hooks.before_sign_up.failureMode (`tula apply --yes` needs --allow-weaker)'
+    )
+    expect(plan.stdout).toContain(
+      '`tula apply --yes` refuses this plan without --allow-weaker: it weakens security.'
+    )
+
+    const refused = await tula(['apply', '--config', loose, '--yes'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain(
+      'error: This plan weakens security (hooks.before_sign_up.failureMode), and with --yes nobody is asked. Nothing was changed. Pass --allow-weaker with --yes to apply it.'
+    )
+    expect(writes(refused)).toEqual([])
+    expect(await state()).toEqual(before)
+    expect((await hooks())[0]?.failureMode).toBe('deny')
+
+    const allowed = await tula(['apply', '--config', loose, '--yes', '--allow-weaker'])
+    expect(allowed.code).toBe(0)
+    expect(hookWrites(allowed)).toEqual(['PATCH /v1/admin/hooks/<id>'])
+    expect(await hooks()).toMatchObject([{ id, failureMode: 'allow' }])
+    // The server recorded the same change as a weakening: one rule, the contract's.
+    expect((await hookAudit('hook.updated'))[0]).toMatchObject({
+      changed: ['failureMode'],
+      weakened: true,
+    })
+    // And tightening it again needs no word.
+    const back = await tula(['apply', '--config', strict, '--yes'])
+    expect(back.code).toBe(0)
+    expect((await hooks())[0]?.failureMode).toBe('deny')
+  })
+
+  test('at a terminal the question says what gets weaker', async () => {
+    await registerHook('before_session')
+    const config = await dev({
+      hooks: { before_session: { url: `${ASK}/before_session`, enabled: false } },
+    })
+    const asked: string[] = []
+    const run = await tula(['apply', '--config', config], {
+      isTTY: true,
+      prompt: async (question) => {
+        asked.push(question)
+        return 'no'
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toStartWith('This WEAKENS security (hooks.before_session.enabled). ')
+    expect(writes(run)).toEqual([])
+    expect((await hooks())[0]?.enabled).toBe(true)
+  })
+
+  test('a hook registered to let through on failure is a weakening too, refused before the secret is asked about', async () => {
+    const config = await dev({
+      hooks: { before_token: { url: `${ASK}/token`, failureMode: 'allow' } },
+    })
+    const refused = await tula(['apply', '--config', config, '--yes', '--discard-secrets'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain('weakens security (hooks.before_token.failureMode)')
+    expect(writes(refused)).toEqual([])
+    expect(await hooks()).toEqual([])
+
+    const allowed = await tula([
+      'apply',
+      '--config',
+      config,
+      '--yes',
+      '--discard-secrets',
+      '--allow-weaker',
+    ])
+    expect(allowed.code).toBe(0)
+    expect((await hookAudit('hook.created'))[0]).toMatchObject({
+      failureMode: 'allow',
+      weakened: true,
+    })
+  })
+
+  test('a point the file leaves out is left alone; --prune removes it, and a hook that is on only with --allow-weaker', async () => {
+    await registerHook('before_sign_up')
+    await registerHook('before_session')
+    const off = await registerHook('before_token', { enabled: false })
+    const config = await dev({ hooks: { before_sign_up: { url: `${ASK}/before_sign_up` } } })
+
+    const kept = await tula(['apply', '--config', config, '--yes'])
+    expect(kept.code).toBe(0)
+    expect(kept.stdout).toContain(
+      '= before_session: unmanaged (on the server, not in the file; --prune removes it)'
+    )
+    expect(hookWrites(kept)).toEqual([])
+    expect(await hooks()).toHaveLength(3)
+
+    const plan = await tula(['diff', '--config', config, '--prune'])
+    expect(plan.stdout).toContain(
+      `- before_session: remove (${ASK}/before_session), with its signing secret`
+    )
+    // Only the hook that is on: removing one that is off lets nothing new through.
+    expect(plan.stdout).toContain('! weakens security: hooks.before_session (`tula apply --yes`')
+
+    const refused = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain('weakens security (hooks.before_session)')
+    expect(writes(refused)).toEqual([])
+    expect(await hooks()).toHaveLength(3)
+
+    const pruned = await tula(['apply', '--config', config, '--yes', '--prune', '--allow-weaker'])
+    expect(pruned.code).toBe(0)
+    expect(hookWrites(pruned)).toEqual([
+      'DELETE /v1/admin/hooks/<id>',
+      'DELETE /v1/admin/hooks/<id>',
+    ])
+    expect(pruned.stdout).toContain('done  hook before_session: remove')
+    expect((await hooks()).map((entry) => entry.point)).toEqual(['before_sign_up'])
+    expect((await hooks()).some((entry) => entry.id === off)).toBe(false)
+  })
+
+  test('removing only a hook that is off needs no --allow-weaker', async () => {
+    await registerHook('before_token', { enabled: false })
+    const config = await dev({ hooks: {} })
+    const run = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(run.code).toBe(0)
+    expect(run.stdout).not.toContain('weakens security')
+    expect(await hooks()).toEqual([])
+  })
+
+  test('a file without a hooks key does not read the hooks, and --prune does not touch them', async () => {
+    await registerHook('before_sign_up')
+    const config = await dev({ settings: { app: { name: 'Northline' } } })
+    const run = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(run.code).toBe(0)
+    expect(run.requests.filter((request) => request.includes('/v1/admin/hooks'))).toEqual([])
+    expect(run.stdout).not.toContain('Hooks')
+    expect(await hooks()).toHaveLength(1)
+  })
+
+  test('a changed address is the same hook: one PATCH of that field, no new secret', async () => {
+    const id = await registerHook('before_sign_up', { deadlineMs: 4000 })
+    const config = await dev({
+      hooks: { before_sign_up: { url: `${ASK}/moved`, deadlineMs: 4000 } },
+    })
+    const bodies: string[] = []
+    const run = await tula(['apply', '--config', config, '--yes'], { bodies })
+    expect(run.code).toBe(0)
+    expect(run.stdout).toContain(
+      `~ before_sign_up: update (url ${ASK}/before_sign_up → ${ASK}/moved)`
+    )
+    expect(hookWrites(run)).toEqual(['PATCH /v1/admin/hooks/<id>'])
+    expect(bodies.map((body) => JSON.parse(body) as object).at(-1)).toEqual({
+      url: `${ASK}/moved`,
+    })
+    expect(await hooks()).toMatchObject([{ id, url: `${ASK}/moved`, deadlineMs: 4000 }])
+    expect(run.stdout + run.stderr).not.toContain('secret')
+  })
+
+  test('an address the server refuses: its code and its fixed reason and no more, with what came before it applied', async () => {
+    const config = await dev({
+      settings: { app: { name: 'Northline' } },
+      hooks: {
+        before_sign_up: { url: `${ASK}/sign-up` },
+        before_session: { url: 'https://canary-nowhere.example.test/ask' },
+      },
+    })
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'kept.json'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('Failed: hook before_session: create')
+    expect(run.stderr).toContain('(hook.url_not_allowed, HTTP 422)\n  reason: resolve_failed\n')
+    expect(run.stderr).toContain(
+      'Applied before the failure:\n  settings: replace\n  hook before_sign_up: create\n' +
+        'Not applied:\n  hook before_session: create\n'
+    )
+    expect(run.stderr).toContain(`Wrote 1 signing secret to ${join(dir, 'kept.json')} (mode 0600).`)
+    expect(run.stdout + run.stderr).not.toContain('whsec_')
+    expect((await hooks()).map((entry) => entry.point)).toEqual(['before_sign_up'])
+    const kept = JSON.parse(await readFile(join(dir, 'kept.json'), 'utf8')) as ListedHook[]
+    SECRETS.push(kept[0]?.secret as string)
+  })
+
+  test('hooks changed by someone else between the plan and the write are not written to', async () => {
+    const id = await registerHook('before_sign_up')
+    const config = await dev({
+      settings: { app: { name: 'Northline' } },
+      hooks: { before_sign_up: { url: `${ASK}/before_sign_up`, deadlineMs: 3000 } },
+    })
+    const run = await tula(['apply', '--config', config], {
+      isTTY: true,
+      prompt: async () => {
+        // The plan weakens nothing. What it would write over meanwhile lets through on failure.
+        await patchHook(id, { failureMode: 'allow' })
+        return 'yes'
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(
+      'error: The hooks were changed by someone else after this plan was made. Nothing was written to them. Run `tula diff` again and review the new plan.\n' +
+        'Applied before the failure:\n  settings: replace\n' +
+        'Not applied:\n  hook before_sign_up: update\n'
+    )
+    expect(writes(run)).toEqual(['PUT /v1/admin/settings'])
+    expect(await hooks()).toMatchObject([{ deadlineMs: 2000, failureMode: 'allow' }])
+  })
+
+  test('when the hooks cannot be read again, the run says that, not that an operation failed', async () => {
+    const config = await dev({ hooks: { before_sign_up: { url: `${ASK}/sign-up` } } })
+    let lists = 0
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'kept.json'], {
+      intercept: (method, path) => {
+        if (method !== 'GET' || path !== '/v1/admin/hooks') {
+          return undefined
+        }
+        lists += 1
+        return lists === 1
+          ? undefined
+          : Response.json(
+              { status: 503, code: 'service.unavailable', detail: 'The service is unavailable.' },
+              { status: 503 }
+            )
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).not.toContain('Failed: hook')
+    expect(run.stderr).toContain(
+      'error: The hooks could not be read again before the first write to them, so nothing was written to them.\n' +
+        'error: The service is unavailable. (service.unavailable, HTTP 503)\n'
+    )
+    expect(hookWrites(run)).toEqual([])
+    expect(await stat(join(dir, 'kept.json')).catch(() => null)).toBeNull()
+  })
+
+  test('a hook whose secret could not be written is reported as created, its secret as not kept, and never printed', async () => {
+    const config = await dev({
+      hooks: {
+        before_sign_up: { url: `${ASK}/sign-up` },
+        before_token: { url: `${ASK}/token` },
+      },
+    })
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'kept.json'], {
+      host: hostWith({
+        writeSecretFile: async () => {
+          throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' })
+        },
+      }),
+    })
+    expect(run.code).toBe(1)
+    expect((await hooks()).map((entry) => entry.point)).toEqual(['before_sign_up'])
+    expect(run.stdout).toContain('done  hook before_sign_up: create')
+    expect(run.stderr).not.toContain('Failed: hook before_sign_up: create')
+    expect(run.stderr).toContain(
+      `error: The hook before_sign_up was created, but its signing secret could not be written to ${join(dir, 'kept.json')}: it was not kept. ` +
+        'A hook’s secret cannot be rotated: to get one, remove the hook and apply again.\n' +
+        'Applied before the failure:\n  settings: replace\n  hook before_sign_up: create\n' +
+        'Not applied:\n  hook before_token: create\n'
+    )
+    expect(run.stdout + run.stderr).not.toContain('Wrote ')
+    expect(run.stdout + run.stderr).not.toContain('whsec_')
+  })
+
+  test('a secret the run was not asked to show is removed from whatever is printed later, an API error that repeats it included', async () => {
+    const config = await dev({
+      hooks: {
+        before_sign_up: { url: `${ASK}/sign-up` },
+        before_token: { url: `${ASK}/token` },
+      },
+    })
+    let first: string | undefined
+    const run = await tula(['apply', '--config', config, '--yes', '--discard-secrets'], {
+      observe: (method, path, body) => {
+        if (method === 'POST' && path === '/v1/admin/hooks') {
+          first = (JSON.parse(body) as { secret: string }).secret
+        }
+      },
+      intercept: (method) =>
+        method === 'POST' && first !== undefined
+          ? Response.json(
+              { status: 500, code: 'internal', detail: `the store said: ${first} is taken` },
+              { status: 500 }
+            )
+          : undefined,
+    })
+    expect(first).toMatch(WHSEC)
+    SECRETS.push(first as string)
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('Failed: hook before_token: create')
+    expect(run.stderr).toContain('the store said: [redacted] is taken')
+    expect(run.stdout + run.stderr).not.toContain(first as string)
+  })
+
+  test('a secret written in the file is refused before any request, and not repeated', async () => {
+    const literal = 'whsec_d3JpdHRlbi1pbi1hLWhvb2stZG8tbm90LXByaW50MTI='
+    const config = await dev({
+      hooks: { before_sign_up: { url: `${ASK}/sign-up`, secret: literal } },
+    })
+    SECRETS.push(literal)
+    const run = await tula(['diff', '--config', config])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('environments.dev.hooks.before_sign_up.secret: unknown key')
+    expect(run.requests).toEqual([])
+  })
+
+  test('--json carries the hooks, what apply will ask for, and a secret only when asked', async () => {
+    await registerHook('before_session')
+    const config = await dev({ hooks: { before_sign_up: { url: `${ASK}/sign-up` } } })
+    const plan = JSON.parse(
+      (await tula(['diff', '--config', config, '--json', '--prune'])).stdout
+    ) as {
+      hooks: { managed: boolean; hooks: { point: string; action: string; weakened: string[] }[] }
+      weakened: string[]
+      applyRequires: Record<string, boolean>
+    }
+    expect(plan.hooks.managed).toBe(true)
+    expect(plan.hooks.hooks).toMatchObject([
+      { point: 'before_sign_up', action: 'create', weakened: [] },
+      { point: 'before_session', action: 'delete', weakened: ['hooks.before_session'] },
+    ])
+    expect(plan.weakened).toEqual(['hooks.before_session'])
+    expect(plan.applyRequires).toEqual({
+      allowUnknown: false,
+      allowWeaker: true,
+      allowWebhookRemoval: false,
+      webhookSecrets: false,
+      hookSecrets: true,
+    })
+    const quiet = await tula(['apply', '--config', config, '--yes', '--json', '--discard-secrets'])
+    expect(quiet.code).toBe(0)
+    expect(quiet.stdout).not.toContain('whsec_')
+    expect(JSON.parse(quiet.stdout)).toMatchObject({
+      applied: ['settings: replace', 'hook before_sign_up: create'],
+    })
+    expect(Object.hasOwn(JSON.parse(quiet.stdout) as object, 'hookSecrets')).toBe(false)
+
+    const loud = await dev({ hooks: { before_token: { url: `${ASK}/token` } } })
+    const shown = await tula(['apply', '--config', loud, '--yes', '--json', '--show-secrets'], {
+      shown: true,
+    })
+    const answer = JSON.parse(shown.stdout) as {
+      webhookSecrets: unknown[]
+      hookSecrets: { hook: string; secret: string }[]
+    }
+    expect(answer.webhookSecrets).toEqual([])
+    expect(answer.hookSecrets).toHaveLength(1)
+    expect(answer.hookSecrets[0]?.hook).toBe('before_token')
+    expect(answer.hookSecrets[0]?.secret).toMatch(WHSEC)
+    SECRETS.push(answer.hookSecrets[0]?.secret as string)
   })
 })
 

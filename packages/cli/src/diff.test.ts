@@ -9,10 +9,14 @@ import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/co
 import {
   buildPlan,
   diffValues,
+  type HookChange,
+  hookSnapshot,
   orderOperations,
   type Plan,
+  planHooks,
   planProviders,
   planWebhooks,
+  type RemoteHook,
   type RemoteProvider,
   type RemoteState,
   type RemoteWebhook,
@@ -997,6 +1001,9 @@ describe('orderOperations: webhooks', () => {
       if (operation.kind === 'settings') {
         return 'settings'
       }
+      if ('point' in operation) {
+        return `${operation.kind}:${operation.point}`
+      }
       return operation.kind === 'provider.set' || operation.kind === 'provider.delete'
         ? `${operation.kind}:${operation.provider}`
         : `${operation.kind}:${operation.url.slice(HOOK.length + 1)}`
@@ -1097,5 +1104,412 @@ describe('orderOperations: webhooks', () => {
       remote({ webhooks: [endpoint(1, { url: HOOK }), endpoint(2, { url: HOOK })] })
     )
     expect(webhookSteps(result)).toEqual([])
+  })
+})
+
+describe('planHooks', () => {
+  const ASK = 'https://api.northline.app/hooks'
+
+  function hook(point: string, over: Partial<RemoteHook> = {}): RemoteHook {
+    return {
+      id: `id-${point}`,
+      point,
+      url: `${ASK}/${point}`,
+      enabled: true,
+      deadlineMs: 2000,
+      failureMode: 'deny',
+      lastFailedAt: null,
+      lastFailureReason: null,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      ...over,
+    }
+  }
+
+  /** What a row expects of one hook: its point, the action, the fields that differ, the weakenings. */
+  type Expected = [
+    point: string,
+    action: HookChange['action'],
+    fields: string[],
+    weakened: string[],
+  ]
+
+  const summary = (changes: readonly HookChange[]): Expected[] =>
+    changes.map((change) => [
+      change.point,
+      change.action,
+      change.fields.map((field) => field.path),
+      change.weakened,
+    ])
+
+  type Desired = NonNullable<EnvironmentConfigInput['hooks']>
+
+  // The weakenings are the contract's `hookWeakenings`: `failureMode` to `allow` (or a hook
+  // registered with it), `enabled` to `false`, the removal of a hook that is on.
+  const rows: [string, RemoteHook[], Desired, boolean, Expected[]][] = [
+    [
+      'a hook the server does not have is created, every field sent',
+      [],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [['before_sign_up', 'create', ['url', 'enabled', 'deadlineMs', 'failureMode'], []]],
+    ],
+    [
+      'a hook created to let through on failure is weaker, as the server records it',
+      [],
+      { before_session: { url: `${ASK}/before_session`, failureMode: 'allow' } },
+      false,
+      [
+        [
+          'before_session',
+          'create',
+          ['url', 'enabled', 'deadlineMs', 'failureMode'],
+          ['hooks.before_session.failureMode'],
+        ],
+      ],
+    ],
+    [
+      'a hook that is as the file says is left alone',
+      [hook('before_sign_up')],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [['before_sign_up', 'none', [], []]],
+    ],
+    [
+      'the defaults are the file’s word: a server’s other deadline is a difference',
+      [hook('before_sign_up', { deadlineMs: 4000 })],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [['before_sign_up', 'update', ['deadlineMs'], []]],
+    ],
+    [
+      'a changed address is the same hook, updated: the point names it',
+      [hook('before_token')],
+      { before_token: { url: `${ASK}/claims` } },
+      false,
+      [['before_token', 'update', ['url'], []]],
+    ],
+    [
+      'an address is compared exactly: a trailing slash is another address',
+      [hook('before_token', { url: `${ASK}/claims/` })],
+      { before_token: { url: `${ASK}/claims` } },
+      false,
+      [['before_token', 'update', ['url'], []]],
+    ],
+    [
+      'deny to allow is weaker',
+      [hook('before_sign_up')],
+      { before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' } },
+      false,
+      [['before_sign_up', 'update', ['failureMode'], ['hooks.before_sign_up.failureMode']]],
+    ],
+    [
+      'allow to deny is not',
+      [hook('before_sign_up', { failureMode: 'allow' })],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [['before_sign_up', 'update', ['failureMode'], []]],
+    ],
+    [
+      'allow that stays allow is no change and no new weakening',
+      [hook('before_sign_up', { failureMode: 'allow' })],
+      { before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' } },
+      false,
+      [['before_sign_up', 'none', [], []]],
+    ],
+    [
+      'switching a hook off is weaker',
+      [hook('before_session')],
+      { before_session: { url: `${ASK}/before_session`, enabled: false } },
+      false,
+      [['before_session', 'update', ['enabled'], ['hooks.before_session.enabled']]],
+    ],
+    [
+      'switching one on is not',
+      [hook('before_session', { enabled: false })],
+      { before_session: { url: `${ASK}/before_session` } },
+      false,
+      [['before_session', 'update', ['enabled'], []]],
+    ],
+    [
+      'off and allow at once: both fields, in the contract’s order',
+      [hook('before_session')],
+      { before_session: { url: `${ASK}/before_session`, enabled: false, failureMode: 'allow' } },
+      false,
+      [
+        [
+          'before_session',
+          'update',
+          ['enabled', 'failureMode'],
+          ['hooks.before_session.enabled', 'hooks.before_session.failureMode'],
+        ],
+      ],
+    ],
+    [
+      'a point the file leaves out is unmanaged',
+      [hook('before_sign_up'), hook('before_token')],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [
+        ['before_sign_up', 'none', [], []],
+        ['before_token', 'unmanaged', [], []],
+      ],
+    ],
+    [
+      '--prune removes it, and removing a hook that is on is weaker',
+      [hook('before_sign_up'), hook('before_token')],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      true,
+      [
+        ['before_sign_up', 'none', [], []],
+        ['before_token', 'delete', [], ['hooks.before_token']],
+      ],
+    ],
+    [
+      'removing a hook that is off weakens nothing',
+      [hook('before_token', { enabled: false })],
+      {},
+      true,
+      [['before_token', 'delete', [], []]],
+    ],
+    [
+      'a point this version does not know is left alone, even with --prune',
+      [hook('before_refresh')],
+      {},
+      true,
+      [['before_refresh', 'unknown', [], []]],
+    ],
+    [
+      'the points come in the contract’s order, whatever the file’s or the server’s',
+      [hook('before_token'), hook('before_sign_up')],
+      {
+        before_token: { url: `${ASK}/before_token` },
+        before_session: { url: `${ASK}/before_session` },
+      },
+      false,
+      [
+        ['before_sign_up', 'unmanaged', [], []],
+        ['before_session', 'create', ['url', 'enabled', 'deadlineMs', 'failureMode'], []],
+        ['before_token', 'none', [], []],
+      ],
+    ],
+  ]
+
+  test.each(rows)('%s', (_, remoteHooks, desired, prune, expected) => {
+    const planned = planHooks(remoteHooks, environment({ hooks: desired }).hooks, { prune })
+    expect(planned.managed).toBe(true)
+    expect(summary(planned.hooks)).toEqual(expected)
+  })
+
+  test('a file without the key manages nothing: no entry, whatever the server has, even with --prune', () => {
+    const planned = planHooks([hook('before_sign_up')], environment({}).hooks, { prune: true })
+    expect(planned).toEqual({ managed: false, hooks: [], seen: hookSnapshot([]) })
+    const whole = plan({}, remote({ hooks: [hook('before_sign_up')] }), { prune: true })
+    expect(whole.hooks.managed).toBe(false)
+    expect(orderOperations(whole).some((operation) => operation.kind.startsWith('hook.'))).toBe(
+      false
+    )
+  })
+
+  test('a change shows the server’s value and the file’s; a creation only the file’s', () => {
+    const changed = planHooks(
+      [hook('before_sign_up', { deadlineMs: 4000, failureMode: 'allow' })],
+      environment({ hooks: { before_sign_up: { url: `${ASK}/before_sign_up` } } }).hooks,
+      {}
+    ).hooks[0]
+    expect(changed).toEqual({
+      point: 'before_sign_up',
+      id: 'id-before_sign_up',
+      url: `${ASK}/before_sign_up`,
+      action: 'update',
+      fields: [
+        { path: 'deadlineMs', kind: 'changed', before: 4000, after: 2000 },
+        { path: 'failureMode', kind: 'changed', before: 'allow', after: 'deny' },
+      ],
+      weakened: [],
+    })
+    const created = planHooks(
+      [],
+      environment({ hooks: { before_token: { url: `${ASK}/claims`, deadlineMs: 300 } } }).hooks,
+      {}
+    ).hooks[0]
+    expect(created).toEqual({
+      point: 'before_token',
+      url: `${ASK}/claims`,
+      action: 'create',
+      fields: [
+        { path: 'url', kind: 'added', after: `${ASK}/claims` },
+        { path: 'enabled', kind: 'added', after: true },
+        { path: 'deadlineMs', kind: 'added', after: 300 },
+        { path: 'failureMode', kind: 'added', after: 'deny' },
+      ],
+      weakened: [],
+    })
+  })
+
+  test('the plan’s weakenings are the settings’ and the hooks’ together; a hook change is a change', () => {
+    const state = remote({ hooks: [hook('before_sign_up'), hook('before_session')] })
+    const weaker = plan(
+      {
+        settings: { mfa: { policy: 'optional' } },
+        hooks: { before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' } },
+      },
+      remote({
+        ...state,
+        settings: settings((s) => {
+          s.mfa.policy = 'required'
+        }),
+      }),
+      { prune: true }
+    )
+    expect(weaker.weakened).toEqual([
+      'mfa.policy',
+      'hooks.before_sign_up.failureMode',
+      'hooks.before_session',
+    ])
+    expect(weaker.changes).toBe(true)
+
+    const settled = buildPlan(
+      {
+        ...state,
+        managedBy: {
+          tool: 'tula-apply',
+          configHash: HASH,
+          at: '2026-10-01T00:00:00.000Z',
+          revision: 3,
+          drifted: false,
+        },
+      },
+      environment({
+        hooks: {
+          before_sign_up: { url: `${ASK}/before_sign_up` },
+        },
+      }),
+      { configHash: HASH }
+    )
+    // One is as the file says, the other unmanaged: nothing is pending for the hooks.
+    expect(settled.hooks.hooks.map((entry) => entry.action)).toEqual(['none', 'unmanaged'])
+    expect(settled.weakened).toEqual([])
+  })
+
+  test('the snapshot is the same for the same hooks in any order, and moves with any field a plan reads', () => {
+    const one = hook('before_sign_up')
+    const two = hook('before_token')
+    const base = hookSnapshot([one, two])
+    expect(hookSnapshot([two, one])).toBe(base)
+    // What a call moves is not what a plan reads.
+    expect(
+      hookSnapshot([
+        { ...one, lastFailedAt: '2026-10-02T00:00:00.000Z', lastFailureReason: 'timeout' },
+        { ...two, updatedAt: '2026-10-03T00:00:00.000Z' },
+      ])
+    ).toBe(base)
+    for (const moved of [
+      { id: 'another' },
+      { point: 'before_session' },
+      { url: `${ASK}/elsewhere` },
+      { enabled: false },
+      { deadlineMs: 2001 },
+      { failureMode: 'allow' },
+    ]) {
+      expect(hookSnapshot([{ ...one, ...moved }, two])).not.toBe(base)
+    }
+    expect(hookSnapshot([one])).not.toBe(base)
+  })
+})
+
+describe('orderOperations: hooks', () => {
+  const ASK = 'https://api.northline.app/hooks'
+  const HOOK = 'https://hooks.northline.app/tula'
+
+  function hook(point: string, over: Partial<RemoteHook> = {}): RemoteHook {
+    return {
+      id: `id-${point}`,
+      point,
+      url: `${ASK}/${point}`,
+      enabled: true,
+      deadlineMs: 2000,
+      failureMode: 'deny',
+      lastFailedAt: null,
+      lastFailureReason: null,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      ...over,
+    }
+  }
+
+  const kinds = (planned: Plan) =>
+    orderOperations(planned).map((operation) =>
+      'point' in operation ? `${operation.kind} ${operation.point}` : operation.kind
+    )
+
+  test('hooks come last: after the settings, every provider and every webhook endpoint', () => {
+    const planned = plan(
+      {
+        settings: { app: { name: 'Northline' } },
+        providers: { google: { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') } },
+        webhooks: [{ url: HOOK, eventTypes: ['user.created'] }],
+        hooks: { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      },
+      remote({ webhooks: [], hooks: [] })
+    )
+    expect(kinds(planned)).toEqual([
+      'settings',
+      'provider.set',
+      'webhook.create',
+      'hook.create before_sign_up',
+    ])
+  })
+
+  test('what adds a check or loosens none goes first, then what loosens one, then removals', () => {
+    const planned = plan(
+      {
+        hooks: {
+          // Loosened: goes after the two below.
+          before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' },
+          // Tightened (switched on): first.
+          before_session: { url: `${ASK}/before_session` },
+        },
+      },
+      remote({
+        hooks: [
+          hook('before_sign_up'),
+          hook('before_session', { enabled: false }),
+          hook('before_token'),
+        ],
+      }),
+      { prune: true }
+    )
+    expect(kinds(planned)).toEqual([
+      'settings',
+      'hook.update before_session',
+      'hook.update before_sign_up',
+      'hook.delete before_token',
+    ])
+  })
+
+  test('a new hook is created before another is loosened, whatever the points’ order', () => {
+    const planned = plan(
+      {
+        hooks: {
+          before_sign_up: { url: `${ASK}/before_sign_up`, enabled: false },
+          before_token: { url: `${ASK}/before_token`, failureMode: 'allow' },
+        },
+      },
+      remote({ hooks: [hook('before_sign_up')] })
+    )
+    expect(kinds(planned)).toEqual([
+      'settings',
+      'hook.create before_token',
+      'hook.update before_sign_up',
+    ])
+  })
+
+  test('an unchanged, an unmanaged and an unknown hook are no operation', () => {
+    const planned = plan(
+      { hooks: { before_sign_up: { url: `${ASK}/before_sign_up` } } },
+      remote({ hooks: [hook('before_sign_up'), hook('before_token'), hook('before_refresh')] })
+    )
+    expect(kinds(planned)).toEqual(['settings'])
   })
 })

@@ -136,6 +136,17 @@ export default defineConfig({
         },
       ],
       // #endregion
+      // #region hooks
+      // The questions this environment asks before it acts, by point: at most one hook per
+      // point. There is no secret to write here either. What an entry leaves out is the
+      // API's default: on, a deadline of two seconds, and `failureMode: 'deny'` (a call that
+      // fails refuses what was asked about). `dev` has no `hooks` key: its hooks are not
+      // managed by this file.
+      hooks: {
+        before_sign_up: { url: 'https://api.northline.app/hooks/tula/sign-up' },
+        before_token: { url: 'https://api.northline.app/hooks/tula/claims', deadlineMs: 1000 },
+      },
+      // #endregion
     },
   },
 })

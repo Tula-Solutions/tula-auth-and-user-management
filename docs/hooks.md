@@ -348,6 +348,43 @@ the hook's secret: `TULA_MASTER_KEY` changed). It is the last failure, whenever 
 denial is not a failure. The server also logs one line per failed call, with ids and the
 reason. Nothing of what your endpoint said is kept.
 
+## In the dashboard and in the config file
+
+**The dashboard** has a Hooks screen per environment ([dashboard.md](dashboard.md)): the
+three points, each with its hook or none. It adds a hook (the signing secret is shown once,
+in that dialog and nowhere after), changes its address, deadline and failure mode, switches
+it off and on, and removes it. Every change the server records as a weakening is asked about
+first, in a sentence that says what is let through at that point, and in a production
+environment the point's name has to be typed: `allow` on failure, switching a hook off, and
+removing one that is on.
+
+What the screen can say about calls is what the server keeps: **the last call that failed**
+(when, and the fixed word for why, with "timed out" told apart from the rest). It says so in
+those words. A call that was answered leaves no record, so the screen cannot say how often a
+hook allowed or denied, nor that a hook "is failing now": the last failure stays until
+another one replaces it.
+
+**The config file** can hold an environment's hooks, by point, without their secrets
+([config.md](config.md#hooks)):
+
+<!-- snippet: examples/tula-config/tula.config.ts#hooks -->
+```ts
+// The questions this environment asks before it acts, by point: at most one hook per
+// point. There is no secret to write here either. What an entry leaves out is the
+// API's default: on, a deadline of two seconds, and `failureMode: 'deny'` (a call that
+// fails refuses what was asked about). `dev` has no `hooks` key: its hooks are not
+// managed by this file.
+hooks: {
+  before_sign_up: { url: 'https://api.northline.app/hooks/tula/sign-up' },
+  before_token: { url: 'https://api.northline.app/hooks/tula/claims', deadlineMs: 1000 },
+},
+```
+<!-- /snippet -->
+
+`tula diff` marks the same weakenings (`! weakens security: hooks.before_sign_up.failureMode`)
+and `tula apply --yes` refuses them without `--allow-weaker`. A new hook's secret goes where
+a new webhook endpoint's goes: `--secrets-file`, `--show-secrets` or `--discard-secrets`.
+
 ### How long a sign-in can wait
 
 Each call ends at its hook's deadline, which is never more than five seconds; nothing is
@@ -522,6 +559,6 @@ Try again later.") and keep the control to start again.
 ## Not built yet
 
 - Replacing a hook's secret without removing the hook.
-- Hooks in `tula.config.ts` and in the dashboard.
-- A log of calls, and a way to send a test question.
+- A log of calls (the dashboard shows the last failed call and says that nothing else is
+  recorded), counts of what a hook allowed and denied, and a way to send a test question.
 - A hook at a refresh, and claims a hook can change without a sign-in or a step-up.

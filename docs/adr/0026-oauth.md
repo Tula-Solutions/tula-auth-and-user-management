@@ -261,6 +261,10 @@ Phase 2 (TULA-12). Scopes `openid profile email` and nothing else; no Graph call
   an operator who has not added the optional claim to the app registration gets no
   Microsoft sign-ups, and the user's message ("verify it with the provider") points at
   something the user cannot do. `docs/providers/microsoft.md` says so in its checklist.
+  **Whether a personal account's token carries the claim is not known**: the reference
+  speaks of a domain owner, which a personal account does not have in the same sense, and
+  no such token was seen. If it does not, `consumers` admits accounts that can be
+  connected from a profile and can never sign up.
 - **PKCE is sent** (S256), and the nonce is checked in the ID token.
 - **The mock provider serves it** with a tenant id and an object id on its consent page and
   a box that leaves the verified-domain claim out, and refuses an account of a tenant the

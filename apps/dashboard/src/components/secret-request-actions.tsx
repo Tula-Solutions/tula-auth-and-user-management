@@ -10,7 +10,8 @@ import { ActionButton } from './action-button'
  * The dialog itself is given `busy` for the same time ({@link Modal}).
  *
  * @param props - `pending`: the request is in flight; `onCancel`; `submitLabel` and
- *   `pendingLabel`: the submitting button's text at rest and while pending.
+ *   `pendingLabel`: the submitting button's text at rest and while pending; `unavailable`:
+ *   the submitting button is marked as not usable yet.
  * @returns Cancel, the submitting button and, while pending, the reason.
  */
 export function SecretRequestActions({
@@ -19,8 +20,14 @@ export function SecretRequestActions({
   submitLabel,
   pendingLabel,
   onSubmit,
+  unavailable = false,
 }: {
   pending: boolean
+  /**
+   * The submitting button cannot be used yet (a confirmation still to be typed). It is
+   * marked, not disabled; the form that holds it is what refuses the submit.
+   */
+  unavailable?: boolean
   onCancel: () => void
   submitLabel: string
   pendingLabel: string
@@ -48,7 +55,12 @@ export function SecretRequestActions({
         >
           Cancel
         </ActionButton>
-        <ActionButton type={onSubmit ? 'button' : 'submit'} onClick={onSubmit} pending={pending}>
+        <ActionButton
+          type={onSubmit ? 'button' : 'submit'}
+          onClick={onSubmit}
+          pending={pending}
+          aria-disabled={unavailable || pending || undefined}
+        >
           {pending ? pendingLabel : submitLabel}
         </ActionButton>
       </div>
