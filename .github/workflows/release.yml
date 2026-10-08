@@ -57,5 +57,8 @@ jobs:
         with:
           name: package-tarballs
           path: .release/*.tgz
+          # `.release` is a dot directory, and the action skips hidden files unless told
+          # otherwise: without this it finds nothing and the step fails.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
