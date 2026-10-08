@@ -117,6 +117,25 @@ export function answerText(statusCode: number | null): string {
 }
 
 /**
+ * How a delivery last went, for its row in the list: the receiver's status code, or why
+ * there was none, or that nothing has been tried.
+ *
+ * @param delivery - The delivery's last status code and the server's word for a failure.
+ * @returns For example `HTTP 503`, `No answer within five seconds.` or `No request yet`.
+ */
+export function lastResultText(delivery: {
+  statusCode: number | null
+  failureReason: string | null
+}): string {
+  if (delivery.statusCode !== null) {
+    return answerText(delivery.statusCode)
+  }
+  return delivery.failureReason === null
+    ? 'No request yet'
+    : failureReasonText(delivery.failureReason)
+}
+
+/**
  * What became of a request made on demand (a test event, a delivery sent again).
  *
  * @param result - The outcome, the status code, the duration and the server's word.

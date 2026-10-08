@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { screen, waitFor, within } from '@testing-library/react'
 import { ACTIVITY_TYPES } from '@tula/contract/event-types'
-import { failure, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
+import {
+  failure,
+  fakeWebhookDelivery,
+  fakeWebhookEndpoint,
+  IDS,
+  installFakeApi,
+} from '~/testing/fake-api'
 import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
 
 // The webhooks screens: an environment's endpoints, one endpoint's deliveries, one delivery's
@@ -562,5 +568,420 @@ describe('sending a test event', () => {
       ])
     )
     expect(within(dialog()).queryAllByTestId('send-result')).toHaveLength(0)
+  })
+})
+
+/** The cells of a table's body rows, as text, without the cells listed in `skip`. */
+function bodyRows(table: HTMLElement, skip: number[] = []): string[][] {
+  return within(table)
+    .getAllByRole('row')
+    .slice(1)
+    .map((row) =>
+      within(row)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent ?? '')
+        .filter((_text, index) => !skip.includes(index))
+    )
+}
+
+type FakeDelivery = ReturnType<typeof fakeWebhookDelivery>
+
+/** An endpoint with deliveries, opened at its own screen (or at `options.at`). */
+function withDeliveries(
+  deliveries: (endpointId: string) => FakeDelivery[],
+  options: {
+    search?: string
+    endpoint?: Parameters<typeof fakeWebhookEndpoint>[0]
+    at?: (path: string, made: FakeDelivery[]) => string
+  } = {}
+) {
+  const api = installFakeApi()
+  const endpoint = fakeWebhookEndpoint({ url: HOME, ...options.endpoint })
+  api.state.webhookEndpoints.push(endpoint)
+  const made = deliveries(endpoint.id)
+  api.state.webhookDeliveries.push(...made)
+  const path = `${DEV_PATH}/webhooks/${endpoint.id}`
+  const address = options.at?.(path, made) ?? `${path}${options.search ?? ''}`
+  return { ...start(address, { api }), endpoint, made, path }
+}
+
+const FAILED_THREE_TIMES = [
+  {
+    attempt: 1,
+    attemptedAt: '2026-10-03T08:00:00.000Z',
+    statusCode: 500,
+    durationMs: 120,
+    failureReason: null,
+  },
+  {
+    attempt: 2,
+    attemptedAt: '2026-10-03T08:00:05.000Z',
+    statusCode: null,
+    durationMs: 5000,
+    failureReason: 'timeout',
+  },
+  {
+    attempt: 3,
+    attemptedAt: '2026-10-03T08:05:00.000Z',
+    statusCode: 503,
+    durationMs: 87,
+    failureReason: null,
+  },
+]
+
+describe('the deliveries of an endpoint', () => {
+  test('the endpoint and its deliveries: state in words, type, when, requests and the last result', async () => {
+    const { made, path } = withDeliveries((id) => [
+      fakeWebhookDelivery(id, { createdAt: '2026-10-04T09:00:00.000Z' }),
+      fakeWebhookDelivery(id, {
+        eventType: 'session.revoked',
+        state: 'failed',
+        attempts: FAILED_THREE_TIMES,
+        createdAt: '2026-10-03T08:00:00.000Z',
+      }),
+      fakeWebhookDelivery(id, {
+        state: 'pending',
+        attempts: [],
+        completedAt: null,
+        createdAt: '2026-10-02T07:00:00.000Z',
+      }),
+      fakeWebhookDelivery(id, {
+        eventType: 'api_key.created',
+        eventId: null,
+        test: true,
+        state: 'failed',
+        attempts: [
+          {
+            attempt: 1,
+            attemptedAt: '2026-10-01T06:00:00.000Z',
+            statusCode: null,
+            durationMs: 5000,
+            failureReason: 'timeout',
+          },
+        ],
+        createdAt: '2026-10-01T06:00:00.000Z',
+      }),
+    ])
+    await heading('Webhook endpoint')
+    // The endpoint itself, with everything that can be done to it, and no link to this screen.
+    const endpoint = await card(HOME)
+    expect(within(endpoint).getByTestId('endpoint-state').textContent).toContain('Active')
+    expect(within(endpoint).queryAllByRole('link', { name: 'Deliveries' })).toHaveLength(0)
+    expect(screen.getByRole('link', { name: '← All webhook endpoints' }).getAttribute('href')).toBe(
+      `/dashboard${DEV_PATH}/webhooks`
+    )
+
+    const table = await screen.findByRole('table', { name: 'Deliveries' })
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual(['Queued', 'Event type', 'State', 'Requests', 'Last result', 'Attempts'])
+    // Without the first cell, which is a time in the reader's locale.
+    expect(bodyRows(table, [0])).toEqual([
+      ['user.created', 'Delivered', '1', 'HTTP 204', 'See attempts'],
+      ['session.revoked', 'Failed', '3', 'HTTP 503', 'See attempts'],
+      ['user.created', 'Pending', '0', 'No request yet', 'See attempts'],
+      [
+        'api_key.createdTest event',
+        'Failed',
+        '1',
+        'No answer within five seconds.',
+        'See attempts',
+      ],
+    ])
+    expect(
+      [...table.querySelectorAll('time')].map((time) => time.getAttribute('datetime'))
+    ).toEqual([
+      '2026-10-04T09:00:00.000Z',
+      '2026-10-03T08:00:00.000Z',
+      '2026-10-02T07:00:00.000Z',
+      '2026-10-01T06:00:00.000Z',
+    ])
+    // Every row's link says which delivery it leads to, and leads there.
+    const links = within(table).getAllByRole('link')
+    expect(links.map((link) => link.getAttribute('href'))).toEqual(
+      made.map((delivery) => `/dashboard${path}/deliveries/${delivery.id}`)
+    )
+    expect(new Set(links.map((link) => link.getAttribute('aria-label'))).size).toBe(4)
+    expect(links[0]?.getAttribute('aria-label')).toStartWith(
+      'Attempts of the user.created delivery queued '
+    )
+  })
+
+  test('the page and the filters are in the address, and what the address cannot mean is dropped', async () => {
+    const { user, api, location, path, endpoint } = withDeliveries(
+      (id) => [
+        ...Array.from({ length: 24 }, () => fakeWebhookDelivery(id)),
+        fakeWebhookDelivery(id, { eventType: 'session.revoked', state: 'failed' }),
+      ],
+      { search: '?state=bogus&eventType=invoice.paid&page=2' }
+    )
+    const list = () =>
+      api
+        .callsTo('GET', `/v1/admin/webhook-endpoints/${endpoint.id}/deliveries`)
+        .map((call) => call.search.toString())
+    const table = await screen.findByRole('table', { name: 'Deliveries' })
+    expect(list()).toEqual(['page=2&size=20'])
+    expect(bodyRows(table, [0, 3, 4, 5])).toEqual([
+      ['user.created', 'Delivered'],
+      ['user.created', 'Delivered'],
+      ['user.created', 'Delivered'],
+      ['user.created', 'Delivered'],
+      ['session.revoked', 'Failed'],
+    ])
+    await user.click(screen.getByRole('button', { name: 'Previous' }))
+    await waitFor(() => expect(location()).toBe(path))
+
+    // A filter starts again at the first page.
+    await user.click(await screen.findByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(location()).toBe(`${path}?page=2`))
+    const state = screen.getByLabelText('State') as HTMLSelectElement
+    expect([...state.options].map((option) => [option.value, option.textContent])).toEqual([
+      ['', 'Any state'],
+      ['pending', 'Pending'],
+      ['delivered', 'Delivered'],
+      ['failed', 'Failed'],
+    ])
+    await user.selectOptions(state, 'failed')
+    await waitFor(() => expect(location()).toBe(`${path}?state=failed`))
+    await waitFor(() => expect(list().at(-1)).toBe('state=failed&page=1&size=20'))
+    await waitFor(() =>
+      expect(bodyRows(screen.getByRole('table', { name: 'Deliveries' }), [0, 3, 4, 5])).toEqual([
+        ['session.revoked', 'Failed'],
+      ])
+    )
+
+    const type = screen.getByLabelText('Event type') as HTMLSelectElement
+    expect([...type.options].map((option) => option.value)).toEqual(['', ...ACTIVITY_TYPES])
+    await user.selectOptions(type, 'user.created')
+    await waitFor(() => expect(location()).toBe(`${path}?state=failed&eventType=user.created`))
+    expect((await screen.findByText('No delivery matches these filters')).tagName).toBe('P')
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+    await waitFor(() => expect(location()).toBe(path))
+  })
+
+  test('an endpoint with no deliveries says so, and a test event sent from here is listed', async () => {
+    const { user } = withDeliveries(() => [])
+    expect((await screen.findByText('Nothing has been queued for this endpoint yet')).tagName).toBe(
+      'P'
+    )
+    expect(screen.queryAllByRole('button', { name: 'Clear filters' })).toHaveLength(0)
+    await user.click(screen.getByRole('button', { name: `Send a test event to ${HOME}` }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Send test event' }))
+    await within(dialog()).findByTestId('send-result')
+    await user.click(within(dialog()).getByRole('button', { name: 'Close' }))
+    const table = await screen.findByRole('table', { name: 'Deliveries' })
+    expect(bodyRows(table, [0])).toEqual([
+      ['user.createdTest event', 'Delivered', '1', 'HTTP 204', 'See attempts'],
+    ])
+  })
+
+  test('an endpoint of another environment is not found, and the way back is still there', async () => {
+    const api = installFakeApi()
+    const elsewhere = fakeWebhookEndpoint({ url: HOME, environmentId: IDS.production })
+    api.state.webhookEndpoints.push(elsewhere)
+    start(`${DEV_PATH}/webhooks/${elsewhere.id}`, { api })
+    expect((await screen.findByRole('alert')).textContent).toContain('This could not be loaded')
+    expect(screen.queryAllByRole('heading', { level: 2, name: HOME })).toHaveLength(0)
+    expect(screen.getByRole('link', { name: '← All webhook endpoints' }).getAttribute('href')).toBe(
+      `/dashboard${DEV_PATH}/webhooks`
+    )
+  })
+
+  test('deleting the endpoint from its own screen leads back to the list, with no error on the way', async () => {
+    const { user, api, location } = withDeliveries((id) => [fakeWebhookDelivery(id)])
+    await user.click(within(await card(HOME)).getByRole('button', { name: `Delete ${HOME}` }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Delete endpoint' }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/webhooks`))
+    await screen.findByText('No webhook endpoints yet')
+    expect(screen.queryAllByText('This could not be loaded')).toHaveLength(0)
+    expect(api.state.webhookDeliveries).toEqual([])
+    // Nothing asked for the endpoint again once it was gone.
+    const asked = api.calls.map((call) => `${call.method} ${call.path}`)
+    expect(asked.slice(asked.findIndex((line) => line.startsWith('DELETE')) + 1)).toEqual([
+      'GET /v1/admin/webhook-endpoints',
+    ])
+  })
+})
+
+describe('one delivery', () => {
+  function withDelivery(
+    overrides: Parameters<typeof fakeWebhookDelivery>[1] = {},
+    endpoint: Parameters<typeof fakeWebhookEndpoint>[0] = {}
+  ) {
+    const world = withDeliveries((id) => [fakeWebhookDelivery(id, overrides)], {
+      endpoint,
+      at: (path, made) => `${path}/deliveries/${made[0]?.id}`,
+    })
+    return { ...world, delivery: world.made[0] as FakeDelivery }
+  }
+
+  const FAILED = {
+    eventType: 'session.revoked',
+    state: 'failed',
+    attempts: FAILED_THREE_TIMES,
+    createdAt: '2026-10-03T08:00:00.000Z',
+    completedAt: '2026-10-03T08:05:00.000Z',
+  }
+
+  function fact(name: string): Element | null {
+    return within(screen.getByTestId('delivery-facts')).getByText(name, { selector: 'dt' })
+      .nextElementSibling
+  }
+
+  test('every request is listed with its status code, its duration, its time and why it failed', async () => {
+    const { path, delivery } = withDelivery(FAILED)
+    await heading('Delivery')
+    expect(
+      (await screen.findByRole('link', { name: '← Deliveries of this endpoint' })).getAttribute(
+        'href'
+      )
+    ).toBe(`/dashboard${path}`)
+    const facts = await screen.findByTestId('delivery-facts')
+    expect(fact('Endpoint')?.textContent).toBe(HOME)
+    expect(fact('Event type')?.textContent).toBe('session.revoked')
+    expect(fact('State')?.textContent).toBe('Failed')
+    expect(fact('Event')?.textContent).toBe(delivery.eventId as string)
+    expect(fact('Requests made')?.textContent).toBe('3')
+    expect(
+      [...facts.querySelectorAll('time')].map((time) => time.getAttribute('datetime'))
+    ).toEqual(['2026-10-03T08:00:00.000Z', '2026-10-03T08:05:00.000Z'])
+
+    const table = screen.getByRole('table', { name: 'Requests made for this delivery' })
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent)
+    ).toEqual(['Request', 'When', 'Answer', 'Duration', 'What went wrong'])
+    expect(bodyRows(table, [1])).toEqual([
+      ['1', 'HTTP 500', '120 ms', '—'],
+      ['2', 'No answer', '5000 ms', 'No answer within five seconds.'],
+      ['3', 'HTTP 503', '87 ms', '—'],
+    ])
+    expect(
+      [...table.querySelectorAll('time')].map((time) => time.getAttribute('datetime'))
+    ).toEqual(['2026-10-03T08:00:00.000Z', '2026-10-03T08:00:05.000Z', '2026-10-03T08:05:00.000Z'])
+  })
+
+  test('sending it again shows the result and the new request, and says what a success does', async () => {
+    const { user, api, endpoint, delivery } = withDelivery(FAILED, {
+      failingSince: '2026-10-03T08:00:00.000Z',
+    })
+    const again = await screen.findByRole('button', { name: 'Send again' })
+    expect(screen.getByTestId('send-again-note').textContent).toBe(
+      'One request is made now, with the same event and the same id, and is not retried. If it gets through, the delivery is delivered and the endpoint’s run of failures ends.'
+    )
+    await user.click(again)
+    await waitFor(() =>
+      expect(screen.getByTestId('send-result').textContent).toBe(
+        'Delivered: the endpoint answered 204 in 41 ms.'
+      )
+    )
+    expect(
+      api.callsTo(
+        'POST',
+        `/v1/admin/webhook-endpoints/${endpoint.id}/deliveries/${delivery.id}/redeliver`
+      )
+    ).toHaveLength(1)
+    await waitFor(() =>
+      expect(
+        bodyRows(screen.getByRole('table', { name: 'Requests made for this delivery' }), [1]).at(-1)
+      ).toEqual(['4', 'HTTP 204', '41 ms', '—'])
+    )
+    expect(fact('State')?.textContent).toBe('Delivered')
+
+    // A second try that fails says that, in place of the first result.
+    api.state.webhookReceiver = { statusCode: 500, durationMs: 9, failureReason: null }
+    await user.click(screen.getByRole('button', { name: 'Send again' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('send-result').textContent).toBe(
+        'Failed: the endpoint answered 500 in 9 ms.'
+      )
+    )
+  })
+
+  test.each([
+    [
+      'endpoint_disabled',
+      'The endpoint is switched off, and nothing is sent to one that is. Switch it on first.',
+    ],
+    [
+      'delivery_pending',
+      'The server is still retrying this delivery and will send it by itself. It can be sent again by hand once it has been delivered or given up.',
+    ],
+    ['attempt_limit', 'This delivery has had twenty requests, the most one delivery can have.'],
+    [
+      'event_gone',
+      'The event is no longer kept (events are kept for 30 days), so there is nothing to send again.',
+    ],
+    ['a_later_word', 'This delivery cannot be sent again.'],
+  ])('a delivery that cannot be sent again (%s) says why in words', async (reason, sentence) => {
+    const { user, api } = withDelivery(FAILED)
+    api.override('POST', /\/redeliver$/, () =>
+      failure(409, 'webhook.cannot_redeliver', 'This delivery cannot be sent again.', undefined, {
+        reason,
+      })
+    )
+    await user.click(await screen.findByRole('button', { name: 'Send again' }))
+    await waitFor(() =>
+      expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toEqual([sentence])
+    )
+    expect(screen.queryAllByTestId('send-result')).toHaveLength(0)
+  })
+
+  test('the limit on requests made on demand is said in words', async () => {
+    const { user, api } = withDelivery(FAILED)
+    api.override('POST', /\/redeliver$/, () => {
+      const response = failure(429, 'rate_limited', 'Too many requests.')
+      response.headers.set('retry-after', '12')
+      return response
+    })
+    await user.click(await screen.findByRole('button', { name: 'Send again' }))
+    await waitFor(() =>
+      expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toEqual([
+        'Test events and deliveries sent again share a limit of ten a minute for the environment. Try again in 12 seconds.',
+      ])
+    )
+  })
+
+  test('a test event is marked as one and is not offered to be sent again', async () => {
+    withDelivery({ eventId: null, test: true, eventType: 'api_key.created' })
+    await screen.findByTestId('delivery-facts')
+    expect(fact('Event')?.textContent).toBe(
+      'A test event, sent on demand. It is no event of this environment.'
+    )
+    expect(screen.queryAllByRole('button', { name: 'Send again' })).toHaveLength(0)
+    expect(screen.getByTestId('send-again-note').textContent).toBe(
+      'A test event is not sent again. Send a new one from the endpoint.'
+    )
+  })
+
+  test('a delivery still pending shows when it is tried next, and one with no request says so', async () => {
+    withDelivery({
+      state: 'pending',
+      attempts: [],
+      completedAt: null,
+      nextAttemptAt: '2026-10-04T12:05:00.000Z',
+    })
+    await screen.findByTestId('delivery-facts')
+    expect(fact('State')?.textContent).toBe('Pending')
+    expect(fact('Next request')?.querySelector('time')?.getAttribute('datetime')).toBe(
+      '2026-10-04T12:05:00.000Z'
+    )
+    expect(screen.getByText('No request has been made for this delivery yet.').tagName).toBe('P')
+    expect(screen.queryAllByRole('table')).toHaveLength(0)
+  })
+
+  test('a delivery asked for under another endpoint is not found', async () => {
+    const api = installFakeApi()
+    const mine = fakeWebhookEndpoint({ url: HOME })
+    const other = fakeWebhookEndpoint({ url: 'https://other.example.com/in' })
+    api.state.webhookEndpoints.push(mine, other)
+    const delivery = fakeWebhookDelivery(other.id)
+    api.state.webhookDeliveries.push(delivery)
+    start(`${DEV_PATH}/webhooks/${mine.id}/deliveries/${delivery.id}`, { api })
+    expect((await screen.findByRole('alert')).textContent).toContain('This could not be loaded')
+    expect(screen.queryAllByTestId('delivery-facts')).toHaveLength(0)
   })
 })

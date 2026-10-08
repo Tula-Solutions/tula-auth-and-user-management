@@ -15,7 +15,7 @@ import type { EnvironmentScope } from '~/features/users/users-screen'
 import { formatDateTime } from '~/lib/format'
 import { cn } from '~/lib/utils'
 import { EditEndpointDialog } from './edit-endpoint-dialog'
-import { refreshWebhooks } from './queries'
+import { forgetEndpoint, refreshWebhooks } from './queries'
 import { Moment, RotateSecretDialog } from './rotate-secret-dialog'
 import { TestEventDialog } from './test-event-dialog'
 import { endpointState, webhookMessageFor } from './words'
@@ -170,8 +170,11 @@ export function EndpointCard({
           { id: endpoint.id },
           {
             onSuccess: async () => {
-              await done('Endpoint deleted')
+              // First, so that a screen about this endpoint stops asking for it before the
+              // lists are read again.
+              forgetEndpoint(queryClient, endpoint.id)
               onDeleted?.()
+              await done('Endpoint deleted')
             },
           }
         ),

@@ -10,6 +10,21 @@ const WEBHOOKS_PATH = '/v1/admin/webhook-endpoints'
  *
  * @param queryClient - The app's query client.
  */
+/**
+ * Drop what is cached about one endpoint that no longer exists (itself, its deliveries), so
+ * that the refresh after a deletion does not ask the server for it once more.
+ *
+ * @param queryClient - The app's query client.
+ * @param endpointId - The deleted endpoint.
+ */
+export function forgetEndpoint(queryClient: QueryClient, endpointId: string): void {
+  const own = `${WEBHOOKS_PATH}/${endpointId}`
+  queryClient.removeQueries({
+    predicate: (query) =>
+      typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith(own),
+  })
+}
+
 export async function refreshWebhooks(queryClient: QueryClient): Promise<void> {
   await queryClient.invalidateQueries({
     predicate: (query) =>
