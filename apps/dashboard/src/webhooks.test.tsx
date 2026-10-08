@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { screen, waitFor, within } from '@testing-library/react'
+import { ACTIVITY_TYPES } from '@tula/contract/event-types'
 import { failure, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
 import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
 
@@ -474,5 +475,92 @@ describe('rotating a signing secret', () => {
         'No overlap is under way: the previous secret has already stopped signing.',
       ])
     )
+  })
+})
+
+describe('sending a test event', () => {
+  function outcome(): HTMLElement {
+    return within(dialog()).getByTestId('send-result')
+  }
+
+  test('the type is one of the contract’s; the result is the outcome, a status code and a duration', async () => {
+    const { user, api } = withEndpoint({
+      eventTypes: ['session.revoked', 'user.created'],
+      failingSince: '2026-10-03T08:00:00.000Z',
+    })
+    await user.click(
+      within(await card(HOME)).getByRole('button', { name: `Send a test event to ${HOME}` })
+    )
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Send a test event')
+    // What a test event is, and what it does not do.
+    expect(dialog().textContent).toContain('"test": true')
+    expect(dialog().textContent).toContain(
+      'It does not change the endpoint’s health: a failure does not count towards switching it off, and a success does not end a run of failures.'
+    )
+    const type = within(dialog()).getByLabelText('Event type') as HTMLSelectElement
+    expect([...type.options].map((option) => option.value)).toEqual([...ACTIVITY_TYPES])
+    // It starts on a type the endpoint subscribes to.
+    expect(type.value).toBe('session.revoked')
+
+    await user.selectOptions(type, 'api_key.created')
+    await user.click(within(dialog()).getByRole('button', { name: 'Send test event' }))
+    await waitFor(() =>
+      expect(outcome().textContent).toBe('Delivered: the endpoint answered 204 in 41 ms.')
+    )
+    expect(outcome().getAttribute('data-outcome')).toBe('delivered')
+    const sent = api.calls.filter((call) => call.path.endsWith('/test'))
+    expect(sent.map((call) => call.body)).toEqual([{ eventType: 'api_key.created' }])
+    const delivery = api.state.webhookDeliveries[0]
+    expect(
+      within(dialog()).getByRole('link', { name: 'See this delivery' }).getAttribute('href')
+    ).toBe(
+      `/dashboard${DEV_PATH}/webhooks/${api.state.webhookEndpoints[0]?.id}/deliveries/${delivery?.id}`
+    )
+
+    api.state.webhookReceiver = { statusCode: 500, durationMs: 87, failureReason: null }
+    await user.click(within(dialog()).getByRole('button', { name: 'Send test event' }))
+    await waitFor(() =>
+      expect(outcome().textContent).toBe('Failed: the endpoint answered 500 in 87 ms.')
+    )
+    expect(outcome().getAttribute('data-outcome')).toBe('failed')
+
+    api.state.webhookReceiver = { statusCode: null, durationMs: 5000, failureReason: 'timeout' }
+    await user.click(within(dialog()).getByRole('button', { name: 'Send test event' }))
+    await waitFor(() =>
+      expect(outcome().textContent).toBe(
+        'Failed: there was no answer (5000 ms). No answer within five seconds.'
+      )
+    )
+    // Nothing about the endpoint was asked to change.
+    expect(patches(api)).toEqual([])
+
+    await user.click(within(dialog()).getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    // Opened again, the last result is not shown.
+    await user.click(screen.getByRole('button', { name: `Send a test event to ${HOME}` }))
+    expect(within(dialog()).queryAllByTestId('send-result')).toHaveLength(0)
+  })
+
+  test('an endpoint that is off can be tested, and the limit on requests is said in words', async () => {
+    const { user, api } = withEndpoint({ enabled: false, eventTypes: ['invoice.paid'] })
+    api.override('POST', /\/test$/, () => {
+      const response = failure(429, 'rate_limited', 'Too many requests.')
+      response.headers.set('retry-after', '30')
+      return response
+    })
+    await user.click(
+      within(await card(HOME)).getByRole('button', { name: `Send a test event to ${HOME}` })
+    )
+    // None of its types is one the contract knows: the first of the contract's is offered.
+    expect((within(dialog()).getByLabelText('Event type') as HTMLSelectElement).value).toBe(
+      'user.created'
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Send test event' }))
+    await waitFor(() =>
+      expect(alerts()).toEqual([
+        'Test events and deliveries sent again share a limit of ten a minute for the environment. Try again in 30 seconds.',
+      ])
+    )
+    expect(within(dialog()).queryAllByTestId('send-result')).toHaveLength(0)
   })
 })

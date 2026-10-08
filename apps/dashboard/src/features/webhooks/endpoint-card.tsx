@@ -17,6 +17,7 @@ import { cn } from '~/lib/utils'
 import { EditEndpointDialog } from './edit-endpoint-dialog'
 import { refreshWebhooks } from './queries'
 import { Moment, RotateSecretDialog } from './rotate-secret-dialog'
+import { TestEventDialog } from './test-event-dialog'
 import { endpointState, webhookMessageFor } from './words'
 
 /**
@@ -88,6 +89,7 @@ export function EndpointCard({
   const revoke = useRevokePreviousWebhookSecret({ request })
   const [editing, setEditing] = useState(false)
   const [rotating, setRotating] = useState(false)
+  const [testing, setTesting] = useState(false)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const url = endpoint.url
 
@@ -248,6 +250,14 @@ export function EndpointCard({
         <ActionButton
           variant='outline'
           size='sm'
+          aria-label={`Send a test event to ${url}`}
+          onClick={() => setTesting(true)}
+        >
+          Send a test event
+        </ActionButton>
+        <ActionButton
+          variant='outline'
+          size='sm'
           aria-label={`Rotate the secret of ${url}`}
           onClick={() => setRotating(true)}
         >
@@ -264,6 +274,12 @@ export function EndpointCard({
       </div>
       <EditEndpointDialog endpoint={endpoint} open={editing} onClose={() => setEditing(false)} />
       <RotateSecretDialog endpoint={endpoint} open={rotating} onClose={() => setRotating(false)} />
+      <TestEventDialog
+        scope={scope}
+        endpoint={endpoint}
+        open={testing}
+        onClose={() => setTesting(false)}
+      />
       <ConfirmDialog
         open={active !== null}
         title={active?.title ?? ''}
