@@ -4,7 +4,8 @@ The dashboard is a web app for the operator of a deployment. The API serves it a
 `/dashboard` (the image ships it; nothing else to deploy), and it manages the same things the
 admin API and the CLI do: workspaces, projects and environments; users and their sessions;
 sign-in methods and OAuth providers; the password policy and session profiles; API keys and
-signing keys; the audit logs; and the deployment's diagnostics.
+signing keys; webhook endpoints and their deliveries; the audit logs; and the deployment's
+diagnostics.
 
 How it is built and tested: [apps/dashboard/README.md](../apps/dashboard/README.md). The
 session, its CSRF rules and how the app is served: [ADR 0032](adr/0032-dashboard.md).
@@ -51,6 +52,9 @@ deletes a workspace, project or environment yet.
 | Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. |
 | API keys | List (prefix and last four characters only), create, revoke. |
 | Signing keys | List with status; rotate. |
+| Webhooks | List an environment's webhook endpoints with how each is doing; add one (its signing secret is shown once), change its address and event types, switch it off and on, rotate its secret, send a test event, delete it. |
+| A webhook endpoint | The endpoint, and the log of what was sent to it: one row per delivery, filtered by state and event type. |
+| A delivery | Every request the server made for it (status code, duration, time, and why one failed), and "Send again". |
 | Audit log | An environment's entries, filtered by action, actor type, actor, target and day. |
 | Settings | App name, support address, allowed origins and redirect URLs, security notices, audit retention. |
 | Instance audit log | Dashboard sign-ins, and workspaces, projects and environments being created. |
@@ -73,6 +77,22 @@ deletes a workspace, project or environment yet.
   yet, so a second rotation within ten minutes is refused.
 - **At least one sign-in method must stay on.** Switching off the last one (counting enabled
   providers) is refused by the server, and the dashboard says so.
+- **A webhook signing secret is shown once**, when the endpoint is added and when its secret
+  is rotated. Copy it from the dialog; closing the dialog discards it, and the API cannot
+  show it again. If it is lost, rotate.
+- **Rotating a webhook secret breaks nothing at once.** For 24 hours every delivery is signed
+  with the new secret and the previous one, and the endpoint's card says until when. "End
+  the overlap now" stops the previous secret at once: use it once your receiver has the new
+  one, or when the old one leaked. A second rotation waits until the overlap is over.
+- **An endpoint the server switched off says why**: it answered `410 Gone`, or requests to it
+  failed for five days. Fix the receiver, send a test event, then switch the endpoint on.
+- **A test event changes nothing about an endpoint.** It carries `"test": true`, is sent
+  once, and neither counts as a failure nor ends a run of failures. "Send again" on a
+  delivery is one request too, with the same event and id; if it gets through it does end
+  the run. Both share a limit of ten requests a minute per environment.
+- **Deleting an endpoint deletes its delivery log** and its pending deliveries with it.
+
+More about webhooks: [webhooks.md](webhooks.md).
 
 ## Saving settings
 
@@ -111,7 +131,8 @@ it a retention period, and entries older than that are then deleted permanently.
 ## Switching and signing out
 
 - Switching environment, project, workspace or user discards what was typed and not saved on
-  the screen you leave: a settings draft, a half-typed provider secret, an open confirmation.
+  the screen you leave: a settings draft, a half-typed provider secret, a webhook secret
+  still on screen, an open confirmation.
   Nothing typed for one environment can be saved to another.
 - If signing out fails (the API did not answer), the dashboard stays where it is and says
   that you are still signed in. Choose "Sign out" again; until it succeeds the session in
