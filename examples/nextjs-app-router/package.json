@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@tula/tsconfig": "workspace:*",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0"
   }
