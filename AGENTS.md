@@ -353,9 +353,15 @@ whose answer decides what happens next (step 2.3).
 - **The worker process serves health and nothing else** (`createWorkerApp`: `/v1/status`,
   `/v1/ready`, the contract's 404 for the rest), runs no migration, creates no signing key
   and imports no router: `worker.test.ts` walks `worker.ts`'s import graph and fails for a
-  router, the API app, the JWKS bootstrap or a migration. The walk reads every way of
-  loading a module (a bare `import '…'`, `export … from`, `require`, `import()`) and fails
-  for a name computed at run time: never load a module in the worker's graph by a name that
+  router, the API app, the JWKS bootstrap or a migration. The walk follows `~/` and
+  relative specifiers through the API's own files (never into a package), by every way of
+  loading a module Bun's parser reports (`import … from`, a bare `import '…'`,
+  `export … from`, `require('…')`, `import('…')`; not an import of types only). It **fails**
+  for a file with an `import(` or `require(` whose argument is anything but one string
+  written out (a variable, a concatenation, a conditional, a template with a substitution),
+  and for a file with `new Function(` or a bare `eval(`. Those two rules read the
+  transpiled text, so a string that contains such a call fails the walk too: reword the
+  string, never loosen the rule. Never load a module in the worker's graph by a name that
   is not written out. It is built by the same
   `createContainer`, so `deps.outbound` is `{ tier }` there too. **The Compose `worker`
   service is not given `TULA_ADMIN_TOKEN`**, nor anything else only the API reads and a

@@ -43,21 +43,46 @@ const transpiler = new Bun.Transpiler({ loader: 'ts' })
  * `export … from`, `require('…')` and `import('…')`. Read with Bun's own parser, not a pattern
  * over the text: a comment is not an import, and an import of types only loads nothing.
  *
- * @throws when the file loads a module whose name is not written out (`import(name)`,
- *   `require(name)`): the walk cannot follow it, and saying nothing would be a pass.
+ * @throws when the file has an `import(` or a `require(` whose argument is anything but one
+ *   string written out (`import(name)`, `import('./' + name)`, `import(a ? './x' : './y')`),
+ *   or runs code built from text (`new Function(`, a bare `eval(`): the walk cannot follow
+ *   either, and saying nothing would be a pass.
  */
 function loaded(source: string, file: string): string[] {
-  // The parser's own output: no comment, no type, one quoting. What is left of an `import(`
-  // or a `require(` that is not followed by a string is a name computed at run time.
-  const computed = transpiler
-    .transformSync(source)
-    .match(/\b(?:import|require)\(\s*(?!["'])[^)]*\)/g)
-  if (computed) {
+  // The parser's own output: no comment, no type. The rules below read text, so they err
+  // towards refusing: a string that merely contains `import(x)` fails the walk too, and the
+  // answer to that is to reword the string, never to loosen the rule.
+  const code = transpiler.transformSync(source)
+  // One whole string (or a template with nothing substituted), then the end of the argument:
+  // `)` or the `,` before an options object. Anything else after the `(` is computed.
+  const LITERAL = /^\s*("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\$]|\\.|\$(?!\{))*`)\s*[,)]/
+  const paths = transpiler.scanImports(source).map((entry) => entry.path)
+  const computed: string[] = []
+  for (const call of code.matchAll(/(?<![.\w$])(?:import|require)\(/g)) {
+    const from = call.index + call[0].length
+    const literal = LITERAL.exec(code.slice(from))?.[1]
+    // The parser folds what it can before it prints: `require('./t' + 'arget')` comes out as
+    // one string and `import(c ? './a' : './b')` as two imports, and it reports neither as an
+    // import of the source. So a string here counts only if the scan of the source, as
+    // written, names the same module; otherwise the name was put together, by whoever.
+    if (literal === undefined || !paths.includes(literal.slice(1, -1))) {
+      computed.push(`${call[0]}${code.slice(from, from + 40).split('\n')[0]}`)
+    }
+  }
+  // Said first: a file that does this usually trips the rule above as well, by the text it runs.
+  // Not a method of that name (`redis.eval(script)` runs Lua on a Redis server, not code here).
+  const fromText = code.match(/\bnew\s+Function\s*\(|(?<![.\w$])eval\s*\(/g)
+  if (fromText) {
+    throw new Error(
+      `${file} runs code built from text (${fromText.join(', ')}): the walk cannot see what that loads`
+    )
+  }
+  if (computed.length > 0) {
     throw new Error(
       `${file} loads a module by a computed name (${computed.join(', ')}): the walk cannot see what that reaches`
     )
   }
-  return transpiler.scanImports(source).map((entry) => entry.path)
+  return paths
 }
 
 /**
@@ -143,10 +168,46 @@ describe('the import walk', () => {
     ['a dynamic import', "const name = './target'\nexport const a = await import(name)\n"],
     ['a template', "const name = 'target'\nexport const a = await import(`./${name}`)\n"],
     ['a require', "const name = './target'\nexport const a = require(name)\n"],
+    // A name that only begins with a literal is as computed as one that does not.
+    [
+      'a dynamic import of a literal and more',
+      "const n = 'target'\nexport const a = await import('./' + n)\n",
+    ],
+    [
+      'a dynamic import of one of two literals',
+      "const c = Date.now() > 0\nexport const a = await import(c ? './target' : './types')\n",
+    ],
+    ['a require of two literals joined', "export const a = require('./t' + 'arget')\n"],
   ])('%s of a computed name fails the walk, loudly', async (_form, entry) => {
     await expect(graph(entry)).rejects.toThrow(
       /^entry\.ts loads a module by a computed name \(.+\): the walk cannot see what that reaches$/
     )
+  })
+
+  // Code built from text can load anything, and no parser sees inside the text.
+  test.each([
+    ['new Function', 'export const a = new Function(\'return import("./target")\')()\n'],
+    ['eval', 'export const a = eval(\'import("./target")\')\n'],
+  ])('a file that runs code from text (%s) fails the walk, loudly', async (_form, entry) => {
+    await expect(graph(entry)).rejects.toThrow(
+      /^entry\.ts runs code built from text \(.+\): the walk cannot see what that loads$/
+    )
+  })
+
+  test('a method called eval, a literal with an option, and a plain template are not refused', async () => {
+    expect(
+      [
+        ...(await graph(
+          [
+            'const redis = { eval: (script: string) => script }',
+            "export const a = redis.eval('return 1')",
+            "export const b = await import('./target', { with: { type: 'x' } } as never)",
+            'export const c = await import(`./lib/deeper`)',
+            '',
+          ].join('\n')
+        )),
+      ].sort()
+    ).toEqual(WHOLE)
   })
 })
 
