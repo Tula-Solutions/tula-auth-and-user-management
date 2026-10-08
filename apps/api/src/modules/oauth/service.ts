@@ -5,6 +5,7 @@ import {
   type FirstFactorStrategy,
   hasEnabledSignInMethod,
   type Identity,
+  MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   type OAuthProviderSettings,
@@ -124,17 +125,40 @@ export async function enabledProviders(
 }
 
 /**
+ * The stored field that makes a provider's credentials unusable as they are, if any.
+ *
+ * Microsoft's `tenant` becomes a path segment of Microsoft's endpoints and decides whose
+ * accounts sign in. The admin route stores only what {@link MicrosoftTenantSchema} returns; a
+ * row that holds anything else (written before a rule, or changed in the database) is not
+ * repaired or guessed at.
+ */
+function unusableField(record: OAuthProviderRecord): 'tenant' | null {
+  if (record.provider !== 'microsoft') {
+    return null
+  }
+  const tenant = MicrosoftTenantSchema.safeParse(record.config.tenant)
+  // Exactly the stored spelling: the schema trims and lower-cases, the adapter does neither.
+  return tenant.success && tenant.data === record.config.tenant ? null : 'tenant'
+}
+
+/**
  * An environment's credentials for a provider it has enabled.
  *
  * Checked on every step that uses the provider (start, callback, exchange), so a provider
  * switched off while an attempt is under way stops working at once.
  *
+ * Credentials the server cannot use answer exactly as a provider that is off does, and at the
+ * same point (before a redirect URL is judged, a ceiling charged or an attempt made): an
+ * anonymous caller learns that the method is not available and nothing about why. The reason
+ * is logged for the operator, by field name and never by value.
+ *
  * @param deps - Provider store and secret box.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @returns The opened credentials. Never log or return them.
- * @throws AuthError `auth.method_disabled` when the provider is not configured, not enabled, or
- *   its stored secret does not open (a changed master key): the method is unusable either way.
+ * @throws AuthError `auth.method_disabled` when the provider is not configured, not enabled,
+ *   its stored secret does not open (a changed master key) or a stored field is one the
+ *   provider cannot be called with (Microsoft's `tenant`): the method is unusable either way.
  */
 export async function credentials(
   deps: Pick<Deps, 'oauthProviders' | 'secretBox'>,
@@ -143,6 +167,15 @@ export async function credentials(
 ): Promise<OAuthCredentials> {
   const record = await deps.oauthProviders.find(tenant.environmentId, provider)
   if (!record?.enabled) {
+    throw new AuthError('auth.method_disabled', { method: strategyOf(provider) })
+  }
+  const field = unusableField(record)
+  if (field !== null) {
+    logger.error('stored OAuth credentials cannot be used', {
+      environmentId: tenant.environmentId,
+      provider,
+      field,
+    })
     throw new AuthError('auth.method_disabled', { method: strategyOf(provider) })
   }
   try {

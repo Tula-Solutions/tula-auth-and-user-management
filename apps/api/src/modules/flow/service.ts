@@ -1449,7 +1449,8 @@ export interface OAuthStartResult {
  * @param context - The requesting device.
  * @param link - For connecting from a profile: the signed-in user.
  * @returns The attempt (with its secret), the provider's URL and the binding.
- * @throws AuthError `request.origin_not_allowed`, `auth.method_disabled` or
+ * @throws AuthError `request.origin_not_allowed`, `auth.method_disabled` (also when the
+ *   provider's adapter cannot build its URL from the stored credentials) or
  *   `request.redirect_not_allowed`.
  * @throws RateLimitError when the environment's ceiling is reached.
  */
@@ -1472,6 +1473,26 @@ export async function startOAuth(
   const oauthState = `${tenant.environmentId}.${id}.${randomToken()}`
   const codeVerifier = randomToken()
   const nonce = randomToken()
+  // Built before the attempt is stored. `OAuth.credentials` has already refused what it can
+  // tell is unusable; an adapter that still cannot make a URL from what it was given is the
+  // provider being unavailable: the answer of a provider that is off, and no attempt left
+  // behind.
+  let authorizationUrl: string
+  try {
+    authorizationUrl = deps.oauth[provider].authorizationUrl(credentials, {
+      state: oauthState,
+      codeVerifier,
+      nonce,
+      redirectUri: OAuth.callbackUrl(deps.config, provider),
+    })
+  } catch (error) {
+    logger.error('an OAuth provider could not build its authorization URL', {
+      environmentId: tenant.environmentId,
+      provider,
+      failure: error instanceof OAuthProviderError ? error.failure : 'unexpected',
+    })
+    throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
+  }
   const binding = `${OAUTH_BINDING_PREFIX}${randomToken()}`
   const state: State = {
     ...asked(context),
@@ -1495,12 +1516,6 @@ export async function startOAuth(
     // An OAuth attempt has no identifier: who it is for is what the provider will say.
     identifier: `oauth:${provider}`,
     state,
-  })
-  const authorizationUrl = deps.oauth[provider].authorizationUrl(credentials, {
-    state: oauthState,
-    codeVerifier,
-    nonce,
-    redirectUri: OAuth.callbackUrl(deps.config, provider),
   })
   return {
     attempt: toAttempt(attempt, stepFor(attempt, state), secret),

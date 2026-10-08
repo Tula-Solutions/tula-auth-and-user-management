@@ -1,11 +1,14 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { FlowAttempt, OAuthProviderSettings, OAuthStart } from '@tula/contract'
-import { MICROSOFT_CONSUMER_TENANT_ID } from '~/adapters/oauth/microsoft'
+import { createMicrosoftProvider, MICROSOFT_CONSUMER_TENANT_ID } from '~/adapters/oauth/microsoft'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
+import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import { MOCK_MICROSOFT_TENANT_ID } from '~/modules/oauth/dev-router'
+import * as OAuth from '~/modules/oauth/service'
+import { OAuthProviderError } from '~/ports/oauth-provider'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
 // Sign in with Microsoft, from the admin routes to a session: the credentials' `tenant`, the
@@ -59,16 +62,20 @@ const configure = (body: Record<string, unknown>) =>
     ...body,
   })
 
-async function start() {
-  const res = await app.request('/v1/client/sign-ins/oauth', {
+function startRequest(redirectUrl = REDIRECT) {
+  return app.request('/v1/client/sign-ins/oauth', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-tula-publishable-key': PK,
       'x-tula-client': 'ios',
     },
-    body: JSON.stringify({ provider: 'microsoft', redirectUrl: REDIRECT }),
+    body: JSON.stringify({ provider: 'microsoft', redirectUrl }),
   })
+}
+
+async function start() {
+  const res = await startRequest()
   expect(res.status).toBe(200)
   return (await res.json()) as OAuthStart
 }
@@ -239,6 +246,124 @@ describe('Microsoft is a first factor like the others', () => {
       status: 'needs_first_factor',
       strategies: ['oauth_microsoft'],
     })
+  })
+})
+
+// A stored `tenant` the server cannot use (a row from before a rule, an edit in the database)
+// is the provider being unavailable: said the way a provider that is off is said, and before
+// anything is made.
+describe('credentials the server cannot use', () => {
+  /** What a start answers for a provider that is not configured at all. */
+  async function refusalOfAnOffProvider(redirectUrl?: string) {
+    const res = await startRequest(redirectUrl)
+    return { status: res.status, body: await res.json() }
+  }
+
+  async function storeTenant(tenant: string | undefined) {
+    await configure({ tenant: CONTOSO })
+    const record = await deps.oauthProviders.find(TEST_TENANT.environmentId, 'microsoft')
+    if (!record) {
+      throw new Error('no stored provider')
+    }
+    await deps.oauthProviders.upsert(
+      { ...record, config: tenant === undefined ? {} : { tenant } },
+      Audit.none('fixture')
+    )
+  }
+
+  test.each([
+    ['a domain name', 'contoso.onmicrosoft.com'],
+    ['a path', 'common/../consumers'],
+    ['a GUID in braces', `{${CONTOSO}}`],
+    ['an alias in another case', 'Common'],
+    ['an empty tenant', ''],
+    ['no tenant', undefined],
+  ])(
+    'a stored row with %s: a start is refused as a provider that is off is, and no attempt is made',
+    async (_name, tenant) => {
+      const charged = spyOn(deps.rateLimiter, 'hit')
+      const off = await refusalOfAnOffProvider()
+      expect(off.body).toMatchObject({ code: 'auth.method_disabled' })
+      const chargedWhenOff = charged.mock.calls.length
+      await storeTenant(tenant)
+      // The real adapter: the mock puts whatever is stored into its own URL.
+      Object.assign(deps, { oauth: { ...deps.oauth, microsoft: createMicrosoftProvider() } })
+      const created = spyOn(deps.flowAttempts, 'create')
+      const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+      try {
+        const before = charged.mock.calls.length
+        const res = await startRequest()
+        expect({ status: res.status, body: await res.json() }).toEqual(off)
+        expect(created).not.toHaveBeenCalled()
+        // Nothing more is counted than for a provider that is off: the environment's ceiling
+        // is charged only after this refusal.
+        expect(charged.mock.calls.length - before).toBe(chargedWhenOff)
+        expect(logged).toHaveBeenCalledWith('stored OAuth credentials cannot be used', {
+          environmentId: TEST_TENANT.environmentId,
+          provider: 'microsoft',
+          field: 'tenant',
+        })
+        if (tenant) {
+          expect(JSON.stringify(logged.mock.calls)).not.toContain(tenant)
+        }
+      } finally {
+        created.mockRestore()
+        charged.mockRestore()
+        logged.mockRestore()
+      }
+    }
+  )
+
+  test('the refusal comes before the redirect URL is judged, as for a provider that is off', async () => {
+    const off = await refusalOfAnOffProvider('https://elsewhere.test/callback')
+    await storeTenant('contoso.onmicrosoft.com')
+    const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+    try {
+      const res = await startRequest('https://elsewhere.test/callback')
+      expect({ status: res.status, body: await res.json() }).toEqual(off)
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  test('every later step of an attempt reads the same refusal', async () => {
+    await storeTenant('contoso.onmicrosoft.com')
+    const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+    try {
+      await expect(OAuth.credentials(deps, TEST_TENANT, 'microsoft')).rejects.toMatchObject({
+        code: 'auth.method_disabled',
+        params: { method: 'oauth_microsoft' },
+      })
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  test('a usable tenant is not refused: an alias and a tenant id', async () => {
+    for (const tenant of ['organizations', CONTOSO]) {
+      await storeTenant(tenant)
+      expect((await OAuth.credentials(deps, TEST_TENANT, 'microsoft')).tenant).toBe(tenant)
+    }
+  })
+
+  test('an adapter that cannot build its URL makes no attempt either', async () => {
+    const off = await refusalOfAnOffProvider()
+    await configure({ tenant: CONTOSO })
+    const built = spyOn(deps.oauth.microsoft, 'authorizationUrl').mockImplementation(() => {
+      throw new OAuthProviderError('unavailable')
+    })
+    const created = spyOn(deps.flowAttempts, 'create')
+    const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+    try {
+      const res = await startRequest()
+      expect({ status: res.status, body: await res.json() }).toEqual(off)
+      expect(built).toHaveBeenCalledTimes(1)
+      expect(created).not.toHaveBeenCalled()
+    } finally {
+      built.mockRestore()
+      created.mockRestore()
+      logged.mockRestore()
+    }
   })
 })
 

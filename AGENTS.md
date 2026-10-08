@@ -1149,7 +1149,10 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   signing key's `issuer` must cover it (a key without one is refused), and the tenant must
   be one the environment's `tenant` accepts; every failure is the same `invalid_token`.
   `emailVerified` is `xms_edov === true` and nothing looser. `tenant` is required, has no
-  default, is an alias or a GUID (never a domain name), and is not a secret. A new refusal
+  default, is an alias or a GUID (never a domain name), and is not a secret. A stored
+  `tenant` that is anything else is the provider being unavailable: `OAuth.credentials`
+  answers `auth.method_disabled` exactly as for a provider that is off, before a redirect
+  URL is judged or an attempt made, and logs the field's name, never its value. A new refusal
   gets a row in the table of `adapters/oauth/microsoft.test.ts`, with a token the test
   signs.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider

@@ -226,7 +226,11 @@ Phase 2 (TULA-12). Scopes `openid profile email` and nothing else; no Graph call
   as the name `tenant` in `oauth_provider.updated.changed`, never its value. A default of
   `common` was considered and not taken: it would let every Microsoft account on earth sign
   in to an environment whose operator only typed a client id. No migration: `config` is
-  `jsonb` and the provider column is text.
+  `jsonb` and the provider column is text. The admin route stores only such a value; a row
+  that holds anything else (changed in the database) is not repaired: `OAuth.credentials`
+  answers `auth.method_disabled`, at the point and in the words of a provider that is off,
+  so a start makes no attempt and an anonymous caller learns nothing about why, and the
+  field's name is logged for the operator.
 - **An account is `<tid>:<oid>`**, both GUIDs, lower-cased. Never `sub` (pairwise: another
   value for every application, so it would not survive a new app registration), and never
   `email`, `preferred_username` or `upn`, which a tenant's administrator sets. The object id
