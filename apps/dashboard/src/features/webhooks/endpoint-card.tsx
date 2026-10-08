@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { type ReactNode, useId, useState } from 'react'
 import {
   useDeleteWebhookEndpoint,
+  useRevokePreviousWebhookSecret,
   useUpdateWebhookEndpoint,
   type WebhookEndpoint,
 } from '~/api/generated/api.gen'
@@ -15,6 +16,7 @@ import { formatDateTime } from '~/lib/format'
 import { cn } from '~/lib/utils'
 import { EditEndpointDialog } from './edit-endpoint-dialog'
 import { refreshWebhooks } from './queries'
+import { Moment, RotateSecretDialog } from './rotate-secret-dialog'
 import { endpointState, webhookMessageFor } from './words'
 
 /**
@@ -51,7 +53,7 @@ export function EndpointState({
 }
 
 /** Which confirmation the card is asking. */
-type Confirmation = 'off' | 'on' | 'delete'
+type Confirmation = 'off' | 'on' | 'end-overlap' | 'delete'
 
 /** Props of {@link EndpointCard}. */
 export interface EndpointCardProps {
@@ -83,13 +85,16 @@ export function EndpointCard({
   const request = useEnvironmentRequest()
   const update = useUpdateWebhookEndpoint({ request })
   const remove = useDeleteWebhookEndpoint({ request })
+  const revoke = useRevokePreviousWebhookSecret({ request })
   const [editing, setEditing] = useState(false)
+  const [rotating, setRotating] = useState(false)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const url = endpoint.url
 
   function closeConfirmation() {
     update.reset()
     remove.reset()
+    revoke.reset()
     setConfirmation(null)
   }
 
@@ -113,6 +118,8 @@ export function EndpointCard({
       label: string
       body: ReactNode
       destructive?: boolean
+      /** Ask for the endpoint's address to be typed first. */
+      typed?: boolean
       pending: boolean
       error: unknown
       run: () => void
@@ -134,11 +141,26 @@ export function EndpointCard({
       error: update.error,
       run: () => switchTo(true),
     },
+    'end-overlap': {
+      title: 'End the overlap now?',
+      label: 'End the overlap',
+      body: 'The previous secret stops signing at once and is deleted. Do this once your receiver verifies with the new secret, or when the previous one has leaked. A receiver that still verifies with the previous secret alone refuses every delivery from then on, until it is given the new one.',
+      destructive: true,
+      pending: revoke.isPending,
+      error: revoke.error,
+      run: () =>
+        revoke.mutate(
+          { id: endpoint.id },
+          { onSuccess: () => done('Overlap ended: one secret signs') }
+        ),
+    },
     delete: {
       title: `Delete ${url}?`,
       label: 'Delete endpoint',
       body: 'Nothing more is delivered to it. Its signing secret, its pending deliveries and the log of everything delivered to it are deleted with it, and cannot be brought back.',
       destructive: true,
+      // In production the address is typed: it names the endpoint, and it is what is lost.
+      typed: environment.kind === 'production',
       pending: remove.isPending,
       error: remove.error,
       run: () =>
@@ -177,6 +199,26 @@ export function EndpointCard({
           <dd>{formatDateTime(endpoint.createdAt)}</dd>
         </div>
       </dl>
+      {endpoint.rotationOverlapEndsAt ? (
+        <div
+          data-testid='rotation-overlap'
+          className='flex flex-col items-start gap-2 rounded-md border px-3 py-2 text-sm'
+        >
+          <p>
+            Two secrets are signing: every delivery carries a signature for the new secret and one
+            for the previous secret, until <Moment iso={endpoint.rotationOverlapEndsAt} />. After
+            that only the new one signs.
+          </p>
+          <ActionButton
+            variant='outline'
+            size='sm'
+            aria-label={`End the secret overlap of ${url} now`}
+            onClick={() => setConfirmation('end-overlap')}
+          >
+            End the overlap now
+          </ActionButton>
+        </div>
+      ) : null}
       <div className='flex flex-wrap items-center gap-2'>
         {hideDeliveriesLink ? null : (
           <Link
@@ -204,6 +246,14 @@ export function EndpointCard({
           {endpoint.enabled ? 'Switch off' : 'Switch on'}
         </ActionButton>
         <ActionButton
+          variant='outline'
+          size='sm'
+          aria-label={`Rotate the secret of ${url}`}
+          onClick={() => setRotating(true)}
+        >
+          Rotate the secret
+        </ActionButton>
+        <ActionButton
           variant='destructive'
           size='sm'
           aria-label={`Delete ${url}`}
@@ -213,13 +263,13 @@ export function EndpointCard({
         </ActionButton>
       </div>
       <EditEndpointDialog endpoint={endpoint} open={editing} onClose={() => setEditing(false)} />
+      <RotateSecretDialog endpoint={endpoint} open={rotating} onClose={() => setRotating(false)} />
       <ConfirmDialog
         open={active !== null}
         title={active?.title ?? ''}
         confirmLabel={active?.label ?? ''}
         destructive={active?.destructive}
-        // In production the address is typed: it names the endpoint, and it is what is lost.
-        requireText={active?.destructive && environment.kind === 'production' ? url : undefined}
+        requireText={active?.typed ? url : undefined}
         pending={active?.pending}
         error={active?.error}
         errorText={webhookMessageFor}

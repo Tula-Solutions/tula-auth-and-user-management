@@ -399,3 +399,80 @@ describe('deleting an endpoint', () => {
     expect(api.state.webhookEndpoints).toHaveLength(0)
   })
 })
+
+describe('rotating a signing secret', () => {
+  const OVERLAP = '2026-10-05T09:30:00.000Z'
+
+  test('a rotation during an overlap is refused in a sentence, not as an error code', async () => {
+    const { user, api } = withEndpoint({ rotationOverlapEndsAt: OVERLAP })
+    const notice = within(await card(HOME)).getByTestId('rotation-overlap')
+    expect(notice.textContent).toContain(
+      'Two secrets are signing: every delivery carries a signature for the new secret and one for the previous secret, until'
+    )
+    expect(notice.querySelector('time')?.getAttribute('datetime')).toBe(OVERLAP)
+
+    await user.click(screen.getByRole('button', { name: `Rotate the secret of ${HOME}` }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Rotate secret' }))
+    await waitFor(() =>
+      expect(alerts()).toEqual([
+        'A rotation is already under way: two secrets are signing, and an endpoint never has three. End the overlap first, or wait for it to end.',
+      ])
+    )
+    expect(within(dialog()).queryAllByTestId('webhook-secret')).toHaveLength(0)
+    expect(api.state.webhookEndpoints[0]?.rotationOverlapEndsAt).toBe(OVERLAP)
+
+    // The other refusal a rotation can get.
+    api.override('POST', /\/secret\/rotate$/, () =>
+      failure(409, 'webhook.rotation_refused', 'Refused.', undefined, {
+        reason: 'secret_unreadable',
+      })
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Rotate secret' }))
+    await waitFor(() =>
+      expect(alerts()).toEqual([
+        'The server cannot open this endpoint’s current secret, so it could not keep it signing beside a new one. Check that every API instance has the same TULA_MASTER_KEY, or delete the endpoint and add it again.',
+      ])
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+  })
+
+  test('ending the overlap asks first and says the old secret stops at once', async () => {
+    const { user, api } = withEndpoint({ rotationOverlapEndsAt: OVERLAP })
+    await user.click(
+      within(await card(HOME)).getByRole('button', {
+        name: `End the secret overlap of ${HOME} now`,
+      })
+    )
+    expect(within(dialog()).getByRole('heading').textContent).toBe('End the overlap now?')
+    expect(dialog().textContent).toContain(
+      'The previous secret stops signing at once and is deleted.'
+    )
+    expect(dialog().textContent).toContain(
+      'A receiver that still verifies with the previous secret alone refuses every delivery from then on'
+    )
+    expect(api.calls.some((call) => call.method === 'DELETE')).toBe(false)
+    await user.click(within(dialog()).getByRole('button', { name: 'End the overlap' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await screen.findByText('Overlap ended: one secret signs')
+    expect(api.state.webhookEndpoints[0]?.rotationOverlapEndsAt).toBeNull()
+    await waitFor(() => expect(screen.queryAllByTestId('rotation-overlap')).toHaveLength(0))
+  })
+
+  test('an overlap that had already ended is said so', async () => {
+    const { user, api } = withEndpoint({ rotationOverlapEndsAt: OVERLAP })
+    await card(HOME)
+    // It ended by itself between the list being read and the click.
+    const endpoint = api.state.webhookEndpoints[0]
+    if (endpoint) {
+      endpoint.rotationOverlapEndsAt = null
+    }
+    await user.click(screen.getByRole('button', { name: `End the secret overlap of ${HOME} now` }))
+    await user.click(within(dialog()).getByRole('button', { name: 'End the overlap' }))
+    await waitFor(() =>
+      expect(alerts()).toEqual([
+        'No overlap is under way: the previous secret has already stopped signing.',
+      ])
+    )
+  })
+})
