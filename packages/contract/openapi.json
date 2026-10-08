@@ -1342,6 +1342,12 @@
           },
           "client": {
             "$ref": "#/components/schemas/SessionClient"
+          },
+          "hookBypassed": {
+            "type": "boolean"
+          },
+          "claimsHookBypassed": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1603,6 +1609,9 @@
                 "user"
               ]
             }
+          },
+          "claimsHookBypassed": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2614,7 +2623,9 @@
           "point": {
             "type": "string",
             "enum": [
-              "before_sign_up"
+              "before_sign_up",
+              "before_session",
+              "before_token"
             ]
           },
           "enabled": {
@@ -2705,7 +2716,9 @@
           "point": {
             "type": "string",
             "enum": [
-              "before_sign_up"
+              "before_sign_up",
+              "before_session",
+              "before_token"
             ]
           },
           "changed": {
@@ -2799,7 +2812,9 @@
           "point": {
             "type": "string",
             "enum": [
-              "before_sign_up"
+              "before_sign_up",
+              "before_session",
+              "before_token"
             ]
           },
           "weakened": {
@@ -3058,10 +3073,176 @@
         "additionalProperties": false,
         "description": "What the server posts, signed, to the hook registered for `before_sign_up`, before it creates an account by a sign-up. Not an event: nothing has happened yet."
       },
+      "HookBeforeSessionData": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "client": {
+            "$ref": "#/components/schemas/SessionClient"
+          },
+          "profile": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "amr": {
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            }
+          },
+          "signUp": {
+            "type": "boolean"
+          },
+          "ipAddress": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "userId",
+          "client",
+          "profile",
+          "amr",
+          "signUp",
+          "ipAddress"
+        ],
+        "additionalProperties": false,
+        "description": "What a hook is told about a sign-in before its session is created."
+      },
+      "HookBeforeSessionQuestion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "hook.before_session"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HookBeforeSessionData"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "data"
+        ],
+        "additionalProperties": false,
+        "description": "What the server posts, signed, to the hook registered for `before_session`, after every factor of a sign-in was proven and before it creates the session. Not an event: nothing has happened yet."
+      },
+      "HookBeforeTokenData": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "client": {
+            "$ref": "#/components/schemas/SessionClient"
+          },
+          "profile": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "amr": {
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,31}$"
+            }
+          }
+        },
+        "required": [
+          "userId",
+          "sessionId",
+          "client",
+          "profile",
+          "amr"
+        ],
+        "additionalProperties": false,
+        "description": "What a hook is told about a session before its token is issued."
+      },
+      "HookBeforeTokenQuestion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "hook.before_token"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HookBeforeTokenData"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "data"
+        ],
+        "additionalProperties": false,
+        "description": "What the server posts, signed, to the hook registered for `before_token`, when a session is created and each time its user proves a factor again. The answer is the claims the session’s tokens carry until the next question. Not an event."
+      },
       "HookQuestion": {
         "oneOf": [
           {
             "$ref": "#/components/schemas/HookBeforeSignUpQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/HookBeforeSessionQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/HookBeforeTokenQuestion"
           }
         ]
       },
@@ -3098,6 +3279,28 @@
             "additionalProperties": false
           }
         ]
+      },
+      "HookClaimsAnswer": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          }
+        },
+        "required": [
+          "claims"
+        ],
+        "additionalProperties": false
       },
       "StatusResponse": {
         "type": "object",
@@ -7563,7 +7766,9 @@
           "point": {
             "type": "string",
             "enum": [
-              "before_sign_up"
+              "before_sign_up",
+              "before_session",
+              "before_token"
             ]
           },
           "url": {

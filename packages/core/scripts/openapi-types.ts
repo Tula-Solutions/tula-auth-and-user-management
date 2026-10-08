@@ -76,9 +76,10 @@ export const WEBHOOK_EVENT_SCHEMA = 'TulaEvent'
 
 /**
  * The components a hook's receiver is typed from: the question the server posts (a union told
- * apart by `type`) and the answer it reads. No operation refers to either.
+ * apart by `type`), the answer of a deciding hook and the answer of a claims hook. No
+ * operation refers to any of them.
  */
-export const HOOK_SCHEMAS = ['HookQuestion', 'HookAnswer'] as const
+export const HOOK_SCHEMAS = ['HookQuestion', 'HookAnswer', 'HookClaimsAnswer'] as const
 
 /** Security scheme of an admin operation: the environment's secret key. */
 export const SECRET_KEY_SECURITY_SCHEME = 'secretKey'

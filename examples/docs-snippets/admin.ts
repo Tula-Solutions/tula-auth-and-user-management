@@ -3,6 +3,7 @@ import {
   ifMatch,
   isTulaAdminError,
   type TulaHookAnswer,
+  type TulaHookClaimsAnswer,
   type TulaHookQuestion,
   type TulaWebhookEvent,
   verifyHook,
@@ -351,6 +352,7 @@ export async function registerHook(storeSecret: (secret: string) => Promise<void
   // #region hook-register
   const { data: hook } = await admin.call('createHook', {
     body: {
+      // `before_sign_up`, `before_session` or `before_token`: one hook per point.
       point: 'before_sign_up',
       url: 'https://api.example.com/tula/before-sign-up',
       // Optional: 2000 unless given, at least 100, never more than 5000.
@@ -390,6 +392,10 @@ export async function beforeSignUp(request: Request): Promise<Response> {
     // Never answer `allow` to a request that did not verify.
     return new Response(null, { status: isTulaAdminError(error) ? 400 : 500 })
   }
+  if (question.type !== 'hook.before_sign_up') {
+    // Another point's question sent to this address: not one this route answers.
+    return new Response(null, { status: 400 })
+  }
   // `question.data` is the address being signed up, how (`password`, `passwordless`,
   // `oauth_google`, …), the kind of client and the IP address the request came from.
   const answer: TulaHookAnswer = isDisposable(question.data.email)
@@ -397,6 +403,60 @@ export async function beforeSignUp(request: Request): Promise<Response> {
       { decision: 'deny', code: 'disposable_email' }
     : { decision: 'allow' }
   // A 200 with exactly this body. Anything else is a failed call, not an answer.
+  return Response.json(answer)
+}
+// #endregion
+
+/** Your own rule about who may have a session now. Keep it fast. */
+declare function isSuspended(userId: string): Promise<boolean>
+/** Your own record of a user: what your application authorizes on. */
+declare function planOf(userId: string): Promise<{ plan: string; seats: number }>
+
+// #region hook-receive-session
+// Asked when every factor of a sign-in is proven, just before its session is created.
+export async function beforeSession(request: Request): Promise<Response> {
+  let question: TulaHookQuestion
+  try {
+    question = await verifyHook(await request.text(), request.headers, hookSecret)
+  } catch (error) {
+    return new Response(null, { status: isTulaAdminError(error) ? 400 : 500 })
+  }
+  if (question.type !== 'hook.before_session') {
+    return new Response(null, { status: 400 })
+  }
+  // `question.data` is the user's id, the kind of client, the session profile, what was
+  // proven (`amr`), whether this sign-in created the account, and the IP address.
+  const { userId, amr, profile } = question.data
+  let answer: TulaHookAnswer = { decision: 'allow' }
+  if (await isSuspended(userId)) {
+    answer = { decision: 'deny', code: 'account_suspended' }
+  } else if (profile === 'admin' && !amr.includes('mfa')) {
+    // `amr` is a set: test membership, never position.
+    answer = { decision: 'deny', code: 'two_step_needed' }
+  }
+  return Response.json(answer)
+}
+// #endregion
+
+// #region hook-receive-token
+// Asked when a session is created and when its user proves a factor again. Not at a
+// refresh: what you answer is stored on the session and issued until one of those happens.
+export async function beforeToken(request: Request): Promise<Response> {
+  let question: TulaHookQuestion
+  try {
+    question = await verifyHook(await request.text(), request.headers, hookSecret)
+  } catch (error) {
+    return new Response(null, { status: isTulaAdminError(error) ? 400 : 500 })
+  }
+  if (question.type !== 'hook.before_token') {
+    return new Response(null, { status: 400 })
+  }
+  const { plan, seats } = await planOf(question.data.userId)
+  // Exactly `{ claims }`. Each value one string, number or boolean; no reserved name
+  // (`sub`, `amr`, …); at most 1,024 bytes together with the profile's template claims.
+  const answer: TulaHookClaimsAnswer = {
+    claims: { plan, seats, elevated: question.data.amr.includes('mfa') },
+  }
   return Response.json(answer)
 }
 // #endregion

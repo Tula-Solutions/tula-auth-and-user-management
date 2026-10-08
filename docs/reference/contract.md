@@ -670,6 +670,23 @@ const { customClaims } = await auth()
 const isAdmin = customClaims.role === 'admin' // a missing claim is `undefined`: "no"
 ```
 
+### `CustomClaimsCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link checkCustomClaims} found: the claims, or why they are not claims.
+
+- `invalid`: not a plain object, a key that fails {@link isCustomClaimKey} (a reserved
+  name and `__proto__` among them), or a value that is not one string, number or boolean.
+- `too_large`: every claim is fine and together they are over
+  {@link MAX_CUSTOM_CLAIMS_BYTES}.
+
+```ts
+export type CustomClaimsCheck =
+| { claims: Record<string, CustomClaimValue> }
+| { problem: 'invalid' | 'too_large' }
+```
+
 ### `DASHBOARD_HEADER`
 
 _constant_, defined in `packages/contract/src/headers.ts`
@@ -1546,6 +1563,24 @@ what lets a new auth method ship everywhere with only a server change (business 
 const FlowStepSchema
 ```
 
+### `HOOK_ANSWER_KINDS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What each point takes for an answer: a `decision` ({@link HookAnswerSchema}: allow, or deny
+with a code) or `claims` ({@link HookClaimsAnswerSchema}). A point takes one kind and never
+the other: a claims hook cannot deny, and a deciding hook cannot add a claim.
+
+```ts
+const HOOK_ANSWER_KINDS: Record<any, "claims" | "decision">
+```
+
+**Example**
+
+```ts
+HOOK_ANSWER_KINDS.before_token // 'claims'
+```
+
 ### `HOOK_DEFAULT_DEADLINE_MS`
 
 _constant_, defined in `packages/contract/src/hook.ts`
@@ -1606,8 +1641,11 @@ _constant_, defined in `packages/contract/src/hook.ts`
 
 Why a call of a hook failed, as a hook's `lastFailureReason` says it. Fixed words of the
 server's own: the first eight are the outbound guard's (the request was not made, or got no
-usable answer), then an answer whose status was not 2xx, an answer that was not exactly
-`{ "decision": … }`, and a signing secret the server could not open.
+usable answer), then an answer whose status was not 2xx, an answer that was not exactly the
+answer its point takes, and a signing secret the server could not open. The last two are a
+claims hook's alone: a claim that breaks a rule (a reserved name, a key outside the grammar,
+a value that is not one string, number or boolean), and claims over the size cap, by
+themselves or together with the claims of the session's JWT template.
 
 ```ts
 const HOOK_FAILURE_REASONS
@@ -1692,10 +1730,16 @@ deadlineMs >= HOOK_MIN_DEADLINE_MS
 _constant_, defined in `packages/contract/src/hook.ts`
 
 The points at which the server can ask a hook. A closed list: an environment has at most one
-hook per point. Later points are added here.
+hook per point.
+
+- `before_sign_up`: before a sign-up creates an account. Allows or denies.
+- `before_session`: before a sign-in (a sign-up's and a password reset's too) creates a
+  session, after every factor was proven. Allows or denies.
+- `before_token`: when a session is created and each time its user proves a factor again,
+  before the token is issued. Answers with claims for the token; it cannot deny.
 
 ```ts
-const HOOK_POINTS: readonly ["before_sign_up"]
+const HOOK_POINTS: readonly ["before_sign_up", "before_session", "before_token"]
 ```
 
 **Example**
@@ -1839,6 +1883,31 @@ const HookAnswerSchema
 return Response.json({ decision: 'deny', code: 'disposable_email' } satisfies HookAnswer)
 ```
 
+### `HookBeforeSessionDataSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The `data` of a `hook.before_session` question: who is about to get a session, and how
+they proved it. An allow-list, and strict.
+
+- `userId`: the user. Every factor the sign-in needed has been **proven** by the time the
+  question is asked.
+- `client`: the kind of client the sign-in was started from.
+- `profile`: the name of the session profile the session would get.
+- `amr`: what was proven, as the token's `amr` will say it. A set.
+- `signUp`: `true` when the session is the one a sign-up ends with (the account was created
+  by the same attempt), `false` for a sign-in and for a password reset.
+- `ipAddress`: the address the request that would create the session came from, as the
+  server knows it; `null` when it does not.
+
+**No email address**: the account exists, and its id names it (an operator reads the
+address from the admin API by that id). Never a password, a code, a token, an attempt's id
+or secret, a name or a user agent.
+
+```ts
+const HookBeforeSessionDataSchema
+```
+
 ### `HookBeforeSignUpDataSchema`
 
 _constant_, defined in `packages/contract/src/hook.ts`
@@ -1859,6 +1928,83 @@ anything of a provider's profile.
 
 ```ts
 const HookBeforeSignUpDataSchema
+```
+
+### `HookBeforeTokenDataSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The `data` of a `hook.before_token` question: the session whose token is about to carry the
+claims the hook answers with. An allow-list, and strict.
+
+- `userId`, `sessionId`: the user and the session. When the question is asked for a new
+  session, the session **does not exist yet** and may never (the environment's
+  concurrent-session rule can still refuse it): do not act on the id, only answer.
+- `client`: the kind of client the session was created from.
+- `profile`: the name of the session's profile.
+- `amr`: everything the session has proven so far, as the token's `amr` says it. A set.
+
+**No email address and no IP address.** The id names the user; and a claim that depends on
+where one request came from would be signed into every later token of the session, long
+after the request. Never a password, a code, a token or a user agent.
+
+```ts
+const HookBeforeTokenDataSchema
+```
+
+### `HookClaimsAnswer`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+What a claims hook answers.
+
+```ts
+export type HookClaimsAnswer = z.infer<typeof HookClaimsAnswerSchema>
+```
+
+### `HookClaimsAnswerSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The answer of a claims hook (`before_token`): the claims to issue under the namespace claim
+(`ext`) of the session's tokens, and **nothing else**.
+
+- `claims`: an object of at most {@link MAX_CUSTOM_CLAIMS_BYTES} bytes as JSON whose every
+  key passes `isCustomClaimKey` (letters, digits and underscores, at most 32, not a reserved
+  claim name) and whose every value is one string, number or boolean. `{}` is an answer and
+  means none.
+
+Any other key beside `claims` (a `decision` among them) is not an answer. A claim that
+breaks a rule fails the **whole** answer: nothing of it is issued, and the hook's failure
+mode decides. The claims sit inside `ext`, so no answer can set `sub`, `amr`, `auth_time`
+or any other claim Tula issues; a claims hook cannot deny, choose a user, mark an address
+verified or skip a second factor.
+
+This schema describes the shape and holds every rule but one: a schema library copies an
+object and drops a `__proto__` key on the way. The server judges the body as it was parsed,
+with {@link readHookClaimsAnswer}, which refuses that key too.
+
+```ts
+const HookClaimsAnswerSchema
+```
+
+**Example**
+
+```ts
+return Response.json({ claims: { role: 'admin', plan: 'team' } } satisfies HookClaimsAnswer)
+```
+
+### `HookClaimsRead`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+What {@link readHookClaimsAnswer} found in a body: the claims, or which of the fixed failure
+words ({@link HOOK_FAILURE_REASONS}) says why there are none.
+
+```ts
+export type HookClaimsRead =
+| { claims: Record<string, CustomClaimValue> }
+| { problem: 'answer_invalid' | 'claims_invalid' | 'claims_too_large' }
 ```
 
 ### `HookFailureMode`
@@ -1938,7 +2084,7 @@ _constant_, defined in `packages/contract/src/hook.ts`
 Any question, told apart by `type`: what a hook's receiver parses a request with.
 
 ```ts
-const HookQuestionSchema: z.ZodDiscriminatedUnion<[any], "type">
+const HookQuestionSchema: z.ZodDiscriminatedUnion<[any, any, any], "type">
 ```
 
 **Example**
@@ -4792,6 +4938,36 @@ export function builtInSessionProfile(client: SessionClient): BuiltInSessionProf
 builtInSessionProfile('ios') // 'mobile'
 ```
 
+### `checkCustomClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Judge claims that did not come from the environment's settings (a hook's answer), **whole**:
+either every one of them can be issued under the namespace claim, or none is.
+
+Nothing is repaired and nothing is left out: one bad key makes the whole value `invalid`.
+Give it the value as it was parsed (`JSON.parse`), not one a schema library has rebuilt:
+the keys are read as the object's **own** keys, so a `__proto__` key a parser kept is seen
+and refused, where a library that copies objects would have dropped it silently. An empty
+object is fine and means no claims.
+
+```ts
+export function checkCustomClaims(value: unknown): CustomClaimsCheck
+```
+
+**Parameters**
+
+- `value`: The candidate claims.
+
+**Returns** A copy of the claims (own keys only, no prototype reachable), or the problem.
+
+**Example**
+
+```ts
+checkCustomClaims({ role: 'admin' }) // { claims: { role: 'admin' } }
+checkCustomClaims({ sub: 'someone-else' }) // { problem: 'invalid' }
+```
+
 ### `contrastRatio`
 
 _function_, defined in `packages/contract/src/theme.ts`
@@ -5415,6 +5591,38 @@ readCustomClaims({ sub: 'u1', ext: { role: 'admin' } }) // { role: 'admin' }
 readCustomClaims({ sub: 'u1', ext: ['admin'] }) // null
 ```
 
+### `readHookClaimsAnswer`
+
+_function_, defined in `packages/contract/src/hook.ts`
+
+Read a claims hook's answer from a parsed body, **as the server does**: the one definition
+of what such an answer is.
+
+- `answer_invalid`: not an object with exactly the one key `claims` holding a plain object.
+- `claims_invalid`: the shape is right and a claim is not: a reserved name, a key outside
+  the grammar (`__proto__` included), a value that is not one string, number or boolean.
+- `claims_too_large`: every claim is fine and together they are over the cap.
+
+Whole or nothing: no problem leaves some claims standing. Pass the value `JSON.parse`
+returned, not one a schema has rebuilt.
+
+```ts
+export function readHookClaimsAnswer(body: unknown): HookClaimsRead
+```
+
+**Parameters**
+
+- `body`: The parsed body.
+
+**Returns** A copy of the claims (possibly none), or the problem.
+
+**Example**
+
+```ts
+readHookClaimsAnswer({ claims: { role: 'admin' } }) // { claims: { role: 'admin' } }
+readHookClaimsAnswer({ claims: { sub: 'x' } }) // { problem: 'claims_invalid' }
+```
+
 ### `readStoredEnvironmentSettings`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -5737,6 +5945,23 @@ const { customClaims } = await auth()
 const isAdmin = customClaims.role === 'admin' // a missing claim is `undefined`: "no"
 ```
 
+### `CustomClaimsCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link checkCustomClaims} found: the claims, or why they are not claims.
+
+- `invalid`: not a plain object, a key that fails {@link isCustomClaimKey} (a reserved
+  name and `__proto__` among them), or a value that is not one string, number or boolean.
+- `too_large`: every claim is fine and together they are over
+  {@link MAX_CUSTOM_CLAIMS_BYTES}.
+
+```ts
+export type CustomClaimsCheck =
+| { claims: Record<string, CustomClaimValue> }
+| { problem: 'invalid' | 'too_large' }
+```
+
 ### `MAX_CUSTOM_CLAIMS_BYTES`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -5812,6 +6037,36 @@ const RESERVED_CLAIM_NAMES
 
 ```ts
 RESERVED_CLAIM_NAMES.includes('sub') // true
+```
+
+### `checkCustomClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Judge claims that did not come from the environment's settings (a hook's answer), **whole**:
+either every one of them can be issued under the namespace claim, or none is.
+
+Nothing is repaired and nothing is left out: one bad key makes the whole value `invalid`.
+Give it the value as it was parsed (`JSON.parse`), not one a schema library has rebuilt:
+the keys are read as the object's **own** keys, so a `__proto__` key a parser kept is seen
+and refused, where a library that copies objects would have dropped it silently. An empty
+object is fine and means no claims.
+
+```ts
+export function checkCustomClaims(value: unknown): CustomClaimsCheck
+```
+
+**Parameters**
+
+- `value`: The candidate claims.
+
+**Returns** A copy of the claims (own keys only, no prototype reachable), or the problem.
+
+**Example**
+
+```ts
+checkCustomClaims({ role: 'admin' }) // { claims: { role: 'admin' } }
+checkCustomClaims({ sub: 'someone-else' }) // { problem: 'invalid' }
 ```
 
 ### `customClaimsBytes`
