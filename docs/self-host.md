@@ -89,6 +89,7 @@ packaged stack:
 | `API_REDIS_URL` | `redis://redis:6379` | The API's `REDIS_URL`: the stack's own Redis unless you point it elsewhere. A separate name for the same reason. |
 | `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. Required in `staging` and `prod`, where the bundled Mailpit is refused. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
 | `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `TULA_ADMIN_TOKEN`, `OAUTH_MOCK_PROVIDER`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. Set `TRUST_PROXY=true` only when every request comes through the proxy: the instances' own ports are published here too, and on those a client could then write its own address. |
+| `WEBHOOK_WORKER` | `api` | Passed to every container of the stack. With `separate` the two instances make no webhook delivery and the `worker` service has to be started with them: `--profile app --profile worker` ([The webhook worker as its own service](#the-webhook-worker-as-its-own-service)). |
 | `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `5432`, `6379`, `1025`, `8025` | Host ports of the other services. |
 
 The database addresses inside the stack are fixed; `DATABASE_URL` from `.env` is not used.
@@ -146,6 +147,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log has its own period, the `audit.retentionDays` setting. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
 | `REDIS_URL` | in `staging` and `prod` | none | Redis shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. A `valkey://` or `valkeys://` URL is accepted too, but only Redis (7 and 8) has been tested; Valkey has never been run. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
+| `WEBHOOK_WORKER` | | `api` | `api` or `separate`: where webhook deliveries are made. `api`: inside the API instances. `separate`: only in a worker process (the same image, `bun run src/worker.ts`), and an API instance makes none. **Every process gets the same value**, and with `separate` a worker has to be running or nothing is delivered. See [The webhook worker as its own service](#the-webhook-worker-as-its-own-service). |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
 
 ## Settings of an environment
@@ -429,7 +431,8 @@ the API, and they work again when it is switched back on with the same `rpId`.
 
 `tula doctor` checks what actually goes wrong, each with its fix: the database and its
 migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks,
-`PUBLIC_URL`, and the redirect URI each enabled OAuth provider needs
+`PUBLIC_URL`, the redirect URI each enabled OAuth provider needs, and whether webhook events
+are waiting with nothing delivering them
 ([cli.md](cli.md#tula-doctor)). The checks run inside the API, behind
 `GET /v1/instance/diagnostics`, and that route takes the **instance admin token**:
 
@@ -623,6 +626,103 @@ through Redis and are immediate.
 Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
 separately, and a restart forgets all three.
 
+### The webhook worker as its own service
+
+By default webhook deliveries are made inside the API instances (`WEBHOOK_WORKER=api`): one
+instance does a round every five seconds, the others skip it, and there is nothing to
+configure. `WEBHOOK_WORKER=separate` moves them into a **worker**: a second process from the
+same image that does nothing else.
+
+```sh
+# The API instances, as before, and the worker: the same image, another command.
+docker run … -e WEBHOOK_WORKER=separate tula-api                          # each API instance
+docker run … -e WEBHOOK_WORKER=separate tula-api bun run src/worker.ts    # the worker
+```
+
+With the Compose file: `WEBHOOK_WORKER=separate docker compose --profile app --profile worker
+up -d` (and stop with both profiles). `--profile app` alone is unchanged: no worker, and the
+instances deliver.
+
+**When to separate it.** A delivery is a request to an address one of your tenants typed.
+Separate the worker when you want those requests to leave from somewhere else than the
+machines that take sign-in traffic:
+
+- **Egress rules.** The worker's containers get the route to the internet (or to the egress
+  proxy's network, the allow-list, the fixed outbound address your customers put in their
+  firewalls). The API instances need none of that for webhooks.
+- **Load.** A burst of events, or receivers that answer slowly, then takes CPU, sockets and
+  database connections from the worker, not from the instances answering sign-ins.
+- **Restarts and scaling of their own.** You can deploy, stop or resize the worker without
+  touching the API, and the other way round.
+
+A deployment with one or two instances and no such requirement gains nothing from it: leave
+the default.
+
+**What the worker is.**
+
+- **The same image, and less of the environment than the API.** What it uses: `DATABASE_URL`
+  (the runtime role), the same `TULA_MASTER_KEY` (it opens the endpoints' signing secrets),
+  the same `ENVIRONMENT` (the tier the address guard judges by), `WEBHOOK_WORKER` and
+  `LOG_LEVEL`. It checks its variables under the same rules as the API, so in `staging` and
+  `prod` it also has to be given what those rules demand of every process, though it never
+  uses them: `REDIS_URL`, `SMTP_URL`, `MAIL_FROM`, `BREACH_CHECK=hibp` and an https
+  `PUBLIC_URL`. **Do not give it `TULA_ADMIN_TOKEN`**: it serves no instance route, and the
+  deployment's most powerful credential should be in no container that has no use for it.
+  It has no use for `OAUTH_MOCK_PROVIDER`, `CORS_ORIGINS`, `TRUST_PROXY`, `PASSWORD_POLICY`,
+  `API_DOCS`, `DASHBOARD_DIR` or `INSTANCE_AUDIT_RETENTION_DAYS` either. The Compose file's
+  `worker` service is given exactly the first two lists.
+- **It takes no traffic.** It listens on `PORT` for `GET /v1/status` and `GET /v1/ready` and
+  answers 404 to everything else: no sign-in route, no admin route, no dashboard. Do not
+  publish the port and put no load balancer in front of it. `/v1/ready` checks the database
+  and is what the image's health check asks.
+- **It never runs migrations** and creates no signing keys. Run migrations as before, and
+  start the worker after them.
+- **It makes the same rounds, under the same lock.** The schedule, the retries, the guard on
+  every address and the log lines (`webhook delivery round finished`) are the ones described
+  in [webhooks.md](webhooks.md#how-the-server-calls-you). Like retention, the lock needs
+  `DATABASE_URL` to be a direct connection or a session-mode pooler.
+- **You may run several.** Each tries the lock every five seconds; one is let through and the
+  others skip that round. A second worker is for availability, not for throughput.
+- **Stopping it is safe.** On `SIGTERM` it starts no new round, lets the round under way
+  finish the requests it is making and record them, and exits (within ten seconds, or it
+  exits anyway). What it had not sent stays where it was and is sent by the next round of
+  any worker. A request that was sent and not recorded is sent again: delivery is at least
+  once, as always. It keeps running when the database is away: rounds fail, `/v1/ready`
+  answers 503, and it carries on when the database is back.
+
+**What does not move.**
+
+- **Hooks stay in the API.** A [hook](hooks.md) is asked inside the sign-in or sign-up
+  request that waits for its answer, by the instance serving that request. If you use hooks,
+  the API instances still call your hook addresses, and their egress has to allow those.
+- **Saving an endpoint still looks its address up** from the API instance (a DNS lookup of
+  the host, to refuse a private address at once). No request is made to it.
+- **A test event and a delivery sent again are refused.** Both are requests the API instance
+  that takes the call would make itself. With `WEBHOOK_WORKER=separate` they answer
+  `501 not_implemented` with `params.reason: "worker_separate"`, and nothing is sent. The
+  endpoints, the delivery log and secret rotation work as before
+  ([webhooks.md](webhooks.md#send-a-test-event)).
+- **Retention stays in the API**, the deletion of old events and delivery records included.
+
+**Give every process the same value, and run the worker.** The variable says where the
+deployment delivers; the command says what a process is.
+
+| `WEBHOOK_WORKER` on | Worker running? | What happens |
+| --- | --- | --- |
+| every process: `api` (or unset) | no | The API instances deliver. The default. |
+| every process: `separate` | yes | The worker delivers; no API instance makes a request to an endpoint. |
+| every process: `separate` | **no** | **Nothing is delivered.** Events wait in the outbox and are delivered, late, once a worker runs. Each API instance says at start-up `WEBHOOK_WORKER=separate: this API instance makes no webhook delivery`, and `tula doctor` fails `webhook_worker` once an event has waited a minute. The same failure is what a worker that runs and cannot keep up, or cannot work, looks like: the check reads the outbox and says so. |
+| the worker: `api` (or unset) | it refuses to start | It exits with a message naming the variable: the API instances already deliver, and a worker beside them would separate nothing. |
+| API instances with different values | | Not detected. The instances with `api` deliver, so the separation is not in force. Set it in one place for all of them. |
+
+`tula doctor` ([above](#checking-a-deployment-tula-doctor)) is the check to run after the
+change. Its `webhook_worker` line looks at what is waiting, not at the worker: with nothing
+waiting it is `ok` whether or not a worker runs, so create an event (a test user) and run it
+again a minute later, or look for `webhook delivery round finished` in the worker's log.
+
+To go back, set `WEBHOOK_WORKER=api` everywhere (or remove it), restart the API instances and
+stop the worker. Nothing is lost either way: what waits is in the database.
+
 **Retention.** The API cleans up after itself; there is nothing to schedule. On start-up and
 every ten minutes one instance (whichever takes a PostgreSQL advisory lock first; the others
 skip that round) deletes:
@@ -661,7 +761,8 @@ for now. See [ADR 0017](adr/0017-retention.md).
 
 **Health.** `GET /v1/status` answers while the process is up; `GET /v1/ready` also checks the
 database, and Redis when it is configured, and is what the image's health check and a load
-balancer should use.
+balancer should use. A [webhook worker](#the-webhook-worker-as-its-own-service) answers the
+same two paths and nothing else; its `/v1/ready` checks the database.
 
 **The image.** It runs as the unprivileged `bun` user and listens on 3003. It contains the
 API's sources, the two workspace packages the API imports (`packages/db`, with the migrations

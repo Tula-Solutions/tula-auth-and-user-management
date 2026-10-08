@@ -135,6 +135,15 @@ export interface WebhookDeliveryStore {
   pendingEvents(environmentId: string, limit: number): Promise<OutboxEvent[]>
 
   /**
+   * When the oldest event still waiting happened, and nothing else of it: what the
+   * diagnostics need to say how long the outbox has waited, without reading a payload.
+   *
+   * @param environmentId - The environment to look in.
+   * @returns `occurredAt` of its oldest event with no `delivered_at`, or `null` when none waits.
+   */
+  oldestPendingEventAt(environmentId: string): Promise<Date | null>
+
+  /**
    * @param environmentId - The environment to look in. No other is read.
    * @param eventIds - The events.
    * @returns Those of them that still exist, settled or not, in no particular order.

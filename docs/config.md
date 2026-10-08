@@ -271,7 +271,9 @@ hooks: {
   **update**: the hook keeps its id and its signing secret. (A webhook endpoint is its
   address; a hook is not.)
 - **What an entry leaves out is the API's default**, and is managed: `enabled: true`,
-  `deadlineMs: 2000`, `failureMode: 'deny'`. An entry is the whole hook. So a hook someone
+  `deadlineMs: 2000`, `failureMode: 'deny'`. An entry is the whole hook. **A change made in
+  the dashboard to a hook's switch, deadline or failure mode is reverted by the next
+  `tula apply`, and `tula diff` shows it in the plan first.** So a hook someone
   switched off in the dashboard is switched on again by a file that does not say
   `enabled: false`, and a hook set to `allow` there goes back to `deny`. A check that
   silently stays off or loosened would be the worse surprise.

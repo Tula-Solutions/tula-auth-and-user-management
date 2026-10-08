@@ -3,6 +3,9 @@
 #   Packaged API: `docker compose --profile app up -d --build` also runs the migrations, two
 #                 instances of the API image and a proxy that puts both behind one address
 #                 (http://localhost:3005). See docs/self-host.md.
+#   Worker apart: `WEBHOOK_WORKER=separate docker compose --profile app --profile worker up -d`
+#                 also runs the webhook worker as a container of its own, and the two API
+#                 instances then make no delivery. Stop with both profiles too.
 # Host ports can be moved with POSTGRES_PORT, REDIS_PORT, MAILPIT_SMTP_PORT, MAILPIT_UI_PORT,
 # API_PORT, API_2_PORT and LB_PORT, and the built image's tag with API_IMAGE, e.g. to run a
 # second stack next to this one (with `docker compose -p <another name>`).
@@ -13,6 +16,37 @@
 # Images are pinned by digest (the multi-arch index): a tag can be moved, a digest cannot.
 # Dependabot proposes updates (.github/dependabot.yml).
 
+# What every process of the image is given: the API instances and the webhook worker. The
+# worker uses the database, the master key (it opens the signing secrets), ENVIRONMENT (the
+# tier the outbound guard judges an address in), WEBHOOK_WORKER and LOG_LEVEL. The rest of
+# this block it never reads, but the environment's schema demands them of every process in a
+# live tier (apps/api/src/env.ts: a real relay and sender, `hibp`, Redis, an https address),
+# so a worker without them would not start there. What only the API reads, and a process
+# starts without, is in `x-api` below and is NOT given to the worker
+# (.claude/hooks/compose.test.ts holds the list).
+x-process-environment: &process-environment
+  ENVIRONMENT: ${ENVIRONMENT:-local}
+  DATABASE_URL: postgres://tula_api:tula_api@postgres:5432/tula
+  # Required: 32 bytes as hex (`openssl rand -hex 32`). The API refuses to start without it.
+  TULA_MASTER_KEY: ${TULA_MASTER_KEY:-}
+  # Not `PUBLIC_URL` / `SMTP_URL`: Compose also reads the repository's `.env`, where a
+  # developer's values describe `bun run dev` on the host (port 3003, mail at 127.0.0.1, which
+  # inside this container is the container itself).
+  # Both instances share one PUBLIC_URL: it is the issuer of every access token, so a token
+  # signed by one instance is only accepted by the other if they agree on it.
+  # When clients reach the API through the proxy (`lb`), set API_PUBLIC_URL to its address.
+  PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
+  SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
+  # Not `REDIS_URL`, for the same reason: in a developer's `.env` it points at 127.0.0.1.
+  REDIS_URL: ${API_REDIS_URL:-redis://redis:6379}
+  MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
+  BREACH_CHECK: ${BREACH_CHECK:-offline}
+  # Where webhook deliveries are made: `api` (inside the API instances) or `separate` (only
+  # in the `worker` service below, which then has to be started: `--profile worker`). One
+  # value for every container of the stack.
+  WEBHOOK_WORKER: ${WEBHOOK_WORKER:-api}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
 # The packaged API. Connects as the non-owner `tula_api` role, so row-level security applies.
 # Shared by both instances below: they must differ in nothing but the host port.
 x-api: &api
@@ -22,24 +56,9 @@ x-api: &api
     context: .
     dockerfile: apps/api/Dockerfile
   environment:
-    ENVIRONMENT: ${ENVIRONMENT:-local}
-    DATABASE_URL: postgres://tula_api:tula_api@postgres:5432/tula
-    # Required: 32 bytes as hex (`openssl rand -hex 32`). The API refuses to start without it.
-    TULA_MASTER_KEY: ${TULA_MASTER_KEY:-}
+    <<: *process-environment
     # Optional: the instance admin token (`tula doctor`). Unset, the instance routes do not exist.
     TULA_ADMIN_TOKEN: ${TULA_ADMIN_TOKEN:-}
-    # Not `PUBLIC_URL` / `SMTP_URL`: Compose also reads the repository's `.env`, where a
-    # developer's values describe `bun run dev` on the host (port 3003, mail at 127.0.0.1, which
-    # inside this container is the container itself).
-    # Both instances share one PUBLIC_URL: it is the issuer of every access token, so a token
-    # signed by one instance is only accepted by the other if they agree on it.
-    # When clients reach the API through the proxy (`lb`), set API_PUBLIC_URL to its address.
-    PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}
-    SMTP_URL: ${API_SMTP_URL:-smtp://mailpit:1025}
-    # Not `REDIS_URL`, for the same reason: in a developer's `.env` it points at 127.0.0.1.
-    REDIS_URL: ${API_REDIS_URL:-redis://redis:6379}
-    MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
-    BREACH_CHECK: ${BREACH_CHECK:-offline}
     PASSWORD_POLICY: ${PASSWORD_POLICY:-recommended}
     CORS_ORIGINS: ${CORS_ORIGINS:-}
     # `true` only when every request comes through a proxy that overwrites X-Forwarded-For, as
@@ -49,7 +68,6 @@ x-api: &api
     # Development and tests only: serves every OAuth provider from the built-in mock provider
     # (ADR 0026). The API refuses to start with it unless ENVIRONMENT is `local`.
     OAUTH_MOCK_PROVIDER: ${OAUTH_MOCK_PROVIDER:-false}
-    LOG_LEVEL: ${LOG_LEVEL:-info}
   depends_on:
     postgres:
       condition: service_healthy
@@ -117,6 +135,20 @@ services:
   api-2:
     <<: *api
     ports: ['127.0.0.1:${API_2_PORT:-3004}:3003']
+
+  # The webhook worker as a container of its own (docs/self-host.md, "The webhook worker as its
+  # own service"): the same image as the API, another command, and of the API's settings only
+  # what a process needs to start: not the admin token, not the mock provider. Optional:
+  #   WEBHOOK_WORKER=separate docker compose --profile app --profile worker up -d
+  # With `separate` the two API instances make no delivery, so the worker must be running;
+  # without it the worker refuses to start, because the instances already deliver.
+  # It takes no traffic and publishes no port; the image's health check asks its `/v1/ready`.
+  worker:
+    <<: *api
+    profiles: ['worker']
+    command: ['bun', 'run', 'src/worker.ts']
+    # Replaces the API's whole map (a merge key is shallow): the shared block and nothing else.
+    environment: *process-environment
 
   # Both instances behind one address, round robin (docker/lb/nginx.conf). This is what the
   # exit criterion "two packaged instances behind one address" runs against

@@ -371,3 +371,28 @@ describe('loadEnv', () => {
     })
   })
 })
+
+describe('WEBHOOK_WORKER', () => {
+  test('unset or blank, deliveries are made inside the API, as before the switch existed', () => {
+    expect(parseEnv(base).WEBHOOK_WORKER).toBe('api')
+    expect(parseEnv({ ...base, WEBHOOK_WORKER: '' }).WEBHOOK_WORKER).toBe('api')
+    expect(parseEnv({ ...base, WEBHOOK_WORKER: '  ' }).WEBHOOK_WORKER).toBe('api')
+  })
+
+  test.each(['api', 'separate'] as const)('%s is accepted as written', (value) => {
+    expect(parseEnv({ ...base, WEBHOOK_WORKER: value }).WEBHOOK_WORKER).toBe(value)
+  })
+
+  // A closed set, exact: a near miss must stop the boot, never fall back to a default that
+  // decides who delivers.
+  test.each(['Separate', 'API', 'worker', 'off', 'true', 'none', 'api,separate', ' separate'])(
+    '%p is refused',
+    (value) => {
+      expect(invalidVars({ ...base, WEBHOOK_WORKER: value })).toEqual(['WEBHOOK_WORKER'])
+    }
+  )
+
+  test('it is accepted in a live tier too', () => {
+    expect(parseEnv({ ...live, WEBHOOK_WORKER: 'separate' }).WEBHOOK_WORKER).toBe('separate')
+  })
+})

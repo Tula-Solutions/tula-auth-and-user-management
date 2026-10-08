@@ -15,6 +15,7 @@ type Job = {
   needs?: string | string[]
   if?: string
   permissions?: Record<string, string>
+  env?: Record<string, string>
   steps: Step[]
 }
 type Workflow = { jobs: Record<string, Job> }
@@ -128,6 +129,69 @@ describe('the Turborepo cache', () => {
     expect(steps.findIndex((step) => step.uses?.startsWith('actions/cache/save@'))).toBeGreaterThan(
       verify
     )
+  })
+})
+
+// TULA-52: a webhook delivered by the worker running as a service of its own.
+describe('the self-host run with the worker as its own service', () => {
+  const steps = () => job('self-host-worker').steps
+  const scripts = () => steps().map((step) => step.run ?? '')
+  const indexOf = (text: string) => scripts().findIndex((script) => script.includes(text))
+  const COMPOSE =
+    'docker compose -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker'
+
+  test('every container is told the worker is separate, and nothing else is changed', () => {
+    // No `ENVIRONMENT` and nothing that loosens the outbound guard: the stack runs in the
+    // tier the other self-host jobs run in, and the receiver is reached within its rules.
+    expect(Object.keys(job('self-host-worker').env ?? {}).sort()).toEqual([
+      'TULA_MASTER_KEY',
+      'WEBHOOK_WORKER',
+    ])
+    expect(job('self-host-worker').env?.WEBHOOK_WORKER).toBe('separate')
+  })
+
+  test('the stack is started without the worker: the check has to see nothing delivered first', () => {
+    const start = indexOf('up -d --build')
+    expect(start).toBeGreaterThan(-1)
+    expect(scripts()[start]).toContain('--profile app up -d --build')
+    expect(scripts()[start]).not.toContain('--profile worker')
+    // The check starts the worker itself, after it has seen the event wait.
+    expect(scripts().filter((script) => /up -d[^\n]*\bworker\b/.test(script))).toEqual([])
+  })
+
+  test('the check runs against that stack, with the receiver’s file laid over it', () => {
+    const check = indexOf('scripts/worker-check/check.ts')
+    expect(check).toBeGreaterThan(indexOf('up -d --build'))
+    expect(scripts()[check]).toContain(`bun run scripts/worker-check/check.ts -- ${COMPOSE}`)
+    // Its exit code is the step's: nothing after it on the line, nothing that swallows it.
+    expect(scripts()[check]).not.toMatch(/check\.ts[^\n]*(\|\||\|\s|;)/)
+  })
+
+  test('the instance token is generated for the run, never written in the workflow', () => {
+    const token = indexOf('TULA_ADMIN_TOKEN=')
+    expect(token).toBeGreaterThan(-1)
+    expect(token).toBeLessThan(indexOf('up -d --build'))
+    expect(scripts()[token]).toContain('openssl rand -hex 32')
+    expect(scripts()[token]).toContain('::add-mask::')
+  })
+
+  test('the conformance run still names the scenarios it skips, all eight', () => {
+    // The worker job replaces none of that: a receiver on the runner is still out of reach
+    // for a server in a container, and the skip is still checked by name.
+    const run = job('self-host').steps.find((step) => step.run?.includes('bun run conformance'))
+    for (const name of [
+      'claims added by a hook',
+      'hook that times out',
+      'sign-in denied by a hook',
+      'sign-in hook that times out',
+      'sign-up denied by a hook',
+      'webhook delivered and signed',
+      'webhook retried after a 500',
+      'webhook secret rotated with an overlap',
+    ]) {
+      expect(run?.run).toContain(`'${name}'`)
+    }
+    expect(run?.run).toContain('if [ "$skipped" != "$expected" ]; then')
   })
 })
 

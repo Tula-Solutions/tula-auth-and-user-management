@@ -29,10 +29,18 @@ paths:
   never `allowedOrigin`'s loopback rule.
 - Whatever runs after a transaction has committed (first signing keys) logs its failure and
   lets the answer stand.
-- A background job is a service function `server.ts` starts on boot and on a timer on every
-  instance, under `deps.jobLock.runExclusive(<its own job name>, …)`; a new job gets a new id
-  in `JOB_LOCK_IDS` (never renumber). It serves environments one at a time and a failure in
-  one is logged and skipped (`modules/retention`, `modules/webhook`).
+- A background job is a service function `startJobs` (`src/jobs.ts`) starts on boot and on a
+  timer, under `deps.jobLock.runExclusive(<its own job name>, …)`; a new job gets a new id
+  in `JOB_LOCK_IDS` (never renumber) and a place in `planProcess` (`src/process.ts`) for the
+  role that runs it. Never set a timer for one, or name one, in `server.ts` or `worker.ts`:
+  both call `bootJobs(container)` and nothing else. It serves
+  environments one at a time and a failure in one is logged and skipped
+  (`modules/retention`, `modules/webhook`).
+- Whether this process makes webhook deliveries is `deps.config.deliversWebhooks` (from
+  `WEBHOOK_WORKER` and the process's role), never a second reading of the environment. Code
+  that calls a webhook endpoint checks it first: with `WEBHOOK_WORKER=separate` an API
+  instance makes no such request, and a request on demand is refused with `not_implemented`
+  and `params.reason: 'worker_separate'`.
 - A route that makes the server call an operator's address on demand (a webhook test event,
   a delivery sent again) has a per-environment rate limit of its own, mounted after
   `secretKey()`, and answers only the outcome, a status code and a duration.

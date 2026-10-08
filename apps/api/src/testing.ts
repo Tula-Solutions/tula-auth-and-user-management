@@ -81,6 +81,7 @@ export const TEST_CONFIG: AppConfig = {
   dashboardDir: null,
   apiDocs: true,
   instanceAuditRetentionDays: 365,
+  deliversWebhooks: true,
 }
 
 /**
