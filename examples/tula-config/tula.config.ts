@@ -117,6 +117,19 @@ export default defineConfig({
         },
       },
       // #endregion
+      // #region webhooks
+      // The endpoints this environment's events are posted to. An endpoint is its address;
+      // there is no secret to write: the server makes it when `tula apply` registers the
+      // endpoint (`--secrets-file <path>` keeps it). `enabled` is left out, so the switch
+      // stays as the server has it. `dev` has no `webhooks` key: its endpoints are not
+      // managed by this file.
+      webhooks: [
+        {
+          url: 'https://api.northline.app/webhooks/tula',
+          eventTypes: ['user.created', 'user.deleted'],
+        },
+      ],
+      // #endregion
     },
   },
 })

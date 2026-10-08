@@ -382,5 +382,161 @@ describe('the example config', () => {
     })
     // The dev entry leaves the password policy to the deployment.
     expect(selectEnvironment(config, 'dev').settings.password).toBeUndefined()
+    // One environment declares its webhook endpoints; the other leaves them unmanaged.
+    expect(prod.webhooks).toEqual([
+      {
+        url: 'https://api.northline.app/webhooks/tula',
+        eventTypes: ['user.created', 'user.deleted'],
+      },
+    ])
+    expect(selectEnvironment(config, 'dev').webhooks).toBeUndefined()
+  })
+})
+
+describe('webhooks', () => {
+  const HOOK = 'https://hooks.northline.app/tula'
+
+  function webhooksOf(input: TulaConfigInput) {
+    return defineConfig(input).environments.dev?.webhooks
+  }
+
+  test('an environment without the key does not manage webhooks: the key stays absent', () => {
+    const dev = defineConfig({ environments: { dev: {} } }).environments.dev
+    expect(dev && Object.hasOwn(dev, 'webhooks')).toBe(false)
+    expect(webhooksOf({ environments: { dev: { webhooks: [] } } })).toEqual([])
+  })
+
+  test('event types are a set: sorted, each once; enabled stays absent when left out', () => {
+    expect(
+      webhooksOf({
+        environments: {
+          dev: {
+            webhooks: [
+              { url: HOOK, eventTypes: ['user.deleted', 'user.created', 'user.deleted'] },
+              { url: `${HOOK}/2`, eventTypes: ['user.created'], enabled: false },
+            ],
+          },
+        },
+      })
+    ).toEqual([
+      { url: HOOK, eventTypes: ['user.created', 'user.deleted'] },
+      { url: `${HOOK}/2`, eventTypes: ['user.created'], enabled: false },
+    ])
+  })
+
+  test('a secret is a type error and a run-time error that does not repeat it', () => {
+    const literal = 'whsec_bGl0ZXJhbC1zZWNyZXQtdmFsdWUtMTIz'
+    const error = refusal(() =>
+      defineConfig({
+        environments: {
+          dev: {
+            webhooks: [
+              // @ts-expect-error an endpoint has no secret field: the server makes the secret
+              { url: HOOK, eventTypes: ['user.created'], secret: literal },
+            ],
+          },
+        },
+      })
+    )
+    expect(error.code).toBe('config.invalid')
+    expect(error.issues).toEqual([
+      { path: 'environments.dev.webhooks.0.secret', message: 'unknown key' },
+    ])
+    expect(Bun.inspect(error)).not.toContain(literal)
+  })
+
+  test.each([
+    ['no event type', { url: HOOK, eventTypes: [] }, 'webhooks.0.eventTypes'],
+    [
+      'an unknown event type',
+      { url: HOOK, eventTypes: ['user.exploded'] },
+      'webhooks.0.eventTypes.0',
+    ],
+    [
+      'an address with a space',
+      { url: 'https://a.example/x y', eventTypes: ['user.created'] },
+      'webhooks.0.url',
+    ],
+    ['no address', { eventTypes: ['user.created'] }, 'webhooks.0.url'],
+    [
+      'enabled that is not a boolean',
+      { url: HOOK, eventTypes: ['user.created'], enabled: 'yes' },
+      'webhooks.0.enabled',
+    ],
+  ])('refuses %s, by path, without repeating a value', (_, endpoint, path) => {
+    const error = refusal(() =>
+      defineConfig({ environments: { dev: { webhooks: [endpoint as never] } } })
+    )
+    expect(error.issues.map((issue) => issue.path)).toEqual([`environments.dev.${path}`])
+    expect(error.message).not.toContain('exploded')
+    expect(error.message).not.toContain('x y')
+  })
+
+  test('the same address twice is refused, naming both entries and not the address', () => {
+    const error = refusal(() =>
+      defineConfig({
+        environments: {
+          dev: {
+            webhooks: [
+              { url: HOOK, eventTypes: ['user.created'] },
+              { url: `${HOOK}/other`, eventTypes: ['user.created'] },
+              { url: HOOK, eventTypes: ['user.deleted'] },
+            ],
+          },
+        },
+      })
+    )
+    expect(error.issues).toEqual([
+      {
+        path: 'environments.dev.webhooks.2.url',
+        message:
+          'the same address as webhooks.0: an endpoint is identified by its address, so each is listed once',
+      },
+    ])
+    expect(error.message).not.toContain('hooks.northline.app')
+  })
+
+  test('more endpoints than an environment may have are refused', () => {
+    const webhooks = Array.from({ length: 11 }, (_, index) => ({
+      url: `${HOOK}/${index}`,
+      eventTypes: ['user.created' as const],
+    }))
+    const error = refusal(() => defineConfig({ environments: { dev: { webhooks } } }))
+    expect(error.issues).toEqual([
+      {
+        path: 'environments.dev.webhooks',
+        message: 'an environment has at most 10 webhook endpoints',
+      },
+    ])
+  })
+
+  test('the fingerprint ignores the order and repeats of event types, and an absent key', async () => {
+    const hash = async (input: TulaConfigInput) => {
+      const dev = defineConfig(input).environments.dev
+      if (!dev) {
+        throw new Error('fixture')
+      }
+      return hashEnvironmentConfig(dev)
+    }
+    const one = await hash({
+      environments: {
+        dev: { webhooks: [{ url: HOOK, eventTypes: ['user.created', 'user.deleted'] }] },
+      },
+    })
+    const reordered = await hash({
+      environments: {
+        dev: {
+          webhooks: [{ url: HOOK, eventTypes: ['user.deleted', 'user.created', 'user.created'] }],
+        },
+      },
+    })
+    expect(reordered).toBe(one)
+    // What an empty entry hashed to before webhooks existed: an absent key adds nothing, so
+    // no environment already applied shows a new version of its file.
+    const unmanaged = await hash({ environments: { dev: {} } })
+    expect(unmanaged).toBe(
+      'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    )
+    expect(await hash({ environments: { dev: { webhooks: [] } } })).not.toBe(unmanaged)
   })
 })
