@@ -414,6 +414,27 @@
                       "captureId": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "alsoSecrets": {
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "notSecrets": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "signatures": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2
                       }
                     },
                     "required": ["secret"],
@@ -818,6 +839,27 @@
                       "captureId": {
                         "type": "string",
                         "minLength": 1
+                      },
+                      "alsoSecrets": {
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "notSecrets": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "signatures": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2
                       }
                     },
                     "required": ["secret"],

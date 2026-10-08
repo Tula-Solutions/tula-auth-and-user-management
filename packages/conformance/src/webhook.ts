@@ -104,6 +104,16 @@ function eventType(body: string): string | undefined {
   }
 }
 
+/** What a `webhook` step may say about the signatures beyond "one is right for `secret`". */
+export interface SignatureExpectation {
+  /** Secrets that must each have a signature in the header too. */
+  alsoSecrets?: readonly string[]
+  /** Secrets that must have none. */
+  notSecrets?: readonly string[]
+  /** How many entries the header holds, exactly. */
+  signatures?: number
+}
+
 /** What {@link checkDelivery} found. */
 export interface DeliveryCheck {
   /** Why the delivery is not what a Tula server sends; empty when it is. */
@@ -117,12 +127,15 @@ export interface DeliveryCheck {
  * right for the endpoint's secret, a timestamp close to now, and a body that is an event of
  * the contract with the delivery's id.
  *
- * No problem quotes the secret, a signature or the body: the report is read in CI logs.
+ * No problem quotes a secret, a signature or the body: the report is read in CI logs. A
+ * secret of `signing` is named by its place in the step (`alsoSecrets[0]`), never by value.
  *
  * @param delivery - What arrived.
  * @param secret - The endpoint's signing secret (`whsec_…`).
  * @param now - The time on the server, in milliseconds since the Unix epoch.
  * @param expected - A subset the event must match, as a request step's `expect.body`.
+ * @param signing - For a secret rotation: a secret that must sign as well, secrets that must
+ *   not, and how many signatures there are.
  * @returns The problems found, and the event's id.
  *
  * @example
@@ -134,7 +147,8 @@ export async function checkDelivery(
   delivery: ReceivedDelivery,
   secret: string,
   now: number,
-  expected?: unknown
+  expected?: unknown,
+  signing: SignatureExpectation = {}
 ): Promise<DeliveryCheck> {
   const problems: string[] = []
   if (delivery.method !== 'POST') {
@@ -174,6 +188,34 @@ export async function checkDelivery(
     if (!signatures.split(' ').includes(right)) {
       problems.push(`no entry of ${WEBHOOK_SIGNATURE_HEADER} is the signature for the secret`)
     }
+  }
+  const entries = signatures.split(' ')
+  /** Whether the header holds the signature `listed` makes; `null` when it is no secret. */
+  const signedBy = async (listed: string): Promise<boolean | null> => {
+    const other = webhookSecretBytes(listed)
+    return other && entries.includes(await signWebhook(other, id, timestamp, delivery.body))
+  }
+  for (const [name, list, wanted, problem] of [
+    ['alsoSecrets', signing.alsoSecrets ?? [], true, 'no entry of'],
+    ['notSecrets', signing.notSecrets ?? [], false, 'an entry of'],
+  ] as const) {
+    for (const [index, listed] of list.entries()) {
+      const found = await signedBy(listed)
+      if (found === null) {
+        problems.push(`${name}[${index}] is not a signing secret (whsec_…)`)
+      } else if (found !== wanted) {
+        problems.push(
+          `${problem} ${WEBHOOK_SIGNATURE_HEADER} is the signature for a secret that should ${
+            wanted ? 'also' : 'no longer'
+          } sign (${name}[${index}])`
+        )
+      }
+    }
+  }
+  if (signing.signatures !== undefined && entries.length !== signing.signatures) {
+    problems.push(
+      `${WEBHOOK_SIGNATURE_HEADER} has ${entries.length} entries, expected ${signing.signatures}`
+    )
   }
   let parsed: unknown
   try {

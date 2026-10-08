@@ -167,6 +167,93 @@ describe('checkDelivery', () => {
   })
 })
 
+describe('checkDelivery during a secret rotation', () => {
+  /** A delivery of the overlap: the current secret's signature first, then the previous one's. */
+  async function overlapping(): Promise<ReceivedDelivery> {
+    const delivery = await good()
+    const previous = (await signed(OTHER_SECRET, delivery.body)).headers['webhook-signature']
+    delivery.headers['webhook-signature'] = `${delivery.headers['webhook-signature']} ${previous}`
+    return delivery
+  }
+
+  test('a delivery of the overlap verifies with either secret and has exactly two signatures', async () => {
+    const delivery = await overlapping()
+    expect(
+      (
+        await checkDelivery(delivery, SECRET, NOW, undefined, {
+          alsoSecrets: [OTHER_SECRET],
+          signatures: 2,
+        })
+      ).problems
+    ).toEqual([])
+    // Either of the two may be the one the step names first.
+    expect(
+      (await checkDelivery(delivery, OTHER_SECRET, NOW, undefined, { alsoSecrets: [SECRET] }))
+        .problems
+    ).toEqual([])
+  })
+
+  test('a secret that should also sign and does not is a problem', async () => {
+    const { problems } = await checkDelivery(await good(), SECRET, NOW, undefined, {
+      alsoSecrets: [OTHER_SECRET],
+    })
+    expect(problems).toEqual([
+      'no entry of webhook-signature is the signature for a secret that should also sign (alsoSecrets[0])',
+    ])
+  })
+
+  test('a secret that should no longer sign and does is a problem', async () => {
+    const { problems } = await checkDelivery(await overlapping(), SECRET, NOW, undefined, {
+      notSecrets: [OTHER_SECRET],
+    })
+    expect(problems).toEqual([
+      'an entry of webhook-signature is the signature for a secret that should no longer sign (notSecrets[0])',
+    ])
+    expect(
+      (await checkDelivery(await good(), SECRET, NOW, undefined, { notSecrets: [OTHER_SECRET] }))
+        .problems
+    ).toEqual([])
+  })
+
+  test.each([
+    ['two where one is expected', overlapping, 1, 'webhook-signature has 2 entries, expected 1'],
+    ['one where two are expected', good, 2, 'webhook-signature has 1 entries, expected 2'],
+  ])('reports %s', async (_, build, signatures, problem) => {
+    expect(
+      (await checkDelivery(await build(), SECRET, NOW, undefined, { signatures })).problems
+    ).toEqual([problem])
+  })
+
+  test('a listed secret that is not one is said, without quoting it', async () => {
+    const { problems } = await checkDelivery(await good(), SECRET, NOW, undefined, {
+      alsoSecrets: ['tula_sk_dev_canary'],
+      notSecrets: ['whsec_canary'],
+    })
+    expect(problems).toEqual([
+      'alsoSecrets[0] is not a signing secret (whsec_…)',
+      'notSecrets[0] is not a signing secret (whsec_…)',
+    ])
+    expect(problems.join(' ')).not.toContain('canary')
+  })
+
+  test('no problem quotes either secret or a signature', async () => {
+    const delivery = await overlapping()
+    const { problems } = await checkDelivery(delivery, SECRET, NOW, undefined, {
+      alsoSecrets: [formatWebhookSecret(new Uint8Array(32).fill(11))],
+      notSecrets: [OTHER_SECRET],
+      signatures: 1,
+    })
+    expect(problems).toHaveLength(3)
+    const text = problems.join('\n')
+    for (const secret of [SECRET, OTHER_SECRET]) {
+      expect(text).not.toContain(secret)
+    }
+    for (const entry of (delivery.headers['webhook-signature'] ?? '').split(' ')) {
+      expect(text).not.toContain(entry)
+    }
+  })
+})
+
 describe('WebhookReceiver', () => {
   test('keeps what it is sent, answers 204, and hands deliveries out oldest first, by type', async () => {
     const receiver = new WebhookReceiver('127.0.0.1')
@@ -382,6 +469,26 @@ describe('webhook steps', () => {
     expect(formatResult(result)).not.toContain(SECRET)
   })
 
+  test('a step checks the other secret of a rotation and the number of signatures, with variables filled in', async () => {
+    const { target } = webhookTarget({})
+    const both = await runScenario(
+      scenario(steps({ alsoSecrets: ['{{secret}}'], signatures: 1 })),
+      target
+    )
+    expect(both.status).toBe('passed')
+    const { target: again } = webhookTarget({})
+    const result = await runScenario(
+      scenario(steps({ notSecrets: ['{{secret}}'], signatures: 2 })),
+      again
+    )
+    expect(result.status).toBe('failed')
+    expect(result.steps.at(-1)?.problems).toEqual([
+      'an entry of webhook-signature is the signature for a secret that should no longer sign (notSecrets[0])',
+      'webhook-signature has 1 entries, expected 2',
+    ])
+    expect(formatResult(result)).not.toContain(SECRET)
+  })
+
   test('a mismatch of the event is reported, with the captured secret as its placeholder', async () => {
     const { target } = webhookTarget({})
     const result = await runScenario(scenario(steps({ body: { type: 'user.banned' } })), target)
@@ -466,6 +573,26 @@ describe('the webhook step in a scenario file', () => {
         steps: [{ name: 's', webhook }],
       }).success
     ).toBe(false)
+  })
+
+  test('an expectation may name the other secret of a rotation, one that no longer signs, and how many signatures there are', () => {
+    const parse = (expect: object) =>
+      ScenarioSchema.safeParse({
+        ...base,
+        needsWebhookReceiver: true,
+        steps: [{ name: 's', webhook: { receiver: 'r', expect: { secret: 's', ...expect } } }],
+      }).success
+    expect(parse({ alsoSecrets: ['{{old}}'], signatures: 2 })).toBe(true)
+    expect(parse({ notSecrets: ['{{old}}'], signatures: 1 })).toBe(true)
+    // Bounded as the header is: the server never signs with more than two secrets.
+    expect(parse({ alsoSecrets: [] })).toBe(false)
+    expect(parse({ alsoSecrets: ['a', 'b'] })).toBe(false)
+    expect(parse({ notSecrets: [] })).toBe(false)
+    expect(parse({ notSecrets: Array.from({ length: 5 }, () => 's') })).toBe(false)
+    expect(parse({ signatures: 0 })).toBe(false)
+    expect(parse({ signatures: 3 })).toBe(false)
+    expect(parse({ signatures: 1.5 })).toBe(false)
+    expect(parse({ alsoSecrets: 'one' })).toBe(false)
   })
 
   test('a receiver may be started with the statuses it answers its next deliveries with', () => {
