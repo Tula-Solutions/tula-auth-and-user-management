@@ -209,6 +209,13 @@ key, and the result is measured against the same cap and dropped whole beyond it
 adds claims is one more entry in `extra`; whether a hook may override a template's claim is
 that ticket's decision.
 
+**2026-10-08 (TULA-53).** That ticket decided it: the `before_token` hook's claims are the
+one entry of `extra`, read from the session's row and judged again there
+(`CustomClaims.stored`), and **the hook wins a key both set**
+([ADR 0035](0035-hooks.md#2026-10-08-hooks-before-a-session-and-before-a-token-tula-53)).
+"Read at every issue, never stored" above remains true of a template's claims; a hook's are
+stored on the session and are not read from the hook again until the session steps up.
+
 ## Consequences
 
 - An environment without a template is unchanged, byte for byte in its claim set.
@@ -240,7 +247,8 @@ that ticket's decision.
 
 ## Deferred
 
-- A hook that adds claims; claims from organizations, roles or user metadata.
+- Claims from organizations, roles or user metadata. (A hook that adds claims was built by
+  TULA-53: ADR 0035.)
 - Custom claims in `@tula/core` and `@tula/react`.
 - A second, separately shaped token (another audience or lifetime).
 - Showing the claims a given user would get, in the dashboard.

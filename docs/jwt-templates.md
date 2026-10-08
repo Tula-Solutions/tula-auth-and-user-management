@@ -114,8 +114,8 @@ one read at sign-in and at a step-up, and none at a refresh
 A constant says what **you** typed: `plan: { value: 'team' }` gives every session of that
 profile `"plan": "team"`. It is useful to tell profiles apart (`{ value: 'back-office' }` on
 the profile your staff tool asks for); it is not a per-user role. Per-user claims need a
-source that knows the user: organizations and roles, and a hook that adds claims, are later
-work.
+source that knows the user: a [`before_token` hook](hooks.md), which asks your backend for
+them ([Claims from a hook](#claims-from-a-hook)). Organizations and roles are later work.
 
 ## Rules
 
@@ -136,6 +136,28 @@ work.
   `sessions.profiles.<name>.jwtTemplate`. Unset it on the profile first.
 - **No value, no key.** A source that has nothing for a user leaves its key out; it is never
   `null`. A template with no claims adds no `ext` at all. Read a missing claim as "no".
+
+## Claims from a hook
+
+A [`before_token` hook](hooks.md) adds claims your backend answers with: a plan, a role, a
+tenant id. They go inside the same `ext`, next to the template's, under the same rules for
+keys and values and **inside the same 1,024 bytes**: the cap is on the two together.
+
+- **Where both set a key, the hook's value wins.** A template is the profile's default for
+  everybody; the hook's answer is about this user. So a constant is a good default
+  (`plan: { value: 'free' }`) that the hook raises.
+- **They are not read at every issue.** The template's claims are; the hook's are asked for
+  when the session is created and when its user proves a factor again, stored on the
+  session, and issued from there. A refresh does not call your backend. A change in your
+  data reaches a session at its next sign-in or step-up, or when you end its sessions.
+- **Claims that do not fit are a failed call**, not a cut one: if the hook's claims and the
+  template's together are over the cap when the hook answers, the hook's `failureMode`
+  decides (by default the sign-in is refused, and the hook shows
+  `lastFailureReason: "claims_too_large"`). If you later grow the template so that a
+  session's stored claims no longer fit beside it, that session's tokens are issued with
+  **no** `ext` at all, and a warning is logged, until the template shrinks or the session
+  signs in again. Leave room: a template near the cap leaves none for a hook.
+- A profile needs no template for a hook's claims to be issued.
 
 ## When a change takes effect
 
@@ -201,7 +223,6 @@ backend, and a claim read in the browser decides nothing.
 
 ## Not built
 
-- A hook that adds claims (they will arrive under `ext` and inside the same 1,024 bytes).
 - Claims from organizations, roles or user metadata: none of those exist yet.
 - Custom claims in the browser SDKs, and a second token (an "API token" with another audience
   or lifetime). A template shapes the session's own access token and nothing else.

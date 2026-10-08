@@ -352,6 +352,18 @@ cannot show (a name re-pointed at a private address between the save and the cal
 after the deadline, every malformed answer, a secret that does not open) is in the API's own
 tests (`apps/api/src/modules/hook/`).
 
+`54-sign-in-denied-by-a-hook`, `55-claims-added-by-a-hook` and `56-sign-in-hook-that-times-out`
+are the same for the two later points (`before_session`, `before_token`): the same `hook`
+step, whose `answer` may also be a claims answer (`{ "claims": { … } }`), the same receiver,
+the same skip, and three more names in CI's list (eight in all). `54` and `56` register the
+environment's `before_session` hook and `55` its `before_token` hook, each removed in
+`cleanup`; while one runs, every sign-in in that environment is asked. `55` reads the claim
+from the access token, refreshes and reads it again, and checks the receiver was asked once.
+What they cannot show (a step-up asking again, a refresh inside the grace window, an answer
+that breaks a rule of the claims, stored claims that no longer pass) is in
+`apps/api/src/modules/session/hook-claims.test.ts` and
+`apps/api/src/modules/flow/session-hook.test.ts`.
+
 `48-webhook-refused-address` needs no receiver and runs everywhere. It leaves out one half of
 its subject on purpose: that an address which passed when it was saved is refused **when a
 delivery is made** (its name was pointed at a private address meanwhile). A scenario cannot

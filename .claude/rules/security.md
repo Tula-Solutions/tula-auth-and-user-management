@@ -338,6 +338,21 @@ Before finishing any change here, confirm each item holds and has a test:
     store, a log line or an error (canary in the answer's headers and body), and no log line
     holds the address asked about. `allow` on failure, switching a hook off and removing one
     that is on are recorded with `weakened: true`.
+    **`before_session`** is asked in `finish` only. Test, side by side, a wrong and a right
+    password, a locked account and a sign-in waiting on a second factor: the receiver is
+    called only for the one whose every factor is proven, and the answers before that are
+    the same with and without a hook. A denial and a failure under `deny` leave no session,
+    no token, no `Set-Cookie`, no `session.created` and no new-device notice; a hang ends in
+    bounded time and sets `lastFailedAt` / `lastFailureReason`. A refresh and a step-up do
+    not ask it. **`before_token`**: an answer with `sub`, `amr`, `emailVerified`, `userId`
+    or `__proto__`, a nested value, a key beside `claims`, or claims over the cap with the
+    template is a failure in both modes and never partly applied; the token of a session
+    made with such an answer under `allow` equals one made without a hook. A refresh, a
+    refresh in the grace window and a stateful request make no call and do not read the
+    hook store; a step-up asks again and replaces what is stored (also with nothing, when
+    the hook is gone or failed under `allow`), and under `deny` a failed call fails the
+    step-up and leaves `amr`, `auth_time` and the claims as they were. Stored claims that
+    break a rule are issued as none. Two step-ups at once never store claims of neither.
 50. **JWT templates (ADR 0036):** custom claims are issued only under `ext`, only from the
     closed source list or an operator's constant, and only through `CustomClaims.build`.
     Test: every reserved name and every malformed key refused at save, with the field's

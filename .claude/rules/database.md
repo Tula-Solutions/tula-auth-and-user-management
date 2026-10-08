@@ -42,7 +42,12 @@ paths:
   grant deliberately); one row per `(environment_id, point)`; `deadline_ms`
   held to 100..5000 by the check `hooks_deadline_bounds` (never widen it: the API's schema
   is not the only writer a table has); `last_failed_at` and `last_failure_reason` set
-  together; and no column for anything an endpoint answered. Three tables have a
+  together; and no column for anything an endpoint answered, with one exception that is
+  not on that table: `sessions.hook_claims` (migration 0022), the claims a `before_token`
+  hook answered with, nullable jsonb held by the check `sessions_hook_claims_bounds` to an
+  object of at most 4,096 bytes of its text (the claims' own rules are the service's, on
+  write and again on read). `hooks.point` is text with no check: a new point needs no
+  migration. Three tables have a
   second policy (`audit_logs`, `events`, `webhook_deliveries`), and a second policy is always
   restrictive and `FOR DELETE`. `webhook_deliveries.event_id` is deliberately **not** a
   foreign key (the log outlives the event). Admin deletes run under the owner
