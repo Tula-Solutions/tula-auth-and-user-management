@@ -2,6 +2,7 @@ import {
   DASHBOARD_SESSION_COOKIE,
   ErrorEnvelopeSchema,
   HookAnswerSchema,
+  HookClaimsAnswerSchema,
   HookQuestionSchema,
   TulaEventSchema,
 } from '@tula/contract'
@@ -258,5 +259,10 @@ export async function eventSchemas() {
 export async function hookSchemas() {
   const question = await resolver(HookQuestionSchema).toOpenAPISchema()
   const answer = await resolver(HookAnswerSchema).toOpenAPISchema()
-  return { ...question.components?.schemas, ...answer.components?.schemas }
+  const claims = await resolver(HookClaimsAnswerSchema).toOpenAPISchema()
+  return {
+    ...question.components?.schemas,
+    ...answer.components?.schemas,
+    ...claims.components?.schemas,
+  }
 }
