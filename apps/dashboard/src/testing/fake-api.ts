@@ -1,5 +1,8 @@
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import { type FakeHookState, hookRoutes } from './fake-hooks'
 import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
+
+export { type FakeHook, fakeHook } from './fake-hooks'
 
 export {
   type FakeWebhookDelivery,
@@ -78,7 +81,7 @@ function page<T>(rows: T[]) {
 }
 
 /** The fake's data, open to a test that wants to arrange or inspect it. */
-export interface FakeState extends FakeWebhookState {
+export interface FakeState extends FakeWebhookState, FakeHookState {
   /** Whether `TULA_ADMIN_TOKEN` is set (the instance routes exist). */
   adminToken: boolean
   signedIn: boolean
@@ -204,6 +207,8 @@ function initialState(): FakeState {
     webhookDeliveries: [],
     webhookReceiver: { statusCode: 204, durationMs: 41, failureReason: null },
     webhookNow: NOW,
+    hooks: [],
+    hookNow: NOW,
     canStillSignIn: true,
     authentication: {
       hasPassword: true,
@@ -519,6 +524,7 @@ export function installFakeApi() {
     ],
     ['GET', /^\/v1\/admin\/audit-logs$/, () => page(state.audit)],
     ...webhookRoutes(state),
+    ...hookRoutes(state),
     ['GET', /^\/v1\/admin\/settings$/, () => structuredClone(state.settings)],
     [
       'PUT',

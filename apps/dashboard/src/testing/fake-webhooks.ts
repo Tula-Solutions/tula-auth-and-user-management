@@ -188,7 +188,7 @@ export function fakeWebhookDelivery(
 }
 
 /** What the outbound guard says of an address: the word it is refused with, or nothing. */
-function refusedAddress(url: string): string | null {
+export function refusedAddress(url: string): string | null {
   if (!URL.canParse(url)) {
     return 'invalid_url'
   }
@@ -223,7 +223,7 @@ function notFound(): Response {
 }
 
 /** The API's answer to a path, a query or a body its schema refuses: one entry per issue. */
-function invalid(error: z.ZodError): Response {
+export function invalid(error: z.ZodError): Response {
   return failure(
     422,
     'validation.failed',

@@ -3,6 +3,7 @@ import {
   FileKey2,
   KeyRound,
   LogIn,
+  MessageCircleQuestionMark,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -26,6 +27,7 @@ export interface EnvironmentSection {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/api-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/hooks'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/audit-log'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
   label: string
@@ -61,6 +63,12 @@ export const ENVIRONMENT_SECTIONS: readonly EnvironmentSection[] = [
     icon: FileKey2,
   },
   { segment: 'webhooks', to: `${ENVIRONMENT_PATH}/webhooks`, label: 'Webhooks', icon: Webhook },
+  {
+    segment: 'hooks',
+    to: `${ENVIRONMENT_PATH}/hooks`,
+    label: 'Hooks',
+    icon: MessageCircleQuestionMark,
+  },
   {
     segment: 'audit-log',
     to: `${ENVIRONMENT_PATH}/audit-log`,

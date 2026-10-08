@@ -147,6 +147,45 @@ describe('a dialog whose answer carries a secret cannot be left while its reques
     ).toHaveLength(1)
   })
 
+  test.each([
+    ['deny', 'refusing on failure'],
+    ['allow', 'letting through on failure, from the question it is asked about'],
+  ])('a new hook (%s: %s): the same', async (mode) => {
+    const current = start(`${DEV_PATH}/hooks`)
+    const { user, api } = current
+    await user.click(await screen.findByRole('button', { name: 'Add a hook for before_session' }))
+    await user.type(
+      within(dialog()).getByLabelText('Address'),
+      'https://api.example.com/hooks/session'
+    )
+    await user.selectOptions(within(dialog()).getByLabelText('When a call fails'), mode)
+    const hold = holdAnswers(
+      (path, _headers, method) => method === 'POST' && path === '/v1/admin/hooks'
+    )
+    await user.click(button('Add hook'))
+    if (mode === 'allow') {
+      // The question comes first, and it is its button that sends.
+      expect(hold.held()).toBe(0)
+      await user.click(button('Add hook'))
+    }
+    await waitFor(() => expect(hold.held()).toBe(1))
+    expect(button('Creatingâ€¦').getAttribute('aria-busy')).toBe('true')
+    await expectNoWayOut(current)
+    // The server has made the hook and its secret; only the answer is still to come.
+    expect(api.state.hooks).toHaveLength(1)
+    expect(api.callsTo('POST', '/v1/admin/hooks')).toHaveLength(1)
+
+    await act(() => hold.release())
+    const secret = (await within(dialog()).findByTestId('hook-secret')).textContent ?? ''
+    expect(secret).toStartWith('whsec_')
+    await expectFocus(
+      within(dialog()).getByRole('heading', { name: 'Copy the signing secret now' })
+    )
+    await user.click(button('I have copied it'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(screen.getAllByText('https://api.example.com/hooks/session')).toHaveLength(1)
+  })
+
   test('the list is marked for a refresh even when the screen that asked is gone', async () => {
     const current = start(`${DEV_PATH}/webhooks`)
     const { user, router, queryClient, location } = current
@@ -247,6 +286,25 @@ describe('the secret is shown as soon as the answer arrives, whatever the listâ€
 
     await act(() => list.release())
     await waitFor(() => expect(rows()).toHaveLength(1))
+  })
+
+  test('a new hook', async () => {
+    const { user } = start(`${DEV_PATH}/hooks`)
+    await user.click(await screen.findByRole('button', { name: 'Add a hook for before_token' }))
+    await user.type(within(dialog()).getByLabelText('Address'), 'https://api.example.com/claims')
+    const list = holdAnswers(lists('/v1/admin/hooks'))
+    const post = holdAnswers(posts('/v1/admin/hooks'))
+    await user.click(button('Add hook'))
+    await waitFor(() => expect(post.held()).toBe(1))
+    await act(() => post.release())
+    expect(await expectShownBeforeTheList(list, 'hook-secret')).toStartWith('whsec_')
+    expect(button('I have copied it').getAttribute('aria-disabled')).not.toBe('true')
+    expect(screen.queryAllByText('https://api.example.com/claims')).toHaveLength(0)
+
+    await act(() => list.release())
+    await waitFor(() =>
+      expect(screen.queryAllByText('https://api.example.com/claims')).toHaveLength(1)
+    )
   })
 })
 
