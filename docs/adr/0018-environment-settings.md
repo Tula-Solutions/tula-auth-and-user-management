@@ -135,6 +135,14 @@ a rule turned off, fewer required character classes, a looser repeat limit or a 
 history. `Settings.weakened` is that definition, as one pure function. Disabling a sign-in
 method is not a weakening.
 
+*Since then* the definition moved to the contract (`settingsWeakenings`, ADR 0030, which
+`Settings.weakened` delegates to) and grew: a security notice switched off, an MFA policy
+moved towards `off`, sessions that live longer or can be had more freely, and, since
+2026-10-08, an audit retention period set where there was none or made shorter
+(`audit.retentionDays`), because saving it makes the server delete older audit entries for
+good ([ADR 0017](0017-retention.md#audit-entries-added-2026-10-08)). The flag means "this
+change weakened something on that list", not only "the password policy got weaker".
+
 Three error codes are new: `precondition.required` (428), `precondition.failed` (412) and
 `auth.method_disabled` (403).
 

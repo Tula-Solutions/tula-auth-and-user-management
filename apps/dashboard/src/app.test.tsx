@@ -452,6 +452,14 @@ describe('settings', () => {
     await user.type(screen.getByLabelText('Keep audit entries for (days)'), '30')
     await user.type(screen.getByLabelText('Support email (optional)'), 'help@example.com')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    // A period where there was none deletes older entries: the editor asks, in those words.
+    expect(dialog().textContent).toContain('This deletes older audit entries for good')
+    expect(dialog().textContent).not.toContain('weakens security')
+    expect(dialog().textContent).toContain(
+      'Audit entries older than the new period are deleted for good, within ten minutes'
+    )
+    expect(api.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
     await screen.findByText('Settings saved')
     expect(api.state.settings.settings.urls.allowedOrigins).toEqual(['https://app.example.com'])
     expect(api.state.settings.settings.audit.retentionDays).toBe(30)

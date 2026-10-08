@@ -209,7 +209,8 @@ const Audit = z.object({
   /**
    * Days an audit entry is kept; `null` (the default) keeps entries for ever. With a number
    * set, the server's retention job deletes the environment's entries older than that,
-   * permanently (ADR 0017).
+   * permanently (ADR 0017). **Saving a period, or a shorter one, deletes the older entries
+   * for good within ten minutes**, which is why `settingsWeakenings` lists it.
    */
   retentionDays: z.number().int().min(1).max(MAX_AUDIT_RETENTION_DAYS).nullable().default(null),
 })

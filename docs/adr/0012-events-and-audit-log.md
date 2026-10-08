@@ -253,8 +253,11 @@ of.
   (which are deleted 30 days after they end). The audit retention setting is what covers
   that: with a period set, an entry and the address in it are gone once it is older.
 - With a period set, the log no longer answers "what happened" beyond it, and the entry that
-  records a period being set is deleted by that period like any other. A deployment that
-  needs longer than it keeps exports the entries first.
+  records who set or shortened the period (`environment.settings_updated`, `weakened: true`)
+  is deleted by that period like any other. After that the server's log line of each purge
+  is the only durable trace, and it names no actor: keep the API's logs, outside the reach of
+  the API's credentials. A deployment that needs longer than it keeps exports the entries
+  first.
 - Every write that records activity costs two more inserts in its transaction.
 - The list uses offset paging, like the user list: entries written while a client pages shift
   later pages by that many rows, and deep pages are slow. Filtering by `action` alone scans the

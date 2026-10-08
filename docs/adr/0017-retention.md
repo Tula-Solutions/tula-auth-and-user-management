@@ -170,11 +170,38 @@ suite in `stores.integration.ts`). It is the only table with a second policy, an
 that counted "exactly one policy per tenant table" now counts one *permissive* policy per
 table and names this one as the only other.
 
-What the bounds do not stop: someone who holds the runtime role, or a secret key, can set an
-environment's period to one day and wait. That leaves `environment.settings_updated` entries
-(with `audit.retentionDays` among the changed keys) for at least that day, and the server's
-log lines for as long as logs are kept. Shortening the period is not yet treated as a
-weakening that asks for confirmation (`settingsWeakenings`); it should be.
+**What the one-day floor bounds, and what it does not.** It bounds a bad *cutoff*: a
+statement that asks for entries younger than a day gets none of them, whoever wrote it. It
+does not bound a bad *period*. A period of one day is a valid setting, and with it everything
+older than a day goes; the floor has no opinion on whether the environment's period was
+meant. Someone who holds a secret key, a dashboard session or the runtime role can set an
+environment's period to one day and wait ten minutes. Two clocks are involved, too: the
+job's cutoff and the policy's `now()` are read when the purge runs (the API's clock and the
+database's), while `occurred_at` was written earlier by whichever instance recorded the
+entry, from its own clock. An entry stamped in the future by an instance whose clock ran
+ahead is kept longer than the period; one stamped in the past is deleted sooner, and the
+floor moves with the stamp, not with when the row was really written. The floor is a guard
+against a wrong statement, not proof of an entry's age.
+
+**A shorter period asks first.** Because a bad period is the case nothing in the database
+stops, setting a period where there was none, or shortening one, is a weakening in the
+contract's one definition (`settingsWeakenings` lists `audit.retentionDays`; lengthening it,
+keeping it or removing it is not one). So the audit entry of such a change carries
+`weakened: true`, `tula diff` warns and adds "deletes audit entries older than N days, for
+good", `tula apply --yes` refuses the plan without `--allow-weaker`, and the dashboard's
+editor asks before saving, in the words "This deletes older audit entries for good". There
+is no opt-in switch beside the setting and no dry-run pass: nothing has been released, so
+no deployment holds a number it set while the setting did nothing; the upgrade note in
+`docs/self-host.md` and the changeset say to check all the same.
+
+**The record of who shortened it does not last.** The change is recorded as
+`environment.settings_updated` (the key `audit.retentionDays`, `weakened: true`, the actor),
+but that entry is in the log the period governs: once it is older than the new period it is
+deleted like any other. From then on the only trace that entries were deleted, and under
+what period, is the server's log line of each purge (environment id, period, count), which
+names no actor. Keep the API's logs for at least as long as the audit log would have been
+kept, and ship them somewhere the API's own credentials cannot rewrite. A summarising audit
+entry that the purge spares is the open question under "Not recorded as activity" below.
 
 **Not recorded as activity.** The deletes write no audit entry and no event, like every
 other delete of this job ([ADR 0012](0012-events-and-audit-log.md), "What is deliberately not

@@ -162,7 +162,7 @@ API key belongs to) has a settings document, read and replaced with its secret k
 | `signUp.password` | `required` (default), or `optional`: a sign-up may then leave the password out and the account signs in by email (needs `emailCode`). |
 | `urls.allowedOrigins` | Browser origins that may call the client API: exact origins such as `https://app.example.com`, no paths or wildcards, `http` only for localhost. |
 | `urls.allowedRedirectUrls` | URLs a flow may send users to, matched **exactly**. An emailed sign-in link leads only to a URL listed here. |
-| `audit.retentionDays` | How many days this environment's audit entries are kept: 1 to 3650, or `null` (the default) for ever. With a number set, the retention job, which runs on start-up and every ten minutes, deletes the entries older than that; an entry is never deleted in its first day. **Deletion is permanent**: export what you need to keep longer (`GET /v1/admin/audit-logs`) before you set or shorten the period. See "Retention" under [Running it for real](#running-it-for-real). |
+| `audit.retentionDays` | How many days this environment's audit entries are kept: 1 to 3650, or `null` (the default) for ever. With a number set, the retention job, which runs on start-up and every ten minutes, deletes the entries older than that; an entry is never deleted in its first day. **Saving a period, or a shorter one, deletes the older entries for good within ten minutes**: there is no undo, so export what you need to keep longer (`GET /v1/admin/audit-logs`) first. Because of that it counts as a weakening: the dashboard asks before saving it and `tula apply --yes` needs `--allow-weaker`. Keep the API's server logs: the audit entry that records who changed the period is itself deleted once it is older than the new period, and the log line of each deletion is then the only trace. See "Retention" under [Running it for real](#running-it-for-real). |
 | `notifications.passwordChanged` | Email a user when their password is changed, reset, set by an administrator or added. On by default. |
 | `sessions.profiles` | Named session profiles. `web` (browsers) and `mobile` (every other client) always exist; add up to ten more. Each has `type` (`hybrid` or `stateful`), `accessTokenTtl` (30s to 15m, never longer than `idleTimeout`), `idleTimeout` (1m to 365d), `absoluteTimeout` (at least the idle timeout, or `null`), `refresh.reuseGracePeriod` (10s to 60s, or `null` for none), `stepUpAfter` (1m to 24h, or `null` for ten minutes) and `clientSelectable`. See [Sessions](#sessions). |
 | `sessions.maxPerUser`, `sessions.onLimit` | The most live sessions one user may have (`null`: no limit), and what a sign-in at the limit does: `end_oldest` (default) or `refuse_newest`. |
@@ -207,7 +207,8 @@ Without `If-Match` the answer is 428 (`precondition.required`); with a revision 
 longer current, 412 (`precondition.failed`): read again and retry. Each change is in the audit
 log as `environment.settings_updated`, listing the keys that changed and never their values,
 with `"weakened": true` when the change made the password policy weaker, switched a security
-notice off or moved the MFA policy towards `off`.
+notice off, moved the MFA policy towards `off`, let sessions live longer, or set or shortened
+the audit retention period.
 
 **Security notices.** The `notifications` switches control the emails that let a user
 notice a takeover ([ADR 0023](adr/0023-security-notices.md)). They are sent after the change,
@@ -643,7 +644,10 @@ takes effect on the next run, so within ten minutes; export first if you need th
 entries. The database itself refuses to delete an entry of the last day, and the API's
 database role can still not change one. When entries are deleted the log has a line,
 `audit entries past the retention period deleted`, with the environment's id, the period
-and the count. The entries' outbox events are not deleted.
+and the count. **Keep those logs.** The audit entry that says who set or shortened the
+period (`environment.settings_updated`, `weakened: true`) is deleted like any other once it
+is older than the period, so after that the server's log is the only record that entries
+were deleted and under which period. The entries' outbox events are not deleted.
 
 It never deletes outbox events. Each run logs one line, `retention run finished`, with
 counts only (at `debug` level when there was nothing to delete). The other periods are fixed

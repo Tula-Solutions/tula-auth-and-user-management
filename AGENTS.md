@@ -577,7 +577,9 @@ nothing.
   strictly again: nothing reaches the store that `EnvironmentSettingsSchema` refuses. Reading
   is defensive too (`readStoredEnvironmentSettings` drops list entries it would not accept),
   because settings are read on the request path. `password.minLength` has a floor of 8 on input, and the audit entry carries
-  `weakened: true` when `Settings.weakened` says the password policy got weaker.
+  `weakened: true` when `Settings.weakened` says the change weakened something: the password
+  policy, a security notice, the MFA policy, the sessions, or the audit retention period
+  (set where there was none, or shortened: older entries are then deleted).
 - **A replace may name the tool that manages the settings from a config file**
   (`x-tula-managed-by` + `x-tula-config-hash`, [ADR 0030](docs/adr/0030-config-and-apply.md)):
   the store records it with the revision that write produced, and the answer's `managedBy`
@@ -717,14 +719,18 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   the one way an entry goes: call it from nowhere but `modules/retention`. The job reads the
   period **past the settings cache** (`Settings.get(…, true)`: a stale period here destroys
   something), deletes nothing for a period that is not a whole number of days of at least 1,
-  and keeps the entries of an environment whose settings it cannot read. The runtime role
+  and keeps the entries of an environment whose settings it cannot read. Setting a period or
+  shortening one is a weakening (`settingsWeakenings` lists `audit.retentionDays`): the audit
+  entry says `weakened: true`, `tula apply --yes` needs `--allow-weaker`, and the dashboard
+  asks first, saying that entries are deleted for good. The runtime role
   has `DELETE` on `audit_logs` for it and still no `UPDATE`; row-level security bounds the
   delete to the environment in scope and, by the restrictive policy
   `audit_logs_retention_floor`, to entries older than one day, whatever a statement asks.
   Never loosen that policy, never give the role `UPDATE` (an entry could be backdated past
   it), and add no second policy that is not restrictive. The deletes are not themselves
   audit entries: the change of the setting is, and the job logs the environment, the period
-  and the count.
+  and the count. That log line is the only trace that lasts (the entry recording the change
+  is deleted by the period it set), so never drop or quieten it.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 

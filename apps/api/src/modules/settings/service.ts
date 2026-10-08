@@ -151,9 +151,10 @@ export function changedKeys(before: EnvironmentSettings, after: EnvironmentSetti
  * harder to notice: the definition behind the audit entry's `weakened` flag.
  *
  * The definition itself is the contract's `settingsWeakenings` (which lists what got weaker),
- * so that `tula diff` warns about exactly what this records: a weaker password policy, a
- * security notice switched off, an MFA policy moved towards `off`, or sessions that live
- * longer or can be had more freely.
+ * so that `tula diff` warns about exactly what this records: a weaker password policy, an
+ * audit retention period set or shortened (older entries are then deleted), a security
+ * notice switched off, an MFA policy moved towards `off`, or sessions that live longer or can
+ * be had more freely.
  *
  * @param before - The settings being replaced.
  * @param after - The new settings.
@@ -338,8 +339,8 @@ function managerChanges(
  * Replace an environment's settings, if they are still at the revision the caller read.
  *
  * The change is recorded as `environment.settings_updated` in the same transaction, with the
- * keys that changed and never their values, and `weakened: true` when it made the password
- * policy weaker or switched a security notice off (see {@link weakened}). A document identical to the current one changes
+ * keys that changed and never their values, and `weakened: true` when it weakened anything
+ * the contract's `settingsWeakenings` lists (see {@link weakened}). A document identical to the current one changes
  * nothing: no new revision and no audit entry, unless the replace also changes which tool is
  * on record as managing the settings (`input.manager`), which is a write of its own.
  *

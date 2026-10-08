@@ -86,6 +86,13 @@ export function planWarnings(plan: Plan): string[] {
       `weakens security: ${plan.weakened.join(', ')} (\`tula apply --yes\` needs --allow-weaker)`
     )
   }
+  // "Weakens security" undersells this one: applying it destroys something.
+  const retentionDays = plan.body.audit?.retentionDays
+  if (plan.weakened.includes('audit.retentionDays') && typeof retentionDays === 'number') {
+    warnings.push(
+      `deletes audit entries older than ${retentionDays} days, for good, within ten minutes of applying`
+    )
+  }
   if (plan.marker.reason === 'other-tool') {
     warnings.push(MARKER_REASONS['other-tool'])
   }
