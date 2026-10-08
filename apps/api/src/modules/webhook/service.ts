@@ -736,13 +736,19 @@ export const WEBHOOK_WORKER_SEPARATE_REASON = 'worker_separate'
  * is what an operator who separated the two for a network policy was promised, and a request
  * made from here anyway would fail against that policy and be written to the delivery log as
  * the receiver's failure. Handing the request to the worker is not built, which is what the
- * code says. Checked before anything is read, so the answer is the same for an endpoint that
- * exists and one that does not.
+ * code says.
+ *
+ * Called twice for a request over HTTP. By the router, right after the key is checked and
+ * before the send limit and the validators, so that an authenticated caller always gets
+ * this answer and nothing is counted. And by {@link sendTest} and {@link redeliver} as
+ * their first statement, before a store is read, so that no caller of the service can make
+ * a request either, and the answer is the same for an endpoint that exists and one that
+ * does not.
  *
  * @param deps - The configuration.
  * @throws NotImplementedError `not_implemented`, `params.reason` `worker_separate`.
  */
-function requireDeliveryHere(deps: Pick<Deps, 'config'>): void {
+export function requireDeliveryHere(deps: Pick<Deps, 'config'>): void {
   if (!deps.config.deliversWebhooks) {
     throw new NotImplementedError({
       message:

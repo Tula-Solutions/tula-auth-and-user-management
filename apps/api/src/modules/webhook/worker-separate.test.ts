@@ -284,6 +284,84 @@ describe('requests on demand, asked of an API instance that does not deliver', (
     expect(stranger.status).toBe(401)
   })
 
+  // The refusal is about the deployment, not about the request: it comes right after the key
+  // is checked, before the send limit counts anything and before a body or an id is looked at.
+  describe('the order of the refusal over HTTP', () => {
+    const post = (deps: TestDeps, path: string, init: { key?: string; body?: string } = {}) =>
+      createApp(deps).request(path, {
+        method: 'POST',
+        headers: {
+          ...(init.key !== undefined && { authorization: `Bearer ${init.key}` }),
+          'content-type': 'application/json',
+        },
+        body: init.body ?? JSON.stringify({ eventType: 'user.deleted' }),
+      })
+
+    test('every call is the refusal, however many: the send limit never answers for it', async () => {
+      await seedApiKey(api, SK)
+      const endpoint = await register()
+      const statuses: number[] = []
+      for (let call = 0; call < 12; call += 1) {
+        const answer = await post(api, `${PATH}/${endpoint.id}/test`, { key: SK })
+        statuses.push(answer.status)
+        expect(await answer.json()).toEqual(REFUSAL)
+      }
+      expect(statuses).toEqual(new Array(12).fill(501))
+      const again: number[] = []
+      for (let call = 0; call < 12; call += 1) {
+        const path = `${PATH}/${endpoint.id}/deliveries/${endpoint.id}/redeliver`
+        again.push((await post(api, path, { key: SK })).status)
+      }
+      expect(again).toEqual(new Array(12).fill(501))
+    })
+
+    test('a body or an id the route would refuse is the same refusal, not a validation error', async () => {
+      await seedApiKey(api, SK)
+      const endpoint = await register()
+      for (const [path, body] of [
+        [`${PATH}/${endpoint.id}/test`, '{"eventType":"no.such.type"}'],
+        [`${PATH}/${endpoint.id}/test`, 'not json'],
+        [`${PATH}/not-an-id/test`, '{"eventType":"user.deleted"}'],
+        [`${PATH}/not-an-id/deliveries/neither/redeliver`, '{}'],
+      ] as const) {
+        const answer = await post(api, path, { key: SK, body })
+        expect(`${path} ${answer.status}`).toBe(`${path} 501`)
+        expect(await answer.json()).toEqual(REFUSAL)
+      }
+    })
+
+    test('without a key, or with a wrong one, the answer is the usual 401: the mode is not told to a stranger', async () => {
+      await seedApiKey(api, SK)
+      const endpoint = await register()
+      for (const key of [undefined, 'tula_sk_dev_wrong0000000000000000000000000000000']) {
+        const test = await post(api, `${PATH}/${endpoint.id}/test`, { key })
+        expect(test.status).toBe(401)
+        const again = await post(
+          api,
+          `${PATH}/${endpoint.id}/deliveries/${endpoint.id}/redeliver`,
+          {
+            key,
+          }
+        )
+        expect(again.status).toBe(401)
+      }
+    })
+
+    test('refused calls spend nothing of the send allowance: all of it is there when the process delivers', async () => {
+      await seedApiKey(api, SK)
+      const endpoint = await register()
+      for (let call = 0; call < 12; call += 1) {
+        expect((await post(api, `${PATH}/${endpoint.id}/test`, { key: SK })).status).toBe(501)
+      }
+      // The same stores and the same limiter, in a process that delivers.
+      const allowed: number[] = []
+      for (let call = 0; call < Webhooks.WEBHOOK_SEND_RATE_LIMIT + 1; call += 1) {
+        allowed.push((await post(worker, `${PATH}/${endpoint.id}/test`, { key: SK })).status)
+      }
+      expect(allowed).toEqual([200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 429])
+    })
+  })
+
   test('where the process delivers, both work as they always have', async () => {
     const endpoint = await register()
     const result = await Webhooks.sendTest(worker, tenant, endpoint.id, {

@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type MiddlewareHandler } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
@@ -60,6 +60,22 @@ const onlyTheOutcome =
 
 /** What an API instance that does not deliver answers a request on demand with. */
 const workerSeparate = { 501: openapi.responses[501] }
+
+/**
+ * Refuse a request on demand in a process that makes no delivery (`WEBHOOK_WORKER=separate`).
+ *
+ * Mounted **after** `secretKey()` and **before** `sendRateLimit` and the validators. After
+ * the key, so that a caller without one gets the usual 401 and is not told how the
+ * deployment is arranged. Before the rest, because the refusal is about the deployment and
+ * not about the request: an authenticated caller gets the same fixed answer whatever the id
+ * or the body, however often, and a call that sends nothing spends nothing of the allowance
+ * for calls that do. This is the order of the answers; what keeps a request from being made
+ * is the service, which refuses again (`Webhooks.sendTest`, `Webhooks.redeliver`).
+ */
+const deliveredHere: MiddlewareHandler<AppEnv> = async (c, next) => {
+  Webhooks.requireDeliveryHere(c.get('deps'))
+  await next()
+}
 
 const refusedAddress =
   'An address the server may not call is refused with `webhook.url_not_allowed` (422): it must ' +
@@ -312,6 +328,7 @@ router.post(
   }),
   adminRateLimit(),
   secretKey(),
+  deliveredHere,
   sendRateLimit,
   validator('param', WebhookEndpointIdParamSchema, validationHook),
   validator('json', SendTestWebhookRequestSchema, validationHook),
@@ -356,6 +373,7 @@ router.post(
   }),
   adminRateLimit(),
   secretKey(),
+  deliveredHere,
   sendRateLimit,
   validator('param', WebhookDeliveryParamSchema, validationHook),
   async (c) => {
