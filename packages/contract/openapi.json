@@ -2161,7 +2161,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 30
+            "maximum": 32
           },
           "enabled": {
             "type": "boolean"
@@ -2460,6 +2460,147 @@
         ],
         "description": "The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again."
       },
+      "WebhookEndpointSecretRotatedEventData": {
+        "type": "object",
+        "properties": {
+          "rotationOverlapEndsAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "rotationOverlapEndsAt"
+        ],
+        "description": "A webhook endpoint’s signing secret was replaced. Deliveries carry a signature for the new secret and one for the previous secret until the time given; after it, for the new one only. Neither secret, nor any part of one, is in the event."
+      },
+      "WebhookEndpointSecretRotatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "webhook_endpoint.secret_rotated"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "webhook_endpoint"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/WebhookEndpointSecretRotatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A webhook endpoint’s signing secret was replaced. Deliveries carry a signature for the new secret and one for the previous secret until the time given; after it, for the new one only. Neither secret, nor any part of one, is in the event."
+      },
+      "WebhookEndpointPreviousSecretRevokedEventData": {
+        "type": "object",
+        "properties": {},
+        "description": "An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only."
+      },
+      "WebhookEndpointPreviousSecretRevokedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "webhook_endpoint.previous_secret_revoked"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "webhook_endpoint"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/WebhookEndpointPreviousSecretRevokedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only."
+      },
       "TulaEvent": {
         "oneOf": [
           {
@@ -2551,6 +2692,12 @@
           },
           {
             "$ref": "#/components/schemas/WebhookEndpointDisabledEvent"
+          },
+          {
+            "$ref": "#/components/schemas/WebhookEndpointSecretRotatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/WebhookEndpointPreviousSecretRevokedEvent"
           }
         ]
       },
@@ -2619,6 +2766,7 @@
           "identity.last_sign_in_method",
           "webhook.url_not_allowed",
           "webhook.cannot_redeliver",
+          "webhook.rotation_refused",
           "passkey.registration_failed",
           "passkey.already_registered",
           "passkey.limit_reached",
@@ -4798,7 +4946,9 @@
           "webhook_endpoint.created",
           "webhook_endpoint.updated",
           "webhook_endpoint.deleted",
-          "webhook_endpoint.disabled"
+          "webhook_endpoint.disabled",
+          "webhook_endpoint.secret_rotated",
+          "webhook_endpoint.previous_secret_revoked"
         ]
       },
       "AuditLogQuery": {
@@ -5977,6 +6127,18 @@
               }
             ]
           },
+          "rotationOverlapEndsAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -5996,6 +6158,7 @@
           "disabledReason",
           "failingSince",
           "lastFailedAt",
+          "rotationOverlapEndsAt",
           "createdAt",
           "updatedAt"
         ]
@@ -6064,6 +6227,18 @@
               }
             ]
           },
+          "rotationOverlapEndsAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -6087,6 +6262,7 @@
           "disabledReason",
           "failingSince",
           "lastFailedAt",
+          "rotationOverlapEndsAt",
           "createdAt",
           "updatedAt",
           "secret"
@@ -6103,7 +6279,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 30,
+            "maxItems": 32,
             "type": "array",
             "items": {
               "type": "string",
@@ -6137,7 +6313,9 @@
                 "webhook_endpoint.created",
                 "webhook_endpoint.updated",
                 "webhook_endpoint.deleted",
-                "webhook_endpoint.disabled"
+                "webhook_endpoint.disabled",
+                "webhook_endpoint.secret_rotated",
+                "webhook_endpoint.previous_secret_revoked"
               ]
             }
           },
@@ -6163,7 +6341,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 30,
+            "maxItems": 32,
             "type": "array",
             "items": {
               "type": "string",
@@ -6197,7 +6375,9 @@
                 "webhook_endpoint.created",
                 "webhook_endpoint.updated",
                 "webhook_endpoint.deleted",
-                "webhook_endpoint.disabled"
+                "webhook_endpoint.disabled",
+                "webhook_endpoint.secret_rotated",
+                "webhook_endpoint.previous_secret_revoked"
               ]
             }
           },
@@ -6617,7 +6797,9 @@
               "webhook_endpoint.created",
               "webhook_endpoint.updated",
               "webhook_endpoint.deleted",
-              "webhook_endpoint.disabled"
+              "webhook_endpoint.disabled",
+              "webhook_endpoint.secret_rotated",
+              "webhook_endpoint.previous_secret_revoked"
             ]
           }
         },
@@ -6625,6 +6807,91 @@
           "eventType"
         ],
         "additionalProperties": false
+      },
+      "RotatedWebhookSecret": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "url": {
+            "type": "string"
+          },
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "disabledReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failingSince": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastFailedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rotationOverlapEndsAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+            "description": "When the previous secret stops signing. Until then deliveries carry both signatures."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "secret": {
+            "type": "string",
+            "description": "The new signing secret. Store it now: it is shown only once."
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "eventTypes",
+          "enabled",
+          "disabledReason",
+          "failingSince",
+          "lastFailedAt",
+          "rotationOverlapEndsAt",
+          "createdAt",
+          "updatedAt",
+          "secret"
+        ]
       },
       "DiagnosticStatus": {
         "type": "string",
@@ -18821,6 +19088,270 @@
           {
             "in": "path",
             "name": "deliveryId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/admin/webhook-endpoints/{id}/secret/rotate": {
+      "post": {
+        "operationId": "rotateWebhookSecret",
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Replace an endpoint’s signing secret",
+        "description": "Makes a new signing secret (`whsec_…`) for the endpoint and returns it in this response only. The secret it replaces is not dropped: for 24h (until `rotationOverlapEndsAt`) every delivery carries **two** signatures in `webhook-signature`, the new secret’s first and the previous secret’s after a space, so a receiver verifies with whichever it holds. Deploy the new secret to the receiver inside that time; after it only the new secret signs, and the previous one is deleted. The request has no body and nothing in one is read: the server makes the secret. Refused with `webhook.rotation_refused` (409) and a fixed word in `params.reason`: `rotation_in_progress` while a previous secret is still signing (an endpoint never has three: end the overlap first with `DELETE …/secret/previous`), or `secret_unreadable` when the server cannot open the current secret and so could not keep it signing. An endpoint that is switched off can be rotated. Recorded in the audit log as `webhook_endpoint.secret_rotated`, with the time and nothing of either secret.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The endpoint, with its new signing secret.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotatedWebhookSecret"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/admin/webhook-endpoints/{id}/secret/previous": {
+      "delete": {
+        "operationId": "revokePreviousWebhookSecret",
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "End a secret rotation’s overlap now",
+        "description": "Ends the overlap of a rotation early: the endpoint’s previous signing secret stops signing and is deleted, and deliveries carry the current secret’s signature only. For a previous secret that has leaked, once the receiver verifies with the new one; and what makes another rotation possible at once. A round of deliveries under way when this is called may still add the previous secret’s signature, for a few seconds at most. Refused with `webhook.rotation_refused` (409, `params.reason`: `no_rotation_in_progress`) when no previous secret is signing. Recorded in the audit log as `webhook_endpoint.previous_secret_revoked`.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The endpoint as it is now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookEndpoint"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
             "schema": {
               "type": "string",
               "format": "uuid",

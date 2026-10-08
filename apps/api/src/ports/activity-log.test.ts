@@ -19,7 +19,11 @@ import type { PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
 import type { RotationPlan, SigningKeyStore } from '~/ports/signing-key-store'
 import type { NewIdentity, NewUser, UserRepository } from '~/ports/user-repository'
-import type { WebhookEndpointRecord, WebhookEndpointStore } from '~/ports/webhook-endpoint-store'
+import type {
+  WebhookEndpointRecord,
+  WebhookEndpointStore,
+  WebhookSecretRotation,
+} from '~/ports/webhook-endpoint-store'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
 
 // AGENTS.md: "every change to who can do what is recorded, in the same transaction". The
@@ -41,6 +45,7 @@ declare const apiKey: NewApiKey
 declare const provider: OAuthProviderRecord
 declare const plan: RotationPlan
 declare const endpoint: WebhookEndpointRecord
+declare const rotation: WebhookSecretRotation
 declare const settings: Parameters<EnvironmentSettingsStore['replace']>[2]
 
 async function _users(users: UserRepository): Promise<void> {
@@ -142,9 +147,20 @@ async function _webhookEndpoints(endpoints: WebhookEndpointStore): Promise<void>
   await endpoints.disable(ENV, 'endpoint', 'failing', AT)
   // @ts-expect-error
   await endpoints.disable(ENV, 'endpoint', 'gone', AT, undefined)
+  // @ts-expect-error a new signing secret changes who can sign an environment's events
+  await endpoints.rotateSecret(ENV, 'endpoint', rotation, AT)
+  // @ts-expect-error
+  await endpoints.rotateSecret(ENV, 'endpoint', rotation, AT, undefined)
+  // @ts-expect-error ending an overlap early takes a secret away before its time
+  await endpoints.revokePreviousSecret(ENV, 'endpoint', AT)
+  // @ts-expect-error
+  await endpoints.revokePreviousSecret(ENV, 'endpoint', AT, undefined)
   // Since when an endpoint has been failing is the worker's bookkeeping: a method of its own
   // that takes none (ADR 0012).
   await endpoints.setHealth(ENV, 'endpoint', null, { failingSince: AT, lastFailedAt: AT })
+  // So is deleting a previous secret whose overlap has ended: it stopped signing at that end,
+  // by the clock, and the rotation that set the end is what was recorded (ADR 0012).
+  await endpoints.clearExpiredPreviousSecrets(ENV, AT, 10)
 }
 
 /** The memory adapters are what tests hold (`TestDeps`): they are as strict as the ports. */
@@ -173,6 +189,10 @@ async function _memoryAdapters(deps: TestDeps): Promise<void> {
   await deps.webhookEndpoints.delete(ENV, 'endpoint')
   // @ts-expect-error
   await deps.webhookEndpoints.disable(ENV, 'endpoint', 'failing', AT)
+  // @ts-expect-error
+  await deps.webhookEndpoints.rotateSecret(ENV, 'endpoint', rotation, AT)
+  // @ts-expect-error
+  await deps.webhookEndpoints.revokePreviousSecret(ENV, 'endpoint', AT)
 }
 
 function _reasons(): Recorded[] {

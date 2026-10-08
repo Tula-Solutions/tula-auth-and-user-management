@@ -1,5 +1,5 @@
 import { type Database, webhookEndpoints, withTenant } from '@tula/db'
-import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
@@ -8,6 +8,7 @@ import type {
   WebhookEndpointHealth,
   WebhookEndpointRecord,
   WebhookEndpointStore,
+  WebhookSecretRotation,
 } from '~/ports/webhook-endpoint-store'
 
 const columns = {
@@ -17,6 +18,8 @@ const columns = {
   url: webhookEndpoints.url,
   eventTypes: webhookEndpoints.eventTypes,
   secret: webhookEndpoints.secret,
+  previousSecret: webhookEndpoints.previousSecret,
+  previousSecretExpiresAt: webhookEndpoints.previousSecretExpiresAt,
   enabled: webhookEndpoints.enabled,
   disabledReason: webhookEndpoints.disabledReason,
   failingSince: webhookEndpoints.failingSince,
@@ -144,6 +147,110 @@ export class PostgresWebhookEndpointStore implements WebhookEndpointStore {
         .returning({ id: webhookEndpoints.id })
     )
     return rows.length === 1
+  }
+
+  /** @inheritdoc */
+  async rotateSecret(
+    environmentId: string,
+    id: string,
+    rotation: WebhookSecretRotation,
+    at: Date,
+    recorded: Recorded
+  ): Promise<WebhookEndpointRecord | null> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [row] = await tx
+        .update(webhookEndpoints)
+        .set({
+          secret: rotation.secret,
+          previousSecret: rotation.previousSecret,
+          previousSecretExpiresAt: rotation.previousSecretExpiresAt,
+          updatedAt: at,
+        })
+        .where(
+          and(
+            eq(webhookEndpoints.environmentId, environmentId),
+            eq(webhookEndpoints.id, id),
+            // Both compares are in the statement itself, so they are judged against the row
+            // as it is when the update takes its lock: of two rotations at once the second
+            // sees the first one's secret and its overlap, and writes nothing.
+            eq(webhookEndpoints.secret, rotation.expectedSecret),
+            or(
+              isNull(webhookEndpoints.previousSecretExpiresAt),
+              lte(webhookEndpoints.previousSecretExpiresAt, at)
+            )
+          )
+        )
+        .returning(columns)
+      await recordActivity(tx, row && activity ? [activity] : [])
+      return row ?? null
+    })
+  }
+
+  /** @inheritdoc */
+  async revokePreviousSecret(
+    environmentId: string,
+    id: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<WebhookEndpointRecord | null> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [row] = await tx
+        .update(webhookEndpoints)
+        .set({ previousSecret: null, previousSecretExpiresAt: null, updatedAt: at })
+        .where(
+          and(
+            eq(webhookEndpoints.environmentId, environmentId),
+            eq(webhookEndpoints.id, id),
+            // Guarded: only a previous secret that still signs is revoked (and recorded).
+            gt(webhookEndpoints.previousSecretExpiresAt, at)
+          )
+        )
+        .returning(columns)
+      await recordActivity(tx, row && activity ? [activity] : [])
+      return row ?? null
+    })
+  }
+
+  /** @inheritdoc */
+  async clearExpiredPreviousSecrets(
+    environmentId: string,
+    at: Date,
+    limit: number
+  ): Promise<number> {
+    const expired = and(
+      eq(webhookEndpoints.environmentId, environmentId),
+      lte(webhookEndpoints.previousSecretExpiresAt, at)
+    )
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(webhookEndpoints)
+        .set({
+          previousSecret: null,
+          previousSecretExpiresAt: null,
+          // Set to itself, as in `setHealth`: no administrator changed the endpoint.
+          updatedAt: sql`${webhookEndpoints.updatedAt}`,
+        })
+        .where(
+          and(
+            // Said again on the update itself: the batch is chosen from a snapshot, and a
+            // rotation committed since then has put a secret there that still signs.
+            expired,
+            inArray(
+              webhookEndpoints.id,
+              tx
+                .select({ id: webhookEndpoints.id })
+                .from(webhookEndpoints)
+                .where(expired)
+                .orderBy(asc(webhookEndpoints.previousSecretExpiresAt), asc(webhookEndpoints.id))
+                .limit(limit)
+            )
+          )
+        )
+        .returning({ id: webhookEndpoints.id })
+    )
+    return rows.length
   }
 
   /** @inheritdoc */

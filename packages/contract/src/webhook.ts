@@ -86,6 +86,15 @@ export const WebhookEndpointSchema = z
      * answer succeeded. A failure after a long silence starts `failingSince` again.
      */
     lastFailedAt: z.iso.datetime().nullable(),
+    /**
+     * When the overlap of a secret rotation ends, which is when the endpoint's **previous**
+     * signing secret stops signing. Set while an overlap is under way: until then every
+     * delivery carries a signature for the current secret and one for the previous one.
+     * `null` when one secret signs. A time and nothing else: no secret, and no part of one,
+     * is ever returned by a read. (Named for the overlap and not for the secret on purpose:
+     * nothing under a key that reads like a credential is ever a plain value.)
+     */
+    rotationOverlapEndsAt: z.iso.datetime().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -98,6 +107,40 @@ export const WebhookEndpointSchema = z
 export const CreatedWebhookEndpointSchema = WebhookEndpointSchema.extend({
   secret: z.string().describe('The signing secret. Store it now: it is shown only once.'),
 }).meta({ ref: 'CreatedWebhookEndpoint' })
+
+/**
+ * An endpoint whose signing secret was just replaced. `secret` is the **new** secret
+ * (`whsec_…`), in this response only. The previous secret is not returned (the receiver has
+ * it); it keeps signing beside the new one until `rotationOverlapEndsAt`.
+ */
+export const RotatedWebhookSecretSchema = WebhookEndpointSchema.extend({
+  secret: z.string().describe('The new signing secret. Store it now: it is shown only once.'),
+  rotationOverlapEndsAt: z.iso
+    .datetime()
+    .describe(
+      'When the previous secret stops signing. Until then deliveries carry both signatures.'
+    ),
+}).meta({ ref: 'RotatedWebhookSecret' })
+
+/**
+ * Why a signing secret cannot be replaced, or its overlap ended, as
+ * `webhook.rotation_refused` says it in `params.reason`: a rotation is already under way (two
+ * secrets sign, and there are never three), none is under way (there is no previous secret to
+ * revoke), or the server could not open the endpoint's current secret and so cannot keep it
+ * signing beside a new one.
+ *
+ * @example
+ * ```ts
+ * if (error.code === 'webhook.rotation_refused' && error.params?.reason === 'rotation_in_progress') {
+ *   // wait for the overlap to end, or revoke the previous secret first
+ * }
+ * ```
+ */
+export const WEBHOOK_ROTATION_REFUSALS = [
+  'rotation_in_progress',
+  'no_rotation_in_progress',
+  'secret_unreadable',
+] as const
 
 /** An environment's webhook endpoints, oldest first. */
 export const WebhookEndpointListSchema = z
@@ -254,6 +297,8 @@ export const WebhookSendResultSchema = z
 export type WebhookEndpoint = z.infer<typeof WebhookEndpointSchema>
 /** A newly registered webhook endpoint, with its signing secret. */
 export type CreatedWebhookEndpoint = z.infer<typeof CreatedWebhookEndpointSchema>
+/** An endpoint with its new signing secret, as a rotation answers. */
+export type RotatedWebhookSecret = z.infer<typeof RotatedWebhookSecretSchema>
 /** An environment's webhook endpoints. */
 export type WebhookEndpointList = z.infer<typeof WebhookEndpointListSchema>
 /** Create-endpoint request body. */

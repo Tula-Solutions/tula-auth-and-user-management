@@ -6,6 +6,7 @@ import {
   EVENT_FIXTURES,
   formatWebhookSecret,
   MAX_WEBHOOK_ENDPOINTS,
+  type RotatedWebhookSecret,
   type SendTestWebhookRequest,
   signWebhook,
   type UpdateWebhookEndpointRequest,
@@ -46,6 +47,24 @@ export const WEBHOOK_SECRET_PURPOSE = 'webhook-secrets'
 
 /** Bytes of a new signing key: 256 bits, inside the 24 to 64 the scheme allows. */
 export const WEBHOOK_SECRET_BYTES = 32
+
+/**
+ * How long the secret a rotation replaced keeps signing beside the new one. A constant, not a
+ * setting: a receiver's operator can be told what to expect.
+ *
+ * A day is long enough to get the new secret into a receiver through an ordinary deployment
+ * (a review, a release window, another time zone), and short enough that a secret which is
+ * being replaced because it may have leaked stops being worth anything soon. An operator who
+ * cannot wait that long ends the overlap by hand ({@link revokePreviousSecret}).
+ */
+export const WEBHOOK_SECRET_OVERLAP = '24h'
+
+/**
+ * Endpoints cleared of an expired previous secret per statement, per environment per round.
+ * An environment has at most `MAX_WEBHOOK_ENDPOINTS` endpoints, so one statement is always
+ * the whole of it; the bound is there so the statement has one.
+ */
+export const WEBHOOK_SECRET_CLEAR_BATCH = 100
 
 /**
  * How often the delivery worker runs. Short, because a webhook is how an operator's backend
@@ -236,19 +255,60 @@ export interface DeliveryReport {
   /** Endpoints the server switched off. */
   disabled: number
   /**
+   * Previous signing secrets deleted from their rows because their rotation's overlap had
+   * ended. They had stopped signing at that end already, by the clock.
+   */
+  secretsExpired: number
+  /**
    * Events never sent because their stored payload is not an event of the contract (rows
    * recorded before the payload had a schema version). Settled.
    */
   skipped: number
 }
 
-/** What binds a sealed secret to its row: copied to another environment or endpoint, it fails. */
+/**
+ * What binds the sealed **current** secret to its row: copied to another environment or
+ * endpoint, it fails. Exactly what it was before rotation existed, so every secret stored
+ * since the first webhook still opens.
+ */
 function aad(environmentId: string, endpointId: string): string {
   return `${environmentId}:${endpointId}`
 }
 
-/** The public view of a stored endpoint: everything but the secret. */
-function view(record: WebhookEndpointRecord): WebhookEndpoint {
+/**
+ * What binds the sealed **previous** secret to its row and to its slot. The slot is part of
+ * it, so a ciphertext cannot be moved between the two columns: the current one copied into
+ * `previous_secret` does not open (it would otherwise sign past its own rotation), and the
+ * previous one copied back into `secret` does not either. Both ids are UUIDs, so this can
+ * never be another row's current binding.
+ */
+function previousAad(environmentId: string, endpointId: string): string {
+  return `${environmentId}:${endpointId}:previous`
+}
+
+/**
+ * Whether an endpoint's previous secret signs at `at`: it has one, and its end has not come.
+ * The one place that decides it, for signing, for the view and for what a rotation refuses;
+ * the store's guards say the same in SQL. Strict: at the instant of its end it does not.
+ */
+function overlapUnderWay(
+  record: Pick<WebhookEndpointRecord, 'previousSecretExpiresAt'>,
+  at: Date
+): boolean {
+  return (
+    record.previousSecretExpiresAt !== null &&
+    at.getTime() < record.previousSecretExpiresAt.getTime()
+  )
+}
+
+/**
+ * The public view of a stored endpoint: everything but the secrets.
+ *
+ * @param record - The stored endpoint.
+ * @param now - The clock: a previous secret past its end is not "a rotation under way",
+ *   whether or not the worker has cleared it from the row yet.
+ */
+function view(record: WebhookEndpointRecord, now: Date): WebhookEndpoint {
   return {
     id: record.id,
     url: record.url,
@@ -257,6 +317,9 @@ function view(record: WebhookEndpointRecord): WebhookEndpoint {
     disabledReason: record.disabledReason,
     failingSince: record.failingSince?.toISOString() ?? null,
     lastFailedAt: record.lastFailedAt?.toISOString() ?? null,
+    rotationOverlapEndsAt: overlapUnderWay(record, now)
+      ? (record.previousSecretExpiresAt?.toISOString() ?? null)
+      : null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   }
@@ -284,15 +347,16 @@ async function requireCallable(deps: Pick<Deps, 'outbound'>, url: string): Promi
 /**
  * List the environment's webhook endpoints.
  *
- * @param deps - The endpoint store.
+ * @param deps - The endpoint store and the clock.
  * @param tenant - The environment.
  * @returns The endpoints, oldest first, without their secrets.
  */
 export async function list(
-  deps: Pick<Deps, 'webhookEndpoints'>,
+  deps: Pick<Deps, 'webhookEndpoints' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>
 ): Promise<WebhookEndpoint[]> {
-  return (await deps.webhookEndpoints.list(tenant.environmentId)).map(view)
+  const now = deps.clock.now()
+  return (await deps.webhookEndpoints.list(tenant.environmentId)).map((record) => view(record, now))
 }
 
 /** The stored endpoint, or the 404 every route answers for one that is not this environment's. */
@@ -311,18 +375,18 @@ async function requireEndpoint(
 /**
  * Read one webhook endpoint.
  *
- * @param deps - The endpoint store.
+ * @param deps - The endpoint store and the clock.
  * @param tenant - The environment.
  * @param id - The endpoint.
  * @returns The endpoint, without its secret.
  * @throws NotFoundError when the environment has no endpoint with that id.
  */
 export async function get(
-  deps: Pick<Deps, 'webhookEndpoints'>,
+  deps: Pick<Deps, 'webhookEndpoints' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>,
   id: string
 ): Promise<WebhookEndpoint> {
-  return view(await requireEndpoint(deps, tenant, id))
+  return view(await requireEndpoint(deps, tenant, id), deps.clock.now())
 }
 
 /**
@@ -374,7 +438,7 @@ async function register(
     })
   }
   const id = deps.ids.next()
-  const secret = formatWebhookSecret(crypto.getRandomValues(new Uint8Array(WEBHOOK_SECRET_BYTES)))
+  const secret = newSecret()
   const activity = Audit.entry(deps, tenant, {
     type: 'webhook_endpoint.created',
     actor,
@@ -393,6 +457,8 @@ async function register(
         new TextEncoder().encode(secret),
         aad(tenant.environmentId, id)
       ),
+      previousSecret: null,
+      previousSecretExpiresAt: null,
       enabled: input.enabled,
       disabledReason: null,
       failingSince: null,
@@ -405,7 +471,7 @@ async function register(
     },
     activity
   )
-  return { ...view(record), secret }
+  return { ...view(record, activity.occurredAt), secret }
 }
 
 /** Whether two lists name the same event types, in any order. */
@@ -455,7 +521,7 @@ export async function update(
   }
   const changed = WEBHOOK_ENDPOINT_FIELDS.filter((field) => changes[field] !== undefined)
   if (changed.length === 0) {
-    return view(current)
+    return view(current, deps.clock.now())
   }
   // Switched on again, or pointed somewhere else: what the worker held against the endpoint
   // was about the endpoint as it was.
@@ -478,7 +544,7 @@ export async function update(
     // Removed between the read and the write.
     throw new NotFoundError()
   }
-  return view(updated)
+  return view(updated, deps.clock.now())
 }
 
 /**
@@ -509,6 +575,155 @@ export async function remove(
   if (!deleted) {
     throw new NotFoundError()
   }
+}
+
+/** A new signing secret: 256 bits from the CSPRNG, in the Standard Webhooks format. */
+function newSecret(): string {
+  return formatWebhookSecret(crypto.getRandomValues(new Uint8Array(WEBHOOK_SECRET_BYTES)))
+}
+
+/**
+ * Replace an endpoint's signing secret without dropping a delivery.
+ *
+ * The server makes the new secret and returns it in this result only. The secret it replaces
+ * is not thrown away: it keeps signing **beside** the new one for
+ * {@link WEBHOOK_SECRET_OVERLAP}, so every delivery in that time carries two signatures (the
+ * new secret's first) and a receiver verifies with whichever it holds. The operator deploys
+ * the new secret to the receiver inside the overlap; when it ends, the old one signs nothing
+ * (decided at each request from the stored end and the clock) and the worker deletes it.
+ *
+ * **Never three.** While a previous secret still signs, another rotation is refused
+ * (`rotation_in_progress`): keeping a third would let a mistake pile secrets up, and dropping
+ * the oldest silently would fail the receivers that still hold only it. The operator who
+ * needs to rotate again now ends the overlap first ({@link revokePreviousSecret}), which is
+ * an explicit, recorded act. The check is made again in the store's statement, so two
+ * rotations that arrive together, on one instance or two, cannot both be written.
+ *
+ * The replaced secret is opened and sealed again for the previous slot (its binding names the
+ * slot), which is why a secret the server cannot open cannot be rotated
+ * (`secret_unreadable`): it could not be kept signing, and a receiver that still holds only
+ * it would be cut off at once, with no overlap at all. That is a `TULA_MASTER_KEY` to put
+ * right first.
+ *
+ * An endpoint that is switched off can be rotated: a secret that may have leaked is a reason
+ * to switch one off, and it is replaced before it is switched on again.
+ *
+ * @param deps - The endpoint store, the secret box, ids and the clock.
+ * @param tenant - The environment. An endpoint of another is not found.
+ * @param id - The endpoint.
+ * @param actor - Who rotates it, for the audit log.
+ * @returns The endpoint, its **new** secret, and when the previous one stops signing.
+ * @throws NotFoundError when the environment has no endpoint with that id, or it was removed
+ *   meanwhile.
+ * @throws AuthError `webhook.rotation_refused`, with `params.reason` `rotation_in_progress`
+ *   or `secret_unreadable`.
+ */
+export async function rotateSecret(
+  deps: Pick<Deps, 'webhookEndpoints' | 'secretBox' | 'ids' | 'clock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  id: string,
+  actor: Actor
+): Promise<RotatedWebhookSecret> {
+  const current = await requireEndpoint(deps, tenant, id)
+  if (overlapUnderWay(current, deps.clock.now())) {
+    throw new AuthError('webhook.rotation_refused', { reason: 'rotation_in_progress' })
+  }
+  // Opened, and a signing secret: anything else could not sign today and must not be kept as
+  // a previous secret that signs nothing while a read says two secrets do.
+  const replaced = await openSecret(deps, current.secret, aad(tenant.environmentId, id))
+  if (!replaced) {
+    throw new AuthError('webhook.rotation_refused', { reason: 'secret_unreadable' })
+  }
+  const secret = newSecret()
+  const sealed = {
+    secret: await deps.secretBox.seal(
+      WEBHOOK_SECRET_PURPOSE,
+      new TextEncoder().encode(secret),
+      aad(tenant.environmentId, id)
+    ),
+    previousSecret: await deps.secretBox.seal(
+      WEBHOOK_SECRET_PURPOSE,
+      replaced.sealable,
+      previousAad(tenant.environmentId, id)
+    ),
+  }
+  // The replaced secret was in the clear only to be sealed again.
+  replaced.sealable.fill(0)
+  // One reading of the clock for the rotation, its audit entry and the end of the overlap.
+  const at = deps.clock.now()
+  const previousSecretExpiresAt = new Date(at.getTime() + durationToMs(WEBHOOK_SECRET_OVERLAP))
+  const rotated = await deps.webhookEndpoints.rotateSecret(
+    tenant.environmentId,
+    id,
+    { expectedSecret: current.secret, ...sealed, previousSecretExpiresAt },
+    at,
+    {
+      ...Audit.entry(deps, tenant, {
+        type: 'webhook_endpoint.secret_rotated',
+        actor,
+        target: { type: 'webhook_endpoint', id },
+        // A time, and nothing of either secret: not a prefix, not a fingerprint.
+        data: { rotationOverlapEndsAt: previousSecretExpiresAt.toISOString() },
+      }),
+      occurredAt: at,
+    }
+  )
+  if (!rotated) {
+    // Not written: the endpoint was removed meanwhile, or another rotation got there first
+    // (its secret is no longer the one read here, and a previous one now signs).
+    await requireEndpoint(deps, tenant, id)
+    throw new AuthError('webhook.rotation_refused', { reason: 'rotation_in_progress' })
+  }
+  return {
+    ...view(rotated, at),
+    rotationOverlapEndsAt: previousSecretExpiresAt.toISOString(),
+    secret,
+  }
+}
+
+/**
+ * End a rotation's overlap now: the endpoint's previous secret stops signing at once and is
+ * deleted.
+ *
+ * For a previous secret that has leaked (the usual reason a secret is rotated in a hurry):
+ * once the receiver verifies with the new one, the old one should not stay good for the rest
+ * of the day. It is also what makes another rotation possible straight away. Deliveries a
+ * round is making when this is called may still carry the old secret's signature beside the
+ * new one, for that round at most; that gives away nothing (whoever holds the old secret can
+ * sign with it anyway) and what matters is done by the operator: taking the old secret out of
+ * the receiver.
+ *
+ * @param deps - The endpoint store, ids and the clock.
+ * @param tenant - The environment. An endpoint of another is not found.
+ * @param id - The endpoint.
+ * @param actor - Who ends it, for the audit log.
+ * @returns The endpoint as it is now: one secret signs.
+ * @throws NotFoundError when the environment has no endpoint with that id.
+ * @throws AuthError `webhook.rotation_refused`, `params.reason` `no_rotation_in_progress`,
+ *   when no previous secret is signing (none was ever kept, or its overlap is already over).
+ */
+export async function revokePreviousSecret(
+  deps: Pick<Deps, 'webhookEndpoints' | 'ids' | 'clock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  id: string,
+  actor: Actor
+): Promise<WebhookEndpoint> {
+  const activity = Audit.entry(deps, tenant, {
+    type: 'webhook_endpoint.previous_secret_revoked',
+    actor,
+    target: { type: 'webhook_endpoint', id },
+  })
+  const revoked = await deps.webhookEndpoints.revokePreviousSecret(
+    tenant.environmentId,
+    id,
+    activity.occurredAt,
+    activity
+  )
+  if (!revoked) {
+    await requireEndpoint(deps, tenant, id)
+    throw new AuthError('webhook.rotation_refused', { reason: 'no_rotation_in_progress' })
+  }
+  return view(revoked, activity.occurredAt)
 }
 
 type DeliveryDeps = Pick<
@@ -551,22 +766,111 @@ function recipients(
   )
 }
 
-/** The signing key of an endpoint, or `null` when its sealed secret cannot be opened or read. */
-async function signingKey(
+/** What an endpoint's deliveries are signed with. */
+interface SigningKeys {
+  /** The key of the current secret: it always signs, and its signature comes first. */
+  current: Uint8Array<ArrayBuffer>
+  /**
+   * The key of the secret a rotation replaced, and when it stops signing; `null` when there
+   * is none, when its end had come by the time the keys were opened, or when it would not
+   * open. Whether it signs a given request is decided at that request ({@link signatures}).
+   */
+  previous: { key: Uint8Array<ArrayBuffer>; expiresAt: Date } | null
+  /**
+   * The endpoint has a previous secret that should still be signing and it would not open:
+   * deliveries are made with the current secret's signature alone, and the caller says so.
+   */
+  previousUnreadable: boolean
+}
+
+/**
+ * One sealed secret, opened: its signing key, and the bytes that were sealed (the `whsec_…`
+ * text, for sealing again under another binding). `null` when it cannot be opened with that
+ * binding or is no signing secret; the failure itself is never passed on, logged or returned.
+ */
+async function openSecret(
   deps: Pick<Deps, 'secretBox'>,
-  endpoint: WebhookEndpointRecord
-): Promise<Uint8Array<ArrayBuffer> | null> {
+  sealed: string,
+  binding: string
+): Promise<{ key: Uint8Array<ArrayBuffer>; sealable: Uint8Array } | null> {
   try {
-    const opened = await deps.secretBox.open(
-      WEBHOOK_SECRET_PURPOSE,
-      endpoint.secret,
-      aad(endpoint.environmentId, endpoint.id)
-    )
-    return webhookSecretBytes(new TextDecoder().decode(opened))
+    const sealable = await deps.secretBox.open(WEBHOOK_SECRET_PURPOSE, sealed, binding)
+    const key = webhookSecretBytes(new TextDecoder().decode(sealable))
+    return key && { key, sealable }
   } catch {
     // The failure is not passed on: it is about key material.
     return null
   }
+}
+
+/** The key of one sealed secret, or `null` when it cannot be opened or is no signing secret. */
+async function openKey(
+  deps: Pick<Deps, 'secretBox'>,
+  sealed: string,
+  binding: string
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  return (await openSecret(deps, sealed, binding))?.key ?? null
+}
+
+/**
+ * The signing keys of an endpoint, or `null` when its **current** secret cannot be opened or
+ * read: then nothing is sent, as before rotation existed. The previous secret never signs
+ * alone.
+ *
+ * @param deps - The secret box.
+ * @param endpoint - The endpoint as stored.
+ * @param now - The clock: a previous secret whose end has come is not opened at all.
+ */
+async function signingKeys(
+  deps: Pick<Deps, 'secretBox'>,
+  endpoint: WebhookEndpointRecord,
+  now: Date
+): Promise<SigningKeys | null> {
+  const current = await openKey(deps, endpoint.secret, aad(endpoint.environmentId, endpoint.id))
+  if (!current) {
+    return null
+  }
+  const { previousSecret, previousSecretExpiresAt: expiresAt } = endpoint
+  if (previousSecret === null || expiresAt === null || !overlapUnderWay(endpoint, now)) {
+    return { current, previous: null, previousUnreadable: false }
+  }
+  const key = await openKey(deps, previousSecret, previousAad(endpoint.environmentId, endpoint.id))
+  return { current, previous: key && { key, expiresAt }, previousUnreadable: key === null }
+}
+
+/**
+ * The value of the `webhook-signature` header for one request: the current secret's
+ * signature, and after it, separated by a space, the previous secret's while its overlap
+ * lasts. **The one place a delivery is signed**: the worker, a test event and a delivery
+ * sent again all come through {@link request}, which calls this.
+ *
+ * Whether the previous secret signs is decided here, for this request, from its stored end
+ * and the instant the request is made, never from whether anything has cleared it away: at
+ * the instant the overlap ends it signs nothing, on every instance, with no job having run.
+ * Never more than two entries, which is well inside what a verifier reads.
+ *
+ * @param keys - The endpoint's keys.
+ * @param id - The `webhook-id`.
+ * @param at - When the request is made: also where its `webhook-timestamp` comes from.
+ * @param body - The exact text sent.
+ */
+async function signatures(keys: SigningKeys, id: string, at: Date, body: string): Promise<string> {
+  const timestamp = Math.floor(at.getTime() / 1000)
+  const entries = [await signWebhook(keys.current, id, timestamp, body)]
+  if (keys.previous && at.getTime() < keys.previous.expiresAt.getTime()) {
+    entries.push(await signWebhook(keys.previous.key, id, timestamp, body))
+  }
+  return entries.join(' ')
+}
+
+/** Said when an endpoint's previous secret should be signing and would not open. */
+function warnPreviousUnreadable(endpoint: WebhookEndpointRecord): void {
+  // The receiver may still hold only the previous secret, and will then refuse these
+  // deliveries until it has the new one: worth a line, with ids and nothing else.
+  logger.warn(
+    'webhook previous signing secret could not be opened; deliveries to the endpoint carry the current secret’s signature only',
+    { environmentId: endpoint.environmentId, endpointId: endpoint.id }
+  )
 }
 
 /**
@@ -579,7 +883,7 @@ async function signingKey(
  *
  * @param deps - The outbound guard's settings, ids and the clock.
  * @param url - The endpoint's address.
- * @param key - Its signing key.
+ * @param keys - Its signing keys: the current secret's, and the previous one's during an overlap.
  * @param id - The `webhook-id`: the event's id.
  * @param payload - The body, written out once: exactly that text is signed and sent.
  * @returns The request as an attempt: when, the status or the guard's word, how long.
@@ -587,7 +891,7 @@ async function signingKey(
 async function request(
   deps: Pick<Deps, 'outbound' | 'ids' | 'clock'>,
   url: string,
-  key: Uint8Array<ArrayBuffer>,
+  keys: SigningKeys,
   id: string,
   payload: Record<string, unknown>
 ): Promise<NewWebhookAttempt> {
@@ -602,7 +906,7 @@ async function request(
         'content-type': 'application/json',
         [WEBHOOK_ID_HEADER]: id,
         [WEBHOOK_TIMESTAMP_HEADER]: String(timestamp),
-        [WEBHOOK_SIGNATURE_HEADER]: await signWebhook(key, id, timestamp, body),
+        [WEBHOOK_SIGNATURE_HEADER]: await signatures(keys, id, attemptedAt, body),
       },
       body,
       timeoutMs: WEBHOOK_DELIVERY_TIMEOUT_MS,
@@ -852,8 +1156,8 @@ async function serveEndpoint(
   }
   const ids = (deliveries: readonly WebhookDeliveryRecord[]) => deliveries.map(({ id }) => id)
   const later = (wait: string) => new Date(deps.clock.now().getTime() + durationToMs(wait))
-  const key = await signingKey(deps, endpoint)
-  if (!key) {
+  const keys = await signingKeys(deps, endpoint, deps.clock.now())
+  if (!keys) {
     // Most often a TULA_MASTER_KEY that is not the one the secret was sealed with, on this
     // instance or on all of them. The receiver did nothing wrong and was sent nothing, so no
     // attempt is counted against it; the deliveries wait, and are sent once the key is right.
@@ -871,6 +1175,11 @@ async function serveEndpoint(
       { environmentId, endpointId: endpoint.id, events }
     )
     return
+  }
+  if (keys.previousUnreadable) {
+    // Once per endpoint per round, like the line above, and only when there is something to
+    // send: the deliveries are made all the same.
+    warnPreviousUnreadable(endpoint)
   }
   const events = new Map(
     (
@@ -897,7 +1206,7 @@ async function serveEndpoint(
       )
       continue
     }
-    const attempt = await request(deps, endpoint.url, key, event.id, event.payload)
+    const attempt = await request(deps, endpoint.url, keys, event.id, event.payload)
     await settle(deps, round, endpoint, delivery, attempt)
     if (attempt.failureReason === 'timeout') {
       // The endpoint let a request run out its whole deadline. Waiting that long again for
@@ -956,10 +1265,32 @@ async function deliverEnvironment(
       signal?.aborted === true ||
       deps.clock.now().getTime() - started >= WEBHOOK_ENVIRONMENT_BUDGET_MS,
   }
+  await dropExpiredSecrets(deps, round)
   await settleUnowed(deps, round, new Date(started))
   await queueOwed(deps, round)
   await expireOld(deps, round)
   await deliverDue(deps, round)
+}
+
+/**
+ * Delete the previous signing secrets of an environment's endpoints whose overlap has ended.
+ *
+ * They stopped signing at that end already ({@link signatures} decides by the clock); this
+ * only takes away a ciphertext nothing will open again, so that a secret an operator
+ * replaced, perhaps because it leaked, is not kept in the database for good. Done here
+ * because the round already visits every environment's endpoints every few seconds, whether
+ * they are on or off and whether or not anything is due: one statement, and first, so that
+ * nothing that goes wrong later in the round keeps an expired secret in place.
+ */
+async function dropExpiredSecrets(
+  deps: Pick<Deps, 'webhookEndpoints' | 'clock'>,
+  round: Round
+): Promise<void> {
+  round.report.secretsExpired += await deps.webhookEndpoints.clearExpiredPreviousSecrets(
+    round.environmentId,
+    deps.clock.now(),
+    WEBHOOK_SECRET_CLEAR_BATCH
+  )
 }
 
 /**
@@ -1085,6 +1416,8 @@ async function deliverDue(deps: DeliveryDeps, round: Round): Promise<void> {
  *
  * Per environment, in this order:
  *
+ * 0. Previous signing secrets whose rotation's overlap has ended are deleted from their rows
+ *    (they stopped signing at that end, by the clock; see {@link rotateSecret}).
  * 1. Events owed to nobody (from before the earliest endpoint that is on) are settled in bulk.
  * 2. Every other waiting event becomes one `pending` delivery per endpoint it is **owed** to
  *    (switched on, subscribed to its type, registered no later than it happened), and is then
@@ -1134,6 +1467,7 @@ export async function deliverPending(
     deferred: 0,
     givenUp: 0,
     disabled: 0,
+    secretsExpired: 0,
     skipped: 0,
   }
   for (const { id } of await deps.environments.listAll()) {
@@ -1178,7 +1512,13 @@ export async function run(
     return null
   }
   const report = outcome.value
-  const did = report.events + report.queued + report.delivered + report.deferred + report.givenUp
+  const did =
+    report.events +
+    report.queued +
+    report.delivered +
+    report.deferred +
+    report.givenUp +
+    report.secretsExpired
   // An idle round is routine and frequent; one that sent something, or could not, is worth a
   // line.
   const log =
@@ -1336,12 +1676,15 @@ export async function sendTest(
 ): Promise<WebhookSendResult> {
   const endpoint = await requireEndpoint(deps, tenant, endpointId)
   const createdAt = deps.clock.now()
-  const key = await signingKey(deps, endpoint)
+  const keys = await signingKeys(deps, endpoint, createdAt)
+  if (keys?.previousUnreadable) {
+    warnPreviousUnreadable(endpoint)
+  }
   // With no key nothing is sent, and what is recorded says so: a delivery with no attempt.
   // An id of its own, so a receiver that drops repeats by id takes every test.
   const eventId = deps.ids.next()
-  const attempt = key
-    ? await request(deps, endpoint.url, key, eventId, {
+  const attempt = keys
+    ? await request(deps, endpoint.url, keys, eventId, {
         ...EVENT_FIXTURES[input.eventType],
         id: eventId,
         occurredAt: createdAt.toISOString(),
@@ -1439,8 +1782,8 @@ export async function redeliver(
   if (!event || !isEvent(event)) {
     throw new AuthError('webhook.cannot_redeliver', { reason: 'event_gone' })
   }
-  const key = await signingKey(deps, endpoint)
-  if (!key) {
+  const keys = await signingKeys(deps, endpoint, deps.clock.now())
+  if (!keys) {
     // The server's fault, and nothing was sent: said to the caller, and to the log once.
     logger.warn('webhook signing secret could not be opened; nothing was sent', {
       environmentId,
@@ -1454,7 +1797,10 @@ export async function redeliver(
       failureReason: 'signing_failed',
     }
   }
-  const attempt = await request(deps, endpoint.url, key, event.id, event.payload)
+  if (keys.previousUnreadable) {
+    warnPreviousUnreadable(endpoint)
+  }
+  const attempt = await request(deps, endpoint.url, keys, event.id, event.payload)
   const delivered = succeeded(attempt)
   const recorded = await deps.webhookDeliveries.recordAttempt(
     environmentId,

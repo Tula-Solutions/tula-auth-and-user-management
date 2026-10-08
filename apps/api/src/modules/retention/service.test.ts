@@ -978,6 +978,8 @@ describe('the webhook worker’s leavings', () => {
         url: 'https://hooks.example.com/tula',
         eventTypes: ['user.deleted'],
         secret: 'sealed',
+        previousSecret: null,
+        previousSecretExpiresAt: null,
         enabled: true,
         disabledReason: null,
         failingSince: null,

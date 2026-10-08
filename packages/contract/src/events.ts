@@ -343,6 +343,19 @@ export const EVENT_DATA_SCHEMAS = {
       reason: z.enum(WEBHOOK_DISABLED_REASONS),
     }
   ),
+  'webhook_endpoint.secret_rotated': data(
+    'WebhookEndpointSecretRotated',
+    'A webhook endpoint’s signing secret was replaced. Deliveries carry a signature for the new secret and one for the previous secret until the time given; after it, for the new one only. Neither secret, nor any part of one, is in the event.',
+    {
+      /** When the previous secret stops signing, unless an administrator ends the overlap sooner. */
+      rotationOverlapEndsAt: z.iso.datetime(),
+    }
+  ),
+  'webhook_endpoint.previous_secret_revoked': data(
+    'WebhookEndpointPreviousSecretRevoked',
+    'An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only.',
+    {}
+  ),
 } as const satisfies Record<ActivityType, z.ZodObject>
 
 /**

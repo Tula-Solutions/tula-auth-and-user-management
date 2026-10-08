@@ -14,6 +14,17 @@ export interface WebhookEndpointRecord {
    * Never leaves the API after the response that created the endpoint.
    */
   secret: string
+  /**
+   * The secret a rotation replaced, sealed for the previous slot (bound to environment,
+   * endpoint id **and** the slot, so a ciphertext moved between the two columns does not
+   * open). `null` unless a rotation's overlap is under way, or has ended and the worker has
+   * not cleared it yet. Whether it still signs is judged from
+   * {@link WebhookEndpointRecord.previousSecretExpiresAt} and the clock, never from its
+   * presence.
+   */
+  previousSecret: string | null
+  /** When the previous secret stops signing. Set exactly when `previousSecret` is. */
+  previousSecretExpiresAt: Date | null
   enabled: boolean
   /**
    * Why the server switched it off; `null` while it is on and when an administrator did.
@@ -38,6 +49,22 @@ export interface WebhookEndpointRecord {
 export interface WebhookEndpointHealth {
   failingSince: Date | null
   lastFailedAt: Date | null
+}
+
+/** A secret rotation, as the store writes it: every value already sealed. */
+export interface WebhookSecretRotation {
+  /**
+   * The sealed current secret the caller read and re-sealed as `previousSecret`. The rotation
+   * is written only over a row that still holds exactly this, so the previous slot can only
+   * ever receive the secret that was signing.
+   */
+  expectedSecret: string
+  /** The new secret, sealed for the current slot. */
+  secret: string
+  /** The secret being replaced, sealed for the previous slot. */
+  previousSecret: string
+  /** When the replaced secret stops signing. */
+  previousSecretExpiresAt: Date
 }
 
 /** Why the server switches an endpoint off by itself. */
@@ -138,6 +165,72 @@ export interface WebhookEndpointStore {
     expected: WebhookEndpointHealth | null,
     next: WebhookEndpointHealth
   ): Promise<boolean>
+
+  /**
+   * Replace an endpoint's signing secret, keeping the one it replaces in the previous slot
+   * until `rotation.previousSecretExpiresAt`.
+   *
+   * A compare-and-set, in one statement: the row is written only if its current secret is
+   * still the one the caller read (`rotation.expectedSecret`) **and** no previous secret is
+   * still signing at `at` (none stored, or its end has come: `previous_secret_expires_at <=
+   * at`). That is what keeps an endpoint from ever having three secrets: of two rotations
+   * that arrive together, on one instance or two, one writes and the other gets `null`.
+   *
+   * @param environmentId - The environment. An endpoint of another is not touched.
+   * @param id - The endpoint.
+   * @param rotation - The sealed values, and the sealed secret they were worked out from.
+   * @param at - When the rotation is made: the instant "still signing" is judged by, and the
+   *   endpoint's new `updatedAt`.
+   * @param activity - Recorded in the same transaction, only if the row was written.
+   * @returns The endpoint as it is now, or `null` when nothing was written: the endpoint is
+   *   gone, its secret is no longer the one read, or a previous secret still signs.
+   */
+  rotateSecret(
+    environmentId: string,
+    id: string,
+    rotation: WebhookSecretRotation,
+    at: Date,
+    activity: Recorded
+  ): Promise<WebhookEndpointRecord | null>
+
+  /**
+   * End a rotation's overlap now: delete the previous secret and its end from the row.
+   *
+   * Guarded in the statement: only a previous secret that still signs at `at`
+   * (`previous_secret_expires_at > at`) is revoked. One that has already stopped by itself is
+   * the worker's to clear ({@link WebhookEndpointStore.clearExpiredPreviousSecrets}) and is
+   * not a revocation.
+   *
+   * @param environmentId - The environment. An endpoint of another is not touched.
+   * @param id - The endpoint.
+   * @param at - When; the endpoint's new `updatedAt`.
+   * @param activity - Recorded in the same transaction, only if a secret was revoked.
+   * @returns The endpoint as it is now, or `null` when nothing was written: the endpoint is
+   *   gone, or it has no previous secret that still signs.
+   */
+  revokePreviousSecret(
+    environmentId: string,
+    id: string,
+    at: Date,
+    activity: Recorded
+  ): Promise<WebhookEndpointRecord | null>
+
+  /**
+   * Delete, from the endpoints of one environment, the previous secrets that have stopped
+   * signing (`previous_secret_expires_at <= at`), at most `limit` rows a call.
+   *
+   * The worker's housekeeping, and **not recorded** (ADR 0012): the secret stopped signing at
+   * its end, by the clock, whether or not this has run; the rotation that set that end is what
+   * changed something and is recorded. This only makes sure a ciphertext nothing will ever
+   * open again does not stay in the database. `updatedAt` does not move: no administrator
+   * changed the endpoint.
+   *
+   * @param environmentId - The environment.
+   * @param at - Now.
+   * @param limit - Most rows cleared by this call.
+   * @returns How many endpoints had a previous secret deleted.
+   */
+  clearExpiredPreviousSecrets(environmentId: string, at: Date, limit: number): Promise<number>
 
   /**
    * Switch an endpoint off because of what its deliveries did, and say why.

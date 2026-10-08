@@ -57,6 +57,8 @@ function endpoint(tenant: TestTenant): WebhookEndpointRecord {
     url: 'https://hooks.example.com/tula',
     eventTypes: ['user.created'],
     secret: 'v1.sealed.secret',
+    previousSecret: null,
+    previousSecretExpiresAt: null,
     enabled: true,
     disabledReason: null,
     failingSince: null,

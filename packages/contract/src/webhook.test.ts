@@ -4,8 +4,10 @@ import {
   CreatedWebhookEndpointSchema,
   CreateWebhookEndpointRequestSchema,
   MAX_WEBHOOK_URL_LENGTH,
+  RotatedWebhookSecretSchema,
   SendTestWebhookRequestSchema,
   UpdateWebhookEndpointRequestSchema,
+  WEBHOOK_ROTATION_REFUSALS,
   WebhookDeliveryDetailSchema,
   WebhookEndpointSchema,
   WebhookSendResultSchema,
@@ -19,6 +21,7 @@ const endpoint = {
   disabledReason: null,
   failingSince: null,
   lastFailedAt: null,
+  rotationOverlapEndsAt: null,
   createdAt: '2026-10-08T09:30:00.000Z',
   updatedAt: '2026-10-08T09:30:00.000Z',
 }
@@ -111,6 +114,46 @@ describe('WebhookEndpointSchema', () => {
       'whsec_x'
     )
     expect(CreatedWebhookEndpointSchema.safeParse(endpoint).success).toBe(false)
+  })
+})
+
+describe('a secret being replaced', () => {
+  const overlapEnds = '2026-10-09T09:30:00.000Z'
+
+  test('an endpoint says when its previous secret stops signing, as a time and nothing else', () => {
+    const rotating = { ...endpoint, rotationOverlapEndsAt: overlapEnds }
+    expect(WebhookEndpointSchema.parse(rotating)).toEqual(rotating)
+    expect(
+      WebhookEndpointSchema.safeParse({ ...endpoint, rotationOverlapEndsAt: 'tomorrow' }).success
+    ).toBe(false)
+    // Required: a server of this version always says whether a replacement is under way.
+    const { rotationOverlapEndsAt: _, ...without } = endpoint
+    expect(WebhookEndpointSchema.safeParse(without).success).toBe(false)
+    // Neither secret has a place in it, the previous one included.
+    expect(
+      WebhookEndpointSchema.parse({ ...rotating, secret: 'whsec_x', previousSecret: 'whsec_y' })
+    ).toEqual(rotating)
+  })
+
+  test('the answer of a rotation carries the new secret, once, and never the previous one', () => {
+    const rotated = { ...endpoint, rotationOverlapEndsAt: overlapEnds, secret: 'whsec_new' }
+    expect(RotatedWebhookSecretSchema.parse({ ...rotated, previousSecret: 'whsec_old' })).toEqual(
+      rotated
+    )
+    const { secret: _, ...without } = rotated
+    expect(RotatedWebhookSecretSchema.safeParse(without).success).toBe(false)
+    // A rotation always leaves a previous secret signing: its answer always says until when.
+    expect(
+      RotatedWebhookSecretSchema.safeParse({ ...rotated, rotationOverlapEndsAt: null }).success
+    ).toBe(false)
+  })
+
+  test('the words a refusal can say are a closed list', () => {
+    expect([...WEBHOOK_ROTATION_REFUSALS]).toEqual([
+      'rotation_in_progress',
+      'no_rotation_in_progress',
+      'secret_unreadable',
+    ])
   })
 })
 
