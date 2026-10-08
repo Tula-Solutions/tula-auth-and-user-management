@@ -317,9 +317,11 @@ journey through `@tula/core`.
 ## Not built yet
 
 - Secret rotation for a hook.
-- A hook in `tula.config.ts`; `tula apply` refusing `hookWeakenings` under `--yes`.
-- The dashboard screen, with its confirmation for a weakening.
-- A log of calls, and a "test this hook" request.
+- A log of calls, counts of outcomes, and a "test this hook" request.
+
+Built since: a hook in `tula.config.ts`, `tula apply` refusing `hookWeakenings` under
+`--yes`, and the dashboard screen with its confirmation for a weakening (TULA-59, the last
+section of this record).
 
 ## Alternatives considered
 
@@ -672,3 +674,85 @@ out`.
 
 The dashboard's screen for hooks and hooks in `tula.config.ts` (TULA-59). Secret rotation
 for a hook, a call log and a test question remain as listed below.
+
+## 2026-10-08: Hooks in the dashboard and in the config file (TULA-59)
+
+No route, schema, table or event changed. The config file's side is in
+[ADR 0030](0030-config-and-apply.md) ("Hooks in the file"); this section is the screen.
+
+### The screen is the points, not a list
+
+`/w/…/e/<id>/hooks` draws one section per point of `HOOK_POINTS`, in that order, each with
+its hook or the words that nothing is asked there. A list of hooks would leave a point
+without one absent, and "no check at sign-up" is the thing an operator most needs to see.
+A hook whose point this build does not know (a later server's) gets a section after the
+three, with the point as text: it can be switched and removed, never edited, because the
+form would send fields under rules the build cannot know.
+
+### What weakens is the contract's rule, asked first
+
+The dashboard calls `hookWeakenings(was, is)` with what the form would send and asks before
+sending whenever it returns anything: `failureMode: 'allow'` (at creation or by a change),
+switching a hook off, removing one that is on. The question says what is let through at
+that point (a sign-up, a sign-in, a session without the hook's claims), and in a production
+environment the point's name is typed. No second definition of which changes weaken: the
+screen has two sentences per point (the check is gone, for `enabled`; a failed call is let
+through, for anything else), so a rule the contract gains is asked about without a change
+here, and gets words of its own when it is neither. A failure mode the build does not know is read as `deny` for the comparison,
+so that a change to `allow` from it is still asked about.
+
+Two things are confirmed although they weaken nothing: switching a hook **on** (from that
+moment its receiver decides; never typed) and removing a hook that is **off** (its secret
+is deleted for good; typed in production like any removal).
+
+*Alternative:* a second dialog over the form for the question. The question is a stage of
+the same dialog instead: one `<dialog>`, one focus trap, and for a creation the dialog that
+asks is the one that must not be closed while the request that returns the secret runs.
+
+The add and edit forms have no "enabled" field. A hook is created on; the switch is an act
+of its own with its own confirmation. One form that could both loosen the failure mode and
+switch the hook off would need a question about two things at once.
+
+### The secret
+
+Shown once by the dialog that created the hook, held in that dialog's state, under the
+rules of every such dialog (`busy` while the request runs, `SecretRequestActions`,
+`gcTime: 0`, `reset()` when the dialog lets go, the list refreshed from the hook-level
+`onSuccess`, started and not awaited). There is no "show again" and no rotation: the screen
+says to remove the hook and add it again.
+
+### "Recent outcomes": what is shown, and what is not there to show
+
+The ticket asks for recent outcomes as allowed, denied, failed and timed out. The server
+keeps one fact per hook: `lastFailedAt` and `lastFailureReason` ("What the operator sees of
+a failing hook", above), never cleared, written only for a failure. An allowed call and a
+denied call leave nothing on the hook. So the screen shows **the last call that failed**:
+when, the reason in words, and *Timed out* (`timeout`) told apart from *Failed* (every other
+reason). It says, in the same row, that calls that were answered are not recorded. It does
+not say "failing": a failure from last month is still the last failure.
+
+*Alternative:* derive outcomes from the outbox (`hook.denied` and the `hookBypassed` flags
+are events). Rejected: those are events of what happened to a user, kept 30 days after
+they are settled, absent for an allowed call, and reading them would make a list endpoint
+scan the outbox. It would also draw numbers that look like a call log and are not one.
+
+*What a fuller version needs* (proposed, not built): additive columns on `hooks`, written
+by a method beside `noteFailure` with no activity (bookkeeping, ADR 0012): the time and
+outcome of the last call (`allowed`, `denied`, `failed`), and counters of each since the
+hook was last changed. That is a write per sign-in on a row every sign-in reads, so it
+wants a decision about contention (a counter in the rate limiter's store, flushed, is the
+other shape). A list of recent calls is a table with retention, like
+`webhook_delivery_attempts`, and must hold nothing of the question (it carries an email
+and an IP address) and nothing of the answer but the decision.
+
+### Tests
+
+`apps/dashboard/src/hooks.test.tsx` (the screen against the fake API),
+`secret-dialogs.test.tsx` and `environment-switch.test.tsx` (the secret, a typed address
+and an open confirmation do not follow a switch; a registration held back in one
+environment is never made in another), `features/hooks/words.test.ts` (every reason, point
+and refusal has words; no file of the feature says "webhook" of a hook), and
+`e2e/tests/dashboard/hooks.spec.ts`: a hook registered in the browser with `allow` (asked
+about first) at a receiver that answers 500, a real sign-up in the example app that asks
+it, the failed call then shown on the screen, the hook edited, switched off and removed,
+with axe on every state and dialog.

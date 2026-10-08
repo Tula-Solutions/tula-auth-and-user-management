@@ -167,6 +167,11 @@ export interface EnvironmentConfig {
    * sorted and without repeats. Absent when the file does not mention webhooks.
    */
   webhooks?: WebhookEndpointConfig[]
+  /**
+   * The hooks, by point, when the file manages them: every field of each filled in. Absent
+   * when the file does not mention hooks.
+   */
+  hooks?: Partial<Record<HookPoint, Required<HookConfig>>>
 }
 ```
 
@@ -197,6 +202,13 @@ export interface EnvironmentConfigInput {
    * and shown as unmanaged, and `tula apply --prune` removes it.
    */
   webhooks?: WebhookEndpointConfig[]
+  /**
+   * The hooks, by point. Left out, hooks are **not managed** by the file: `tula` neither reads
+   * nor changes them. Written (an empty object included), a point with an entry is made what
+   * the entry says; a hook the server has for a point without one is left alone and shown as
+   * unmanaged, and `tula apply --prune` removes it.
+   */
+  hooks?: HooksConfig
 }
 ```
 
@@ -238,6 +250,60 @@ export type EnvironmentSettingsConfig = z.input<typeof EnvironmentSettingsInputS
 
 ```ts
 const settings: EnvironmentSettingsConfig = { mfa: { policy: 'required' } }
+```
+
+### `HookConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+One hook of an environment: the address the server asks at a point, and what a call that
+fails does.
+
+There is no field for the signing secret, on purpose: the server makes it and returns it
+once, when `tula apply` registers the hook (`--secrets-file`, `--show-secrets`). A `secret`
+key does not compile and is refused when the file is loaded.
+
+A hook is named by its **point** (the key it is written under), so a changed address is the
+same hook with the same secret.
+
+```ts
+export interface HookConfig {
+  /** Where the question is posted: `https`, no credentials, a host the server may call. */
+  url: string
+  /** Whether the hook is asked. Defaults to `true`. Switching one off is a weakening. */
+  enabled?: boolean
+  /** How long the server waits for the answer, in milliseconds: 100 to 5000. Defaults to 2000. */
+  deadlineMs?: number
+  /**
+   * What a call that fails does: `deny` (the default) refuses what was asked about, `allow`
+   * lets it happen as if there were no hook. `allow` is a weakening: `tula diff` flags it and
+   * `tula apply --yes` needs `--allow-weaker`.
+   */
+  failureMode?: HookFailureMode
+}
+```
+
+**Example**
+
+```ts
+const hook: HookConfig = { url: 'https://api.northline.app/hooks/sign-up', deadlineMs: 1500 }
+```
+
+### `HooksConfig`
+
+_type_, defined in `packages/config/src/config.ts`
+
+The hooks of one environment, by point. A point left out is not managed by the file:
+`tula apply` leaves the server's hook for it alone unless it is run with `--prune`.
+
+```ts
+export type HooksConfig = Partial<Record<HookPoint, HookConfig>>
+```
+
+**Example**
+
+```ts
+const hooks: HooksConfig = { before_sign_up: { url: 'https://api.northline.app/hooks/sign-up' } }
 ```
 
 ### `LoadedConfig`
@@ -491,10 +557,11 @@ A fingerprint of one environment's config: what `tula apply` records with the se
 writes, so the dashboard and a later `tula diff` can say which version of the file is in
 force.
 
-It covers the settings, the providers and the webhook endpoints as written, with each
-secret as the **name** of its variable: no secret value is hashed, so the fingerprint
+It covers the settings, the providers, the webhook endpoints and the hooks as written, with
+each secret as the **name** of its variable: no secret value is hashed, so the fingerprint
 reveals nothing about one. An endpoint's event types count as a set, and an environment
-that does not mention webhooks hashes as it did before they could be written. So does one
+that does not mention webhooks or hooks hashes as it did before they could be written (a
+hook's defaults count as written). So does one
 that defines no JWT template and whose profiles name none, and one that leaves text messages
 (`sms`) at their default; the order templates and their claims are written in never counts.
 

@@ -305,7 +305,11 @@ paths:
   without opening it: keep the named-pipe tests (host, `apply`, `dev`). Webhook operations are
   ordered after the settings and the providers, and the endpoints are read again before the
   first of them. `planBlockers` (an address the server has twice, more than ten endpoints)
-  fail `diff` with exit 1 and stop `apply` before any write. Exit codes are `EXIT`
+  fail `diff` with exit 1 and stop `apply` before any write. Hooks (`hooks`, keyed by
+  point; `planHooks`) are identified by point, an entry is the whole hook (what it leaves
+  out is the API's default, managed), there is no field for a secret, and what weakens is
+  the contract's `hookWeakenings` in `plan.weakened`; their writes come last and their
+  secrets go where an endpoint's go. Exit codes are `EXIT`
   (`diff`: 0 / 2 / 1). The diff engine (`src/diff.ts`) is pure and table-tested; a change to
   how a field is compared, to the write order, or to when a secret is sent needs a row there
   and a line in `docs/config.md`. Behaviour against the real API is tested in

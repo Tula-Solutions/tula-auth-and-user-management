@@ -260,6 +260,68 @@ second time and the contract did not change.
 - **Not in the file:** rotating a secret, test events, sending again. They are acts, not
   state.
 
+### Hooks in the file (added 2026-10-08, TULA-59)
+
+`hooks` is an optional key of an environment: an object keyed by point
+(`before_sign_up`, `before_session`, `before_token`), each entry
+`{ url, enabled?, deadlineMs?, failureMode? }` with the contract's fields and bounds. What
+the webhook section decided holds here unless this section says otherwise: no key means not
+read and not touched, also with `--prune` (and the fingerprint of a file without it is the
+one it had; a test pins the value); no field for a secret (`@ts-expect-error` and a
+run-time test); an address with a user name or a password refused by position; server text
+through `printable()`; the endpoints' secret handling, reused.
+
+- **A hook is its point, not its address.** An environment has one hook per point (the
+  server's unique rule), so the point identifies it and a changed address is an update that
+  keeps the id and the secret. *Alternative:* identity by address, as for an endpoint. It
+  would turn a changed address into a removal and a creation: a weakening, a new secret and
+  a moment with no check, for what the operator meant as an edit.
+- **An entry is the whole hook; what it leaves out is the API's default and is managed.**
+  A webhook endpoint's `enabled` is managed only when written, because the server switches
+  endpoints off by itself and a file that silently switched them back on would undo that.
+  Nothing switches a hook off but an operator, and what is left out here are security
+  fields: a file that says nothing about `failureMode` and leaves a hook at `allow` would
+  be a check the file's reader believes in and the server does not have. So left out means
+  `enabled: true`, `deadlineMs: 2000`, `failureMode: 'deny'`. *Alternative:* unmanaged when
+  left out. Rejected for that reason; the cost is that a dashboard change to those three is
+  reverted by the next apply, which the plan shows.
+- **A point the file leaves out is unmanaged** (removed only with `--prune`), and **a point
+  this version does not know is never touched**, not even by `--prune`: it is printed and
+  left. Removing a check the tool cannot name is not something `--prune` should do.
+- **Weakening is the contract's `hookWeakenings`**, the function behind the audit entry's
+  `weakened`, applied to what the plan would do: paths `hooks.<point>.failureMode`,
+  `hooks.<point>.enabled` and, for a removed hook that is on, `hooks.<point>`. They join
+  `plan.weakened`, so `apply --yes` refuses them without `--allow-weaker` before any write
+  (a zero-writes test against the real API). There is **no** `--allow-hook-removal`: a
+  webhook endpoint's removal has a flag of its own because it destroys a delivery log and
+  pending deliveries, which is not a weakening; a hook's removal destroys nothing but the
+  check, and that is exactly what `--allow-weaker` already names. Removing a hook that is
+  off needs neither. Adding a `deny` hook is not a weakening although it can lock sign-ins
+  out when its receiver is down: the docs say to deploy the receiver first.
+- **The secret of a created hook goes where an endpoint's goes**, by the same code: into
+  the output's redaction first, then `--secrets-file` (the same file, created exclusively
+  before the first write), `--show-secrets` or `--discard-secrets`, and a plan that creates
+  a hook with none of the three is refused before any write. A hook's entry in the file
+  begins with `"hook": "<point>"`, so an endpoint's entry is what it was. `--json` has
+  `hookSecrets` beside `webhookSecrets`, and `applyRequires.hookSecrets`. A hook's secret
+  cannot be rotated: a discarded or unkept one means removing and adding the hook, said in
+  the output and the docs.
+- **Hooks are written last**, after the settings, the providers and the webhook endpoints,
+  and among themselves: creations, changes that weaken nothing, changes that weaken,
+  removals. Tightening before loosening means a run that fails part-way is never weaker
+  than both what was there and what the file says. After the endpoints, so that an
+  endpoint registered in the same run receives the `hook.*` events of the hook writes.
+  *Alternative:* hooks before webhooks. Nothing depends on it either way for safety; the
+  events decided it.
+- **A stale plan** is handled as for endpoints, and no better: the hooks are read again
+  before the first hook write and compared (id, point, address, switch, deadline, failure
+  mode); a difference, or a failed read, stops the run with nothing written to a hook. The
+  server's own compare-and-set on a hook's update and delete (ADR 0035) closes part of the
+  window the endpoints have open: a hook changed between the server's read and write
+  answers `resource.conflict`, reported as a failed operation.
+- **`@tula/mcp` gains nothing.** A hook's secret has the webhook secret's shape (`whsec_`),
+  which `SECRET_SHAPES` already has, and there is no hook tool.
+
 ## Consequences
 
 - One more generated file to keep in step: after `contract:generate`, run `core:generate` and
