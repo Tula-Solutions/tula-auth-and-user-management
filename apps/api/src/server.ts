@@ -1,7 +1,7 @@
 import { createContainer } from '~/container'
 import { loadEnv } from '~/env'
 import { createApp, MAX_BODY_BYTES } from '~/index'
-import { startJobs } from '~/jobs'
+import { bootJobs } from '~/jobs'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import { shutdownOnSignal } from '~/lib/shutdown'
@@ -43,7 +43,7 @@ if (!container.plan.deliversWebhooks) {
 // The background jobs this process runs (`planProcess`): retention always, and the webhook
 // worker (ADR 0034) unless it is its own service. Every instance starts the same timers; the
 // job lock inside each job lets one of them through each round, and the others skip it.
-const jobs = startJobs(container.deps, container.plan.jobs)
+const jobs = bootJobs(container)
 
 shutdownOnSignal(async () => {
   jobs.stopTimers()

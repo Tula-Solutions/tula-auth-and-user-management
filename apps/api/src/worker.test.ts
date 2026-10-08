@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 // The worker's entrypoint, started as the image starts it (`bun run src/worker.ts`), with a
@@ -34,35 +36,121 @@ function environment(overrides: Record<string, string>): Record<string, string> 
   }
 }
 
-describe('what the worker is built from', () => {
-  /** Every module a file reaches through `~/` and relative imports, itself included. */
-  async function reached(entry: string): Promise<Set<string>> {
-    const src = import.meta.dir
-    const seen = new Set<string>()
-    const queue = [join(src, entry)]
-    for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
-      if (seen.has(file)) {
+const transpiler = new Bun.Transpiler({ loader: 'ts' })
+
+/**
+ * Every module a file loads at run time, by any form: `import … from`, a bare `import '…'`,
+ * `export … from`, `require('…')` and `import('…')`. Read with Bun's own parser, not a pattern
+ * over the text: a comment is not an import, and an import of types only loads nothing.
+ *
+ * @throws when the file loads a module whose name is not written out (`import(name)`,
+ *   `require(name)`): the walk cannot follow it, and saying nothing would be a pass.
+ */
+function loaded(source: string, file: string): string[] {
+  // The parser's own output: no comment, no type, one quoting. What is left of an `import(`
+  // or a `require(` that is not followed by a string is a name computed at run time.
+  const computed = transpiler
+    .transformSync(source)
+    .match(/\b(?:import|require)\(\s*(?!["'])[^)]*\)/g)
+  if (computed) {
+    throw new Error(
+      `${file} loads a module by a computed name (${computed.join(', ')}): the walk cannot see what that reaches`
+    )
+  }
+  return transpiler.scanImports(source).map((entry) => entry.path)
+}
+
+/**
+ * Every module a file reaches through `~/` and relative specifiers, itself included, as
+ * paths from `root`.
+ */
+async function reached(entry: string, root: string = import.meta.dir): Promise<Set<string>> {
+  const seen = new Set<string>()
+  const queue = [join(root, entry)]
+  for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
+    if (seen.has(file)) {
+      continue
+    }
+    seen.add(file)
+    for (const specifier of loaded(await Bun.file(file).text(), file.slice(root.length + 1))) {
+      if (!/^(~\/|\.{1,2}\/)/.test(specifier)) {
         continue
       }
-      seen.add(file)
-      const text = await Bun.file(file).text()
-      for (const [, specifier] of text.matchAll(
-        /(?:from|import\()\s*['"]((?:~\/|\.{1,2}\/)[^'"]+)['"]/g
-      )) {
-        const base = specifier?.startsWith('~/')
-          ? join(src, specifier.slice(2))
-          : join(dirname(file), specifier ?? '')
-        for (const candidate of [`${base}.ts`, join(base, 'index.ts'), base]) {
-          if (/\.ts$/.test(candidate) && (await Bun.file(candidate).exists())) {
-            queue.push(candidate)
-            break
-          }
+      const base = specifier.startsWith('~/')
+        ? join(root, specifier.slice(2))
+        : join(dirname(file), specifier)
+      for (const candidate of [`${base}.ts`, join(base, 'index.ts'), base]) {
+        if (/\.ts$/.test(candidate) && (await Bun.file(candidate).exists())) {
+          queue.push(candidate)
+          break
         }
       }
     }
-    return new Set([...seen].map((file) => file.slice(src.length + 1)))
   }
+  return new Set([...seen].map((file) => file.slice(root.length + 1)))
+}
 
+// The walk is only worth what it sees. Each way of loading a module, in a graph of its own.
+describe('the import walk', () => {
+  async function graph(entry: string): Promise<Set<string>> {
+    const root = mkdtempSync(join(tmpdir(), 'tula-walk-'))
+    mkdirSync(join(root, 'lib'))
+    const files: Record<string, string> = {
+      'entry.ts': entry,
+      'target.ts': "import { deeper } from './lib/deeper'\nexport const target = deeper\n",
+      'lib/deeper.ts': 'export const deeper = 1\n',
+      'lib/index.ts': 'export const folder = 1\n',
+      'types.ts': 'export interface Shape {\n  a: number\n}\n',
+    }
+    for (const [name, text] of Object.entries(files)) {
+      writeFileSync(join(root, name), text)
+    }
+    try {
+      return await reached('entry.ts', root)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+  const WHOLE = ['entry.ts', 'lib/deeper.ts', 'target.ts']
+
+  test.each([
+    ['a named import', "import { target } from './target'\nexport const a = target\n"],
+    ['an import for its side effects only', "import './target'\n"],
+    ['a binding that is never used', "import unused from './target'\n"],
+    ['a re-export of everything', "export * from './target'\n"],
+    ['a re-export by name', "export { target } from './target'\n"],
+    ['a require', "export const a = require('./target')\n"],
+    ['a dynamic import', "export const a = await import('./target')\n"],
+    ['a dynamic import inside a function', "export const a = () => import('./target')\n"],
+    ['the root alias', "import '~/target'\n"],
+  ])('%s is followed, and what it loads in turn', async (_form, entry) => {
+    expect([...(await graph(entry))].sort()).toEqual(WHOLE)
+  })
+
+  test('a folder is its index file', async () => {
+    expect([...(await graph("import './lib'\n"))].sort()).toEqual(['entry.ts', 'lib/index.ts'])
+  })
+
+  test.each([
+    ['types only', "import type { Shape } from './types'\nexport const a: Shape = { a: 1 }\n"],
+    ['a comment', "// import './target'\n/* require('./target') */\nexport const a = 1\n"],
+    ['a package', "import { join } from 'node:path'\nexport const a = join\n"],
+  ])('%s loads nothing, and is not followed', async (_form, entry) => {
+    expect([...(await graph(entry))]).toEqual(['entry.ts'])
+  })
+
+  test.each([
+    ['a dynamic import', "const name = './target'\nexport const a = await import(name)\n"],
+    ['a template', "const name = 'target'\nexport const a = await import(`./${name}`)\n"],
+    ['a require', "const name = './target'\nexport const a = require(name)\n"],
+  ])('%s of a computed name fails the walk, loudly', async (_form, entry) => {
+    await expect(graph(entry)).rejects.toThrow(
+      /^entry\.ts loads a module by a computed name \(.+\): the walk cannot see what that reaches$/
+    )
+  })
+})
+
+describe('what the worker is built from', () => {
   test('no router, no API app, no migration and no signing-key bootstrap is reachable from it', async () => {
     const modules = await reached('worker.ts')
     // The walk found the real graph, not just the entry.

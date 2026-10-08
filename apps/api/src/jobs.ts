@@ -4,6 +4,7 @@ import { errorReason } from '~/lib/safe-error'
 import * as Retention from '~/modules/retention/service'
 import * as Webhooks from '~/modules/webhook/service'
 import type { ExclusiveJob } from '~/ports/job-lock'
+import type { ProcessPlan } from '~/process'
 
 /** The two timer functions {@link startJobs} uses: the platform's, or a test's. */
 export interface JobTimers {
@@ -29,9 +30,29 @@ const systemTimers: JobTimers = {
 }
 
 /**
+ * Start the background jobs of the process a container was built for: the jobs its plan
+ * names, and no others.
+ *
+ * What both entrypoints call. They hand over the container whole so that neither can name a
+ * job itself: an API instance of a deployment whose worker is separate must not start the
+ * delivery timer, and the list that says so is the plan's.
+ *
+ * @param container - The process's dependencies and its plan (`createContainer`).
+ * @param timers - The timer functions; a test passes its own.
+ * @returns How to stop them.
+ */
+export function bootJobs(
+  container: { deps: Deps; plan: Pick<ProcessPlan, 'jobs'> },
+  timers?: JobTimers
+): RunningJobs {
+  return startJobs(container.deps, container.plan.jobs, timers)
+}
+
+/**
  * Put a process's background jobs on their timers: each runs once now and then on its own
  * interval. **The only scheduling path**, for an API instance (`server.ts`) and for the
- * webhook worker (`worker.ts`) alike; which jobs a process runs is `planProcess`'s answer.
+ * webhook worker (`worker.ts`) alike, both through {@link bootJobs}; which jobs a process
+ * runs is `planProcess`'s answer.
  *
  * Every process that runs a job starts the same timer; the job lock inside `Retention.run`
  * and `Webhooks.run` lets one of them through each round, and the others skip it. A delivery

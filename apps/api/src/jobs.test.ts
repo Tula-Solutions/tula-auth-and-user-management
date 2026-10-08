@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import { type JobTimers, startJobs } from '~/jobs'
+import { join } from 'node:path'
+import { bootJobs, type JobTimers, startJobs } from '~/jobs'
 import * as logger from '~/lib/logger'
 import * as Retention from '~/modules/retention/service'
 import * as Webhooks from '~/modules/webhook/service'
@@ -184,4 +185,41 @@ describe('startJobs', () => {
     await settle()
     await jobs.finish()
   })
+})
+
+// What the two entrypoints call. A process that starts jobs its plan does not name is the
+// bug the plan exists to rule out: an API instance under `WEBHOOK_WORKER=separate` with a
+// delivery timer after all.
+describe('bootJobs: a process starts the jobs of its plan, and no others', () => {
+  test.each([
+    ['an API instance that delivers', 'api', 'api', [5_000, 600_000], 1, 1],
+    ['an API instance whose worker is separate', 'api', 'separate', [600_000], 1, 0],
+    ['a worker', 'worker', 'separate', [5_000], 0, 1],
+  ] as const)('%s', async (_name, role, mode, intervals, retentions, deliveries) => {
+    const { retention, delivery } = stubs()
+    const { timers, started } = fakeTimers()
+    const deps = createTestDeps()
+    const jobs = bootJobs({ deps, plan: planProcess(role, mode) }, timers)
+    expect(started.map((timer) => timer.ms).sort((a, b) => a - b)).toEqual([...intervals])
+    expect(retention).toHaveBeenCalledTimes(retentions)
+    expect(delivery).toHaveBeenCalledTimes(deliveries)
+    await jobs.finish()
+  })
+
+  // Nothing runs `server.ts` in a test (it needs a database before it listens), so what it
+  // hands the scheduler is held here: the container it built, whole, and nothing of its own.
+  test.each(['server.ts', 'worker.ts'])(
+    '%s starts its jobs through bootJobs(container), and names no job itself',
+    async (file) => {
+      const source = await Bun.file(join(import.meta.dir, file)).text()
+      const imported = new Bun.Transpiler({ loader: 'ts' })
+        .scan(source)
+        .imports.map((entry) => entry.path)
+      expect(imported).toContain('~/jobs')
+      expect(source.match(/\bbootJobs\(([^)]*)\)/g)).toEqual(['bootJobs(container)'])
+      expect(source).not.toContain('startJobs')
+      expect(source).not.toMatch(/setInterval|setTimeout/)
+      expect(source).not.toMatch(/['"](retention|webhook_delivery)['"]/)
+    }
+  )
 })

@@ -1,6 +1,6 @@
 import { type Container, createContainer } from '~/container'
 import { loadEnv } from '~/env'
-import { startJobs } from '~/jobs'
+import { bootJobs } from '~/jobs'
 import * as logger from '~/lib/logger'
 import { shutdownOnSignal } from '~/lib/shutdown'
 import { WorkerNotSeparateError } from '~/process'
@@ -42,7 +42,7 @@ logger.info('tula webhook worker started', {
 // A database that is away is not fatal here: the round is logged as failed, `/v1/ready`
 // answers 503, and the next round tries again. Several workers may run; the job lock lets one
 // through each round.
-const jobs = startJobs(container.deps, container.plan.jobs)
+const jobs = bootJobs(container)
 
 shutdownOnSignal(async () => {
   // The round under way finishes the requests it is making (each at most its deadline, well
