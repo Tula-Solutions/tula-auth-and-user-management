@@ -21,10 +21,14 @@ paths:
 - The runtime grant matrix (migration 0003) is least-privilege: control plane has no DELETE
   (except `instance_audit_logs`, which the retention job purges after
   `INSTANCE_AUDIT_RETENTION_DAYS`: migration 0016, DELETE but never UPDATE),
-  `audit_logs` is append-only, `events` has no DELETE. Admin deletes run under the owner
+  `audit_logs` has SELECT, INSERT and DELETE but never UPDATE (migration 0017: the retention
+  job deletes an environment's entries past its `audit.retentionDays`, and the restrictive
+  policy `audit_logs_retention_floor` refuses any entry younger than a day; it is the only
+  tenant table with a second policy, and a second policy is always restrictive), `events` has
+  no DELETE. Admin deletes run under the owner
   (`DATABASE_MIGRATION_URL`), never the request path. The retention job (ADR 0017) deletes
   expired tenant rows as the runtime role, per environment inside `withTenant`, through batched
-  store methods; it never touches `audit_logs` or `events`. New tables get **no**
+  store methods; it never touches `events`. New tables get **no**
   default grants: add them to the matrix in the same migration (a test fails otherwise). Run all
   migrations as the same owner role (default privileges are per-owner).
 - Refresh tokens are pruned by deleting sessions (cascade), never token-by-token.

@@ -144,7 +144,7 @@ describe('runtime role privileges are least-privilege (F3)', () => {
     'delete from tula.environments',
     'delete from tula.api_keys',
     'update tula.audit_logs set action = action',
-    'delete from tula.audit_logs',
+    'truncate tula.audit_logs',
     'delete from tula.events',
   ])('tula_app cannot run: %s', async (statement) => {
     expect(await failureReason(testDb.db.execute(sql.raw(statement)))).toMatch(/permission denied/)
@@ -183,7 +183,7 @@ describe('runtime role privileges are least-privilege (F3)', () => {
     expect(rows).toEqual([])
   })
 
-  test('the instance audit log can be purged by the runtime role but never rewritten; an environment’s log can be neither', async () => {
+  test('both audit logs can be purged by the runtime role, and neither can be rewritten or emptied', async () => {
     const rows = await queryRows<{ table: string; privilege: string; held: boolean }>(
       testDb.db,
       sql`
@@ -195,14 +195,94 @@ describe('runtime role privileges are least-privilege (F3)', () => {
       `
     )
     expect(rows).toEqual([
-      { table: 'audit_logs', privilege: 'DELETE', held: false },
+      // The retention job's purge of entries past `audit.retentionDays` (migration 0017).
+      { table: 'audit_logs', privilege: 'DELETE', held: true },
       { table: 'audit_logs', privilege: 'TRUNCATE', held: false },
       { table: 'audit_logs', privilege: 'UPDATE', held: false },
-      // The retention job's purge (migration 0016): the one audit log with an end.
+      // The retention job's purge (migration 0016).
       { table: 'instance_audit_logs', privilege: 'DELETE', held: true },
       { table: 'instance_audit_logs', privilege: 'TRUNCATE', held: false },
       { table: 'instance_audit_logs', privilege: 'UPDATE', held: false },
     ])
+  })
+
+  describe('what the runtime role may delete from an environment’s audit log', () => {
+    const DAY = 86_400_000
+    const entry = (tenant: TestTenant, occurredAt: Date) => ({
+      id: Bun.randomUUIDv7(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      actorType: 'system' as const,
+      action: 'user.created',
+      occurredAt,
+    })
+    const write = async (tenant: TestTenant, occurredAt: Date) => {
+      const row = entry(tenant, occurredAt)
+      await withTenant(testDb.db, tenant.environmentId, (tx) =>
+        settle(tx.insert(schema.auditLogs).values(row))
+      )
+      return row.id
+    }
+    const exists = async (tenant: TestTenant, id: string) =>
+      (
+        await withTenant(testDb.db, tenant.environmentId, (tx) =>
+          tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.id, id))
+        )
+      ).length === 1
+    const old = () => new Date(Date.now() - 400 * DAY)
+
+    test('an old entry of its own environment', async () => {
+      const id = await write(a, old())
+      const deleted = await withTenant(testDb.db, a.environmentId, (tx) =>
+        tx.delete(schema.auditLogs).where(eq(schema.auditLogs.id, id)).returning()
+      )
+      expect(deleted).toHaveLength(1)
+      expect(await exists(a, id)).toBe(false)
+    })
+
+    test('never another environment’s entry, however old', async () => {
+      const id = await write(b, old())
+      const deleted = await withTenant(testDb.db, a.environmentId, (tx) =>
+        tx.delete(schema.auditLogs).returning()
+      )
+      expect(deleted.map((row) => row.id)).not.toContain(id)
+      expect(await exists(b, id)).toBe(true)
+    })
+
+    test('nothing at all outside a tenant scope (fail closed)', async () => {
+      const id = await write(a, old())
+      const deleted = await queryRows(testDb.db, sql`delete from tula.audit_logs returning id`)
+      expect(deleted).toEqual([])
+      expect(await exists(a, id)).toBe(true)
+    })
+
+    test('never an entry of the last day: the shortest period that can be set is one day', async () => {
+      const fresh = await write(a, new Date(Date.now() - DAY + 3_600_000))
+      const justNow = await write(a, new Date())
+      const past = await write(a, new Date(Date.now() - DAY - 3_600_000))
+      const deleted = await withTenant(testDb.db, a.environmentId, (tx) =>
+        tx
+          .delete(schema.auditLogs)
+          .where(eq(schema.auditLogs.environmentId, a.environmentId))
+          .returning()
+      )
+      const ids = deleted.map((row) => row.id)
+      expect(ids).toContain(past)
+      expect(ids).not.toContain(fresh)
+      expect(ids).not.toContain(justNow)
+      expect(await exists(a, fresh)).toBe(true)
+      expect(await exists(a, justNow)).toBe(true)
+    })
+
+    test('and it cannot backdate an entry to get past that floor', async () => {
+      const id = await write(a, new Date())
+      const backdate = withTenant(testDb.db, a.environmentId, (tx) =>
+        settle(
+          tx.update(schema.auditLogs).set({ occurredAt: old() }).where(eq(schema.auditLogs.id, id))
+        )
+      )
+      expect(await failureReason(backdate)).toMatch(/permission denied/)
+    })
   })
 
   test('tenant data can still be deleted through RLS (e.g. revoking sessions)', async () => {
@@ -274,7 +354,7 @@ describe('refresh-token pruning is by whole session (F6)', () => {
 })
 
 describe('every tenant table has exactly the isolation policy (F5)', () => {
-  test('one policy per RLS table, keyed on the tenant setting for reads and writes', async () => {
+  test('one permissive policy per RLS table, keyed on the tenant setting for reads and writes', async () => {
     await testDb.setRole('postgres')
     const rows = await queryRows<{ table: string; policies: number; tenantScoped: number }>(
       testDb.db,
@@ -287,6 +367,7 @@ describe('every tenant table has exactly the isolation policy (F5)', () => {
         from pg_class c
         join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'tula'
         left join pg_policies p on p.schemaname = 'tula' and p.tablename = c.relname
+          and p.permissive = 'PERMISSIVE'
         where c.relkind = 'r' and c.relrowsecurity
         group by c.relname order by c.relname
       `
@@ -294,6 +375,35 @@ describe('every tenant table has exactly the isolation policy (F5)', () => {
     await testDb.setRole('tula_app')
     expect(rows.length).toBeGreaterThanOrEqual(10)
     expect(rows.filter((row) => row.policies !== 1 || row.tenantScoped !== 1)).toEqual([])
+  })
+
+  test('the only other policy narrows deletes from the audit log; none widens anything', async () => {
+    await testDb.setRole('postgres')
+    const rows = await queryRows<{
+      table: string
+      name: string
+      command: string
+      roles: string
+      using: string
+    }>(
+      testDb.db,
+      sql`
+        select tablename as table, policyname as name, cmd as command, roles::text as roles,
+               qual as using
+        from pg_policies where schemaname = 'tula' and permissive <> 'PERMISSIVE'
+      `
+    )
+    await testDb.setRole('tula_app')
+    // A restrictive policy is ANDed with the tenant policy: it can only take rows away.
+    expect(rows).toEqual([
+      {
+        table: 'audit_logs',
+        name: 'audit_logs_retention_floor',
+        command: 'DELETE',
+        roles: '{public}',
+        using: expect.stringMatching(/occurred_at < \(now\(\) - '1 day'::interval\)/),
+      },
+    ])
   })
 
   test('api_keys is the only table with environment_id and no RLS', async () => {

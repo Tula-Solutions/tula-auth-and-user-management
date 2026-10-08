@@ -143,7 +143,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `CORS_ORIGINS` | | none | Comma-separated browser origins. Allowed for `/v1/admin/*`, and the **default** allowed origins of an environment until it saves its own settings (below). |
 | `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. **Behind a proxy it must be set**: without it every client has the proxy's address, so they all share one rate-limit bucket (one visitor's guesses lock everyone out, the dashboard's sign-in included) and one audit sample. Without a proxy it must stay `false`, or a client picks its own bucket with a header. |
 | `API_DOCS` | | `on` in `local` and `dev`, `off` in `staging` and `prod` | `on` or `off`: whether the API reference page is served at `/v1/docs`. The page is on the same origin as the dashboard; it loads no script from another host (the reference's bundle is served by the API from its own installed package) and has its own Content-Security-Policy, and a deployment that does not need it should leave it off. `/v1/openapi.json` is served either way. |
-| `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log is never deleted. |
+| `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log has its own period, the `audit.retentionDays` setting. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
 | `REDIS_URL` | in `staging` and `prod` | none | Redis shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. A `valkey://` or `valkeys://` URL is accepted too, but only Redis (7 and 8) has been tested; Valkey has never been run. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
@@ -162,7 +162,7 @@ API key belongs to) has a settings document, read and replaced with its secret k
 | `signUp.password` | `required` (default), or `optional`: a sign-up may then leave the password out and the account signs in by email (needs `emailCode`). |
 | `urls.allowedOrigins` | Browser origins that may call the client API: exact origins such as `https://app.example.com`, no paths or wildcards, `http` only for localhost. |
 | `urls.allowedRedirectUrls` | URLs a flow may send users to, matched **exactly**. An emailed sign-in link leads only to a URL listed here. |
-| `audit.retentionDays` | How long audit entries are kept (`null`: for ever). Stored; nothing is deleted yet. |
+| `audit.retentionDays` | How many days this environment's audit entries are kept: 1 to 3650, or `null` (the default) for ever. With a number set, the retention job, which runs on start-up and every ten minutes, deletes the entries older than that; an entry is never deleted in its first day. **Deletion is permanent**: export what you need to keep longer (`GET /v1/admin/audit-logs`) before you set or shorten the period. See "Retention" under [Running it for real](#running-it-for-real). |
 | `notifications.passwordChanged` | Email a user when their password is changed, reset, set by an administrator or added. On by default. |
 | `sessions.profiles` | Named session profiles. `web` (browsers) and `mobile` (every other client) always exist; add up to ten more. Each has `type` (`hybrid` or `stateful`), `accessTokenTtl` (30s to 15m, never longer than `idleTimeout`), `idleTimeout` (1m to 365d), `absoluteTimeout` (at least the idle timeout, or `null`), `refresh.reuseGracePeriod` (10s to 60s, or `null` for none), `stepUpAfter` (1m to 24h, or `null` for ten minutes) and `clientSelectable`. See [Sessions](#sessions). |
 | `sessions.maxPerUser`, `sessions.onLimit` | The most live sessions one user may have (`null`: no limit), and what a sign-in at the limit does: `end_oldest` (default) or `refuse_newest`. |
@@ -633,12 +633,21 @@ transaction-mode pooler (PgBouncer in `transaction` mode) retention can stop wit
 - sessions, with their refresh tokens, 30 days after they were revoked or expired;
 - authenticator enrolments that were started and never confirmed, and expired passkey
   challenges;
-- entries of the **instance** audit log older than `INSTANCE_AUDIT_RETENTION_DAYS`.
+- entries of the **instance** audit log older than `INSTANCE_AUDIT_RETENTION_DAYS`;
+- an environment's audit entries older than its `audit.retentionDays` setting, **only where
+  the environment has set one**. The default is `null`: keep them for ever.
 
-It never deletes audit entries or outbox events (an environment's `audit.retentionDays`
-setting is stored but not applied yet). Each run logs one line, `retention run
-finished`, with counts only (at `debug` level when there was nothing to delete). The periods
-are fixed for now. See [ADR 0017](adr/0017-retention.md).
+Audit entries are the one thing in this list an operator chooses to end, and their deletion
+is permanent: there is no archive and nothing brings an entry back. A new or shorter period
+takes effect on the next run, so within ten minutes; export first if you need the older
+entries. The database itself refuses to delete an entry of the last day, and the API's
+database role can still not change one. When entries are deleted the log has a line,
+`audit entries past the retention period deleted`, with the environment's id, the period
+and the count. The entries' outbox events are not deleted.
+
+It never deletes outbox events. Each run logs one line, `retention run finished`, with
+counts only (at `debug` level when there was nothing to delete). The other periods are fixed
+for now. See [ADR 0017](adr/0017-retention.md).
 
 **Health.** `GET /v1/status` answers while the process is up; `GET /v1/ready` also checks the
 database, and Redis when it is configured, and is what the image's health check and a load
@@ -678,7 +687,8 @@ reports whether the database is at the version the running image ships.
 | `0013` managed by | Records which config file last applied an environment's settings (`tula apply`). | Nothing. |
 | `0014` diagnostics | A function, owned by the schema owner, that tells the API which migrations are applied (for `tula doctor`). | Nothing, as long as migrations run as the owner and the API as a member of `tula_app`: the function is how the non-owner role reads that one fact. |
 | `0015` instance audit log | The log of dashboard sign-ins and of workspaces, projects and environments being created. | Nothing. It is written only where `TULA_ADMIN_TOKEN` is set. |
-| `0016` instance audit retention | Lets the API delete instance audit entries older than `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30). | Set the variable if a year is not what you want. An environment's audit log is still never deleted. |
+| `0016` instance audit retention | Lets the API delete instance audit entries older than `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30). | Set the variable if a year is not what you want. |
+| `0017` audit retention | Lets the API delete an environment's audit entries older than its `audit.retentionDays` setting, and adds a database rule that no entry of the last day can be deleted. Until this version the setting was stored and did nothing. | **Check the setting in every environment before you upgrade.** One that already holds a number starts deleting older entries, for good, within ten minutes of the new version starting. `null` (the default) keeps everything, as before. |
 
 Settings added since Phase 0 that a deployment behind a proxy or with several instances should
 look at: `REDIS_URL` (required in `staging` and `prod`), `TRUST_PROXY`, `TULA_ADMIN_TOKEN`,
@@ -698,9 +708,9 @@ DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_
 ## Not there yet
 
 - No published image; build it from source.
-- Audit entries and outbox events are kept for ever: audit retention becomes a setting in a
-  later step, and nothing delivers the event outbox yet (webhooks arrive in Phase 2), so no
-  event is deleted until something has delivered it.
+- Outbox events are kept for ever: nothing delivers the event outbox yet (webhooks arrive in
+  Phase 2), so no event is deleted until something has delivered it. Audit entries are kept
+  for ever too unless an environment sets `audit.retentionDays`.
 - A `TULA_MASTER_KEY` that does not match the stored signing keys does not stop the server. It
   logs `signing keys are unusable in some environments` at start-up, and sign-in fails in those
   environments until the right key is restored.

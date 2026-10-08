@@ -1006,7 +1006,8 @@ otherwise silently reset the password policy to its default.
 - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
   may leave it out (`optional`, which needs `emailCode`).
 - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
-- `audit.retentionDays`: how long audit entries are kept.
+- `audit.retentionDays`: how many days audit entries are kept before the server deletes
+  them for good; `null` (the default) keeps them for ever.
 - `notifications`: which security notices are emailed to an account's owner
   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
 - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or

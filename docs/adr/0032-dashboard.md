@@ -189,8 +189,9 @@ Postgres adapters, one behaviour suite):
   plane: no tenant columns and no RLS, like `workspaces`; the runtime role may `SELECT`,
   `INSERT` and, for the retention job only, `DELETE` (migration `0016`), never `UPDATE`.
   Entries are kept for `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30) and then
-  deleted in batches by the retention job (ADR 0017). An environment's audit log has no such
-  period and is never deleted. Each entry is written in the same transaction as its change. Names are free
+  deleted in batches by the retention job (ADR 0017). An environment's audit log has the
+  period the environment sets (`audit.retentionDays`; none by default, which keeps it for
+  ever). Each entry is written in the same transaction as its change. Names are free
   text an operator typed and never go into an entry.
 - **Left out:** deleting or archiving a workspace, project or environment; renaming a
   workspace; moving a project. Deletion cascades through every tenant table and needs its own

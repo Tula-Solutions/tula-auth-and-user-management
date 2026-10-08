@@ -99,7 +99,8 @@ Filter the audit log by "Actor type: instance_admin" to see what was done from t
 Failed sign-ins to the dashboard are in the instance audit log, at most one entry a minute
 per address; each says how many failures from that address in the minute before were not
 recorded one by one. The instance audit log is kept for `INSTANCE_AUDIT_RETENTION_DAYS`
-(a year by default); an environment's audit log is kept for good.
+(a year by default); an environment's audit log is kept for good unless its settings give
+it a retention period, and entries older than that are then deleted permanently.
 
 ## Switching and signing out
 

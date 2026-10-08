@@ -247,8 +247,8 @@ describe('atomicity', () => {
   })
 })
 
-describe('the audit log is append-only and tenant-scoped', () => {
-  test('the runtime role can neither change nor delete an entry', async () => {
+describe('the audit log is tenant-scoped, never rewritten, and ends only past the floor', () => {
+  test('the runtime role cannot change an entry', async () => {
     const user = newUser(a)
     const entry = activity(a, { target: { type: 'user', id: user.id } })
     await new PostgresUserRepository(testDb.db).create(user, entry)
@@ -257,17 +257,58 @@ describe('the audit log is append-only and tenant-scoped', () => {
         tx.update(auditLogs).set({ action: 'forged' }).where(eq(auditLogs.id, entry.id))
       )
     ).rejects.toThrow()
-    await expect(
-      withTenant(testDb.db, a.environmentId, (tx) =>
-        tx.delete(auditLogs).where(eq(auditLogs.id, entry.id))
-      )
-    ).rejects.toThrow()
     const { entries } = await new PostgresActivityLog(testDb.db).listAudit(a.environmentId, {
       targetId: user.id,
       page: 1,
       size: 10,
     })
     expect(entries.map((found) => found.type)).toEqual(['user.created'])
+  })
+
+  test('an entry of the last day survives a purge that asks for it, and a direct delete', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const log = new PostgresActivityLog(testDb.db)
+    const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000)
+    const fresh = activity(tenant, { occurredAt: hoursAgo(23) })
+    const past = activity(tenant, { occurredAt: hoursAgo(25) })
+    await withTenant(testDb.db, tenant.environmentId, (tx) => recordActivity(tx, [fresh, past]))
+    // A cutoff in the future: a job gone wrong, or anything else running as the runtime role.
+    const tomorrow = new Date(Date.now() + 86_400_000)
+    expect(await log.deleteAuditBefore(tenant.environmentId, tomorrow, 100)).toBe(1)
+    const direct = await withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.delete(auditLogs).where(eq(auditLogs.id, fresh.id)).returning()
+    )
+    expect(direct).toEqual([])
+    const { entries } = await log.listAudit(tenant.environmentId, { page: 1, size: 10 })
+    expect(entries.map((entry) => entry.id)).toEqual([fresh.id])
+  })
+
+  test('a purge deletes audit entries only: their outbox events stay', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const old = activity(tenant, { occurredAt: new Date('2000-06-01T00:00:00.000Z') })
+    await withTenant(testDb.db, tenant.environmentId, (tx) => recordActivity(tx, [old]))
+    const log = new PostgresActivityLog(testDb.db)
+    expect(await log.deleteAuditBefore(tenant.environmentId, new Date('2001-01-01'), 100)).toBe(1)
+    const outbox = await withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.select({ id: events.id }).from(events).where(eq(events.id, old.id))
+    )
+    expect(outbox).toEqual([{ id: old.id }])
+  })
+
+  test('a purge for one environment cannot be made to reach another by its arguments', async () => {
+    const [mine, theirs] = [await createTestTenant(testDb.db), await createTestTenant(testDb.db)]
+    const old = activity(theirs, { occurredAt: new Date('2000-06-01T00:00:00.000Z') })
+    await withTenant(testDb.db, theirs.environmentId, (tx) => recordActivity(tx, [old]))
+    // The statement the purge runs, with its own environment filter left out, in A's scope.
+    const reached = await withTenant(testDb.db, mine.environmentId, (tx) =>
+      tx.delete(auditLogs).where(eq(auditLogs.id, old.id)).returning()
+    )
+    expect(reached).toEqual([])
+    const { totalCount } = await new PostgresActivityLog(testDb.db).listAudit(
+      theirs.environmentId,
+      { page: 1, size: 1 }
+    )
+    expect(totalCount).toBe(1)
   })
 
   test('an activity for another environment cannot be written from this one', async () => {

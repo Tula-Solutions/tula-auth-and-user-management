@@ -1,5 +1,5 @@
 import { auditLogs, type Database, events, type Transaction, withTenant } from '@tula/db'
-import { and, count, desc, eq, gte, lt } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, lt } from 'drizzle-orm'
 import { eventPayload } from '~/lib/event-payload'
 import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
 
@@ -57,7 +57,7 @@ export async function recordActivity(
   }
 }
 
-/** The audit log in Postgres, read inside the environment's RLS scope. */
+/** The audit log in Postgres, read and purged inside the environment's RLS scope. */
 export class PostgresActivityLog implements ActivityLog {
   /** @param db - Database connected as the runtime role. */
   constructor(private readonly db: Database) {}
@@ -105,5 +105,37 @@ export class PostgresActivityLog implements ActivityLog {
         totalCount: total?.value ?? 0,
       }
     })
+  }
+
+  /** @inheritdoc */
+  async deleteAuditBefore(environmentId: string, before: Date, limit: number): Promise<number> {
+    // Inside `withTenant`, so row-level security confines the delete to this environment even
+    // if the filters below were wrong; the filters are still spelled out, like every purge.
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.environmentId, environmentId),
+            // Said again on the delete itself: the batch is chosen from a snapshot.
+            lt(auditLogs.occurredAt, before),
+            // DELETE has no LIMIT in Postgres: pick the batch in a subquery, oldest first, on
+            // the `(environment_id, occurred_at)` index, so a backlog is never one long delete.
+            inArray(
+              auditLogs.id,
+              tx
+                .select({ id: auditLogs.id })
+                .from(auditLogs)
+                .where(
+                  and(eq(auditLogs.environmentId, environmentId), lt(auditLogs.occurredAt, before))
+                )
+                .orderBy(asc(auditLogs.occurredAt), asc(auditLogs.id))
+                .limit(limit)
+            )
+          )
+        )
+        .returning({ id: auditLogs.id })
+    )
+    return rows.length
   }
 }

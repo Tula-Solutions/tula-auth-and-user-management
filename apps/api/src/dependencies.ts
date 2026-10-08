@@ -68,8 +68,8 @@ export interface AppConfig {
   apiDocs: boolean
   /**
    * Days an instance audit entry is kept before the retention job deletes it
-   * (`INSTANCE_AUDIT_RETENTION_DAYS`, default 365). Environments' audit logs have no such
-   * period: they are never deleted (ADR 0017).
+   * (`INSTANCE_AUDIT_RETENTION_DAYS`, default 365). An environment's audit log has its own
+   * period, in its settings (`audit.retentionDays`, ADR 0017), not this one.
    */
   instanceAuditRetentionDays: number
 }

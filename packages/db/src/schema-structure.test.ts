@@ -39,7 +39,13 @@ describe('declared schema', () => {
         'environment_id',
         'project_id',
       ])
-      expect(config.policies.map((policy) => policy.name)).toEqual([`${name}_tenant_isolation`])
+      // The audit log has one more, restrictive: it narrows what the retention job may delete.
+      const extra = name === 'audit_logs' ? ['audit_logs_retention_floor'] : []
+      expect(config.policies.map((policy) => policy.name)).toEqual([
+        `${name}_tenant_isolation`,
+        ...extra,
+      ])
+      expect(config.policies.filter((policy) => policy.as !== 'restrictive')).toHaveLength(1)
     }
   )
 })

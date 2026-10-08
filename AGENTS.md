@@ -460,7 +460,8 @@ a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)).
 instance; `deps.jobLock.runExclusive(job, fn)` lets one instance through and the others skip
 the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). The only one so
 far is `modules/retention`, which has no router. Its deletes go through store methods that take
-an environment, a cutoff and a batch limit, never through a query of its own.
+an environment, a cutoff and a batch limit, never through a query of its own. That includes
+an environment's audit entries past its `audit.retentionDays`.
 
 Register routers in `apps/api/src/index.ts` with lazy imports:
 `app.route('/v1/client/sessions', (await import('~/modules/session/router')).default)`.
@@ -525,7 +526,7 @@ Register routers in `apps/api/src/index.ts` with lazy imports:
   can call.
 - **The instance audit log has a retention period** (`INSTANCE_AUDIT_RETENTION_DAYS`, default
   365; `ControlPlane.deleteAuditBefore` from the retention job). An environment's audit log
-  is never deleted.
+  has the period the environment set (`audit.retentionDays`; see "Data & tenancy").
 - **Every HTML response has a Content-Security-Policy that allows no script from another
   origin, and `nosniff`.** The API reference (`/v1/docs`, `~/lib/api-docs`) is served only
   where `API_DOCS` is on (default: `local` and `dev`), from the installed, exactly pinned
@@ -706,8 +707,24 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
   cascade), authenticator enrolments that were never confirmed, expired WebAuthn challenges.
   A new table of short-lived rows gets a batched purge method on its store, in both adapters
-  and the shared suite, and a line in that job. Audit entries and outbox events are never
-  deleted by it.
+  and the shared suite, and a line in that job. Outbox events are never deleted by it.
+- **An environment's audit entries are deleted only by the retention job, and only past the
+  period the environment set** (`audit.retentionDays`, 1 to 3650 days; `null`, the default,
+  keeps them for ever; [ADR 0012](docs/adr/0012-events-and-audit-log.md),
+  [ADR 0017](docs/adr/0017-retention.md)). A log that can only grow cannot meet a
+  data-retention obligation (entries hold IP addresses), so the operator chooses its end;
+  the deletion is permanent. `ActivityLog.deleteAuditBefore(environment, cutoff, limit)` is
+  the one way an entry goes: call it from nowhere but `modules/retention`. The job reads the
+  period **past the settings cache** (`Settings.get(…, true)`: a stale period here destroys
+  something), deletes nothing for a period that is not a whole number of days of at least 1,
+  and keeps the entries of an environment whose settings it cannot read. The runtime role
+  has `DELETE` on `audit_logs` for it and still no `UPDATE`; row-level security bounds the
+  delete to the environment in scope and, by the restrictive policy
+  `audit_logs_retention_floor`, to entries older than one day, whatever a statement asks.
+  Never loosen that policy, never give the role `UPDATE` (an entry could be backdated past
+  it), and add no second policy that is not restrictive. The deletes are not themselves
+  audit entries: the change of the setting is, and the job logs the environment, the period
+  and the count.
 - Schema changes: edit the schema, `bun run db:generate`, review the SQL, commit the migration.
   Never `drizzle-kit push`, never edit a merged migration.
 
