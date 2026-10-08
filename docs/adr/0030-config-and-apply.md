@@ -177,6 +177,76 @@ settings) with `drifted`: the settings' revision is past the one that apply prod
 (type stripping) and only for erasable syntax, which is not a promise we can make for a file
 an operator writes. `@tula/config` and `@tula/admin` themselves run on Node.
 
+### Webhook endpoints in the file (added 2026-10-08, TULA-44)
+
+An environment's webhook endpoints ([ADR 0034](0034-webhooks.md)) can be listed in the file:
+`webhooks: [{ url, eventTypes, enabled? }]`. The fields are validated with the contract's own
+request schemas (`CreateWebhookEndpointRequestSchema`'s `url` and `eventTypes`,
+`UpdateWebhookEndpointRequestSchema`'s `enabled`), taken by `shape`; nothing is declared a
+second time and the contract did not change.
+
+- **Identity is the address, compared exactly.** An endpoint has no natural name, and an id
+  in a file would have to be copied out of a server first. The API stores an address as it
+  was typed and compares it as text (`Webhooks.update`: `input.url !== current.url`), and
+  has no normalisation of its own, so the CLI has none either: a second, invented one would
+  disagree with the server somewhere. Consequences, accepted: a changed address is a new
+  endpoint (new secret) plus an endpoint the file no longer lists, never an update; the same
+  address twice in a file is an error when the file is loaded.
+- **Absent is not managed; a list manages what it names.** The first half is as asked: no
+  `webhooks` key means the endpoints are not read, not shown and not touched, even with
+  `--prune`. The second half follows the precedent this ADR already set for providers, and
+  differs from the first proposal (in which `webhooks: []` planned every endpoint for
+  removal): an endpoint the list leaves out is *unmanaged*, shown and left alone, and removed
+  only with `--prune`. One rule for "the server has it and the file does not" is worth more
+  than a list that is the whole truth, and it means that adding a `webhooks` list to a file
+  can never, by itself, remove anything.
+- **Event types are a set**, normalised when the file is loaded (sorted, each once), so
+  neither the plan nor the fingerprint moves with their order. `enabled` is managed only when
+  written: left out, an endpoint the server switched off (`disabledReason`) stays off.
+  Switching such an endpoint on needs no flag (it is not destructive, and the server will
+  switch it off again if it still fails) but is said on the endpoint's line and as a warning.
+- **Removal is its own kind of destructive plan.** It deletes the endpoint's pending
+  deliveries and its delivery log. That is not "weakens security", so `--allow-weaker` would
+  be the wrong word: under `--yes` such a plan needs `--allow-webhook-removal`, in addition
+  to the `--prune` that planned it, and is refused before any write otherwise. At a terminal
+  the question names what is deleted. `--prune` alone is not consent enough under `--yes`
+  because it predates webhooks: a pipeline already pruning providers would start deleting
+  delivery logs the day a list is added.
+- **The secret of a created endpoint exists only in the API's one answer.** It is added to
+  the output's redaction the moment it arrives, before anything else can print, unless the
+  run was asked to show it (as `tula dev` does for `--show-keys`). The operator gets it by
+  asking: `--secrets-file <path>` (JSON, mode 0600, through the `Host` that `tula dev` writes
+  `.env.local` with: a temporary file opened exclusively, a symbolic link and anything that
+  is not a regular file refused) or `--show-secrets`. A file that is already there is never
+  replaced; the file is claimed with an empty list before the first write, so a path that
+  cannot be written fails the run while it has written nothing, and it is rewritten after
+  each creation, so a run that fails later has kept what it was given. A plan that creates an
+  endpoint with neither option is refused before any write, with or without `--yes`: throwing
+  a secret away silently and printing one unasked are both wrong. `--discard-secrets` is the
+  explicit way to proceed without one; the operator rotates later, and the overlap then also
+  signs with a secret nobody holds, which is harmless.
+- **Order.** Webhook writes come after the settings and every provider. Nothing about
+  signing in depends on them, a registration is the write most likely to be refused for a
+  reason outside the file (the outbound guard), and a stale settings revision must stop the
+  run before an endpoint is touched. Among themselves: updates, creations, removals. At the
+  limit of ten, exactly as many removals as it takes go before the creations, the oldest of
+  the endpoints being removed anyway, and the plan says so. A plan that would leave more
+  than ten is refused whole, as is one that names an address the server has more than once
+  (the API allows that; which endpoint is meant cannot be known, and with `--prune` a guess
+  could remove the wrong one). `tula diff` exits 1 for both: a plan no run can carry out is
+  an error to put right, not changes pending.
+- **A stale plan.** Endpoints have no revision and the API has no conditional write for
+  them, and this step changes no route. So the guarantee is weaker than the settings' and is
+  said as such: the endpoints are read again immediately before the first webhook write and
+  compared with what the plan read (id, address, event types, switch, the server's reason
+  for switching off); any difference stops the run with nothing written to an endpoint. A
+  change made between that read and the writes is not detected. What limits the damage: a
+  `PATCH` carries only the fields the plan changes, a removed endpoint answers 404, and the
+  cap is enforced by the server under its own lock. Closing the window needs a revision or
+  an `If-Match` on the endpoint routes: an API change, deferred.
+- **Not in the file:** rotating a secret, test events, sending again. They are acts, not
+  state.
+
 ## Consequences
 
 - One more generated file to keep in step: after `contract:generate`, run `core:generate` and

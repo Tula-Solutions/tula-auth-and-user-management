@@ -92,7 +92,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/react` | `@tula/react` — provider, hooks and prebuilt components (sign-up, sign-in, reset, account) with one themeable stylesheet ([ADR 0022](docs/adr/0022-react-sdk.md)). |
 | `packages/nextjs` | `@tula/nextjs` — the Next.js App Router SDK: a same-origin route handler, a request interceptor that verifies sessions offline, server helpers and the React components ([ADR 0029](docs/adr/0029-nextjs-sdk.md)). |
 | `packages/admin` | `@tula/admin` — the typed client for `/v1/admin/*`, generated from `openapi.json`. Holds a secret key: server-side only ([ADR 0030](docs/adr/0030-config-and-apply.md)). |
-| `packages/config` | `@tula/config` — `defineConfig()` for `tula.config.ts`: an environment's settings and OAuth providers as code, validated with the contract's schemas; secrets only as `env('NAME')`. |
+| `packages/config` | `@tula/config` — `defineConfig()` for `tula.config.ts`: an environment's settings, OAuth providers and webhook endpoints as code, validated with the contract's schemas; secrets only as `env('NAME')`, and none at all for a webhook endpoint. |
 | `packages/cli` | `@tula/cli` — the `tula` executable (Bun): `tula diff`, `tula apply` ([docs/config.md](docs/config.md)), `tula dev`, `tula doctor`, `tula policy test`, `tula mcp` ([docs/cli.md](docs/cli.md), [ADR 0031](docs/adr/0031-instance-admin-and-cli.md)). A command is a `Command` object in `COMMANDS`. |
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor) and scaffold tools that return files ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
@@ -152,6 +152,25 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   `apply` needs `--yes`.
   A new diff rule (a list that is a set, a field kept from the server) is documented in
   `docs/config.md` and gets a table test in `packages/cli/src/diff.test.ts`.
+- **Webhook endpoints in the config file** ([ADR 0030](docs/adr/0030-config-and-apply.md),
+  "Webhook endpoints in the file"). An endpoint is **its address, compared exactly**
+  (`planWebhooks`): never normalise one, the server does not. No `webhooks` key means not
+  read and not touched, even with `--prune`; with a list, what it leaves out is *unmanaged*
+  and removed only with `--prune`. Event types are a set and `enabled` is managed only when
+  written. **A secret is never in the file** (no field; keep the `@ts-expect-error` and the
+  run-time test) **and never printed unasked**: the created endpoint's secret goes into the
+  output's redaction before anything else runs, unless `--show-secrets`, and a plan that
+  creates an endpoint without `--secrets-file`, `--show-secrets` or `--discard-secrets` is
+  refused before any write. The secrets file is written only through `Host.writeSecretFile`,
+  never over a file that is there, and is claimed before the first write. Under `--yes` a
+  removal needs `--allow-webhook-removal`. Webhook writes come **after** the settings and
+  every provider (updates, creations, removals; removals first only as far as the limit of
+  ten forces), and the endpoints are read again before the first of them
+  (`webhookSnapshot`): keep that read, and do not call it a guarantee (endpoints have no
+  revision). An address the server has twice and a plan over the limit are `planBlockers`:
+  `diff` exits 1, `apply` writes nothing. Text from the server (an address, a
+  `disabledReason`, an id) is printed through `printable()`. Every test of `apply` that
+  creates an endpoint asserts the secret is absent from all output unless asked for.
 - **The CLI reaches the database only through `tula dev`, and only by running what the API
   image ships** ([ADR 0031](docs/adr/0031-instance-admin-and-cli.md)): `docker compose run
   migrate`, the seed and `create-api-key.ts`. Everything it spawns goes through the injectable

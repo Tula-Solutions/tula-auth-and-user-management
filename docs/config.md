@@ -3,7 +3,8 @@
 An environment's sign-in behaviour is its **settings** (app name, password policy, sign-in
 methods, allowed origins and redirect URLs, notices, the MFA policy, passkeys, session profiles)
 and its **OAuth providers**. Both can be written in a file, reviewed in a pull request and
-applied by a pipeline. The decisions behind this page are in
+applied by a pipeline. So can its **webhook endpoints** ([Webhook endpoints](#webhook-endpoints),
+below). The decisions behind this page are in
 [ADR 0030](adr/0030-config-and-apply.md).
 
 > Nothing is published to npm yet. Inside this repository the CLI is `bun run tula -- <args>`,
@@ -101,6 +102,134 @@ The plan lists what was kept. To manage either, write it in the file.
 A **provider** the file does not mention is left alone and shown as *unmanaged*; `--prune`
 deletes it.
 
+**Webhook endpoints** follow the same rule, one level up: a file with no `webhooks` list does
+not manage them at all, and a list manages exactly what it names
+([Webhook endpoints](#webhook-endpoints)).
+
+## Webhook endpoints
+
+An environment's [webhook endpoints](webhooks.md) can be listed in the file:
+
+<!-- snippet: examples/tula-config/tula.config.ts#webhooks -->
+```ts
+// The endpoints this environment's events are posted to. An endpoint is its address;
+// there is no secret to write: the server makes it when `tula apply` registers the
+// endpoint (`--secrets-file <path>` keeps it). `enabled` is left out, so the switch
+// stays as the server has it. `dev` has no `webhooks` key: its endpoints are not
+// managed by this file.
+webhooks: [
+  {
+    url: 'https://api.northline.app/webhooks/tula',
+    eventTypes: ['user.created', 'user.deleted'],
+  },
+],
+```
+<!-- /snippet -->
+
+| Field | |
+| --- | --- |
+| `url` | where events are posted: what `POST /v1/admin/webhook-endpoints` takes, judged by the server (`https`, no credentials, a public address) |
+| `eventTypes` | the event types delivered, at least one. A **set**: order and repeats mean nothing |
+| `enabled` | optional. Left out, the switch is **not managed** |
+
+The rules, each of which the plan shows before anything is written:
+
+- **A secret can never be in the file.** There is no field for one: a `secret` key does not
+  compile, and a file that holds one is refused when it is loaded, without the value being
+  repeated. The signing secret is made by the server.
+- **No `webhooks` key: not managed.** `tula` does not read the environment's endpoints, shows
+  nothing about them and changes none, with or without `--prune`. `webhooks: []` is
+  different: it says the file manages webhooks and lists none.
+- **An endpoint is its address.** It has no name or id in the file; an entry is matched to the
+  server's endpoint with **exactly** the same `url`, character for character, which is how
+  the server itself stores and compares an address (it does not normalise one, so
+  `https://a.example/hook` and `https://a.example/hook/` are two endpoints). The same address
+  twice in the file is an error when the file is loaded.
+- **A changed address is a new endpoint, never an update.** The plan shows the new address as
+  `create` (with a **new signing secret**) and the old one as *unmanaged*; with `--prune` the
+  old one is removed, and its pending deliveries and its delivery log go with it. The plan
+  says so in words. To keep an endpoint's secret and log while moving it, change its address
+  through the admin API first, then the file.
+- **An endpoint the list leaves out is left alone** and shown as *unmanaged*, as a provider
+  is. `--prune` removes it.
+- **Event types are a set.** `['user.deleted', 'user.created', 'user.created']` and
+  `['user.created', 'user.deleted']` are the same thing: no difference in the plan and the
+  same fingerprint of the file. A change shows the types added and removed, sorted
+  (`eventTypes +"session.created" -"user.deleted"`).
+- **`enabled` left out is not managed.** A new endpoint starts switched on and an existing one
+  is left as it is, **including one the server switched off** because it kept failing or
+  answered `410`: a file that does not write `enabled` never fights the server. Written
+  (`true` or `false`), it is set. Switching on an endpoint the server switched off needs no
+  extra flag, but the plan says why it was off, on the endpoint's line and as a warning
+  (`! switches on a webhook endpoint the server switched off (https://… : failing); if it
+  still fails the server switches it off again`). A pipeline that keeps `enabled: true` in
+  the file switches such an endpoint on again at every run.
+- **Removal destroys something.** Removing an endpoint deletes its pending deliveries and its
+  delivery log, for good. At a terminal the question says so (`This REMOVES 1 webhook
+  endpoint with its pending deliveries and its delivery log, for good.`). With `--yes`
+  nobody reads it, so the run is refused and nothing is written unless
+  `--allow-webhook-removal` is given too. (`--prune` alone is not enough under `--yes`: a
+  pipeline that already prunes providers would otherwise start deleting delivery logs the day
+  a `webhooks` list is added to the file.)
+- **The signing secret of a new endpoint is shown once, by the server, to the run that
+  creates it.** `tula apply` never prints it unless asked and removes it from every line it
+  writes from the moment it arrives. A plan that creates an endpoint is refused, with or
+  without `--yes` and before anything is written, until the run says what to do with it:
+
+  | Option | |
+  | --- | --- |
+  | `--secrets-file <path>` | write the secrets to a **new** file only you can read (mode 0600), as JSON: `[{ "id", "url", "secret" }]`. A file that is already there is never replaced (it may hold an earlier run's secrets), and nothing is written through a symbolic link or onto anything that is not a regular file. The file is claimed before the first write and rewritten after every endpoint, so a run that fails part-way has kept what it was given |
+  | `--show-secrets` | print each secret on standard output, under its endpoint's line (with `--json`: in `webhookSecrets`). Not for a pipeline whose log is kept |
+  | `--discard-secrets` | keep nothing. Rotate the secret later to get one ([rotating a secret](webhooks.md#rotate-a-secret)); for the 24 hours of that rotation's overlap deliveries are also signed with the first secret, which nobody holds, and that is harmless |
+
+  Give the secret to the receiver, then delete the file.
+- **Order.** Webhook endpoints are written **after** the settings and every provider:
+  nothing about signing in waits for them, and an address the server refuses does not stop a
+  settings change that was safe to make. Among themselves: changes to existing endpoints,
+  then new ones, then removals, so an address being replaced is never without an endpoint.
+  An environment has at most 10 endpoints; when the new ones do not fit beside the ones
+  being removed, exactly as many removals as it takes go first (the oldest of those being
+  removed anyway), and the plan says so (`! the environment is at its limit of 10 webhook
+  endpoints: 1 of the removals is made before the new endpoint is created, to make room`).
+  A plan that would leave more than 10 is refused whole.
+- **An address the server has more than once cannot be matched.** The API allows two endpoints
+  with one address. If the file names such an address, `tula` cannot tell which one is meant
+  and does not guess: `tula diff` prints the plan and fails (exit `1`), `tula apply` writes
+  nothing, and the message gives the ids so that all but one can be removed by hand.
+- **Someone else's change.** Endpoints have no revision, so a webhook write cannot be made
+  conditional the way the settings' is. Instead `apply` reads the endpoints once more just
+  before its first webhook write and stops, writing nothing to them, if an endpoint was
+  added, removed or changed (address, event types, switch) since the plan was made. That
+  catches a change made while a person read the plan. It does **not** catch one made in the
+  moment between that read and the writes: such a change to a field the plan also changes is
+  overwritten. A change only sends the fields that differ, so a concurrent change to another
+  field of the same endpoint survives; an endpoint removed meanwhile fails its write and is
+  reported. `--expect-revision` is about the settings only.
+- **A failure part-way** is reported as for every other write: what was applied, what was
+  not. An address the server will not call shows the API's code and its one fixed word for
+  the rule, and nothing else:
+
+  ```
+  Failed: webhook https://hooks.example.com/tula: create
+  error: The server cannot deliver to that address. (webhook.url_not_allowed, HTTP 422)
+    reason: resolve_failed
+  ```
+
+In the plan:
+
+```
+Webhooks
+  + https://api.northline.app/webhooks/tula: create (eventTypes "user.created" "user.deleted"; a signing secret is made, shown once)
+  ~ https://ops.northline.app/hooks: update (eventTypes +"session.created" -"user.updated")
+  = https://old.northline.app/hooks: unmanaged (on the server, not in the file; --prune removes it, with its pending deliveries and its delivery log)
+
+  ! creates 1 webhook endpoint: its signing secret is shown once, to the run that creates it (`tula apply` needs --secrets-file <path>, --show-secrets or --discard-secrets)
+```
+
+An address is shown (it is in your file); a secret never is: no read of the API returns one.
+An address may itself carry a token in its path or query. It is then in the file, in the
+plan and in a pipeline's log: prefer the signature to a token in the address.
+
 ## Pointing the CLI at an environment
 
 The environment a run changes is decided by the **secret key**, not by the name in the file.
@@ -177,15 +306,17 @@ Changes pending. Run `tula apply` to make them.
   without `--allow-unknown`. Upgrade `tula` instead.
 - `! the settings were changed outside the config file since the last apply`: someone saved
   in the dashboard or through the API. The differences are in the plan.
-- `--json` prints the same plan as data: `weakened` and `unknown` list the paths, and
-  `applyRequires` (`{ "allowUnknown": false, "allowWeaker": true }`) says which of the two
-  flags `apply` will ask for.
+- `--json` prints the same plan as data: `weakened` and `unknown` list the paths, `webhooks`
+  holds the endpoints, `blockers` the reasons the plan cannot be applied at all, and
+  `applyRequires` (`{ "allowUnknown": false, "allowWeaker": true, "allowWebhookRemoval":
+  false, "webhookSecrets": false }`) says what `apply` will ask for: the three flags, and a
+  word on the signing secrets of the endpoints it creates.
 
 | Exit code | Meaning |
 | --- | --- |
 | `0` | the environment is as the file says |
 | `2` | there are changes to apply |
-| `1` | an error: bad config, bad key, the API refused or could not be reached |
+| `1` | an error: bad config, bad key, the API refused or could not be reached, or a plan that cannot be applied (a webhook address the server has twice, more than 10 endpoints) |
 
 ## `tula apply`
 
@@ -242,11 +373,15 @@ tula apply --env prod --yes    # no question: for CI
 | `--env`, `-e <name>` | the entry in the file; may be left out when it has one |
 | `--config`, `-c <path>` | default `tula.config.ts` in the current directory |
 | `--yes`, `-y` | apply without asking |
-| `--prune` | delete providers the server has and the file does not |
+| `--prune` | delete providers, and remove webhook endpoints, that the server has and the file does not list |
 | `--rotate-secrets` | send every managed provider's secret again |
 | `--expect-revision <n>` | apply only if the settings are still at this revision |
 | `--allow-weaker` | with `--yes`: apply a plan that weakens security |
 | `--allow-unknown` | apply although the server has settings this version does not know (they are reset) |
+| `--allow-webhook-removal` | with `--yes`: apply a plan that removes a webhook endpoint, with its pending deliveries and its delivery log |
+| `--secrets-file <path>` | write the signing secrets of the webhook endpoints the run creates to a new file (mode 0600) |
+| `--show-secrets` | print them |
+| `--discard-secrets` | keep none of them |
 | `--insecure-http` | allow a plain http API URL that is not localhost (a private network you trust) |
 | `--secret-key-file <path>` | read the secret key from a file; `-` for standard input (piped, with `--yes`) |
 | `--json` | print the plan (and what was applied) as JSON |
@@ -301,11 +436,27 @@ jobs:
           TULA_SECRET_KEY: ${{ secrets.TULA_SECRET_KEY_PROD }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
-        # --yes alone never weakens security and never resets a setting a newer server has:
-        # such a plan fails this step. Weakening on purpose is its own, reviewed change:
+        # --yes alone never weakens security, never resets a setting a newer server has and
+        # never removes a webhook endpoint: such a plan fails this step. Each on purpose is
+        # its own, reviewed change:
         #   bunx tula apply --env prod --yes --allow-weaker
-        run: bunx tula apply --env prod --yes
+        #   bunx tula apply --env prod --yes --prune --allow-webhook-removal
+        # --secrets-file matters only to a run that creates a webhook endpoint: the server
+        # shows its signing secret once. Without the option such a run is refused.
+        run: bunx tula apply --env prod --yes --secrets-file "$RUNNER_TEMP/tula-webhook-secrets.json"
+      - name: Hand new webhook secrets to the secret store
+        # The file exists only when an endpoint was created. Store it where the receiver
+        # reads its secret (your vault's CLI goes here), and never print it: a log is kept.
+        run: |
+          file="$RUNNER_TEMP/tula-webhook-secrets.json"
+          if [ -s "$file" ]; then
+            your-vault put tula/webhook-secrets < "$file"
+            rm "$file"
+          fi
 ```
+
+If your pipeline has nowhere to put a secret, use `--discard-secrets` there and rotate the
+secret by hand afterwards; do not use `--show-secrets` in a pipeline.
 
 A plan that weakens security (the pull request's `diff` output says
 `tula apply --yes refuses this plan without --allow-weaker`) fails the apply job as written.
@@ -339,8 +490,10 @@ settings are saved again *without* going through `apply`; the audit entry of tha
 changes this record (a first apply over identical settings, a new version of the file) still
 bumps the settings revision. The fingerprint is
 computed over the file's content with each secret as its variable's **name**; it says nothing
-about a secret's value. Providers are not covered by `drifted` (they have no revision):
-`tula diff` is the full check.
+about a secret's value. Providers and webhook endpoints are not covered by `drifted` (they
+have no revision): `tula diff` is the full check. The fingerprint covers the `webhooks` list
+(event types as a set), so a change to it is a new version of the file; a file without the
+list has the fingerprint it had before the list could be written.
 
 ## What `tula` runs on
 

@@ -274,13 +274,26 @@ paths:
   `EnvironmentSettingsInputSchema`; do not redeclare a setting here. A provider secret is a
   `SecretRef` and nothing else: keep the `@ts-expect-error` test that a literal does not
   compile and the run-time test that it is refused without being repeated. No error of this
-  package carries a value from the file or the environment.
+  package carries a value from the file or the environment. A webhook endpoint
+  (`webhooks: [{ url, eventTypes, enabled? }]`) takes its fields from the contract's request
+  schemas by `shape` and has **no** field for a secret: keep its `@ts-expect-error` and
+  run-time tests too. Its problems are named by position (`webhooks.2.url`), never by
+  address. Event types are normalised on load (sorted, each once), and an environment
+  without the list must keep hashing as it did (a test pins the value).
 - `@tula/cli`: commands take a `CommandContext` and write through `output`; no `console`, no
   `process.stdout` outside `process-io.ts` (built by `createProcessIo` from injectable parts,
   unit-tested with fake streams and file modes). No option takes a secret. `apply` refuses
   `plan.unknown` without `--allow-unknown` and, under `--yes`, `plan.weakened` without
   `--allow-weaker`, before any write: a new kind of destructive plan gets the same treatment
-  and a zero-writes test. Exit codes are `EXIT`
+  and a zero-writes test (a plan that removes a webhook endpoint: `--allow-webhook-removal`).
+  A plan that creates a webhook endpoint is refused before any write unless the run says
+  what becomes of the signing secret (`--secrets-file`, `--show-secrets`,
+  `--discard-secrets`); the secret is given to `output.redact` as soon as the API answers,
+  unless `--show-secrets`, and the file is written only through `Host.writeSecretFile`,
+  claimed before the first write, never over an existing file. Webhook operations are
+  ordered after the settings and the providers, and the endpoints are read again before the
+  first of them. `planBlockers` (an address the server has twice, more than ten endpoints)
+  fail `diff` with exit 1 and stop `apply` before any write. Exit codes are `EXIT`
   (`diff`: 0 / 2 / 1). The diff engine (`src/diff.ts`) is pure and table-tested; a change to
   how a field is compared, to the write order, or to when a secret is sent needs a row there
   and a line in `docs/config.md`. Behaviour against the real API is tested in
