@@ -1450,7 +1450,8 @@ export interface OAuthStartResult {
  * @param link - For connecting from a profile: the signed-in user.
  * @returns The attempt (with its secret), the provider's URL and the binding.
  * @throws AuthError `request.origin_not_allowed`, `auth.method_disabled` (also when the
- *   provider's adapter cannot build its URL from the stored credentials) or
+ *   provider's adapter says, with an `OAuthProviderError`, that it cannot build its URL from
+ *   the stored credentials; any other error of an adapter is rethrown as it is) or
  *   `request.redirect_not_allowed`.
  * @throws RateLimitError when the environment's ceiling is reached.
  */
@@ -1473,10 +1474,11 @@ export async function startOAuth(
   const oauthState = `${tenant.environmentId}.${id}.${randomToken()}`
   const codeVerifier = randomToken()
   const nonce = randomToken()
-  // Built before the attempt is stored. `OAuth.credentials` has already refused what it can
-  // tell is unusable; an adapter that still cannot make a URL from what it was given is the
-  // provider being unavailable: the answer of a provider that is off, and no attempt left
-  // behind.
+  // Built before the attempt is stored, so that a failure here leaves no attempt behind.
+  // `OAuth.credentials` has already refused what it can tell is unusable; an adapter that
+  // says, in the port's own error, that it still cannot make a URL from what it was given is
+  // the provider being unavailable: the answer of a provider that is off. Anything else an
+  // adapter throws is a bug and stays the 500 it is, never a method that looks switched off.
   let authorizationUrl: string
   try {
     authorizationUrl = deps.oauth[provider].authorizationUrl(credentials, {
@@ -1486,10 +1488,13 @@ export async function startOAuth(
       redirectUri: OAuth.callbackUrl(deps.config, provider),
     })
   } catch (error) {
+    if (!(error instanceof OAuthProviderError)) {
+      throw error
+    }
     logger.error('an OAuth provider could not build its authorization URL', {
       environmentId: tenant.environmentId,
       provider,
-      failure: error instanceof OAuthProviderError ? error.failure : 'unexpected',
+      failure: error.failure,
     })
     throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
   }
