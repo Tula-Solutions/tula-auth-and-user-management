@@ -99,6 +99,16 @@ test('an environment has one hook per point, and another environment has its own
   await clear(other)
 })
 
+test('an environment has a hook for each point, and one of each at most', async () => {
+  for (const point of ['before_sign_up', 'before_session', 'before_token'] as const) {
+    expect(await insert(tenant, { point })).toBeNull()
+  }
+  for (const point of ['before_sign_up', 'before_session', 'before_token'] as const) {
+    expect(await insert(tenant, { point })).toContain('hooks_environment_point_key')
+  }
+  await clear(tenant)
+})
+
 test('a failure mode the server does not know is refused', async () => {
   expect(await insert(tenant, { failureMode: 'ignore' as never })).toContain(
     'hooks_failure_mode_known'
