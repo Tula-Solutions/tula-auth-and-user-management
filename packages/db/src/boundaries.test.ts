@@ -206,6 +206,37 @@ describe('runtime role privileges are least-privilege (F3)', () => {
     ])
   })
 
+  test('a webhook delivery is appended by the runtime role and never rewritten; the outbox is never deleted from', async () => {
+    const rows = await queryRows<{ table: string; privilege: string; held: boolean }>(
+      testDb.db,
+      sql`
+        select t.name as table, p.name as privilege,
+               has_table_privilege('tula_app', 'tula.' || t.name, p.name) as held
+        from (values ('webhook_deliveries'), ('webhook_endpoints'), ('events')) as t(name),
+             (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) as p(name)
+        order by t.name, p.name
+      `
+    )
+    expect(rows).toEqual([
+      // The worker sets `delivered_at` (UPDATE, held since 0003); deleting delivered events
+      // is left to a later migration (ADR 0017).
+      { table: 'events', privilege: 'DELETE', held: false },
+      { table: 'events', privilege: 'INSERT', held: true },
+      { table: 'events', privilege: 'TRUNCATE', held: false },
+      { table: 'events', privilege: 'UPDATE', held: true },
+      // One row per endpoint and event, written once (migration 0018).
+      { table: 'webhook_deliveries', privilege: 'DELETE', held: false },
+      { table: 'webhook_deliveries', privilege: 'INSERT', held: true },
+      { table: 'webhook_deliveries', privilege: 'TRUNCATE', held: false },
+      { table: 'webhook_deliveries', privilege: 'UPDATE', held: false },
+      // An administrator removes an endpoint on the request path.
+      { table: 'webhook_endpoints', privilege: 'DELETE', held: true },
+      { table: 'webhook_endpoints', privilege: 'INSERT', held: true },
+      { table: 'webhook_endpoints', privilege: 'TRUNCATE', held: false },
+      { table: 'webhook_endpoints', privilege: 'UPDATE', held: true },
+    ])
+  })
+
   describe('what the runtime role may delete from an environment’s audit log', () => {
     const DAY = 86_400_000
     const entry = (tenant: TestTenant, occurredAt: Date) => ({
