@@ -29,6 +29,12 @@ by error code. Their code samples are copied from files of this repository by
 | [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
 | [Sessions](methods/sessions.md) | Profiles, devices, the concurrent-session limit, what your server sees. |
 
+## Claims for your backend
+
+| | |
+| --- | --- |
+| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula/nextjs`. |
+
 ## Events for your backend
 
 | | |

@@ -116,7 +116,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * The JWT templates are compared whole, like a list: "the templates changed", not which one
+ * or which claim. Their claims would otherwise be up to 160 names, more than an event's
+ * `changed` may hold together with the rest of the document. And a template's name, unlike a
+ * profile's, is also a **value** in the document (a profile's `jwtTemplate`), so naming it
+ * here would put a string an admin typed into an event's payload, which goes to third
+ * parties (ADR 0012). A profile that changes its template is named by its field.
+ */
+const WHOLE = /^sessions\.jwtTemplates$/
+
+/** A value whose keys are in a fixed order, so that two equal maps compare equal as text. */
+function ordered(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return Array.isArray(value) ? value.map(ordered) : value
+  }
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, ordered(value[key])])
+  )
+}
+
 function flatten(value: unknown, path: string, into: Map<string, string>): void {
+  if (WHOLE.test(path)) {
+    // The order templates and their claims are written in means nothing.
+    into.set(path, JSON.stringify(ordered(value)))
+    return
+  }
   if (!isRecord(value)) {
     // Lists are compared whole: "the allowed origins changed", not which entry.
     into.set(path, JSON.stringify(value))

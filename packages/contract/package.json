@@ -8,6 +8,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./custom-claims": "./src/custom-claims.ts",
     "./error-codes": "./src/error-codes.ts",
     "./event-types": "./src/event-types.ts",
     "./headers": "./src/headers.ts",
@@ -22,6 +23,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
+      },
+      "./custom-claims": {
+        "types": "./dist/custom-claims.d.ts",
+        "default": "./dist/custom-claims.js"
       },
       "./error-codes": {
         "types": "./dist/error-codes.d.ts",

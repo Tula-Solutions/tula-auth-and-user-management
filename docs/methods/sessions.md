@@ -14,7 +14,7 @@ rotating refresh token, 7 days idle and 30 days in all.
 
 | Where | How |
 | --- | --- |
-| Dashboard | **Session profiles**: lifetimes per profile, custom profiles, the concurrent-session limit. A user's page: revoke one session or all. |
+| Dashboard | **Session profiles**: lifetimes per profile, custom profiles, JWT templates, the concurrent-session limit. A user's page: revoke one session or all. |
 | `tula.config.ts` | `sessions`. |
 | Admin API | `PUT /v1/admin/settings`; `DELETE /v1/admin/users/<id>/sessions`; `POST /v1/admin/sessions/verify` for a stateful cookie. |
 
@@ -71,6 +71,9 @@ await admin.call('revokeUserSessions', { params: { userId } })
 - **`type: 'stateful'`** (browsers only): one httpOnly cookie and no token; every request is
   checked against the database, so a sign-out elsewhere takes effect on the very next request.
   It costs a database read per request.
+- **`jwtTemplate`** names the [JWT template](../jwt-templates.md) whose custom claims the
+  profile's sessions carry under the `ext` claim (`auth().customClaims` in `@tula/nextjs`).
+  None by default.
 - **`maxPerUser`** with `onLimit: 'end_oldest'` (default) lets the new device in and ends the
   oldest session; `'refuse_newest'` refuses the new sign-in.
 

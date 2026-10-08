@@ -132,6 +132,10 @@ describe('describeWeakening', () => {
   test('says a known path in words and keeps an unknown one', () => {
     expect(describeWeakening('password.minLength')).toContain('shorter')
     expect(describeWeakening('sessions.profiles.admin')).toContain('admin')
+    // A profile's template is its own sentence, and names the profile alone.
+    expect(describeWeakening('sessions.profiles.admin.jwtTemplate')).toBe(
+      'Sessions of the “admin” profile lose custom claims, or get different ones: an application that reads them may refuse those users'
+    )
     expect(describeWeakening('future.setting')).toBe('future.setting')
   })
 })

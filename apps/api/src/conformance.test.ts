@@ -62,6 +62,7 @@ describe('conformance scenarios, in process', () => {
       'webhook secret rotated with an overlap',
       'sign-up denied by a hook',
       'hook that times out',
+      'jwt template custom claims',
     ])
   })
 

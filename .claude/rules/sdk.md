@@ -223,6 +223,13 @@ paths:
 - `verifyAccessToken` is the only way a token becomes a session, in the middleware and in
   `auth()`. A new claim check goes there and gets a failure-path test in `middleware.test.ts`
   (run for both the middleware and `auth()`).
+- Custom claims (ADR 0036) reach application code only through `sessionClaims` (`verify.ts`),
+  which replaces `ext` with what `readCustomClaims` accepts or removes it: for a verified
+  token, the stateful check's answer and the opened `x-tula-auth` header alike.
+  `auth().customClaims` is a frozen record of `unknown` values (empty when signed in with
+  none, `null` when signed out). `custom-claims.test.ts` runs its malformed table for the
+  middleware and for `auth()` alone; a new way a session's claims arrive gets a row there.
+  `@tula/core` and `@tula/react` do not expose them.
 - `x-tula-auth` is the only header that carries claims, and only for stateful sessions: sealed
   with `sealClaims`, opened with `openClaims`, stripped from every incoming request by
   `resolveSession`. Tests cover a forged header with and without the middleware.

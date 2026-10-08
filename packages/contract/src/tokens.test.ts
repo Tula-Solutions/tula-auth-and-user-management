@@ -56,6 +56,16 @@ describe('access token claims about how the session was authenticated', () => {
     expect(parsed.amr).toEqual(['pwd', 'otp', 'mfa'])
   })
 
+  test('a token with custom claims parses with them; nested ones are not a token of ours', () => {
+    const ext = { role: 'member', seats: 3, beta: true }
+    expect(AccessTokenClaimsSchema.parse({ ...claims, ext }).ext).toEqual(ext)
+    expect(AccessTokenClaimsSchema.parse(claims).ext).toBeUndefined()
+    expect(AccessTokenClaimsSchema.safeParse({ ...claims, ext: { a: { b: 1 } } }).success).toBe(
+      false
+    )
+    expect(AccessTokenClaimsSchema.safeParse({ ...claims, ext: ['a'] }).success).toBe(false)
+  })
+
   test('a token issued before they existed still parses, with neither', () => {
     const parsed = AccessTokenClaimsSchema.parse(claims)
     expect(parsed.auth_time).toBeUndefined()

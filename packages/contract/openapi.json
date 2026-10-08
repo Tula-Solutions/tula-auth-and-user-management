@@ -4117,6 +4117,19 @@
           },
           "sp": {
             "type": "string"
+          },
+          "ext": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
           }
         },
         "required": [
@@ -4403,7 +4416,6 @@
         ]
       },
       "SessionProfileName": {
-        "description": "The session profile the client would like. Honoured only when the environment marks that profile `clientSelectable`; any other name is ignored and the session gets the profile of its client kind (`web`, or `mobile` for every other client).",
         "type": "string",
         "maxLength": 32,
         "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
@@ -5469,6 +5481,17 @@
             "default": false,
             "type": "boolean"
           },
+          "jwtTemplate": {
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionProfileName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "refresh": {
             "default": {},
             "type": "object",
@@ -5497,6 +5520,71 @@
           "end_oldest",
           "refuse_newest"
         ]
+      },
+      "JwtTemplateSource": {
+        "type": "string",
+        "enum": [
+          "user.email",
+          "user.email_verified",
+          "user.created_at",
+          "session.client",
+          "session.created_at"
+        ]
+      },
+      "JwtTemplateClaim": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "from": {
+                "$ref": "#/components/schemas/JwtTemplateSource"
+              }
+            },
+            "required": [
+              "from"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "JwtTemplate": {
+        "type": "object",
+        "properties": {
+          "claims": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JwtTemplateClaim"
+            }
+          }
+        },
+        "additionalProperties": false
       },
       "SessionSettings": {
         "default": {},
@@ -5532,6 +5620,16 @@
           },
           "onLimit": {
             "$ref": "#/components/schemas/SessionLimitAction"
+          },
+          "jwtTemplates": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JwtTemplate"
+            }
           }
         },
         "additionalProperties": false

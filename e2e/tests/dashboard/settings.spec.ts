@@ -276,6 +276,72 @@ test('session profiles: add a custom profile, set a limit, and a bad duration is
   await expectScreenAccessible(page, 'session profiles, refused')
 })
 
+test('JWT templates: a template is built, chosen for a profile and saved; a reserved claim and a template in use are refused; losing claims asks first', async ({
+  page,
+}) => {
+  await open(page, `${ENVIRONMENT_PATH}/sessions`, 'Session profiles')
+  await expect(page.getByText('No templates yet.')).toBeVisible()
+
+  await page.getByLabel('New template name').fill('app')
+  await page.getByRole('button', { name: 'Add template' }).click()
+  const template = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('heading', { name: 'app', exact: true }) })
+  await expect(template.getByText('Not used by a profile.')).toBeVisible()
+
+  // A claim Tula sets itself can never be a template's.
+  await template.getByLabel('New claim name').fill('sub')
+  await template.getByRole('button', { name: 'Add claim' }).click()
+  await expect(template.getByText(/reserved claim name/)).toBeVisible()
+  await expectScreenAccessible(page, 'jwt templates, a reserved claim refused')
+
+  await template.getByLabel('New claim name').fill('role')
+  await template.getByRole('button', { name: 'Add claim' }).click()
+  await template.getByLabel('Value of role').selectOption('text')
+  await template.getByLabel('Text of role').fill('member')
+  await template.getByLabel('New claim name').fill('email')
+  await template.getByLabel('New claim name').press('Enter')
+  await template.getByLabel('Value of email').selectOption('user.email')
+  await expect(template.getByText(/^Up to [\d,]+ of 1,024 bytes\.$/)).toBeVisible()
+
+  const web = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('heading', { name: 'web', exact: false }) })
+    .filter({ has: page.getByLabel('JWT template') })
+  await web.getByLabel('JWT template').selectOption('app')
+  await expect(template.getByText('Used by: web.')).toBeVisible()
+  await expectScreenAccessible(page, 'jwt templates, a template in use')
+
+  // Adding claims weakens nothing: saved without a question.
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Settings saved')).toBeVisible()
+  const saved = await page.request.get(`${API_URL}/v1/admin/settings`, {
+    headers: { authorization: `Bearer ${SECRET_KEY}` },
+  })
+  const { settings } = (await saved.json()) as {
+    settings: {
+      sessions: { jwtTemplates: unknown; profiles: { web: { jwtTemplate: string | null } } }
+    }
+  }
+  expect(settings.sessions.jwtTemplates).toEqual({
+    app: { claims: { role: { value: 'member' }, email: { from: 'user.email' } } },
+  })
+  expect(settings.sessions.profiles.web.jwtTemplate).toBe('app')
+
+  // A template a profile uses stays until the profile lets go of it.
+  await template.getByRole('button', { name: 'Take out the app template' }).click()
+  await expect(template.getByRole('alert')).toContainText('The web profile uses this template.')
+  await expect(page.getByRole('status').filter({ hasText: 'No unsaved changes.' })).toBeVisible()
+
+  // Taking claims away from a profile's sessions is asked about, in words.
+  await web.getByLabel('JWT template').selectOption('')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(dialog(page)).toContainText('Sessions of the “web” profile lose custom claims')
+  await expectScreenAccessible(page, 'jwt templates, losing claims confirmation')
+  await dialog(page).getByRole('button', { name: 'Save anyway' }).click()
+  await expect(page.getByText('Settings saved')).toBeVisible()
+})
+
 test('a draft made in one environment does not follow the operator to another', async ({
   page,
 }) => {

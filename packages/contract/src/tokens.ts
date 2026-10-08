@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { CUSTOM_CLAIMS_CLAIM } from './custom-claims'
 
 /** Version of the access-token claim layout. Bump only with a migration plan for SDKs. */
 export const ACCESS_TOKEN_VERSION = 1
@@ -105,6 +106,19 @@ export const AccessTokenClaimsSchema = z
      * an ordinary one. Optional: tokens issued before profiles existed do not carry it.
      */
     sp: z.string().optional(),
+    /**
+     * The session's custom claims: what the JWT template of its profile defines (ADR 0036),
+     * each key holding one string, number or boolean. **Absent** when the profile uses no
+     * template or the template yields nothing for this user; never an empty object.
+     *
+     * Everything an operator adds lives under this one claim, so it can never be mistaken for
+     * one of Tula's. A constant in it is what the operator configured, not something the
+     * server checked. An application that authorizes on a custom claim must treat a missing
+     * claim as "no". Read it with `readCustomClaims`, which refuses any other shape.
+     */
+    [CUSTOM_CLAIMS_CLAIM]: z
+      .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+      .optional(),
   })
   .meta({ ref: 'AccessTokenClaims' })
 

@@ -39,11 +39,13 @@ const DEFAULT_PROFILE: SessionProfile = {
   refresh: { reuseGracePeriod: '10s' },
   stepUpAfter: null,
   clientSelectable: false,
+  jwtTemplate: null,
 }
 const DEFAULT_SESSIONS: SessionSettings = {
   profiles: { web: DEFAULT_PROFILE, mobile: DEFAULT_PROFILE },
   maxPerUser: null,
   onLimit: 'end_oldest',
+  jwtTemplates: {},
 }
 
 describe('EnvironmentSettingsSchema', () => {

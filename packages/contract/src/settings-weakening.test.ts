@@ -225,3 +225,159 @@ describe('settingsWeakenings', () => {
     expect(settingsWeakenings(before, base)).toEqual(['sessions.profiles.kiosk'])
   })
 })
+
+describe('settingsWeakenings and custom claims', () => {
+  const templated: EnvironmentSettings = EnvironmentSettingsSchema.parse({
+    sessions: {
+      jwtTemplates: {
+        app: { claims: { role: { value: 'member' }, email: { from: 'user.email' } } },
+        spare: { claims: { plan: { value: 'free' } } },
+      },
+      profiles: {
+        web: { jwtTemplate: 'app' },
+        admin: { jwtTemplate: 'app' },
+      },
+    },
+  })
+
+  function after(patch: (settings: EnvironmentSettings) => void): EnvironmentSettings {
+    const next = structuredClone(templated)
+    patch(next)
+    return next
+  }
+
+  // What an application may be authorizing on is gone or means something else.
+  test.each([
+    [
+      'a profile stops using its template',
+      (s) => {
+        s.sessions.profiles.web.jwtTemplate = null
+      },
+      ['sessions.profiles.web.jwtTemplate'],
+    ],
+    [
+      'a claim is removed from a template in use: every profile that uses it',
+      (s) => {
+        s.sessions.jwtTemplates.app = { claims: { email: { from: 'user.email' } } }
+      },
+      ['sessions.profiles.web.jwtTemplate', 'sessions.profiles.admin.jwtTemplate'],
+    ],
+    [
+      'a claim’s constant changes',
+      (s) => {
+        s.sessions.jwtTemplates.app = {
+          claims: { role: { value: 'admin' }, email: { from: 'user.email' } },
+        }
+      },
+      ['sessions.profiles.web.jwtTemplate', 'sessions.profiles.admin.jwtTemplate'],
+    ],
+    [
+      'a claim’s source changes',
+      (s) => {
+        s.sessions.jwtTemplates.app = {
+          claims: { role: { value: 'member' }, email: { from: 'session.client' } },
+        }
+      },
+      ['sessions.profiles.web.jwtTemplate', 'sessions.profiles.admin.jwtTemplate'],
+    ],
+    [
+      'a profile switches to a template without one of its claims',
+      (s) => {
+        s.sessions.profiles.admin = { ...s.sessions.profiles.web, jwtTemplate: 'spare' }
+      },
+      ['sessions.profiles.admin.jwtTemplate'],
+    ],
+    [
+      'a profile is removed and the built-in it falls back to lacks its claims',
+      (s) => {
+        delete s.sessions.profiles.admin
+        s.sessions.profiles.web.jwtTemplate = 'spare'
+      },
+      ['sessions.profiles.web.jwtTemplate', 'sessions.profiles.admin.jwtTemplate'],
+    ],
+  ] as [string, (settings: EnvironmentSettings) => void, string[]][])(
+    '%s',
+    (_name, patch, expected) => {
+      expect(settingsWeakenings(templated, after(patch))).toEqual(expected)
+    }
+  )
+
+  test.each([
+    [
+      'a new template',
+      (s) => {
+        s.sessions.jwtTemplates.extra = { claims: { a: { value: 1 } } }
+      },
+    ],
+    [
+      'a claim added to a template in use',
+      (s) => {
+        s.sessions.jwtTemplates.app = {
+          claims: {
+            role: { value: 'member' },
+            email: { from: 'user.email' },
+            beta: { value: true },
+          },
+        }
+      },
+    ],
+    [
+      'a profile starts using a template',
+      (s) => {
+        s.sessions.profiles.mobile.jwtTemplate = 'spare'
+      },
+    ],
+    [
+      'a template no profile uses is changed',
+      (s) => {
+        s.sessions.jwtTemplates.spare = { claims: {} }
+      },
+    ],
+    [
+      'a template no profile uses is removed',
+      (s) => {
+        delete s.sessions.jwtTemplates.spare
+      },
+    ],
+    [
+      'a template is renamed and its profiles follow',
+      (s) => {
+        s.sessions.jwtTemplates.renamed = {
+          claims: { role: { value: 'member' }, email: { from: 'user.email' } },
+        }
+        delete s.sessions.jwtTemplates.app
+        s.sessions.profiles.web.jwtTemplate = 'renamed'
+        s.sessions.profiles.admin = { ...s.sessions.profiles.web }
+      },
+    ],
+    [
+      'the claims are written in another order',
+      (s) => {
+        s.sessions.jwtTemplates.app = {
+          claims: { email: { from: 'user.email' }, role: { value: 'member' } },
+        }
+      },
+    ],
+    [
+      'a profile is removed and the built-in carries the same claims',
+      (s) => {
+        delete s.sessions.profiles.admin
+      },
+    ],
+  ] as [string, (settings: EnvironmentSettings) => void][])(
+    '%s is not a weakening',
+    (_name, patch) => {
+      expect(settingsWeakenings(templated, after(patch))).toEqual([])
+    }
+  )
+
+  test('a stored profile naming a template that is gone had no claims to lose', () => {
+    const before = after((s) => {
+      s.sessions.profiles.web.jwtTemplate = 'gone'
+    })
+    const next = after((s) => {
+      s.sessions.profiles.web.jwtTemplate = null
+    })
+    expect(settingsWeakenings(before, next)).toEqual([])
+  })
+})
