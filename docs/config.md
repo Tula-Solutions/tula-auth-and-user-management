@@ -401,6 +401,10 @@ Changes pending. Run `tula apply` to make them.
 - `+` added, `~` changed, `-` removed, by path. Allowed origins, redirect URLs and
   the countries text messages may go to (`sms.allowedCountries`) are sets:
   their order is not a change, and a change shows the entries added and removed.
+  One thing does read the order of `urls.allowedOrigins`: a texted code is bound to the host
+  of its **first** entry ([phone numbers](phone-numbers.md)). Reordering the list changes that
+  line of the message, and `diff` shows nothing for it: write the origin your users type the
+  code on first.
 - JWT templates (`sessions.jwtTemplates`) are a set by name, and a template's claims a set by
   key: their order is not a change. A claim is one value: a changed claim is one line at
   `sessions.jwtTemplates.<name>.claims.<key>` with the claim before and after, never a line

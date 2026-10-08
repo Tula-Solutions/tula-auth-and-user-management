@@ -31,6 +31,22 @@ describe('codeText', () => {
     ).toBe('Your Northline verification code is 000042.\n\n@localhost #000042')
   })
 
+  // `tula diff` compares `urls.allowedOrigins` as a set, so a reordering is no change to it.
+  // It is one to the message: the line is bound to whichever origin is written first.
+  test('the same origins in another order bind the code to another host', () => {
+    const origins = ['https://app.northline.app', 'https://admin.northline.app']
+    const text = (allowedOrigins: string[]) =>
+      codeText({ appName: 'Northline', allowedOrigins, code: '123456' })
+    expect(text(origins)).toBe(
+      'Your Northline verification code is 123456.\n\n@app.northline.app #123456'
+    )
+    expect(text([...origins].reverse())).toBe(
+      'Your Northline verification code is 123456.\n\n@admin.northline.app #123456'
+    )
+    // Only ever one bound line, and never a later entry beside the first.
+    expect(text(origins)).not.toContain('admin.northline.app')
+  })
+
   test('without an allowed origin there is no bound line at all', () => {
     expect(codeText({ appName: 'Northline', allowedOrigins: [], code: '123456' })).toBe(
       'Your Northline verification code is 123456.'

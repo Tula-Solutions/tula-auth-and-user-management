@@ -63,7 +63,10 @@ can text a code, or when the user already has a number:
    code is refused, never guessed.
 2. The code from the text message. The field is `autocomplete="one-time-code"`, and the
    message ends with a line (`@your-host #123456`) that lets a phone offer the code on your
-   site only. The host is that of the environment's first allowed origin.
+   site only. The host is that of the **first** entry of the environment's
+   `urls.allowedOrigins`: put the origin where users type the code first. The list is
+   otherwise a set, so `tula diff` reports nothing when it is only reordered, although the
+   message's last line then changes.
 3. The number, marked **Verified**, with **Change** and **Remove**.
 
 Adding, changing and removing ask for a recent authentication first

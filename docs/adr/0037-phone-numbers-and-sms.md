@@ -159,6 +159,8 @@ Your Northline verification code is 123456.
 - The last line is the origin-bound one-time-code format: a browser or operating system that
   knows it offers the code only on that site. The host is that of the environment's **first**
   allowed origin, never anything a request said. With no allowed origin the line is left out.
+  The list is a set everywhere else (`tula diff` shows nothing for a reordering), so this is
+  the one reader of its order: accepted and documented, until a setting names the host.
 - It starts with a word, and the code is its last run of six digits.
 - With the longest app name the settings accept it is one GSM-7 segment.
 - It says nothing of when the code expires: the sentence would not fit one segment beside a
