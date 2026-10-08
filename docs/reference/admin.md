@@ -210,10 +210,14 @@ export interface Operations {
   banUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Create an API key (`POST /v1/admin/api-keys`). */
   createApiKey: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateApiKeyRequest']; response: Schemas['CreatedApiKey'] }
+  /** Register a hook (`POST /v1/admin/hooks`). */
+  createHook: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateHookRequest']; response: Schemas['CreatedHook'] }
   /** Create a user (`POST /v1/admin/users`). */
   createUser: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateUserRequest']; response: Schemas['User'] }
   /** Register a webhook endpoint (`POST /v1/admin/webhook-endpoints`). */
   createWebhookEndpoint: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateWebhookEndpointRequest']; response: Schemas['CreatedWebhookEndpoint'] }
+  /** Remove a hook (`DELETE /v1/admin/hooks/{id}`). */
+  deleteHook: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Remove an OAuth provider’s credentials (`DELETE /v1/admin/oauth-providers/{provider}`). */
   deleteOAuthProvider: { params: { provider: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Delete a user (`DELETE /v1/admin/users/{userId}`). */
@@ -222,6 +226,8 @@ export interface Operations {
   deleteWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Read the environment’s settings (`GET /v1/admin/settings`). */
   getEnvironmentSettings: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['EnvironmentSettingsState'] }
+  /** Get a hook (`GET /v1/admin/hooks/{id}`). */
+  getHook: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Hook'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
   getUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Get how a user signs in (`GET /v1/admin/users/{userId}/authentication`). */
@@ -236,6 +242,8 @@ export interface Operations {
   listAuditLogs: { params: Record<string, never>; query: { action?: Schemas['ActivityType']; actorId?: string; targetId?: string; actorType?: 'user' | 'admin' | 'system' | 'agent' | 'instance_admin'; from?: string; to?: string; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['AuditLogList'] }
   /** List environments (`GET /v1/admin/environments`). */
   listEnvironments: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['EnvironmentList'] }
+  /** List hooks (`GET /v1/admin/hooks`). */
+  listHooks: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['HookList'] }
   /** List OAuth providers (`GET /v1/admin/oauth-providers`). */
   listOAuthProviders: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OAuthProviderSettingsList'] }
   /** List signing keys (`GET /v1/admin/signing-keys`). */
@@ -272,6 +280,8 @@ export interface Operations {
   setUserPassword: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['SetPasswordRequest']; response: undefined }
   /** Unban a user (`POST /v1/admin/users/{userId}/unban`). */
   unbanUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
+  /** Change a hook (`PATCH /v1/admin/hooks/{id}`). */
+  updateHook: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['UpdateHookRequest']; response: Schemas['Hook'] }
   /** Set an OAuth provider’s credentials (`PUT /v1/admin/oauth-providers/{provider}`). */
   updateOAuthProvider: { params: { provider: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['OAuthProviderUpdate']; response: Schemas['OAuthProviderSettings'] }
   /** Change a webhook endpoint (`PATCH /v1/admin/webhook-endpoints/{id}`). */
@@ -329,7 +339,7 @@ export interface Schemas {
     amr?: string[]
     sp?: string
   }
-  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked'
+  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted'
   ApiKey: {
     id: string
     kind: Schemas['ApiKeyKind']
@@ -403,6 +413,13 @@ export interface Schemas {
   CreateEnvironmentRequest: {
     kind: Schemas['EnvironmentKind']
   }
+  CreateHookRequest: {
+    point: 'before_sign_up'
+    url: string
+    enabled?: boolean
+    deadlineMs?: number
+    failureMode?: 'deny' | 'allow'
+  }
   CreateProjectRequest: {
     workspaceId: string
     name: string
@@ -416,7 +433,7 @@ export interface Schemas {
   }
   CreateWebhookEndpointRequest: {
     url: string
-    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked')[]
+    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted')[]
     enabled?: boolean
   }
   CreateWorkspaceRequest: {
@@ -433,6 +450,20 @@ export interface Schemas {
     revokedAt: string | null
     /** The full key. Store it now: it is shown only once. */
     key: string
+  }
+  CreatedHook: {
+    id: string
+    point: string
+    url: string
+    enabled: boolean
+    deadlineMs: number
+    failureMode: string
+    lastFailedAt: string | null
+    lastFailureReason: string | null
+    createdAt: string
+    updatedAt: string
+    /** The signing secret. Store it now: it is shown only once. */
+    secret: string
   }
   CreatedProject: {
     project: Schemas['Project']
@@ -589,7 +620,7 @@ export interface Schemas {
     managedBy?: string | null
     outsideConfig?: boolean
   }
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -609,6 +640,95 @@ export interface Schemas {
     code: Schemas['ErrorCode']
     message: string
     params?: Schemas['ErrorParams']
+  }
+  Hook: {
+    id: string
+    point: string
+    url: string
+    enabled: boolean
+    deadlineMs: number
+    failureMode: string
+    lastFailedAt: string | null
+    lastFailureReason: string | null
+    createdAt: string
+    updatedAt: string
+  }
+  HookAnswer: {
+    decision: 'allow'
+  } | {
+    decision: 'deny'
+    code?: string
+  }
+  HookBeforeSignUpData: {
+    email: string
+    method: 'password' | 'passwordless' | 'oauth_google' | 'oauth_github' | 'oauth_apple'
+    client: Schemas['SessionClient']
+    ipAddress: string | null
+  }
+  HookBeforeSignUpQuestion: {
+    id: string
+    type: 'hook.before_sign_up'
+    schemaVersion: 1
+    occurredAt: string
+    data: Schemas['HookBeforeSignUpData']
+  }
+  HookCreatedEvent: {
+    id: string
+    type: 'hook.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'hook'
+      id: string
+    }
+    data: Schemas['HookCreatedEventData']
+    test?: true
+  }
+  HookCreatedEventData: {
+    point: 'before_sign_up'
+    enabled: boolean
+    failureMode: 'deny' | 'allow'
+    weakened?: boolean
+  }
+  HookDeletedEvent: {
+    id: string
+    type: 'hook.deleted'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'hook'
+      id: string
+    }
+    data: Schemas['HookDeletedEventData']
+    test?: true
+  }
+  HookDeletedEventData: {
+    point: 'before_sign_up'
+    weakened?: boolean
+  }
+  HookList: {
+    data: Schemas['Hook'][]
+  }
+  HookQuestion: Schemas['HookBeforeSignUpQuestion']
+  HookUpdatedEvent: {
+    id: string
+    type: 'hook.updated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'hook'
+      id: string
+    }
+    data: Schemas['HookUpdatedEventData']
+    test?: true
+  }
+  HookUpdatedEventData: {
+    point: 'before_sign_up'
+    changed: ('url' | 'enabled' | 'deadlineMs' | 'failureMode')[]
+    weakened?: boolean
   }
   InstanceActivityType: 'instance.signed_in' | 'instance.sign_in_failed' | 'instance.signed_out' | 'workspace.created' | 'project.created' | 'project.renamed' | 'environment.created'
   InstanceAuditLogList: {
@@ -745,7 +865,7 @@ export interface Schemas {
     secret: string
   }
   SendTestWebhookRequest: {
-    eventType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked'
+    eventType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted'
   }
   Session: {
     id: string
@@ -890,13 +1010,19 @@ export interface Schemas {
     nextKeyId: string
   }
   SigningKeyStatus: 'next' | 'active' | 'retired'
-  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent']
+  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent']
+  UpdateHookRequest: {
+    url?: string
+    enabled?: boolean
+    deadlineMs?: number
+    failureMode?: 'deny' | 'allow'
+  }
   UpdateProjectRequest: {
     name: string
   }
   UpdateWebhookEndpointRequest: {
     url?: string
-    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked')[]
+    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted')[]
     enabled?: boolean
   }
   User: {
@@ -983,6 +1109,7 @@ export interface Schemas {
     method: 'admin' | 'sign_up' | 'oauth_google' | 'oauth_github' | 'oauth_apple'
     emailVerified: boolean
     passwordless?: boolean
+    hookBypassed?: boolean
   }
   UserDeletedEvent: {
     id: string
@@ -1364,6 +1491,24 @@ How long one request may take before it fails with `network.timeout`, by default
 const DEFAULT_TIMEOUT_MS: 30000
 ```
 
+### `HOOK_QUESTION_TYPE_NAMES`
+
+_constant_, defined in `packages/admin/src/hook.ts`
+
+The `type` of every question this version knows. A closed list on purpose: a hook must
+never allow something it does not understand, so a question of another type is refused
+(`hook.invalid_payload`) rather than passed on.
+
+```ts
+const HOOK_QUESTION_TYPE_NAMES: ["hook.before_sign_up"]
+```
+
+**Example**
+
+```ts
+HOOK_QUESTION_TYPE_NAMES.includes('hook.before_sign_up') // true
+```
+
 ### `INSTANCE_OPERATIONS`
 
 _constant_, defined in `packages/admin/src/generated/api.gen.ts`
@@ -1601,6 +1746,47 @@ export interface TulaAdminErrorInit {
   retryAfterMs?: number
   /** What kind of failure a missing answer was (an error's name, never its message). */
   reason?: string
+}
+```
+
+### `TulaHookAnswer`
+
+_type_, defined in `packages/admin/src/hook.ts`
+
+What a hook answers, as the JSON body of a `200`: allow, or deny with an optional message
+code of your own (lower-case letters, digits and underscores, at most 64) that your app
+turns into words. **Exactly this and nothing else**: any other key, another `decision` or a
+status that is not 2xx is not an answer, and the hook's failure mode decides.
+
+```ts
+export type TulaHookAnswer = Schemas['HookAnswer']
+```
+
+**Example**
+
+```ts
+const answer: TulaHookAnswer = { decision: 'deny', code: 'disposable_email' }
+```
+
+### `TulaHookQuestion`
+
+_type_, defined in `packages/admin/src/hook.ts`
+
+A question Tula asks a hook: a union told apart by `type`. Not an event: nothing has
+happened yet, and what you answer decides whether it does.
+
+```ts
+export type TulaHookQuestion = Schemas['HookQuestion']
+```
+
+**Example**
+
+```ts
+function decide(question: TulaHookQuestion): TulaHookAnswer {
+  if (question.type === 'hook.before_sign_up' && question.data.email.endsWith('@spam.example')) {
+    return { decision: 'deny', code: 'domain_blocked' }
+  }
+  return { decision: 'allow' }
 }
 ```
 
@@ -1874,6 +2060,79 @@ export function isTulaAdminError(value: unknown): value is TulaAdminError
 ```ts
 if (isTulaAdminError(error)) {
   log(error.code, error.status)
+}
+```
+
+### `verifyHook`
+
+_function_, defined in `packages/admin/src/hook.ts`
+
+Verify a hook's question from Tula and return it.
+
+A question is a `POST` whose body is JSON and whose headers are signed exactly as a webhook
+delivery's are (`webhook-id`, `webhook-timestamp`, `webhook-signature`: the Standard
+Webhooks scheme, HMAC-SHA256 over `<id>.<timestamp>.<body>` with the hook's secret), so this
+checks what {@link verifyWebhook } checks: the signature in constant time, and a timestamp
+within five minutes of this server's clock. It then requires the body to be a **question**:
+an event is refused here, and a question is refused by `verifyWebhook`, whatever secret
+signed either.
+
+**Answer inside the hook's deadline** (two seconds unless you set another, never more than
+five) with a `200` and exactly `{ "decision": "allow" }` or
+`{ "decision": "deny", "code": "your_code" }` ({@link TulaHookAnswer}). Anything else (an
+error status, a redirect, another key, no answer in time) is a failure, and the hook's
+failure mode decides: by default the sign-up is refused. Answer first and do slow work
+afterwards; a question is asked once and never repeated.
+
+**Refuse what you cannot verify**: answer a non-2xx when this throws. Never answer `allow`
+to a request that did not verify.
+
+**Pass the body exactly as it arrived**: the raw text or bytes of the request, never an
+object your framework parsed and you wrote out again.
+
+Runs on any server runtime (it uses Web Crypto). Never call it from a browser: it takes the
+hook's secret.
+
+```ts
+export async function verifyHook(
+  body: string | Uint8Array,
+  headers: WebhookHeaders,
+  secret: WebhookSecrets,
+  options: VerifyWebhookOptions = {}
+): Promise<TulaHookQuestion>
+```
+
+**Parameters**
+
+- `body`: The request body as received: text or bytes.
+- `headers`: The request's headers.
+- `secret`: The hook's signing secret (`whsec_…`), as its registration returned it.
+- `options`: The clock to judge the timestamp by; the real one unless given.
+
+**Returns** The question.
+
+**Throws**
+
+TulaAdminError with `status` 0 and one of these codes, and never with the secret, a
+signature or the body in it: `hook.invalid_secret`, `hook.invalid_headers`,
+`hook.timestamp_out_of_tolerance`, `hook.invalid_signature`, `hook.invalid_payload`
+(signed correctly, but not a question this version knows with the request's id).
+
+**Example**
+
+```ts
+// A complete receiver (Next.js, Hono, any `Request`-based server).
+export async function POST(request: Request) {
+  let question: TulaHookQuestion
+  try {
+    question = await verifyHook(await request.text(), request.headers, process.env.TULA_HOOK_SECRET ?? '')
+  } catch {
+    return new Response(null, { status: 400 })
+  }
+  const answer: TulaHookAnswer = question.data.email.endsWith('@mailinator.com')
+    ? { decision: 'deny', code: 'disposable_email' }
+    : { decision: 'allow' }
+  return Response.json(answer)
 }
 ```
 

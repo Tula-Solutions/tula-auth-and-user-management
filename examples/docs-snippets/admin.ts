@@ -2,11 +2,14 @@ import {
   createAdminClient,
   ifMatch,
   isTulaAdminError,
+  type TulaHookAnswer,
+  type TulaHookQuestion,
   type TulaWebhookEvent,
+  verifyHook,
   verifyWebhook,
 } from '@tula/admin'
 
-// The admin API calls shown in docs/methods/*.md and docs/webhooks.md, through `@tula/admin` so that they are
+// The admin API calls shown in docs/methods/*.md, docs/webhooks.md and docs/hooks.md, through `@tula/admin` so that they are
 // typed against the OpenAPI contract. Copied by region (`bun run docs:generate`) and compiled
 // by `bun run typecheck:scripts`. Nothing here runs.
 
@@ -312,3 +315,58 @@ export async function revokePreviousWebhookSecret(endpointId: string) {
   }
   // #endregion
 }
+
+/** Register the hook asked before a sign-up, and change it later. */
+export async function registerHook(storeSecret: (secret: string) => Promise<void>) {
+  // #region hook-register
+  const { data: hook } = await admin.call('createHook', {
+    body: {
+      point: 'before_sign_up',
+      url: 'https://api.example.com/tula/before-sign-up',
+      // Optional: 2000 unless given, at least 100, never more than 5000.
+      deadlineMs: 2000,
+    },
+  })
+  // The only time the secret is returned: put it in your secret manager now.
+  await storeSecret(hook.secret)
+  // #endregion
+  // #region hook-manage
+  // What the operator sees of a hook that is failing: when, and a fixed word for why.
+  const { data: current } = await admin.call('getHook', { params: { id: hook.id } })
+  if (current.lastFailureReason === 'timeout') {
+    // The endpoint did not answer inside `deadlineMs`.
+  }
+  // Each of these removes a check and is recorded with `weakened: true`.
+  await admin.call('updateHook', { params: { id: hook.id }, body: { failureMode: 'allow' } })
+  await admin.call('updateHook', { params: { id: hook.id }, body: { enabled: false } })
+  await admin.call('deleteHook', { params: { id: hook.id } })
+  // #endregion
+}
+
+/** The hook's signing secret (`whsec_…`), from your secret manager. */
+declare const hookSecret: string
+/** Your own rule. Keep it fast: the person signing up is waiting for the answer. */
+declare function isDisposable(email: string): boolean
+
+// #region hook-receive
+// The route the hook's address leads to, on any server that gives you a `Request`.
+export async function beforeSignUp(request: Request): Promise<Response> {
+  let question: TulaHookQuestion
+  try {
+    // The body exactly as it arrived: the signature is over these bytes.
+    question = await verifyHook(await request.text(), request.headers, hookSecret)
+  } catch (error) {
+    // Not from Tula, changed on the way, older than five minutes, or not a question.
+    // Never answer `allow` to a request that did not verify.
+    return new Response(null, { status: isTulaAdminError(error) ? 400 : 500 })
+  }
+  // `question.data` is the address being signed up, how (`password`, `passwordless`,
+  // `oauth_google`, …), the kind of client and the IP address the request came from.
+  const answer: TulaHookAnswer = isDisposable(question.data.email)
+    ? // Your own code, for your app to turn into words: lower-case letters, digits, `_`.
+      { decision: 'deny', code: 'disposable_email' }
+    : { decision: 'allow' }
+  // A 200 with exactly this body. Anything else is a failed call, not an answer.
+  return Response.json(answer)
+}
+// #endregion

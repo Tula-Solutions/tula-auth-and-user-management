@@ -318,3 +318,23 @@ Before finishing any change here, confirm each item holds and has a test:
     `outbound.test.ts`. Its settings come from `deps.outbound` only, which `container.ts`
     builds as `{ tier }` and nothing else (a test holds that): never pass a resolver or a
     certificate from configuration, and never call an operator's address with `fetch`.
+49. **Hooks (ADR 0035):** the `before_sign_up` hook is asked only where an account is about
+    to be created for a proven address. Test, for every sign-up path, an existing and a new
+    address side by side: the same answers, and the receiver not called at the start, for a
+    wrong code, for a decoy attempt, without the attempt's secret, from a foreign origin, or
+    for an address that has an account. A denial and a failure leave no user, identity,
+    session or `user.created`, and end the attempt. Every kind of bad answer (a non-2xx
+    whatever its body, a redirect, an oversized body, not JSON, an unknown key, a `code`
+    beside an `allow`, a late answer, a hang) is a failure, tested in both failure modes:
+    refused as `hook.unavailable` by default, let through with `hookBypassed` under `allow`.
+    The deadline: 5001 refused by the contract and by the database, and the service never
+    passes more than 5000. An address that passed when saved and resolves to a private one
+    when called is not called. A secret that does not open sends nothing; a ciphertext sealed
+    for another hook, another environment or under the webhooks' purpose does not open.
+    Another environment's hook, a disabled hook and a removed hook are never asked; a hook
+    changed mid-attempt applies as it is when the account is about to be created. An answer
+    with extra fields changes nothing about the account or its session. An administrator's
+    create asks nothing. Nothing of an answer beyond the decision and the code reaches a
+    store, a log line or an error (canary in the answer's headers and body), and no log line
+    holds the address asked about. `allow` on failure, switching a hook off and removing one
+    that is on are recorded with `weakened: true`.

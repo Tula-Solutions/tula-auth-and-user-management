@@ -206,7 +206,9 @@ of.
   `session.created`); the replay marker of a TOTP time step; an authenticator enrolment that
   is only started (it counts as nothing until confirmed, which is recorded); transient rows
   (flow attempts, verification tokens, WebAuthn challenges); and the retention job's deletes
-  of rows that had already ended ([ADR 0017](0017-retention.md)); and what the webhook worker
+  of rows that had already ended ([ADR 0017](0017-retention.md)); when a hook's call last failed and why (`HookStore.noteFailure`, a method of its own that
+  takes none: what an operator is shown of a failing hook, and no change to anyone's access;
+  [ADR 0035](0035-hooks.md)); and what the webhook worker
   writes ([ADR 0034](0034-webhooks.md)): a delivery row and its attempts, which are themselves
   the record of the delivery, an event's `delivered_at` (`WebhookDeliveryStore` has no method
   that takes an activity), and an endpoint's run of failed requests (when it began and when

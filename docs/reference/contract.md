@@ -90,7 +90,7 @@ _constant_, defined in `packages/contract/src/audit.ts`
 What a recorded action can be about.
 
 ```ts
-const AUDIT_TARGET_TYPES: readonly ["user", "session", "api_key", "signing_key", "environment", "webhook_endpoint"]
+const AUDIT_TARGET_TYPES: readonly ["user", "session", "api_key", "signing_key", "environment", "webhook_endpoint", "hook"]
 ```
 
 ### `AUTHENTICATION_METHODS`
@@ -484,6 +484,30 @@ nothing an operator would not put on that screen.
 const ClientConfigSchema
 ```
 
+### `CreateHookRequest`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+Body of a hook's registration.
+
+```ts
+export type CreateHookRequest = z.infer<typeof CreateHookRequestSchema>
+```
+
+### `CreateHookRequestSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Body of `POST /v1/admin/hooks`.
+
+`url` must be one the server may call: `https`, no credentials, and a host that resolves to
+public addresses only (`hook.url_not_allowed` otherwise). There is no `secret` field: the
+server generates it. `failureMode: 'allow'` is recorded as a weakening.
+
+```ts
+const CreateHookRequestSchema
+```
+
 ### `CreateUserRequest`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -529,6 +553,27 @@ server generates it.
 
 ```ts
 const CreateWebhookEndpointRequestSchema
+```
+
+### `CreatedHook`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+A hook with its secret, as its registration returns it.
+
+```ts
+export type CreatedHook = z.infer<typeof CreatedHookSchema>
+```
+
+### `CreatedHookSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+A newly registered hook. `secret` is its signing secret (`whsec_…`), in this response only:
+the server keeps it sealed and never returns it again.
+
+```ts
+const CreatedHookSchema
 ```
 
 ### `CreatedWebhookEndpoint`
@@ -912,7 +957,8 @@ What each event is about: the `target.type` of its payload. `target.id` is that 
 
 An event about a user's credentials targets the `user` (the passkey or session concerned
 is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
-endpoint has an id of its own, as an API key does, so it is its own kind of target.
+endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
+is a hook.
 
 ```ts
 const EVENT_TARGET_TYPES: Record<any, any>
@@ -1446,6 +1492,431 @@ what lets a new auth method ship everywhere with only a server change (business 
 
 ```ts
 const FlowStepSchema
+```
+
+### `HOOK_DEFAULT_DEADLINE_MS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+How long the server waits for a hook's answer unless the hook says otherwise, in
+milliseconds. A hook is on the path of a person signing up: they are waiting.
+
+```ts
+const HOOK_DEFAULT_DEADLINE_MS: 2000
+```
+
+**Example**
+
+```ts
+const deadlineMs = input.deadlineMs ?? HOOK_DEFAULT_DEADLINE_MS
+```
+
+### `HOOK_DENIAL_CODE_PATTERN`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What a denial's message code looks like: lower-case letters, digits and underscores. The
+operator's own name for why (`disposable_email`), which their app turns into words: narrow
+enough that it can be shown, logged and put in an error's `params` without being markup,
+a sentence or a secret.
+
+```ts
+const HOOK_DENIAL_CODE_PATTERN: {}
+```
+
+**Example**
+
+```ts
+HOOK_DENIAL_CODE_PATTERN.test('disposable_email') // true
+```
+
+### `HOOK_FAILURE_MODES`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What happens when a hook cannot be asked or does not answer as the contract says: `deny`
+refuses what was asked about (the default: a check that is down lets nobody through),
+`allow` lets it happen as if there were no hook. Choosing `allow` is a recorded weakening.
+
+```ts
+const HOOK_FAILURE_MODES: readonly ["deny", "allow"]
+```
+
+**Example**
+
+```ts
+const mode: HookFailureMode = 'deny'
+```
+
+### `HOOK_FAILURE_REASONS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Why a call of a hook failed, as a hook's `lastFailureReason` says it. Fixed words of the
+server's own: the first eight are the outbound guard's (the request was not made, or got no
+usable answer), then an answer whose status was not 2xx, an answer that was not exactly
+`{ "decision": … }`, and a signing secret the server could not open.
+
+```ts
+const HOOK_FAILURE_REASONS
+```
+
+**Example**
+
+```ts
+if (hook.lastFailureReason === 'timeout') {
+  // the endpoint did not answer inside the hook's deadline
+}
+```
+
+### `HOOK_FIELDS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The fields of a hook an update can change, as `hook.updated` names them. `url` says the
+address changed, never what it is or was.
+
+```ts
+const HOOK_FIELDS: readonly ["url", "enabled", "deadlineMs", "failureMode"]
+```
+
+**Example**
+
+```ts
+const changed: (typeof HOOK_FIELDS)[number][] = ['failureMode']
+```
+
+### `HOOK_MAX_DEADLINE_MS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The longest deadline a hook can be given, in milliseconds. Not configurable above this: the
+API's schema refuses a larger number and so does the database.
+
+```ts
+const HOOK_MAX_DEADLINE_MS: 5000
+```
+
+**Example**
+
+```ts
+deadlineMs <= HOOK_MAX_DEADLINE_MS
+```
+
+### `HOOK_MAX_DENIAL_CODE_LENGTH`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Longest message code a hook may deny with.
+
+```ts
+const HOOK_MAX_DENIAL_CODE_LENGTH: 64
+```
+
+**Example**
+
+```ts
+code.length <= HOOK_MAX_DENIAL_CODE_LENGTH
+```
+
+### `HOOK_MIN_DEADLINE_MS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The shortest deadline a hook can be given, in milliseconds.
+
+```ts
+const HOOK_MIN_DEADLINE_MS: 100
+```
+
+**Example**
+
+```ts
+deadlineMs >= HOOK_MIN_DEADLINE_MS
+```
+
+### `HOOK_POINTS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The points at which the server can ask a hook. A closed list: an environment has at most one
+hook per point. Later points are added here.
+
+```ts
+const HOOK_POINTS: readonly ["before_sign_up"]
+```
+
+**Example**
+
+```ts
+const point: HookPoint = HOOK_POINTS[0] // 'before_sign_up'
+```
+
+### `HOOK_QUESTION_FIXTURES`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+A valid example of every question, keyed by point: for documentation and for a receiver's
+tests. Plain data: nothing here is a real id or a real address.
+
+```ts
+const HOOK_QUESTION_FIXTURES: { readonly [P in HookPoint]: HookQuestionOf<P> }
+```
+
+**Example**
+
+```ts
+test('refuses a disposable address', async () => {
+  expect(await decide(HOOK_QUESTION_FIXTURES.before_sign_up)).toEqual({ decision: 'allow' })
+})
+```
+
+### `HOOK_QUESTION_SCHEMAS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The question of each point: the envelope around its `data`.
+
+- `id`: the question's id, also the `webhook-id` header. Every question has a new one.
+- `type`: {@link HOOK_QUESTION_TYPES} of the point.
+- `schemaVersion`: {@link HOOK_SCHEMA_VERSION}.
+- `occurredAt`: when the question was asked, ISO 8601, UTC.
+
+```ts
+const HOOK_QUESTION_SCHEMAS: Record<any, z.ZodObject<Record<string, any>, z.core.$strip>>
+```
+
+**Example**
+
+```ts
+const question = HOOK_QUESTION_SCHEMAS.before_sign_up.parse(JSON.parse(body))
+```
+
+### `HOOK_QUESTION_TYPES`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The `type` of the question asked at each point. None of them is the name of an event.
+
+```ts
+const HOOK_QUESTION_TYPES: Record<any, `hook.${any}`>
+```
+
+**Example**
+
+```ts
+if (question.type === HOOK_QUESTION_TYPES.before_sign_up) {
+  // question.data.email is the address being signed up
+}
+```
+
+### `HOOK_SCHEMA_VERSION`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The version of the hook questions: the `schemaVersion` of every question. Within a version a
+question only grows.
+
+```ts
+const HOOK_SCHEMA_VERSION: 1
+```
+
+**Example**
+
+```ts
+question.schemaVersion === HOOK_SCHEMA_VERSION
+```
+
+### `HOOK_SIGN_UP_METHODS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+How a sign-up is being made, as a `hook.before_sign_up` question says it: with a password,
+without one (an emailed code proved the address), or by a first sign-in with a provider.
+
+```ts
+const HOOK_SIGN_UP_METHODS: readonly ["password", "passwordless", ...any[]]
+```
+
+**Example**
+
+```ts
+const method: (typeof HOOK_SIGN_UP_METHODS)[number] = 'oauth_google'
+```
+
+### `Hook`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+A hook as listed.
+
+```ts
+export type Hook = z.infer<typeof HookSchema>
+```
+
+### `HookAnswer`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+What a hook answers.
+
+```ts
+export type HookAnswer = z.infer<typeof HookAnswerSchema>
+```
+
+### `HookAnswerSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The answer of a hook: allow, or deny with an optional message code of the operator's own.
+
+**Exactly this and nothing else.** A body that is not JSON, another `decision`, a `code`
+beside an `allow`, a code outside {@link HOOK_DENIAL_CODE_PATTERN} or **any other key** is
+not an answer: the call has failed and the hook's failure mode decides. An unknown key is
+not ignored, because a later version may give one meaning and a server that does not know
+it must not act on half of an answer. A hook can allow or deny; it cannot mark an address
+verified, skip a second factor, choose a user or add anything to an account.
+
+```ts
+const HookAnswerSchema
+```
+
+**Example**
+
+```ts
+return Response.json({ decision: 'deny', code: 'disposable_email' } satisfies HookAnswer)
+```
+
+### `HookBeforeSignUpDataSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The `data` of a `hook.before_sign_up` question. An allow-list, and strict: nothing reaches a
+question by being passed along.
+
+- `email`: the address the account would be created for, normalised (lower case): the form
+  an account is unique by. The address has been **proven** by the time the question is
+  asked (an emailed code, or a provider that asserts it verified).
+- `method`: one of {@link HOOK_SIGN_UP_METHODS}.
+- `client`: the kind of client the sign-up was started from.
+- `ipAddress`: the address the request that would create the account came from, as the
+  server knows it; `null` when it does not.
+
+Never a password, a code, a token, an attempt's id or secret, a name, a user agent or
+anything of a provider's profile.
+
+```ts
+const HookBeforeSignUpDataSchema
+```
+
+### `HookFailureMode`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+One of {@link HOOK_FAILURE_MODES}.
+
+```ts
+export type HookFailureMode = (typeof HOOK_FAILURE_MODES)[number]
+```
+
+### `HookFailureReason`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+One of {@link HOOK_FAILURE_REASONS}.
+
+```ts
+export type HookFailureReason = (typeof HOOK_FAILURE_REASONS)[number]
+```
+
+### `HookListSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+An environment's hooks, oldest first: at most one per point.
+
+```ts
+const HookListSchema
+```
+
+### `HookPoint`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+A point at which a hook is asked.
+
+```ts
+export type HookPoint = (typeof HOOK_POINTS)[number]
+```
+
+### `HookPointSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+One of {@link HOOK_POINTS}.
+
+```ts
+const HookPointSchema: z.ZodEnum<{}>
+```
+
+### `HookQuestion`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+Any question a hook is asked: a union told apart by `type`.
+
+```ts
+export type HookQuestion = { [P in HookPoint]: HookQuestionOf<P> }[HookPoint]
+```
+
+### `HookQuestionOf`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+The question asked at point `P`.
+
+```ts
+export type HookQuestionOf<P extends HookPoint> = z.infer<(typeof HOOK_QUESTION_SCHEMAS)[P]>
+```
+
+### `HookQuestionSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Any question, told apart by `type`: what a hook's receiver parses a request with.
+
+```ts
+const HookQuestionSchema: z.ZodDiscriminatedUnion<[any], "type">
+```
+
+**Example**
+
+```ts
+const question = HookQuestionSchema.parse(JSON.parse(body))
+```
+
+### `HookSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+A hook as the admin API lists it. The signing secret is never part of it: it is returned
+once, by the call that registered the hook.
+
+```ts
+const HookSchema
+```
+
+### `HookStrength`
+
+_interface_, defined in `packages/contract/src/hook.ts`
+
+What of a hook decides how much it protects.
+
+```ts
+export interface HookStrength {
+  enabled: boolean
+  failureMode: HookFailureMode
+}
 ```
 
 ### `HybridSessionTokens`
@@ -3487,6 +3958,27 @@ const TulaEventSchema: z.ZodType<EventOf<any>, unknown, z.core.$ZodTypeInternals
 const event = TulaEventSchema.parse(JSON.parse(body))
 ```
 
+### `UpdateHookRequest`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+Body of a hook's update.
+
+```ts
+export type UpdateHookRequest = z.infer<typeof UpdateHookRequestSchema>
+```
+
+### `UpdateHookRequestSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Body of `PATCH /v1/admin/hooks/{id}`: the fields to change, at least one. The point a hook
+was registered for and its secret cannot be changed.
+
+```ts
+const UpdateHookRequestSchema
+```
+
 ### `UpdateWebhookEndpointRequest`
 
 _type_, defined in `packages/contract/src/webhook.ts`
@@ -4240,6 +4732,44 @@ export function hasEnabledSignInMethod(settings: {
 hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS) // true: the password
 ```
 
+### `hookWeakenings`
+
+_function_, defined in `packages/contract/src/hook.ts`
+
+Which fields of a hook were changed in a way that lets through what it used to stop: the
+same idea as `settingsWeakenings` for an environment's settings, and meant for the same
+uses (the audit entry's `weakened`; later, `tula apply --yes` and the dashboard's
+confirmation).
+
+- `failureMode` from `deny` to `allow`, or a hook registered with `allow`: a check that is
+  down no longer refuses. Whether the hook is on at that moment does not matter: the choice
+  is what is recorded, and it takes effect whenever the hook is on.
+- `enabled` to `false`, or the removal of a hook that was on: the check is gone.
+
+```ts
+export function hookWeakenings(
+  was: HookStrength | null,
+  is: HookStrength | null
+): ('enabled' | 'failureMode')[]
+```
+
+**Parameters**
+
+- `was`: The hook before; `null` when it is being registered.
+- `is`: The hook after; `null` when it is being removed.
+
+**Returns**
+
+The names of the weakened fields, in the order of {@link HOOK_FIELDS}; empty when
+the change weakens nothing.
+
+**Example**
+
+```ts
+hookWeakenings({ enabled: true, failureMode: 'deny' }, { enabled: true, failureMode: 'allow' })
+// ['failureMode']
+```
+
 ### `isRelyingPartyId`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -4813,7 +5343,8 @@ What each event is about: the `target.type` of its payload. `target.id` is that 
 
 An event about a user's credentials targets the `user` (the passkey or session concerned
 is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
-endpoint has an id of its own, as an API key does, so it is its own kind of target.
+endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
+is a hook.
 
 ```ts
 const EVENT_TARGET_TYPES: Record<any, any>

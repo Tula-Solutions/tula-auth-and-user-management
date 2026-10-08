@@ -35,7 +35,11 @@ paths:
   `previous_secret_expires_at`, set and cleared together (the check
   `webhook_endpoints_previous_secret_whole`); the role's table-level UPDATE from 0018 covers
   them, and no grant changed. Neither of the last two has
-  a column for anything of a receiver's answer beyond a status code. Three tables have a
+  a column for anything of a receiver's answer beyond a status code. `hooks` (migration 0021):
+  SELECT, INSERT, UPDATE and DELETE; one row per `(environment_id, point)`; `deadline_ms`
+  held to 100..5000 by the check `hooks_deadline_bounds` (never widen it: the API's schema
+  is not the only writer a table has); `last_failed_at` and `last_failure_reason` set
+  together; and no column for anything an endpoint answered. Three tables have a
   second policy (`audit_logs`, `events`, `webhook_deliveries`), and a second policy is always
   restrictive and `FOR DELETE`. `webhook_deliveries.event_id` is deliberately **not** a
   foreign key (the log outlives the event). Admin deletes run under the owner

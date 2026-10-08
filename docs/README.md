@@ -35,6 +35,12 @@ by error code. Their code samples are copied from files of this repository by
 | --- | --- |
 | [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula/admin`, what is stored, and what is not built yet (retries among them). |
 
+## Questions for your backend
+
+| | |
+| --- | --- |
+| [Hooks](hooks.md) | Register the hook asked before a sign-up, the question and the answer, verifying it with `@tula/admin`, the deadline, what a failed call does, and where the hook is and is not asked. |
+
 ## Tools
 
 | | |
