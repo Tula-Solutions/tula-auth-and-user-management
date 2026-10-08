@@ -145,7 +145,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `API_DOCS` | | `on` in `local` and `dev`, `off` in `staging` and `prod` | `on` or `off`: whether the API reference page is served at `/v1/docs`. The page is on the same origin as the dashboard; it loads no script from another host (the reference's bundle is served by the API from its own installed package) and has its own Content-Security-Policy, and a deployment that does not need it should leave it off. `/v1/openapi.json` is served either way. |
 | `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log is never deleted. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
-| `REDIS_URL` | in `staging` and `prod` | none | Redis shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. A `valkey://` or `valkeys://` URL is accepted too, but only Redis 7 has been tested; Valkey has never been run. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
+| `REDIS_URL` | in `staging` and `prod` | none | Redis shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. A `valkey://` or `valkeys://` URL is accepted too, but only Redis (7 and 8) has been tested; Valkey has never been run. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
 
 ## Settings of an environment
@@ -506,7 +506,11 @@ stored signing keys cannot be decrypted, and every sign-in fails until the signi
 recreated, which signs every user out. Store it in a secret manager and back it up separately
 from the database.
 
-**The database.** Tula is developed and tested against PostgreSQL 17. Two roles are needed, and they must be different:
+**The database.** Tula is developed and tested against PostgreSQL 18 (its migrations and
+integration tests also passed on 17). The bundled Compose file pins the `postgres:18` image,
+which keeps its data under `/var/lib/postgresql` and refuses to start on a volume that an
+earlier major version wrote: a database made with the 17 image is moved with `pg_dump` and
+`pg_restore` (or `pg_upgrade`), never by changing the image tag. Two roles are needed, and they must be different:
 
 - an **owner** that runs the migrations (`DATABASE_MIGRATION_URL`);
 - a **runtime** login for the API (`DATABASE_URL`) that is a member of `tula_app` and owns

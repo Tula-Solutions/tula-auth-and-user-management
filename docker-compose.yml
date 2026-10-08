@@ -63,14 +63,14 @@ x-api: &api
 
 services:
   postgres:
-    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     environment:
       POSTGRES_USER: tula
       POSTGRES_PASSWORD: tula
       POSTGRES_DB: tula
     ports: ['127.0.0.1:${POSTGRES_PORT:-5432}:5432']
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-roles.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U tula -d tula']
@@ -79,7 +79,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
     ports: ['127.0.0.1:${REDIS_PORT:-6379}:6379']
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
