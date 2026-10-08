@@ -114,7 +114,8 @@ describe('<SignIn> draws the step the server answers with', () => {
     await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('Too many requests. Try again shortly.')
-    expect(alert.textContent).toMatch(/Try again in [12]s\./)
+    // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
+    await waitFor(() => expect(alert.textContent).toMatch(/Try again in [12]s\./))
     const submit = screen.getByRole('button', { name: 'Sign in' })
     expect(submit.getAttribute('aria-disabled')).toBe('true')
 

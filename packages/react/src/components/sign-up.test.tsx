@@ -190,7 +190,8 @@ describe('<SignUp>', () => {
     w.api.on(ROUTE.signUp, () => failure(429, 'rate_limited', { params: { retryAfter: 75 } }))
     await w.user.click(screen.getByRole('button', { name: 'Continue' }))
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toMatch(/Try again in 1m 1[45]s\./)
+    // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
+    await waitFor(() => expect(alert.textContent).toMatch(/Try again in 1m 1[45]s\./))
     expect(screen.getByRole('button', { name: 'Continue' }).getAttribute('aria-disabled')).toBe(
       'true'
     )

@@ -221,7 +221,12 @@ export function world(options: WorldOptions = {}): World {
   return {
     api,
     client,
-    user: userEvent.setup(),
+    // No pause between keys. user-event's default (`delay: 0`) waits for a timer after every
+    // keystroke: a turn of the event loop each, which is most of what typing costs here and,
+    // on a CI runner busy with the other packages' tests, tens of milliseconds a key. Nothing
+    // under test needs the pause: every event is dispatched inside `act`, so React has
+    // rendered before the next key (`harness.test.tsx` holds this).
+    user: userEvent.setup({ delay: null }),
     mount: (ui, provider = {}) =>
       render(
         <TulaProvider client={client} {...(provider as object)}>

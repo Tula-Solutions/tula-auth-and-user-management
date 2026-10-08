@@ -80,8 +80,8 @@ async function passwordAnswers(w: World, answer: () => Response) {
 }
 
 describe('<SignIn> at needs_second_factor', () => {
-  // Three tests, not one: each types a code a key at a time, and on a slow runner the three
-  // together came within a second of the runner's limit.
+  // Three tests, not one: each signs in to get here, and one test that did it three times
+  // came within a second of the runner's limit.
   test('asks for the authenticator code, and refuses one that is too short without sending it', async () => {
     const w = world()
     w.mount(<SignIn />)

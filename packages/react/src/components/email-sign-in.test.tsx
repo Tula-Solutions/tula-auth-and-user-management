@@ -116,7 +116,8 @@ describe('<SignIn> with an emailed code', () => {
     expect(screen.getByText('We will email you a 6-digit code to sign in with.')).toBeTruthy()
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('Too many requests')
-    expect(alert.textContent).toMatch(/Try again in (1m 0s|59s)\./)
+    // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
+    await waitFor(() => expect(alert.textContent).toMatch(/Try again in (1m 0s|59s)\./))
     expect(
       screen.getByRole('button', { name: 'Email me a code' }).getAttribute('aria-disabled')
     ).toBe('true')
@@ -155,7 +156,8 @@ describe('<SignIn> with an emailed code', () => {
     await w.user.click(await screen.findByRole('button', { name: 'Email me a code' }))
     const title = await screen.findByRole('heading', { name: 'Email me a code' })
     await expectFocus(title)
-    expect((await screen.findByRole('alert')).textContent).toMatch(/Try again in (1m 0s|59s)\./)
+    // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
+    expect(await screen.findByText(/Try again in (1m 0s|59s)\./)).toBeTruthy()
     const button = screen.getByRole('button', { name: 'Email me a code' })
     expect(button.getAttribute('aria-disabled')).toBe('true')
     expect(alternatives()).toEqual(['Use your password'])
