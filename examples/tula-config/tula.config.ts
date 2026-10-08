@@ -115,6 +115,12 @@ export default defineConfig({
           // The whole .p8 file's contents, in a variable.
           privateKey: env('APPLE_PRIVATE_KEY'),
         },
+        microsoft: {
+          clientId: '6731de76-14a6-49ae-97bc-6eba6914391e',
+          clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+          // Which accounts may sign in: 'common', 'organizations', 'consumers' or a tenant id.
+          tenant: 'organizations',
+        },
       },
       // #endregion
       // #region webhooks

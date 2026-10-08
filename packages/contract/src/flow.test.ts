@@ -52,7 +52,7 @@ describe('FlowStep', () => {
     ).toBe(false)
   })
 
-  test('first factors are the password, email, passkeys and the three OAuth providers', () => {
+  test('first factors are the password, email, passkeys and the OAuth providers', () => {
     expect(FirstFactorStrategySchema.options).toEqual([
       'password',
       'email_code',
@@ -61,6 +61,7 @@ describe('FlowStep', () => {
       'oauth_google',
       'oauth_github',
       'oauth_apple',
+      'oauth_microsoft',
     ])
   })
 

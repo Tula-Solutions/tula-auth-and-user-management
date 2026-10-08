@@ -8,6 +8,7 @@ export {
   env,
   hashEnvironmentConfig,
   isSecretRef,
+  type MicrosoftProviderConfig,
   type OAuthClientConfig,
   type ProvidersConfig,
   parseConfig,

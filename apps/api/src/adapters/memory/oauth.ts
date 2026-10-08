@@ -70,5 +70,6 @@ export function fakeOAuthProviders(): FakeOAuthProviders {
     google: new FakeOAuthProvider('google'),
     github: new FakeOAuthProvider('github'),
     apple: new FakeOAuthProvider('apple'),
+    microsoft: new FakeOAuthProvider('microsoft'),
   }
 }

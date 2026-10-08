@@ -4,7 +4,8 @@ import type { OAuthProvider as OAuthProviderName } from '@tula/contract'
 export interface OAuthProfile {
   /**
    * The provider's stable id for the account: the `sub` of an ID token, GitHub's numeric user
-   * id. Never a login name or an email address, both of which can change hands.
+   * id, Microsoft's tenant id and object id (`<tid>:<oid>`). Never a login name or an email
+   * address, both of which can change hands.
    */
   subject: string
   /** The account's email address, or `null` when the provider shared none. */
@@ -19,7 +20,7 @@ export interface OAuthProfile {
 /** An environment's own credentials for one provider, opened from the secret box. */
 export interface OAuthCredentials {
   clientId: string
-  /** Google, GitHub. */
+  /** Google, GitHub, Microsoft. */
   clientSecret?: string
   /** Apple: the developer team id. */
   teamId?: string
@@ -27,6 +28,11 @@ export interface OAuthCredentials {
   keyId?: string
   /** Apple: the PKCS#8 private key (PEM) the client-secret JWT is signed with. */
   privateKey?: string
+  /**
+   * Microsoft: which accounts may sign in (`common`, `organizations`, `consumers` or a tenant
+   * id). Not a secret.
+   */
+  tenant?: string
 }
 
 /** What an authorization URL is built from. All of it is kept server-side on the attempt. */

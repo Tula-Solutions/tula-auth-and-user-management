@@ -250,6 +250,57 @@ test('sign-in methods: toggles, the last-method refusal, and a provider whose se
   await expect(google.getByText('Not configured')).toBeVisible()
 })
 
+test('Microsoft: who can sign in is asked, has no default, and one organization is its tenant id', async ({
+  page,
+}) => {
+  await open(page, `${ENVIRONMENT_PATH}/sign-in-methods`, 'Sign-in methods')
+  const microsoft = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('heading', { name: 'Microsoft' }) })
+  await expect(microsoft.locator('code').first()).toContainText('microsoft')
+  const secret = `dashboard-e2e-${uniqueEmail('ms-secret')}`
+  const audience = microsoft.getByLabel('Who can sign in')
+  await expect(audience).toHaveValue('')
+  await microsoft.getByLabel('Application (client) ID').fill('dashboard-e2e-ms-client')
+  await microsoft.getByLabel('Client secret').fill(secret)
+
+  // Nothing chosen: the API refuses it, and the question says so.
+  await microsoft.getByRole('button', { name: 'Save Microsoft' }).click()
+  await expect(audience).toHaveAttribute('aria-invalid', 'true')
+  await expectScreenAccessible(page, 'sign-in methods, Microsoft without a tenant')
+
+  // One organization, by a domain name: refused at the id; by its id: saved, lower-cased.
+  await audience.selectOption('tenant')
+  const tenant = microsoft.getByLabel('Directory (tenant) ID')
+  await tenant.fill('contoso.onmicrosoft.com')
+  await microsoft.getByRole('button', { name: 'Save Microsoft' }).click()
+  await expect(tenant).toHaveAttribute('aria-invalid', 'true')
+  await tenant.fill('72F988BF-86F1-41AF-91AB-2D7CD011DB47')
+  await microsoft.getByRole('button', { name: 'Save Microsoft' }).click()
+  await expect(page.getByText('Microsoft saved')).toBeVisible()
+  await expect(microsoft.getByText(/A client secret is saved/)).toBeVisible()
+  await expectNoSecretKept(page, [secret])
+  await page.reload()
+  await expect(microsoft.getByLabel('Who can sign in')).toHaveValue('tenant')
+  await expect(microsoft.getByLabel('Directory (tenant) ID')).toHaveValue(
+    '72f988bf-86f1-41af-91ab-2d7cd011db47'
+  )
+  await expectScreenAccessible(page, 'sign-in methods, Microsoft for one organization')
+
+  // Widened to every account: saved without the secret being typed again.
+  await microsoft.getByLabel('Who can sign in').selectOption('common')
+  await expect(microsoft.getByLabel('Directory (tenant) ID')).toHaveCount(0)
+  await microsoft.getByRole('button', { name: 'Save Microsoft' }).click()
+  await expect(page.getByText('Microsoft saved')).toBeVisible()
+  await page.reload()
+  await expect(microsoft.getByLabel('Who can sign in')).toHaveValue('common')
+
+  await microsoft.getByRole('button', { name: 'Remove Microsoft' }).click()
+  await dialog(page).getByRole('button', { name: 'Remove Microsoft' }).click()
+  await expect(page.getByText('Microsoft removed')).toBeVisible()
+  await expect(microsoft.getByText('Not configured')).toBeVisible()
+})
+
 test('session profiles: add a custom profile, set a limit, and a bad duration is refused on its field', async ({
   page,
 }) => {

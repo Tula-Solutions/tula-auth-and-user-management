@@ -5,7 +5,14 @@ import {
   UnexpectedErrorResponseBodyError,
   UnexpectedResponseError,
 } from 'arctic'
-import { createRemoteJWKSet, customFetch, errors, type JWTPayload, jwtVerify } from 'jose'
+import {
+  createRemoteJWKSet,
+  customFetch,
+  errors,
+  type JWTPayload,
+  type JWTVerifyResult,
+  jwtVerify,
+} from 'jose'
 import { timingSafeEqual } from '~/lib/crypto'
 import { OAuthProviderError } from '~/ports/oauth-provider'
 
@@ -62,6 +69,79 @@ export type IdTokenVerifier = (
   expected: { audience: string; nonce: string }
 ) => Promise<JWTPayload>
 
+/** A provider's published signing keys, fetched and cached by `jose`. */
+export type ProviderKeySet = ReturnType<typeof createRemoteJWKSet>
+
+/**
+ * A provider's key set, fetched through the global `fetch` looked up at call time (so tests can
+ * stub it and stay offline), cached, and refetched when a token names a key that is not in the
+ * cache.
+ *
+ * @param jwksUrl - Where the provider publishes its signing keys.
+ * @param timeoutMs - How long the fetch may take.
+ * @returns The key set.
+ */
+export function remoteKeySet(jwksUrl: string, timeoutMs: number): ProviderKeySet {
+  return createRemoteJWKSet(new URL(jwksUrl), {
+    // `jose` aborts the key-set request with this (it hands the signal to the fetch below).
+    timeoutDuration: timeoutMs,
+    [customFetch]: (url, init) => globalThis.fetch(url, init),
+  })
+}
+
+/**
+ * Verify an ID token against a key set: the signature, `RS256` only, the audience, the expiry
+ * and the attempt's nonce, and the issuer when `expected.issuers` is given. A provider whose
+ * issuer depends on the token itself (Microsoft's is per tenant) leaves it out and **must**
+ * check `iss` on what this returns.
+ *
+ * @param keys - The provider's key set.
+ * @param idToken - The token.
+ * @param expected - The client id, the attempt's nonce and, for a fixed issuer, its spellings.
+ * @param timeoutMs - How long the key-set fetch may take.
+ * @returns The verified claims and the token's protected header.
+ * @throws OAuthProviderError `invalid_token`, `invalid_profile` (no `sub`) or `unavailable`
+ *   (the key set did not arrive in time).
+ */
+export async function verifyIdToken(
+  keys: ProviderKeySet,
+  idToken: string,
+  expected: { audience: string; nonce: string; issuers?: string[] },
+  timeoutMs: number
+): Promise<JWTVerifyResult> {
+  let verified: JWTVerifyResult
+  try {
+    // The only network call in here is the key-set fetch. The deadline is a second guard
+    // around it, for a `fetch` that does not honour the abort signal.
+    verified = await withDeadline(
+      jwtVerify(idToken, keys, {
+        ...(expected.issuers && { issuer: expected.issuers }),
+        audience: expected.audience,
+        algorithms: ['RS256'],
+        clockTolerance: CLOCK_TOLERANCE_SECONDS,
+        requiredClaims: ['sub', 'exp', 'iat'],
+      }),
+      timeoutMs
+    )
+  } catch (error) {
+    if (error instanceof OAuthProviderError) {
+      throw error
+    }
+    // A key set that did not arrive in time says nothing about the token.
+    throw new OAuthProviderError(
+      error instanceof errors.JWKSTimeout ? 'unavailable' : 'invalid_token'
+    )
+  }
+  const { payload } = verified
+  if (typeof payload.nonce !== 'string' || !timingSafeEqual(payload.nonce, expected.nonce)) {
+    throw new OAuthProviderError('invalid_token')
+  }
+  if (typeof payload.sub !== 'string' || payload.sub === '') {
+    throw new OAuthProviderError('invalid_profile')
+  }
+  return verified
+}
+
 /**
  * Build the ID-token verifier of an OIDC provider (Google, Apple).
  *
@@ -86,44 +166,9 @@ export function createIdTokenVerifier(
   options: ProviderOptions = {}
 ): IdTokenVerifier {
   const timeoutMs = options.timeoutMs ?? PROVIDER_TIMEOUT_MS
-  const keys = createRemoteJWKSet(new URL(rules.jwksUrl), {
-    // `jose` aborts the key-set request with this (it hands the signal to the fetch below).
-    timeoutDuration: timeoutMs,
-    [customFetch]: (url, init) => globalThis.fetch(url, init),
-  })
-  return async (idToken, expected) => {
-    let payload: JWTPayload
-    try {
-      // The only network call in here is the key-set fetch. The deadline is a second guard
-      // around it, for a `fetch` that does not honour the abort signal.
-      const verified = await withDeadline(
-        jwtVerify(idToken, keys, {
-          issuer: rules.issuers,
-          audience: expected.audience,
-          algorithms: ['RS256'],
-          clockTolerance: CLOCK_TOLERANCE_SECONDS,
-          requiredClaims: ['sub', 'exp', 'iat'],
-        }),
-        timeoutMs
-      )
-      payload = verified.payload
-    } catch (error) {
-      if (error instanceof OAuthProviderError) {
-        throw error
-      }
-      // A key set that did not arrive in time says nothing about the token.
-      throw new OAuthProviderError(
-        error instanceof errors.JWKSTimeout ? 'unavailable' : 'invalid_token'
-      )
-    }
-    if (typeof payload.nonce !== 'string' || !timingSafeEqual(payload.nonce, expected.nonce)) {
-      throw new OAuthProviderError('invalid_token')
-    }
-    if (typeof payload.sub !== 'string' || payload.sub === '') {
-      throw new OAuthProviderError('invalid_profile')
-    }
-    return payload
-  }
+  const keys = remoteKeySet(rules.jwksUrl, timeoutMs)
+  return async (idToken, expected) =>
+    (await verifyIdToken(keys, idToken, { ...expected, issuers: rules.issuers }, timeoutMs)).payload
 }
 
 /**

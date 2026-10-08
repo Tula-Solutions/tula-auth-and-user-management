@@ -229,18 +229,22 @@ describe('the question of a hook', () => {
     expect(HOOK_QUESTION_SCHEMAS.before_sign_up.safeParse(question).success).toBe(false)
   })
 
-  test.each([['password'], ['passwordless'], ['oauth_google'], ['oauth_github'], ['oauth_apple']])(
-    'a sign-up made by %s can be asked about',
-    (method) => {
-      const fixture = HOOK_QUESTION_FIXTURES.before_sign_up
-      expect(
-        HOOK_QUESTION_SCHEMAS.before_sign_up.safeParse({
-          ...fixture,
-          data: { ...fixture.data, method },
-        }).success
-      ).toBe(true)
-    }
-  )
+  test.each([
+    ['password'],
+    ['passwordless'],
+    ['oauth_google'],
+    ['oauth_github'],
+    ['oauth_apple'],
+    ['oauth_microsoft'],
+  ])('a sign-up made by %s can be asked about', (method) => {
+    const fixture = HOOK_QUESTION_FIXTURES.before_sign_up
+    expect(
+      HOOK_QUESTION_SCHEMAS.before_sign_up.safeParse({
+        ...fixture,
+        data: { ...fixture.data, method },
+      }).success
+    ).toBe(true)
+  })
 
   test('an address that is not known is null, never left out', () => {
     const fixture = HOOK_QUESTION_FIXTURES.before_sign_up

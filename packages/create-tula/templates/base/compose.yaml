@@ -63,7 +63,7 @@ services:
       REDIS_URL: redis://redis:6379
       MAIL_FROM: ${MAIL_FROM:-Tula Auth <no-reply@localhost>}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # Local development only: `true` serves Google, GitHub and Apple from a built-in mock
+      # Local development only: `true` serves every OAuth provider from a built-in mock
       # provider whose consent page signs in as any address typed into it. Set it in .env to try
       # the provider buttons before you have real credentials. The API refuses it outside
       # ENVIRONMENT=local.

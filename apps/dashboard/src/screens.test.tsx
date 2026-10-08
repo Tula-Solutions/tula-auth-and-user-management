@@ -297,6 +297,117 @@ describe('settings controls', () => {
     expect(api.state.settings.settings.notifications.passwordChanged).toBe(false)
   })
 
+  describe('the Microsoft card', () => {
+    const TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47'
+    const listed = (over: Record<string, unknown> = {}) => ({
+      data: [
+        {
+          provider: 'microsoft',
+          configured: false,
+          enabled: false,
+          clientId: null,
+          teamId: null,
+          keyId: null,
+          tenant: null,
+          callbackUrl: 'http://localhost:3003/v1/client/oauth/microsoft/callback',
+          updatedAt: null,
+          ...over,
+        },
+      ],
+    })
+    const card = () =>
+      screen.getByRole('heading', { name: 'Microsoft' }).closest('li') as HTMLElement
+    const select = () => within(card()).getByLabelText('Who can sign in') as HTMLSelectElement
+
+    test('asks who can sign in, has no default, and sends one organization’s tenant id', async () => {
+      const api = installFakeApi()
+      const bodies: Record<string, unknown>[] = []
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => listed())
+      api.override('PUT', /^\/v1\/admin\/oauth-providers\/microsoft$/, (call) => {
+        const body = call.body as Record<string, unknown>
+        bodies.push(body)
+        return typeof body.tenant === 'string' && body.tenant !== 'not-a-tenant'
+          ? { provider: 'microsoft' }
+          : failure(422, 'validation.failed', 'Invalid.', [
+              { field: 'tenant', code: 'validation.failed', message: 'tenant is required' },
+            ])
+      })
+      const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+      await screen.findByRole('heading', { name: 'Microsoft' })
+      expect(select().value).toBe('')
+      expect(within(card()).queryByLabelText('Directory (tenant) ID') === null).toBe(true)
+      await user.type(within(card()).getByLabelText('Application (client) ID'), 'ms-client')
+      await user.type(within(card()).getByLabelText('Client secret'), 'ms-secret-value')
+
+      // Nothing chosen: no tenant is invented, and the refusal is said at the question.
+      await user.click(within(card()).getByRole('button', { name: 'Save Microsoft' }))
+      await within(card()).findByText('tenant is required')
+      expect(bodies[0]).toEqual({
+        clientId: 'ms-client',
+        enabled: true,
+        clientSecret: 'ms-secret-value',
+      })
+      expect(select().getAttribute('aria-invalid')).toBe('true')
+
+      // One organization: its id is typed, and a refusal of it is said at the id.
+      await user.selectOptions(select(), 'tenant')
+      const id = within(card()).getByLabelText('Directory (tenant) ID') as HTMLInputElement
+      await user.type(id, 'not-a-tenant')
+      await user.click(within(card()).getByRole('button', { name: 'Save Microsoft' }))
+      await waitFor(() => expect(bodies).toHaveLength(2))
+      await waitFor(() => expect(id.getAttribute('aria-invalid')).toBe('true'))
+      expect(bodies[1]?.tenant).toBe('not-a-tenant')
+      await user.clear(id)
+      await user.type(id, ` ${TENANT} `)
+      await user.click(within(card()).getByRole('button', { name: 'Save Microsoft' }))
+      await screen.findByText('Microsoft saved')
+      expect(bodies[2]).toEqual({
+        clientId: 'ms-client',
+        enabled: true,
+        tenant: TENANT,
+        clientSecret: 'ms-secret-value',
+      })
+      // Saved: the secret is gone from the page.
+      expect(document.documentElement.outerHTML.includes('ms-secret-value')).toBe(false)
+    })
+
+    test.each([
+      ['common', 'common', null],
+      ['organizations', 'organizations', null],
+      ['consumers', 'consumers', null],
+      [TENANT, 'tenant', TENANT],
+    ])(
+      'a stored tenant %p is shown as %p, and saved again without the secret',
+      async (tenant, choice, id) => {
+        const api = installFakeApi()
+        const bodies: unknown[] = []
+        api.override('GET', /^\/v1\/admin\/oauth-providers$/, () =>
+          listed({ configured: true, enabled: true, clientId: 'ms-client', tenant })
+        )
+        api.override('PUT', /^\/v1\/admin\/oauth-providers\/microsoft$/, (call) => {
+          bodies.push(call.body)
+          return { provider: 'microsoft' }
+        })
+        const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+        await screen.findByRole('heading', { name: 'Microsoft' })
+        expect(select().value).toBe(choice)
+        const field = within(card()).queryByLabelText(
+          'Directory (tenant) ID'
+        ) as HTMLInputElement | null
+        expect(field?.value ?? null).toBe(id)
+        await user.click(within(card()).getByRole('button', { name: 'Save Microsoft' }))
+        await screen.findByText('Microsoft saved')
+        expect(bodies).toEqual([{ clientId: 'ms-client', enabled: true, tenant }])
+      }
+    )
+
+    test('every other provider has no such question', async () => {
+      start(`${DEV_PATH}/sign-in-methods`)
+      await screen.findByRole('heading', { name: 'Microsoft' })
+      expect(screen.getAllByLabelText('Who can sign in')).toHaveLength(1)
+    })
+  })
+
   test('Apple takes a team, a key id and a private key; a provider can be removed; “enabled” may be refused', async () => {
     const api = installFakeApi()
     const bodies: unknown[] = []
@@ -313,6 +424,7 @@ describe('settings controls', () => {
           clientId: null,
           teamId: null,
           keyId: null,
+          tenant: null,
           callbackUrl: 'http://localhost:3003/v1/client/oauth/apple/callback',
           updatedAt: null,
         },
@@ -323,6 +435,7 @@ describe('settings controls', () => {
           clientId: 'g-client',
           teamId: null,
           keyId: null,
+          tenant: null,
           callbackUrl: 'http://localhost:3003/v1/client/oauth/google/callback',
           updatedAt: null,
         },

@@ -186,6 +186,10 @@ function initialVariables(scenario: Scenario, origin: string): Record<string, st
       variables[name] = value
       continue
     }
+    if (value.generate === 'uuid') {
+      variables[name] = crypto.randomUUID()
+      continue
+    }
     const random = crypto.randomUUID().replaceAll('-', '')
     variables[name] =
       value.generate === 'email'
@@ -601,6 +605,12 @@ async function runOAuth(
     const form = new URLSearchParams(authorization.searchParams)
     form.set('email', oauth.email ?? '')
     form.set('subject', oauth.subject ?? '')
+    if (oauth.tenantId !== undefined) {
+      form.set('tenant_id', oauth.tenantId)
+    }
+    if (oauth.objectId !== undefined) {
+      form.set('object_id', oauth.objectId)
+    }
     form.set('action', oauth.deny ? 'deny' : 'allow')
     if (oauth.unverified) {
       form.set('unverified', '1')

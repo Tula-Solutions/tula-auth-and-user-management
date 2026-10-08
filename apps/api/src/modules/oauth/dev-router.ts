@@ -1,7 +1,8 @@
-import { OAUTH_PROVIDERS, OAuthProviderSchema } from '@tula/contract'
+import { MicrosoftTenantSchema, OAUTH_PROVIDERS, OAuthProviderSchema } from '@tula/contract'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { isGuid, MICROSOFT_CONSUMER_TENANT_ID, microsoftSubject } from '~/adapters/oauth/microsoft'
 import { issueMockCode } from '~/adapters/oauth/mock'
 import type { AppEnv } from '~/dependencies'
 import { sha256Hex } from '~/lib/crypto'
@@ -21,6 +22,9 @@ import * as OAuth from '~/modules/oauth/service'
  * should assert, `POST` issues a code and sends the browser to this API's real callback, which
  * then runs exactly the code a real provider's answer runs. It is deliberately outside the
  * OpenAPI document: it is not part of the contract.
+ *
+ * For Microsoft the form asks what a Microsoft token says instead of one account id: the
+ * tenant id, the object id, and whether the verified-domain claim (`xms_edov`) is there.
  */
 const router = new Hono<AppEnv>()
 
@@ -31,18 +35,63 @@ const ParamsSchema = z.object({
   state: z.string().min(1).max(512),
   nonce: z.string().min(1).max(512),
   code_challenge: z.string().min(1).max(512),
+  /** Microsoft only: the environment's `tenant`, so that the page offers a tenant id it accepts. */
+  tenant: MicrosoftTenantSchema.optional(),
 })
 
 const ConsentSchema = ParamsSchema.extend({
   email: z.string().max(320).default(''),
   subject: z.string().max(200).default(''),
+  tenant_id: z.string().max(36).default(''),
+  object_id: z.string().max(36).default(''),
   given_name: z.string().max(100).default(''),
   family_name: z.string().max(100).default(''),
   unverified: z.string().optional(),
   action: z.enum(['allow', 'deny']).default('allow'),
 })
 
-const NAMES = { google: 'Google', github: 'GitHub', apple: 'Apple' } as const
+const NAMES = {
+  google: 'Google',
+  github: 'GitHub',
+  apple: 'Apple',
+  microsoft: 'Microsoft',
+} as const
+
+/** The organization the mock's Microsoft accounts are in when nothing else is said. */
+export const MOCK_MICROSOFT_TENANT_ID = '11111111-2222-4333-8444-555555555555'
+
+/** The tenant id the consent page offers: one the environment's `tenant` accepts. */
+function defaultTenantId(tenant: string | undefined): string {
+  if (tenant === 'consumers') {
+    return MICROSOFT_CONSUMER_TENANT_ID
+  }
+  return isGuid(tenant) ? tenant : MOCK_MICROSOFT_TENANT_ID
+}
+
+/** A GUID that is stable per seed, so signing in again finds the same identity. */
+function guidOf(seed: string): string {
+  const hex = sha256Hex(seed)
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-')
+}
+
+const ACCOUNT_FIELDS =
+  '<label for="subject">Account id (optional; derived from the email when empty)</label>' +
+  '<input id="subject" name="subject" type="text" autocomplete="off">'
+
+function microsoftFields(tenant: string | undefined): string {
+  return (
+    '<label for="tenant_id">Tenant id (tid)</label>' +
+    `<input id="tenant_id" name="tenant_id" type="text" autocomplete="off" value="${escapeHtml(defaultTenantId(tenant))}">` +
+    '<label for="object_id">Object id (oid; optional, derived from the email when empty)</label>' +
+    '<input id="object_id" name="object_id" type="text" autocomplete="off">'
+  )
+}
 
 const STYLE =
   'body{font-family:system-ui,sans-serif;max-width:26rem;margin:8vh auto;padding:0 1rem;color:#1a1a1a;background:#fff}' +
@@ -90,6 +139,7 @@ router.get('/authorize', (c) => {
     .map(([name, value]) => `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`)
     .join('')
   const name = NAMES[parsed.data.provider]
+  const microsoft = parsed.data.provider === 'microsoft'
   return page(
     c,
     `<h1>Mock ${name} sign-in</h1>` +
@@ -98,14 +148,17 @@ router.get('/authorize', (c) => {
       `<form method="post" action="/v1/dev/oauth/authorize">${hidden}` +
       '<label for="email">Email address the provider reports</label>' +
       '<input id="email" name="email" type="email" autocomplete="off">' +
-      '<label for="subject">Account id (optional; derived from the email when empty)</label>' +
-      '<input id="subject" name="subject" type="text" autocomplete="off">' +
+      (microsoft ? microsoftFields(parsed.data.tenant) : ACCOUNT_FIELDS) +
       '<label for="given_name">First name (optional)</label>' +
       '<input id="given_name" name="given_name" type="text" autocomplete="off">' +
       '<label for="family_name">Last name (optional)</label>' +
       '<input id="family_name" name="family_name" type="text" autocomplete="off">' +
       '<p><label style="font-weight:400"><input type="checkbox" name="unverified" value="1"> ' +
-      'Report the email as unverified</label></p>' +
+      `${
+        microsoft
+          ? 'Leave out the verified-domain claim (xms_edov): the address is unverified'
+          : 'Report the email as unverified'
+      }</label></p>` +
       '<button type="submit" name="action" value="allow">Continue</button>' +
       '<button type="submit" name="action" value="deny" class="secondary">Cancel</button>' +
       '</form>'
@@ -136,7 +189,18 @@ router.post('/authorize', async (c) => {
     return c.redirect(callback.toString(), 302)
   }
   const email = parseEmail(consent.email)
-  if (!email && consent.subject === '') {
+  // Stable per address, so signing in again finds the same identity. Microsoft's is the pair
+  // of ids its tokens carry, built as the real adapter builds it.
+  const subject =
+    consent.provider === 'microsoft'
+      ? email || consent.object_id !== ''
+        ? microsoftSubject(
+            consent.tenant_id || defaultTenantId(consent.tenant),
+            consent.object_id || guidOf(email?.normalized ?? '')
+          )
+        : null
+      : consent.subject || (email ? `mock-${sha256Hex(email.normalized).slice(0, 24)}` : null)
+  if (subject === null) {
     return refused(c)
   }
   callback.searchParams.set(
@@ -148,8 +212,7 @@ router.post('/authorize', async (c) => {
       nonce: consent.nonce,
       codeChallenge: consent.code_challenge,
       profile: {
-        // Stable per address, so signing in again finds the same identity.
-        subject: consent.subject || `mock-${sha256Hex(email?.normalized ?? '').slice(0, 24)}`,
+        subject,
         email: email?.email ?? null,
         emailVerified: email !== null && consent.unverified === undefined,
         ...(consent.given_name && { givenName: consent.given_name }),

@@ -11,10 +11,11 @@ import {
 import { ActionButton } from '~/components/action-button'
 import { ConfirmDialog } from '~/components/confirm-dialog'
 import { CopyButton } from '~/components/copy-button'
-import { Field, SwitchRow, TextField } from '~/components/field'
+import { Field, SelectField, SwitchRow, TextField } from '~/components/field'
 import { Section } from '~/components/page'
 import { QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
+import { NativeSelectOption } from '~/components/ui/native-select'
 import { Textarea } from '~/components/ui/textarea'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
@@ -23,6 +24,30 @@ const PROVIDER_NAME: Record<OAuthProviderSettings['provider'], string> = {
   google: 'Google',
   github: 'GitHub',
   apple: 'Apple',
+  microsoft: 'Microsoft',
+}
+
+/**
+ * Which Microsoft accounts may sign in, as the form asks it: one of Microsoft's three
+ * aliases, one organization (whose tenant id is then typed), or nothing chosen yet. There is
+ * no default: an environment that takes every Microsoft account says so.
+ */
+const MICROSOFT_AUDIENCES = [
+  ['common', 'Any Microsoft account (work, school or personal)'],
+  ['organizations', 'Work and school accounts of any organization'],
+  ['consumers', 'Personal Microsoft accounts only'],
+  ['tenant', 'One organization (by tenant ID)'],
+] as const
+
+type MicrosoftAudience = (typeof MICROSOFT_AUDIENCES)[number][0] | ''
+
+function audienceOf(tenant: string | null | undefined): MicrosoftAudience {
+  if (tenant === null || tenant === undefined || tenant === '') {
+    return ''
+  }
+  return tenant === 'common' || tenant === 'organizations' || tenant === 'consumers'
+    ? tenant
+    : 'tenant'
 }
 
 /**
@@ -36,6 +61,7 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
   const queryClient = useQueryClient()
   const name = PROVIDER_NAME[provider.provider]
   const apple = provider.provider === 'apple'
+  const microsoft = provider.provider === 'microsoft'
   // `gcTime: 0` and the `reset()` after a save: a mutation's variables hold the secret.
   const request = useEnvironmentRequest()
   const update = useUpdateOAuthProvider({ mutation: { gcTime: 0 }, request })
@@ -43,6 +69,10 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
   const [clientId, setClientId] = useState(provider.clientId ?? '')
   const [teamId, setTeamId] = useState(provider.teamId ?? '')
   const [keyId, setKeyId] = useState(provider.keyId ?? '')
+  const [audience, setAudience] = useState<MicrosoftAudience>(audienceOf(provider.tenant))
+  const [tenantId, setTenantId] = useState(
+    audienceOf(provider.tenant) === 'tenant' ? (provider.tenant ?? '') : ''
+  )
   const [enabled, setEnabled] = useState(provider.configured ? provider.enabled : true)
   const [secret, setSecret] = useState('')
   const [replacing, setReplacing] = useState(!provider.configured)
@@ -61,6 +91,11 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
       clientId: clientId.trim(),
       enabled,
       ...(apple ? { teamId: teamId.trim(), keyId: keyId.trim() } : {}),
+      // Nothing chosen sends no tenant, and the API says it is required: the form has no
+      // default to send in its place.
+      ...(microsoft && audience !== ''
+        ? { tenant: audience === 'tenant' ? tenantId.trim() : audience }
+        : {}),
       ...(replacing && secret !== '' ? { [secretField]: secret } : {}),
     }
     update.mutate(
@@ -78,7 +113,7 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
     )
   }
 
-  const known = ['clientId', 'teamId', 'keyId', secretField]
+  const known = ['clientId', 'teamId', 'keyId', 'tenant', secretField]
   const general = update.error && !known.some((field) => errors[field])
   return (
     <li className='flex flex-col gap-4 rounded-lg border p-4'>
@@ -101,7 +136,9 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
       </div>
       <form onSubmit={submit} className='flex flex-col gap-4' noValidate>
         <TextField
-          label={apple ? 'Services ID (client id)' : 'Client ID'}
+          label={
+            apple ? 'Services ID (client id)' : microsoft ? 'Application (client) ID' : 'Client ID'
+          }
           autoComplete='off'
           spellCheck={false}
           value={clientId}
@@ -124,6 +161,35 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
               onChange={(event) => setKeyId(event.target.value)}
               error={errors.keyId}
             />
+          </div>
+        ) : null}
+        {microsoft ? (
+          <div className='grid gap-4 sm:grid-cols-2'>
+            <SelectField
+              label='Who can sign in'
+              value={audience}
+              onChange={(event) => setAudience(event.target.value as MicrosoftAudience)}
+              error={audience === 'tenant' ? undefined : errors.tenant}
+              hint='Match the “Supported account types” of the app registration.'
+            >
+              <NativeSelectOption value=''>Choose…</NativeSelectOption>
+              {MICROSOFT_AUDIENCES.map(([value, label]) => (
+                <NativeSelectOption key={value} value={value}>
+                  {label}
+                </NativeSelectOption>
+              ))}
+            </SelectField>
+            {audience === 'tenant' ? (
+              <TextField
+                label='Directory (tenant) ID'
+                autoComplete='off'
+                spellCheck={false}
+                value={tenantId}
+                onChange={(event) => setTenantId(event.target.value)}
+                error={errors.tenant}
+                hint='The tenant’s ID, not its domain name. Only its accounts can sign in.'
+              />
+            ) : null}
           </div>
         ) : null}
         {replacing ? (
@@ -214,6 +280,8 @@ function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
                 setClientId('')
                 setTeamId('')
                 setKeyId('')
+                setAudience('')
+                setTenantId('')
                 setReplacing(true)
                 await refresh()
                 notify(`${name} removed`)
@@ -241,7 +309,7 @@ export function OAuthProviders() {
   return (
     <Section
       title='OAuth providers'
-      description='Sign-in with Google, GitHub and Apple. Each provider is saved separately from the settings above.'
+      description='Sign-in with Google, GitHub, Apple and Microsoft. Each provider is saved separately from the settings above.'
     >
       <QueryState query={providers} label='Loading providers'>
         {(list) => (

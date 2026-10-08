@@ -1,4 +1,5 @@
 import type { OAuthProvider as OAuthProviderName } from '@tula/contract'
+import { tenantAccepts } from '~/adapters/oauth/microsoft'
 import { timingSafeEqual } from '~/lib/crypto'
 import type { SecretBox } from '~/lib/secret-box'
 import type { Clock } from '~/ports/clock'
@@ -73,6 +74,8 @@ export function issueMockCode(
  * It keeps the checks a real provider makes, so the server code is exercised honestly: the code
  * is bound to the client id and redirect URI, expires in a minute, carries the nonce, and is
  * only exchanged with the PKCE verifier matching the challenge the authorization URL carried.
+ * For Microsoft it also keeps the tenant rule: an account of a tenant the environment's
+ * `tenant` does not accept is refused, as the real adapter refuses its token.
  *
  * @param provider - The provider this instance stands in for.
  * @param deps - Secret box, clock and the API's public URL.
@@ -92,6 +95,10 @@ export function createMockProvider(
       url.searchParams.set('nonce', request.nonce)
       url.searchParams.set('code_challenge', s256(request.codeVerifier))
       url.searchParams.set('code_challenge_method', 'S256')
+      if (provider === 'microsoft' && credentials.tenant !== undefined) {
+        // So that the consent page can offer a tenant id the environment accepts.
+        url.searchParams.set('tenant', credentials.tenant)
+      }
       return url.toString()
     },
 
@@ -118,6 +125,12 @@ export function createMockProvider(
       if (!timingSafeEqual(grant.nonce, exchange.nonce)) {
         throw new OAuthProviderError('invalid_token')
       }
+      if (
+        provider === 'microsoft' &&
+        !tenantAccepts(credentials.tenant, grant.profile.subject.split(':')[0] ?? '')
+      ) {
+        throw new OAuthProviderError('invalid_token')
+      }
       return grant.profile
     },
   }
@@ -138,5 +151,6 @@ export function mockOAuthProviders(deps: {
     google: createMockProvider('google', deps),
     github: createMockProvider('github', deps),
     apple: createMockProvider('apple', deps),
+    microsoft: createMockProvider('microsoft', deps),
   }
 }

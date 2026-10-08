@@ -285,6 +285,21 @@ async function runOperation(
     }
     return undefined
   }
+  if (operation.provider === 'microsoft') {
+    const microsoft = environment.providers.microsoft
+    if (microsoft) {
+      await admin.call('updateOAuthProvider', {
+        params: { provider: 'microsoft' },
+        body: {
+          clientId: microsoft.clientId,
+          tenant: microsoft.tenant,
+          enabled: microsoft.enabled,
+          ...(secret !== undefined && { clientSecret: secret }),
+        },
+      })
+    }
+    return undefined
+  }
   const client = environment.providers[operation.provider]
   if (client) {
     await admin.call('updateOAuthProvider', {

@@ -129,6 +129,21 @@ export function GoogleMark() {
   )
 }
 
+/**
+ * Microsoft's logo: four squares in the colours its branding guidelines give, which are the
+ * mark's own and so not theme tokens (as Google's are not). Drawn here, never fetched.
+ */
+export function MicrosoftMark() {
+  return (
+    <Mark viewBox='0 0 21 21'>
+      <path fill='#F25022' d='M0 0h10v10H0z' />
+      <path fill='#7FBA00' d='M11 0h10v10H11z' />
+      <path fill='#00A4EF' d='M0 11h10v10H0z' />
+      <path fill='#FFB900' d='M11 11h10v10H11z' />
+    </Mark>
+  )
+}
+
 /** GitHub's mark, in the button's text colour (black on light, white on dark, as GitHub asks). */
 export function GitHubMark() {
   return (

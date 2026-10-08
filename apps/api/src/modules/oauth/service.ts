@@ -169,6 +169,7 @@ function toSettings(
     clientId: record?.clientId ?? null,
     teamId: record?.config.teamId ?? null,
     keyId: record?.config.keyId ?? null,
+    tenant: record?.config.tenant ?? null,
     callbackUrl: callbackUrl(config, provider),
     updatedAt: record?.updatedAt.toISOString() ?? null,
   }
@@ -205,12 +206,14 @@ const PROVIDER_FIELDS = {
   google: { secret: 'clientSecret', config: [] },
   github: { secret: 'clientSecret', config: [] },
   apple: { secret: 'privateKey', config: ['teamId', 'keyId'] },
+  // `tenant` has no default: which Microsoft accounts may sign in is the operator's decision.
+  microsoft: { secret: 'clientSecret', config: ['tenant'] },
 } as const satisfies Record<
   OAuthProvider,
-  { secret: keyof SecretMaterial; config: readonly ('teamId' | 'keyId')[] }
+  { secret: keyof SecretMaterial; config: readonly ('teamId' | 'keyId' | 'tenant')[] }
 >
 
-const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId'] as const
+const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId', 'tenant'] as const
 
 /**
  * Refuse a change that would leave an environment with no way to sign in: its settings enable
@@ -237,6 +240,8 @@ async function requireWayIn(
 
 /**
  * Set a provider's credentials and whether sign-in offers it.
+ *
+ * Microsoft also takes `tenant` (which accounts may sign in); it is required and not a secret.
  *
  * The secret (a client secret, or Apple's private key) is sealed with the secret box, bound to
  * the environment and the provider, before it is stored, and is never returned or logged. It may
@@ -300,7 +305,7 @@ export async function update(
     }
 
     const now = deps.clock.now()
-    const config = { teamId: input.teamId, keyId: input.keyId }
+    const config = { teamId: input.teamId, keyId: input.keyId, tenant: input.tenant }
     // Typed by the event contract: the names of what changed are a closed set there.
     const changed: EventData<'oauth_provider.updated'>['changed'] = [
       ...(existing?.clientId !== input.clientId ? (['clientId'] as const) : []),

@@ -446,7 +446,7 @@ export interface ProviderChange {
    * when the server has it and the config does not (left alone without `--prune`).
    */
   action: 'create' | 'update' | 'delete' | 'none' | 'unmanaged'
-  /** The differences in its fields that are not secret: `clientId`, `teamId`, `keyId`, `enabled`. */
+  /** The differences in its fields that are not secret: `clientId`, `teamId`, `keyId`, `tenant`, `enabled`. */
   fields: Change[]
   /**
    * What happens to its secret: `set` (written from the environment variable), `keep` (the
@@ -469,6 +469,9 @@ export interface PlanOptions {
   rotateSecrets?: boolean
 }
 
+/** The fields whose change says nothing about the secret: the stored one is kept. */
+const KEEPS_SECRET: ReadonlySet<string> = new Set(['enabled', 'tenant'])
+
 /** The non-secret fields of a provider in a config, in display order. */
 function providerFields(
   provider: OAuthProvider,
@@ -485,6 +488,16 @@ function providerFields(
       }
     )
   }
+  if (provider === 'microsoft') {
+    const microsoft = providers.microsoft
+    return (
+      microsoft && {
+        clientId: microsoft.clientId,
+        tenant: microsoft.tenant,
+        enabled: microsoft.enabled,
+      }
+    )
+  }
   const client = providers[provider]
   return client && { clientId: client.clientId, enabled: client.enabled }
 }
@@ -494,7 +507,9 @@ function providerFields(
  *
  * A secret cannot be compared: the API never returns one. So it is written when the provider
  * is created, when one of its identifying fields changes (a new client id comes with a new
- * secret) and when `rotateSecrets` asks; switching a provider on or off keeps the stored one.
+ * secret) and when `rotateSecrets` asks; switching a provider on or off keeps the stored one,
+ * and so does a change of Microsoft's `tenant` (which accounts may sign in: the app
+ * registration, and so its secret, is the same).
  * That is what makes a second run a no-op.
  *
  * @param remote - The providers as the server lists them.
@@ -549,7 +564,7 @@ export function planProviders(
       const before = (current as Record<string, unknown>)[path]
       return same(before, after) ? [] : [{ path, kind: 'changed', before, after }]
     })
-    const identityChanged = changes.some((change) => change.path !== 'enabled')
+    const identityChanged = changes.some((change) => !KEEPS_SECRET.has(change.path))
     const secret = identityChanged || options.rotateSecrets ? 'set' : 'keep'
     plans.push({
       provider,

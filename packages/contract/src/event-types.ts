@@ -39,7 +39,7 @@ export const ACTIVITY_TYPES = [
   'user.mfa_disabled',
   'user.backup_codes_regenerated',
   'user.backup_code_used',
-  // A provider account (Google, GitHub, Apple) connected to or disconnected from a user;
+  // A provider account (Google, GitHub, Apple, Microsoft) connected to or disconnected from a user;
   // `provider` says which, `method` how (`auto`, `profile`).
   'user.identity_linked',
   'user.identity_unlinked',

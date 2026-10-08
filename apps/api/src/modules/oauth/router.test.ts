@@ -1118,6 +1118,7 @@ describe('admin: provider credentials', () => {
         clientId: 'google-client-id',
         teamId: null,
         keyId: null,
+        tenant: null,
         callbackUrl: 'http://localhost:3003/v1/oauth/callback/google',
         updatedAt: expect.any(String),
       },
@@ -1131,6 +1132,12 @@ describe('admin: provider credentials', () => {
         provider: 'apple',
         configured: false,
         callbackUrl: 'http://localhost:3003/v1/oauth/callback/apple',
+      }),
+      expect.objectContaining({
+        provider: 'microsoft',
+        configured: false,
+        tenant: null,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/microsoft',
       }),
     ])
   })
