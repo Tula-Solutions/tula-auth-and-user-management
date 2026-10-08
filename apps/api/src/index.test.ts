@@ -253,6 +253,8 @@ describe('documentation routes', () => {
       '/v1/client/me/passkeys',
       '/v1/client/me/passkeys/options',
       '/v1/client/me/passkeys/{passkeyId}',
+      '/v1/client/me/phone',
+      '/v1/client/me/phone/verify',
       '/v1/admin/webhook-endpoints',
       '/v1/admin/webhook-endpoints/{id}',
       '/v1/admin/webhook-endpoints/{id}/deliveries',

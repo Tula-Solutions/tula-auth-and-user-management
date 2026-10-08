@@ -286,6 +286,29 @@ export interface TulaLocalization {
     /** Shown instead of "Turn off" where the app requires two-step verification. */
     requiredByApp: string
   }
+  /** The profile's "Phone number" section (ADR 0037). */
+  phone: {
+    sectionTitle: string
+    none: string
+    verified: string
+    add: string
+    change: string
+    /** The accessible name of "Change". */
+    changeLabel: string
+    remove: string
+    /** The accessible name of "Remove". */
+    removeLabel: string
+    numberLabel: string
+    numberHint: string
+    send: string
+    /** `{digits}` is the last digits of the number the code was texted to. */
+    codeSent: string
+    verify: string
+    differentNumber: string
+    cancel: string
+    added: string
+    removed: string
+  }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
     title: string
@@ -640,6 +663,25 @@ export const EN_LOCALIZATION: TulaLocalization = {
     regenerate: 'New backup codes',
     regenerated: 'Your earlier backup codes no longer work.',
     requiredByApp: 'This app requires two-step verification, so it cannot be turned off.',
+  },
+  phone: {
+    sectionTitle: 'Phone number',
+    none: 'No phone number.',
+    verified: 'Verified',
+    add: 'Add a phone number',
+    change: 'Change',
+    changeLabel: 'Change phone number',
+    remove: 'Remove',
+    removeLabel: 'Remove phone number',
+    numberLabel: 'Phone number',
+    numberHint: 'Include the country code, for example +1 415 555 0142.',
+    send: 'Send code',
+    codeSent: 'We sent a 6-digit code by text message to the number ending in {digits}.',
+    verify: 'Verify',
+    differentNumber: 'Use a different number',
+    cancel: 'Cancel',
+    added: 'Your phone number was added.',
+    removed: 'Your phone number was removed.',
   },
   stepUp: {
     title: 'Confirm it is you',

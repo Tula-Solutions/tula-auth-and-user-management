@@ -654,6 +654,36 @@ describe('JWT templates', () => {
     )
   })
 
+  // As for templates: `sms` arrived with a default in every document (ADR 0037).
+  test('an environment that leaves text messages alone hashes as it did before they existed', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    expect(await hash({})).toBe(before)
+    expect(await hash({ sms: { enabled: false, allowedCountries: [] } })).toBe(before)
+    expect(await hash({ sms: {} })).toBe(before)
+  })
+
+  test('switching text messages on, and each country, changes the fingerprint', async () => {
+    const off = await hash({})
+    const onNowhere = await hash({ sms: { enabled: true } })
+    const listed = await hash({ sms: { allowedCountries: ['US'] } })
+    const on = await hash({ sms: { enabled: true, allowedCountries: ['US'] } })
+    const wider = await hash({ sms: { enabled: true, allowedCountries: ['US', 'DE'] } })
+    expect(new Set([off, onNowhere, listed, on, wider]).size).toBe(5)
+  })
+
+  test('a country that is not one is refused, named by its place', () => {
+    for (const allowedCountries of [['us'], ['USA'], ['ZZ'], ['US', 'US']]) {
+      let thrown: unknown
+      try {
+        defineConfig({ environments: { dev: { settings: { sms: { allowedCountries } } } } })
+      } catch (error) {
+        thrown = error
+      }
+      expect(isConfigError(thrown)).toBe(true)
+      expect(String((thrown as Error).message)).toContain('environments.dev.settings.sms')
+    }
+  })
+
   test('a template, a claim and a profile’s use of one all change the fingerprint', async () => {
     const template = { app: { claims: { role: { value: 'member' } } } }
     const defined = await hash({ sessions: { jwtTemplates: template } })

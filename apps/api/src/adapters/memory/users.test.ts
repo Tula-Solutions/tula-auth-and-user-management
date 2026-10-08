@@ -1,3 +1,4 @@
+import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { describeUserRepository } from '~/adapters/user-repository.suite'
 
@@ -7,8 +8,12 @@ const tenant = (environmentId: string) => ({
 })
 const a = tenant('00000000-0000-7000-8000-00000000e001')
 
-describeUserRepository('MemoryUserRepository', async () => ({
-  users: new MemoryUserRepository(),
-  a,
-  b: tenant('00000000-0000-7000-8000-00000000e002'),
-}))
+describeUserRepository('MemoryUserRepository', async () => {
+  const log = new MemoryActivityLog()
+  return {
+    users: new MemoryUserRepository(log),
+    log,
+    a,
+    b: tenant('00000000-0000-7000-8000-00000000e002'),
+  }
+})

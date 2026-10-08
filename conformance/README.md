@@ -37,6 +37,7 @@ bun run conformance
 | `CONFORMANCE_MAILPIT_URL` | `http://localhost:8025` | Mailpit's web address. |
 | `CONFORMANCE_SETTLE_MS` | `0` | For a run through one address in front of several instances ([below](#behind-one-address)): how long to wait after each step that changes the environment's settings. At most 60000. |
 | `CONFORMANCE_WEBHOOK_RECEIVER_HOST` | none | An address of this machine that the server can reach, for the [webhook scenarios](#the-webhook-scenarios-need-a-receiver-the-server-can-reach): `127.0.0.1` for a server running on this machine in the `local` tier. Without it, scenarios marked `needsWebhookReceiver` are skipped. |
+| `CONFORMANCE_SMS_INBOX_URLS` | none | The origins whose development SMS inbox the runner reads (`GET /v1/dev/sms/messages`), separated by commas: every instance of the deployment, each on its own address, because an instance keeps its own inbox (`http://localhost:3003,http://localhost:3004` for the packaged stack, also when the run goes through the proxy). The server needs `SMS_PROVIDER=dev`. Without it, scenarios marked `needsSmsInbox` are skipped. |
 | `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
@@ -107,9 +108,9 @@ particular request went to a particular instance. CI runs both (`self-host` in
 A scenario is one JSON file in `scenarios/`, validated against
 [`scenario.schema.json`](scenario.schema.json) (generated from
 `packages/conformance/src/scenario.ts`; do not edit it by hand). The JSON Schema describes the
-shape only. The loader also enforces four rules it cannot express: a scenario with an
+shape only. The loader also enforces five rules it cannot express: a scenario with an
 `auth: "secret"` step must set `needsSecretKey: true`, one with a `webhook` or a `hook` step must set
-`needsWebhookReceiver: true`, a request with the secret key cannot also carry an
+`needsWebhookReceiver: true`, one with an `smsCode` step must set `needsSmsInbox: true`, a request with the secret key cannot also carry an
 `accessToken`, and `headers` cannot name a header the runner sets itself (`x-tula-attempt`
 included: use `attempt`).
 
@@ -148,7 +149,8 @@ included: use `attempt`).
 
 - **Variables.** `{{name}}` in any string is replaced by a variable: a literal from `variables`,
   a generated value (`email`: a unique address; `password`: a long random password that passes
-  every built-in policy), or a value an earlier step captured.
+  every built-in policy; `phone`: a United States number in E.164 form that nobody has, from
+  the `555-01XX` range kept for fiction), or a value an earlier step captured.
 - **Request steps.** `auth` is `publishable` (the default), `secret` or `none`; `accessToken`
   adds `Authorization: Bearer …`; `client` sets `x-tula-client`; `attempt` sets
   `x-tula-attempt`, the secret of the attempt the request continues (capture `attemptSecret`
@@ -184,6 +186,14 @@ included: use `attempt`).
 - **Email steps** read the 6-digit code from the newest email to an address. `captureWrong`
   also stores a code that is guaranteed not to be the right one. Right after a resend the
   newest email can still be the previous one; no scenario resends yet.
+- **SMS-code steps** (`smsCode: { to, capture, captureWrong? }`) read the 6-digit code from
+  the newest text message to a number, as an email step does for an address. Against a live
+  server the messages come from its development SMS inbox (`SMS_PROVIDER=dev`, the `local`
+  tier only; ADR 0037), asked of every origin in `CONFORMANCE_SMS_INBOX_URLS` with the newest
+  message across them taken; in process they are the memory sender's. The code is the last run
+  of exactly six digits in the text: the message ends with the origin-bound line
+  (`@host #123456`). A scenario with such a step sets `needsSmsInbox: true` and is skipped by
+  a target without an inbox. A runner for another language needs an HTTP `GET` for it.
 - **Email-link steps** (`emailLink: { to, captureToken, captureAttempt?, url? }`) read the
   sign-in link from the newest email to an address that carries a code, and take it apart as
   the page it leads to does: the link token and the attempt id come from the URL's **fragment**
@@ -279,6 +289,7 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `49-webhook-retried-after-a-500` | A backend answers a delivery `500` and recovers: the delivery is `pending` with one attempt on record and cannot be sent again by hand meanwhile (`webhook.cannot_redeliver`, `delivery_pending`); a few seconds later the server sends it again with the same `webhook-id`, and the delivery log has both requests, a status code and a duration each. A test event arrives signed, marked `"test": true`, of a type the endpoint did not subscribe to, and is in the delivery log and not in the audit log. A delivered delivery is sent again by hand, with the same id, and is refused once the endpoint is off (`endpoint_disabled`). Waits 9 seconds (needs a secret key and a receiver the server can reach). |
 | `48-webhook-refused-address` | The outbound guard at the moment an address is saved: a private address, the metadata service, a private address spelled as one number, private IPv6 and IPv4-in-IPv6 addresses, credentials and a non-http scheme are refused with `webhook.url_not_allowed` and a fixed `params.reason`, on a registration and on a change, and nothing of the address is repeated or stored (needs a secret key). |
 | `43-settings-managed-by-config` | A replace that names its tool and config fingerprint (`x-tula-managed-by`, `x-tula-config-hash`) is recorded as the settings' manager; a later replace without them keeps the record and shows as `drifted`; one header without the other is refused. Cleanup restores the settings and removes the record. |
+| `57-phone-number` | A signed-in user adds a phone number and proves it with a texted 6-digit code. Nothing is sent while text messages are off or no country is allowed, and only to a country on the list; the client config says only whether a number can be added. The receipt holds neither the code nor the number; asking again within the minute is rate limited; another user's code, a wrong code and a used code confirm nothing; a code asked for before its country was removed or text messages were switched off is not honoured after. Adding and removing are in the audit log without the number (needs a secret key and the development SMS inbox). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
@@ -315,6 +326,15 @@ keeps the callback's path so a later step can replay it (`callback`). The scenar
 `google` provider's credentials at the start and remove them in `cleanup`: do not run them
 against an environment whose Google credentials you want to keep. They add about 95 seconds
 (a 61-second wait for a ticket to expire and a 31-second one for the next authenticator code).
+
+### The phone number scenario needs the development SMS inbox
+
+`57-phone-number` reads the code texted to a number. Start the server with `SMS_PROVIDER=dev`
+(accepted only with `ENVIRONMENT=local` and a loopback `PUBLIC_URL`) and name every instance
+in `CONFORMANCE_SMS_INBOX_URLS`. Without the variable the scenario is skipped and its line
+says why. The numbers it uses are from the range kept for fiction, and nothing is sent to
+them: the inbox is the server's memory. The scenario switches the environment's `sms` setting
+on, to the United States only, and puts the original settings back in `cleanup`.
 
 ### The webhook scenarios need a receiver the server can reach
 

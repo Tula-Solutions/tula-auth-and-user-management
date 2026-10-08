@@ -43,6 +43,8 @@ function toUser(record: UserRecord): User {
     bannedAt: record.bannedAt?.toISOString() ?? null,
     lastSignInAt: record.lastSignInAt?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
+    phoneNumber: record.phoneNumber,
+    phoneNumberVerifiedAt: record.phoneNumberVerifiedAt?.toISOString() ?? null,
   }
 }
 
@@ -226,6 +228,8 @@ export async function create(
     bannedAt: null,
     lastSignInAt: null,
     createdAt: now,
+    phoneNumber: null,
+    phoneNumberVerifiedAt: null,
   }
   const created = await deps.users.create(
     {

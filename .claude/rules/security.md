@@ -379,3 +379,18 @@ Before finishing any change here, confirm each item holds and has a test:
     is absent, in a token and in the sealed header, with and without the middleware.
     Neither a template's name, a claim's key nor a constant appears in an audit entry or an
     event's payload.
+51. **Phone numbers and SMS (ADR 0037):** a text message is sent only through `Sms.sendCode`
+    (the `SmsSender` port; a failed send is `sms.unavailable`, never "sent"), and only after
+    `Settings.requireSms` for that number, which every step that sends or accepts a texted
+    code calls before anything is counted, spent or sent. An empty `sms.allowedCountries`
+    allows nothing. The development inbox (`SMS_PROVIDER=dev`, `/v1/dev/sms/messages`) exists
+    only with `ENVIRONMENT=local` and a loopback `PUBLIC_URL`, refuses a request with an
+    `Origin`, and is checked in `env.ts`, `container.ts`, `createApp` and the handler: keep
+    all four. A phone number is personal data: never in a log line, an audit entry, an event
+    payload, an error or a limiter or lockout key (a keyed hash there). A phone code is a
+    `phone_verification` token whose keyed hash covers the user and the number, guessed under
+    `Phone.codeLockKey` (its own per-user key, never `Mfa.stepUpLockKey`). Test: SMS off, on
+    with no country, a country not listed, a country removed and SMS switched off between
+    the send and the confirmation, another user's code, a code for a number that was
+    replaced, a wrong, used and expired code, the lockout, a failed send leaving the earlier
+    code working, no recent authentication, and the inbox route in every other tier.

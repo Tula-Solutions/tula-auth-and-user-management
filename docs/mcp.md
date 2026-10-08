@@ -99,7 +99,7 @@ refused.
 | `run_doctor` | none | `{ apiUrl, version, environment, checks: [{ id, source, status, summary, fix?, values? }] }` |
 
 - A **user** is `id`, `email`, `emailVerifiedAt`, `firstName`, `lastName`, `bannedAt`,
-  `lastSignInAt`, `createdAt`.
+  `lastSignInAt`, `createdAt`. A user's phone number is not returned.
 - **signInMethods** is `hasPassword`, `emailVerified`, `identities` (provider and date),
   `factors` (type and date), `backupCodesRemaining`, `passkeys` (name, whether synced, dates)
   and `canSignInWithoutPasskeys`.

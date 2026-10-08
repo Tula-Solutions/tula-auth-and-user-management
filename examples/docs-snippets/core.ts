@@ -209,6 +209,19 @@ export async function stepUp(code: string) {
   // #endregion
 }
 
+/** A phone number on the account, proven with a texted code (ADR 0037). */
+export async function phoneNumber(code: string) {
+  // #region phone-number
+  // Both calls need a recent authentication: handle `auth.step_up_required` as above.
+  const sent = await tula.user.phone.request({ phoneNumber: '+1 (415) 555-0142' })
+  // sent.destination === '***42'; the code is in the text message, never in an answer
+  const user = await tula.user.phone.verify({ code })
+  // user.phoneNumber === '+14155550142', user.phoneNumberVerifiedAt is when
+  await tula.user.phone.remove()
+  // #endregion
+  return { sent, user }
+}
+
 /** Tokens, devices and sign-out. */
 export async function sessions() {
   // #region sessions

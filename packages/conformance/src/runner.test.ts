@@ -5,6 +5,7 @@ import {
   nextOrigin,
   PUBLISHABLE_KEY_HEADER,
   runScenario,
+  SMS_INBOX_SKIP_REASON,
   type Target,
 } from './runner'
 import { type Scenario, ScenarioSchema } from './scenario'
@@ -623,6 +624,118 @@ describe('runScenario', () => {
       direct.target
     )
     expect(direct.waits).toEqual([])
+  })
+
+  test('reads the texted code, and derives one that is certainly wrong', async () => {
+    const asked: string[] = []
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      smsCode: async (to) => {
+        asked.push(to)
+        return '482919'
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          { name: 'read', smsCode: { to: '{{phone}}', capture: 'code', captureWrong: 'wrong' } },
+          {
+            name: 'send',
+            request: {
+              method: 'POST',
+              path: '/verify',
+              body: { code: '{{code}}', bad: '{{wrong}}' },
+            },
+            expect: { status: 200 },
+          },
+        ],
+        { needsSmsInbox: true, variables: { phone: '+12025550142' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(asked).toEqual(['+12025550142'])
+    expect(requests[0]?.body).toEqual({ code: '482919', bad: '482910' })
+  })
+
+  test('a scenario that needs an SMS inbox is skipped, with the reason, by a target without one', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario(
+        [
+          { name: 'ask', request: get('/a'), expect: { status: 200 } },
+          { name: 'read', smsCode: { to: '+12025550142', capture: 'code' } },
+        ],
+        { needsSmsInbox: true }
+      ),
+      target
+    )
+    expect(result).toEqual({
+      name: 'test',
+      status: 'skipped',
+      steps: [],
+      reason: SMS_INBOX_SKIP_REASON,
+    })
+    expect(requests).toEqual([])
+  })
+
+  test('a text message that did not arrive fails the step, and a failure never quotes the code', async () => {
+    const missing = fakeTarget(() => ({ status: 200 }), {
+      smsCode: async () => {
+        throw new Error('no text message with a code arrived for that number')
+      },
+    })
+    const steps = [{ name: 'read', smsCode: { to: '+12025550142', capture: 'code' } }]
+    expect(
+      await runScenario(scenario(steps, { needsSmsInbox: true }), missing.target)
+    ).toMatchObject({
+      status: 'failed',
+      steps: [{ ok: false, problems: ['no text message with a code arrived for that number'] }],
+    })
+    const refused = fakeTarget(() => ({ status: 422, body: { code: '482919' } }), {
+      smsCode: async () => '482919',
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          ...steps,
+          {
+            name: 'send',
+            request: { method: 'POST', path: '/verify', body: { code: '{{code}}' } },
+            expect: { status: 200, body: { code: 'ok' } },
+          },
+        ],
+        { needsSmsInbox: true }
+      ),
+      refused.target
+    )
+    expect(result.status).toBe('failed')
+    expect(JSON.stringify(result)).not.toContain('482919')
+  })
+
+  test('a generated phone number is a fictional United States number, fresh for each run', async () => {
+    const seen = new Set<string>()
+    for (let run = 0; run < 200; run += 1) {
+      const { target, requests } = fakeTarget(() => ({ status: 200 }))
+      await runScenario(
+        scenario(
+          [
+            {
+              name: 'send',
+              request: { method: 'POST', path: '/phone', body: { phoneNumber: '{{phone}}' } },
+              expect: { status: 200 },
+            },
+          ],
+          { variables: { phone: { generate: 'phone' } } }
+        ),
+        target
+      )
+      const number = (requests[0]?.body as { phoneNumber?: string } | undefined)?.phoneNumber ?? ''
+      // +1, an area code that starts 2 to 9 and is no N11 service code, then 555-01XX.
+      expect(number).toMatch(/^\+1[2-9][0-9]{2}55501[0-9]{2}$/)
+      expect(number.slice(3, 5)).not.toBe('11')
+      seen.add(number)
+    }
+    expect(seen.size).toBeGreaterThan(150)
   })
 
   test('a wait step passes the duration to the target', async () => {

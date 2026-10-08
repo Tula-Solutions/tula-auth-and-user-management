@@ -70,6 +70,7 @@ const PAGINATION = S.object({
   perPage: S.number,
 })
 
+// Without `phoneNumber` and `phoneNumberVerifiedAt`: personal data no tool needs (ADR 0037).
 const USER = S.object({
   id: S.string(64),
   email: S.string(320),
@@ -192,6 +193,8 @@ const SETTINGS = S.object({
       identityChanged: S.boolean,
     }),
     mfa: S.object({ policy: S.string(20) }),
+    // Two-letter country codes, at most as many as there are countries.
+    sms: S.object({ enabled: S.boolean, allowedCountries: S.array(S.string(2), 100) }),
     passkeys: S.object({ rpId: S.string(253) }),
     sessions: S.object({
       profiles: S.record(SESSION_PROFILE, 20),

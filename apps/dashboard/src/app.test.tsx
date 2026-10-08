@@ -586,6 +586,66 @@ describe('settings', () => {
     expect(screen.queryByRole('list', { name: 'Allowed origins' })).toBeNull()
   })
 
+  test('text messages: off with no country by default; a country is checked before it joins the list', async () => {
+    const { user, api } = start(`${DEV_PATH}/settings`)
+    const toggle = await screen.findByRole('switch', { name: 'Send text messages' })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    // Said in words: switched on with no country, nothing is sent.
+    expect(screen.getByText(/With no country listed nothing is sent/)).toBeDefined()
+    expect(screen.queryByRole('list', { name: 'Countries text messages may go to' })).toBeNull()
+
+    const country = screen.getByRole('textbox', { name: 'Countries text messages may go to' })
+    await user.type(country, 'Germany')
+    await user.click(screen.getByRole('button', { name: 'Add country' }))
+    await screen.findByText(/must be an ISO 3166-1 alpha-2 country code in upper case/)
+    await user.clear(country)
+    // Typed in lower case, stored in upper case: the code is the same country.
+    await user.type(country, 'us{Enter}')
+    await user.type(country, 'DE{Enter}')
+    const list = screen.getByRole('list', { name: 'Countries text messages may go to' })
+    expect(within(list).getByText('US')).toBeDefined()
+    expect(within(list).getByText('DE')).toBeDefined()
+    await user.type(country, 'US')
+    await user.click(screen.getByRole('button', { name: 'Add country' }))
+    await screen.findByText('That one is already in the list.')
+
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    // Not a weakening: nothing asks first.
+    await screen.findByText('Settings saved')
+    expect(openDialogs()).toBe(0)
+    expect(api.state.settings.settings.sms).toEqual({
+      enabled: true,
+      allowedCountries: ['US', 'DE'],
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Take out US' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() =>
+      expect(api.state.settings.settings.sms).toEqual({ enabled: true, allowedCountries: ['DE'] })
+    )
+  })
+
+  test('text messages: the server’s refusal of the list is shown at the list', async () => {
+    const api = installFakeApi()
+    api.override('PUT', /^\/v1\/admin\/settings$/, () =>
+      failure(422, 'validation.failed', 'Invalid settings.', [
+        {
+          field: 'sms.allowedCountries',
+          code: 'validation.failed',
+          message: 'must not list a country twice',
+        },
+      ])
+    )
+    const { user } = start(`${DEV_PATH}/settings`, { api })
+    const country = await screen.findByRole('textbox', {
+      name: 'Countries text messages may go to',
+    })
+    await user.type(country, 'US{Enter}')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect((await screen.findAllByText(/must not list a country twice/)).length).toBeGreaterThan(0)
+  })
+
   test('sign-in methods: the last-method refusal is said in words; providers show their redirect URI', async () => {
     const api = installFakeApi()
     api.override('PUT', /^\/v1\/admin\/settings$/, () =>
@@ -831,6 +891,26 @@ describe('users', () => {
     // A passkey's name is the user's own text: drawn as text, and its state said in words.
     expect(text).toMatch(/<b>Key<\/b>.*never used.*this device only/)
     expect(signInSection().querySelector('b')).toBeNull()
+  })
+
+  test('a user with no phone number: the profile says none', async () => {
+    start(`${DEV_PATH}/users/${IDS.user}`)
+    const row = (await screen.findByText('Phone number')).closest('div') as HTMLElement
+    expect(row.textContent).toBe('Phone numberNone')
+  })
+
+  test('a user’s phone number is shown with when it was verified', async () => {
+    const api = installFakeApi()
+    const [account] = api.state.users
+    if (!account) {
+      throw new Error('the fake API has no user')
+    }
+    account.phoneNumber = '+14155550142'
+    account.phoneNumberVerifiedAt = '2026-05-03T09:00:00.000Z'
+    start(`${DEV_PATH}/users/${IDS.user}`, { api })
+    const row = (await screen.findByText('Phone number')).closest('div') as HTMLElement
+    expect(row.textContent).toContain('+14155550142')
+    expect(row.textContent).toMatch(/verified .*2026/)
   })
 
   test('a user with no password: what they sign in with instead', async () => {

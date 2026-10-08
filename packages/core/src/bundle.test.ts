@@ -18,9 +18,14 @@ import { join } from 'node:path'
  * 0035) added three error codes with their messages (`hook.denied`, `hook.unavailable`,
  * `hook.url_not_allowed`) and no code: 50 bytes, from 15,458 to 15,508, with 42 bytes of room
  * left before them. The budget moved by exactly those 50 bytes, to 15,550, so the room for
- * fixes is what it was; every existing message is unchanged.
+ * fixes is what it was; every existing message is unchanged. A phone number on an account
+ * (ADR 0037) added 231 bytes, from 15,508 to 15,739: three routes in the operation table,
+ * `user.phone` (ask, confirm, remove), the receipt's guard and four error messages
+ * (`phone.invalid`, `sms.disabled`, `sms.country_not_allowed`, `sms.unavailable`); no
+ * dependency, and the phone number rules of the contract are not in the bundle (the server
+ * judges a number). The budget moved by exactly those 231 bytes, to 15,781.
  */
-const GZIP_BUDGET_BYTES = 15_550
+const GZIP_BUDGET_BYTES = 15_781
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

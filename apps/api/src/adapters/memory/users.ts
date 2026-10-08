@@ -112,7 +112,13 @@ export class MemoryUserRepository implements UserRepository {
       passwordHash,
       ...record
     } = user
-    this.#users.set(user.id, { ...record, bannedAt: null, lastSignInAt: null })
+    this.#users.set(user.id, {
+      ...record,
+      bannedAt: null,
+      lastSignInAt: null,
+      phoneNumber: null,
+      phoneNumberVerifiedAt: null,
+    })
     if (oauthIdentity) {
       this.#identities.set(oauthIdentity.id, {
         ...oauthIdentity,
@@ -324,6 +330,43 @@ export class MemoryUserRepository implements UserRepository {
       this.#activityLog.record(activity ? [activity] : [])
     }
     return { ...user }
+  }
+
+  /** @inheritdoc */
+  async setPhoneNumber(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return null
+    }
+    user.phoneNumber = phoneNumber
+    user.phoneNumberVerifiedAt = at
+    this.#activityLog.record(activity ? [activity] : [])
+    return { ...user }
+  }
+
+  /** @inheritdoc */
+  async removePhoneNumber(
+    environmentId: string,
+    userId: string,
+    _at: Date,
+    recorded: Recorded
+  ): Promise<boolean> {
+    const activity = activityOf(recorded)
+    const user = this.#user(environmentId, userId)
+    if (!user || user.phoneNumber === null) {
+      return false
+    }
+    user.phoneNumber = null
+    user.phoneNumberVerifiedAt = null
+    this.#activityLog.record(activity ? [activity] : [])
+    return true
   }
 
   /** @inheritdoc */

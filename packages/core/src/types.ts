@@ -242,6 +242,18 @@ export type StepUpProof = Schemas['StepUpRequest']
 export type StepUpPrepared = Schemas['StepUpEmailCode']
 
 /**
+ * The receipt of a code texted to a phone number: where it went (masked) and when it stops
+ * working. Never the code, and never the whole number.
+ *
+ * @example
+ * ```ts
+ * const sent: PhoneCodeSent = await tula.user.phone.request({ phoneNumber: '+14155550142' })
+ * show(`We texted a code to the number ending ${sent.destination.slice(-2)}`)
+ * ```
+ */
+export type PhoneCodeSent = Schemas['PhoneCodeSent']
+
+/**
  * A way to step up. An `auth.step_up_required` error says which ones the user may use; see
  * `stepUpMethods`.
  *

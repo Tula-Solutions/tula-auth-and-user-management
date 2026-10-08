@@ -21,6 +21,7 @@ import { fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { BackupCodesPanel, EnrolmentConfirmForm } from './mfa'
 import { ConnectedAccountsSection } from './oauth'
 import { PasskeysSection } from './passkey'
+import { PhoneSection } from './phone'
 import {
   Button,
   Form,
@@ -542,6 +543,7 @@ export function UserProfileSections(props: {
               onChanged={() => void sessions.reload()}
             />
           )}
+          <PhoneSection key={`phone:${state.sessionId}`} user={user} />
         </>
       ) : (
         <p className='tula-text'>{t.common.loading}</p>
@@ -566,7 +568,8 @@ export function UserProfileSections(props: {
 }
 
 /**
- * Account management for the signed-in user: who they are, change the password, two-step
+ * Account management for the signed-in user: who they are, change the password, a phone
+ * number (where the app sends text messages: add it with a texted code, remove it), two-step
  * verification, passkeys (where the environment has them on), connected accounts, and where
  * they are signed in, with "this device" marked, one device or all the others signed out, and
  * sign out. Renders nothing while signed out.

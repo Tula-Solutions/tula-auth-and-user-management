@@ -47,6 +47,10 @@ export const ACTIVITY_TYPES = [
   'user.passkey_renamed',
   'user.passkey_removed',
   'user.passkey_counter_regressed',
+  // A phone number verified and stored on a user, or taken off again (ADR 0037). The number
+  // itself, its country and its digits are never in an event.
+  'user.phone_number_added',
+  'user.phone_number_removed',
   'session.created',
   'session.revoked',
   'session.reuse_detected',
@@ -129,6 +133,8 @@ export const EVENT_TARGET_TYPES = {
   'user.passkey_renamed': 'user',
   'user.passkey_removed': 'user',
   'user.passkey_counter_regressed': 'user',
+  'user.phone_number_added': 'user',
+  'user.phone_number_removed': 'user',
   'session.created': 'session',
   'session.revoked': 'session',
   'session.reuse_detected': 'session',

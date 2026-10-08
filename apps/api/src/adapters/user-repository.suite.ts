@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import type { ActivityType } from '@tula/contract'
 import * as Audit from '~/modules/audit/service'
+import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { NewUser, UserRepository } from '~/ports/user-repository'
 
 /** A tenant for the suite. */
@@ -11,6 +13,8 @@ export interface UserSuiteTenant {
 /** What a repository under test provides. */
 export interface UserSuiteContext {
   users: UserRepository
+  /** Reads back what the repository recorded. */
+  log: ActivityLog
   a: UserSuiteTenant
   b: UserSuiteTenant
 }
@@ -53,8 +57,191 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
     function record(input: NewUser) {
       const { identityId: _i, credentialId: _c, passwordHash: _p, ...rest } = input
-      return { ...rest, bannedAt: null, lastSignInAt: null }
+      return {
+        ...rest,
+        bannedAt: null,
+        lastSignInAt: null,
+        phoneNumber: null,
+        phoneNumberVerifiedAt: null,
+      }
     }
+
+    function activity(tenant: UserSuiteTenant, type: ActivityType, userId: string): Activity {
+      return {
+        id: Bun.randomUUIDv7(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        type,
+        actor: { type: 'user', id: userId },
+        target: { type: 'user', id: userId },
+        ipAddress: '203.0.113.7',
+        userAgent: 'suite/1.0',
+        data: {},
+        occurredAt: now,
+      }
+    }
+
+    const auditOf = async (tenant: UserSuiteTenant, userId: string) =>
+      (
+        await ctx.log.listAudit(tenant.environmentId, { targetId: userId, page: 1, size: 50 })
+      ).entries.map((entry) => entry.type)
+
+    describe('a phone number', () => {
+      test('a new user has none', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
+          phoneNumber: null,
+          phoneNumberVerifiedAt: null,
+        })
+      })
+
+      test('is stored with the time it was proven, and recorded', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        const stored = await ctx.users.setPhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          '+14155550100',
+          later(1_000),
+          activity(ctx.a, 'user.phone_number_added', input.id)
+        )
+        const expected = {
+          ...record(input),
+          phoneNumber: '+14155550100',
+          phoneNumberVerifiedAt: later(1_000),
+        }
+        expect(stored).toEqual(expected)
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(expected)
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.phone_number_added'])
+      })
+
+      test('a second number replaces the first, and proving one again moves its time', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        const set = (phoneNumber: string, at: Date) =>
+          ctx.users.setPhoneNumber(
+            ctx.a.environmentId,
+            input.id,
+            phoneNumber,
+            at,
+            activity(ctx.a, 'user.phone_number_added', input.id)
+          )
+        await set('+14155550100', later(1_000))
+        expect(await set('+4915112345678', later(2_000))).toEqual({
+          ...record(input),
+          phoneNumber: '+4915112345678',
+          phoneNumberVerifiedAt: later(2_000),
+        })
+        expect((await set('+4915112345678', later(3_000)))?.phoneNumberVerifiedAt).toEqual(
+          later(3_000)
+        )
+        expect(await auditOf(ctx.a, input.id)).toHaveLength(3)
+      })
+
+      test('two users may have the same number: it is not an identifier', async () => {
+        const first = user(ctx.a)
+        const second = user(ctx.a)
+        await ctx.users.create(first, Audit.none('fixture'))
+        await ctx.users.create(second, Audit.none('fixture'))
+        for (const { id } of [first, second]) {
+          expect(
+            (
+              await ctx.users.setPhoneNumber(
+                ctx.a.environmentId,
+                id,
+                '+14155550100',
+                later(1),
+                Audit.none('fixture')
+              )
+            )?.phoneNumber
+          ).toBe('+14155550100')
+        }
+      })
+
+      test('removing takes the number and its time, once, and records only a real removal', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        const remove = () =>
+          ctx.users.removePhoneNumber(
+            ctx.a.environmentId,
+            input.id,
+            later(2_000),
+            activity(ctx.a, 'user.phone_number_removed', input.id)
+          )
+        // Nothing to remove: nothing recorded.
+        expect(await remove()).toBe(false)
+        expect(await auditOf(ctx.a, input.id)).toEqual([])
+        await ctx.users.setPhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          '+14155550100',
+          later(1_000),
+          Audit.none('fixture')
+        )
+        expect(await remove()).toBe(true)
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
+        expect(await remove()).toBe(false)
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.phone_number_removed'])
+      })
+
+      test('an unknown user and another environment’s user get nothing, and nothing is recorded', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          '+14155550100',
+          later(1),
+          Audit.none('fixture')
+        )
+        for (const [environmentId, id] of [
+          [ctx.a.environmentId, Bun.randomUUIDv7()],
+          [ctx.b.environmentId, input.id],
+        ] as const) {
+          expect(
+            await ctx.users.setPhoneNumber(
+              environmentId,
+              id,
+              '+4915112345678',
+              later(2),
+              activity(ctx.b, 'user.phone_number_added', id)
+            )
+          ).toBeNull()
+          expect(
+            await ctx.users.removePhoneNumber(
+              environmentId,
+              id,
+              later(2),
+              activity(ctx.b, 'user.phone_number_removed', id)
+            )
+          ).toBe(false)
+        }
+        expect(await auditOf(ctx.b, input.id)).toEqual([])
+        expect((await ctx.users.findById(ctx.a.environmentId, input.id))?.phoneNumber).toBe(
+          '+14155550100'
+        )
+      })
+
+      test('the list carries it', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          '+14155550100',
+          later(1),
+          Audit.none('fixture')
+        )
+        const listed = await ctx.users.list(ctx.a.environmentId, {
+          q: input.emailNormalized,
+          sort: 'email',
+          page: 1,
+          size: 10,
+        })
+        expect(listed.users[0]?.phoneNumber).toBe('+14155550100')
+      })
+    })
 
     test('creates a user and finds them by id and by normalized email', async () => {
       const input = user(ctx.a)

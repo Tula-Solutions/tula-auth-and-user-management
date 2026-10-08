@@ -226,6 +226,18 @@ export const EVENT_DATA_SCHEMAS = {
     'A passkey’s signature counter did not grow: it may have been cloned. The sign-in was refused.',
     { passkeyId: id() }
   ),
+  // Neither phone event has a field, on purpose: a number is personal data, and its country
+  // or last digits narrow it down. The target says whose it is; that is all a receiver gets.
+  'user.phone_number_added': data(
+    'UserPhoneNumberAdded',
+    'A user verified a phone number, which is now the account’s (replacing an earlier one).',
+    {}
+  ),
+  'user.phone_number_removed': data(
+    'UserPhoneNumberRemoved',
+    'A user took the phone number off their account.',
+    {}
+  ),
   'session.created': data('SessionCreated', 'A user signed in.', {
     userId: id(),
     client: SessionClientSchema,

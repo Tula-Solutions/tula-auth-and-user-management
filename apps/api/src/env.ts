@@ -172,6 +172,17 @@ const fields = z.object({
    */
   OAUTH_MOCK_PROVIDER: flag,
   /**
+   * What sends text messages (ADR 0037).
+   *
+   * - `none` (the default): nothing does. An environment that switches SMS on in its settings
+   *   gets `sms.unavailable` for every send, and no message is written anywhere.
+   * - `dev`: the development inbox. Nothing is sent; the last messages are kept in the
+   *   process's memory and readable at `GET /v1/dev/sms/messages`. Refused outside
+   *   `ENVIRONMENT=local` and with a `PUBLIC_URL` that is not loopback: whoever can read the
+   *   inbox reads every code.
+   */
+  SMS_PROVIDER: z.enum(['none', 'dev']).default('none'),
+  /**
    * Days an instance audit entry (dashboard sign-ins, workspaces, projects) is kept before the
    * retention job deletes it. At least 30: the log is what an operator reads after an
    * incident. Environments' audit logs are not affected: each has its own period, the
@@ -291,6 +302,23 @@ function parsedUrl(value: string): URL | null {
 }
 
 const schema = fields.superRefine((env, ctx) => {
+  if (env.SMS_PROVIDER === 'dev' && env.ENVIRONMENT !== 'local') {
+    // As for the mock provider: the development inbox hands every code to whoever asks, so
+    // it must be impossible wherever other people can reach the API, `dev` included.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['SMS_PROVIDER'],
+      message: `dev is only allowed with ENVIRONMENT=local, not ${env.ENVIRONMENT}: the development inbox shows every code to anyone who can reach this API`,
+    })
+  }
+  if (env.SMS_PROVIDER === 'dev' && !isLoopbackUrl(env.PUBLIC_URL)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['SMS_PROVIDER'],
+      message:
+        'dev is only allowed when PUBLIC_URL is a loopback address (localhost, 127.0.0.1, [::1] or a *.localhost name): the development inbox shows every code to anyone who can reach this API',
+    })
+  }
   if (env.OAUTH_MOCK_PROVIDER && env.ENVIRONMENT !== 'local') {
     // Not a "live tiers" rule: the mock provider signs anyone in as any address they type, so
     // it must be impossible in every deployment other people can reach, `dev` included.

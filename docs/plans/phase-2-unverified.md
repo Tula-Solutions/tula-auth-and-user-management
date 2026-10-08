@@ -297,3 +297,19 @@ dashboard in a browser. Not verified:
 | The Next.js example | It does not show a custom claim: `auth().customClaims` is tested against the real API in process, for a token and for a stateful session, not on a page in a browser. |
 | `user.created_at` against `session.created_at` over HTTP | Told apart only in the API's own test, which moves the fixed clock between creating the user and signing in. Scenario 53 cannot: a scenario has no way to move a server's clock, its sign-up and sign-in fall in the same second, and the scenario format compares a claim with a value, not two claims with each other. |
 | A third party's JWT library | The token with `ext` is verified by the API's own verifier and by `@tula/nextjs`. No other verifier was tried. |
+
+## A phone number on an account (TULA-11, [ADR 0037](../adr/0037-phone-numbers-and-sms.md))
+
+Adding, confirming and removing a number are tested through the API in process (memory
+adapters), the conformance scenario, the `@tula/core` journeys, the React components in
+happy-dom and in a browser, and the dashboard's component tests. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| A real text message | There is no adapter for a provider: no message has ever left the server. The message's text is checked for its length in GSM-7 by counting characters, not by a carrier. |
+| The origin-bound line on a phone | The format (`@host #code`) is written as specified. No phone or browser was asked to offer a code from it. |
+| A real PostgreSQL server | The migration (`0023_phone_number.sql`) was generated and read, not applied: `db:migrate` and the integration tests (`*.integration.ts`, the user repository's new methods and the check `users_phone_number_whole` among them) were **not run** from the worktree. |
+| The conformance scenario against a live server | `phone number on an account` ran in process only. The `self-host` CI jobs were changed to start the stack with `SMS_PROVIDER=dev` and to read both instances' inboxes; that workflow has not run. |
+| The development inbox behind several instances | The runner's reading of several inboxes (the newest message across them) is unit-tested against fakes, not against two API processes. |
+| The calling-code table | Hand-written. Not checked against a provider's own table, and it does not know number ranges inside a country (premium rates, satellite). |
+| The dashboard in a browser | The "Text messages" section and the phone number on a user's screen are covered by component tests (happy-dom); the `dashboard` Playwright project has no scenario for them. |

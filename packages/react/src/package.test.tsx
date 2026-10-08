@@ -123,8 +123,13 @@ describe('what @tula/react costs a browser bundle', () => {
    * The phase-1 review fixes took it just past that, to about 45.6 kB, and the budget to
    * 46 kB: the provider's "sign-out did not finish" dialog with its retry and strings, the
    * refusal of a destination that names a host without a scheme, and `discard()` on every flow.
+   * A phone number on an account (ADR 0037) took it to 47,364 bytes and the budget to 47.8 kB:
+   * about 0.25 kB is the client's (three routes, `user.phone`, four error messages) and the
+   * rest the profile's section (the number form, the code form, the summary with change and
+   * remove, and their strings). No dependency was added, and the contract's phone number
+   * rules are not in the bundle: the server judges a number.
    */
-  const GZIP_BUDGET_BYTES = 46_000
+  const GZIP_BUDGET_BYTES = 47_800
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

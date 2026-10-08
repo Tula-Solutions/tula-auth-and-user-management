@@ -1,6 +1,7 @@
 import { loadScenarios } from './load'
 import { mailpitCodes, mailpitLinks } from './mailpit'
 import { exitCode, formatResult, runScenario, type Target } from './runner'
+import { devSmsCodes } from './sms-inbox'
 
 /**
  * Run every scenario against a live server: `bun run conformance`.
@@ -18,6 +19,11 @@ import { exitCode, formatResult, runScenario, type Target } from './runner'
  *   reach, where the runner starts its webhook receivers (`127.0.0.1` for a server running on
  *   this machine in the `local` tier). Without it the scenarios marked `needsWebhookReceiver`
  *   are skipped.
+ * - `CONFORMANCE_SMS_INBOX_URLS` (optional): the origin of every instance whose development
+ *   SMS inbox is read, separated by commas (`http://localhost:3003,http://localhost:3004`).
+ *   Each instance has its own inbox, so name the instances themselves, never a proxy in
+ *   front of them. The server must run with `SMS_PROVIDER=dev`. Without it the scenarios
+ *   marked `needsSmsInbox` are skipped.
  *
  * The server must run with `TRUST_PROXY=true` and deliver mail to that Mailpit.
  */
@@ -48,6 +54,18 @@ if (receiverHost !== undefined && !/^[A-Za-z0-9.-]+$/.test(receiverHost)) {
   process.exit(2)
 }
 
+const smsInboxUrls = (process.env.CONFORMANCE_SMS_INBOX_URLS ?? '')
+  .split(',')
+  .map((url) => url.trim().replace(/\/+$/, ''))
+  .filter((url) => url !== '')
+// Origins only: the path of the inbox is the runner's to add.
+if (smsInboxUrls.some((url) => !/^https?:\/\/[A-Za-z0-9.-]+(:[0-9]+)?$/.test(url))) {
+  process.stderr.write(
+    'conformance: CONFORMANCE_SMS_INBOX_URLS must be origins (http://host:port), separated by commas\n'
+  )
+  process.exit(2)
+}
+
 const target: Target = {
   baseUrl: (process.env.CONFORMANCE_BASE_URL ?? 'http://localhost:3003').replace(/\/+$/, ''),
   second: secondBaseUrl
@@ -58,6 +76,7 @@ const target: Target = {
   fetch: (request) => fetch(request),
   emailCode: mailpitCodes(mailpit),
   emailLink: mailpitLinks(mailpit),
+  smsCode: smsInboxUrls.length > 0 ? devSmsCodes(smsInboxUrls) : undefined,
   wait: (ms) => Bun.sleep(ms),
   settleMs: settleMs > 0 ? settleMs : undefined,
   // Authenticator codes are computed for the wall clock, which is the server's clock too.

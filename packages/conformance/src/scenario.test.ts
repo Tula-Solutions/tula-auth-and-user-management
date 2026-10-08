@@ -199,3 +199,38 @@ test('expected claims are keyed by the path of the token in the body', () => {
   ).toBe(true)
   expect(ScenarioSchema.safeParse(scenario(['session.accessToken'])).success).toBe(false)
 })
+
+test('a scenario that reads a text message must say so, so it is skipped where there is no inbox', () => {
+  const read = { name: 'read', smsCode: { to: '{{phone}}', capture: 'code' } }
+  const base = { name: 'n', description: 'd', steps: [read] }
+  expect(ScenarioSchema.safeParse(base).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base, needsSmsInbox: false }).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base, needsSmsInbox: true }).success).toBe(true)
+  // In the cleanup too.
+  const step = { name: 's', request: { method: 'GET', path: '/x' }, expect: { status: 200 } }
+  expect(
+    ScenarioSchema.safeParse({ name: 'n', description: 'd', steps: [step], cleanup: [read] })
+      .success
+  ).toBe(false)
+  // Nothing unknown in the step.
+  expect(
+    ScenarioSchema.safeParse({
+      ...base,
+      needsSmsInbox: true,
+      steps: [{ name: 'read', smsCode: { to: 'x', capture: 'code', body: true } }],
+    }).success
+  ).toBe(false)
+})
+
+test('a variable is generated only as a kind the runner knows', () => {
+  const scenario = (generate: string) => ({
+    name: 'n',
+    description: 'd',
+    variables: { value: { generate } },
+    steps: [{ name: 's', request: { method: 'GET', path: '/x' }, expect: { status: 200 } }],
+  })
+  for (const kind of ['email', 'password', 'phone']) {
+    expect(ScenarioSchema.safeParse(scenario(kind)).success).toBe(true)
+  }
+  expect(ScenarioSchema.safeParse(scenario('address')).success).toBe(false)
+})

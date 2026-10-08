@@ -2,6 +2,7 @@ import {
   MAX_APP_NAME_LENGTH,
   MAX_AUDIT_RETENTION_DAYS,
   RedirectUrlSchema,
+  SmsCountrySchema,
   WebOriginSchema,
 } from '@tula/contract'
 import type { ZodType } from 'zod'
@@ -123,6 +124,40 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
           ))}
         </div>
       </Section>
+      <Section
+        title='Text messages'
+        description='Whether this environment sends text messages (SMS), and to which countries. A user can then add a phone number to their account and prove it with a texted code.'
+      >
+        <div>
+          <SwitchRow
+            label='Send text messages'
+            description='A message costs money. With no country listed nothing is sent, even when this is on.'
+            checked={draft.sms?.enabled ?? false}
+            onChange={(checked) =>
+              update((current) => ({
+                ...current,
+                sms: { allowedCountries: current.sms?.allowedCountries ?? [], enabled: checked },
+              }))
+            }
+          />
+        </div>
+        <ListEditor
+          label='Countries text messages may go to'
+          itemName='country'
+          placeholder='US'
+          hint='Two-letter country codes (ISO 3166-1), such as US or DE. Countries that share a calling code count as one: US also allows Canadian numbers.'
+          values={draft.sms?.allowedCountries ?? []}
+          onChange={(values) =>
+            update((current) => ({
+              ...current,
+              sms: { enabled: current.sms?.enabled ?? false, allowedCountries: values },
+            }))
+          }
+          normalize={(value) => value.toUpperCase()}
+          validate={entryValidator(SmsCountrySchema)}
+          error={errors['sms.allowedCountries'] ?? errors.sms}
+        />
+      </Section>
       <Section title='Audit log'>
         <TextField
           label='Keep audit entries for (days)'
@@ -147,7 +182,8 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
 }
 
 /**
- * General settings of an environment: its name, URLs, notices and audit retention.
+ * General settings of an environment: its name, URLs, notices, text messages and audit
+ * retention.
  *
  * @returns The screen.
  */

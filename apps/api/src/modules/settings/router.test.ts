@@ -403,6 +403,7 @@ describe('GET /v1/client/config', () => {
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
       mfa: { policy: 'optional' },
+      phone: { enabled: false },
     })
   })
 
@@ -426,6 +427,7 @@ describe('GET /v1/client/config', () => {
       signUp: { password: 'required' },
       password: strictPolicy,
       mfa: { policy: 'optional' },
+      phone: { enabled: false },
     })
     expect(text).not.toContain('https://acme.test')
     expect(text).not.toContain('retentionDays')

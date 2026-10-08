@@ -294,7 +294,8 @@ Providers
 Changes pending. Run `tula apply` to make them.
 ```
 
-- `+` added, `~` changed, `-` removed, by path. Allowed origins and redirect URLs are sets:
+- `+` added, `~` changed, `-` removed, by path. Allowed origins, redirect URLs and
+  the countries text messages may go to (`sms.allowedCountries`) are sets:
   their order is not a change, and a change shows the entries added and removed.
 - JWT templates (`sessions.jwtTemplates`) are a set by name, and a template's claims a set by
   key: their order is not a change. A claim is one value: a changed claim is one line at

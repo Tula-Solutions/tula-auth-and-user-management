@@ -66,6 +66,7 @@ describe('conformance scenarios, in process', () => {
       'sign-in denied by a hook',
       'claims added by a hook',
       'sign-in hook that times out',
+      'phone number on an account',
     ])
   })
 
