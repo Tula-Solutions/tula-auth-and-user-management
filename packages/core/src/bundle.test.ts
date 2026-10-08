@@ -14,9 +14,13 @@ import { join } from 'node:path'
  * the budget moved from 12 kB to 13 kB. Passkeys (ADR 0027) added about 2.3 kB with no
  * dependency (ten routes, the WebAuthn JSON conversions for browsers without
  * `parseCreationOptionsFromJSON` and `toJSON`, the response guards, the autofill loop and
- * eight error messages), to 14.9 kB, and the budget moved from 13 kB to 15.5 kB.
+ * eight error messages), to 14.9 kB, and the budget moved from 13 kB to 15.5 kB. Hooks (ADR
+ * 0035) added three error codes with their messages (`hook.denied`, `hook.unavailable`,
+ * `hook.url_not_allowed`) and no code: 50 bytes, from 15,458 to 15,508, with 42 bytes of room
+ * left before them. The budget moved by exactly those 50 bytes, to 15,550, so the room for
+ * fixes is what it was; every existing message is unchanged.
  */
-const GZIP_BUDGET_BYTES = 15_500
+const GZIP_BUDGET_BYTES = 15_550
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

@@ -28,6 +28,14 @@ const CLIENT_MESSAGES = {
   'webhook.invalid_signature': 'No signature of the delivery matches the secret.',
   'webhook.invalid_payload':
     'The delivery is signed correctly but its body is not the event it names.',
+  'hook.invalid_secret': 'The hook secret is not a signing secret (whsec_…).',
+  'hook.invalid_headers':
+    'The webhook-id, webhook-timestamp or webhook-signature header is missing, repeated or malformed.',
+  'hook.timestamp_out_of_tolerance':
+    'The question’s timestamp is more than five minutes from this server’s clock.',
+  'hook.invalid_signature': 'No signature of the question matches the secret.',
+  'hook.invalid_payload':
+    'The request is signed correctly but its body is not a hook question this version knows.',
 } as const
 
 /**
