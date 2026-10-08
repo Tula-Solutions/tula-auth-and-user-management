@@ -156,7 +156,19 @@ function linkedin(token: string | Promise<string>, overrides: Record<string, Ans
       if (!route) {
         throw new Error(`unexpected request to ${url}`)
       }
-      return route()
+      const answer = await route()
+      // What `fetch` does with a redirect, which a stub does not do by itself: refuse it
+      // when the request said `redirect: 'error'`, and otherwise request the target with the
+      // same headers. A read that follows one is seen asking the target.
+      const location = answer.headers.get('location')
+      if (answer.status >= 300 && answer.status < 400 && location !== null) {
+        const mode = input instanceof Request ? input.redirect : init?.redirect
+        if (mode === 'error') {
+          throw new TypeError('fetch failed: unexpected redirect')
+        }
+        return globalThis.fetch(location, init)
+      }
+      return answer
     }) as typeof fetch)
   )
   return { calls, exchange: () => createLinkedInProvider().exchange(credentials, exchangeInput) }
@@ -360,11 +372,6 @@ describe('the userinfo answer', () => {
       'unavailable',
     ],
     [
-      'a redirect, which is not followed',
-      () => Promise.reject(new TypeError('unexpected redirect: canary-in-the-answer')),
-      'unavailable',
-    ],
-    [
       'an answer that is not JSON',
       () => new Response('<html>canary-in-the-answer'),
       'invalid_profile',
@@ -398,6 +405,21 @@ describe('the userinfo answer', () => {
       for (const spy of logged) {
         expect(spy).not.toHaveBeenCalled()
       }
+    }
+  )
+
+  // Review finding F1, for the read LinkedIn shares with Discord.
+  test.each([301, 302, 303, 307, 308])(
+    'a %i from userinfo is not followed: the token goes nowhere else',
+    async (status) => {
+      const elsewhere = 'https://elsewhere.test/collect'
+      const { calls, exchange } = linkedin(idToken(), {
+        [USERINFO_URL]: () => new Response(null, { status, headers: { location: elsewhere } }),
+        // What a followed redirect would find: a good answer about this very member.
+        [elsewhere]: () => jsonResponse(USERINFO),
+      })
+      expect(await failureOf(exchange())).toBe('unavailable')
+      expect(calls.map((call) => call.url)).toEqual([TOKEN_URL, KEYS_URL, USERINFO_URL])
     }
   )
 
@@ -579,6 +601,20 @@ describe('a LinkedIn that never answers', () => {
     ['the userinfo endpoint', USERINFO_URL],
   ])('%s hanging is unavailable after the timeout', async (_name, url) => {
     linkedin(idToken(), { [url]: hang })
+    const since = performance.now()
+    expect(
+      await failureOf(
+        createLinkedInProvider({ timeoutMs: 40 }).exchange(credentials, exchangeInput)
+      )
+    ).toBe('unavailable')
+    expect(performance.now() - since).toBeLessThan(2000)
+  })
+
+  test('a userinfo body that never finishes is unavailable too', async () => {
+    linkedin(idToken(), {
+      [USERINFO_URL]: () =>
+        new Response(new ReadableStream({ start: () => undefined }), { status: 200 }),
+    })
     const since = performance.now()
     expect(
       await failureOf(

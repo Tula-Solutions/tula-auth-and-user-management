@@ -78,7 +78,19 @@ function discord(overrides: Record<string, Answer> = {}): Call[] {
       if (!route) {
         throw new Error(`unexpected request to ${url}`)
       }
-      return route()
+      const answer = await route()
+      // What `fetch` does with a redirect, which a stub does not do by itself: refuse it
+      // when the request said `redirect: 'error'`, and otherwise request the target with the
+      // same headers. A read that follows one is seen asking the target.
+      const location = answer.headers.get('location')
+      if (answer.status >= 300 && answer.status < 400 && location !== null) {
+        const mode = input instanceof Request ? input.redirect : init?.redirect
+        if (mode === 'error') {
+          throw new TypeError('fetch failed: unexpected redirect')
+        }
+        return globalThis.fetch(location, init)
+      }
+      return answer
     }) as typeof fetch)
   )
   return calls
@@ -291,6 +303,23 @@ describe('refusals', () => {
       expect(await failureOf(createDiscordProvider().exchange(credentials, exchangeInput))).toBe(
         failure
       )
+    }
+  )
+
+  // Review finding F1: nothing failed when `redirect: 'error'` was taken off the profile read.
+  test.each([301, 302, 303, 307, 308])(
+    'a %i from the profile endpoint is not followed: the token goes nowhere else',
+    async (status) => {
+      const elsewhere = 'https://elsewhere.test/collect'
+      const calls = discord({
+        [USER_URL]: () => new Response(null, { status, headers: { location: elsewhere } }),
+        // What a followed redirect would find: a good profile, for someone else.
+        [elsewhere]: () => jsonResponse({ ...USER, id: '99999999999999999' }),
+      })
+      expect(await failureOf(createDiscordProvider().exchange(credentials, exchangeInput))).toBe(
+        'unavailable'
+      )
+      expect(calls.map((call) => call.url)).toEqual([TOKEN_URL, USER_URL])
     }
   )
 
