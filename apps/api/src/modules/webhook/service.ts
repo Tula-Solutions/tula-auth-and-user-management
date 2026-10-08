@@ -57,6 +57,19 @@ export const WEBHOOK_MAX_BATCHES = 10
 export const WEBHOOK_DELIVERY_TIMEOUT_MS = 5_000
 
 /**
+ * Events marked per statement when an environment's backlog is settled in bulk: events that
+ * are owed to nobody because they happened before any endpoint that is on was registered.
+ */
+export const WEBHOOK_SETTLE_BATCH_SIZE = 5_000
+
+/**
+ * Bulk batches per environment per round: a ceiling of 100,000 events, each batch its own
+ * short transaction. A deployment that has recorded events for years settles a million of
+ * them in ten rounds, under a minute, instead of the hours the per-event path would take.
+ */
+export const WEBHOOK_MAX_SETTLE_BATCHES = 20
+
+/**
  * Largest answer body a delivery accepts. Nothing of it is read or kept: the cap only bounds
  * what a receiver can make the server take in. A larger answer counts as a failed delivery.
  */
@@ -77,6 +90,11 @@ export interface DeliveryReport {
   failed: number
   /** Events settled: marked delivered, whether or not anything had to be sent. */
   events: number
+  /**
+   * Of those, events settled in bulk, unread: they happened before any endpoint that is on
+   * was registered (or the environment has none), so they were owed to nobody.
+   */
+  unowed: number
   /** Deliveries a receiver answered with a 2xx status. */
   delivered: number
   /** Deliveries that got another status, or no answer. Recorded, not repeated. */
@@ -173,15 +191,33 @@ export async function get(
  * @returns The endpoint and its secret.
  * @throws AuthError `webhook.url_not_allowed` when the server may not call the address.
  * @throws ConflictError when the environment already has `MAX_WEBHOOK_ENDPOINTS` endpoints.
+ * @throws ServiceUnavailableError when the environment's lock could not be had in time.
  */
 export async function create(
-  deps: Pick<Deps, 'webhookEndpoints' | 'outbound' | 'secretBox' | 'ids' | 'clock'>,
+  deps: Pick<
+    Deps,
+    'webhookEndpoints' | 'environmentLock' | 'outbound' | 'secretBox' | 'ids' | 'clock'
+  >,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   input: CreateWebhookEndpointRequest,
   actor: Actor
 ): Promise<CreatedWebhookEndpoint> {
+  // Before the lock: resolving a name can take seconds, and nothing it decides is shared.
   await requireCallable(deps, input.url)
-  // A soft cap: two concurrent registrations at the limit can both pass, which is acceptable.
+  // The count and the insert take turns per environment, across instances: registrations
+  // that arrive together cannot each see room for one more.
+  return deps.environmentLock.runExclusive(tenant.environmentId, 'webhook_endpoints', () =>
+    register(deps, tenant, input, actor)
+  )
+}
+
+/** Count the environment's endpoints and add one. Called with the environment's lock held. */
+async function register(
+  deps: Pick<Deps, 'webhookEndpoints' | 'secretBox' | 'ids' | 'clock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  input: CreateWebhookEndpointRequest,
+  actor: Actor
+): Promise<CreatedWebhookEndpoint> {
   const existing = await deps.webhookEndpoints.list(tenant.environmentId)
   if (existing.length >= MAX_WEBHOOK_ENDPOINTS) {
     throw new ConflictError({
@@ -402,11 +438,7 @@ async function attempt(
   })
   const key = await signingKey(deps, endpoint)
   if (!key) {
-    // Most often a TULA_MASTER_KEY that is not the one the secret was sealed with.
-    logger.warn('webhook signing secret could not be opened; nothing was sent', {
-      environmentId: endpoint.environmentId,
-      endpointId: endpoint.id,
-    })
+    // The caller says so once per endpoint and round, not once per event.
     return failed('signing_failed')
   }
   // The exact text that is sent is the text that is signed.
@@ -452,13 +484,82 @@ async function deliverEnvironment(
   const started = deps.clock.now().getTime()
   // Endpoints that ran out a delivery's whole deadline in this round. Waiting that long again
   // for every further event would spend the environment's budget on one endpoint and starve
-  // the others, so the rest of what such an endpoint is owed this round is recorded as not
-  // sent. The next round tries it afresh.
+  // the others, so the rest of what such an endpoint is owed this round is settled WITHOUT
+  // being tried: recorded as failed (`endpoint_unresponsive`), never sent, and not sent later
+  // either until retries exist. An endpoint that was slow once loses up to a round's worth.
+  // The next round tries it afresh.
   const unresponsive = new Set<string>()
+  // Per endpoint, how many deliveries were not made this round because its secret could not
+  // be opened. A fault on the server's side: said once per endpoint, with the count.
+  const unsigned = new Map<string, number>()
   // Out of budget, or the server is shutting down: either way what is left waits.
   const outOfTime = () =>
     signal?.aborted === true ||
     deps.clock.now().getTime() - started >= WEBHOOK_ENVIRONMENT_BUDGET_MS
+  try {
+    await settleUnowed(deps, environmentId, report, new Date(started), outOfTime)
+    await deliverOwed(deps, environmentId, report, outOfTime, unresponsive, unsigned)
+  } finally {
+    for (const [endpointId, events] of unsigned) {
+      // Most often a TULA_MASTER_KEY that is not the one the secret was sealed with, on this
+      // instance or on all of them. The receiver did nothing wrong and was sent nothing.
+      logger.warn(
+        'webhook signing secret could not be opened; nothing was sent to the endpoint this round',
+        { environmentId, endpointId, events }
+      )
+    }
+  }
+}
+
+/**
+ * Settle, in bulk and unread, the events of an environment that are owed to nobody.
+ *
+ * An event is owed to the endpoints that are switched on, subscribed to its type and were
+ * registered no later than it happened. So an event from **before the earliest endpoint that
+ * is on** is owed to none of them whatever its type, and with no endpoint on, nothing that
+ * has happened so far is owed to anyone. An endpoint that is switched off does not count: it
+ * is owed nothing while it is off, exactly as in the per-event path, which would settle the
+ * same events one by one.
+ *
+ * The boundary is strict: an event at the very instant the earliest endpoint was registered
+ * is owed to it and is left for the per-event path. So is anything at or after the instant
+ * this pass began, which an endpoint registered meanwhile may be owed.
+ */
+async function settleUnowed(
+  deps: DeliveryDeps,
+  environmentId: string,
+  report: DeliveryReport,
+  started: Date,
+  outOfTime: () => boolean
+): Promise<void> {
+  const registered = (await deps.webhookEndpoints.list(environmentId))
+    .filter((endpoint) => endpoint.enabled)
+    .map((endpoint) => endpoint.createdAt.getTime())
+  const before = new Date(Math.min(started.getTime(), ...registered))
+  for (let batch = 0; batch < WEBHOOK_MAX_SETTLE_BATCHES && !outOfTime(); batch++) {
+    const settled = await deps.webhookDeliveries.settleBefore(
+      environmentId,
+      before,
+      deps.clock.now(),
+      WEBHOOK_SETTLE_BATCH_SIZE
+    )
+    report.events += settled
+    report.unowed += settled
+    if (settled < WEBHOOK_SETTLE_BATCH_SIZE) {
+      return
+    }
+  }
+}
+
+/** Send one environment's waiting events to the endpoints they are owed to, event by event. */
+async function deliverOwed(
+  deps: DeliveryDeps,
+  environmentId: string,
+  report: DeliveryReport,
+  outOfTime: () => boolean,
+  unresponsive: Set<string>,
+  unsigned: Map<string, number>
+): Promise<void> {
   for (let batch = 0; batch < WEBHOOK_MAX_BATCHES; batch++) {
     const pending = await deps.webhookDeliveries.pendingEvents(environmentId, WEBHOOK_BATCH_SIZE)
     if (pending.length === 0) {
@@ -505,6 +606,9 @@ async function deliverEnvironment(
           if (result.failureReason === 'timeout') {
             unresponsive.add(endpoint.id)
           }
+          if (result.failureReason === 'signing_failed') {
+            unsigned.set(endpoint.id, (unsigned.get(endpoint.id) ?? 0) + 1)
+          }
           // `gone` (the endpoint was removed meanwhile) and `duplicate` (another worker's row)
           // both mean this endpoint is owed nothing more for this event.
           await deps.webhookDeliveries.insert({
@@ -543,7 +647,7 @@ async function deliverEnvironment(
  *
  * Per environment it takes the events no round has settled yet, oldest first, and sends each
  * to every endpoint that is switched on, subscribed to the event's type and was registered no
- * later than the event happened. **Each endpoint gets one attempt per event**: the outcome is
+ * later than the event happened. **Each endpoint gets at most one attempt per event**: the outcome is
  * recorded (a status code and a duration, or a fixed word when there was no answer) and a
  * failure is not repeated. An event is marked delivered once every endpoint it had to go to
  * has a delivery row, which includes the event nobody subscribed to.
@@ -551,10 +655,16 @@ async function deliverEnvironment(
  * Delivery is at least once: a round that ends between sending and recording sends again, with
  * the same event id.
  *
- * An endpoint that lets a delivery run out its deadline is not waited for again in the same
- * round: the rest of what it is owed in that round is recorded as failed
- * (`endpoint_unresponsive`) without a request, so it cannot use up the budget its
- * environment's other endpoints share.
+ * Two kinds of event are settled without being tried, and are not sent later (there are no
+ * retries yet). After an endpoint lets a delivery run out its deadline, the rest of what it
+ * is owed in that round is recorded `endpoint_unresponsive`, so it cannot use up the budget
+ * its environment's other endpoints share: a receiver that is slow once can lose up to a
+ * round's worth. And what is owed to an endpoint whose secret cannot be opened is recorded
+ * `signing_failed`, with one log line per endpoint per round.
+ *
+ * Before any of that, events owed to nobody (from before the earliest endpoint that is on)
+ * are settled in bulk, so a long outbox does not stand between a new endpoint and its first
+ * delivery.
  *
  * A failure in one environment is logged and skipped, and each environment has a time budget
  * ({@link WEBHOOK_ENVIRONMENT_BUDGET_MS}), so neither a broken nor a slow one keeps the
@@ -575,6 +685,7 @@ export async function deliverPending(
     environments: 0,
     failed: 0,
     events: 0,
+    unowed: 0,
     delivered: 0,
     undelivered: 0,
     skipped: 0,

@@ -259,7 +259,14 @@ Before finishing any change here, confirm each item holds and has a test:
     word and never the address or what it resolved to. Of a receiver's answer only the status
     code and the duration are kept: test with a canary in the answer's headers and body
     against the delivery row, the logs and every store. One endpoint's failure, slowness or
-    removal mid-round must not fail the round or another environment's deliveries.
+    removal mid-round must not fail the round or another environment's deliveries. A row with
+    `endpoint_unresponsive` or `signing_failed` means nothing was sent: never write either for
+    an event that was, log `signing_failed` once per endpoint per round with a count, and keep
+    the docs saying these events are lost until retries exist. Bulk settling
+    (`settleBefore`) is strict at its cutoff: test the event at the very instant of the
+    earliest switched-on endpoint's registration (owed, not settled), a switched-off
+    endpoint, and another environment. The endpoint cap is counted and inserted under
+    `deps.environmentLock` (`webhook_endpoints`): keep the concurrent-registrations test.
 48. **The outbound guard (`lib/outbound.ts`):** every rule of `request` is a rule of `check`,
     and both share the functions that hold them; a new rule gets a row in both tables of
     `outbound.test.ts`. Its settings come from `deps.outbound` only, which `container.ts`

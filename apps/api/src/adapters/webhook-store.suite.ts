@@ -288,6 +288,45 @@ export function describeWebhookStores(
       expect(await ctx.deliveries.markDelivered(ctx.a.environmentId, [], later)).toBe(0)
     })
 
+    test('settling in bulk marks the events before a cutoff, oldest first, up to the limit', async () => {
+      const ids = [
+        await ctx.seedEvent(ctx.a, seeded(1)),
+        await ctx.seedEvent(ctx.a, seeded(2)),
+        await ctx.seedEvent(ctx.a, seeded(3)),
+        await ctx.seedEvent(ctx.a, seeded(4)),
+      ]
+      const cutoff = seeded(4).occurredAt
+      expect(await ctx.deliveries.settleBefore(ctx.a.environmentId, cutoff, later, 2)).toBe(2)
+      expect(await Promise.all(ids.map((id) => ctx.deliveredAt(ctx.a, id)))).toEqual([
+        later,
+        later,
+        null,
+        null,
+      ])
+      expect(await ctx.deliveries.settleBefore(ctx.a.environmentId, cutoff, later, 10)).toBe(1)
+      expect(await ctx.deliveries.settleBefore(ctx.a.environmentId, cutoff, later, 10)).toBe(0)
+      // The event at the cutoff itself is not before it: it still waits.
+      const waiting = await ctx.deliveries.pendingEvents(ctx.a.environmentId, 10)
+      expect(waiting.map((event) => event.id)).toEqual([ids[3] as string])
+    })
+
+    test('settling in bulk leaves an already settled event its first time', async () => {
+      const first = await ctx.seedEvent(ctx.a, seeded(1))
+      await ctx.deliveries.markDelivered(ctx.a.environmentId, [first], now)
+      const cutoff = seeded(9).occurredAt
+      expect(await ctx.deliveries.settleBefore(ctx.a.environmentId, cutoff, later, 10)).toBe(0)
+      expect(await ctx.deliveredAt(ctx.a, first)).toEqual(now)
+    })
+
+    test('settling in bulk touches one environment only', async () => {
+      const mine = await ctx.seedEvent(ctx.a, seeded(1))
+      const theirs = await ctx.seedEvent(ctx.b, seeded(1))
+      const cutoff = seeded(9).occurredAt
+      expect(await ctx.deliveries.settleBefore(ctx.b.environmentId, cutoff, later, 10)).toBe(1)
+      expect(await ctx.deliveredAt(ctx.a, mine)).toBeNull()
+      expect(await ctx.deliveredAt(ctx.b, theirs)).toEqual(later)
+    })
+
     test('another environment cannot mark an event delivered', async () => {
       const event = await ctx.seedEvent(ctx.a, seeded(1))
       expect(await ctx.deliveries.markDelivered(ctx.b.environmentId, [event], now)).toBe(0)

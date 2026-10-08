@@ -143,7 +143,9 @@ export async function receiveWebhook(request: Request): Promise<Response> {
 <!-- /snippet -->
 
 `verifyWebhook` (from `@tula/admin`, on any server runtime) refuses a delivery whose signature
-is not right for the secret, whose headers are missing or malformed, or whose timestamp is
+is not right for the secret, whose headers are missing or malformed (a `webhook-id` or
+`webhook-timestamp` sent twice is malformed; a `webhook-signature` sent twice is read as one
+list, of which any right entry is enough), or whose timestamp is
 more than five minutes old or more than five minutes ahead of your server's clock, and returns
 the typed event otherwise. Its errors are `TulaAdminError`s with a `code`
 (`webhook.invalid_signature`, `webhook.timestamp_out_of_tolerance`, `webhook.invalid_headers`,
@@ -175,13 +177,36 @@ or the body.
 
 For each delivery: which endpoint and event, when it was tried, whether it was delivered, your
 answer's **status code**, how long it took, and, when there was no answer, a fixed word for
-why (`timeout`, `connection_failed`, `address_not_allowed`, …). An endpoint that lets a
-delivery run into the five-second deadline is not waited for again in the same round: what it
-was owed in that round is recorded as failed (`endpoint_unresponsive`) and not sent. **Nothing else of your answer
+why (`timeout`, `connection_failed`, `address_not_allowed`, …). Two of those words mean that
+**nothing was sent**: `endpoint_unresponsive` and `signing_failed`
+([below](#what-can-be-lost-today)). **Nothing else of your answer
 is kept or logged**: no header and no body. The server's log never holds an endpoint's address
 or its secret.
 
 There is no API to read these records yet. Removing an endpoint removes its records.
+
+## What can be lost today
+
+Until retries exist, an event your endpoint does not receive is not sent again. Three ways
+that happens, the last two without your endpoint being asked at all:
+
+- **Your endpoint did not answer with a 2xx in five seconds.** That one delivery failed.
+- **Your endpoint let a delivery run into the deadline, and more events were waiting.** The
+  server does not wait five seconds again for each of them: the rest of what your endpoint
+  was owed **in that round** (at most 1,000 events; usually a handful) is recorded as
+  `endpoint_unresponsive` and **was never tried**. The next round, five seconds later, tries
+  your endpoint again. So one slow answer can cost more than one event. Answer inside the
+  deadline, always; do the work afterwards.
+- **The server could not open your endpoint's signing secret** (`signing_failed`). This is a
+  fault on the server's side, nothing your endpoint did: nothing is sent while it lasts. The
+  operator sees one log line per endpoint per round, `webhook signing secret could not be
+  opened; nothing was sent to the endpoint this round`, with the endpoint's id and a count,
+  and should check that every API instance has the same `TULA_MASTER_KEY`, the one the
+  deployment has always had (`tula doctor`). If the key is gone, remove the endpoint and
+  register it again: that issues a new secret.
+
+If you cannot afford a gap, reconcile from the admin API (the audit log lists every event by
+the same id) rather than rely on webhooks alone, until retries are built.
 
 ## How the server calls you
 
@@ -201,14 +226,15 @@ For the operator of the server:
   delivery fails (`signing_failed`, with a line in the log naming the endpoint's id) until
   the endpoints are registered again.
 - The first start of a version with webhooks settles the whole outbox, which has recorded
-  every event since the deployment began: nothing of it is sent (no endpoint existed), each
-  event is only marked. That takes a round every five seconds at up to 1,000 events per
-  environment, with a log line per round. See
+  every event since the deployment began: nothing of it is sent (no endpoint existed), the
+  events are only marked, in bulk, up to 100,000 per environment every five seconds. The
+  migration before it blocks writes to the outbox table while it runs: see
   [Upgrading](self-host.md#upgrading), migration `0018`.
 
 ## Not built yet
 
-- **Retries.** One attempt per endpoint and event; a failed delivery is not repeated.
+- **Retries.** At most one attempt per endpoint and event; a failed delivery is not repeated,
+  and [some events are never tried](#what-can-be-lost-today).
 - **Reading the delivery log**, sending a test event, redelivering.
 - **Rotating a secret** without a gap (the verifier already accepts either of two signatures).
 - **Endpoints in `tula.config.ts`** (`tula diff`, `tula apply`).

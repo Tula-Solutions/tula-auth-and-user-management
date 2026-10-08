@@ -263,19 +263,40 @@ whose answer decides what happens next (step 2.3).
 - **The worker is `Webhooks.run`, on every instance, under its own job lock**
   (`'webhook_delivery'`, advisory lock id 2: never renumber). Per environment: undelivered
   events oldest first in bounded batches; an event is **owed** to the endpoints that are
-  switched on, subscribed to its type and were registered no later than it happened; one
-  attempt per endpoint and event (retries are a later step); `delivered_at` is set once every
+  switched on, subscribed to its type and were registered no later than it happened; **at
+  most** one attempt per endpoint and event (retries are a later step); `delivered_at` is set once every
   owed endpoint has a delivery row, which includes the event owed to nobody. A row with no
   `schemaVersion` (recorded before the event contract) is never sent: it is marked and
   counted. One environment's failure is logged and skipped, and each has a time budget per
   round, so a slow endpoint cannot hold up the others.
+- **Two kinds of event are settled without being tried, and every document says so.** After
+  an endpoint lets one delivery run out its deadline, the rest of what it is owed in that
+  round is recorded `endpoint_unresponsive` (no request made), so one hung endpoint cannot
+  spend the budget its environment's other endpoints share; and everything owed to an
+  endpoint whose sealed secret does not open is recorded `signing_failed`, logged **once per
+  endpoint per round with a count**, never once per event. Neither is sent later until
+  retries exist: a receiver that is slow once can lose up to a round's worth, and a wrong
+  `TULA_MASTER_KEY` loses events the receiver did nothing to lose. Never describe either row
+  as an attempt, and never leave such events unsettled instead (with no retry and no
+  give-up, a dead endpoint would hold its environment's outbox for ever).
+- **What is owed to nobody is settled in bulk, by one store call a batch**
+  (`WebhookDeliveryStore.settleBefore(environment, cutoff, at, limit)`): events from strictly
+  before the earliest endpoint that is **switched on** was registered, or before the pass
+  began when none is on. An event at the same instant as that registration is owed and is
+  left for the per-event path. A switched-off endpoint's date does not count: "owed" is
+  decided by the endpoints as they are when the worker looks. Keep the boundary and the
+  isolation tests in the shared suite.
+- **The cap on endpoints is counted and inserted under the environment's lock**
+  (`deps.environmentLock`, scope `webhook_endpoints`); the address is judged before the lock.
 - **Delivery is at least once and says so**: the request is sent before its row is written;
   the unique `(endpoint_id, event_id)` makes a second row a no-op. Docs and the verifier's
   JSDoc tell a receiver to drop repeats by id.
 - **`verifyWebhook` (`@tula/admin`) is Zod-free and web-platform only**, refuses a wrong or
-  missing signature (constant-time, every entry compared), a malformed or repeated header and
-  a timestamp more than five minutes away in either direction, accepts any one of several
-  signatures, and never puts the secret, a signature or the body in an error.
+  missing signature (constant-time, every entry compared), a malformed header, a
+  `webhook-id` or `webhook-timestamp` sent twice (as a list in a plain record, or joined with
+  a comma by a `Headers` object) and a timestamp more than five minutes away in either
+  direction. A `webhook-signature` sent twice is one list, as the reference library reads it:
+  it accepts any one right entry of however many, and never puts the secret, a signature or the body in an error.
 - **The `webhook` conformance step needs a receiver the server can reach.** A scenario with
   one is marked `needsWebhookReceiver` and skipped by a target without one; a live server in
   a container cannot reach the runner's loopback, and the answer to that is the skip, never a

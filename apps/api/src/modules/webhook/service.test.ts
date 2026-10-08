@@ -459,6 +459,7 @@ describe('a delivery round', () => {
       environments: 2,
       failed: 0,
       events: 2,
+      unowed: 0,
       delivered: 1,
       undelivered: 0,
       skipped: 0,
@@ -1157,6 +1158,182 @@ describe('races and failures inside a round', () => {
     expect(reads.mock.calls.every(([, limit]) => limit === Webhooks.WEBHOOK_BATCH_SIZE)).toBe(true)
     expect(await Webhooks.deliverPending(deps)).toMatchObject({ events: 50, skipped: 50 })
     expect(await Webhooks.deliverPending(deps)).toMatchObject({ events: 0, skipped: 0 })
+  })
+})
+
+describe('a secret the server cannot open', () => {
+  test('is logged once per endpoint per round, with how many events it cost, not once per event', async () => {
+    quietLogs()
+    const broken = await register(tenant, { url: receiverUrl('/broken') })
+    const fine = await register(tenant, { url: receiverUrl('/fine') })
+    const record = await deps.webhookEndpoints.find(tenant.environmentId, broken.id)
+    await deps.webhookEndpoints.delete(tenant.environmentId, broken.id, Audit.none('fixture'))
+    await deps.webhookEndpoints.insert(
+      { ...(record as NonNullable<typeof record>), secret: 'not-sealed' },
+      Audit.none('fixture')
+    )
+    const events = Array.from({ length: 7 }, () => happen())
+
+    await Webhooks.deliverPending(deps)
+
+    const opened = (): unknown[][] =>
+      ((spies[2]?.mock.calls ?? []) as unknown[][]).filter(([message]) =>
+        String(message).includes('signing secret could not be opened')
+      )
+    expect(opened()).toEqual([
+      [
+        'webhook signing secret could not be opened; nothing was sent to the endpoint this round',
+        { environmentId: tenant.environmentId, endpointId: broken.id, events: 7 },
+      ],
+    ])
+    // The loss is recorded per event, and the endpoint beside it is not affected.
+    const rows = await deps.webhookDeliveries.listForEvents(tenant.environmentId, events)
+    expect(rows.filter((row) => row.failureReason === 'signing_failed')).toHaveLength(7)
+    expect(received.filter((one) => one.path === '/fine')).toHaveLength(7)
+    expect(received.filter((one) => one.path === '/broken')).toEqual([])
+    expect(fine.id).not.toBe(broken.id)
+
+    // The next round says it again, once, if it happens again.
+    happen()
+    await Webhooks.deliverPending(deps)
+    expect(opened()).toHaveLength(2)
+  })
+})
+
+describe('a backlog owed to nobody', () => {
+  /** Put `count` events of the contract in the outbox, as recorded at `at`. */
+  function backlog(count: number, at: Date, scope: Tenant = tenant): string[] {
+    const ids: string[] = []
+    for (let index = 0; index < count; index++) {
+      const id = deps.ids.next()
+      ids.push(id)
+      deps.activityLog.outbox.push({
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        type: 'user.deleted',
+        payload: { id, type: 'user.deleted', schemaVersion: 1 },
+        occurredAt: new Date(at),
+        deliveredAt: null,
+      })
+    }
+    return ids
+  }
+
+  test('a large outbox from before the first endpoint does not delay the first delivery', async () => {
+    const old = backlog(12_000, deps.clock.now())
+    deps.clock.advance('1h')
+    await register()
+    const fresh = happen()
+
+    const report = await Webhooks.deliverPending(deps)
+
+    // One round: the event that is owed arrives, though twelve thousand older ones were ahead.
+    expect(received.map((request) => request.headers['webhook-id'])).toEqual([fresh])
+    expect(outboxRow(fresh).deliveredAt).not.toBeNull()
+    expect(old.every((id) => outboxRow(id).deliveredAt !== null)).toBe(true)
+    expect(report).toMatchObject({ unowed: 12_000, delivered: 1, skipped: 0 })
+    // Settled in bulk: no delivery row, nothing sent.
+    expect(
+      await deps.webhookDeliveries.listForEvents(tenant.environmentId, old.slice(0, 50))
+    ).toEqual([])
+  })
+
+  test('an environment with no endpoint settles what it has in bulk', async () => {
+    const old = backlog(3_000, deps.clock.now())
+    deps.clock.advance('1s')
+    const reads = spyOn(deps.webhookDeliveries, 'pendingEvents')
+    spies.push(reads as never)
+    const report = await Webhooks.deliverPending(deps)
+    expect(report).toMatchObject({ events: 3_000, unowed: 3_000 })
+    expect(old.every((id) => outboxRow(id).deliveredAt !== null)).toBe(true)
+    // Not read a hundred at a time.
+    expect(
+      reads.mock.calls.filter(([id]) => id === tenant.environmentId).length
+    ).toBeLessThanOrEqual(1)
+  })
+
+  test('an event at the very instant the earliest endpoint was registered is owed, and is sent', async () => {
+    const before = backlog(1, new Date(deps.clock.now().getTime() - 1))
+    await register()
+    const same = backlog(1, deps.clock.now())
+    await Webhooks.deliverPending(deps)
+    expect(received.map((request) => request.headers['webhook-id'])).toEqual(same)
+    expect(await deliveriesOf(same[0] as string)).toHaveLength(1)
+    expect(await deliveriesOf(before[0] as string)).toEqual([])
+    expect(outboxRow(before[0] as string).deliveredAt).not.toBeNull()
+  })
+
+  test('a switched-off endpoint does not hold events back: only endpoints that are on are owed anything', async () => {
+    await register(tenant, { enabled: false })
+    deps.clock.advance('1s')
+    const between = backlog(2_000, deps.clock.now())
+    deps.clock.advance('1s')
+    await register(tenant, { url: receiverUrl('/on') })
+    const fresh = happen()
+    const report = await Webhooks.deliverPending(deps)
+    expect(received.map((request) => request.headers['webhook-id'])).toEqual([fresh])
+    expect(between.every((id) => outboxRow(id).deliveredAt !== null)).toBe(true)
+    expect(report.unowed).toBeGreaterThanOrEqual(2_000)
+  })
+
+  test('one environment’s backlog is settled by its own endpoints’ dates, not another’s', async () => {
+    await register(otherTenant)
+    deps.clock.advance('1s')
+    const mine = backlog(5, deps.clock.now(), tenant)
+    const theirs = backlog(5, deps.clock.now(), otherTenant)
+    deps.clock.advance('1s')
+    await register(tenant, { url: receiverUrl('/dev') })
+    await Webhooks.deliverPending(deps)
+    // Theirs happened after their endpoint was registered: sent. Mine happened before mine.
+    expect(received.map((request) => request.headers['webhook-id']).sort()).toEqual(
+      [...theirs].sort()
+    )
+    expect(mine.every((id) => outboxRow(id).deliveredAt !== null)).toBe(true)
+  })
+
+  test('the bulk settling is bounded per round and is not started once the round is told to stop', async () => {
+    backlog(10, deps.clock.now())
+    deps.clock.advance('1s')
+    const settle = spyOn(deps.webhookDeliveries, 'settleBefore')
+    spies.push(settle as never)
+    expect(await Webhooks.deliverPending(deps, AbortSignal.abort())).toMatchObject({ unowed: 0 })
+    expect(settle).not.toHaveBeenCalled()
+    await Webhooks.deliverPending(deps)
+    expect(settle).toHaveBeenCalled()
+    expect(
+      settle.mock.calls.every(([, , , limit]) => limit === Webhooks.WEBHOOK_SETTLE_BATCH_SIZE)
+    ).toBe(true)
+    expect(
+      Webhooks.WEBHOOK_SETTLE_BATCH_SIZE * Webhooks.WEBHOOK_MAX_SETTLE_BATCHES
+    ).toBeLessThanOrEqual(200_000)
+  })
+})
+
+describe('the cap on endpoints under concurrency', () => {
+  test('twelve registrations at once leave ten endpoints, and two are told why', async () => {
+    const results = await Promise.allSettled(Array.from({ length: 12 }, () => register()))
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(
+      MAX_WEBHOOK_ENDPOINTS
+    )
+    const refused = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    )
+    expect(refused.map((result) => (result.reason as ServiceException).status)).toEqual([409, 409])
+    expect(await Webhooks.list(deps, tenant)).toHaveLength(MAX_WEBHOOK_ENDPOINTS)
+    expect(deps.activityLog.ofType('webhook_endpoint.created')).toHaveLength(MAX_WEBHOOK_ENDPOINTS)
+  })
+
+  test('the count and the insert take the environment’s own lock, and no other environment’s', async () => {
+    const lock = spyOn(deps.environmentLock, 'runExclusive')
+    spies.push(lock as never)
+    await Promise.all([register(tenant), register(otherTenant)])
+    expect(lock.mock.calls.map(([environment, scope]) => `${scope}:${environment}`).sort()).toEqual(
+      [
+        `webhook_endpoints:${tenant.environmentId}`,
+        `webhook_endpoints:${otherTenant.environmentId}`,
+      ].sort()
+    )
   })
 })
 

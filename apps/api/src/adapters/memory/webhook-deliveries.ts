@@ -72,6 +72,28 @@ export class MemoryWebhookDeliveryStore implements WebhookDeliveryStore {
   }
 
   /** @inheritdoc */
+  async settleBefore(
+    environmentId: string,
+    before: Date,
+    at: Date,
+    limit: number
+  ): Promise<number> {
+    const batch = this.#activityLog.outbox
+      .filter(
+        (row) =>
+          row.environmentId === environmentId &&
+          row.deliveredAt === null &&
+          row.occurredAt.getTime() < before.getTime()
+      )
+      .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime() || (a.id < b.id ? -1 : 1))
+      .slice(0, limit)
+    for (const row of batch) {
+      row.deliveredAt = new Date(at)
+    }
+    return batch.length
+  }
+
+  /** @inheritdoc */
   async markDelivered(
     environmentId: string,
     eventIds: readonly string[],

@@ -1,5 +1,5 @@
 import { type Database, events, webhookDeliveries, withTenant } from '@tula/db'
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, lt } from 'drizzle-orm'
 import { isForeignKeyViolation } from '~/adapters/postgres/errors'
 import type {
   DeliveryInsertOutcome,
@@ -92,6 +92,44 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
       }
       throw error
     }
+  }
+
+  /** @inheritdoc */
+  async settleBefore(
+    environmentId: string,
+    before: Date,
+    at: Date,
+    limit: number
+  ): Promise<number> {
+    const waiting = and(
+      eq(events.environmentId, environmentId),
+      isNull(events.deliveredAt),
+      lt(events.occurredAt, before)
+    )
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(events)
+        .set({ deliveredAt: at })
+        .where(
+          and(
+            // Said again on the update itself: the batch is chosen from a snapshot.
+            waiting,
+            // UPDATE has no LIMIT in Postgres: pick the batch in a subquery, oldest first, on
+            // `events_environment_undelivered_idx`, so a backlog is never one long update.
+            inArray(
+              events.id,
+              tx
+                .select({ id: events.id })
+                .from(events)
+                .where(waiting)
+                .orderBy(asc(events.occurredAt), asc(events.id))
+                .limit(limit)
+            )
+          )
+        )
+        .returning({ id: events.id })
+    )
+    return rows.length
   }
 
   /** @inheritdoc */

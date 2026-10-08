@@ -32,6 +32,13 @@ ALTER TABLE "tula"."webhook_endpoints" ENABLE ROW LEVEL SECURITY;--> statement-b
 DROP INDEX "tula"."events_undelivered_idx";--> statement-breakpoint
 -- Moved up by hand: drizzle-kit wrote this after the foreign key that needs it
 -- (`webhook_deliveries_event_fk` references exactly these two columns).
+--
+-- LOCKING. This constraint, and `events_environment_undelivered_idx` further down, are each
+-- built under a lock that blocks every INSERT into `tula.events` until the build is done, and
+-- every sign-in, sign-out and admin change inserts an event in its own transaction. On a
+-- large outbox those requests wait for as long as the two builds take: apply this migration
+-- in a quiet window. Neither is built CONCURRENTLY, because the migrator runs a migration in
+-- one transaction, where that is not allowed (docs/self-host.md, "Upgrading").
 ALTER TABLE "tula"."events" ADD CONSTRAINT "events_environment_id_id_key" UNIQUE("environment_id","id");--> statement-breakpoint
 ALTER TABLE "tula"."webhook_deliveries" ADD CONSTRAINT "webhook_deliveries_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "tula"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tula"."webhook_deliveries" ADD CONSTRAINT "webhook_deliveries_environment_id_environments_id_fk" FOREIGN KEY ("environment_id") REFERENCES "tula"."environments"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

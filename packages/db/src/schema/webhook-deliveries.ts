@@ -29,7 +29,11 @@ export const webhookDeliveries = tula.table(
     ...tenantColumns(),
     endpointId: uuid('endpoint_id').notNull(),
     eventId: uuid('event_id').notNull(),
-    /** When the request was sent (or would have been, when it was refused before sending). */
+    /**
+     * When the request was sent; for a row whose `failure_reason` says nothing was sent
+     * (`signing_failed`, `endpoint_unresponsive`, a refusal by the outbound guard), when the
+     * worker decided not to.
+     */
     attemptedAt: timestamp('attempted_at', { withTimezone: true }).notNull(),
     outcome: text('outcome', { enum: WEBHOOK_DELIVERY_OUTCOMES }).notNull(),
     /** The receiver's HTTP status; `null` when there was no answer. */

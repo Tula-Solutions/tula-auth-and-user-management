@@ -122,9 +122,12 @@ dashboard session with `x-tula-environment`):
 | `DELETE /:id` | Remove, with the record of its deliveries. `204`. |
 
 An environment holds at most ten endpoints (`MAX_WEBHOOK_ENDPOINTS`): every event is sent to
-each subscribed endpoint, so the number bounds the requests one event causes. Like the API-key
-caps it is checked before the insert and two concurrent registrations at the limit can both
-pass.
+each subscribed endpoint, so the number bounds the requests one event causes. The count and
+the insert happen under the environment's lock (`deps.environmentLock`, scope
+`webhook_endpoints`, the advisory lock that `Settings.replace` and `OAuth.update` use for
+their own invariant), so registrations that arrive together, on one instance or several,
+cannot each see room for one more. The address is judged before the lock is taken: resolving
+a name can take seconds.
 
 Every write takes an `Activity`, in the port and both adapters (`ports/activity-log.test.ts`
 holds the `@ts-expect-error` lines). Three new activity types, each with a schema and a
@@ -211,6 +214,18 @@ codebase has no pattern for overriding a job's timer and this step does not star
 
 One round (`Webhooks.deliverPending`), per environment:
 
+0. **Settle in bulk what is owed to nobody.** Every event from before the earliest endpoint
+   that is switched on was registered (or, with no endpoint on, from before this pass began)
+   is marked delivered by one store call per batch (`settleBefore(environment, cutoff, at,
+   limit)`: 5,000 events a statement, at most twenty a round), unread and with no delivery
+   row. The comparison is strict: an event at the very instant the earliest endpoint was
+   registered is owed to it and is left for step 1. **A switched-off endpoint's date does not
+   count**, because "owed" is decided by the endpoints as they are when the worker looks, and
+   an endpoint that is off is owed nothing; the per-event path would settle the same events
+   one at a time. Without this step a deployment's first real delivery waits behind its whole
+   history at 1,000 events a round. These events are counted in the round's report
+   (`unowed`). Rows of the pre-contract shape among them are settled the same way and are not
+   counted separately.
 1. Read the undelivered events, oldest first, 100 at a time, at most ten batches (1,000
    events per environment per round; a larger backlog is finished by the following rounds).
 2. For each event, the endpoints it is **owed to**: switched on, subscribed to the event's
@@ -225,7 +240,8 @@ One round (`Webhooks.deliverPending`), per environment:
 4. Mark the event delivered once every endpoint it was owed to has a row, **which includes
    the event that was owed to nobody**. This is what stops the outbox growing.
 
-**One attempt per endpoint and event.** A failure is recorded and not repeated: retries, with
+**At most one attempt per endpoint and event.** (Two cases below are settled with none.) A
+failure is recorded and not repeated: retries, with
 backoff and a point of giving up, are the next step. The row was shaped for them: it is keyed
 by endpoint and event and already says when the attempt was made and how it ended, so a retry
 adds an attempt count and a next-attempt time and updates the row (with an `UPDATE` grant the
@@ -252,15 +268,36 @@ its budget is spent and what it has left waits for the next round. The list of e
 read again for every batch, so one switched off or removed stops being sent to; one removed
 while its delivery is under way leaves no row (the foreign key) and does not fail the round.
 
-**An endpoint that does not answer costs one deadline a round.** Deliveries within an
-environment are made one after another, so an endpoint that accepts the connection and never
-answers would otherwise take five seconds of the budget for every event and leave the
-environment's healthy endpoints about three events a round. After an endpoint lets one
-delivery run out its deadline, the rest of what it is owed **in that round** is recorded as
-`failed` with `endpoint_unresponsive` and no request is made; the next round tries it again.
-Only a timeout does this: an endpoint that answers with an error, or refuses the connection,
-fails fast and is tried for every event. Under one attempt per event those deliveries would
-have failed anyway; when retries exist they are the first candidates for one.
+**An endpoint that does not answer costs one deadline a round, and loses the rest of that
+round.** Deliveries within an environment are made one after another, so an endpoint that
+accepts the connection and never answers would otherwise take five seconds of the budget for
+every event and leave the environment's healthy endpoints about three events a round. After
+an endpoint lets one delivery run out its deadline, the rest of what it is owed **in that
+round** is settled without being tried: a row with outcome `failed`, reason
+`endpoint_unresponsive`, no status code and a duration of zero, and **no request was made**.
+The next round tries the endpoint again. Only a timeout does this: an endpoint that answers
+with an error, or refuses the connection, fails fast and is tried for every event.
+
+This is a real loss and not only for an endpoint that is down. **A receiver that is slow
+once, for one delivery, can lose up to a round's worth of events for that endpoint (at most
+1,000), and nothing sends them again**: this step has no retries. They are not left
+unsettled instead, because with no retry and no point of giving up, an endpoint that hangs
+for good would then hold its environment's outbox for ever. The row says exactly what
+happened (`endpoint_unresponsive` is never written for an event that was sent), so the next
+ticket of step 2.2, retries, can pick these rows up first. Until then the guidance to a
+receiver is to answer inside the deadline, always.
+
+**A secret the server cannot open is the server's fault, and is said once.** When an
+endpoint's sealed secret does not open (a `TULA_MASTER_KEY` that is not the one it was sealed
+with, on one instance or on all), nothing is sent to that endpoint and each event it was owed
+is settled with `signing_failed`. The receiver did nothing wrong and is told nothing; like
+the case above, the events are not sent later. The log has one line per endpoint per round,
+`webhook signing secret could not be opened; nothing was sent to the endpoint this round`,
+with the environment's id, the endpoint's id and how many events it cost, not a line per
+event. An operator who sees it checks that every instance runs with the same
+`TULA_MASTER_KEY` and that it is the key the deployment has always had (`tula doctor`'s
+`master_key` check); if the key is truly gone, the endpoint has to be removed and registered
+again, which issues a new secret.
 
 **Clocks.** "Registered no later than the event happened" compares two timestamps that may
 come from two API instances. If the instance that recorded an event runs behind the one that
@@ -294,10 +331,18 @@ refuses, with a `TulaAdminError` of status 0:
 | Code | When |
 | --- | --- |
 | `webhook.invalid_secret` | The secret is not `whsec_` and base64 of 24 to 64 bytes. |
-| `webhook.invalid_headers` | A header is missing, empty, sent twice or malformed; the id has a full stop; more than eight signatures. |
+| `webhook.invalid_headers` | A header is missing, empty or malformed; `webhook-id` or `webhook-timestamp` was sent twice; the id has a full stop or a comma; more than eight signatures. |
 | `webhook.timestamp_out_of_tolerance` | The timestamp is more than five minutes old, or more than five minutes ahead. |
 | `webhook.invalid_signature` | No `v1` entry is the signature for the secret (compared in constant time, every entry). |
 | `webhook.invalid_payload` | Signed correctly, but not an event whose `id` is the `webhook-id`. |
+
+*Repeated headers.* A plain record keeps a repeated header as a list; a `Headers` object has
+already joined the values with `, `. A `webhook-id` or `webhook-timestamp` sent twice is
+refused either way (a value with a comma in it is refused, since neither has one). A
+`webhook-signature` sent twice is **accepted when any entry is right**: the header is a list
+by definition, the reference JavaScript library reads a joined value the same way (it splits
+on spaces and takes what stands between the first and second comma of each entry), and a
+second entry cannot make a wrong delivery verify.
 
 It is Zod-free at run time (hand-written guards on the envelope; `data` is typed and not
 validated, since the signature is what makes the body Tula's) and uses web platform APIs
@@ -353,11 +398,18 @@ Each is a later step of 2.2 and is named so that its absence is not mistaken for
 - The outbox stops growing without bound in the sense that matters first: every event is
   settled. Rows are still never deleted; delivered events and delivery rows accumulate until
   the retention step.
-- **A deployment upgraded from before this version has its whole outbox to settle.** Events
-  from before step 2.1 are marked delivered without being sent; events from after it are owed
-  to no endpoint (none existed) and are marked too. At 1,000 events per environment per round
-  and a round every five seconds, a million rows take about an hour and a half. Nothing from
-  before an endpoint was registered is ever sent to it.
+- **A deployment upgraded from before this version has its whole outbox to settle, and does
+  it in bulk.** No endpoint existed when those events happened, so they are owed to nobody
+  and are marked 5,000 a statement, up to 100,000 per environment per round: a million rows
+  in ten rounds, under a minute. (By arithmetic; not measured on a real database.) Nothing
+  from before an endpoint was registered is ever sent to it, and the first event that is owed
+  to a new endpoint does not wait behind the history.
+- **Migration `0018` blocks writes to `events` while it runs.** It adds a unique constraint
+  and builds an index on that table, and each takes a lock that blocks inserts until it is
+  built. Every sign-in, sign-out and admin change inserts an event in its own transaction, so
+  on a large outbox those requests wait (and may time out) for as long as the build takes.
+  Apply it in a quiet window. It is not built `CONCURRENTLY`: the migrator runs each
+  migration in a transaction, where that is not allowed.
 - A failed delivery is lost until retries exist. This step is not yet something to rely on
   for anything a missed notice would break; the docs say so.
 - Rounds are sequential across environments. A deployment with many environments whose

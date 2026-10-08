@@ -100,4 +100,18 @@ export interface WebhookDeliveryStore {
    * @returns How many were marked by this call.
    */
   markDelivered(environmentId: string, eventIds: readonly string[], at: Date): Promise<number>
+
+  /**
+   * Mark one batch of an environment's waiting events as settled without reading them: the
+   * oldest ones that happened **before** `before`. For events the worker knows are owed to
+   * nobody (they happened before any endpoint that is on was registered), so that a long
+   * outbox does not have to be walked a hundred events at a time.
+   *
+   * @param environmentId - The environment. No other is touched.
+   * @param before - Events that occurred before this instant are marked; one at it is kept.
+   * @param at - When they were settled.
+   * @param limit - The most events one call marks.
+   * @returns How many were marked.
+   */
+  settleBefore(environmentId: string, before: Date, at: Date, limit: number): Promise<number>
 }

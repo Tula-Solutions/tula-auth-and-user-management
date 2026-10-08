@@ -77,10 +77,17 @@ const MAX_ID_LENGTH = 256
 /** Whole seconds since the epoch, in decimal: nothing else is a timestamp. */
 const TIMESTAMP = /^[0-9]{1,15}$/
 
-/** The one value of a header, or `undefined` when it is missing, empty or was sent twice. */
-function header(headers: WebhookHeaders, name: string): string | undefined {
+/**
+ * Every value a header was sent with, in order.
+ *
+ * A plain record (Node's `req.headers`) keeps a repeated header as a list, or under two
+ * spellings of its name. A `Headers` object has already joined the values with `, `: there
+ * the one string is all there is, and what it holds is judged by the caller.
+ */
+function headerValues(headers: WebhookHeaders, name: string): string[] {
   if (typeof Headers !== 'undefined' && headers instanceof Headers) {
-    return headers.get(name) || undefined
+    const joined = headers.get(name)
+    return joined === null ? [] : [joined]
   }
   const found: string[] = []
   for (const [key, value] of Object.entries(headers)) {
@@ -89,8 +96,39 @@ function header(headers: WebhookHeaders, name: string): string | undefined {
     }
     found.push(...(typeof value === 'string' ? [value] : value))
   }
-  // Two values of one of these headers is a request no Tula server sent.
-  return found.length === 1 ? found[0] || undefined : undefined
+  return found
+}
+
+/**
+ * The value of a header that has exactly one: `undefined` when it is missing, empty or was
+ * sent twice. A value with a comma in it is refused as sent twice, because that is what a
+ * `Headers` object makes of a repeated header, and neither an id nor a timestamp has one.
+ */
+function single(headers: WebhookHeaders, name: string): string | undefined {
+  const [value, ...more] = headerValues(headers, name)
+  return value && more.length === 0 && !value.includes(',') ? value : undefined
+}
+
+/**
+ * The entries of the signature header. It is a list by definition (space-separated, so that
+ * two secrets can sign during a rotation), and a signature header sent twice is read as one
+ * longer list, as the reference Standard Webhooks library reads it: a `Headers` object joins
+ * the two with `, `, which leaves a comma at the end of an entry, dropped here.
+ */
+function signatureEntries(headers: WebhookHeaders): string[] | undefined {
+  const joined = headerValues(headers, WEBHOOK_SIGNATURE_HEADER).join(' ')
+  if (joined === '' || joined.length > MAX_SIGNATURE_HEADER_LENGTH) {
+    return undefined
+  }
+  const entries = joined
+    .split(' ')
+    .map((entry) => entry.replace(/,+$/, ''))
+    .filter((entry) => entry !== '')
+  const wellFormed =
+    entries.length > 0 &&
+    entries.length <= WEBHOOK_MAX_SIGNATURES &&
+    entries.every((entry) => entry.indexOf(',') > 0)
+  return wellFormed ? entries : undefined
 }
 
 /**
@@ -150,6 +188,11 @@ function isEvent(value: unknown, id: string): value is TulaWebhookEvent {
  * is accepted when **any one** signature is right and the timestamp is within five minutes of
  * this server's clock, either way.
  *
+ * A `webhook-id` or `webhook-timestamp` that was sent twice is refused (also where a `Headers`
+ * object has joined the two values with a comma). A `webhook-signature` sent twice is read as
+ * one list, like the reference library does: it is a list already, and one right entry is
+ * enough.
+ *
  * **Pass the body exactly as it arrived**: the raw text or bytes of the request, never an
  * object your framework parsed and you wrote out again. The signature is over the bytes.
  *
@@ -166,7 +209,8 @@ function isEvent(value: unknown, id: string): value is TulaWebhookEvent {
  * @returns The event. Its `type` may be one a later server added.
  * @throws TulaAdminError with `status` 0 and one of these codes, and never with the secret, a
  *   signature or the body in it: `webhook.invalid_secret` (not a `whsec_…` secret),
- *   `webhook.invalid_headers` (a header missing, sent twice or malformed),
+ *   `webhook.invalid_headers` (a header missing or malformed, or an id or a timestamp sent
+ *   twice),
  *   `webhook.timestamp_out_of_tolerance` (more than five minutes old, or ahead),
  *   `webhook.invalid_signature` (no signature matches), `webhook.invalid_payload` (signed
  *   correctly, but not an event with the delivery's id).
@@ -201,9 +245,9 @@ export async function verifyWebhook(
   if (!key) {
     throw clientError('webhook.invalid_secret')
   }
-  const id = header(headers, WEBHOOK_ID_HEADER)
-  const sentAt = header(headers, WEBHOOK_TIMESTAMP_HEADER)
-  const signatures = header(headers, WEBHOOK_SIGNATURE_HEADER)
+  const id = single(headers, WEBHOOK_ID_HEADER)
+  const sentAt = single(headers, WEBHOOK_TIMESTAMP_HEADER)
+  const entries = signatureEntries(headers)
   if (
     id === undefined ||
     id.length > MAX_ID_LENGTH ||
@@ -212,16 +256,7 @@ export async function verifyWebhook(
     id.includes('.') ||
     sentAt === undefined ||
     !TIMESTAMP.test(sentAt) ||
-    signatures === undefined ||
-    signatures.length > MAX_SIGNATURE_HEADER_LENGTH
-  ) {
-    throw clientError('webhook.invalid_headers')
-  }
-  const entries = signatures.split(' ').filter((entry) => entry !== '')
-  if (
-    entries.length === 0 ||
-    entries.length > WEBHOOK_MAX_SIGNATURES ||
-    !entries.every((entry) => entry.indexOf(',') > 0)
+    entries === undefined
   ) {
     throw clientError('webhook.invalid_headers')
   }

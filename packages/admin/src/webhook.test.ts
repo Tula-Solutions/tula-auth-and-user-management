@@ -218,6 +218,50 @@ describe('verifyWebhook', () => {
     expect(error.code).toBe('webhook.invalid_headers')
   })
 
+  test.each(['webhook-id', 'webhook-timestamp'] as const)(
+    'refuses a %s that was sent twice, however the headers are given',
+    async (name) => {
+      const once = await delivery()
+      const value = once[name]
+      // A `Headers` object joins a repeated header with a comma; Node gives a list.
+      const joined = new Headers(once)
+      joined.append(name, value)
+      expect((await failure(verify(joined))).code).toBe('webhook.invalid_headers')
+      expect((await failure(verify({ ...once, [name]: [value, value] }))).code).toBe(
+        'webhook.invalid_headers'
+      )
+    }
+  )
+
+  test('refuses an id with a comma in it', async () => {
+    const id = 'a,b'
+    const headers = await delivery({
+      'webhook-id': id,
+      'webhook-signature': await sign(SECRET, { id }),
+    })
+    expect((await failure(verify(headers))).code).toBe('webhook.invalid_headers')
+  })
+
+  test('a signature header sent twice is one list: any right entry is enough, as the reference library reads it', async () => {
+    const right = await sign()
+    const wrong = await sign(OTHER_SECRET)
+    for (const [first, second] of [
+      [right, wrong],
+      [wrong, right],
+    ] as const) {
+      const joined = new Headers(await delivery({ 'webhook-signature': first }))
+      joined.append('webhook-signature', second)
+      expect(joined.get('webhook-signature')).toBe(`${first}, ${second}`)
+      expect(await verify(joined)).toEqual(event)
+      expect(await verify({ ...(await delivery()), 'webhook-signature': [first, second] })).toEqual(
+        event
+      )
+    }
+    const none = new Headers(await delivery({ 'webhook-signature': wrong }))
+    none.append('webhook-signature', await sign(SECRET, { id: 'other' }))
+    expect((await failure(verify(none))).code).toBe('webhook.invalid_signature')
+  })
+
   test('refuses a header that was sent twice', async () => {
     const headers = { ...(await delivery()), 'webhook-id': [event.id, event.id] }
     expect((await failure(verify(headers))).code).toBe('webhook.invalid_headers')

@@ -1692,6 +1692,11 @@ scheme, HMAC-SHA256 over `<id>.<timestamp>.<body>` with the endpoint's secret. T
 is accepted when **any one** signature is right and the timestamp is within five minutes of
 this server's clock, either way.
 
+A `webhook-id` or `webhook-timestamp` that was sent twice is refused (also where a `Headers`
+object has joined the two values with a comma). A `webhook-signature` sent twice is read as
+one list, like the reference library does: it is a list already, and one right entry is
+enough.
+
 **Pass the body exactly as it arrived**: the raw text or bytes of the request, never an
 object your framework parsed and you wrote out again. The signature is over the bytes.
 
@@ -1723,7 +1728,8 @@ export async function verifyWebhook(
 
 TulaAdminError with `status` 0 and one of these codes, and never with the secret, a
 signature or the body in it: `webhook.invalid_secret` (not a `whsec_…` secret),
-`webhook.invalid_headers` (a header missing, sent twice or malformed),
+`webhook.invalid_headers` (a header missing or malformed, or an id or a timestamp sent
+twice),
 `webhook.timestamp_out_of_tolerance` (more than five minutes old, or ahead),
 `webhook.invalid_signature` (no signature matches), `webhook.invalid_payload` (signed
 correctly, but not an event with the delivery's id).

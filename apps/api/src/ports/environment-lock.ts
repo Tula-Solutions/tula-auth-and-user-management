@@ -4,8 +4,10 @@
  * - `sign_in_methods`: "an environment always has at least one way to sign in" is decided from
  *   the settings document **and** the OAuth provider rows, which are written by different
  *   routes. Each write re-checks the rule while holding this lock (ADR 0026).
+ * - `webhook_endpoints`: "an environment has at most `MAX_WEBHOOK_ENDPOINTS` endpoints" is a
+ *   count and then an insert; a registration does both while holding this lock (ADR 0034).
  */
-export type EnvironmentLockScope = 'sign_in_methods'
+export type EnvironmentLockScope = 'sign_in_methods' | 'webhook_endpoints'
 
 /**
  * Makes writes that share an invariant take turns, per environment and across API instances.

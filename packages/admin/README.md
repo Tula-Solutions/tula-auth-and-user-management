@@ -99,8 +99,9 @@ export async function receiveWebhook(request: Request): Promise<Response> {
 - **The raw body.** Pass the text or bytes as they arrived, never an object your framework
   parsed: the signature is over the bytes.
 - **What it refuses**, each with its own `code` on a `TulaAdminError`: a secret that is not
-  one (`webhook.invalid_secret`); a missing, repeated or malformed header
-  (`webhook.invalid_headers`); a timestamp more than five minutes old or ahead
+  one (`webhook.invalid_secret`); a missing or malformed header, or a `webhook-id` or
+  `webhook-timestamp` sent twice (`webhook.invalid_headers`; a `webhook-signature` sent twice
+  is read as one list, as the Standard Webhooks reference library reads it); a timestamp more than five minutes old or ahead
   (`webhook.timestamp_out_of_tolerance`); no matching signature
   (`webhook.invalid_signature`, compared in constant time; any one of several signatures in
   the header is enough); a correctly signed body that is not the event the delivery names
