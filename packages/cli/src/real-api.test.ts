@@ -154,6 +154,10 @@ interface State {
     app: { name: string }
     mfa: { policy: string }
     signIn: { methods: { password: { enabled: boolean } } }
+    sessions: {
+      jwtTemplates: Record<string, unknown>
+      profiles: { web: { jwtTemplate: string | null } }
+    }
   }
   managedBy: { tool: string; drifted: boolean; revision: number } | null
 }
@@ -483,6 +487,79 @@ describe('tula diff / tula apply against the API', () => {
     const allowed = await tula(['apply', '--config', loose, '--yes', '--allow-weaker'])
     expect(allowed.code).toBe(0)
     expect((await state()).settings.mfa.policy).toBe('off')
+  })
+
+  test('a JWT template is planned, applied, and a second run changes nothing', async () => {
+    const config = await dev({
+      settings: {
+        sessions: {
+          jwtTemplates: {
+            app: { claims: { role: { value: 'member' }, email: { from: 'user.email' } } },
+          },
+          profiles: { web: { jwtTemplate: 'app' } },
+        },
+      },
+    })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain('+ sessions.jwtTemplates.app')
+    expect(plan.stdout).toContain('~ sessions.profiles.web.jwtTemplate: null → "app"')
+    // Adding claims weakens nothing.
+    expect(plan.stdout).not.toContain('weakens security')
+
+    const applied = await tula(['apply', '--config', config, '--yes'])
+    expect(applied.code).toBe(0)
+    expect(writes(applied)).toEqual(['PUT /v1/admin/settings'])
+    const now = await state()
+    expect(now.settings.sessions.jwtTemplates).toEqual({
+      app: { claims: { role: { value: 'member' }, email: { from: 'user.email' } } },
+    })
+    expect(now.settings.sessions.profiles.web.jwtTemplate).toBe('app')
+
+    const second = await tula(['apply', '--config', config, '--yes'])
+    expect(second.stdout).toContain('No changes')
+    expect(writes(second)).toEqual([])
+  })
+
+  test('taking a claim away from sessions that carry it needs --allow-weaker under --yes', async () => {
+    const template = (claims: Record<string, unknown>) =>
+      dev({
+        settings: {
+          sessions: {
+            jwtTemplates: { app: { claims } },
+            profiles: { web: { jwtTemplate: 'app' } },
+          },
+        },
+      })
+    const full = await template({ role: { value: 'member' }, beta: { value: true } })
+    expect((await tula(['apply', '--config', full, '--yes'])).code).toBe(0)
+    const before = await state()
+
+    const less = await template({ beta: { value: true } })
+    const plan = await tula(['diff', '--config', less])
+    expect(plan.stdout).toContain('- sessions.jwtTemplates.app.claims.role')
+    expect(plan.stdout).toContain('! weakens security: sessions.profiles.web.jwtTemplate')
+    const refused = await tula(['apply', '--config', less, '--yes'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain('--allow-weaker')
+    expect(writes(refused)).toEqual([])
+    expect(await state()).toEqual(before)
+
+    expect((await tula(['apply', '--config', less, '--yes', '--allow-weaker'])).code).toBe(0)
+    expect((await state()).settings.sessions.jwtTemplates).toEqual({
+      app: { claims: { beta: { value: true } } },
+    })
+  })
+
+  test('a template the file’s schema refuses is shown with the field’s path, before any request', async () => {
+    // The file's own schema refuses a reserved key before any request.
+    const config = await dev({
+      settings: { sessions: { jwtTemplates: { app: { claims: { sub: { value: 'x' } } } } } },
+    })
+    const run = await tula(['diff', '--config', config])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('sessions.jwtTemplates.app.claims.sub')
+    expect(writes(run)).toEqual([])
   })
 
   test('without a terminal and without --yes, apply refuses instead of waiting', async () => {

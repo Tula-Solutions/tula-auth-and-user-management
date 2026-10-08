@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import {
   type ConfigError,
   defineConfig,
+  type EnvironmentSettingsConfig,
   env,
   hashEnvironmentConfig,
   isConfigError,
@@ -584,5 +585,104 @@ describe('webhooks', () => {
       'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
     )
     expect(await hash({ environments: { dev: { webhooks: [] } } })).not.toBe(unmanaged)
+  })
+})
+
+describe('JWT templates', () => {
+  const hash = async (settings: EnvironmentSettingsConfig) => {
+    const dev = defineConfig({ environments: { dev: { settings } } }).environments.dev
+    if (!dev) {
+      throw new Error('fixture')
+    }
+    return hashEnvironmentConfig(dev)
+  }
+
+  test('are written in the settings, through the contract’s own schema', () => {
+    const config = defineConfig({
+      environments: {
+        dev: {
+          settings: {
+            sessions: {
+              jwtTemplates: {
+                app: { claims: { role: { value: 'member' }, email: { from: 'user.email' } } },
+              },
+              profiles: { web: { jwtTemplate: 'app' } },
+            },
+          },
+        },
+      },
+    })
+    const sessions = config.environments.dev?.settings.sessions
+    expect(sessions?.jwtTemplates.app?.claims.role).toEqual({ value: 'member' })
+    expect(sessions?.profiles.web.jwtTemplate).toBe('app')
+    expect(sessions?.profiles.mobile.jwtTemplate).toBeNull()
+  })
+
+  test.each<[string, EnvironmentSettingsConfig]>([
+    [
+      'a reserved key',
+      { sessions: { jwtTemplates: { app: { claims: { sub: { value: 'x' } } } } } },
+    ],
+    [
+      'a profile naming a missing template',
+      { sessions: { profiles: { web: { jwtTemplate: 'gone' } } } },
+    ],
+    [
+      'a source outside the list',
+      { sessions: { jwtTemplates: { app: { claims: { ip: { from: 'session.ip' as never } } } } } },
+    ],
+  ])('refuses %s', (_label, settings) => {
+    let thrown: unknown
+    try {
+      defineConfig({ environments: { dev: { settings } } })
+    } catch (error) {
+      thrown = error
+    }
+    expect(isConfigError(thrown)).toBe(true)
+  })
+
+  // The fingerprint is what says "this file is what is applied". An environment that uses no
+  // template must keep the fingerprint it had before templates could be written, or every
+  // applied environment would show a new version of its file after an upgrade.
+  test('an environment without templates hashes as it did before they existed', async () => {
+    expect(await hash({})).toBe(
+      'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    )
+    expect(await hash({ sessions: { jwtTemplates: {} } })).toBe(await hash({}))
+    expect(await hash({ sessions: { profiles: { web: { jwtTemplate: null } } } })).toBe(
+      await hash({})
+    )
+  })
+
+  test('a template, a claim and a profile’s use of one all change the fingerprint', async () => {
+    const template = { app: { claims: { role: { value: 'member' } } } }
+    const defined = await hash({ sessions: { jwtTemplates: template } })
+    const used = await hash({
+      sessions: { jwtTemplates: template, profiles: { web: { jwtTemplate: 'app' } } },
+    })
+    const changed = await hash({
+      sessions: { jwtTemplates: { app: { claims: { role: { value: 'owner' } } } } },
+    })
+    expect(new Set([await hash({}), defined, used, changed]).size).toBe(4)
+  })
+
+  test('the order claims and templates are written in does not', async () => {
+    const one = await hash({
+      sessions: {
+        jwtTemplates: {
+          a: { claims: { x: { value: 1 }, y: { from: 'user.email' } } },
+          b: { claims: {} },
+        },
+      },
+    })
+    const other = await hash({
+      sessions: {
+        jwtTemplates: {
+          b: { claims: {} },
+          a: { claims: { y: { from: 'user.email' }, x: { value: 1 } } },
+        },
+      },
+    })
+    expect(other).toBe(one)
   })
 })

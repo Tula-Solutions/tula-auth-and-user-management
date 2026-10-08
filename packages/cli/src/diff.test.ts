@@ -359,6 +359,143 @@ describe('buildPlan', () => {
     expect(result.unknown).toEqual([])
   })
 
+  describe('JWT templates', () => {
+    const app = { claims: { role: { value: 'member' }, email: { from: 'user.email' } } } as const
+    /** A server that has these templates, with `web` using the one named. */
+    const server = (templates: Record<string, unknown>, web: string | null = null) =>
+      remote({
+        settings: settings((s) => {
+          s.sessions.jwtTemplates = structuredClone(templates) as never
+          s.sessions.profiles.web.jwtTemplate = web
+        }),
+      })
+    const file = (jwtTemplates: Record<string, unknown>, web: string | null = null) =>
+      ({
+        settings: { sessions: { jwtTemplates, profiles: { web: { jwtTemplate: web } } } },
+      }) as never
+    const lines = (result: ReturnType<typeof plan>) =>
+      result.settings.map((change) => [change.path, change.kind])
+
+    test.each<[string, Record<string, unknown>, Record<string, unknown>, [string, string][]]>([
+      ['the same templates', { app }, { app }, []],
+      [
+        'templates and claims are sets: another order is no change',
+        { app, other: { claims: {} } },
+        {
+          other: { claims: {} },
+          app: { claims: { email: { from: 'user.email' }, role: { value: 'member' } } },
+        },
+        [],
+      ],
+      [
+        'a template only the file has is added as a whole',
+        {},
+        { app },
+        [['sessions.jwtTemplates.app', 'added']],
+      ],
+      [
+        'a template only the server has is removed as a whole',
+        { app },
+        {},
+        [['sessions.jwtTemplates.app', 'removed']],
+      ],
+      [
+        'a claim only the file has is added by its key',
+        { app },
+        { app: { claims: { ...app.claims, beta: { value: true } } } },
+        [['sessions.jwtTemplates.app.claims.beta', 'added']],
+      ],
+      [
+        'a claim only the server has is removed by its key',
+        { app },
+        { app: { claims: { role: { value: 'member' } } } },
+        [['sessions.jwtTemplates.app.claims.email', 'removed']],
+      ],
+      [
+        'a constant that differs is one changed claim',
+        { app },
+        { app: { claims: { ...app.claims, role: { value: 'owner' } } } },
+        [['sessions.jwtTemplates.app.claims.role', 'changed']],
+      ],
+      [
+        'a claim that changes its kind of source is one changed claim, not a field each way',
+        { app },
+        { app: { claims: { ...app.claims, role: { from: 'session.client' } } } },
+        [['sessions.jwtTemplates.app.claims.role', 'changed']],
+      ],
+    ])('%s', (_name, has, wants, expected) => {
+      const result = plan(file(wants), server(has))
+      expect(lines(result)).toEqual(expected)
+      // A template or a claim the file does not have is the file's choice, never a setting
+      // this version does not know.
+      expect(result.unknown).toEqual([])
+    })
+
+    test('a changed claim shows both definitions whole', () => {
+      const result = plan(
+        file({ app: { claims: { ...app.claims, role: { from: 'session.client' } } } }),
+        server({ app })
+      )
+      expect(result.settings).toEqual([
+        {
+          path: 'sessions.jwtTemplates.app.claims.role',
+          kind: 'changed',
+          before: { value: 'member' },
+          after: { from: 'session.client' },
+        },
+      ])
+    })
+
+    test('a profile that starts or stops using a template is a change of its field', () => {
+      expect(lines(plan(file({ app }, 'app'), server({ app })))).toEqual([
+        ['sessions.profiles.web.jwtTemplate', 'changed'],
+      ])
+      expect(lines(plan(file({ app }), server({ app }, 'app')))).toEqual([
+        ['sessions.profiles.web.jwtTemplate', 'changed'],
+      ])
+    })
+
+    test.each<[string, Record<string, unknown>, string | null, string[]]>([
+      [
+        'the profile stops using its template',
+        { app },
+        null,
+        ['sessions.profiles.web.jwtTemplate'],
+      ],
+      [
+        'a claim its sessions carry is removed',
+        { app: { claims: { role: { value: 'member' } } } },
+        'app',
+        ['sessions.profiles.web.jwtTemplate'],
+      ],
+      [
+        'a claim its sessions carry changes',
+        { app: { claims: { ...app.claims, role: { value: 'owner' } } } },
+        'app',
+        ['sessions.profiles.web.jwtTemplate'],
+      ],
+      [
+        'a claim is added',
+        { app: { claims: { ...app.claims, beta: { value: true } } } },
+        'app',
+        [],
+      ],
+      ['another template is added', { app, extra: { claims: {} } }, 'app', []],
+    ])('weakening: %s', (_name, wants, web, weakened) => {
+      expect(plan(file(wants, web), server({ app }, 'app')).weakened).toEqual(weakened)
+    })
+
+    test('a file that leaves templates out removes the server’s: flagged where a profile used one', () => {
+      const result = plan({}, server({ app }, 'app'))
+      expect(lines(result)).toEqual([
+        ['sessions.profiles.web.jwtTemplate', 'changed'],
+        ['sessions.jwtTemplates.app', 'removed'],
+      ])
+      expect(result.weakened).toEqual(['sessions.profiles.web.jwtTemplate'])
+      expect(result.unknown).toEqual([])
+    })
+  })
+
   test('a setting the server has and this version does not know is reported, not hidden', () => {
     const state = remote({
       settings: { ...settings(), future: { feature: true } } as unknown as EnvironmentSettings,

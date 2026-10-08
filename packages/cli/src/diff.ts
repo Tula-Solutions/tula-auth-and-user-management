@@ -35,11 +35,19 @@ export const MANAGING_TOOL = 'tula-apply'
 export const SET_PATHS: readonly string[] = ['urls.allowedOrigins', 'urls.allowedRedirectUrls']
 
 /**
- * Maps whose entries are whole things with a name (a session profile): one that appears or
- * disappears is shown as added or removed. Everywhere else a key the server has and the file's
- * schema does not is a setting this version of the CLI does not know.
+ * Maps whose entries are whole things with a name (a session profile, a JWT template and,
+ * inside one, its claims by key): one that appears or disappears is shown as added or removed.
+ * Everywhere else a key the server has and the file's schema does not is a setting this
+ * version of the CLI does not know.
  */
-const NAMED_ENTRY_PATHS: readonly string[] = ['sessions.profiles']
+const NAMED_ENTRY_PATHS: readonly string[] = ['sessions.profiles', 'sessions.jwtTemplates']
+
+/**
+ * A JWT template's claim (`sessions.jwtTemplates.<name>.claims.<key>`) is one value: where the
+ * claim comes from. `{ from: 'user.email' }` becoming `{ value: 'x' }` is that claim changed,
+ * shown whole on both sides, not a `from` removed and a `value` added.
+ */
+const WHOLE_VALUE = /^sessions\.jwtTemplates\.[^.]+\.claims\.[^.]+$/
 
 /** The two settings whose default is the deployment's, which only the server knows. */
 const DEPLOYMENT_DEFAULTS = ['password', 'urls.allowedOrigins'] as const
@@ -107,7 +115,7 @@ function diffAt(
   if (after === undefined) {
     return [{ path, kind: 'removed', before }]
   }
-  if (isPlainObject(before) && isPlainObject(after)) {
+  if (isPlainObject(before) && isPlainObject(after) && !WHOLE_VALUE.test(path)) {
     const keys = [...new Set([...Object.keys(after), ...Object.keys(before)])]
     return keys.flatMap((key) =>
       diffAt(path === '' ? key : `${path}.${key}`, before[key], after[key], setPaths)
@@ -124,7 +132,9 @@ function diffAt(
  *
  * Objects are compared key by key at any depth; a key only one side has is `added` or
  * `removed` as a whole. A list on one of `setPaths` is compared as a set; any other list, and
- * every scalar, by value. A key set to `undefined` counts as absent.
+ * every scalar, by value. A key set to `undefined` counts as absent. JWT templates are a set
+ * by name and a template's claims a set by key (maps, so their order never counts); one claim
+ * is compared as a whole value.
  *
  * @param before - What the server has.
  * @param after - What the config says.

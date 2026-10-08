@@ -610,6 +610,36 @@ function canonical(value: unknown): unknown {
 }
 
 /**
+ * The environment as it is hashed: without the two defaults JWT templates added to every
+ * settings document (no templates; a profile that names none).
+ *
+ * The fingerprint says which version of the file is applied. A field that every document
+ * gained by upgrading must not change it, or each applied environment would report a new
+ * version of a file nobody touched.
+ */
+function withoutUnusedTemplates(environment: EnvironmentConfig): unknown {
+  const { sessions } = environment.settings
+  const { jwtTemplates, ...rest } = sessions
+  const profiles = Object.fromEntries(
+    Object.entries(sessions.profiles).map(([name, profile]) => {
+      const { jwtTemplate, ...limits } = profile
+      return [name, jwtTemplate === null ? limits : profile]
+    })
+  )
+  return {
+    ...environment,
+    settings: {
+      ...environment.settings,
+      sessions: {
+        ...rest,
+        profiles,
+        ...(Object.keys(jwtTemplates).length > 0 && { jwtTemplates }),
+      },
+    },
+  }
+}
+
+/**
  * A fingerprint of one environment's config: what `tula apply` records with the settings it
  * writes, so the dashboard and a later `tula diff` can say which version of the file is in
  * force.
@@ -617,7 +647,9 @@ function canonical(value: unknown): unknown {
  * It covers the settings, the providers and the webhook endpoints as written, with each
  * secret as the **name** of its variable: no secret value is hashed, so the fingerprint
  * reveals nothing about one. An endpoint's event types count as a set, and an environment
- * that does not mention webhooks hashes as it did before they could be written.
+ * that does not mention webhooks hashes as it did before they could be written. So does one
+ * that defines no JWT template and whose profiles name none; the order templates and their
+ * claims are written in never counts.
  *
  * @param environment - The environment's validated config.
  * @returns `sha256:` and 64 hex characters. The same for the same content in any key order.
@@ -628,7 +660,7 @@ function canonical(value: unknown): unknown {
  * ```
  */
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string> {
-  const text = JSON.stringify(canonical(environment))
+  const text = JSON.stringify(canonical(withoutUnusedTemplates(environment)))
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
   return `sha256:${hex}`
