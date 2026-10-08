@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { EVENT_FIXTURES } from '@tula/contract'
 import {
   formatWebhookSecret,
@@ -6,7 +6,7 @@ import {
   webhookSecretBytes,
 } from '@tula/contract/webhook-signature'
 import { isTulaAdminError, type TulaAdminError } from './errors'
-import { verifyWebhook, WEBHOOK_MAX_SIGNATURES } from './webhook'
+import { verifyWebhook, WEBHOOK_MAX_SECRETS, WEBHOOK_MAX_SIGNATURES } from './webhook'
 
 const SECRET = formatWebhookSecret(new Uint8Array(32).fill(41))
 const OTHER_SECRET = formatWebhookSecret(new Uint8Array(32).fill(42))
@@ -49,7 +49,11 @@ async function failure(work: Promise<unknown>): Promise<TulaAdminError> {
 
 const verify = (
   headers: Parameters<typeof verifyWebhook>[1],
-  { body = BODY as string | Uint8Array, secret = SECRET, now = NOW } = {}
+  {
+    body = BODY as string | Uint8Array,
+    secret = SECRET as string | readonly string[],
+    now = NOW,
+  } = {}
 ) => verifyWebhook(body, headers, secret, { now })
 
 describe('verifyWebhook', () => {
@@ -387,5 +391,139 @@ describe('verifyWebhook', () => {
       }
       expect(await verify(headers, { body })).toEqual(fixture as never)
     }
+  })
+})
+
+describe('verifyWebhook with the secrets of a rotation', () => {
+  // The secret the receiver has had, and the one a rotation returned.
+  const OLD = OTHER_SECRET
+  const NEW = SECRET
+  /** A delivery as the server signs it: one entry per secret that signs, the first one first. */
+  const signedBy = async (...secrets: string[]) =>
+    delivery({
+      'webhook-signature': (await Promise.all(secrets.map((secret) => sign(secret)))).join(' '),
+    })
+
+  test('a list of one secret is that secret', async () => {
+    expect(await verify(await delivery(), { secret: [SECRET] })).toEqual(event)
+    const error = await failure(verify(await delivery(), { secret: [OTHER_SECRET] }))
+    expect(error.code).toBe('webhook.invalid_signature')
+  })
+
+  test('the rollout: a receiver given both secrets verifies before the rotation, during the overlap and after it', async () => {
+    const both = [NEW, OLD] as const
+    // 1. Deployed with both, before the server has rotated: deliveries carry the old signature.
+    expect(await verify(await signedBy(OLD), { secret: both })).toEqual(event)
+    // 2. Rotated: during the overlap deliveries carry both, the new secret's first.
+    expect(await verify(await signedBy(NEW, OLD), { secret: both })).toEqual(event)
+    // 3. The overlap has ended: only the new secret signs.
+    expect(await verify(await signedBy(NEW), { secret: both })).toEqual(event)
+    // 4. The old secret is taken out of the receiver.
+    expect(await verify(await signedBy(NEW), { secret: NEW })).toEqual(event)
+    // Either order of the list reads the same.
+    expect(await verify(await signedBy(OLD), { secret: [OLD, NEW] })).toEqual(event)
+    expect(await verify(await signedBy(NEW), { secret: [OLD, NEW] })).toEqual(event)
+  })
+
+  test('during the overlap either secret alone verifies; after it the old one alone does not', async () => {
+    const during = await signedBy(NEW, OLD)
+    expect(await verify(during, { secret: OLD })).toEqual(event)
+    expect(await verify(during, { secret: NEW })).toEqual(event)
+    const after = await signedBy(NEW)
+    expect((await failure(verify(after, { secret: OLD }))).code).toBe('webhook.invalid_signature')
+    expect((await failure(verify(after, { secret: [OLD] }))).code).toBe('webhook.invalid_signature')
+  })
+
+  test('a delivery signed with neither secret is refused, with the code a wrong secret has', async () => {
+    const stranger = formatWebhookSecret(new Uint8Array(32).fill(43))
+    const error = await failure(verify(await signedBy(stranger), { secret: [NEW, OLD] }))
+    expect(error.code).toBe('webhook.invalid_signature')
+    expect(error.status).toBe(0)
+  })
+
+  test('a signature for one secret over another delivery does not verify with the other', async () => {
+    // Right secret, wrong id: neither entry is the signature of this delivery.
+    const headers = await delivery({
+      'webhook-signature': `${await sign(NEW, { id: 'other' })} ${await sign(OLD, { body: '{}' })}`,
+    })
+    expect((await failure(verify(headers, { secret: [NEW, OLD] }))).code).toBe(
+      'webhook.invalid_signature'
+    )
+  })
+
+  test('the same secret twice is one secret', async () => {
+    expect(await verify(await signedBy(NEW), { secret: [NEW, NEW] })).toEqual(event)
+  })
+
+  test('the server never signs with more than two secrets, and no more are taken', () => {
+    expect(WEBHOOK_MAX_SECRETS).toBe(2)
+  })
+
+  test.each<[string, unknown]>([
+    ['an empty list', []],
+    ['more secrets than ever sign at once', [SECRET, OTHER_SECRET, SECRET]],
+    ['a list with a secret that is none, beside the right one', [SECRET, 'whsec_nope']],
+    ['a list with an empty string, beside the right one', ['', SECRET]],
+    ['a list holding something that is not text', [SECRET, 42]],
+    ['a list inside a list', [[SECRET]]],
+    ['nothing at all', undefined],
+    ['null', null],
+    ['a number', 42],
+    ['an object that is not a list', { 0: SECRET, length: 1 }],
+  ])('refuses %s as the secrets, even where one of them is right', async (_, secret) => {
+    const error = await failure(
+      verifyWebhook(BODY, await delivery(), secret as never, { now: NOW })
+    )
+    expect(error.code).toBe('webhook.invalid_secret')
+  })
+
+  test('an error names none of the secrets it was given, whichever of them was wrong', async () => {
+    const stranger = formatWebhookSecret(new Uint8Array(32).fill(43))
+    const malformed = 'whsec_canary-not-base64'
+    const errors = [
+      await failure(verify(await signedBy(stranger), { secret: [NEW, OLD] })),
+      await failure(verify(await delivery(), { secret: [NEW, malformed] })),
+      await failure(verify(await delivery(), { secret: [NEW, OLD, stranger] })),
+      await failure(verify(await delivery({ 'webhook-id': '' }), { secret: [NEW, OLD] })),
+    ]
+    for (const error of errors) {
+      const text = `${error.message} ${JSON.stringify(error)} ${error.stack} ${JSON.stringify(error.params)}`
+      for (const secret of [NEW, OLD, stranger]) {
+        expect(text).not.toContain(secret)
+        expect(text).not.toContain(secret.slice('whsec_'.length))
+      }
+      expect(text).not.toContain('canary')
+      // Nor which of them it was: no position, no count.
+      expect(error.params).toEqual({})
+    }
+  })
+
+  test('every secret is put to every entry, whichever matched: the work does not say which one was right', async () => {
+    const stranger = formatWebhookSecret(new Uint8Array(32).fill(43))
+    const signing = spyOn(crypto.subtle, 'sign')
+    try {
+      const count = async (headers: Awaited<ReturnType<typeof delivery>>, secret: string[]) => {
+        signing.mockClear()
+        await verify(headers, { secret }).catch(() => undefined)
+        return signing.mock.calls.length
+      }
+      // One HMAC per secret, whether the first secret matched, the second, both or neither.
+      expect(await count(await signedBy(NEW), [NEW, OLD])).toBe(2)
+      expect(await count(await signedBy(OLD), [NEW, OLD])).toBe(2)
+      expect(await count(await signedBy(NEW, OLD), [NEW, OLD])).toBe(2)
+      expect(await count(await signedBy(stranger), [NEW, OLD])).toBe(2)
+      expect(await count(await signedBy(NEW), [NEW])).toBe(1)
+    } finally {
+      signing.mockRestore()
+    }
+  })
+
+  test('the most work one delivery can ask for is bounded: two secrets, eight entries', async () => {
+    const entries = [
+      ...Array.from({ length: WEBHOOK_MAX_SIGNATURES - 1 }, () => 'v1,AAAA'),
+      await sign(OLD),
+    ]
+    const headers = await delivery({ 'webhook-signature': entries.join(' ') })
+    expect(await verify(headers, { secret: [NEW, OLD] })).toEqual(event)
   })
 })

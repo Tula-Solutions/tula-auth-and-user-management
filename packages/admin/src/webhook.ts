@@ -57,6 +57,18 @@ export interface VerifyWebhookOptions {
 }
 
 /**
+ * The secret, or secrets, a delivery is verified with: one `whsec_…` secret, or a list of
+ * them (at most {@link WEBHOOK_MAX_SECRETS}) while a secret is being replaced.
+ *
+ * @example
+ * ```ts
+ * // The secret a rotation returned, and the one it replaced until the overlap has ended.
+ * const secrets: WebhookSecrets = [rotated.secret, secretInUseBefore]
+ * ```
+ */
+export type WebhookSecrets = string | readonly string[]
+
+/**
  * Most signatures read from one `webhook-signature` header. Tula sends one, and two while a
  * secret is being replaced; the bound keeps a forged header from costing more than a few
  * comparisons.
@@ -67,6 +79,18 @@ export interface VerifyWebhookOptions {
  * ```
  */
 export const WEBHOOK_MAX_SIGNATURES = 8
+
+/**
+ * Most secrets {@link verifyWebhook} takes. Tula signs with one secret, and with two while a
+ * secret is being replaced: never three. A third in a receiver's list is one that should
+ * have been taken out, and a secret left in a list stays good for whoever holds it.
+ *
+ * @example
+ * ```ts
+ * secrets.length <= WEBHOOK_MAX_SECRETS
+ * ```
+ */
+export const WEBHOOK_MAX_SECRETS = 2
 
 /** Longest `webhook-signature` header read; {@link WEBHOOK_MAX_SIGNATURES} of them fit well inside. */
 const MAX_SIGNATURE_HEADER_LENGTH = 1024
@@ -148,6 +172,31 @@ function equalInConstantTime(a: string, b: string): boolean {
   return difference === 0
 }
 
+/**
+ * The signing keys of what the caller passed as the secret: one secret or a short list.
+ *
+ * `undefined` for anything else: no list, an empty one, more than
+ * {@link WEBHOOK_MAX_SECRETS}, or **any** entry that is not a signing secret, even beside one
+ * that is. A list with a broken entry is a misconfiguration, and saying so on every delivery
+ * is how it gets noticed; a verifier that quietly used the entries it liked would hide, for
+ * instance, a new secret that was pasted wrong until the day the old one stops signing.
+ */
+function signingKeys(secret: unknown): Uint8Array<ArrayBuffer>[] | undefined {
+  const listed: unknown = typeof secret === 'string' ? [secret] : secret
+  if (!Array.isArray(listed) || listed.length === 0 || listed.length > WEBHOOK_MAX_SECRETS) {
+    return undefined
+  }
+  const keys: Uint8Array<ArrayBuffer>[] = []
+  for (const one of listed as unknown[]) {
+    const key = typeof one === 'string' ? webhookSecretBytes(one) : null
+    if (!key) {
+      return undefined
+    }
+    keys.push(key)
+  }
+  return keys
+}
+
 /** The text of a body, or `undefined` for bytes that are not UTF-8: no Tula server sent them. */
 function bodyText(body: string | Uint8Array): string | undefined {
   if (typeof body === 'string') {
@@ -187,8 +236,22 @@ function isEvent(value: unknown, id: string): value is TulaWebhookEvent {
  * (`webhook-id`), when it was sent (`webhook-timestamp`, in seconds) and one or more
  * signatures (`webhook-signature`: `v1,<base64>`, separated by spaces): the Standard Webhooks
  * scheme, HMAC-SHA256 over `<id>.<timestamp>.<body>` with the endpoint's secret. The delivery
- * is accepted when **any one** signature is right and the timestamp is within five minutes of
- * this server's clock, either way.
+ * is accepted when **any one** signature is right for **any one** of the secrets given and the
+ * timestamp is within five minutes of this server's clock, either way.
+ *
+ * **Replacing a secret without losing a delivery.** `secret` may be a list of two. When an
+ * endpoint's secret is rotated, the server signs every delivery with the new secret *and* the
+ * previous one for 24 hours, so the order of work is:
+ *
+ * 1. Rotate (`rotateWebhookSecret`); the answer has the new secret and
+ *    `rotationOverlapEndsAt`. Nothing breaks: deliveries still carry the old signature.
+ * 2. Inside those 24 hours, deploy the receiver with **both** secrets (or with the new one
+ *    alone: during the overlap either verifies).
+ * 3. After `rotationOverlapEndsAt`, take the old secret out. Do take it out: a secret left
+ *    in the list stays good for anyone who holds it.
+ *
+ * The rotation comes first because the server makes the secret: there is nothing to deploy
+ * until it has answered. The overlap is what makes that order safe.
  *
  * A `webhook-id` or `webhook-timestamp` that was sent twice is refused (also where a `Headers`
  * object has joined the two values with a comma). A `webhook-signature` sent twice is read as
@@ -213,15 +276,19 @@ function isEvent(value: unknown, id: string): value is TulaWebhookEvent {
  *
  * @param body - The request body as received: text or bytes.
  * @param headers - The request's headers.
- * @param secret - The endpoint's signing secret (`whsec_…`), as its registration returned it.
+ * @param secret - The endpoint's signing secret (`whsec_…`), as its registration or a rotation
+ *   returned it; or a list of one or two of them. Every secret listed must be a signing
+ *   secret: an empty list, a third secret or a malformed entry is refused
+ *   (`webhook.invalid_secret`), whatever the delivery.
  * @param options - The clock to judge the timestamp by; the real one unless given.
  * @returns The event. Its `type` may be one a later server added.
  * @throws TulaAdminError with `status` 0 and one of these codes, and never with the secret, a
- *   signature or the body in it: `webhook.invalid_secret` (not a `whsec_…` secret),
+ *   signature or the body in it, nor which of two secrets was the wrong one:
+ *   `webhook.invalid_secret` (not a `whsec_…` secret, or not one or two of them),
  *   `webhook.invalid_headers` (a header missing or malformed, or an id or a timestamp sent
  *   twice),
  *   `webhook.timestamp_out_of_tolerance` (more than five minutes old, or ahead),
- *   `webhook.invalid_signature` (no signature matches), `webhook.invalid_payload` (signed
+ *   `webhook.invalid_signature` (no signature matches any secret), `webhook.invalid_payload` (signed
  *   correctly, but not an event with the delivery's id).
  *
  * @example
@@ -243,15 +310,25 @@ function isEvent(value: unknown, id: string): value is TulaWebhookEvent {
  *   return new Response(null, { status: 204 })
  * }
  * ```
+ *
+ * @example
+ * ```ts
+ * // While a secret is being replaced: the new one, and the previous one until the overlap
+ * // has ended (`rotationOverlapEndsAt`), then deploy again without it.
+ * const secrets = [process.env.TULA_WEBHOOK_SECRET, process.env.TULA_WEBHOOK_SECRET_PREVIOUS].filter(
+ *   (secret): secret is string => Boolean(secret)
+ * )
+ * const event = await verifyWebhook(await request.text(), request.headers, secrets)
+ * ```
  */
 export async function verifyWebhook(
   body: string | Uint8Array,
   headers: WebhookHeaders,
-  secret: string,
+  secret: WebhookSecrets,
   options: VerifyWebhookOptions = {}
 ): Promise<TulaWebhookEvent> {
-  const key = webhookSecretBytes(secret)
-  if (!key) {
+  const keys = signingKeys(secret)
+  if (!keys) {
     throw clientError('webhook.invalid_secret')
   }
   const id = single(headers, WEBHOOK_ID_HEADER)
@@ -278,17 +355,23 @@ export async function verifyWebhook(
   if (text === undefined) {
     throw clientError('webhook.invalid_signature')
   }
-  const expected = await signWebhook(key, id, timestamp, text)
-  // Every entry is compared, whichever matched first: how long this takes says nothing about
-  // which one was right.
-  let matched = false
+  // The signature every secret would have made, all of them, before anything is compared.
+  const expected: string[] = []
+  for (const key of keys) {
+    expected.push(await signWebhook(key, id, timestamp, text))
+  }
+  // Every entry is put to every secret's signature, whichever matched first, and the results
+  // are gathered without a branch: how long this takes says nothing about which entry, or
+  // which secret, was right.
+  let matched = 0
   for (const entry of entries) {
-    const version = entry.slice(0, entry.indexOf(','))
-    if (version === WEBHOOK_SIGNATURE_VERSION && equalInConstantTime(entry, expected)) {
-      matched = true
+    // The label before the comma is public; an entry of another version is never a match.
+    const versioned = entry.slice(0, entry.indexOf(',')) === WEBHOOK_SIGNATURE_VERSION ? 1 : 0
+    for (const signature of expected) {
+      matched |= versioned & (equalInConstantTime(entry, signature) ? 1 : 0)
     }
   }
-  if (!matched) {
+  if (matched === 0) {
     throw clientError('webhook.invalid_signature')
   }
   let parsed: unknown
