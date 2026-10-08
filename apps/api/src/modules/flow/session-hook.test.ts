@@ -771,3 +771,173 @@ describe('over HTTP', () => {
     ])
   })
 })
+
+describe('an enrolment inside a sign-in that a hook then refuses', () => {
+  // The user has a session from before the environment required two-step verification, and
+  // signs in again: the attempt stops at the enrolment.
+  async function enrolling() {
+    configure()
+    const userId = await seedUser()
+    const earlier = (await signIn()).tokens?.sessionId ?? ''
+    await Notices.settled()
+    configure({ policy: 'required' })
+    const attempt = await startSignIn()
+    expect((await password(attempt)).attempt.step.status).toBe('needs_factor_enrolment')
+    const enrolment = await Flows.startFactorEnrolment(deps, tenant, 'sign_in', ref(attempt), web)
+    const confirm = () =>
+      Flows.confirmFactorEnrolment(
+        deps,
+        tenant,
+        'sign_in',
+        ref(attempt),
+        codeFor(enrolment.secret),
+        web
+      )
+    return { userId, earlier, confirm }
+  }
+
+  async function expectUndone(userId: string, earlier: string) {
+    // The session the user already had is alive, and its access token is still good.
+    expect((await liveSessions(userId)).map((session) => session.id)).toEqual([earlier])
+    expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(false)
+    // The factor is gone again, and so is every backup code made for it.
+    expect(await deps.factors.findTotp(tenant.environmentId, userId)).toBeNull()
+    expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(0)
+    expect(sessions()).toHaveLength(1)
+    expect(deps.activityLog.ofType('session.revoked')).toEqual([])
+  }
+
+  test('a denial leaves the user’s other sessions alive and the factor absent', async () => {
+    const { userId, earlier, confirm } = await enrolling()
+    await hook()
+    respond.before_session = deny
+    expect((await rejection(confirm())).code).toBe('hook.denied')
+    await expectUndone(userId, earlier)
+  })
+
+  test('a session hook that fails leaves them alive too', async () => {
+    const { userId, earlier, confirm } = await enrolling()
+    await hook()
+    respond.before_session = hang
+    expect((await rejection(confirm())).code).toBe('hook.unavailable')
+    await expectUndone(userId, earlier)
+  })
+
+  test('so does a claims hook that fails as the session is made', async () => {
+    const { userId, earlier, confirm } = await enrolling()
+    await hook('before_token')
+    respond.before_token = hang
+    expect((await rejection(confirm())).code).toBe('hook.unavailable')
+    await expectUndone(userId, earlier)
+  })
+
+  test('an enrolment that completes still ends every other session, and only then', async () => {
+    const { userId, earlier, confirm } = await enrolling()
+    await hook()
+    let aliveWhenAsked: boolean | undefined
+    respond.before_session = async () => {
+      aliveWhenAsked = (await liveSessions(userId)).some((session) => session.id === earlier)
+      return allow()
+    }
+    const done = await confirm()
+    expect(done.attempt.step.status).toBe('complete')
+    expect(aliveWhenAsked).toBe(true)
+    expect((await liveSessions(userId)).map((session) => session.id)).toEqual([
+      done.tokens?.sessionId ?? '',
+    ])
+    expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(true)
+    expect(await deps.revokedSessions.has(done.tokens?.sessionId ?? '', deps.clock.now())).toBe(
+      false
+    )
+    expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(10)
+  })
+})
+
+describe('what a refused sign-in has already spent', () => {
+  // Decided, not overlooked (ADR 0035, "What a refusal costs"): the proof comes before the
+  // question, and a spent proof is never given back. A change here is a decision.
+  test('a backup code used for a sign-in the hook refuses is spent: nine are left', async () => {
+    configure()
+    const userId = await seedUser()
+    const { secret } = await Mfa.startTotp(deps, tenant, userId)
+    const { codes } = await Mfa.confirmTotp(deps, tenant, { userId }, codeFor(secret), {
+      type: 'user',
+      id: userId,
+      ipAddress: null,
+      userAgent: null,
+    })
+    await Notices.settled()
+    await hook()
+    respond.before_session = deny
+    const attempt = await startSignIn()
+    await password(attempt)
+    const withCode = (target: Presented) =>
+      Flows.submitSecondFactor(
+        deps,
+        tenant,
+        'sign_in',
+        ref(target),
+        { method: 'backup_code', response: codes[0] ?? '' },
+        web
+      )
+    expect((await rejection(withCode(attempt))).code).toBe('hook.denied')
+    expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(9)
+    expect(await liveSessions(userId)).toEqual([])
+
+    // The same code proves nothing a second time, also once the hook would allow.
+    respond.before_session = allow
+    const again = await startSignIn()
+    await password(again)
+    expect((await rejection(withCode(again))).code).not.toBe('hook.denied')
+    expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(9)
+    expect(await liveSessions(userId)).toEqual([])
+  })
+})
+
+describe('an enrolment inside a sign-in whose sweep goes wrong', () => {
+  async function enrolling() {
+    configure()
+    const userId = await seedUser()
+    const earlier = (await signIn()).tokens?.sessionId ?? ''
+    await Notices.settled()
+    configure({ policy: 'required' })
+    const attempt = await startSignIn()
+    await password(attempt)
+    const enrolment = await Flows.startFactorEnrolment(deps, tenant, 'sign_in', ref(attempt), web)
+    const confirm = () =>
+      Flows.confirmFactorEnrolment(
+        deps,
+        tenant,
+        'sign_in',
+        ref(attempt),
+        codeFor(enrolment.secret),
+        web
+      )
+    return { userId, earlier, confirm }
+  }
+
+  test('a sweep that fails after the session exists does not take the session or the backup codes away', async () => {
+    const { userId, confirm } = await enrolling()
+    const sweep = spyOn(Mfa, 'endSessionsWithoutFactor').mockRejectedValue(new Error('store down'))
+    const done = await confirm()
+    sweep.mockRestore()
+    expect(done.attempt.step.status).toBe('complete')
+    expect(done.tokens?.sessionId).toBeString()
+    expect(await deps.factors.countBackupCodes(tenant.environmentId, userId)).toBe(10)
+    expect(logged()).toContain('could not end the sessions made before two-step verification')
+  })
+
+  test('refused, and the factor cannot be removed again: it stayed on, so the earlier sessions end after all', async () => {
+    const { userId, earlier, confirm } = await enrolling()
+    await hook()
+    respond.before_session = deny
+    const remove = spyOn(deps.factors, 'removeForUser').mockRejectedValue(new Error('store down'))
+    expect((await rejection(confirm())).code).toBe('hook.denied')
+    remove.mockRestore()
+    expect((await deps.factors.findTotp(tenant.environmentId, userId))?.confirmedAt).toBeInstanceOf(
+      Date
+    )
+    expect(await liveSessions(userId)).toEqual([])
+    expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(true)
+  })
+})
