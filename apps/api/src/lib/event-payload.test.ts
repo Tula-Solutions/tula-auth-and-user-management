@@ -148,6 +148,7 @@ describe('eventPayload', () => {
         type: 'session.created',
         dropped: [],
         missing: ['client', 'userId'],
+        invalid: [],
       })
       warn.mockClear()
       // A required field whose value was refused is both: it was given, and it is not there.
@@ -156,8 +157,36 @@ describe('eventPayload', () => {
         type: 'session.created',
         dropped: ['userId'],
         missing: ['userId'],
+        invalid: [],
       })
       expect(JSON.stringify(warn.mock.calls)).not.toContain(CANARY)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  // A rule that spans fields (which details go with which `method`) is in the type's schema,
+  // where a receiver's parser enforces it. The writer must notice breaking it too.
+  test.each([
+    ['removed by its owner, without saying which passkey', { method: 'user' }],
+    [
+      'removed by an admin reset, naming one passkey',
+      { method: 'admin_reset', passkeyId: EVENT_FIXTURES['user.passkey_added'].data.passkeyId },
+    ],
+  ])('says when the fields do not go together: %s', (_name, data) => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      const payload = eventPayload(activityOf('user.passkey_removed', { data }))
+      expect(EVENT_SCHEMAS['user.passkey_removed'].safeParse(payload).success).toBe(false)
+      expect(warn).toHaveBeenCalledTimes(1)
+      const said = warn.mock.calls[0]?.[1] as {
+        dropped: string[]
+        missing: string[]
+        invalid: string[]
+      }
+      expect(said.dropped).toEqual([])
+      expect(said.missing).toEqual([])
+      expect(said.invalid.length).toBeGreaterThan(0)
     } finally {
       warn.mockRestore()
     }

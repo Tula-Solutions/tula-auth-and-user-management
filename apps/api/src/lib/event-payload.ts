@@ -34,6 +34,31 @@ function allowedFields(type: ActivityType): Record<string, z.ZodType> {
   return Object.hasOwn(EVENT_DATA_SCHEMAS, type) ? EVENT_DATA_SCHEMAS[type].shape : {}
 }
 
+/**
+ * What the type's whole `data` schema still refuses once each field has passed its own: a
+ * rule that spans fields (which details go with which `method`). A receiver's parser enforces
+ * such a rule, so the writer has to notice breaking it.
+ *
+ * @returns The fields the refusals name (`data` for one that names none), without those
+ *   already reported as missing.
+ */
+function brokenRules(
+  type: ActivityType,
+  data: Record<string, unknown>,
+  missing: readonly string[]
+): string[] {
+  if (!Object.hasOwn(EVENT_DATA_SCHEMAS, type)) {
+    return []
+  }
+  const whole = EVENT_DATA_SCHEMAS[type].safeParse(data)
+  if (whole.success) {
+    return []
+  }
+  // The path of an issue is a field name of the schema, never a value.
+  const names = whole.error.issues.map((issue) => String(issue.path[0] ?? 'data'))
+  return [...new Set(names)].filter((name) => !missing.includes(name)).sort()
+}
+
 /** When it happened, as ISO 8601; the time now for an activity whose time is not one. */
 function isoTime(activity: Activity): string {
   if (Number.isNaN(activity.occurredAt.getTime())) {
@@ -58,10 +83,11 @@ function isoTime(activity: Activity): string {
  * **It never throws.** The payload is written in the transaction of the change it records; a
  * failure here would undo that change. What is refused is dropped, and the keys (never the
  * values) are logged, together with the fields the schema requires and the payload does not
- * have. An `occurredAt` that is not a time (an invalid `Date`, for which `toISOString` throws)
- * is replaced by the time the payload is built, and logged: an activity is recorded as it
- * happens, so that is the nearest true value, and a payload without a time would not be the
- * event its schema describes.
+ * have, and the fields that break a rule spanning several (`invalid`). An `occurredAt` that
+ * is not a time (an invalid `Date`, for which `toISOString` throws) is replaced by the time
+ * the payload is built, and logged. That keeps this function from being what fails; it does
+ * not rescue the write, because the stores put the same `occurredAt` in the event's and the
+ * audit entry's own columns.
  *
  * @param activity - The recorded action.
  * @returns The payload to store and deliver.
@@ -91,14 +117,16 @@ export function eventPayload(activity: Activity): EventPayload {
   const missing = Object.entries(fields)
     .filter(([key, field]) => !(Object.hasOwn(data, key) || field.safeParse(undefined).success))
     .map(([key]) => key)
-  if (dropped.length > 0 || missing.length > 0) {
+  const invalid = brokenRules(activity.type, data, missing)
+  if (dropped.length > 0 || missing.length > 0 || invalid.length > 0) {
     // A programming error, not an attack: a call site records something the contract has no
-    // field for, or leaves out something it requires. The names are the code's own; the
-    // values are never logged.
+    // field for, leaves out something it requires, or gives fields that do not go together.
+    // The names are the code's own; the values are never logged.
     logger.warn('event payload: not the event its schema describes', {
       type: activity.type,
       dropped: dropped.sort(),
       missing: missing.sort(),
+      invalid,
     })
   }
   return {

@@ -973,8 +973,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   `EVENT_SCHEMA_VERSION` a payload only grows (a new type, an optional field, an enum
   value); anything else is a new version. `events.payload` is built only by `eventPayload`
   (`~/lib/event-payload`), in both adapters: it keeps what the schema names and accepts,
-  field by field, drops the rest, logs by name what it dropped and what is required and
-  missing, and never throws (an `occurredAt` that is not a time becomes the time now). The
+  field by field, drops the rest, logs by name what it dropped, what is required and
+  missing and what breaks a rule that spans fields, and never throws (an `occurredAt` that
+  is not a time becomes the time now). The
   audit entry's `metadata` is not narrowed by it.
   `apps/api/src/event-canary.test.ts` runs every conformance scenario with the wire tapped
   (every request header, whatever its name) and fails if anything a request carried, a

@@ -131,6 +131,8 @@ of.
     (the owner removed one passkey) carries `passkeyId` and never `canStillSignIn`;
     `admin_reset` (every passkey of the user was removed) carries `canStillSignIn` and never
     `passkeyId`. The schema refuses any other combination; it is deliberately not two types.
+    The OpenAPI component cannot say the rule (both fields are optional there, and its
+    description states it): a receiver generated from the document does not enforce it.
   - **One function builds it**, `eventPayload` (`~/lib/event-payload`), called by the memory
     and the Postgres stores alike. It keeps a key of the activity's `data` only if the type's
     schema names it **and** that field's own schema accepts the value, so a named field
@@ -138,8 +140,9 @@ of.
     by key (never by value), together with the keys the schema requires and the payload
     lacks; it never throws, because a record that cannot be written undoes the change it
     records. An `occurredAt` that is not a time (an invalid `Date`, whose `toISOString`
-    throws) is replaced by the time the payload is built, and logged: an activity is
-    recorded as it happens, so that is the nearest true value.
+    throws) is replaced by the time the payload is built, and logged. That only keeps the
+    builder from being what fails: the stores write the same `occurredAt` to the event's and
+    the audit entry's own columns, so such a write is not rescued by it.
   - **Call sites are checked at compile time.** `Audit.entry` takes a union discriminated by
     `type`: each type's `target.type` and `data` are the contract's, so recording a detail
     the contract has no field for does not compile. `Activity.data` itself stays loose (a
@@ -223,11 +226,12 @@ of.
   settings (`environment.settings_updated.changed`, which include an operator's own session
   profile names), the managing tool's name (`managedBy`, operator-supplied, bound by
   `CONFIG_TOOL_PATTERN`), and `canStillSignIn` on `user.passkey_removed`.
-- A payload is not validated as a whole when it is written (only field by field): an event
-  whose call site left out a required field is stored without it rather than refused, and
-  the rule that pairs the fields of `user.passkey_removed` is not applied there either.
-  The missing fields are logged by name; the compiler and the conformance run (which parses
-  every recorded payload with its whole schema) are what keep it from happening.
+- A payload that is not the event its schema describes is stored anyway, never refused: one
+  whose call site left out a required field, or gave fields that do not go together (the
+  pairing of `user.passkey_removed`). The builder checks the finished `data` against the
+  whole schema and logs, by name, what is missing and what breaks such a rule; the compiler
+  and the conformance run (which parses every recorded payload with its whole schema) are
+  what keep it from happening.
 - Audit entries keep IP addresses after a user is deleted, and outlive the sessions they name
   (which are deleted 30 days after they end). The audit retention setting has to cover that.
 - Every write that records activity costs two more inserts in its transaction.
