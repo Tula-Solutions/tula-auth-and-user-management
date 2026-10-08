@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
+import { afterAll, afterEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { createTulaClient, isTulaError, type TulaClient } from '@tula/core'
 import { NextRequest } from 'next/server'
 import { FixedClock } from '../../../apps/api/src/adapters/memory/clock'
 import { createApp } from '../../../apps/api/src/index'
+import * as Hooks from '../../../apps/api/src/modules/hook/service'
 import {
   createTestDeps,
   seedApiKey,
+  TEST_ACTOR,
   TEST_CONFIG,
   TEST_TENANT,
   type TestDeps,
@@ -606,5 +608,81 @@ describe('custom claims from a JWT template (ADR 0036)', () => {
     const response = await browser.visit('/dashboard')
     const auth = await authenticate(passedOn(response), w.instance())
     expect(Object.keys(auth.customClaims ?? {})).toEqual(['a', 'b', 'c', 'd'])
+  })
+})
+
+describe('claims from a before_token hook (ADR 0035)', () => {
+  let asked: Record<string, unknown>[] = []
+  const receiver = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    async fetch(request) {
+      asked.push(((await request.json()) as { data: Record<string, unknown> }).data)
+      return Response.json({ claims: { plan: 'pro', seats: 5, role: 'owner' } })
+    },
+  })
+  afterAll(() => receiver.stop(true))
+
+  async function hookedWorld(type: 'hybrid' | 'stateful') {
+    asked = []
+    const w = await world()
+    w.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: EnvironmentSettingsSchema.parse({
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: {
+          jwtTemplates: {
+            app: { claims: { role: { value: 'member' }, client: { from: 'session.client' } } },
+          },
+          profiles: { web: { type, jwtTemplate: 'app' } },
+        },
+      }),
+    })
+    await Hooks.create(
+      w.deps,
+      TEST_TENANT,
+      {
+        point: 'before_token',
+        url: `http://127.0.0.1:${receiver.port}/tula/before-token`,
+        enabled: true,
+        deadlineMs: 2000,
+        failureMode: 'deny',
+      },
+      TEST_ACTOR
+    )
+    return w
+  }
+  // The template's claims with the hook's over them: the hook's `role` wins.
+  const expected = { role: 'owner', client: 'web', plan: 'pro', seats: 5 }
+
+  test('auth() returns the hook’s claim for a token session, and a refresh asks the hook nothing', async () => {
+    const w = await hookedWorld('hybrid')
+    const { browser } = await signUp(w)
+    expect(asked).toHaveLength(1)
+    const response = await browser.visit('/dashboard')
+    const auth = await authenticate(passedOn(response), w.instance())
+    expect(auth.customClaims).toEqual(expected)
+    expect(auth.customClaims?.plan).toBe('pro')
+
+    const before = browser.jar.get('tula_at')
+    w.advance(61_000)
+    const later = await browser.visit('/dashboard')
+    expect(isNext(later)).toBe(true)
+    // The middleware refreshed: a new access token, the same claims, and no second question.
+    expect(browser.jar.get('tula_at')).not.toBe(before)
+    expect((await authenticate(passedOn(later), w.instance())).customClaims).toEqual(expected)
+    expect(asked).toHaveLength(1)
+  })
+
+  test('auth() returns it for a stateful session, with and without the middleware', async () => {
+    const w = await hookedWorld('stateful')
+    const { browser } = await signUp(w)
+    expect([...browser.jar.keys()]).toEqual(['tula_session'])
+    const options = w.instance({ secretKey: SECRET_KEY })
+    const response = await browser.visit('/dashboard')
+    expect((await authenticate(passedOn(response), options)).customClaims).toEqual(expected)
+    const direct = new Request(`${APP}/x`, { headers: { cookie: browser.cookieHeader() } })
+    expect((await authenticate(direct, options)).customClaims).toEqual(expected)
+    expect(asked).toHaveLength(1)
   })
 })
