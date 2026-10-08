@@ -118,7 +118,7 @@ export function SignInMethods({ query }: { query: QueryLike<UserAuthentication> 
                 <Lines>
                   {authentication.factors.map((factor) => (
                     <li key={factor.type}>
-                      {FACTOR_NAME[factor.type] ?? factor.type} since{' '}
+                      {own(FACTOR_NAME, factor.type) ?? factor.type} since{' '}
                       {formatDateTime(factor.confirmedAt)}
                     </li>
                   ))}

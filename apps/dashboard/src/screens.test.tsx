@@ -496,6 +496,27 @@ describe('settings controls', () => {
       start(`${DEV_PATH}/users/${IDS.user}`, { api })
       await screen.findByText(sentence)
     })
+
+    // A second factor's type is the server's word too: `FACTOR_NAME['constructor']` is a
+    // function of `Object.prototype`, which React draws as nothing.
+    test.each([
+      ['totp', 'Authenticator app since '],
+      ['sms', 'sms since '],
+      ['constructor', 'constructor since '],
+      ['toString', 'toString since '],
+      ['__proto__', '__proto__ since '],
+    ])('a second factor the server calls %p is listed as “%s…”', async (type, start_) => {
+      const api = installFakeApi()
+      api.state.authentication = {
+        ...api.state.authentication,
+        factors: [{ type, confirmedAt: '2026-03-01T09:00:00.000Z' }],
+      }
+      start(`${DEV_PATH}/users/${IDS.user}`, { api })
+      const line = await screen.findByText((_text, element) =>
+        element?.tagName === 'LI' ? (element.textContent ?? '').startsWith(start_) : false
+      )
+      expect(line.textContent?.startsWith(start_)).toBe(true)
+    })
   })
 
   test('Apple takes a team, a key id and a private key; a provider can be removed; “enabled” may be refused', async () => {
