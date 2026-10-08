@@ -1,0 +1,25 @@
+{
+  "name": "@tula/conformance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs the language-neutral scenarios in /conformance against a Tula API over HTTP.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "conformance": "bun run src/cli.ts",
+    "schema:generate": "bun run src/scripts/generate-schema.ts",
+    "schema:check": "bun run src/scripts/generate-schema.ts --check"
+  },
+  "dependencies": {
+    "@tula/contract": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tula/tsconfig": "workspace:*"
+  }
+}

@@ -1,0 +1,115 @@
+import type { FlowKind, FlowStatus } from '@tula/contract'
+
+/** An in-progress sign-in or sign-up and the step it is waiting on. */
+export interface FlowAttemptRecord {
+  id: string
+  projectId: string
+  environmentId: string
+  kind: FlowKind
+  /** The step the attempt is waiting on. */
+  status: FlowStatus
+  /** Set once the attempt is tied to a user. Never exposed before the flow completes. */
+  userId: string | null
+  /** Normalized identifier (email) the attempt started with. */
+  identifier: string
+  /**
+   * SHA-256 (hex) of the secret the client was given when the attempt started and must present
+   * on every later call. `null` only for an attempt stored before attempts were bound: it has
+   * no secret that could be presented, so it can never be continued.
+   */
+  secretHash: string | null
+  /** Step-specific server state. Never sent to clients. */
+  state: Record<string, unknown>
+  expiresAt: Date
+  completedAt: Date | null
+  createdAt: Date
+}
+
+/** An attempt to store. */
+export type NewFlowAttempt = Omit<FlowAttemptRecord, 'completedAt'>
+
+/** What a transition changes. Omitted fields keep their value. */
+export interface FlowAttemptChange {
+  status: FlowStatus
+  userId?: string
+  /**
+   * Gives the attempt an identifier it did not start with: a sign-in by passkey starts with
+   * none, and learns the user's address only once the passkey is proven.
+   */
+  identifier?: string
+  state?: Record<string, unknown>
+  /** Set when the new status is `complete`. */
+  completedAt?: Date
+  /**
+   * Replaces the hash of the attempt's secret: the old secret stops working. Used when the
+   * client that started an attempt lost its secret by design (an OAuth round trip, ADR 0026).
+   */
+  secretHash?: string
+}
+
+/**
+ * A second condition of a transition: a top-level string of the attempt's stored state must
+ * still hold this value. It makes a step that does not change `status` a real compare-and-set
+ * (an OAuth attempt stays on `needs_first_factor` from its start until the ticket is exchanged).
+ */
+export interface StateGuard {
+  key: string
+  value: string
+}
+
+/** Flow attempts, always read and written inside one environment. */
+export interface FlowAttemptStore {
+  /** @param attempt - The attempt to store. */
+  create(attempt: NewFlowAttempt): Promise<void>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param id - Attempt id.
+   * @returns The attempt (whatever its state), or `null`.
+   */
+  findById(environmentId: string, id: string): Promise<FlowAttemptRecord | null>
+
+  /**
+   * Move an attempt to its next step, as a compare-and-set: it only happens if the attempt is
+   * still waiting on `from`, is not completed and has not expired. Of two concurrent
+   * transitions from the same step exactly one succeeds.
+   *
+   * @param environmentId - The attempt's environment.
+   * @param id - Attempt id.
+   * @param from - The step the caller believes the attempt is on.
+   * @param change - The new step and fields.
+   * @param at - Current time.
+   * @param guard - Also require this value in the stored state. Of two concurrent transitions
+   *   with the same guard exactly one succeeds, provided the change replaces the guarded value.
+   * @returns `false` when the guard failed (nothing was written).
+   */
+  transition(
+    environmentId: string,
+    id: string,
+    from: FlowStatus,
+    change: FlowAttemptChange,
+    at: Date,
+    guard?: StateGuard
+  ): Promise<boolean>
+
+  /**
+   * Remove one attempt (and, by cascade, its verification tokens). A no-op if it is not there.
+   *
+   * @param environmentId - The attempt's environment.
+   * @param id - Attempt id.
+   */
+  delete(environmentId: string, id: string): Promise<void>
+
+  /**
+   * Remove attempts in an environment whose lifetime is over, completed or not (and, by
+   * cascade, their verification tokens). Abandoned sign-ups hold a pending password hash, so
+   * they must not be kept. At most `limit` go per call, so no call holds locks for long; the
+   * caller repeats while a full batch comes back.
+   *
+   * @param environmentId - The environment to purge.
+   * @param now - Current time; attempts with `expiresAt <= now` go.
+   * @param limit - The most attempts to remove in this call.
+   * @returns How many attempts were removed.
+   */
+  deleteExpired(environmentId: string, now: Date, limit: number): Promise<number>
+}

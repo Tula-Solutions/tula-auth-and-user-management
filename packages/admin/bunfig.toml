@@ -1,0 +1,7 @@
+[test]
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.95, functions = 0.95 }
+# The contract measures its own coverage; count only this package's files here. `browser.ts` is
+# a module whose whole body is a `throw` (the test imports it and sees the refusal), so the
+# line after the throw can never run.
+coveragePathIgnorePatterns = ["../contract/**", "../core/**", "src/generated/**", "src/browser.ts", "../../apps/**", "../db/**", "../conformance/**"]

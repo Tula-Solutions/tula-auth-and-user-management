@@ -1,0 +1,26 @@
+# Keep the build context small and make sure no local secret or host dependency reaches an image.
+**/node_modules
+.git
+.github
+.claude
+.husky
+.turbo
+**/.turbo
+**/coverage
+**/dist
+**/out
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+docs
+conformance
+# The browser-test fixture serves an API with in-memory data and publishes every email it
+# "sends"; it must never be in an image (e2e/server.ts).
+e2e
+packages/conformance/src
+**/*.test.ts
+**/*.suite.ts
+**/*.integration.ts
+*.md

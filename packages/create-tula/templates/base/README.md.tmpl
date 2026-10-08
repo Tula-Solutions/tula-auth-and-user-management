@@ -1,0 +1,54 @@
+# {{displayName}}
+
+A {{frameworkLabel}} app with [Tula Auth](https://github.com/Tula-Solutions): sign-up, sign-in,
+password reset, two-step verification and account management, against a Tula API that runs on
+your machine in Docker.
+
+## Start
+
+```sh
+bun install
+bunx tula dev        # starts the stack, migrates, seeds, mints development keys
+bun run dev          # the app, on {{appUrl}}
+```
+
+`tula dev` prints the URLs: the API, its reference, and Mailpit, the inbox every email the
+API sends lands in (verification codes included). It writes the development keys to
+`.env.local`; run it again any time, it changes nothing that is already there.
+
+## What is here
+
+| File | What |
+| --- | --- |
+| `compose.yaml` | The local stack: Postgres, Redis, Mailpit, the migrations and the Tula API. |
+| `.env` | The stack's secrets, generated for this project: the master key, the instance admin token, the database passwords. Ignored by git. **Back up `TULA_MASTER_KEY`**: without it the stored signing keys and provider credentials cannot be opened. |
+| `.env.local` | Written by `tula dev`: the API URL and the development keys. Ignored by git. |
+| `.env.example` | What `.env` holds, without the values. Commit this one. |
+| `tula.config.ts` | The environment's settings as code. |
+| `docker/postgres/init.sh` | Creates the API's database role when the volume is first created. |
+
+## Everyday commands
+
+```sh
+bunx tula doctor          # checks the stack: database, migrations, master key, mail, Redis
+bunx tula diff            # what tula.config.ts would change on the server
+bunx tula apply           # make the server match tula.config.ts
+bunx tula policy test     # which password rules a password passes
+bunx tula dev down        # stop the stack (the data is kept)
+bunx tula dev down --volumes   # stop it and delete the database
+```
+
+## The API image
+
+`TULA_API_IMAGE` in `.env` names the Tula API image; it is `{{apiImage}}` here. Nothing is
+published to a registry yet, so build it from the Tula repository and tag it with that name:
+
+```sh
+docker build -f apps/api/Dockerfile -t {{apiImage}} .   # in the Tula repository
+```
+
+## Ports
+
+The API is on `{{apiPort}}` and Mailpit on `{{mailpitPort}}` (`API_PORT` and `MAILPIT_UI_PORT`
+in `.env`). After changing `API_PORT`, run `bunx tula dev` again so `.env.local` follows.
+The app's own port is in its {{frameworkLabel}} config.

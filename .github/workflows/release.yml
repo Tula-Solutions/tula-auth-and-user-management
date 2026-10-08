@@ -1,0 +1,61 @@
+name: Release
+
+# DRY RUN ONLY. Nothing is published: the licence and the npm scope are not decided yet
+# (docs/releasing.md, ADR 0020). On every push to `main` this builds the publishable packages,
+# packs them exactly as they would be published, checks the tarballs with publint and
+# arethetypeswrong, and prints what a release would contain.
+#
+# It cannot publish as it stands, for four independent reasons:
+#   1. every package is `"private": true`, which npm refuses to publish;
+#   2. `scripts/packages.ts` has no code path that uploads anything;
+#   3. this workflow has no npm credentials (no token, and no `id-token: write` for trusted
+#      publishing), and its only permission is reading the repository;
+#   4. `.changeset/config.json` keeps `access` at `restricted`.
+# Turning publishing on is a deliberate, reviewed change to all of them, in the order
+# docs/releasing.md › "Turning publishing on" lists.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    name: Build, check and dry-run the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: What the pending changesets would release
+        run: bunx changeset status
+      - name: Build, pack and check every publishable package; report what would be published
+        run: bun run release:dry-run
+      - name: No package may be publishable yet
+        run: |
+          # A guard for the day someone removes `"private": true` without the rest of the
+          # checklist: until this step is deliberately deleted, a publishable package fails
+          # the release job instead of being one edit away from npm.
+          for manifest in packages/*/package.json apps/*/package.json; do
+            if [ "$(jq -r '.private // false' "$manifest")" != "true" ]; then
+              echo "$manifest is not private. See docs/releasing.md before changing that." >&2
+              exit 1
+            fi
+          done
+        shell: bash -euo pipefail {0}
+      - name: Keep the tarballs for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-tarballs
+          path: .release/*.tgz
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,7 @@
+[test]
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.9, functions = 0.9 }
+# Other packages measure their own coverage; count only this package's files here. `bin.ts` is
+# the three lines that hand the process to `main`; a test runs it as a child process, which
+# coverage does not see.
+coveragePathIgnorePatterns = ["../contract/**", "../admin/**", "../config/**", "../mcp/**", "src/testing/**", "src/bin.ts", "../../apps/**", "../db/**", "../conformance/**"]

@@ -1,0 +1,6 @@
+[test]
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.95, functions = 0.95 }
+# Other packages measure their own coverage; count only this package's files here.
+# `scaffolds.gen.ts` is generated data.
+coveragePathIgnorePatterns = ["../contract/**", "../admin/**", "../core/**", "src/scaffolds.gen.ts", "src/testing/**", "scripts/**", "../../apps/**", "../db/**", "../conformance/**", "../create-tula/**"]

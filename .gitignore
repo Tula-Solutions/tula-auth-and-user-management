@@ -1,10 +1,15 @@
 # dependencies & build output
 node_modules/
 dist/
+.release/
 out/
 .turbo/
 coverage/
 *.tsbuildinfo
+
+# Playwright (bun run e2e)
+e2e/test-results/
+e2e/playwright-report/
 
 # env — only the example is committed
 .env
@@ -19,3 +24,9 @@ coverage/
 .claude/settings.local.json
 .claude/.state/
 .claude/worktrees/
+# a preview configuration the desktop app writes
+.claude/launch.json
+
+# Next.js (examples/nextjs-app-router)
+.next/
+next-env.d.ts

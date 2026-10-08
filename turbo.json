@@ -1,11 +1,39 @@
 {
+  "agentGuidance": false,
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
   "tasks": {
-    "build": { "dependsOn": ["^build"], "outputs": ["dist/**", "out/**"] },
-    "typecheck": { "outputs": [] },
-    "test": { "outputs": [] },
-    "test:coverage": { "outputs": [] },
-    "dev": { "cache": false, "persistent": true }
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "out/**"]
+    },
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
+    "typecheck": {
+      "dependsOn": ["transit", "generate:check"],
+      "outputs": []
+    },
+    "generate:check": {
+      "dependsOn": ["transit"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["transit", "generate:check"],
+      "outputs": []
+    },
+    "test:coverage": {
+      "dependsOn": ["transit", "generate:check"],
+      "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:integration": {
+      "cache": false,
+      "outputs": [],
+      "env": ["DATABASE_URL", "DATABASE_MIGRATION_URL", "REDIS_TEST_URL", "CI"]
+    }
   }
 }

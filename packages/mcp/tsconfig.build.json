@@ -1,0 +1,7 @@
+{
+  // What the declaration build (bunup) compiles: the shipped sources only.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "declaration": true },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/testing/**"]
+}

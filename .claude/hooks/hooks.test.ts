@@ -5,10 +5,27 @@ import { join } from 'node:path'
 
 const root = join(import.meta.dir, '..', '..')
 
+/**
+ * How long a spawned script may run. `Bun.spawnSync` blocks the thread the test runner's own
+ * timeout runs on, so a child that never exits would hang `bun run verify` for ever instead of
+ * failing one test; only a timeout on the spawn itself can stop it. These scripts take
+ * milliseconds.
+ */
+const SPAWN_TIMEOUT_MS = 10_000
+
+/** Run a command to completion, or fail the test naming it if it had to be killed. */
+function spawn(command: string[], options: { stdin?: Buffer; env?: Record<string, string> } = {}) {
+  const proc = Bun.spawnSync(command, { ...options, timeout: SPAWN_TIMEOUT_MS })
+  if (proc.exitedDueToTimeout) {
+    throw new Error(`timed out after ${SPAWN_TIMEOUT_MS} ms: ${command.join(' ')}`)
+  }
+  return proc
+}
+
 function run(script: string, stdin: string, args: string[] = []) {
-  const proc = Bun.spawnSync(['bash', join(root, script), ...args], {
+  const proc = spawn(['bash', join(root, script), ...args], {
     stdin: Buffer.from(stdin),
-    env: { ...process.env, CLAUDE_PROJECT_DIR: root },
+    env: { ...(process.env as Record<string, string>), CLAUDE_PROJECT_DIR: root },
   })
   return { code: proc.exitCode, stderr: proc.stderr.toString() }
 }
@@ -18,9 +35,19 @@ function protect(path: string) {
     .code
 }
 
+describe('spawned scripts', () => {
+  test('a script that never exits fails its test by name instead of hanging the run', () => {
+    const started = Date.now()
+    const hang = () => Bun.spawnSync(['bash', '-c', 'sleep 30'], { timeout: 200 })
+    expect(hang().exitedDueToTimeout).toBe(true)
+    expect(Date.now() - started).toBeLessThan(5_000)
+  })
+})
+
 describe('protect-files.sh', () => {
   test.each([
     'packages/contract/openapi.json',
+    'conformance/scenario.schema.json',
     'apps/api/src/routeTree.gen.ts',
     'apps/dashboard/src/components/ui/button.tsx',
     'bun.lock',
@@ -50,7 +77,7 @@ describe('protect-files.sh', () => {
 describe('.husky/commit-msg', () => {
   function commitMsg(subject: string) {
     const file = join(tmpdir(), `commit-msg-${crypto.randomUUID()}`)
-    Bun.spawnSync(['bash', '-c', 'printf "%s\\n" "$1" > "$2"', '_', subject, file])
+    spawn(['bash', '-c', 'printf "%s\\n" "$1" > "$2"', '_', subject, file])
     return run('.husky/commit-msg', '', [file]).code
   }
 
@@ -101,6 +128,35 @@ describe('workspace packages', () => {
     }
     expect(await Bun.file(bunfigPath).text()).toMatch(/coverageThreshold\s*=/)
   })
+
+  // Bun 1.4.2 does not read a per-test timeout from bunfig.toml: with `[test] timeout = 30000`
+  // a six-second test still fails with "timed out after 5000ms", and passes with
+  // `bun test --timeout 30000`. The key reads as if it worked, which is how apps/dashboard ran
+  // on the default for months. A timeout belongs on the command line of the package's scripts.
+  const bunfigs = [...new Bun.Glob('**/bunfig.toml').scanSync({ cwd: root, dot: true })].filter(
+    (path) => !path.split('/').includes('node_modules')
+  )
+
+  test('the bunfig.toml files are found', () => {
+    expect(bunfigs).toContain('apps/dashboard/bunfig.toml')
+  })
+
+  test.each(bunfigs)('%s sets no [test] timeout, which Bun ignores', async (path) => {
+    const config = Bun.TOML.parse(await Bun.file(join(root, path)).text()) as {
+      test?: { timeout?: unknown }
+    }
+    expect(config.test?.timeout).toBeUndefined()
+  })
+
+  // The one package whose tests may run longer than Bun's five seconds (AGENTS.md, "Testing"):
+  // its `waitFor` waits ten, and a query that gives up must fail with its own message.
+  test.each(['test', 'test:coverage'])(
+    'apps/dashboard passes its 30 s timeout on the command line of `%s`',
+    async (script) => {
+      const pkg = await Bun.file(join(root, 'apps/dashboard/package.json')).json()
+      expect(pkg.scripts[script]).toMatch(/^bun test (.* )?--timeout 30000( |$)/)
+    }
+  )
 })
 
 describe('protect-files.sh edge paths (F14)', () => {

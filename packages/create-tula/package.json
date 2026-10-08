@@ -1,0 +1,46 @@
+{
+  "name": "create-tula",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scaffold a Tula Auth project: a Compose file, a .env with generated secrets, tula.config.ts and an example app (`bun create tula`).",
+  "sideEffects": false,
+  "bin": {
+    "create-tula": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "bin": {
+      "create-tula": "./dist/bin.js"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "engines": {
+    "bun": ">=1.2.0"
+  },
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "templates:sync": "bun run scripts/sync-templates.ts && bun run ../mcp/scripts/sync-scaffolds.ts",
+    "generate:check": "bun run scripts/sync-templates.ts --check"
+  },
+  "devDependencies": {
+    "@tula/example-nextjs": "workspace:*",
+    "@tula/example-react-vite": "workspace:*",
+    "@tula/tsconfig": "workspace:*"
+  }
+}

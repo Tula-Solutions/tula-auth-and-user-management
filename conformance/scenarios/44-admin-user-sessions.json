@@ -1,0 +1,382 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "admin user sessions",
+  "description": "An operator can see a user's active sessions (their devices) and end one of them. The list carries no token and marks none as current: the caller is not one of the user's devices. Ending one session leaves the others alone, stops its still-unexpired access token at once, and is idempotent. A session that does not exist, or is another user's, is the same 404.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "otherEmail": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "verify the address: the sign-up completes with a first session",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "sessionId": "session.sessionId"
+      }
+    },
+    {
+      "name": "start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the password completes it: a second session",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "accessToken2": "session.accessToken",
+        "sessionId2": "session.sessionId"
+      }
+    },
+    {
+      "name": "the operator lists the user's sessions: both, neither current, no token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}/sessions",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": {
+            "$set": [
+              {
+                "id": "{{sessionId}}",
+                "client": "ios",
+                "current": false
+              },
+              {
+                "id": "{{sessionId2}}",
+                "client": "ios",
+                "current": false
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "a user that does not exist has no list",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/00000000-0000-7000-8000-00000000dead/sessions",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "resource.not_found"
+        }
+      }
+    },
+    {
+      "name": "the list needs a credential",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}/sessions",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "a session that does not exist cannot be ended",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{userId}}/sessions/00000000-0000-7000-8000-00000000dead",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "resource.not_found"
+        }
+      }
+    },
+    {
+      "name": "another user is created",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{otherEmail}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "otherUserId": "id"
+      }
+    },
+    {
+      "name": "a session cannot be ended through another user: the same 404",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{otherUserId}}/sessions/{{sessionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "resource.not_found"
+        }
+      }
+    },
+    {
+      "name": "the first session still works",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the operator ends the first session",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{userId}}/sessions/{{sessionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "its access token stops working at once",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "on the other instance too",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken}}",
+        "instance": "second"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "session.revoked"
+        }
+      }
+    },
+    {
+      "name": "the second session is untouched",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{accessToken2}}"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "ending it again changes nothing",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{userId}}/sessions/{{sessionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "the list now holds the second session only",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}/sessions",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": {
+            "$set": [
+              {
+                "id": "{{sessionId2}}",
+                "current": false
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "the audit log says an admin ended it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=session.revoked&targetId={{sessionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "session.revoked",
+              "actor": {
+                "type": "admin"
+              },
+              "target": {
+                "type": "session",
+                "id": "{{sessionId}}"
+              },
+              "metadata": {
+                "reason": "revoked_by_admin"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "and the filter by kind of actor finds it; the dashboard did nothing here",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?actorType=instance_admin&targetId={{sessionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          },
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "a time range in the future is empty",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{sessionId}}&from=2999-01-01T00:00:00Z",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "a time that is not one is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?from=yesterday",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    }
+  ]
+}

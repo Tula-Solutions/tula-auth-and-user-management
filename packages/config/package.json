@@ -1,0 +1,36 @@
+{
+  "name": "@tula/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's config file: defineConfig() for tula.config.ts, validated with the contract's schemas. Environment settings and OAuth providers as code; secrets only by env-var reference.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {
+    "@tula/contract": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tula/tsconfig": "workspace:*"
+  }
+}

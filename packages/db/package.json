@@ -1,0 +1,32 @@
+{
+  "name": "@tula/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's Postgres schema (Drizzle), committed migrations, row-level security and tenant helpers.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test --timeout 20000",
+    "test:coverage": "bun test --timeout 20000 --coverage",
+    "test:integration": "bun test --timeout 30000 ./src/*.integration.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check && bun run src/scripts/check-drift.ts",
+    "db:migrate": "bun run src/scripts/migrate.ts",
+    "seed": "bun run src/scripts/seed.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.3",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@tula/tsconfig": "workspace:*",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11"
+  }
+}

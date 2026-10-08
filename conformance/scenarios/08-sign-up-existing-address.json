@@ -1,0 +1,220 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "sign-up for an existing address",
+  "description": "Signing up with an address that already has an account answers exactly like a new address, is not completed by a code that worked for that address before, and changes nothing about the account.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "otherPassword": {
+      "generate": "password"
+    },
+    "fresh": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"]
+          },
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "the right code completes the sign-up and returns tokens in the body for a native client",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "sessionId": "step.sessionId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "let the per-address email cooldown pass",
+      "wait": "61s"
+    },
+    {
+      "name": "a sign-up for a new address, for comparison",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{fresh}}",
+          "password": "{{otherPassword}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"],
+            "userId": "$absent"
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a second sign-up for the existing address answers the same",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{otherPassword}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification",
+            "strategies": ["email_code"],
+            "userId": "$absent"
+          },
+          "session": "$absent"
+        }
+      },
+      "capture": {
+        "secondSignUpId": "id",
+        "secondSignUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the code that verified this address before does not complete it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{secondSignUpId}}/verify-email",
+        "attempt": "{{secondSignUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "verification.invalid_code"
+        }
+      }
+    },
+    {
+      "name": "start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the password from the second sign-up does not open the account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{otherPassword}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "the original password still does",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          }
+        }
+      }
+    }
+  ]
+}

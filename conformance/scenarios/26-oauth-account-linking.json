@@ -1,0 +1,638 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "OAuth account linking",
+  "description": "Which account a provider identity signs in to. A provider account is connected automatically to an existing account only when the provider asserts the address verified and the account's own address is verified; an account whose address was never verified is never connected (oauth.account_exists). A signed-in user connects a provider account from their profile whatever its address, unless it belongs to another user; a link ticket needs its binding and signs nobody in. Disconnecting is refused when it would remove the user's last way to sign in. Uses the server's mock provider. The provider's credentials are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "member": {
+      "generate": "email"
+    },
+    "squatted": {
+      "generate": "email"
+    },
+    "newcomer": {
+      "generate": "email"
+    },
+    "elsewhere": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment's own google credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-client",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "an account with a verified address and a password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{member}}",
+          "password": "{{password}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      },
+      "capture": {
+        "verifiedId": "id"
+      }
+    },
+    {
+      "name": "the member continues with Google for the first time",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding",
+        "aStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{member}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "both sides have verified the address: the provider account is connected and the member signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{verifiedId}}",
+            "sessionId": "$any"
+          },
+          "session": "$any"
+        }
+      },
+      "capture": {
+        "memberToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the member now has a connected account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "google",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "memberIdentity": "data.0.id"
+      },
+      "captureJson": {
+        "memberIdentities": "data"
+      }
+    },
+    {
+      "name": "the connection is in the audit log",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=user.identity_linked&targetId={{verifiedId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": "$any",
+          "data": [
+            {
+              "id": "$any",
+              "action": "user.identity_linked",
+              "actor": "$any",
+              "target": {
+                "type": "user",
+                "id": "{{verifiedId}}"
+              },
+              "ipAddress": "$any",
+              "userAgent": "$any",
+              "metadata": {
+                "provider": "google",
+                "method": "auto"
+              },
+              "occurredAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the member, who has a password, disconnects it",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/identities/{{memberIdentity}}",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "an account whose address was never verified",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{squatted}}",
+          "password": "{{password}}",
+          "emailVerified": false
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      },
+      "capture": {
+        "unverifiedId": "id"
+      }
+    },
+    {
+      "name": "someone continues with Google using that address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding",
+        "bStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{bUrl}}",
+        "email": "{{squatted}}",
+        "captureTicket": "bTicket",
+        "captureAttempt": "bId"
+      }
+    },
+    {
+      "name": "the provider account is not connected to the unverified account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{bTicket}}",
+          "attemptId": "{{bId}}",
+          "binding": "{{bBinding}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.account_exists",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken"]
+      }
+    },
+    {
+      "name": "a new person signs up with Google",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "cUrl": "authorizationUrl",
+        "cBinding": "binding",
+        "cStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{cUrl}}",
+        "email": "{{newcomer}}",
+        "captureTicket": "cTicket",
+        "captureAttempt": "cId",
+        "subject": "{{newcomer}}"
+      }
+    },
+    {
+      "name": "and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{cTicket}}",
+          "attemptId": "{{cId}}",
+          "binding": "{{cBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "newcomerToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "their only way in is that provider account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{newcomerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "google",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "newcomerIdentity": "data.0.id"
+      }
+    },
+    {
+      "name": "so disconnecting it is refused",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/identities/{{newcomerIdentity}}",
+        "accessToken": "{{newcomerToken}}"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "identity.last_sign_in_method",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the member starts connecting a provider account from their profile",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attemptId": "$any",
+          "expiresAt": "$any",
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "dUrl": "authorizationUrl",
+        "dBinding": "binding"
+      }
+    },
+    {
+      "name": "the provider vouches for the newcomer's account",
+      "oauth": {
+        "authorizationUrl": "{{dUrl}}",
+        "email": "{{newcomer}}",
+        "captureTicket": "dTicket",
+        "captureAttempt": "dId",
+        "subject": "{{newcomer}}"
+      }
+    },
+    {
+      "name": "a provider account that belongs to another user is not connected",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth/exchange",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "ticket": "{{dTicket}}",
+          "attemptId": "{{dId}}",
+          "binding": "{{dBinding}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.identity_in_use",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the member starts again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "eUrl": "authorizationUrl",
+        "eBinding": "binding"
+      }
+    },
+    {
+      "name": "the provider vouches for an account with another address",
+      "oauth": {
+        "authorizationUrl": "{{eUrl}}",
+        "email": "{{elsewhere}}",
+        "captureTicket": "eTicket",
+        "captureAttempt": "eId"
+      }
+    },
+    {
+      "name": "a link ticket does not sign anyone in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{eTicket}}",
+          "attemptId": "{{eId}}",
+          "binding": "{{eBinding}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "status": 410,
+          "code": "oauth.ticket_invalid",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "without the binding nothing is connected",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth/exchange",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "ticket": "{{eTicket}}",
+          "attemptId": "{{eId}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.different_browser",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "with it, the account is connected whatever its address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth/exchange",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "ticket": "{{eTicket}}",
+          "attemptId": "{{eId}}",
+          "binding": "{{eBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "provider": "google",
+          "createdAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "that provider account now signs the member in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "fUrl": "authorizationUrl",
+        "fBinding": "binding",
+        "fStartSecret": "attempt.attemptSecret"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback hands the app a ticket",
+      "oauth": {
+        "authorizationUrl": "{{fUrl}}",
+        "email": "{{elsewhere}}",
+        "captureTicket": "fTicket",
+        "captureAttempt": "fId"
+      }
+    },
+    {
+      "name": "as the member, not as a new account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{fTicket}}",
+          "attemptId": "{{fId}}",
+          "binding": "{{fBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{verifiedId}}",
+            "sessionId": "$any"
+          },
+          "session": "$any"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

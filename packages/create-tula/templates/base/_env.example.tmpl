@@ -1,0 +1,15 @@
+# What .env holds. create-tula generated the real one (it is ignored by git); a teammate copies
+# this file to .env and fills in values of their own:
+#   openssl rand -hex 32   # for each of the four secrets
+COMPOSE_PROJECT_NAME={{name}}
+TULA_API_IMAGE={{apiImage}}
+TULA_MASTER_KEY=
+TULA_ADMIN_TOKEN=
+POSTGRES_PASSWORD=
+TULA_API_DB_PASSWORD=
+API_PORT={{apiPort}}
+MAILPIT_UI_PORT={{mailpitPort}}
+# Local development only. Serves Google, GitHub and Apple from a built-in mock provider that
+# signs in as any address typed into its consent page: for trying the provider buttons before
+# you have real credentials. Never on an API anyone else can reach.
+# OAUTH_MOCK_PROVIDER=true

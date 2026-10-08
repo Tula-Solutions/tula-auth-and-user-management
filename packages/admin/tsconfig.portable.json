@@ -1,0 +1,12 @@
+{
+  // The admin client runs on any server runtime (Node, Bun, Deno, edge workers), so its
+  // shipped sources are typechecked with the web platform's types only: no `bun-types`, no
+  // `@types/node`, so `Buffer`, `process` or a `node:` import fails here.
+  "extends": "@tula/tsconfig/library.json",
+  "compilerOptions": {
+    "types": [],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts"]
+}

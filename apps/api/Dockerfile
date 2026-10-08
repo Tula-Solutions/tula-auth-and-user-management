@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+# Tula API image. Build from the repository root:
+#   docker build -f apps/api/Dockerfile -t tula-api .
+# Bun runs the TypeScript sources directly, so there is no compile step: the image is the
+# production dependencies plus the sources of the API and the two packages it imports.
+#
+# The base image is pinned by digest (the multi-arch index, so amd64 and arm64 both resolve):
+# a tag can be moved to different contents, a digest cannot. Dependabot proposes the update
+# when a new digest or version is published (.github/dependabot.yml); keep the tag in step with
+# `packageManager` in the root package.json. To check or refresh it by hand:
+#   docker buildx imagetools inspect oven/bun:1.4.2-slim
+FROM oven/bun:1.4.2-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS base
+WORKDIR /usr/src/app
+
+# Production dependencies only, for the workspaces the API is built from. The manifests of the
+# browser packages (`packages/react`, `packages/nextjs`, `apps/dashboard`, `examples/*`) are deliberately NOT
+# copied: with them present, `bun install --production` installs their dependencies and peers,
+# and the API image gains React and Next.js. A frozen lockfile installs fine with workspaces missing (they are skipped); the
+# `self-host` CI job builds this image, so a Bun that stops tolerating that fails there.
+FROM base AS install
+COPY package.json bun.lock ./
+COPY apps/api/package.json apps/api/
+COPY packages/contract/package.json packages/contract/
+COPY packages/db/package.json packages/db/
+COPY packages/tsconfig/package.json packages/tsconfig/
+COPY packages/conformance/package.json packages/conformance/
+COPY packages/core/package.json packages/core/
+RUN bun install --frozen-lockfile --production --ignore-scripts
+
+# The dashboard (apps/dashboard): a single-page app built with Vite. It has its own stage and
+# its own install, with its development dependencies (Vite, Tailwind, React), so that none of
+# them reaches the `install` stage above or the released image. Only the manifests it needs
+# are copied; its generated files (Orval's hooks, the route tree) are committed, so the build
+# needs no generator.
+FROM base AS dashboard
+COPY package.json bun.lock ./
+COPY apps/dashboard/package.json apps/dashboard/
+COPY packages/contract/package.json packages/contract/
+COPY packages/tsconfig/package.json packages/tsconfig/
+RUN bun install --frozen-lockfile --ignore-scripts
+COPY packages/tsconfig packages/tsconfig
+COPY packages/contract packages/contract
+COPY apps/dashboard apps/dashboard
+RUN bun run --filter @tula/dashboard build
+
+FROM base AS release
+ENV NODE_ENV=production
+COPY --from=install /usr/src/app ./
+COPY packages/tsconfig packages/tsconfig
+COPY packages/contract packages/contract
+COPY packages/db packages/db
+COPY apps/api apps/api
+# The dashboard's static files (ADR 0032), from its own build stage: no part of its toolchain
+# or of React is in this image, only `dist`. The API serves it at /dashboard under a strict
+# Content-Security-Policy, and answers 404 there when the directory is absent.
+COPY --from=dashboard /usr/src/app/apps/dashboard/dist apps/dashboard/dist
+# The API reference (/v1/docs) is served from the installed package, never a CDN (ADR 0032).
+# Fail the build, not the page, if the bundle is not in the image.
+RUN bun -e "const {findApiDocsBundle}=await import('./apps/api/src/lib/api-docs.ts');const b=findApiDocsBundle('/usr/src/app/apps/api/src');if(!b){console.error('the API reference bundle is missing');process.exit(1)}console.log('API reference bundle',b.version)"
+
+# Never run as root: the server needs no write access to its own files.
+USER bun
+WORKDIR /usr/src/app/apps/api
+EXPOSE 3003/tcp
+
+# `/v1/ready` also checks the database, so an instance that cannot serve is not marked healthy.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
+  CMD ["bun", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3003) + '/v1/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+
+CMD ["bun", "run", "src/server.ts"]

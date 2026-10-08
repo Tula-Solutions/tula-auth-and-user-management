@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.next/
+next-env.d.ts
+
+# Secrets: the master key, the admin token and database passwords (.env), and the
+# development keys `tula dev` writes (.env.local). Never commit them.
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log

@@ -1,0 +1,746 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "needsSecretKey": {
+      "type": "boolean"
+    },
+    "variables": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "generate": {
+                "type": "string",
+                "enum": ["email", "password"]
+              }
+            },
+            "required": ["generate"],
+            "additionalProperties": false
+          }
+        ],
+        "ref": "ConformanceVariable"
+      }
+    },
+    "steps": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "request": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+                  },
+                  "path": {
+                    "type": "string",
+                    "format": "starts_with",
+                    "pattern": "^\\/.*"
+                  },
+                  "auth": {
+                    "default": "publishable",
+                    "type": "string",
+                    "enum": ["publishable", "secret", "none"],
+                    "ref": "ConformanceAuth"
+                  },
+                  "accessToken": {
+                    "type": "string"
+                  },
+                  "client": {
+                    "type": "string",
+                    "enum": ["web", "ios", "android", "server"]
+                  },
+                  "attempt": {
+                    "type": "string"
+                  },
+                  "body": {},
+                  "headers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "instance": {
+                    "type": "string",
+                    "enum": ["first", "second"]
+                  }
+                },
+                "required": ["method", "path"],
+                "ref": "ConformanceRequest"
+              },
+              "expect": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  "body": {},
+                  "bodyExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "claims": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "headers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": ["status"],
+                "ref": "ConformanceExpect"
+              },
+              "times": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "capture": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "captureHeaders": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                }
+              },
+              "captureJson": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "captureCookie": {
+                "type": "object",
+                "properties": {
+                  "match": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "pair": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["match"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "request", "expect"],
+            "additionalProperties": false,
+            "ref": "ConformanceRequestStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "emailCode": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  }
+                },
+                "required": ["to", "capture"]
+              }
+            },
+            "required": ["name", "emailCode"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailCodeStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "emailLink": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "captureToken": {
+                    "type": "string"
+                  },
+                  "captureAttempt": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": ["to", "captureToken"]
+              }
+            },
+            "required": ["name", "emailLink"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailLinkStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "totp": {
+                "type": "object",
+                "properties": {
+                  "secret": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  }
+                },
+                "required": ["secret", "capture"]
+              }
+            },
+            "required": ["name", "totp"],
+            "additionalProperties": false,
+            "ref": "ConformanceTotpStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "oauth": {
+                "type": "object",
+                "properties": {
+                  "authorizationUrl": {
+                    "type": "string"
+                  },
+                  "callback": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "deny": {
+                    "type": "boolean"
+                  },
+                  "captureTicket": {
+                    "type": "string"
+                  },
+                  "captureAttempt": {
+                    "type": "string"
+                  },
+                  "expectError": {
+                    "type": "string"
+                  },
+                  "captureCallback": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "oauth"],
+            "additionalProperties": false,
+            "ref": "ConformanceOAuthStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "passkey": {
+                "type": "object",
+                "properties": {
+                  "authenticator": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "create": {
+                    "type": "string"
+                  },
+                  "get": {
+                    "type": "string"
+                  },
+                  "origin": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "userVerified": {
+                    "type": "boolean"
+                  },
+                  "counter": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "synced": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["authenticator", "origin", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "passkey"],
+            "additionalProperties": false,
+            "ref": "ConformancePasskeyStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "wait": {
+                "type": "string",
+                "ref": "Duration"
+              }
+            },
+            "required": ["name", "wait"],
+            "additionalProperties": false,
+            "ref": "ConformanceWaitStep"
+          }
+        ],
+        "ref": "ConformanceStep"
+      }
+    },
+    "cleanup": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "request": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+                  },
+                  "path": {
+                    "type": "string",
+                    "format": "starts_with",
+                    "pattern": "^\\/.*"
+                  },
+                  "auth": {
+                    "default": "publishable",
+                    "type": "string",
+                    "enum": ["publishable", "secret", "none"],
+                    "ref": "ConformanceAuth"
+                  },
+                  "accessToken": {
+                    "type": "string"
+                  },
+                  "client": {
+                    "type": "string",
+                    "enum": ["web", "ios", "android", "server"]
+                  },
+                  "attempt": {
+                    "type": "string"
+                  },
+                  "body": {},
+                  "headers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "instance": {
+                    "type": "string",
+                    "enum": ["first", "second"]
+                  }
+                },
+                "required": ["method", "path"],
+                "ref": "ConformanceRequest"
+              },
+              "expect": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 599
+                  },
+                  "body": {},
+                  "bodyExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "claims": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "headers": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": ["status"],
+                "ref": "ConformanceExpect"
+              },
+              "times": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "capture": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "captureHeaders": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9-]*$"
+                }
+              },
+              "captureJson": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "captureCookie": {
+                "type": "object",
+                "properties": {
+                  "match": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "pair": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["match"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "request", "expect"],
+            "additionalProperties": false,
+            "ref": "ConformanceRequestStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "emailCode": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  }
+                },
+                "required": ["to", "capture"]
+              }
+            },
+            "required": ["name", "emailCode"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailCodeStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "emailLink": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "captureToken": {
+                    "type": "string"
+                  },
+                  "captureAttempt": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": ["to", "captureToken"]
+              }
+            },
+            "required": ["name", "emailLink"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailLinkStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "totp": {
+                "type": "object",
+                "properties": {
+                  "secret": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  }
+                },
+                "required": ["secret", "capture"]
+              }
+            },
+            "required": ["name", "totp"],
+            "additionalProperties": false,
+            "ref": "ConformanceTotpStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "oauth": {
+                "type": "object",
+                "properties": {
+                  "authorizationUrl": {
+                    "type": "string"
+                  },
+                  "callback": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "deny": {
+                    "type": "boolean"
+                  },
+                  "captureTicket": {
+                    "type": "string"
+                  },
+                  "captureAttempt": {
+                    "type": "string"
+                  },
+                  "expectError": {
+                    "type": "string"
+                  },
+                  "captureCallback": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "oauth"],
+            "additionalProperties": false,
+            "ref": "ConformanceOAuthStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "passkey": {
+                "type": "object",
+                "properties": {
+                  "authenticator": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "create": {
+                    "type": "string"
+                  },
+                  "get": {
+                    "type": "string"
+                  },
+                  "origin": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "userVerified": {
+                    "type": "boolean"
+                  },
+                  "counter": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "synced": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["authenticator", "origin", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "passkey"],
+            "additionalProperties": false,
+            "ref": "ConformancePasskeyStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "wait": {
+                "type": "string",
+                "ref": "Duration"
+              }
+            },
+            "required": ["name", "wait"],
+            "additionalProperties": false,
+            "ref": "ConformanceWaitStep"
+          }
+        ],
+        "ref": "ConformanceStep"
+      }
+    }
+  },
+  "required": ["name", "description", "steps"],
+  "additionalProperties": false,
+  "ref": "ConformanceScenario"
+}

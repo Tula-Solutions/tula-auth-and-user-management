@@ -1,0 +1,38 @@
+{
+  "name": "@tula/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's headless TypeScript client for browsers, Node, Bun and edge runtimes: server-driven flows, sessions and single-flight token refresh.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p . && bun run typecheck:portable",
+    "typecheck:portable": "tsc --noEmit -p tsconfig.portable.json",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "generate": "bun run scripts/generate.ts",
+    "generate:check": "bun run scripts/generate.ts --check"
+  },
+  "dependencies": {
+    "@tula/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "@tula/tsconfig": "workspace:*"
+  }
+}

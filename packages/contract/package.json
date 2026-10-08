@@ -1,0 +1,63 @@
+{
+  "name": "@tula/contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tula's public, language-neutral contract: schemas, flow protocol, error codes, token claims, password policy.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./error-codes": "./src/error-codes.ts",
+    "./headers": "./src/headers.ts",
+    "./issuer": "./src/issuer.ts",
+    "./password-rules": "./src/password-rules.ts",
+    "./theme": "./src/theme.ts",
+    "./openapi.json": "./openapi.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./error-codes": {
+        "types": "./dist/error-codes.d.ts",
+        "default": "./dist/error-codes.js"
+      },
+      "./headers": {
+        "types": "./dist/headers.d.ts",
+        "default": "./dist/headers.js"
+      },
+      "./issuer": {
+        "types": "./dist/issuer.d.ts",
+        "default": "./dist/issuer.js"
+      },
+      "./password-rules": {
+        "types": "./dist/password-rules.d.ts",
+        "default": "./dist/password-rules.js"
+      },
+      "./theme": {
+        "types": "./dist/theme.d.ts",
+        "default": "./dist/theme.js"
+      },
+      "./openapi.json": "./openapi.json",
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "dist",
+    "openapi.json"
+  ],
+  "scripts": {
+    "build": "bunup",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tula/tsconfig": "workspace:*"
+  }
+}

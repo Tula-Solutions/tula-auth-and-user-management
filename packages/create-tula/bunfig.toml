@@ -1,0 +1,6 @@
+[test]
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.9, functions = 0.9 }
+# `bin.ts` is the lines that hand the process to `main`; a test runs it as a child process,
+# which coverage does not see.
+coveragePathIgnorePatterns = ["src/bin.ts", "scripts/**"]

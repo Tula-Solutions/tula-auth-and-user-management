@@ -1,0 +1,8 @@
+{
+  // What the declaration build (bunup) compiles: the shipped sources only. Tests and the test
+  // harness import `@tula/core`'s test doubles by relative path; compiling them here would
+  // write declaration files into that package's source tree.
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/testing/**"]
+}

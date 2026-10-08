@@ -1,0 +1,12 @@
+{
+  "extends": "../../packages/tsconfig/base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["bun-types"],
+    "paths": {
+      "@tula/core": ["../../packages/core/src/index.ts"],
+      "@tula/admin": ["../../packages/admin/src/index.ts"]
+    }
+  },
+  "include": ["*.ts"]
+}

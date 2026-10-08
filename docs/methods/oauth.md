@@ -1,0 +1,202 @@
+# Google, GitHub and Apple (OAuth)
+
+"Continue with Google", GitHub or Apple, and connecting or disconnecting those accounts in
+the account page. Each environment uses its own credentials; none ship with Tula.
+The reasoning (the callback, the ticket, when accounts are linked) is in
+[ADR 0026](../adr/0026-oauth.md).
+
+> **Not verified against the live consoles.** Nothing in this repository has real provider
+> credentials: the flow is tested against the API's built-in mock provider. The redirect URI,
+> the scopes and the protocol are what the code sends; the console steps in the setup
+> checklists are written from each provider's documentation and have not been clicked through.
+
+## Switch it on
+
+Three things per provider, in this order:
+
+1. **Register an app with the provider**, giving it Tula's redirect URI. It is on the API,
+   not on your app, and is exactly `PUBLIC_URL/v1/oauth/callback/<provider>`, for example
+   `https://auth.example.com/v1/oauth/callback/google`. `GET /v1/admin/oauth-providers` lists
+   it as `callbackUrl`. Checklists: [Google](../providers/google.md),
+   [GitHub](../providers/github.md), [Apple](../providers/apple.md).
+2. **Give Tula the credentials.**
+3. **Allow your app's landing page** (the page that renders `<OAuthCallback>`) in
+   `urls.allowedRedirectUrls`, exactly.
+
+| Provider | Redirect URI | Scopes Tula asks for | Credentials |
+| --- | --- | --- | --- |
+| Google | `PUBLIC_URL/v1/oauth/callback/google` | `openid`, `email`, `profile` | client id, client secret |
+| GitHub | `PUBLIC_URL/v1/oauth/callback/github` | `read:user`, `user:email` | client id, client secret |
+| Apple | `PUBLIC_URL/v1/oauth/callback/apple` (https and a real domain; not `localhost`) | name and email | Services ID, team id, key id, the `.p8` key |
+
+| Where | How |
+| --- | --- |
+| Dashboard | **Sign-in methods**: configure Google, GitHub and Apple. A saved secret is write-only. |
+| `tula.config.ts` | `providers`, with every secret as `env('NAME')`, then `tula apply`. |
+| Admin API | `PUT /v1/admin/oauth-providers/<provider>`. |
+
+<!-- snippet: examples/tula-config/tula.config.ts#providers -->
+```ts
+providers: {
+  google: {
+    clientId: '1234567890-abc.apps.googleusercontent.com',
+    clientSecret: env('GOOGLE_CLIENT_SECRET'),
+  },
+  github: { clientId: 'Iv1.fedcba9876543210', clientSecret: env('GITHUB_CLIENT_SECRET') },
+  apple: {
+    clientId: 'app.northline.web',
+    teamId: 'A1B2C3D4E5',
+    keyId: 'K1L2M3N4O5',
+    // The whole .p8 file's contents, in a variable.
+    privateKey: env('APPLE_PRIVATE_KEY'),
+  },
+},
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/admin.ts#providers -->
+```ts
+await admin.call('updateOAuthProvider', {
+  params: { provider: 'google' },
+  body: {
+    enabled: true,
+    clientId: '1234567890-abc.apps.googleusercontent.com',
+    clientSecret, // from your secret manager; it is stored encrypted and never returned
+  },
+})
+const { data } = await admin.call('listOAuthProviders')
+// data.data[n].callbackUrl is the redirect URI to register with the provider.
+```
+<!-- /snippet -->
+
+**Without credentials**, in local development only: start the API with
+`OAUTH_MOCK_PROVIDER=true`. Every provider is then served by a built-in mock whose consent
+page signs in as whatever address is typed into it. The API refuses to start with it unless
+`ENVIRONMENT=local` and `PUBLIC_URL` is a loopback address. A project made by `create-tula`
+reads the switch from its `.env`.
+
+## What the user sees
+
+- A button per enabled provider above the sign-in and sign-up forms.
+- The provider's own consent page, then your app's callback page for a moment, then the app.
+- In the account page: the connected accounts, **Connect** for the others and **Disconnect**
+  (refused for the last way to sign in).
+- A provider account whose address already belongs to a Tula user is connected to that user
+  only when both sides have verified the address; otherwise the user is told an account
+  exists and to sign in to it first.
+
+## Security properties and limits
+
+- The provider returns to the API, which sets no cookie and returns no token: it redirects to
+  your allow-listed page with a single-use, 60-second ticket in the URL fragment.
+- The ticket is honoured only in the tab that started, together with a binding kept in that
+  tab's `sessionStorage` (`tula.oauth.<attempt id>`; not a token). This is what stops a
+  sign-in being planted in someone else's browser.
+- The provider's authorization code is bound to the sign-in that asked for it. With Google
+  and GitHub that is PKCE (an S256 `code_challenge` on the way out, the `code_verifier` with
+  the token request; the verifier never leaves the server); with Google and Apple it is also
+  the `nonce` in the signed ID token. Apple documents no PKCE and gets none. GitHub's PKCE
+  was tested against the built-in mock provider and the requests the adapter builds, not
+  against github.com.
+- A provider sign-in is a **first** factor: a user with two-step verification is still asked
+  for the second step.
+- A provider address that the provider does not assert as verified is refused.
+- No provider token is stored. Credentials are sealed with `TULA_MASTER_KEY` and never
+  returned.
+- Connecting an account needs a recent sign-in ([step-up](two-step-verification.md)).
+  Connecting and disconnecting are in the audit log and announced to the user by email.
+
+## SDK calls
+
+`<SignIn>` and `<SignUp>` show the buttons by themselves. The provider is told where the
+callback page is (`oauthCallbackUrl`, in the layout shown under
+[emailed link](email-link.md#sdk-calls)), and that page renders one component:
+
+<!-- snippet: examples/nextjs-app-router/app/oauth/callback/page.tsx -->
+```tsx
+import { OAuthCallback } from '@tula/nextjs'
+
+/**
+ * Where "Continue with …" and "Connect …" come back to (`oauthCallbackUrl` in the layout).
+ * The provider returns the visitor to the API's own host, which sends them here with a
+ * one-time ticket in the URL fragment; the component exchanges it through the route handler,
+ * so the session's cookies are this app's. The visitor is not signed in yet when they arrive,
+ * so the proxy leaves this route public.
+ *
+ * In a deployed app this exact URL is listed in the environment's `urls.allowedRedirectUrls`;
+ * a local API allows any loopback URL.
+ */
+export default function OAuthCallbackPage() {
+  return <OAuthCallback userProfileUrl='/profile' />
+}
+```
+<!-- /snippet -->
+
+`@tula/core`:
+
+<!-- snippet: examples/docs-snippets/core.ts#oauth-start -->
+```ts
+// Keeps a binding for this tab and navigates to the provider.
+await tula.signIn.withOAuth({
+  provider: 'google',
+  redirectUrl: `${location.origin}/oauth/callback`,
+})
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/core.ts#oauth-callback -->
+```ts
+// On /oauth/callback, on every load:
+const outcome = await tula.signIn.handleOAuthCallback()
+switch (outcome.status) {
+  case 'complete': // signed in
+    break
+  case 'needs_step': // outcome.flow.step is needs_second_factor or needs_factor_enrolment
+    break
+  case 'linked': // a link started with tula.user.identities.link(): outcome.identity
+    break
+  case 'different_browser': // this browser did not start it; nothing was completed
+    break
+  case 'error': // outcome.code: 'oauth.account_exists', 'oauth.access_denied', …
+    break
+  case 'none': // no OAuth answer in the address
+    break
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: examples/docs-snippets/core.ts#oauth-identities -->
+```ts
+const identities = await tula.user.identities.list()
+await tula.user.identities.link({
+  provider: 'github',
+  redirectUrl: `${location.origin}/oauth/callback`,
+})
+```
+<!-- /snippet -->
+
+Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
+[`@tula/nextjs`](../reference/nextjs.md).
+
+## Troubleshooting
+
+| Code | What it means and what to do |
+| --- | --- |
+| `oauth.provider_error` | The provider refused the exchange. With a correct redirect URI this is usually a wrong client secret. `tula doctor` prints the redirect URI each enabled provider needs. |
+| `oauth.access_denied` | The user cancelled at the provider. |
+| `oauth.state_invalid` | The callback's `state` is unknown, used or expired: the user took too long or reloaded the provider's redirect. Start again. |
+| `oauth.ticket_invalid` | The ticket was used or is older than 60 seconds. Start again. |
+| `oauth.different_browser` | The callback page was opened in a tab that did not start the sign-in. |
+| `oauth.email_unverified` | The provider does not vouch for the address. The user verifies it at the provider. |
+| `oauth.email_missing` | The provider returned no address (GitHub with every address hidden). |
+| `oauth.account_exists` | A Tula account has this address and cannot be linked automatically. The user signs in another way and connects the provider in the account page. |
+| `oauth.identity_in_use` | That provider account is connected to another user. |
+| `oauth.already_linked` | The user already has an account of this provider connected. |
+| `identity.last_sign_in_method` | Disconnecting would leave the account with no way to sign in. |
+| `request.redirect_not_allowed` | The callback page is not in `urls.allowedRedirectUrls`. |
+| `link.cross_origin` | `redirectUrl` is not on the page's own origin (a client code: nothing was sent). |
+| `auth.method_disabled` | The provider is not enabled for this environment. |
+
+`redirect_uri_mismatch` (or its equivalent) on the provider's own page means the URI
+registered there differs from `callbackUrl`: usually `http` against `https`, or a trailing
+slash.

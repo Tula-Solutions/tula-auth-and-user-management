@@ -1,0 +1,12 @@
+{
+  // The proof that the client runs outside Bun and Node: the shipped sources (and everything
+  // they import from the contract) are typechecked with the web platform's types only. No
+  // `bun-types`, no `@types/node`, so `Buffer`, `process` or a `node:` import fails here.
+  "extends": "@tula/tsconfig/library.json",
+  "compilerOptions": {
+    "types": [],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/testing/**"]
+}

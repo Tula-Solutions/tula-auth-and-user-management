@@ -9,16 +9,20 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request replaces the run in progress. On `develop` and `main` a run
+# in progress is never cancelled by a later push: it finishes, and the newest push runs next.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Actions are referenced by tag on purpose: Dependabot follows them (.github/dependabot.yml).
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: tula
           POSTGRES_PASSWORD: tula
@@ -27,13 +31,197 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U tula -d tula"
           --health-interval 5s --health-timeout 3s --health-retries 10
+      # The Redis adapters' Lua scripts are only proved against a real server
+      # (apps/api/src/adapters/redis/redis.integration.ts, part of `test:integration`).
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
-      DATABASE_URL: postgres://tula:tula@localhost:5432/tula
+      DATABASE_URL: postgres://tula_api:tula_api@localhost:5432/tula
+      DATABASE_MIGRATION_URL: postgres://tula:tula@localhost:5432/tula
+      REDIS_TEST_URL: redis://localhost:6379
       TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || 'HEAD~1' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
       - run: bun run verify
+      - name: Create database roles (mirrors docker/postgres/init.sql)
+        run: psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
+      - run: bun run db:migrate
+      - run: bun run test:integration
+
+  # Browser behaviour is tested in a browser (Phase 1 plan, rule 3): the example app, built only
+  # from @tula/react components, against the real API served in process with memory adapters
+  # (e2e/server.ts), driven by Playwright, with axe on every screen in light and dark. Its own
+  # job, not part of `bun run verify`: it needs a browser download.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: Install Chromium and its system libraries
+        run: bunx playwright install --with-deps chromium
+      - run: bun run e2e
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+  # The packaged server, as a self-hoster runs it: build the image, start two instances of it
+  # with Compose, and run the conformance scenarios against them over HTTP. The `two instances`
+  # scenario signs in through one and out through the other, and spreads wrong passwords over
+  # both, so this job is what proves the instances share their state (ADR 0016).
+  #
+  # It runs twice, side by side. `two-ports` talks to each instance on its own port, which is
+  # the only way to say which instance a step went to. `one-address` sends every scenario
+  # through the proxy in front of both (`lb`, round robin), as a real deployment is reached:
+  # the Phase 1 exit criterion "two packaged instances behind one address"
+  # (conformance/README.md, "Behind one address").
+  self-host:
+    name: self-host (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    # A full run is about ten minutes of waiting the scenarios ask for; through the one
+    # address, about six more for the settings to reach the other instance after each change.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: two-ports
+            base_url: http://localhost:3003
+            second_base_url: http://localhost:3004
+            public_url: ''
+            lb_client_address: peer
+            settle_ms: '0'
+          - mode: one-address
+            base_url: http://localhost:3005
+            second_base_url: ''
+            # The issuer of the tokens, and where the mock provider's pages are reached.
+            public_url: http://localhost:3005
+            # The runner sends each scenario from its own address in X-Forwarded-For; the
+            # proxy passes it through for this run only (docker/lb/forwarded-for.client.conf).
+            lb_client_address: client
+            settle_ms: '6000'
+    env:
+      API_PUBLIC_URL: ${{ matrix.public_url }}
+      LB_CLIENT_ADDRESS: ${{ matrix.lb_client_address }}
+      # Throwaway values for this job's own containers.
+      TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      TRUST_PROXY: 'true'
+      # The OAuth scenarios run against the API's own mock provider (ADR 0026). Compose runs
+      # the stack in the `local` tier, the only one the API accepts this in.
+      OAUTH_MOCK_PROVIDER: 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: Build and start the stack
+        run: docker compose --profile app up -d --build
+      - name: Wait until both API instances are ready
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:3003/v1/ready > /dev/null &&
+              curl -fsS http://localhost:3004/v1/ready > /dev/null &&
+              curl -fsS http://localhost:3005/v1/ready > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "the API instances did not both become ready" >&2
+          exit 1
+      - name: The image serves the dashboard under its Content-Security-Policy
+        if: matrix.mode == 'two-ports'
+        run: |
+          set -euo pipefail
+          headers=$(curl -fsS -o /dev/null -D - http://localhost:3003/dashboard/)
+          echo "$headers" | grep -i '^content-security-policy:' | grep -F "script-src 'self'" > /dev/null
+          if echo "$headers" | grep -i '^content-security-policy:' | grep -q 'unsafe-'; then
+            echo "the dashboard's Content-Security-Policy allows something unsafe" >&2
+            exit 1
+          fi
+          # The page is the app (a script of this origin), and a missing asset is a 404, not HTML.
+          curl -fsS http://localhost:3003/dashboard/ | grep -q '/dashboard/assets/'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3003/dashboard/assets/missing.js)" = 404
+          # Only the static files: no React and no dashboard sources in the image.
+          docker compose --profile app run --rm -T api sh -c \
+            '! test -e /usr/src/app/node_modules/react && ! test -e /usr/src/app/apps/dashboard/src'
+      - name: Create an environment and its keys
+        run: |
+          # Without pipefail a failed command before `| tail` would be swallowed, and an empty
+          # secret key would make the admin scenarios skip instead of fail.
+          set -euo pipefail
+          compose() { docker compose --profile app run --rm -T api "$@"; }
+          seed=$(compose bun run ../../packages/db/src/scripts/seed.ts)
+          environment=$(echo "$seed" | awk '/development environment/ {print $NF}')
+          if ! echo "$environment" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "seed did not print a development environment id" >&2
+            exit 1
+          fi
+          for kind in publishable secret; do
+            minted=$(compose bun run src/scripts/create-api-key.ts --environment "$environment" --kind "$kind")
+            key=$(echo "$minted" | tail -1)
+            case "$key" in
+              tula_pk_* | tula_sk_*) ;;
+              *) echo "could not create a $kind key" >&2; exit 1 ;;
+            esac
+            echo "::add-mask::$key"
+            name=$(echo "$kind" | tr '[:lower:]' '[:upper:]')
+            echo "CONFORMANCE_${name}_KEY=$key" >> "$GITHUB_ENV"
+          done
+      - name: Run the conformance scenarios against both instances
+        env:
+          CONFORMANCE_BASE_URL: ${{ matrix.base_url }}
+          CONFORMANCE_SECOND_BASE_URL: ${{ matrix.second_base_url }}
+          CONFORMANCE_SETTLE_MS: ${{ matrix.settle_ms }}
+        run: |
+          # Every scenario must run: a missing secret key would skip the admin ones.
+          test -n "$CONFORMANCE_PUBLISHABLE_KEY" && test -n "$CONFORMANCE_SECRET_KEY"
+          bun run conformance | tee conformance.log
+          # `bun run --filter` prefixes every line with the package name, so none of these
+          # patterns may be anchored to the start of a line.
+          if grep -Eq '(^|: )SKIPPED ' conformance.log; then
+            echo "scenarios were skipped" >&2
+            exit 1
+          fi
+          grep -Eq '(^|: )PASSED two instances$' conformance.log
+          if [ "${{ matrix.mode }}" = two-ports ]; then
+            # The cross-instance scenario must have run against two instances: without the
+            # second URL its steps would all go to one server and prove nothing about sharing.
+            grep -Eq ' 0 failed, 0 skipped against http://localhost:3003 and http://localhost:3004$' conformance.log
+          else
+            grep -Eq ' 0 failed, 0 skipped against http://localhost:3005 \(one address, 6000 ms after each settings change\)$' conformance.log
+          fi
+        shell: bash -euo pipefail {0}
+      - name: Both instances answered behind the one address
+        if: matrix.mode == 'one-address'
+        run: |
+          # The proxy logs the instance that answered each request. Round robin over two
+          # instances: each must have answered at least a third of them, or the run did not
+          # exercise what it claims to.
+          docker compose --profile app logs --no-color --no-log-prefix lb > lb.log
+          total=$(grep -c 'upstream=' lb.log)
+          instances=$(grep -o 'upstream=[0-9.]*:3003' lb.log | sort | uniq -c | awk '{print $1}')
+          echo "requests: $total; per instance: $(echo $instances)"
+          test "$(echo "$instances" | wc -l)" -eq 2
+          for count in $instances; do
+            test "$((count * 3))" -ge "$total"
+          done
+        shell: bash -euo pipefail {0}
+      - name: Stack logs
+        if: failure()
+        run: docker compose --profile app logs --no-color

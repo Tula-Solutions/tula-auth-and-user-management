@@ -1,0 +1,195 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "settings managed by a config file",
+  "description": "A tool that applies settings from a config file names itself and the file's fingerprint when it replaces them, and the settings then say who manages them. A replace made without those headers keeps the record and shows as drift; the headers are refused unless both are sent and well-formed. The settings are put back and the record removed afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "appName": "Managed by conformance",
+    "hash": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "passwordPolicy": "settings.password",
+        "origins": "settings.urls.allowedOrigins"
+      }
+    },
+    {
+      "name": "a tool without a config fingerprint is refused",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}",
+          "x-tula-managed-by": "conformance"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed",
+          "errors": [
+            {
+              "field": "x-tula-config-hash"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a replace that names its tool and fingerprint is recorded as the manager",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}",
+          "x-tula-managed-by": "conformance",
+          "x-tula-config-hash": "{{hash}}"
+        },
+        "body": {
+          "app": {
+            "name": "{{appName}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "app": {
+              "name": "{{appName}}"
+            }
+          },
+          "managedBy": {
+            "tool": "conformance",
+            "configHash": "{{hash}}",
+            "at": "$any",
+            "revision": "$any",
+            "drifted": false
+          }
+        }
+      },
+      "captureHeaders": {
+        "managedEtag": "ETag"
+      }
+    },
+    {
+      "name": "the settings say who manages them",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "managedBy": {
+            "tool": "conformance",
+            "configHash": "{{hash}}",
+            "drifted": false
+          }
+        }
+      }
+    },
+    {
+      "name": "a change made without the marker keeps the record and shows as drift",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{managedEtag}}"
+        },
+        "body": {
+          "app": {
+            "name": "Changed by hand"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "managedBy": {
+            "tool": "conformance",
+            "configHash": "{{hash}}",
+            "drifted": true
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back and remove the record",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}",
+          "x-tula-managed-by": "none"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "managedBy": null
+        }
+      }
+    }
+  ]
+}
