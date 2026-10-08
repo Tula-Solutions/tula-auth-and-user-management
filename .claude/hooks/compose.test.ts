@@ -240,7 +240,62 @@ describe.skipIf(!hasCompose)('the optional worker service', () => {
     expect(services['api-2']?.environment?.WEBHOOK_WORKER).toBe('api')
   })
 
-  test('the worker profile adds one service: the same image and settings, another command', () => {
+  // What an API instance is given and the worker is not: nothing the worker runs reads them
+  // (it serves no admin, instance or client route, signs nobody in and stores no password),
+  // and the schema lets a process start without each, in every tier.
+  const API_ONLY = [
+    'CORS_ORIGINS',
+    'OAUTH_MOCK_PROVIDER',
+    'PASSWORD_POLICY',
+    'TRUST_PROXY',
+    'TULA_ADMIN_TOKEN',
+  ]
+
+  test('the worker’s environment is the API’s without what only the API reads', () => {
+    const services = resolved(
+      {
+        WEBHOOK_WORKER: 'separate',
+        // Every one of them set, so that "absent" is not "left at its default".
+        TULA_ADMIN_TOKEN: 'an-admin-token-for-this-test-only',
+        OAUTH_MOCK_PROVIDER: 'true',
+        PASSWORD_POLICY: 'strict',
+        CORS_ORIGINS: 'https://app.example.com',
+        TRUST_PROXY: 'true',
+      },
+      WITH_WORKER
+    )
+    const api = services.api?.environment ?? {}
+    const worker = services.worker?.environment ?? {}
+    for (const name of API_ONLY) {
+      expect(Object.keys(api)).toContain(name)
+    }
+    expect(api.TULA_ADMIN_TOKEN).toBe('an-admin-token-for-this-test-only')
+    // The deployment's most powerful credential is not in a container that has no use for it.
+    expect(Object.keys(worker)).not.toContain('TULA_ADMIN_TOKEN')
+    expect(JSON.stringify(services.worker)).not.toContain('an-admin-token-for-this-test-only')
+    expect(Object.keys(worker)).not.toContain('OAUTH_MOCK_PROVIDER')
+    // Exactly the API's, value for value, minus that list: the database, the master key (it
+    // opens the signing secrets), ENVIRONMENT (the tier the outbound guard judges an address
+    // in), and what the schema demands of every process of a live deployment.
+    const expected = Object.fromEntries(
+      Object.entries(api).filter(([name]) => !API_ONLY.includes(name))
+    )
+    expect(worker).toEqual(expected)
+    expect(Object.keys(worker).sort()).toEqual([
+      'BREACH_CHECK',
+      'DATABASE_URL',
+      'ENVIRONMENT',
+      'LOG_LEVEL',
+      'MAIL_FROM',
+      'PUBLIC_URL',
+      'REDIS_URL',
+      'SMTP_URL',
+      'TULA_MASTER_KEY',
+      'WEBHOOK_WORKER',
+    ])
+  })
+
+  test('the worker profile adds one service: the same image, another command', () => {
     const services = resolved({ WEBHOOK_WORKER: 'separate' }, WITH_WORKER)
     expect(Object.keys(services).sort()).toEqual([
       'api',
@@ -254,9 +309,6 @@ describe.skipIf(!hasCompose)('the optional worker service', () => {
     ])
     const { api, worker } = services
     expect(worker?.image).toBe(api?.image ?? '')
-    // Everything the API has: the database, the master key (it opens the signing secrets),
-    // Redis, and ENVIRONMENT, which is the tier the outbound guard judges an address in.
-    expect(worker?.environment).toEqual(api?.environment ?? {})
     expect(worker?.command).toEqual(['bun', 'run', 'src/worker.ts'])
     // It waits for the migrations like the API, and runs none itself.
     expect(Object.keys(worker?.depends_on ?? {}).sort()).toEqual([
