@@ -3,6 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { StrictMode } from 'react'
 import {
   attempt,
+  expectAbsent,
   expectFocus,
   failure,
   fakeLinkStorage,
@@ -82,8 +83,8 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
     unmount()
     w.mount(<SignIn />)
     await screen.findByLabelText('Email address')
-    expect(screen.queryByRole('button', { name: /^Continue with / })).toBeNull()
-    expect(screen.queryByText('or')).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: /^Continue with / }))
+    expectAbsent(screen.queryByText('or'))
   })
 
   test('nothing is offered where no provider is enabled, or where the tab cannot keep the binding', async () => {
@@ -92,7 +93,7 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
       const { unmount } = w.mount(<SignIn oauthCallbackUrl={CALLBACK} />)
       await screen.findByLabelText('Email address')
       await waitFor(() => expect(w.api.calls(ROUTE.config).length).toBeGreaterThan(0))
-      expect(screen.queryByRole('button', { name: /^Continue with / })).toBeNull()
+      expectAbsent(screen.queryByRole('button', { name: /^Continue with / }))
       unmount()
     }
   })
@@ -352,7 +353,7 @@ describe('<OAuthCallback>', () => {
     w.api.on(EXCHANGE, () => json(200, { nothing: 'useful' }))
     w.mount(<OAuthCallback />)
     await screen.findByRole('heading', { name: 'We could not finish signing you in' })
-    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Try again' }))
     expect(tabStorage.entries.size).toBe(0)
   })
 
@@ -422,7 +423,7 @@ describe('connected accounts in <UserProfile>', () => {
     await view.findByText('Google')
     expect(view.getByRole('button', { name: 'Disconnect Google' })).toBeTruthy()
     expect(view.getByRole('button', { name: 'Connect GitHub' })).toBeTruthy()
-    expect(view.queryByRole('button', { name: 'Connect Google' })).toBeNull()
+    expectAbsent(view.queryByRole('button', { name: 'Connect Google' }))
   })
 
   test('with none connected it says so', async () => {
@@ -456,7 +457,7 @@ describe('connected accounts in <UserProfile>', () => {
     expect((await within(section).findByRole('status')).textContent).toBe(
       'Google was disconnected.'
     )
-    expect(within(section).queryByRole('button', { name: 'Disconnect Google' })).toBeNull()
+    expectAbsent(within(section).queryByRole('button', { name: 'Disconnect Google' }))
   })
 
   test('the last way to sign in cannot be disconnected: the server’s reason is shown', async () => {
@@ -492,8 +493,11 @@ describe('connected accounts in <UserProfile>', () => {
     w.api.on(ROUTE.sessions, () => json(200, { data: [] }))
     await w.client.load()
     w.mount(<UserProfile oauthCallbackUrl={CALLBACK} />)
-    await screen.findByRole('heading', { name: 'Devices' }).catch(() => null)
-    expect(screen.queryByRole('heading', { name: 'Connected accounts' })).toBeNull()
+    // The profile is on the page and the configuration, which says no provider is enabled,
+    // has been answered. (This used to wait a second for a heading the profile does not have.)
+    await screen.findByRole('heading', { name: 'Where you’re signed in' })
+    await waitFor(() => expect(w.api.calls(ROUTE.config).length).toBeGreaterThan(0))
+    expectAbsent(screen.queryByRole('heading', { name: 'Connected accounts' }))
     expect(w.api.calls(IDENTITIES)).toHaveLength(0)
   })
 })

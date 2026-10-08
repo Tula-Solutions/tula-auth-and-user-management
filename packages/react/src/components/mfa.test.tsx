@@ -9,6 +9,7 @@ import { useTula } from '../hooks/use-tula'
 import {
   attempt,
   completed,
+  expectAbsent,
   expectFocus,
   failure,
   json,
@@ -137,7 +138,7 @@ describe('<SignIn> at needs_second_factor', () => {
     await passwordAnswers(w, () => attempt('sign_in', SECOND_FACTOR))
     await w.user.click(await screen.findByRole('button', { name: 'Use a backup code' }))
     const field = screen.getByLabelText('Backup code') as HTMLInputElement
-    expect(screen.queryByLabelText('Authentication code')).toBeNull()
+    expectAbsent(screen.queryByLabelText('Authentication code'))
     // The new field takes the focus: it is where the user types next.
     await expectFocus(field)
     await w.user.click(screen.getByRole('button', { name: 'Verify' }))
@@ -189,7 +190,7 @@ describe('<SignIn> at needs_second_factor', () => {
       attempt('sign_in', { status: 'needs_second_factor', options: ['totp', 'sms_code'] })
     )
     await screen.findByLabelText('Authentication code')
-    expect(screen.queryByRole('button', { name: 'Use a backup code' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Use a backup code' }))
     await w.user.click(screen.getByRole('button', { name: 'Back to sign in' }))
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
   })
@@ -300,7 +301,7 @@ describe('<SignIn> at needs_factor_enrolment', () => {
     // still shown, in a modal dialog of the provider's.
     const dialog = await screen.findByRole('dialog', { name: 'Save your backup codes' })
     expect(await screen.findByText('The app’s home page')).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: 'Set up two-step verification' })).toBeNull()
+    expectAbsent(screen.queryByRole('heading', { name: 'Set up two-step verification' }))
     const list = within(dialog).getByRole('list', { name: 'Backup codes' })
     expect(
       within(list)
@@ -323,7 +324,7 @@ describe('<SignIn> at needs_factor_enrolment', () => {
     await w.user.click(within(dialog).getByRole('button', { name: 'Done' }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expectAbsent(screen.queryByRole('dialog'))
     // Nothing of the codes is left anywhere on the page.
     for (const code of CODES) {
       expect(page()).not.toContain(code)
@@ -344,7 +345,7 @@ describe('<SignIn> at needs_factor_enrolment', () => {
     await w.user.click(screen.getByRole('button', { name: 'Set up authenticator app' }))
     await screen.findByRole('group', { name: 'Setup key' })
     await w.user.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(screen.queryByRole('group', { name: 'Setup key' })).toBeNull()
+    expectAbsent(screen.queryByRole('group', { name: 'Setup key' }))
     expect(page()).not.toContain('JBSW')
   })
 })
@@ -539,7 +540,7 @@ describe('<UserProfile> two-step verification', () => {
     expect(attached).toEqual([true])
     expect(revoke).not.toHaveBeenCalled()
     // The link does not stay on the page.
-    expect(document.querySelector('a[download]')).toBeNull()
+    expectAbsent(document.querySelector('a[download]'))
     jest.advanceTimersByTime(BACKUP_CODES_URL_LIFETIME_MS - 1)
     expect(revoke).not.toHaveBeenCalled()
     jest.advanceTimersByTime(1)
@@ -574,7 +575,7 @@ describe('<UserProfile> two-step verification', () => {
     })
     await w.user.click(await within(mfa).findByRole('button', { name: 'Turn off' }))
     const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
-    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText('Password'))
     const field = within(dialog).getByLabelText('Authentication code')
     // A modal dialog opens on the field it is for.
     await expectFocus(field)
@@ -606,7 +607,7 @@ describe('<UserProfile> two-step verification', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
-    expect(within(mfa).queryByRole('alert')).toBeNull()
+    expectAbsent(within(mfa).queryByRole('alert'))
     expect(w.api.calls(MFA.disable)).toHaveLength(1)
     expect(within(mfa).getByRole('button', { name: 'Turn off' })).toBeTruthy()
   })
@@ -640,7 +641,7 @@ describe('<UserProfile> two-step verification', () => {
     w.mount(<UserProfile />)
     const mfa = await section()
     expect(await within(mfa).findByText(/cannot be turned off/)).toBeTruthy()
-    expect(within(mfa).queryByRole('button', { name: 'Turn off' })).toBeNull()
+    expectAbsent(within(mfa).queryByRole('button', { name: 'Turn off' }))
     expect(within(mfa).getByText('1 backup code left.')).toBeTruthy()
   })
 
@@ -721,7 +722,7 @@ describe('useStepUp', () => {
     await waitFor(() => expect(w.client.state.status).toBe('signed-in'))
     await w.user.click(screen.getByRole('button', { name: 'Renew' }))
     await waitFor(() => expect(onResult).toHaveBeenCalledWith('codes:10'))
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expectAbsent(screen.queryByRole('dialog'))
     expect(w.api.calls(MFA.codes)).toHaveLength(1)
   })
 
@@ -738,7 +739,7 @@ describe('useStepUp', () => {
     await w.user.click(within(dialog).getByRole('button', { name: 'Continue' }))
     await waitFor(() => expect(onResult).toHaveBeenCalledWith('declined'))
     expect(w.api.calls(MFA.codes)).toHaveLength(2)
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expectAbsent(screen.queryByRole('dialog'))
   })
 
   test('Escape closes the dialog as a cancel; a sign-out underneath closes it too', async () => {
@@ -804,7 +805,7 @@ describe('the step-up dialog: a code by email', () => {
     const code = within(dialog).getByLabelText(/Verification code/) as HTMLInputElement
     await expectFocus(code)
     expect(w.api.calls(SEND)).toHaveLength(1)
-    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText('Password'))
 
     // Incomplete: refused here, nothing sent.
     await w.user.type(code, '123')
@@ -854,7 +855,7 @@ describe('the step-up dialog: a code by email', () => {
     const code = await within(dialog).findByLabelText(/Verification code/)
     await expectFocus(code)
     expect(w.api.calls(SEND)).toHaveLength(1)
-    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText('Password'))
 
     await w.user.click(within(dialog).getByRole('button', { name: 'Use your password instead' }))
     await expectFocus(await within(dialog).findByLabelText('Password'))
@@ -881,8 +882,8 @@ describe('the step-up dialog: a code by email', () => {
     expect(await within(dialog).findByText(/Try again in \ds\./)).toBeTruthy()
     expect(within(dialog).getByRole('alert').textContent).not.toBe('')
     expect(dialog.textContent).not.toMatch(/we sent|we emailed|code is on its way/i)
-    expect(within(dialog).queryByLabelText(/Verification code/)).toBeNull()
-    expect(within(dialog).queryByRole('button', { name: /Resend code/ })).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText(/Verification code/))
+    expectAbsent(within(dialog).queryByRole('button', { name: /Resend code/ }))
     const send = within(dialog).getByRole('button', { name: 'Send code' })
     expect(send.getAttribute('aria-disabled')).toBe('true')
     await w.user.click(send)
@@ -940,7 +941,7 @@ describe('the step-up dialog: a code by email', () => {
     )
     await w.user.click(within(dialog).getByRole('button', { name: 'Resend code' }))
     await waitFor(() => expect(w.api.calls(SEND)).toHaveLength(2))
-    await waitFor(() => expect(within(dialog).queryByRole('alert')).toBeNull())
+    await waitFor(() => expectAbsent(within(dialog).queryByRole('alert')))
   })
 
   test('when the email cannot be sent the dialog says so and offers to try again', async () => {
@@ -950,7 +951,7 @@ describe('the step-up dialog: a code by email', () => {
     const dialog = await turnOn(w)
     const alert = await within(dialog).findByRole('alert')
     expect(alert.textContent).not.toBe('')
-    expect(within(dialog).queryByLabelText(/Verification code/)).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText(/Verification code/))
     w.api.on(SEND, () => json(200, RECEIPT))
     await w.user.click(within(dialog).getByRole('button', { name: 'Send code' }))
     await expectFocus(await within(dialog).findByLabelText(/Verification code/))
@@ -964,7 +965,7 @@ describe('the step-up dialog: a code by email', () => {
     const mfa = await section()
     await w.user.click(await within(mfa).findByRole('button', { name: 'Turn off' }))
     const dialog = await screen.findByRole('dialog', { name: 'Confirm it is you' })
-    expect(within(dialog).queryByRole('button', { name: /Email me a code/ })).toBeNull()
+    expectAbsent(within(dialog).queryByRole('button', { name: /Email me a code/ }))
     expect(w.api.calls(SEND)).toHaveLength(0)
   })
 

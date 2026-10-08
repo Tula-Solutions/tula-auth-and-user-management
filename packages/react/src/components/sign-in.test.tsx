@@ -6,6 +6,7 @@ import {
   attempt,
   CODE_STEP,
   completed,
+  expectAbsent,
   expectFocus,
   failure,
   NEW_PASSWORD_STEP,
@@ -84,7 +85,7 @@ describe('<SignIn> draws the step the server answers with', () => {
     expect(w.api.calls(ROUTE.signIn)).toHaveLength(0)
     // Typing clears the message.
     await w.user.type(email, 'm')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
   })
 
   test('a wrong password is shown on the password field, which is emptied and focused', async () => {
@@ -463,7 +464,7 @@ describe('<SignIn> forgotten password', () => {
     expect(screen.getByRole('alert').textContent).toBe('This field is required.')
     expect(w.api.calls(ROUTE.reset)).toHaveLength(0)
     await w.user.type(email, 'x')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
     await w.user.click(screen.getByRole('button', { name: 'Back to sign in' }))
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
   })
@@ -504,7 +505,7 @@ describe('<SignIn> navigation', () => {
       { navigate }
     )
     await screen.findByRole('heading', { name: 'Sign in' })
-    expect(screen.queryByRole('link')).toBeNull()
+    expectAbsent(screen.queryByRole('link'))
     await toPassword(w)
     w.api.on(ROUTE.signInPassword, () => completed('sign_in'))
     await w.user.type(await screen.findByLabelText('Password'), PASSWORD)
@@ -520,7 +521,7 @@ describe('<SignIn> navigation', () => {
     w.mount(<SignIn />, { afterSignInUrl: '/app', navigate })
     expect(await screen.findByRole('heading', { name: 'You are signed in.' })).toBeTruthy()
     expect(navigate).toHaveBeenCalledWith('/app')
-    expect(screen.queryByLabelText('Email address')).toBeNull()
+    expectAbsent(screen.queryByLabelText('Email address'))
   })
 
   test('inside <SignedOut>, which unmounts it on sign-in, completion is still reported', async () => {
@@ -536,7 +537,7 @@ describe('<SignIn> navigation', () => {
     await w.user.type(await screen.findByLabelText('Password'), PASSWORD)
     await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    expect(screen.queryByRole('heading')).toBeNull()
+    expectAbsent(screen.queryByRole('heading'))
   })
 
   test('the sign-up link: a real link with a URL, a button with a callback, nothing with neither', async () => {
@@ -564,7 +565,7 @@ describe('<SignIn> navigation', () => {
 
     w.mount(<SignIn />)
     await screen.findByRole('heading', { name: 'Sign in' })
-    expect(screen.queryByText('New here?')).toBeNull()
+    expectAbsent(screen.queryByText('New here?'))
   })
 
   test('initialEmail fills the field; headingLevel sets the title’s level', async () => {
@@ -600,7 +601,7 @@ describe('<SignIn> inside <Activity> (F3)', () => {
     await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
     // The step on screen was acted on with the attempt it belongs to: no local refusal.
-    expect(screen.queryByText(/not valid at this step/)).toBeNull()
+    expectAbsent(screen.queryByText(/not valid at this step/))
     expect(w.api.calls(ROUTE.signInPassword)[0]?.headers.get('x-tula-attempt')).toBe(
       'tula_at_test_secret'
     )

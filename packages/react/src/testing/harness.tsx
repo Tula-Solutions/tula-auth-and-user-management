@@ -97,6 +97,24 @@ export async function expectFocus(element: Element | null): Promise<void> {
   await waitFor(() => expect(document.activeElement === element).toBe(true))
 }
 
+/**
+ * Assert that a query found nothing: `expectAbsent(screen.queryByRole('button', { name }))`.
+ *
+ * Never `expect(screen.queryBy…(…)).toBeNull()`. That matcher fails exactly when it was given
+ * an element, and then formats it, window and all (see {@link openDialogs}): the one failure
+ * of this kind on CI took 22 seconds and wrote 290 MB before it said which button it had
+ * found. Here the matcher sees a short description of the element, or `null`.
+ *
+ * @param element - What a `queryBy…` or `querySelector` returned.
+ */
+export function expectAbsent(element: Element | null): void {
+  const found =
+    element === null
+      ? null
+      : `<${element.tagName.toLowerCase()}> ${(element.textContent ?? '').trim().slice(0, 80)}`
+  expect(found).toBeNull()
+}
+
 /** A step as any answer after the start carries it. */
 export function attempt(kind: FlowKind, step: FlowStep | { status: string }, extra: object = {}) {
   return json(200, {
