@@ -117,6 +117,7 @@ describe('POST /v1/admin/webhook-endpoints', () => {
       enabled: true,
       disabledReason: null,
       failingSince: null,
+      lastFailedAt: null,
       secret: expect.stringMatching(/^whsec_[A-Za-z0-9+/]{43}=$/),
       createdAt: deps.clock.now().toISOString(),
       updatedAt: deps.clock.now().toISOString(),
@@ -350,6 +351,30 @@ describe('GET /v1/admin/webhook-endpoints/:id/deliveries', () => {
     for (const query of ['state=delivered', 'eventType=user.deleted', 'page=2']) {
       const other = await call('GET', `${PATH}/${endpoint.id}/deliveries?${query}`)
       expect(((await other.json()) as { data: unknown[] }).data).toEqual([])
+    }
+  })
+
+  // The review's case (F5): `page` went to a million, over a count of every row.
+  test('the log is paged through its newest ten thousand deliveries and no further', async () => {
+    const { body: endpoint } = await create()
+    const get = (query: string) => call('GET', `${PATH}/${endpoint.id}/deliveries?${query}`)
+    expect(Webhooks.WEBHOOK_DELIVERY_LIST_WINDOW).toBe(10_000)
+    // The last page inside the window, at three page sizes.
+    for (const query of ['page=500&size=20', 'page=100&size=100', 'page=10000&size=1']) {
+      expect((await get(query)).status).toBe(200)
+    }
+    for (const query of [
+      'page=501&size=20',
+      'page=101&size=100',
+      'page=10001&size=1',
+      'page=501',
+    ]) {
+      const refused = await get(query)
+      expect(refused.status).toBe(422)
+      expect(await refused.json()).toMatchObject({
+        code: 'validation.failed',
+        errors: [{ field: 'page' }],
+      })
     }
   })
 

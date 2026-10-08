@@ -2499,6 +2499,7 @@ export interface WebhookEndpoint {
   /** @nullable */
   disabledReason: string | null;
   failingSince: string | null;
+  lastFailedAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
@@ -2518,6 +2519,7 @@ export interface CreatedWebhookEndpoint {
   /** @nullable */
   disabledReason: string | null;
   failingSince: string | null;
+  lastFailedAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
@@ -5902,7 +5904,7 @@ export const getListWebhookDeliveriesUrl = (id: string,
 }
 
 /**
- * The deliveries of one endpoint, newest first: one per event it was owed, and one per test event. Each says where it stands (`pending`, `delivered`, `failed`), how many requests were made and how the latest ended. Filter by `state` and `eventType`. Deliveries are kept for 90 days.
+ * The deliveries of one endpoint, newest first: one per event it was owed, and one per test event. Each says where it stands (`pending`, `delivered`, `failed`), how many requests were made and how the latest ended. Filter by `state` and `eventType`. Deliveries are kept for 90 days. The list pages through the newest 10000 matching deliveries: a page past that (`page` × `size`) is refused with `validation.failed`, and `meta.totalCount` is counted no further.
  * @summary List an endpoint’s deliveries
  */
 export const listWebhookDeliveries = async (id: string,
@@ -6121,7 +6123,7 @@ export const getSendTestWebhookUrl = (id: string,) => {
 }
 
 /**
- * Sends one test event of the chosen type to the endpoint, now, signed like every delivery. The event is an example with a new id and **`"test": true`** inside the signed body, which no real event has: nothing it describes happened, and a receiver should check the field before acting. It is one request with no retry, recorded as a delivery flagged `test`; it is not written to the audit log and does not count towards switching the endpoint off. An endpoint that is off can be tested. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.
+ * Sends one test event of the chosen type to the endpoint, now, signed like every delivery. The event is an example with a new id and **`"test": true`** inside the signed body, which no real event has: nothing it describes happened, and a receiver should check the field before acting. It is one request with no retry, recorded as a delivery flagged `test`; it is not written to the audit log and changes nothing about the endpoint: a failed test does not count towards switching it off, and one that gets through does not clear `failingSince`. An endpoint that is off can be tested. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.
  * @summary Send a test event
  */
 export const sendTestWebhook = async (id: string,
@@ -6212,7 +6214,7 @@ export const getRedeliverWebhookUrl = (id: string,
 }
 
 /**
- * Makes one more request for a past delivery, now: the event’s stored payload, to the endpoint it was owed to, with the same `webhook-id` (a receiver that drops repeats by id will drop it). The request is added to the delivery’s own attempts. A 2xx makes the delivery `delivered`; a failure leaves it as it was and is not retried. Refused with `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`: `delivery_pending` while the server is still retrying the delivery, `endpoint_disabled` for an endpoint that is switched off, and `event_gone` once the event is no longer kept (30 days) or for a test event. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.
+ * Makes one more request for a past delivery, now: the event’s stored payload, to the endpoint it was owed to, with the same `webhook-id` (a receiver that drops repeats by id will drop it). The request is added to the delivery’s own attempts. A 2xx makes the delivery `delivered`; a failure leaves it as it was and is not retried. Refused with `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`: `delivery_pending` while the server is still retrying the delivery, `endpoint_disabled` for an endpoint that is switched off, `event_gone` once the event is no longer kept (30 days) or for a test event, and `attempt_limit` once the delivery has had 20 requests in all. A request that gets through also ends the endpoint’s run of failures (`failingSince`). The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.
  * @summary Send a delivery again
  */
 export const redeliverWebhook = async (id: string,

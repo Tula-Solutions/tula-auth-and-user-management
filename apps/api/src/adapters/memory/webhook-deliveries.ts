@@ -322,7 +322,7 @@ export class MemoryWebhookDeliveryStore implements WebhookDeliveryStore {
     const start = (query.page - 1) * query.perPage
     return {
       deliveries: matching.slice(start, start + query.perPage).map((row) => structuredClone(row)),
-      totalCount: matching.length,
+      totalCount: Math.min(matching.length, query.maxCount),
     }
   }
 

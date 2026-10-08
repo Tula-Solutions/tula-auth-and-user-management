@@ -13,7 +13,7 @@ import { tula } from './pg-schema'
  * why it is sealed rather than hashed. It is returned once, when the endpoint is created, and
  * by no API afterwards.
  *
- * `failing_since` and `disabled_reason` are the worker's: an endpoint whose deliveries have all
+ * `failing_since`, `last_failed_at` and `disabled_reason` are the worker's: an endpoint whose deliveries have all
  * failed for days is switched off, and says why.
  *
  * `event_types` holds names from the contract's `ACTIVITY_TYPES`; the API validates them, the
@@ -39,6 +39,12 @@ export const webhookEndpoints = tula.table(
      * success, cleared by the next success. What "keeps failing" is measured from.
      */
     failingSince: timestamp('failing_since', { withTimezone: true }),
+    /**
+     * When a request to it last failed; `null` when the last one that was answered succeeded.
+     * A failure long after this one does not continue the run that `failing_since` began: it
+     * begins a new one.
+     */
+    lastFailedAt: timestamp('last_failed_at', { withTimezone: true }),
     ...timestamps(),
   },
   (t) => [tenantParentKey('webhook_endpoints', t), ...tenantConstraints('webhook_endpoints', t)]

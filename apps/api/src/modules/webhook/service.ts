@@ -140,12 +140,50 @@ export const WEBHOOK_ENDPOINT_ROUND_CAP = 50
 export const WEBHOOK_MAX_CONCURRENT_DELIVERIES = 5
 
 /**
- * How long every request to an endpoint must have failed before the server switches it off.
- * Measured from the first failure after its last success to a later failure: an endpoint that
- * is down for an hour, a night or a weekend is not switched off, and one that has taken
- * nothing for the better part of a week is.
+ * How long a run of failed requests must have lasted before the server switches an endpoint
+ * off. A **run** is failed requests with no success among them and no silence between two of
+ * them longer than {@link WEBHOOK_FAILURE_RUN_MAX_GAP_MS}. An endpoint that is down for an
+ * hour, a night or a weekend is not switched off, and one that has been sent things all week
+ * and taken none of them is.
  */
 export const WEBHOOK_DISABLE_AFTER = '5d'
+
+/** What is added to the schedule's own length to get the longest silence a run may have. */
+export const WEBHOOK_FAILURE_RUN_MARGIN = '1h'
+
+/**
+ * The longest silence between two failed requests that still belong to one run: the whole
+ * retry schedule with the most jitter, and a margin. Computed from the schedule's constants,
+ * so it cannot drift from them.
+ *
+ * Why the whole schedule: while one delivery is being retried, its requests are at most this
+ * far apart in all, so an endpoint that is failing and still being sent things never has a
+ * longer silence. A longer one means nothing was sent for a while (the delivery was given up
+ * and no event followed), and then nothing says the endpoint stayed broken: it may have been
+ * fixed the same day. The next failure begins a run of its own.
+ */
+export const WEBHOOK_FAILURE_RUN_MAX_GAP_MS =
+  Math.round(
+    WEBHOOK_RETRY_DELAYS.reduce((sum, wait) => sum + durationToMs(wait), 0) *
+      (1 + WEBHOOK_RETRY_JITTER)
+  ) + durationToMs(WEBHOOK_FAILURE_RUN_MARGIN)
+
+/**
+ * The most requests one delivery may ever have: the worker's eight and what an administrator
+ * adds by sending it again. Past this "send it again" is refused (`attempt_limit`), so one
+ * delivery's log, and the answer that returns it, is bounded. Checked before the request is
+ * made: requests already in flight when the limit is reached are still recorded, and
+ * {@link WEBHOOK_SEND_RATE_LIMIT} bounds how many those can be.
+ */
+export const WEBHOOK_MAX_TOTAL_ATTEMPTS = 20
+
+/**
+ * How far into an endpoint's delivery log the admin API pages and counts: its newest ten
+ * thousand deliveries (500 pages of the default size). A page past it is refused, and
+ * `totalCount` stops there. The log can hold ninety days of deliveries; what an operator
+ * wants from further back is found with the `state` and `eventType` filters, not by paging.
+ */
+export const WEBHOOK_DELIVERY_LIST_WINDOW = 10_000
 
 /**
  * How long the rest of an endpoint's due deliveries are put off after it let one run out its
@@ -218,6 +256,7 @@ function view(record: WebhookEndpointRecord): WebhookEndpoint {
     enabled: record.enabled,
     disabledReason: record.disabledReason,
     failingSince: record.failingSince?.toISOString() ?? null,
+    lastFailedAt: record.lastFailedAt?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   }
@@ -357,6 +396,7 @@ async function register(
       enabled: input.enabled,
       disabledReason: null,
       failingSince: null,
+      lastFailedAt: null,
       // The instant of its own audit entry: an endpoint is sent the events from its creation
       // on, and within this instance "from" must not depend on which of two clock readings
       // came first. Between instances it depends on their clocks agreeing (ADR 0034).
@@ -578,12 +618,16 @@ async function request(
     }
   } catch (error) {
     if (error instanceof Outbound.OutboundError) {
+      // An answer over the cap was still an answer, and its status line had arrived: the
+      // receiver took the event (2xx) or did not, and that is what is recorded. Its body was
+      // not read and is not looked at here either; the guard hands over the number alone.
+      const answered = error.reason === 'response_too_large' && error.status !== undefined
       return {
         id: deps.ids.next(),
         attemptedAt,
-        statusCode: null,
+        statusCode: answered ? (error.status ?? null) : null,
         durationMs: took(),
-        failureReason: error.reason,
+        failureReason: answered ? null : error.reason,
       }
     }
     throw error
@@ -698,24 +742,47 @@ async function settle(
     round.report.givenUp += 1
   }
   if (delivered) {
-    if (endpoint.failingSince) {
-      await deps.webhookEndpoints.setFailingSince(round.environmentId, endpoint.id, null)
-      endpoint.failingSince = null
-    }
+    await clearHealth(deps, endpoint)
     return
   }
   if (gone) {
     await switchOff(deps, round, endpoint, 'gone')
     return
   }
-  if (!endpoint.failingSince) {
-    await deps.webhookEndpoints.setFailingSince(round.environmentId, endpoint.id, now)
-    endpoint.failingSince = now
-    return
-  }
-  if (now.getTime() - endpoint.failingSince.getTime() >= durationToMs(WEBHOOK_DISABLE_AFTER)) {
+  // A failure continues the run only if the one before it was recent. After a silence longer
+  // than the schedule itself, nothing says the endpoint stayed broken (it was sent nothing),
+  // so this failure begins a run of its own: one bad day, a fix and a hiccup a week later
+  // are two short runs, not one long one.
+  const continues =
+    endpoint.failingSince !== null &&
+    endpoint.lastFailedAt !== null &&
+    now.getTime() - endpoint.lastFailedAt.getTime() <= WEBHOOK_FAILURE_RUN_MAX_GAP_MS
+  const failingSince = continues && endpoint.failingSince ? endpoint.failingSince : now
+  await deps.webhookEndpoints.setHealth(round.environmentId, endpoint.id, {
+    failingSince,
+    lastFailedAt: now,
+  })
+  endpoint.failingSince = failingSince
+  endpoint.lastFailedAt = now
+  if (now.getTime() - failingSince.getTime() >= durationToMs(WEBHOOK_DISABLE_AFTER)) {
     await switchOff(deps, round, endpoint, 'failing')
   }
+}
+
+/** A request got through: whatever run of failures the endpoint had is over. */
+async function clearHealth(
+  deps: Pick<Deps, 'webhookEndpoints'>,
+  endpoint: WebhookEndpointRecord
+): Promise<void> {
+  if (endpoint.failingSince === null && endpoint.lastFailedAt === null) {
+    return
+  }
+  await deps.webhookEndpoints.setHealth(endpoint.environmentId, endpoint.id, {
+    failingSince: null,
+    lastFailedAt: null,
+  })
+  endpoint.failingSince = null
+  endpoint.lastFailedAt = null
 }
 
 /**
@@ -983,7 +1050,9 @@ async function deliverDue(deps: DeliveryDeps, round: Round): Promise<void> {
  *    a time and at most {@link WEBHOOK_ENDPOINT_ROUND_CAP} a round. A 2xx is a delivery.
  *    Anything else is tried again by {@link WEBHOOK_RETRY_DELAYS}, up to
  *    {@link WEBHOOK_MAX_ATTEMPTS} requests, and then given up; a `410` is given up at once and
- *    switches the endpoint off, as does every request failing for {@link WEBHOOK_DISABLE_AFTER}.
+ *    switches the endpoint off, as does a run of failed requests
+ *    {@link WEBHOOK_DISABLE_AFTER} long (no success, and no silence longer than
+ *    {@link WEBHOOK_FAILURE_RUN_MAX_GAP_MS}).
  *
  * Delivery is at least once: a round that ends between a request and its record sends again,
  * with the same event id, and the request that was not recorded is not counted.
@@ -1110,7 +1179,8 @@ export interface DeliveryListInput {
  * @param tenant - The environment.
  * @param endpointId - The endpoint.
  * @param input - Filters and paging (defaults: page 1, 20 per page).
- * @returns The page and its paging details.
+ * @returns The page and its paging details. `totalCount` is counted no further than
+ *   {@link WEBHOOK_DELIVERY_LIST_WINDOW}.
  * @throws NotFoundError when the environment has no endpoint with that id.
  */
 export async function listDeliveries(
@@ -1125,7 +1195,13 @@ export async function listDeliveries(
   const { deliveries, totalCount } = await deps.webhookDeliveries.list(
     tenant.environmentId,
     endpointId,
-    { state: input.state, eventType: input.eventType, page, perPage }
+    {
+      state: input.state,
+      eventType: input.eventType,
+      page,
+      perPage,
+      maxCount: WEBHOOK_DELIVERY_LIST_WINDOW,
+    }
   )
   return {
     meta: { totalCount, totalPages: Math.ceil(totalCount / perPage), page, perPage },
@@ -1190,8 +1266,11 @@ function sendResult(deliveryId: string, attempt: NewWebhookAttempt): WebhookSend
  * the outbox or the audit log: the delivery row, flagged as a test, is the record.
  *
  * It goes through the outbound guard like every delivery, is one request with no retry, and
- * changes nothing about the endpoint: a failed test does not count towards switching it off,
- * and a `410` to a test does not either. An endpoint that is switched off can be tested (that
+ * **changes nothing about the endpoint, whichever way it ends**: a failed test does not count
+ * towards switching it off, a `410` to a test does not either, and a test that gets through
+ * does **not** end a run of failures. It is not the delivery of an event, and a receiver may
+ * well answer tests without doing what it does for a real one; only a real event getting
+ * through (the worker's, or one sent again) says the endpoint works. An endpoint that is switched off can be tested (that
  * is how an operator finds out whether to switch it back on).
  *
  * @param deps - The webhook stores, the outbound guard's settings, the secret box, ids, clock.
@@ -1264,9 +1343,16 @@ export async function sendTest(
  * request an administrator asked for, not a new run of the schedule.
  *
  * Refused for a delivery that is still `pending` (the worker will send it), for an endpoint
- * that is switched off, for a test event (it has no stored event) and for an event that is
- * past its retention period. Not audited: it changes nothing about who can do what, and the
- * attempt is its record.
+ * that is switched off, for a test event (it has no stored event), for an event that is past
+ * its retention period, and for a delivery that has had {@link WEBHOOK_MAX_TOTAL_ATTEMPTS}
+ * requests. Not audited: it changes nothing about who can do what, and the attempt is its
+ * record.
+ *
+ * **What it does to the endpoint's health.** A request that gets through ends the endpoint's
+ * run of failures (`failingSince`, `lastFailedAt`): the receiver took a real event, which is
+ * exactly what the run says it has not been doing. A request that fails moves nothing, and
+ * neither it nor a `410` switches the endpoint off: one request made by hand is not the
+ * worker's evidence.
  *
  * @param deps - The webhook stores, the outbound guard's settings, the secret box, ids, clock.
  * @param tenant - The environment. A delivery of another environment is not found.
@@ -1275,7 +1361,7 @@ export async function sendTest(
  * @returns The outcome: a status code and a duration, or one of the server's fixed words.
  * @throws NotFoundError when that endpoint of this environment has no such delivery.
  * @throws AuthError `webhook.cannot_redeliver`, with `params.reason` one of
- *   `delivery_pending`, `endpoint_disabled` and `event_gone`.
+ *   `delivery_pending`, `endpoint_disabled`, `event_gone` and `attempt_limit`.
  */
 export async function redeliver(
   deps: SendDeps,
@@ -1295,6 +1381,9 @@ export async function redeliver(
   }
   if (delivery.state === 'pending') {
     throw new AuthError('webhook.cannot_redeliver', { reason: 'delivery_pending' })
+  }
+  if (delivery.attempts >= WEBHOOK_MAX_TOTAL_ATTEMPTS) {
+    throw new AuthError('webhook.cannot_redeliver', { reason: 'attempt_limit' })
   }
   // Read inside this environment: an id from anywhere else finds nothing.
   const [event] =
@@ -1332,8 +1421,11 @@ export async function redeliver(
     // Removed with its endpoint while the request was under way.
     throw new NotFoundError()
   }
-  if (delivered && endpoint.failingSince) {
-    await deps.webhookEndpoints.setFailingSince(environmentId, endpointId, null)
+  if (delivered) {
+    // The receiver took a real event: its run of failures, if it had one, is over. (A
+    // failure here moves nothing: one request an administrator asked for is not evidence of
+    // a run. And a test event never clears a run, got through or not: see `sendTest`.)
+    await clearHealth(deps, endpoint)
   }
   return sendResult(deliveryId, attempt)
 }

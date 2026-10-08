@@ -223,7 +223,10 @@ router.get(
       'The deliveries of one endpoint, newest first: one per event it was owed, and one per ' +
       'test event. Each says where it stands (`pending`, `delivered`, `failed`), how many ' +
       'requests were made and how the latest ended. Filter by `state` and `eventType`. ' +
-      'Deliveries are kept for 90 days.',
+      'Deliveries are kept for 90 days. The list pages through the newest ' +
+      `${Webhooks.WEBHOOK_DELIVERY_LIST_WINDOW} matching deliveries: a page past that ` +
+      '(`page` × `size`) is refused with `validation.failed`, and `meta.totalCount` is ' +
+      'counted no further.',
     security: openapi.security.admin,
     responses: {
       200: { description: 'One page of deliveries.', content: json(WebhookDeliveryListSchema) },
@@ -286,8 +289,9 @@ router.post(
       'delivery. The event is an example with a new id and **`"test": true`** inside the ' +
       'signed body, which no real event has: nothing it describes happened, and a receiver ' +
       'should check the field before acting. It is one request with no retry, recorded as a ' +
-      'delivery flagged `test`; it is not written to the audit log and does not count ' +
-      'towards switching the endpoint off. An endpoint that is off can be tested. ' +
+      'delivery flagged `test`; it is not written to the audit log and changes nothing about ' +
+      'the endpoint: a failed test does not count towards switching it off, and one that ' +
+      'gets through does not clear `failingSince`. An endpoint that is off can be tested. ' +
       onlyTheOutcome,
     security: openapi.security.admin,
     responses: {
@@ -327,8 +331,10 @@ router.post(
       'the delivery `delivered`; a failure leaves it as it was and is not retried. Refused ' +
       'with `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`: ' +
       '`delivery_pending` while the server is still retrying the delivery, ' +
-      '`endpoint_disabled` for an endpoint that is switched off, and `event_gone` once the ' +
-      'event is no longer kept (30 days) or for a test event. ' +
+      '`endpoint_disabled` for an endpoint that is switched off, `event_gone` once the ' +
+      'event is no longer kept (30 days) or for a test event, and `attempt_limit` once the ' +
+      `delivery has had ${Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS} requests in all. A request ` +
+      'that gets through also ends the endpoint’s run of failures (`failingSince`). ' +
       onlyTheOutcome,
     security: openapi.security.admin,
     responses: {

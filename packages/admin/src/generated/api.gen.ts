@@ -133,6 +133,7 @@ export interface Schemas {
     enabled: boolean
     disabledReason: string | null
     failingSince: string | null
+    lastFailedAt: string | null
     createdAt: string
     updatedAt: string
     /** The signing secret. Store it now: it is shown only once. */
@@ -905,6 +906,7 @@ export interface Schemas {
     enabled: boolean
     disabledReason: string | null
     failingSince: string | null
+    lastFailedAt: string | null
     createdAt: string
     updatedAt: string
   }

@@ -981,6 +981,7 @@ describe('the webhook worker’s leavings', () => {
         enabled: true,
         disabledReason: null,
         failingSince: null,
+        lastFailedAt: null,
         createdAt: deps.clock.now(),
         updatedAt: deps.clock.now(),
       },

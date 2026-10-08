@@ -111,6 +111,11 @@ export interface DeliveryListQuery {
   /** 1-based. */
   page: number
   perPage: number
+  /**
+   * The most rows the count looks at: `totalCount` is the number of matches or this, whichever
+   * is smaller. A log can hold millions of rows; a count of all of them is never asked for.
+   */
+  maxCount: number
 }
 
 /**
@@ -271,7 +276,8 @@ export interface WebhookDeliveryStore {
    * @param environmentId - The environment to look in.
    * @param endpointId - The endpoint.
    * @param query - Filters and the page.
-   * @returns One page of the endpoint's deliveries, newest first, and how many match in all.
+   * @returns One page of the endpoint's deliveries, newest first, and how many match, counted
+   *   no further than `query.maxCount`.
    */
   list(
     environmentId: string,

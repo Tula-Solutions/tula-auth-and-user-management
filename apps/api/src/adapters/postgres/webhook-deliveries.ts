@@ -458,7 +458,16 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
         .orderBy(desc(webhookDeliveries.createdAt), desc(webhookDeliveries.id))
         .limit(query.perPage)
         .offset((query.page - 1) * query.perPage)
-      const [total] = await tx.select({ value: count() }).from(webhookDeliveries).where(matching)
+      // Counted over at most `maxCount` rows, read through the same index as the page: an
+      // endpoint's log can hold millions of rows, and nobody pages that far.
+      const window = tx
+        .select({ id: webhookDeliveries.id })
+        .from(webhookDeliveries)
+        .where(matching)
+        .orderBy(desc(webhookDeliveries.createdAt), desc(webhookDeliveries.id))
+        .limit(query.maxCount)
+        .as('window')
+      const [total] = await tx.select({ value: count() }).from(window)
       return { deliveries: rows.map(toDelivery), totalCount: total?.value ?? 0 }
     })
   }

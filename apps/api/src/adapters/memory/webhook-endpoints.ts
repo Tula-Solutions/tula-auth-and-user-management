@@ -3,6 +3,7 @@ import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   WebhookDisabledReason,
   WebhookEndpointChanges,
+  WebhookEndpointHealth,
   WebhookEndpointRecord,
   WebhookEndpointStore,
 } from '~/ports/webhook-endpoint-store'
@@ -75,6 +76,7 @@ export class MemoryWebhookEndpointStore implements WebhookEndpointStore {
       enabled: changes.enabled ?? record.enabled,
       disabledReason: changes.resetHealth ? null : record.disabledReason,
       failingSince: changes.resetHealth ? null : record.failingSince,
+      lastFailedAt: changes.resetHealth ? null : record.lastFailedAt,
       updatedAt,
     }
     this.#records.set(id, next)
@@ -91,16 +93,13 @@ export class MemoryWebhookEndpointStore implements WebhookEndpointStore {
   }
 
   /** @inheritdoc */
-  async setFailingSince(environmentId: string, id: string, since: Date | null): Promise<void> {
+  async setHealth(environmentId: string, id: string, health: WebhookEndpointHealth): Promise<void> {
     const record = this.#records.get(id)
     if (!record || record.environmentId !== environmentId) {
       return
     }
-    if (since === null) {
-      record.failingSince = null
-    } else if (record.failingSince === null) {
-      record.failingSince = new Date(since)
-    }
+    record.failingSince = health.failingSince && new Date(health.failingSince)
+    record.lastFailedAt = health.lastFailedAt && new Date(health.lastFailedAt)
   }
 
   /** @inheritdoc */

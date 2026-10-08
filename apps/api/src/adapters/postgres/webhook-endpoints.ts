@@ -1,10 +1,11 @@
 import { type Database, webhookEndpoints, withTenant } from '@tula/db'
-import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   WebhookDisabledReason,
   WebhookEndpointChanges,
+  WebhookEndpointHealth,
   WebhookEndpointRecord,
   WebhookEndpointStore,
 } from '~/ports/webhook-endpoint-store'
@@ -19,6 +20,7 @@ const columns = {
   enabled: webhookEndpoints.enabled,
   disabledReason: webhookEndpoints.disabledReason,
   failingSince: webhookEndpoints.failingSince,
+  lastFailedAt: webhookEndpoints.lastFailedAt,
   createdAt: webhookEndpoints.createdAt,
   updatedAt: webhookEndpoints.updatedAt,
 }
@@ -80,7 +82,9 @@ export class PostgresWebhookEndpointStore implements WebhookEndpointStore {
           url: changes.url,
           eventTypes: changes.eventTypes,
           enabled: changes.enabled,
-          ...(changes.resetHealth ? { disabledReason: null, failingSince: null } : {}),
+          ...(changes.resetHealth
+            ? { disabledReason: null, failingSince: null, lastFailedAt: null }
+            : {}),
           updatedAt,
         })
         .where(and(eq(webhookEndpoints.environmentId, environmentId), eq(webhookEndpoints.id, id)))
@@ -106,26 +110,18 @@ export class PostgresWebhookEndpointStore implements WebhookEndpointStore {
   }
 
   /** @inheritdoc */
-  async setFailingSince(environmentId: string, id: string, since: Date | null): Promise<void> {
-    const endpoint = and(
-      eq(webhookEndpoints.environmentId, environmentId),
-      eq(webhookEndpoints.id, id)
-    )
+  async setHealth(environmentId: string, id: string, health: WebhookEndpointHealth): Promise<void> {
     await withTenant(this.db, environmentId, (tx) =>
       tx
         .update(webhookEndpoints)
         // `updated_at` is set to itself: the column updates itself on every write otherwise,
         // and no administrator changed the endpoint.
-        .set({ failingSince: since, updatedAt: sql`${webhookEndpoints.updatedAt}` })
-        // The first failure of a run stands; a success clears whatever is there.
-        .where(
-          and(
-            endpoint,
-            since === null
-              ? isNotNull(webhookEndpoints.failingSince)
-              : isNull(webhookEndpoints.failingSince)
-          )
-        )
+        .set({
+          failingSince: health.failingSince,
+          lastFailedAt: health.lastFailedAt,
+          updatedAt: sql`${webhookEndpoints.updatedAt}`,
+        })
+        .where(and(eq(webhookEndpoints.environmentId, environmentId), eq(webhookEndpoints.id, id)))
     )
   }
 

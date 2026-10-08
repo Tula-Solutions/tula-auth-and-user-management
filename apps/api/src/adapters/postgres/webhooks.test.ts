@@ -60,6 +60,7 @@ function endpoint(tenant: TestTenant): WebhookEndpointRecord {
     enabled: true,
     disabledReason: null,
     failingSince: null,
+    lastFailedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   }

@@ -9,8 +9,10 @@
 --   * `webhook_deliveries.event_id` stops being a foreign key and may be NULL (a test event
 --     has no event). A settled event is deleted after its retention period and the record of
 --     its deliveries is kept longer, so the cascade that tied the two together had to go.
---   * `webhook_endpoints` gains `failing_since` and `disabled_reason`: how the worker knows an
---     endpoint has kept failing, and why it switched one off.
+--   * `webhook_endpoints` gains `failing_since`, `last_failed_at` and `disabled_reason`: how
+--     the worker knows an endpoint has kept failing without a pause, and why it switched one
+--     off. (The runtime role already holds UPDATE on this table: an administrator changes an
+--     endpoint on the request path. No grant changes for it.)
 --   * The runtime role's privileges on `events` are narrowed to what it uses, and it gains the
 --     two bounded deletes the retention job needs. See the end of this file.
 --
@@ -51,6 +53,9 @@ ALTER TABLE "tula"."webhook_deliveries" ADD COLUMN "last_attempt_at" timestamp w
 ALTER TABLE "tula"."webhook_deliveries" ADD COLUMN "completed_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "tula"."webhook_endpoints" ADD COLUMN "disabled_reason" text;--> statement-breakpoint
 ALTER TABLE "tula"."webhook_endpoints" ADD COLUMN "failing_since" timestamp with time zone;--> statement-breakpoint
+-- Both NULL for every endpoint that exists: until now nothing recorded a failing run, so
+-- each endpoint starts with none, and its first failed request under this version begins one.
+ALTER TABLE "tula"."webhook_endpoints" ADD COLUMN "last_failed_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "tula"."webhook_delivery_attempts" ADD CONSTRAINT "webhook_delivery_attempts_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "tula"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tula"."webhook_delivery_attempts" ADD CONSTRAINT "webhook_delivery_attempts_environment_id_environments_id_fk" FOREIGN KEY ("environment_id") REFERENCES "tula"."environments"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tula"."webhook_delivery_attempts" ADD CONSTRAINT "webhook_delivery_attempts_environment_project_fk" FOREIGN KEY ("environment_id","project_id") REFERENCES "tula"."environments"("id","project_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

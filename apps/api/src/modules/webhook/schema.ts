@@ -5,6 +5,7 @@ import {
   WEBHOOK_DELIVERY_STATES,
 } from '@tula/contract'
 import { z } from 'zod'
+import { WEBHOOK_DELIVERY_LIST_WINDOW } from '~/modules/webhook/service'
 
 export {
   CreatedWebhookEndpointSchema,
@@ -33,5 +34,10 @@ export const WebhookDeliveryQuerySchema = z
     eventType: ActivityTypeSchema.optional(),
     page: z.coerce.number().int().min(1).max(1_000_000).default(1),
     size: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
+  })
+  // The log is paged through its newest deliveries only: no offset over millions of rows.
+  .refine((query) => query.page * query.size <= WEBHOOK_DELIVERY_LIST_WINDOW, {
+    path: ['page'],
+    message: `The delivery log is paged through its newest ${WEBHOOK_DELIVERY_LIST_WINDOW} deliveries. Narrow it with state or eventType.`,
   })
   .meta({ ref: 'WebhookDeliveryQuery' })

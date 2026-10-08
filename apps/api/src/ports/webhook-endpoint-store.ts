@@ -20,12 +20,24 @@ export interface WebhookEndpointRecord {
    */
   disabledReason: WebhookDisabledReason | null
   /**
-   * Since when every request to it has failed; `null` when the last one that was answered
-   * succeeded. What "keeps failing" is measured from.
+   * When the current run of failed requests began: no success since, and no silence between
+   * two failures longer than the service allows. `null` when the last request that was
+   * answered succeeded. What "keeps failing" is measured from.
    */
   failingSince: Date | null
+  /**
+   * When a request to it last failed; `null` when the last one that was answered succeeded.
+   * A failure long after this does not continue the run: it begins a new one.
+   */
+  lastFailedAt: Date | null
   createdAt: Date
   updatedAt: Date
+}
+
+/** An endpoint's run of failed requests: both set while one is under way, both `null` otherwise. */
+export interface WebhookEndpointHealth {
+  failingSince: Date | null
+  lastFailedAt: Date | null
 }
 
 /** Why the server switches an endpoint off by itself. */
@@ -37,7 +49,8 @@ export interface WebhookEndpointChanges {
   eventTypes?: string[]
   enabled?: boolean
   /**
-   * Forget what the worker held against the endpoint (`failingSince`, `disabledReason`): it is
+   * Forget what the worker held against the endpoint (`failingSince`, `lastFailedAt`,
+   * `disabledReason`): it is
    * being switched on again, or given another address.
    */
   resetHealth?: true
@@ -96,18 +109,19 @@ export interface WebhookEndpointStore {
   delete(environmentId: string, id: string, activity: Recorded): Promise<boolean>
 
   /**
-   * Note since when an endpoint has been failing, or that it no longer is. The worker's own
-   * bookkeeping: it changes nothing about who can do what and is **not recorded** (ADR 0012).
-   * What it leads to, the endpoint being switched off, is ({@link WebhookEndpointStore.disable}).
+   * Write what the worker knows of an endpoint's run of failures: when it began and when a
+   * request last failed, or `null` for both after a success. The worker's own bookkeeping: it
+   * changes nothing about who can do what and is **not recorded** (ADR 0012). What it leads
+   * to, the endpoint being switched off, is ({@link WebhookEndpointStore.disable}).
    *
-   * A time is kept only if none is set (the first failure of a run of failures stands);
-   * `null` clears it. `updatedAt` does not move: no administrator changed the endpoint.
+   * `updatedAt` does not move: no administrator changed the endpoint. The service decides
+   * the values (whether a failure continues a run or begins one); the store writes them.
    *
-   * @param environmentId - The environment.
+   * @param environmentId - The environment. An endpoint of another is not touched.
    * @param id - The endpoint.
-   * @param since - When the run of failures began, or `null` after a success.
+   * @param health - The run as it stands now.
    */
-  setFailingSince(environmentId: string, id: string, since: Date | null): Promise<void>
+  setHealth(environmentId: string, id: string, health: WebhookEndpointHealth): Promise<void>
 
   /**
    * Switch an endpoint off because of what its deliveries did, and say why.

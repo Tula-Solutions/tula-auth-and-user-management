@@ -213,6 +213,15 @@ describe('migration 0019 carries the delivery rows of 0018 over', () => {
     ])
   })
 
+  test('an endpoint that existed starts with no failing run on record', async () => {
+    const endpoints = await client.query<Record<string, unknown>>(
+      'select enabled, disabled_reason, failing_since, last_failed_at from tula.webhook_endpoints'
+    )
+    expect(endpoints.rows).toEqual([
+      { enabled: true, disabled_reason: null, failing_since: null, last_failed_at: null },
+    ])
+  })
+
   test('row-level security is forced again on both tables the backfill lifted it from', async () => {
     const forced = await client.query<{ relname: string; relforcerowsecurity: boolean }>(
       `select relname, relforcerowsecurity from pg_class

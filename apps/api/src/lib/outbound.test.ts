@@ -345,6 +345,107 @@ describe('request', () => {
     expect(atTheCap.body.length).toBe(1024)
   })
 
+  test.each([
+    ['declared', 200, (): Response => new Response('x'.repeat(2048), { status: 200 })],
+    ['declared', 503, (): Response => new Response('x'.repeat(2048), { status: 503 })],
+    [
+      'streamed',
+      202,
+      (): Response =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              for (let i = 0; i < 8; i++) {
+                controller.enqueue(new TextEncoder().encode('canary-body '.repeat(64)))
+              }
+              controller.close()
+            },
+          }),
+          { status: 202, headers: { 'x-canary': 'canary-header' } }
+        ),
+    ],
+  ])(
+    'an answer over the cap (%s) is refused with its status code, and with nothing else of it',
+    async (_, status, answer) => {
+      respond = answer
+      const { resolve } = fakeResolver('127.0.0.1')
+      const error = await request(local(resolve), `http://hook.example.test:${port}/in`, {
+        maxResponseBytes: 1024,
+      }).then(
+        () => null,
+        (caught: unknown) => caught
+      )
+      expect(error).toBeInstanceOf(OutboundError)
+      const refused = error as OutboundError
+      expect(refused.reason).toBe('response_too_large')
+      // The status line had arrived before the body was judged: a number, and only that.
+      expect(refused.status).toBe(status)
+      expect(refused.message).toBe('The answer was larger than allowed.')
+      expect(Object.keys(refused).sort()).toEqual(['name', 'reason', 'status'])
+      expect(JSON.stringify([refused, refused.message, String(refused.stack)])).not.toContain(
+        'canary'
+      )
+    }
+  )
+
+  test('a failure with no answer carries no status', async () => {
+    respond = () => new Promise<Response>(() => {})
+    const { resolve } = fakeResolver('127.0.0.1')
+    const error = await request(local(resolve), `http://hook.example.test:${port}/in`, {
+      timeoutMs: 50,
+    }).then(
+      () => null,
+      (caught: unknown) => caught
+    )
+    expect((error as OutboundError).reason).toBe('timeout')
+    expect((error as OutboundError).status).toBeUndefined()
+  })
+
+  test('an answer that streams past the cap is cut off: the socket is destroyed and the rest is never read', async () => {
+    // A server that would stream for ever, in 16 KiB pieces, and says when its peer hung up.
+    const { createServer } = await import('node:http')
+    let written = 0
+    let closed: () => void = () => undefined
+    const hungUp = new Promise<void>((done) => {
+      closed = done
+    })
+    const endless = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' })
+      const piece = Buffer.alloc(16 * 1024, 'x')
+      const more = () => {
+        if (res.destroyed || res.socket?.destroyed) {
+          return
+        }
+        written += piece.length
+        res.write(piece, () => setImmediate(more))
+      }
+      res.socket?.on('close', closed)
+      more()
+    })
+    await new Promise<void>((listening) => endless.listen(0, '127.0.0.1', listening))
+    try {
+      const address = endless.address()
+      const endlessPort = typeof address === 'object' && address ? address.port : 0
+      const { resolve } = fakeResolver('127.0.0.1')
+      const error = await request(local(resolve), `http://hook.example.test:${endlessPort}/in`, {
+        maxResponseBytes: 1024,
+        timeoutMs: 5_000,
+      }).then(
+        () => null,
+        (caught: unknown) => caught
+      )
+      expect((error as OutboundError).reason).toBe('response_too_large')
+      expect((error as OutboundError).status).toBe(200)
+      // The server sees the connection go: the guard did not sit and drain the stream.
+      await hungUp
+      // What it got to write before that is a few pieces, not megabytes.
+      expect(written).toBeLessThan(8 * 1024 * 1024)
+    } finally {
+      endless.closeAllConnections()
+      await new Promise<void>((done) => endless.close(() => done()))
+    }
+  })
+
   test('an endpoint that does not answer in time is a timeout', async () => {
     respond = () => new Promise<Response>(() => {})
     const { resolve } = fakeResolver('127.0.0.1')

@@ -67,6 +67,7 @@ export function describeWebhookStores(
       enabled: true,
       disabledReason: null,
       failingSince: null,
+      lastFailedAt: null,
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -253,27 +254,6 @@ export function describeWebhookStores(
       expect(await ctx.recorded()).toEqual(['webhook_endpoint.deleted'])
     })
 
-    test('the first failure of a run is when an endpoint began to fail; a success clears it; neither is recorded', async () => {
-      const record = await registered(ctx.a)
-      const first = new Date('2026-01-03T00:00:00.000Z')
-      await ctx.endpoints.setFailingSince(ctx.a.environmentId, record.id, first)
-      await ctx.endpoints.setFailingSince(ctx.a.environmentId, record.id, later)
-      // No administrator changed it: `updatedAt` has not moved.
-      expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual({
-        ...record,
-        failingSince: first,
-      })
-      await ctx.endpoints.setFailingSince(ctx.a.environmentId, record.id, null)
-      await ctx.endpoints.setFailingSince(ctx.a.environmentId, record.id, null)
-      expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(record)
-      await ctx.endpoints.setFailingSince(ctx.a.environmentId, record.id, later)
-      expect((await ctx.endpoints.find(ctx.a.environmentId, record.id))?.failingSince).toEqual(
-        later
-      )
-      await ctx.endpoints.setFailingSince(ctx.a.environmentId, Bun.randomUUIDv7(), later)
-      expect(await ctx.recorded()).toEqual([])
-    })
-
     test('the server switches an endpoint off once, with its reason, and that is recorded', async () => {
       const record = await registered(ctx.a)
       const disable = (reason: 'failing' | 'gone') =>
@@ -326,7 +306,10 @@ export function describeWebhookStores(
 
     test('an update can forget what the worker held against an endpoint, and otherwise keeps it', async () => {
       const record = await registered(ctx.a)
-      await ctx.endpoints.setFailingSince(ctx.a.environmentId, record.id, now)
+      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, {
+        failingSince: now,
+        lastFailedAt: later,
+      })
       await ctx.endpoints.disable(
         ctx.a.environmentId,
         record.id,
@@ -341,7 +324,12 @@ export function describeWebhookStores(
         later,
         Audit.none('fixture')
       )
-      expect(kept).toMatchObject({ enabled: false, disabledReason: 'gone', failingSince: now })
+      expect(kept).toMatchObject({
+        enabled: false,
+        disabledReason: 'gone',
+        failingSince: now,
+        lastFailedAt: later,
+      })
       const reset = await ctx.endpoints.update(
         ctx.a.environmentId,
         record.id,
@@ -349,12 +337,20 @@ export function describeWebhookStores(
         later,
         Audit.none('fixture')
       )
-      expect(reset).toMatchObject({ enabled: true, disabledReason: null, failingSince: null })
+      expect(reset).toMatchObject({
+        enabled: true,
+        disabledReason: null,
+        failingSince: null,
+        lastFailedAt: null,
+      })
     })
 
     test('another environment cannot mark an endpoint as failing or switch it off', async () => {
       const record = await registered(ctx.a)
-      await ctx.endpoints.setFailingSince(ctx.b.environmentId, record.id, later)
+      await ctx.endpoints.setHealth(ctx.b.environmentId, record.id, {
+        failingSince: later,
+        lastFailedAt: later,
+      })
       expect(
         await ctx.endpoints.disable(
           ctx.b.environmentId,
@@ -573,6 +569,7 @@ export function describeWebhookStores(
       const listed = await ctx.deliveries.list(ctx.a.environmentId, one.id, {
         page: 1,
         perPage: 10,
+        maxCount: 1000,
       })
       expect(listed.totalCount).toBe(2)
       expect(listed.deliveries.map((row) => row.eventId).sort()).toEqual([first, second].sort())
@@ -747,7 +744,11 @@ export function describeWebhookStores(
       }
       expect(await read(ctx.b, target.id, id)).toBeNull()
       expect(
-        await ctx.deliveries.list(ctx.b.environmentId, target.id, { page: 1, perPage: 10 })
+        await ctx.deliveries.list(ctx.b.environmentId, target.id, {
+          page: 1,
+          perPage: 10,
+          maxCount: 1000,
+        })
       ).toEqual({ deliveries: [], totalCount: 0 })
       expect((await read(ctx.a, target.id, id))?.delivery).toMatchObject({
         state: 'pending',
@@ -962,31 +963,107 @@ export function describeWebhookStores(
         const page = await ctx.deliveries.list(ctx.a.environmentId, target.id, query)
         return { ids: page.deliveries.map((row) => row.id), totalCount: page.totalCount }
       }
-      expect(await list({ page: 1, perPage: 10 })).toEqual({
+      expect(await list({ page: 1, perPage: 10, maxCount: 1000 })).toEqual({
         ids: [newest.id, middle.id, oldest.id],
         totalCount: 3,
       })
-      expect(await list({ page: 1, perPage: 2 })).toEqual({
+      expect(await list({ page: 1, perPage: 2, maxCount: 1000 })).toEqual({
         ids: [newest.id, middle.id],
         totalCount: 3,
       })
-      expect(await list({ page: 2, perPage: 2 })).toEqual({ ids: [oldest.id], totalCount: 3 })
-      expect(await list({ page: 3, perPage: 2 })).toEqual({ ids: [], totalCount: 3 })
-      expect(await list({ state: 'pending', page: 1, perPage: 10 })).toEqual({
+      expect(await list({ page: 2, perPage: 2, maxCount: 1000 })).toEqual({
+        ids: [oldest.id],
+        totalCount: 3,
+      })
+      expect(await list({ page: 3, perPage: 2, maxCount: 1000 })).toEqual({
+        ids: [],
+        totalCount: 3,
+      })
+      expect(await list({ state: 'pending', page: 1, perPage: 10, maxCount: 1000 })).toEqual({
         ids: [newest.id, middle.id],
         totalCount: 2,
       })
-      expect(await list({ state: 'delivered', page: 1, perPage: 10 })).toEqual({
+      expect(await list({ state: 'delivered', page: 1, perPage: 10, maxCount: 1000 })).toEqual({
         ids: [oldest.id],
         totalCount: 1,
       })
-      expect(await list({ eventType: 'session.created', page: 1, perPage: 10 })).toEqual({
+      expect(
+        await list({ eventType: 'session.created', page: 1, perPage: 10, maxCount: 1000 })
+      ).toEqual({
         ids: [middle.id],
         totalCount: 1,
       })
       expect(
-        await list({ state: 'failed', eventType: 'user.created', page: 1, perPage: 10 })
+        await list({
+          state: 'failed',
+          eventType: 'user.created',
+          page: 1,
+          perPage: 10,
+          maxCount: 1000,
+        })
       ).toEqual({ ids: [], totalCount: 0 })
+    })
+
+    test('the count of a list stops at the ceiling it is given, and the page is unaffected by it', async () => {
+      const target = await registered(ctx.a)
+      const minute = (n: number) => new Date(now.getTime() + n * 60_000)
+      const ids: string[] = []
+      for (let n = 1; n <= 5; n++) {
+        ids.push((await queued(ctx.a, target.id, minute(n))).id)
+      }
+      const page = await ctx.deliveries.list(ctx.a.environmentId, target.id, {
+        page: 1,
+        perPage: 2,
+        maxCount: 3,
+      })
+      expect(page.totalCount).toBe(3)
+      expect(page.deliveries.map((row) => row.id)).toEqual([ids[4] as string, ids[3] as string])
+      const all = await ctx.deliveries.list(ctx.a.environmentId, target.id, {
+        page: 1,
+        perPage: 2,
+        maxCount: 5,
+      })
+      expect(all.totalCount).toBe(5)
+      const more = await ctx.deliveries.list(ctx.a.environmentId, target.id, {
+        state: 'pending',
+        page: 1,
+        perPage: 2,
+        maxCount: 50,
+      })
+      expect(more.totalCount).toBe(5)
+    })
+
+    test('how long an endpoint has been failing and when it last failed are kept together, and cleared together', async () => {
+      const record = await registered(ctx.a)
+      const first = new Date('2026-01-03T00:00:00.000Z')
+      const second = new Date('2026-01-04T00:00:00.000Z')
+      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, {
+        failingSince: first,
+        lastFailedAt: second,
+      })
+      // No administrator changed it: `updatedAt` has not moved.
+      expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual({
+        ...record,
+        failingSince: first,
+        lastFailedAt: second,
+      })
+      await ctx.endpoints.setHealth(ctx.b.environmentId, record.id, {
+        failingSince: null,
+        lastFailedAt: null,
+      })
+      expect((await ctx.endpoints.find(ctx.a.environmentId, record.id))?.failingSince).toEqual(
+        first
+      )
+      await ctx.endpoints.setHealth(ctx.a.environmentId, record.id, {
+        failingSince: null,
+        lastFailedAt: null,
+      })
+      expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(record)
+      await ctx.endpoints.setHealth(ctx.a.environmentId, Bun.randomUUIDv7(), {
+        failingSince: first,
+        lastFailedAt: first,
+      })
+      expect(await ctx.recorded()).toEqual([])
     })
 
     test('settled events are deleted before a cutoff, oldest first, up to the limit; waiting ones never', async () => {

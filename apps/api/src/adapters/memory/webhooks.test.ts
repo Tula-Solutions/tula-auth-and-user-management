@@ -53,6 +53,7 @@ test('an endpoint id is stored once', async () => {
     enabled: true,
     disabledReason: null,
     failingSince: null,
+    lastFailedAt: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   }

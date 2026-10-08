@@ -75,10 +75,17 @@ export const WebhookEndpointSchema = z
      */
     disabledReason: z.string().nullable(),
     /**
-     * Since when every delivery to the endpoint has failed, or `null` when the last one that
-     * got an answer succeeded. An endpoint that keeps failing is switched off.
+     * Since when requests to the endpoint have kept failing: the first failure of the current
+     * run, with no success since and no silence longer than the retry schedule. `null` when
+     * the last request that got an answer succeeded. An endpoint whose run reaches five days
+     * is switched off.
      */
     failingSince: z.iso.datetime().nullable(),
+    /**
+     * When a request to the endpoint last failed, or `null` when the last one that got an
+     * answer succeeded. A failure after a long silence starts `failingSince` again.
+     */
+    lastFailedAt: z.iso.datetime().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -126,8 +133,9 @@ export const UpdateWebhookEndpointRequestSchema = z
 
 /**
  * Why a delivery cannot be sent again, as `webhook.cannot_redeliver` says it in
- * `params.reason`: the server is still retrying it, its endpoint is switched off, or its
- * event's payload is no longer kept (also: it was a test event, which never had one).
+ * `params.reason`: the server is still retrying it, its endpoint is switched off, its
+ * event's payload is no longer kept (also: it was a test event, which never had one), or it
+ * has had as many requests as one delivery may have.
  *
  * @example
  * ```ts
@@ -140,6 +148,7 @@ export const WEBHOOK_REDELIVER_REFUSALS = [
   'delivery_pending',
   'endpoint_disabled',
   'event_gone',
+  'attempt_limit',
 ] as const
 
 /**

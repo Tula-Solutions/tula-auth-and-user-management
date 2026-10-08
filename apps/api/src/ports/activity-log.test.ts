@@ -144,7 +144,7 @@ async function _webhookEndpoints(endpoints: WebhookEndpointStore): Promise<void>
   await endpoints.disable(ENV, 'endpoint', 'gone', AT, undefined)
   // Since when an endpoint has been failing is the worker's bookkeeping: a method of its own
   // that takes none (ADR 0012).
-  await endpoints.setFailingSince(ENV, 'endpoint', AT)
+  await endpoints.setHealth(ENV, 'endpoint', { failingSince: AT, lastFailedAt: AT })
 }
 
 /** The memory adapters are what tests hold (`TestDeps`): they are as strict as the ports. */

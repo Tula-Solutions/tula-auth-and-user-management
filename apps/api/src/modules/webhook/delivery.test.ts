@@ -665,19 +665,97 @@ describe('an endpoint that keeps failing', () => {
     return eventId
   }
 
-  test('is switched off once every request to it has failed for five days, not a moment sooner', async () => {
+  /**
+   * Fail a new event now and then one more every day, with nothing but failures in between,
+   * until five days after the first: the run that switches an endpoint off.
+   */
+  async function failSteadily(): Promise<{ since: Date; last: string }> {
+    respond = answer(500)
+    let last = await failOne()
+    const since = deps.clock.now()
+    const end = since.getTime() + durationToMs(Webhooks.WEBHOOK_DISABLE_AFTER)
+    while (deps.clock.now().getTime() < end) {
+      deps.clock.advance(Math.min(durationToMs('1d'), end - deps.clock.now().getTime()))
+      last = await failOne()
+    }
+    return { since, last }
+  }
+
+  test('the longest silence a run of failures may have is the whole retry schedule, with its jitter, and a margin', () => {
+    const schedule = Webhooks.WEBHOOK_RETRY_DELAYS.reduce(
+      (sum, wait) => sum + durationToMs(wait),
+      0
+    )
+    expect(Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS).toBe(
+      Math.round(schedule * (1 + Webhooks.WEBHOOK_RETRY_JITTER)) +
+        durationToMs(Webhooks.WEBHOOK_FAILURE_RUN_MARGIN)
+    )
+    // Longer than any wait between two requests of one delivery, shorter than the five days.
+    expect(Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS).toBeGreaterThan(durationToMs('10h') * 1.2)
+    expect(Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS).toBeLessThan(
+      durationToMs(Webhooks.WEBHOOK_DISABLE_AFTER)
+    )
+  })
+
+  // The review's case (F1): one bad day, a fix, five quiet days, one hiccup.
+  test('one event that failed every request, then five days of silence, then one failure does not switch the endpoint off', async () => {
+    quietLogs()
+    const endpoint = await register()
+    respond = answer(500)
+    await failOne()
+    const first = deps.clock.now()
+    for (const wait of Webhooks.WEBHOOK_RETRY_DELAYS) {
+      deps.clock.advance(wait)
+      await round()
+    }
+    expect(received).toHaveLength(Webhooks.WEBHOOK_MAX_ATTEMPTS)
+    expect(await endpointNow(endpoint.id)).toMatchObject({
+      failingSince: first,
+      lastFailedAt: deps.clock.now(),
+    })
+
+    // The receiver is fixed. Nothing happens for five days, so nothing tells the server so.
+    deps.clock.advance(Webhooks.WEBHOOK_DISABLE_AFTER)
+    await round()
+    // One new event meets one 500: the ninth request the endpoint has ever been sent.
+    const hiccup = await failOne()
+    expect(received).toHaveLength(Webhooks.WEBHOOK_MAX_ATTEMPTS + 1)
+    expect(await Webhooks.get(deps, tenant, endpoint.id)).toMatchObject({
+      enabled: true,
+      disabledReason: null,
+      // A run of its own, begun by this failure: not the one from six days ago.
+      failingSince: deps.clock.now().toISOString(),
+      lastFailedAt: deps.clock.now().toISOString(),
+    })
+    expect(deps.activityLog.ofType('webhook_endpoint.disabled')).toEqual([])
+    // And its retry gets through.
+    respond = answer(204)
+    deps.clock.advance('5s')
+    await round()
+    expect(deliveryOf(hiccup)).toMatchObject({ state: 'delivered', attempts: 2 })
+    expect(await endpointNow(endpoint.id)).toMatchObject({
+      enabled: true,
+      failingSince: null,
+      lastFailedAt: null,
+    })
+  })
+
+  test('failures with no silence longer than the schedule and no success, for five days, switch it off, not a moment sooner', async () => {
     quietLogs()
     const endpoint = await register()
     respond = answer(500)
     await failOne()
     const since = deps.clock.now()
-    expect((await endpointNow(endpoint.id)).failingSince).toEqual(since)
-
-    // An hour, a night, a weekend: failing all the while, and still on.
-    for (const wait of ['1h', '11h', '2d', '2d']) {
+    // A failing delivery started each day: an hour, a night, four days of nothing but
+    // failures, and it is still on.
+    for (const wait of ['1h', '11h', '12h', '1d', '1d', '1d']) {
       deps.clock.advance(wait)
       await failOne()
-      expect(await endpointNow(endpoint.id)).toMatchObject({ enabled: true, failingSince: since })
+      expect(await endpointNow(endpoint.id)).toMatchObject({
+        enabled: true,
+        failingSince: since,
+        lastFailedAt: deps.clock.now(),
+      })
     }
     // One millisecond short of five days since the first failure.
     deps.clock.set(new Date(since.getTime() + durationToMs(Webhooks.WEBHOOK_DISABLE_AFTER) - 1))
@@ -713,22 +791,59 @@ describe('an endpoint that keeps failing', () => {
     expect(deps.activityLog.ofType('webhook_endpoint.disabled')).toHaveLength(1)
   })
 
+  test('a silence exactly as long as the limit continues the run; a millisecond longer starts it again', async () => {
+    quietLogs()
+    const endpoint = await register()
+    respond = answer(500)
+    await failOne()
+    const since = deps.clock.now()
+    deps.clock.advance(Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS)
+    await failOne()
+    expect(await endpointNow(endpoint.id)).toMatchObject({
+      failingSince: since,
+      lastFailedAt: deps.clock.now(),
+    })
+    deps.clock.advance(Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS + 1)
+    await failOne()
+    expect(await endpointNow(endpoint.id)).toMatchObject({
+      failingSince: deps.clock.now(),
+      lastFailedAt: deps.clock.now(),
+    })
+  })
+
+  test('silences that restart the run keep an endpoint on for ever, however long it has been failing now and then', async () => {
+    quietLogs()
+    const endpoint = await register()
+    respond = answer(500)
+    for (let count = 0; count < 12; count++) {
+      await failOne()
+      deps.clock.advance(Webhooks.WEBHOOK_FAILURE_RUN_MAX_GAP_MS + 1)
+    }
+    // Twelve failures over more than two weeks, never two in one run.
+    expect((await endpointNow(endpoint.id)).enabled).toBe(true)
+  })
+
   test('one success in between starts the count again', async () => {
     quietLogs()
     const endpoint = await register()
     respond = answer(500)
     await failOne()
-    deps.clock.advance('4d')
+    for (let day = 0; day < 4; day++) {
+      deps.clock.advance('1d')
+      await failOne()
+    }
     respond = answer(204)
     await failOne()
-    expect((await endpointNow(endpoint.id)).failingSince).toBeNull()
+    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null, lastFailedAt: null })
     respond = answer(500)
-    deps.clock.advance('4d')
+    deps.clock.advance('12h')
     await failOne()
     const since = deps.clock.now()
-    deps.clock.advance('4d')
-    await failOne()
-    // Eight days after the first failure, four after the latest run of them began.
+    for (let day = 0; day < 4; day++) {
+      deps.clock.advance('1d')
+      await failOne()
+    }
+    // Eight and a half days after the first failure, four after the latest run of them began.
     expect(await endpointNow(endpoint.id)).toMatchObject({ enabled: true, failingSince: since })
   })
 
@@ -750,17 +865,20 @@ describe('an endpoint that keeps failing', () => {
   test('switching it on again forgets what tripped it, and what was pending is tried again; what happened while it was off is not sent', async () => {
     quietLogs()
     const endpoint = await register()
-    respond = answer(500)
-    await failOne()
-    deps.clock.advance(Webhooks.WEBHOOK_DISABLE_AFTER)
-    const pending = await failOne()
+    const { last: pending } = await failSteadily()
     expect((await endpointNow(endpoint.id)).enabled).toBe(false)
+    expect(deliveryOf(pending).state).toBe('pending')
     const whileOff = happen()
     deps.clock.advance('1h')
     await round()
 
     const updated = await Webhooks.update(deps, tenant, endpoint.id, { enabled: true }, TEST_ACTOR)
-    expect(updated).toMatchObject({ enabled: true, disabledReason: null, failingSince: null })
+    expect(updated).toMatchObject({
+      enabled: true,
+      disabledReason: null,
+      failingSince: null,
+      lastFailedAt: null,
+    })
     expect(deps.activityLog.entries.at(-1)).toMatchObject({
       type: 'webhook_endpoint.updated',
       actor: { type: TEST_ACTOR.type },
@@ -769,8 +887,10 @@ describe('an endpoint that keeps failing', () => {
     respond = answer(204)
     const sent = received.length
     await round()
-    expect(received.slice(sent).map((request) => request.headers['webhook-id'])).toEqual([pending])
-    expect(deliveryOf(pending)).toMatchObject({ state: 'delivered', attempts: 2 })
+    expect(received.slice(sent).map((request) => request.headers['webhook-id'])).toContain(pending)
+    // It waited, untried, while the endpoint was off (an older delivery's retry was what
+    // tripped the switch), and is delivered on its first request.
+    expect(deliveryOf(pending)).toMatchObject({ state: 'delivered', attempts: 1 })
     expect(deps.webhookDeliveries.rows.some((row) => row.eventId === whileOff)).toBe(false)
     // A fresh start: one failure now is the first of a new run, five days from tripping.
     respond = answer(500)
@@ -788,9 +908,12 @@ describe('an endpoint that keeps failing', () => {
     await failOne()
     const since = deps.clock.now()
     await Webhooks.update(deps, tenant, endpoint.id, { eventTypes: ['user.banned'] }, TEST_ACTOR)
-    expect((await endpointNow(endpoint.id)).failingSince).toEqual(since)
+    expect(await endpointNow(endpoint.id)).toMatchObject({
+      failingSince: since,
+      lastFailedAt: since,
+    })
     await Webhooks.update(deps, tenant, endpoint.id, { url: receiverUrl('/new') }, TEST_ACTOR)
-    expect((await endpointNow(endpoint.id)).failingSince).toBeNull()
+    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null, lastFailedAt: null })
   })
 
   test('an administrator switching an endpoint off leaves no reason of the server’s', async () => {
@@ -1615,5 +1738,193 @@ describe('sending a delivery again', () => {
     expect((await failure(Webhooks.redeliver(deps, tenant, endpoint.id, delivery.id))).status).toBe(
       404
     )
+  })
+})
+
+describe('what a request on demand does to an endpoint’s health', () => {
+  /** An endpoint with one failed request on its record, and the delivery that holds it. */
+  async function failing() {
+    const endpoint = await register()
+    const eventId = happen()
+    respond = answer(500)
+    await round()
+    for (const wait of Webhooks.WEBHOOK_RETRY_DELAYS) {
+      deps.clock.advance(wait)
+      await round()
+    }
+    const before = await endpointNow(endpoint.id)
+    expect(before.failingSince).not.toBeNull()
+    return { endpoint, delivery: deliveryOf(eventId), before }
+  }
+
+  test('a delivery sent again that gets through clears it: the receiver took a real event', async () => {
+    quietLogs()
+    const { endpoint, delivery } = await failing()
+    respond = answer(204)
+    await Webhooks.redeliver(deps, tenant, endpoint.id, delivery.id)
+    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null, lastFailedAt: null })
+  })
+
+  test('a test event that gets through does not: it is no delivery of an event, and a receiver may treat tests apart', async () => {
+    quietLogs()
+    const { endpoint, before } = await failing()
+    respond = answer(204)
+    const sent = await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType: 'user.created' })
+    expect(sent.outcome).toBe('delivered')
+    expect(await endpointNow(endpoint.id)).toEqual(before)
+  })
+
+  test('one that fails, test or sent again, moves nothing', async () => {
+    quietLogs()
+    const { endpoint, delivery, before } = await failing()
+    deps.clock.advance('3h')
+    respond = answer(500)
+    await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType: 'user.created' })
+    await Webhooks.redeliver(deps, tenant, endpoint.id, delivery.id)
+    respond = answer(410)
+    await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType: 'user.created' })
+    await Webhooks.redeliver(deps, tenant, endpoint.id, delivery.id)
+    expect(await endpointNow(endpoint.id)).toEqual(before)
+    expect(deps.activityLog.ofType('webhook_endpoint.disabled')).toEqual([])
+  })
+})
+
+describe('an answer larger than the server reads', () => {
+  const big = (status: number) => () =>
+    new Response('canary-body '.repeat(Webhooks.WEBHOOK_MAX_RESPONSE_BYTES), {
+      status,
+      headers: { 'x-canary': 'canary-header' },
+    })
+
+  // The review's case (F3): a healthy receiver with a chatty answer was sent the same event
+  // eight times, given up on, and in the end switched off.
+  test('with a 2xx status is a delivery: the receiver took the event, and nothing of its body is read', async () => {
+    quietLogs()
+    const endpoint = await register()
+    const eventId = happen()
+    respond = big(200)
+    expect(await round()).toMatchObject({ delivered: 1, undelivered: 0 })
+    const delivery = deliveryOf(eventId)
+    expect(delivery).toMatchObject({
+      state: 'delivered',
+      attempts: 1,
+      statusCode: 200,
+      failureReason: null,
+      nextAttemptAt: null,
+    })
+    expect(delivery.log).toMatchObject([{ attempt: 1, statusCode: 200, failureReason: null }])
+    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null })
+    // Once, not eight times.
+    deps.clock.advance('2d')
+    await round()
+    expect(received).toHaveLength(1)
+    expect(JSON.stringify([delivery, deps.webhookDeliveries.rows, logged()])).not.toContain(
+      'canary'
+    )
+  })
+
+  test('with a 2xx status clears an endpoint that was failing', async () => {
+    quietLogs()
+    const endpoint = await register()
+    respond = answer(500)
+    happen()
+    await round()
+    expect((await endpointNow(endpoint.id)).failingSince).not.toBeNull()
+    respond = big(200)
+    deps.clock.advance('5s')
+    await round()
+    expect(await endpointNow(endpoint.id)).toMatchObject({ failingSince: null })
+  })
+
+  test('with any other status is an ordinary failed request, with that status, and is retried', async () => {
+    quietLogs()
+    await register()
+    const eventId = happen()
+    respond = big(503)
+    expect(await round()).toMatchObject({ delivered: 0, undelivered: 1 })
+    expect(deliveryOf(eventId)).toMatchObject({
+      state: 'pending',
+      attempts: 1,
+      statusCode: 503,
+      failureReason: null,
+    })
+    expect(deliveryOf(eventId).log).toMatchObject([{ statusCode: 503, failureReason: null }])
+  })
+
+  test('to a test event and to a delivery sent again is judged the same way', async () => {
+    quietLogs()
+    const endpoint = await register()
+    const eventId = happen()
+    await round()
+    respond = big(202)
+    const test = await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType: 'user.created' })
+    expect(test).toMatchObject({ outcome: 'delivered', statusCode: 202, failureReason: null })
+    const again = await Webhooks.redeliver(deps, tenant, endpoint.id, deliveryOf(eventId).id)
+    expect(again).toMatchObject({ outcome: 'delivered', statusCode: 202, failureReason: null })
+    respond = big(500)
+    const failed = await Webhooks.sendTest(deps, tenant, endpoint.id, { eventType: 'user.created' })
+    expect(failed).toMatchObject({ outcome: 'failed', statusCode: 500, failureReason: null })
+    expect(JSON.stringify([test, again, failed])).not.toContain('canary')
+  })
+})
+
+describe('how many requests one delivery can gather', () => {
+  // The review's case (F4): ten a minute for ever, all into one delivery's log.
+  test('a delivery is sent again up to the cap on its attempts, and past it is refused with a reason', async () => {
+    quietLogs()
+    const endpoint = await register()
+    const eventId = happen()
+    respond = answer(500)
+    await round()
+    for (const wait of Webhooks.WEBHOOK_RETRY_DELAYS) {
+      deps.clock.advance(wait)
+      await round()
+    }
+    const { id } = deliveryOf(eventId)
+    const room = Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS - Webhooks.WEBHOOK_MAX_ATTEMPTS
+    expect(room).toBeGreaterThan(0)
+    for (let count = 0; count < room; count++) {
+      expect(await Webhooks.redeliver(deps, tenant, endpoint.id, id)).toMatchObject({
+        outcome: 'failed',
+      })
+    }
+    expect(deliveryOf(eventId).attempts).toBe(Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS)
+    const sent = received.length
+
+    respond = answer(204)
+    const error = await failure(Webhooks.redeliver(deps, tenant, endpoint.id, id))
+    expect(error).toMatchObject({
+      status: 409,
+      code: 'webhook.cannot_redeliver',
+      params: { reason: 'attempt_limit' },
+    })
+    expect(received).toHaveLength(sent)
+    // What one answer of the log can hold is bounded by that.
+    const detail = await Webhooks.getDelivery(deps, tenant, endpoint.id, id)
+    expect(detail.attempts).toHaveLength(Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS)
+    expect(detail.attemptCount).toBe(Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS)
+  })
+
+  test('the cap leaves room to send a given-up delivery again several times', () => {
+    expect(Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS).toBeGreaterThanOrEqual(
+      Webhooks.WEBHOOK_MAX_ATTEMPTS + 5
+    )
+    expect(Webhooks.WEBHOOK_MAX_TOTAL_ATTEMPTS).toBeLessThanOrEqual(100)
+  })
+})
+
+describe('the window of the delivery log', () => {
+  test('the count is never taken past the window an operator can page through', async () => {
+    const endpoint = await register()
+    const list = spyOn(deps.webhookDeliveries, 'list')
+    spies.push(list as never)
+    await Webhooks.listDeliveries(deps, tenant, endpoint.id, { page: 3, size: 50 })
+    expect(list.mock.calls[0]?.[2]).toEqual({
+      state: undefined,
+      eventType: undefined,
+      page: 3,
+      perPage: 50,
+      maxCount: Webhooks.WEBHOOK_DELIVERY_LIST_WINDOW,
+    })
   })
 })

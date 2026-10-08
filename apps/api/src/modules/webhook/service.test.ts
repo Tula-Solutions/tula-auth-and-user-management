@@ -169,6 +169,7 @@ describe('registering an endpoint', () => {
       enabled: true,
       disabledReason: null,
       failingSince: null,
+      lastFailedAt: null,
       createdAt: created.createdAt,
       updatedAt: created.updatedAt,
     })
@@ -310,6 +311,7 @@ describe('reading, changing and removing an endpoint', () => {
       enabled: false,
       disabledReason: null,
       failingSince: null,
+      lastFailedAt: null,
       createdAt: created.createdAt,
       updatedAt: deps.clock.now().toISOString(),
     })
@@ -672,13 +674,17 @@ describe('a delivery round', () => {
     expect(await deliveriesOf(eventId)).toMatchObject([{ state: 'pending', statusCode: 302 }])
   })
 
-  test('an answer larger than the cap is a failed delivery with no status', async () => {
+  // Changed after review (TULA-42, F3): this was a failed delivery with no status, which with
+  // retries sent a healthy receiver the same event eight times. The status line arrives
+  // before the body, so the answer is judged by it (`delivery.test.ts`, "an answer larger
+  // than the server reads").
+  test('an answer larger than the cap is judged by its status, and nothing of its body is read', async () => {
     await register()
     const eventId = happen()
     respond = () => new Response('x'.repeat(Webhooks.WEBHOOK_MAX_RESPONSE_BYTES + 1))
     await Webhooks.deliverPending(deps)
     expect(await deliveriesOf(eventId)).toMatchObject([
-      { state: 'pending', statusCode: null, failureReason: 'response_too_large' },
+      { state: 'delivered', statusCode: 200, failureReason: null },
     ])
     expect(outboxRow(eventId).deliveredAt).not.toBeNull()
   })
