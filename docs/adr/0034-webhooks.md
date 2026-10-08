@@ -1021,6 +1021,10 @@ that sends something (ids only). The alternative, sending nothing (`signing_fail
 punish every receiver that has already moved to the new secret for a fault in a secret that
 is on its way out. A receiver still on the old secret refuses these deliveries, which are
 retried on the schedule; the operator's remedy is the key, or deploying the new secret.
+This is the one case in which a delivery carries the new secret's signature alone before
+the overlap has ended, and those refusals count as failed requests like any other, so they
+feed the rule that switches a failing endpoint off. It takes a stored secret that no longer
+opens (a damaged row, or a different `TULA_MASTER_KEY`), which is why it is accepted.
 
 If the current secret does not open, nothing changes: `signing_failed`, nothing sent, no
 attempt counted. **The previous secret never signs alone.**
