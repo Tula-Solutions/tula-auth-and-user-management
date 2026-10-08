@@ -239,8 +239,8 @@ whose answer decides what happens next (step 2.3).
   the registration (`Cache-Control: no-store`), sealed with `~/lib/secret-box` (purpose
   `webhook-secrets`, bound to environment and endpoint id). Never a request field, never
   returned by a read, a list or an update, never in a log line, an audit entry, an event
-  payload or an error. A secret that cannot be opened is a recorded failed delivery
-  (`signing_failed`), not a failed round.
+  payload or an error. A secret that cannot be opened puts its endpoint's deliveries
+  off (`signing_failed`, no attempt counted), and is never a failed round.
 - **An endpoint's address is not written anywhere it could travel.** Not in an audit entry,
   not in an event payload (they go to every other subscribed endpoint), not in a log line. A
   change is recorded as `changed: ['url']`.
@@ -251,34 +251,95 @@ whose answer decides what happens next (step 2.3).
   or what its name resolved to. `deps.outbound` is built in `container.ts` as `{ tier }` and
   nothing else; never loosen the guard for a test, a scenario or a deployment.
 - **Never store more of a receiver's answer than its status code and how long it took.**
-  `webhook_deliveries` has no column for a header or a body and must not get one; the worker
-  reads `answer.status` and drops the rest where the request was made. `failure_reason` is
-  one of the server's own fixed words. This is what keeps an endpoint from being a way to
+  Neither `webhook_deliveries` nor `webhook_delivery_attempts` has a column for a header or a
+  body and neither must get one; the one function that makes a request (`request` in the
+  service) reads `answer.status` and drops the rest, `Retry-After` included. `failure_reason`
+  is one of the server's own fixed words. An answer over the size cap is judged by its status
+  (the guard's `response_too_large` carries the status code and nothing else): a 2xx is a
+  delivery, anything else a failed request with that status. Never fail a delivery for the
+  size of a body nobody reads. This is what keeps an endpoint from being a way to
   read whatever answers at its address. A new delivery path gets the canary test (a
-  recognisable string in the answer's headers and body, absent from every store and log).
+  recognisable string in the answer's headers and body, absent from every store, log and
+  answer of the admin API).
 - **Signing is the contract's `signWebhook`** (`@tula/contract/webhook-signature`, Zod-free,
   web platform APIs only): `v1,` + base64 HMAC-SHA256 over `<id>.<timestamp>.<body>`, the
   body being the exact text sent. The server, `@tula/admin`'s `verifyWebhook` and the
   conformance runner all use it; the contract's tests hold the reference libraries' example.
 - **The worker is `Webhooks.run`, on every instance, under its own job lock**
-  (`'webhook_delivery'`, advisory lock id 2: never renumber). Per environment: undelivered
-  events oldest first in bounded batches; an event is **owed** to the endpoints that are
-  switched on, subscribed to its type and were registered no later than it happened; **at
-  most** one attempt per endpoint and event (retries are a later step); `delivered_at` is set once every
-  owed endpoint has a delivery row, which includes the event owed to nobody. A row with no
-  `schemaVersion` (recorded before the event contract) is never sent: it is marked and
+  (`'webhook_delivery'`, advisory lock id 2: never renumber). Per environment, four passes in
+  this order: settle in bulk what is owed to nobody; **queue** (every other waiting event
+  becomes one `pending` delivery per endpoint it is **owed** to: switched on, subscribed to
+  its type, registered no later than it happened; then the event is settled); give up what
+  has been pending longer than `WEBHOOK_DELIVERY_MAX_AGE`; **send** what is due. A row with
+  no `schemaVersion` (recorded before the event contract) is never queued: it is settled and
   counted. One environment's failure is logged and skipped, and each has a time budget per
-  round, so a slow endpoint cannot hold up the others.
-- **Two kinds of event are settled without being tried, and every document says so.** After
-  an endpoint lets one delivery run out its deadline, the rest of what it is owed in that
-  round is recorded `endpoint_unresponsive` (no request made), so one hung endpoint cannot
-  spend the budget its environment's other endpoints share; and everything owed to an
-  endpoint whose sealed secret does not open is recorded `signing_failed`, logged **once per
-  endpoint per round with a count**, never once per event. Neither is sent later until
-  retries exist: a receiver that is slow once can lose up to a round's worth, and a wrong
-  `TULA_MASTER_KEY` loses events the receiver did nothing to lose. Never describe either row
-  as an attempt, and never leave such events unsettled instead (with no retry and no
-  give-up, a dead endpoint would hold its environment's outbox for ever).
+  round.
+- **The delivery is the unit of work, and an event is settled when its deliveries exist.**
+  Never make a request while walking the outbox, and never leave an event unsettled because
+  an endpoint is failing: that is head-of-line blocking of the environment's outbox by one
+  endpoint, the thing the model exists to rule out. `events.delivered_at` means "queued", not
+  "received". The worker reads only `pending` deliveries; `delivered` and `failed` are final
+  for it.
+- **A request is an attempt; what was not sent is not.** Every request the worker tried to
+  make is a row of `webhook_delivery_attempts` (append-only: the runtime role has no `UPDATE`
+  and no `DELETE` on it), written with the delivery's new state in one transaction
+  (`recordAttempt`: the update counts under the row's lock and the insert uses the number it
+  returned). `endpoint_unresponsive` (the endpoint had just let a request time out: the rest
+  of what it has due is put off a minute) and `signing_failed` (its secret would not open:
+  put off five minutes, logged **once per endpoint per round with a count**) go through
+  `defer`: no attempt row, no attempt counted, never against the limit. Never write either
+  word for a request that was made, and never count one. What bounds them is the age limit.
+- **The schedule, the caps and the periods are constants** (`WEBHOOK_RETRY_DELAYS`,
+  `WEBHOOK_MAX_ATTEMPTS`, `WEBHOOK_ENDPOINT_ROUND_CAP`, `WEBHOOK_MAX_CONCURRENT_DELIVERIES`,
+  `WEBHOOK_DISABLE_AFTER`, …), in the service, and every one is stated in `docs/webhooks.md`:
+  change both together. Jitter comes from `deps.jitter` (never `Math.random`), is clamped by
+  the service, and only ever lengthens a wait. `Retry-After` is never read.
+- **One request in flight per endpoint; endpoints side by side.** `serveEndpoint` is one
+  endpoint's lane and makes its requests one after another; `sideBySide` runs at most
+  `WEBHOOK_MAX_CONCURRENT_DELIVERIES` lanes. Never send two events to one endpoint at once
+  from the worker, and never let one lane's failure stop the others.
+- **The server switches an endpoint off for two reasons, as the `system` actor, recorded as
+  `webhook_endpoint.disabled`**: it answered `410` (`gone`), or it has a **run** of failed
+  requests `WEBHOOK_DISABLE_AFTER` long (`failing`). A run is failed requests with no success
+  among them **and no silence between two of them longer than
+  `WEBHOOK_FAILURE_RUN_MAX_GAP_MS`** (the whole retry schedule with the most jitter, plus
+  `WEBHOOK_FAILURE_RUN_MARGIN`: about 34 hours; computed from the schedule's constants, never
+  a number of its own). `failing_since` is when the run began and `last_failed_at` when a
+  request last failed: a failure after a longer silence begins a new run instead of
+  continuing the old one, because an endpoint that was sent nothing has not been shown to be
+  still broken. Never judge by `failing_since` alone (one bad day, a fix and a hiccup a week
+  later must not switch an endpoint off). A success clears both. The rule reads the endpoint
+  row the lane already holds and is looked at only when a request has just failed: never add
+  a scan. Both columns are written by `setHealth`, the one endpoint write with no `Activity`
+  (ADR 0012), and **a failure writes them only over what the lane read** (`setHealth` is a
+  compare-and-set; on a miss the worker reads the row again and applies the rule to it):
+  an administrator's reset, or a delivery sent again that got through, during a round must
+  never be undone by the lane's next failure. Only a success writes blindly. A dead endpoint
+  that is owed an event less often than the retry span plus that limit (about two and a half
+  days) is never switched off: accepted, and said in `docs/webhooks.md`. Switching an endpoint on, or changing its address, resets them and the reason
+  (`resetHealth`). Pending
+  deliveries of an endpoint that is off are neither tried nor counted, and are given up only
+  by age.
+- **A test event and a delivery sent again are requests on demand** (`Webhooks.sendTest`,
+  `Webhooks.redeliver`): through the outbound guard, one request, no retry, behind
+  `sendRateLimit` (its own per-environment bucket, mounted after `secretKey()`), answering
+  only `{ deliveryId, outcome, statusCode, durationMs, failureReason }`. Neither is audited,
+  neither ever switches an endpoint off, and a **failed** one of either moves nothing. What
+  a success does differs, on purpose: a delivery sent again that gets through **ends the
+  endpoint's run of failures** (`clearHealth`: the receiver took a real event), and a test
+  event that gets through does **not** (it is no delivery of an event, and a receiver may
+  answer tests without doing what it does for a real one). A test event is the
+  contract's fixture with a new id and **`test: true` inside the signed body**; it never
+  touches the outbox, and the caller chooses the type and nothing else. Sending again appends
+  an attempt to the **existing** delivery (never a second row) and is refused with
+  `webhook.cannot_redeliver` and a fixed `params.reason` (`WEBHOOK_REDELIVER_REFUSALS`), one
+  of which is `attempt_limit`: a delivery never has more than `WEBHOOK_MAX_TOTAL_ATTEMPTS`
+  requests, so its log and the answer that returns it are bounded. The delivery list pages
+  and counts no further than `WEBHOOK_DELIVERY_LIST_WINDOW` rows (the query schema refuses a
+  page past it; the store's count takes `maxCount`): never an offset or a count over the
+  whole log. A delivery is always looked up under
+  its endpoint and its environment (`find(environment, endpoint, id)`): keep the
+  cross-environment tests.
 - **What is owed to nobody is settled in bulk, by one store call a batch**
   (`WebhookDeliveryStore.settleBefore(environment, cutoff, at, limit)`): events from strictly
   before the earliest endpoint that is **switched on** was registered, or before the pass
@@ -288,9 +349,11 @@ whose answer decides what happens next (step 2.3).
   isolation tests in the shared suite.
 - **The cap on endpoints is counted and inserted under the environment's lock**
   (`deps.environmentLock`, scope `webhook_endpoints`); the address is judged before the lock.
-- **Delivery is at least once and says so**: the request is sent before its row is written;
-  the unique `(endpoint_id, event_id)` makes a second row a no-op. Docs and the verifier's
-  JSDoc tell a receiver to drop repeats by id.
+- **Delivery is at least once and says so**: a request is sent before its attempt is written,
+  and one that was sent and not recorded is sent again and **not counted**; the unique
+  `(endpoint_id, event_id)` makes a second delivery row a no-op. Order is not guaranteed.
+  Docs and the verifier's JSDoc tell a receiver to drop repeats by id, to order by
+  `occurredAt` and to check `test`.
 - **`verifyWebhook` (`@tula/admin`) is Zod-free and web-platform only**, refuses a wrong or
   missing signature (constant-time, every entry compared), a malformed header, a
   `webhook-id` or `webhook-timestamp` sent twice (as a list in a plain record, or joined with
@@ -300,7 +363,9 @@ whose answer decides what happens next (step 2.3).
 - **The `webhook` conformance step needs a receiver the server can reach.** A scenario with
   one is marked `needsWebhookReceiver` and skipped by a target without one; a live server in
   a container cannot reach the runner's loopback, and the answer to that is the skip, never a
-  looser guard. What cannot be shown over HTTP (a name re-pointed between save and delivery)
+  looser guard. CI's `self-host` jobs check the **exact set of skipped scenarios by name**
+  (`.github/workflows/ci.yml`): a new scenario with a receiver is added to that list, never
+  covered by a count. What cannot be shown over HTTP (a name re-pointed between save and delivery)
   is an API test, and the scenario's description says so.
 - A new event type, a new store method that changes an endpoint, or a new kind of secret
   follows the existing rules: a schema and a fixture in the contract, an `Activity` and a
@@ -794,9 +859,15 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   past expiry, sessions 30 days after they ended (refresh tokens go with their session, by
   cascade), authenticator enrolments that were never confirmed, expired WebAuthn challenges.
   A new table of short-lived rows gets a batched purge method on its store, in both adapters
-  and the shared suite, and a line in that job. Outbox events and webhook delivery rows are
-  never deleted by it: their purge is a later step of the webhook work
-  ([ADR 0034](docs/adr/0034-webhooks.md)).
+  and the shared suite, and a line in that job. It also deletes what the webhook worker
+  leaves ([ADR 0034](docs/adr/0034-webhooks.md)): an outbox event 30 days after it was
+  settled (`SETTLED_EVENT_RETENTION`; never one a `pending` delivery is of), and a delivery
+  that has ended, with its attempts, 90 days after it was queued
+  (`ENDED_DELIVERY_RETENTION`). The log outlives the payload on purpose, which is why
+  `webhook_deliveries.event_id` is a plain column and not a foreign key: never add a cascade
+  from `events` to it. The database bounds both deletes itself (`events_retention_floor`:
+  settled and more than a day old; `webhook_deliveries_retention_floor`: not `pending` and
+  more than a week old).
 - **An environment's audit entries are deleted only by the retention job, and only past the
   period the environment set** (`audit.retentionDays`, 1 to 3650 days; `null`, the default,
   keeps them for ever; [ADR 0012](docs/adr/0012-events-and-audit-log.md),
@@ -1036,7 +1107,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   DNS changes. `Outbound.check` applies the same rules to an address that is being saved and
   sends nothing; the two share the functions that hold the rules, so a new rule is a rule of
   both and gets a row in both tables of the tests. Both take `deps.outbound`, which
-  `container.ts` builds as `{ tier }` and nothing else. Its error is a fixed word (`OutboundError.reason`): never store or show more
+  `container.ts` builds as `{ tier }` and nothing else. Its error is a fixed word (`OutboundError.reason`), and for an answer refused for its size also the answer's status code (`OutboundError.status`: the status line arrives before the body; a number, never a header or a byte of the body, and the socket is destroyed before the error is raised): never store or show more
   of an answer than a caller needs. A new refused range gets a row in the table of
   `lib/outbound.test.ts`.
 - Never log passwords, tokens, codes, keys, cookies or full emails. The logger redacts common keys;
@@ -1157,6 +1228,12 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   five-second default); `bun run test:harness` fails for a `bunfig.toml` that sets one and for
   a dashboard script without the flag. Run that package's tests through its scripts: a bare
   `bun test` in `apps/dashboard` has the default.
+- **`toMatchObject` does not compare dates in Bun** (seen on 1.4.2):
+  `expect({ at: new Date(1) }).toMatchObject({ at: new Date(2) })` passes. `toEqual` does
+  compare them. An assertion about *when* written with `toMatchObject` asserts nothing, which
+  is how a boundary test of the webhook worker passed with its comparison turned round. Pass
+  both sides through `comparable()` (`~/testing/comparable`: dates become ISO strings), or
+  use `toEqual`. The webhook tests do; other test files have not been checked for it.
 - Prefer `spyOn` over `mock.module`: Bun's module mocks are process-global and never reset, which
   causes order-dependent failures.
 - Route tests call `createApp(createTestDeps()).request(...)`.
@@ -1292,7 +1369,8 @@ apps/api/src/
                       # the dev-only mock provider's consent page),
                       # instance (diagnostics), control-plane (the dashboard's session,
                       # workspaces, projects, environments, the instance audit log),
-                      # webhook (endpoints, and the delivery worker: a background job)
+                      # webhook (endpoints, the delivery worker: a background job, the
+                      # delivery log, test events and sending a delivery again)
 ```
 
 ## Common commands

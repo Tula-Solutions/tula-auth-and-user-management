@@ -23,15 +23,23 @@ paths:
   `INSTANCE_AUDIT_RETENTION_DAYS`: migration 0016, DELETE but never UPDATE),
   `audit_logs` has SELECT, INSERT and DELETE but never UPDATE (migration 0017: the retention
   job deletes an environment's entries past its `audit.retentionDays`, and the restrictive
-  policy `audit_logs_retention_floor` refuses any entry younger than a day; it is the only
-  tenant table with a second policy, and a second policy is always restrictive), `events` has
-  no DELETE (the webhook worker sets `delivered_at` with the UPDATE it has held since 0003),
-  `webhook_deliveries` has SELECT and INSERT only (migration 0018: one row per endpoint and
-  event, written once; it goes with its endpoint or its event by cascade, and has no column
-  for anything of a receiver's answer beyond a status code). Admin deletes run under the owner
+  policy `audit_logs_retention_floor` refuses any entry younger than a day). The webhook
+  tables (migrations 0018 and 0019): `events` has SELECT, INSERT, **UPDATE of `delivered_at`
+  only** (never grant UPDATE on the table again: a payload must not be rewritable) and DELETE
+  inside `events_retention_floor` (settled and more than a day old); `webhook_deliveries` has
+  SELECT, INSERT, UPDATE of its eight state columns only (not the endpoint, the event, the
+  type, the test flag or `created_at`) and DELETE inside `webhook_deliveries_retention_floor`
+  (not `pending` and more than seven days old); `webhook_delivery_attempts` is append-only,
+  SELECT and INSERT, and goes only by cascade from its delivery. Neither of the last two has
+  a column for anything of a receiver's answer beyond a status code. Three tables have a
+  second policy (`audit_logs`, `events`, `webhook_deliveries`), and a second policy is always
+  restrictive and `FOR DELETE`. `webhook_deliveries.event_id` is deliberately **not** a
+  foreign key (the log outlives the event). Admin deletes run under the owner
   (`DATABASE_MIGRATION_URL`), never the request path. The retention job (ADR 0017) deletes
   expired tenant rows as the runtime role, per environment inside `withTenant`, through batched
-  store methods; it never touches `events` or `webhook_deliveries`. New tables get **no**
+  store methods. A migration that has to change rows of a tenant table lifts `FORCE ROW LEVEL
+  SECURITY` for the backfill and restores it in the same file (0019): the owner is bound by
+  the policy too, and a migration sets no environment. New tables get **no**
   default grants: add them to the matrix in the same migration (a test fails otherwise). Run all
   migrations as the same owner role (default privileges are per-owner).
 - Refresh tokens are pruned by deleting sessions (cascade), never token-by-token.

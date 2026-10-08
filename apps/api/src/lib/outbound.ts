@@ -191,12 +191,24 @@ const FAILURE_TEXT: Record<OutboundFailure, string> = {
 export class OutboundError extends Error {
   /** Which rule refused the request, or how it failed. */
   readonly reason: OutboundFailure
+  /**
+   * The HTTP status of an answer that was refused for its size (`response_too_large`): the
+   * status line arrives before the body, so it is known. **A number and nothing else of the
+   * answer**: no header, and no byte of the body. Absent for every other failure.
+   */
+  declare readonly status?: number
 
-  /** @param reason - Which rule refused the request, or how it failed. */
-  constructor(reason: OutboundFailure) {
+  /**
+   * @param reason - Which rule refused the request, or how it failed.
+   * @param status - The answer's HTTP status, for an answer refused for its size.
+   */
+  constructor(reason: OutboundFailure, status?: number) {
     super(FAILURE_TEXT[reason])
     this.name = 'OutboundError'
     this.reason = reason
+    if (status !== undefined) {
+      this.status = status
+    }
   }
 }
 
@@ -382,9 +394,10 @@ function send(
   const secure = url.protocol === 'https:'
   return new Promise<OutboundResponse>((resolve, reject) => {
     let outgoing: ClientRequest | undefined
-    const fail = (reason: OutboundFailure) => {
+    const fail = (reason: OutboundFailure, status?: number) => {
+      // Before anything else: the socket goes, so nothing more of the answer is taken in.
       outgoing?.destroy()
-      reject(new OutboundError(reason))
+      reject(new OutboundError(reason, status))
     }
     const options: HttpsRequestOptions = {
       // The checked address, not the name: nothing is resolved again.
@@ -412,8 +425,12 @@ function send(
     }
     const onResponse = (incoming: IncomingMessage) => {
       const declared = Number(incoming.headers['content-length'] ?? 0)
+      // The status line is here already. An answer refused for its size still says what
+      // its status was (a webhook receiver that answered 2xx did take the event); nothing
+      // else of it is kept.
+      const tooLarge = () => fail('response_too_large', incoming.statusCode)
       if (declared > limit) {
-        fail('response_too_large')
+        tooLarge()
         return
       }
       const chunks: Buffer[] = []
@@ -421,7 +438,9 @@ function send(
       incoming.on('data', (chunk: Buffer) => {
         size += chunk.length
         if (size > limit) {
-          fail('response_too_large')
+          // Dropped with what was read so far: `chunks` never reaches a caller.
+          chunks.length = 0
+          tooLarge()
           return
         }
         chunks.push(chunk)

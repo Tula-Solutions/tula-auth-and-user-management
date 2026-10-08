@@ -20,7 +20,9 @@ export interface ReceivedDelivery {
 
 /**
  * The operator's backend of a scenario: an HTTP listener on a port the system picks, which
- * keeps what it is sent and answers `204`.
+ * keeps what it is sent and answers `204`, unless it was told to answer its next deliveries
+ * otherwise ({@link WebhookReceiver.answerNext}): that is how a scenario plays a backend that
+ * is failing and then recovers.
  *
  * @example
  * ```ts
@@ -33,10 +35,12 @@ export interface ReceivedDelivery {
 export class WebhookReceiver {
   readonly #server: ReturnType<typeof Bun.serve>
   readonly #waiting: ReceivedDelivery[]
+  readonly #answers: number[]
 
   /** @param hostname - The address to listen on, e.g. `127.0.0.1`. */
   constructor(hostname: string) {
     this.#waiting = []
+    this.#answers = []
     this.#server = Bun.serve({
       port: 0,
       hostname,
@@ -46,10 +50,20 @@ export class WebhookReceiver {
           headers: Object.fromEntries(request.headers),
           body: await request.text(),
         })
-        // What a receiver should do: take the event, answer, and work afterwards.
-        return new Response(null, { status: 204 })
+        // What a receiver should do: take the event, answer, and work afterwards. A status a
+        // scenario asked for is used once, in order; after those, 204 again.
+        return new Response(null, { status: this.#answers.shift() ?? 204 })
       },
     })
+  }
+
+  /**
+   * Answer the next deliveries with these statuses, one each, in order; then `204` again.
+   *
+   * @param statuses - HTTP statuses, e.g. `[500]` to fail the next delivery once.
+   */
+  answerNext(statuses: readonly number[]): void {
+    this.#answers.push(...statuses)
   }
 
   /** The port the listener got. */
@@ -74,6 +88,7 @@ export class WebhookReceiver {
   stop(): void {
     void this.#server.stop(true)
     this.#waiting.length = 0
+    this.#answers.length = 0
   }
 }
 

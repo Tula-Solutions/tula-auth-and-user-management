@@ -197,6 +197,24 @@ describe('WebhookReceiver', () => {
     }
   })
 
+  test('answers the statuses it was told to, one delivery each and in order, and 204 again after them', async () => {
+    const receiver = new WebhookReceiver('127.0.0.1')
+    try {
+      const url = `http://127.0.0.1:${receiver.port}/webhooks/tula`
+      const send = async () => (await fetch(url, { method: 'POST', body: '{}' })).status
+      expect(await send()).toBe(204)
+      receiver.answerNext([500, 503])
+      receiver.answerNext([410])
+      expect([await send(), await send(), await send(), await send()]).toEqual([500, 503, 410, 204])
+      // A delivery it failed is kept all the same: a scenario asks what arrived.
+      expect([receiver.take(), receiver.take(), receiver.take()].every(Boolean)).toBe(true)
+      receiver.answerNext([])
+      expect(await send()).toBe(204)
+    } finally {
+      receiver.stop()
+    }
+  })
+
   test('nothing listens once it is stopped', async () => {
     const receiver = new WebhookReceiver('127.0.0.1')
     const { port } = receiver
@@ -430,6 +448,16 @@ describe('the webhook step in a scenario file', () => {
     ['an expectation without a secret', { receiver: 'r', expect: { type: 'user.created' } }],
     ['an unknown key', { receiver: 'r', captureUrl: 'url', port: 80 }],
     ['an unknown key in the expectation', { receiver: 'r', expect: { secret: 's', headers: {} } }],
+    // `answers` is how the receiver is told to fail: it belongs to the step that starts it.
+    ['answers on an expectation', { receiver: 'r', expect: { secret: 's' }, answers: [500] }],
+    ['an empty list of answers', { receiver: 'r', captureUrl: 'url', answers: [] }],
+    ['an answer that is no status', { receiver: 'r', captureUrl: 'url', answers: [99] }],
+    ['an informational answer', { receiver: 'r', captureUrl: 'url', answers: [100] }],
+    ['an answer that is not a number', { receiver: 'r', captureUrl: 'url', answers: ['500'] }],
+    [
+      'more answers than a scenario can need',
+      { receiver: 'r', captureUrl: 'url', answers: Array.from({ length: 17 }, () => 500) },
+    ],
   ])('refuses a webhook step with %s', (_, webhook) => {
     expect(
       ScenarioSchema.safeParse({
@@ -438,5 +466,84 @@ describe('the webhook step in a scenario file', () => {
         steps: [{ name: 's', webhook }],
       }).success
     ).toBe(false)
+  })
+
+  test('a receiver may be started with the statuses it answers its next deliveries with', () => {
+    expect(
+      ScenarioSchema.safeParse({
+        ...base,
+        needsWebhookReceiver: true,
+        steps: [{ name: 's', webhook: { receiver: 'r', captureUrl: 'url', answers: [500, 204] } }],
+      }).success
+    ).toBe(true)
+  })
+})
+
+describe('a receiver told to fail', () => {
+  test('answers the next delivery as the scenario said, and the step still checks what arrived', async () => {
+    const statuses: number[] = []
+    let url = ''
+    const send = async () => {
+      const body = JSON.stringify(event)
+      const delivery = await signed(SECRET, body)
+      const answer = await fetch(url, { method: 'POST', headers: delivery.headers, body })
+      statuses.push(answer.status)
+    }
+    const target: Target = {
+      baseUrl: 'http://tula.test',
+      publishableKey: 'tula_pk_test',
+      fetch: async (request) => {
+        url = ((await request.json()) as { url: string }).url
+        return Response.json({ secret: SECRET }, { status: 201 })
+      },
+      emailCode: async () => '',
+      wait: async () => undefined,
+      now: () => NOW,
+      webhooks: { hostname: '127.0.0.1', deliver: send },
+    }
+    const expectation = { secret: '{{secret}}', type: event.type }
+    const result = await runScenario(
+      ScenarioSchema.parse({
+        name: 'retried',
+        description: 'd',
+        needsWebhookReceiver: true,
+        steps: [
+          {
+            name: 'start a receiver that fails once',
+            webhook: { receiver: 'backend', captureUrl: 'url', answers: [500] },
+          },
+          {
+            name: 'register it',
+            request: {
+              method: 'POST',
+              path: '/v1/admin/webhook-endpoints',
+              auth: 'none',
+              body: { url: '{{url}}' },
+            },
+            expect: { status: 201 },
+            capture: { secret: 'secret' },
+          },
+          {
+            name: 'the event arrives and is refused',
+            webhook: { receiver: 'backend', expect: expectation },
+          },
+          {
+            name: 'it arrives again and is taken',
+            webhook: { receiver: 'backend', expect: expectation },
+          },
+        ],
+      }),
+      target
+    )
+    expect(formatResult(result)).toBe(
+      [
+        'PASSED retried',
+        '  ok   start a receiver that fails once',
+        '  ok   register it',
+        '  ok   the event arrives and is refused',
+        '  ok   it arrives again and is taken',
+      ].join('\n')
+    )
+    expect(statuses).toEqual([500, 204])
   })
 })

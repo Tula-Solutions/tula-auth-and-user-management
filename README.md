@@ -23,9 +23,10 @@ and prebuilt UI, first-class native mobile, and data you own.
 - **Operations**: per-environment settings, settings as code (`tula diff`, `tula apply`), a
   dashboard, `tula doctor`, an audit log, a read-only MCP server, and `create-tula` to scaffold
   a project.
-- **Webhooks, first step**: an environment's events posted to your backend, signed
-  ([Standard Webhooks](https://www.standardwebhooks.com/)), with a verifier in `@tula/admin`.
-  One attempt per event for now; no retries yet ([docs/webhooks.md](docs/webhooks.md)).
+- **Webhooks**: an environment's events posted to your backend, signed
+  ([Standard Webhooks](https://www.standardwebhooks.com/)), retried over a day on a fixed
+  schedule, with a delivery log, test events and a verifier in `@tula/admin`
+  ([docs/webhooks.md](docs/webhooks.md)).
 - **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
   ([docs/self-host.md](docs/self-host.md)).
 - **A conformance suite** that the server passes in process, as two packaged instances, behind

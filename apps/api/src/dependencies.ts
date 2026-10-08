@@ -129,6 +129,12 @@ export interface Deps {
    */
   outbound: OutboundDeps
   /**
+   * A number from 0 (inclusive) to 1 (exclusive), for spreading out retries so that deliveries
+   * which failed together do not all come back together. **Never for a secret, a token or an
+   * id**: those come from `~/lib/crypto`. A test gives a fixed number.
+   */
+  jitter: () => number
+  /**
    * Makes writes that share an invariant across stores take turns, per environment (the
    * settings document and the OAuth providers: "at least one sign-in method").
    */

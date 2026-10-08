@@ -131,6 +131,8 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),
+    // No spread: a retry is due exactly when the schedule says.
+    jitter: () => 0,
     ...overrides,
     clock,
     activityLog,

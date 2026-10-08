@@ -259,15 +259,42 @@ Before finishing any change here, confirm each item holds and has a test:
     word and never the address or what it resolved to. Of a receiver's answer only the status
     code and the duration are kept: test with a canary in the answer's headers and body
     against the delivery row, the logs and every store. One endpoint's failure, slowness or
-    removal mid-round must not fail the round or another environment's deliveries. A row with
-    `endpoint_unresponsive` or `signing_failed` means nothing was sent: never write either for
-    an event that was, log `signing_failed` once per endpoint per round with a count, and keep
-    the docs saying these events are lost until retries exist. Bulk settling
+    removal mid-round must not fail the round or another environment's deliveries. Bulk settling
     (`settleBefore`) is strict at its cutoff: test the event at the very instant of the
     earliest switched-on endpoint's registration (owed, not settled), a switched-off
     endpoint, and another environment. The endpoint cap is counted and inserted under
     `deps.environmentLock` (`webhook_endpoints`): keep the concurrent-registrations test.
-48. **The outbound guard (`lib/outbound.ts`):** every rule of `request` is a rule of `check`,
+    **Retries and the log (TULA-42):** an event is settled when its deliveries are queued,
+    never held for a failing endpoint. Test the whole schedule on the test clock (a
+    millisecond early is too early), the eighth failure, and that a request sent and not
+    recorded is sent again and not counted. `endpoint_unresponsive` and `signing_failed` mean
+    nothing was sent: never an attempt row, never counted (test many more rounds than there
+    are attempts), bounded only by age. Switching an endpoint off: `410` at once; a run of
+    failures five days long and not a millisecond less, where a run has no success and no
+    silence longer than `WEBHOOK_FAILURE_RUN_MAX_GAP_MS` (test the silence exactly at the
+    limit and a millisecond over, and one failed delivery, five quiet days, one failure:
+    still on); one success resets it, re-enabling resets it, and a reset made while a round is sending
+    is not undone by that round's next failure (`setHealth` compares what was read: test the
+    stale write in the store suite and the round in the service), and the `webhook_endpoint.disabled` entry is the `system`'s with no address or
+    secret. A test event carries `test: true` inside the signed body, writes no outbox row
+    and no audit entry, goes through the guard (test a name re-pointed at a private address),
+    and its answer has five named fields and no canary. Sending again: the stored payload
+    only, appended to the same delivery, refused while pending, for an endpoint that is off
+    and for an event that is gone, and **impossible across environments** (their key with our
+    endpoint id, with their own, and a sibling endpoint: 404, nothing sent). Both are behind
+    `sendRateLimit` (per environment, refuses when it cannot count). A delivery sent again
+    that gets through clears the endpoint's run; a test event never does; a failed one of
+    either moves nothing. A delivery has at most `WEBHOOK_MAX_TOTAL_ATTEMPTS` requests
+    (`attempt_limit`), and the list is paged and counted inside
+    `WEBHOOK_DELIVERY_LIST_WINDOW`. An answer over the size cap is judged by its status code,
+    which is all the guard passes on: test a 2xx (delivered, once) and a non-2xx, with a
+    canary in the oversized body. The retention deletes
+    are bounded in the database: test a recent event, an unsettled one, a pending delivery
+    and a recent one against the store on PGlite, and that `created_at` and `occurred_at`
+    cannot be updated to get past the floor.
+48. **The outbound guard (`lib/outbound.ts`):** an error carries a fixed word and, for
+    `response_too_large` only, the answer's status code: never a header or a byte of a body.
+    Keep the test that the socket is destroyed when an answer streams past the cap. Every rule of `request` is a rule of `check`,
     and both share the functions that hold them; a new rule gets a row in both tables of
     `outbound.test.ts`. Its settings come from `deps.outbound` only, which `container.ts`
     builds as `{ tier }` and nothing else (a test holds that): never pass a resolver or a

@@ -73,6 +73,11 @@ const SERVER_ONLY: Record<string, string> = {
     'the outbound guard judges an address an operator registers with a secret key, which a ' +
     'client SDK never holds; `@tula/admin` is driven against the refusal in ' +
     '`packages/admin/src/webhook-real-api.test.ts`.',
+  'webhook retried after a 500':
+    'retries, the delivery log, test events and sending a delivery again all happen between the ' +
+    'server, an operator’s backend and the admin API with a secret key: a client SDK is on no ' +
+    'side of them. `@tula/admin` is driven through the same operations against the real API ' +
+    'and worker in `packages/admin/src/webhook-real-api.test.ts`.',
   'two instances':
     'a property of the deployment (two API processes sharing Postgres and Redis). A client talks ' +
     'to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host ' +

@@ -20,6 +20,24 @@ export const ENDED_SESSION_RETENTION = '30d'
 export const EXPIRED_VERIFICATION_TOKEN_RETENTION = '1h'
 
 /**
+ * How long an outbox event is kept after the webhook worker settled it (every endpoint it was
+ * owed to has its delivery, ADR 0034). The event's payload is what "send it again" sends, so
+ * this is how long a delivery can be redelivered: a month covers an operator who learns late
+ * that their receiver dropped something, and is far past the day and a few hours the worker
+ * itself keeps trying. An event with a delivery that is still pending is kept whatever its age.
+ */
+export const SETTLED_EVENT_RETENTION = '30d'
+
+/**
+ * How long the record of a delivery is kept (the row and every request made for it), from the
+ * moment it was queued, once it is no longer pending. Longer than the event it is of, on
+ * purpose: what happened to last quarter's deliveries can still be read after their payloads
+ * are gone. It holds no payload and nothing of a receiver's answer, only ids, times, status
+ * codes and durations.
+ */
+export const ENDED_DELIVERY_RETENTION = '90d'
+
+/**
  * How often the retention job runs. Expired sign-up attempts hold the hash of a password that
  * was never used, so they should not outlive their expiry by long; the other tables only need
  * a daily pass, and an idle pass costs a handful of indexed queries per environment.
@@ -53,6 +71,10 @@ export interface RetentionCounts {
   instanceAuditLogs: number
   /** Environments' audit entries older than their own `audit.retentionDays`. */
   auditLogs: number
+  /** Webhook deliveries that ended, with their attempts, past {@link ENDED_DELIVERY_RETENTION}. */
+  webhookDeliveries: number
+  /** Outbox events settled more than {@link SETTLED_EVENT_RETENTION} ago. */
+  events: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -73,6 +95,7 @@ type RetentionDeps = Pick<
   | 'passkeys'
   | 'controlPlane'
   | 'activityLog'
+  | 'webhookDeliveries'
   | 'environmentSettings'
   | 'config'
   | 'clock'
@@ -161,15 +184,20 @@ async function purgeAudit(
  * - authenticator enrolments that were never confirmed and lapsed more than
  *   {@link EXPIRED_VERIFICATION_TOKEN_RETENTION} ago (a sealed secret nobody will use);
  * - audit entries older than the environment's own `audit.retentionDays`, where it has set one
- *   (the default, `null`, keeps them for ever).
+ *   (the default, `null`, keeps them for ever);
+ * - webhook deliveries that have ended (delivered or given up) and were queued more than
+ *   {@link ENDED_DELIVERY_RETENTION} ago, with every request recorded for them;
+ * - outbox events the webhook worker settled more than {@link SETTLED_EVENT_RETENTION} ago,
+ *   except one that a delivery still pending is of.
  *
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
  *
- * Outbox events are never deleted here, and nor are webhook delivery rows: the webhook worker
- * marks events delivered (ADR 0034), and deleting the delivered ones, with the grant and the
- * policy that needs, is a later step (ADR 0017). That includes the events of audit entries
- * this job deletes.
+ * An outbox event that no worker has settled is never deleted, and nor is a delivery that is
+ * still pending: the database refuses both whatever this job asks (the restrictive policies of
+ * migration 0019), as it refuses an event of the last day and a delivery of the last week.
+ * Deleting an event does not delete the audit entry of the same id, nor the other way round:
+ * each has its own period.
  *
  * A failure in one environment is logged and skipped, so it cannot keep the environments after
  * it from being purged. Each environment is purged through its own tenant-scoped store calls:
@@ -182,6 +210,8 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
   const now = deps.clock.now()
   const tokensBefore = new Date(now.getTime() - durationToMs(EXPIRED_VERIFICATION_TOKEN_RETENTION))
   const sessionsBefore = new Date(now.getTime() - durationToMs(ENDED_SESSION_RETENTION))
+  const deliveriesBefore = new Date(now.getTime() - durationToMs(ENDED_DELIVERY_RETENTION))
+  const eventsBefore = new Date(now.getTime() - durationToMs(SETTLED_EVENT_RETENTION))
   const report: RetentionReport = {
     environments: 0,
     failed: 0,
@@ -192,6 +222,8 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     passkeyChallenges: 0,
     instanceAuditLogs: 0,
     auditLogs: 0,
+    webhookDeliveries: 0,
+    events: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
   // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
@@ -227,6 +259,14 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       // Last, and the only step whose rows did not end by themselves: the environment chose
       // how long its audit entries are kept. One that cannot be read, or purged, keeps them.
       report.auditLogs += await purgeAudit(deps, id, now)
+      // The webhook worker's leavings. The delivery log first, then the events: neither
+      // depends on the other (a delivery keeps its event's id and type, not a reference).
+      report.webhookDeliveries += await drain((limit) =>
+        deps.webhookDeliveries.deleteEndedBefore(id, deliveriesBefore, limit)
+      )
+      report.events += await drain((limit) =>
+        deps.webhookDeliveries.deleteSettledEvents(id, eventsBefore, limit)
+      )
     } catch (error) {
       report.failed += 1
       logger.warn('retention failed in one environment', {
@@ -263,7 +303,9 @@ export async function run(
     report.pendingFactors +
     report.passkeyChallenges +
     report.instanceAuditLogs +
-    report.auditLogs
+    report.auditLogs +
+    report.webhookDeliveries +
+    report.events
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

@@ -75,6 +75,15 @@ describe('createContainer', () => {
     }
   )
 
+  test('the jitter of webhook retries is a number from 0 up to, never including, 1, and not a fixed one', async () => {
+    const { deps, close } = createContainer(parseEnv(base))
+    const drawn = Array.from({ length: 200 }, () => deps.jitter())
+    expect(drawn.every((value) => value >= 0 && value < 1)).toBe(true)
+    // 32 random bits each: two hundred equal draws would mean it is not random at all.
+    expect(new Set(drawn).size).toBeGreaterThan(100)
+    await close()
+  })
+
   test('defaults to the recommended policy and the offline breach list', async () => {
     const { deps, close } = createContainer(parseEnv(base))
     expect(deps.config.passwordPolicy).toEqual(PASSWORD_POLICY_PRESETS.recommended)

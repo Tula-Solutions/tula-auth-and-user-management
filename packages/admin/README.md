@@ -76,8 +76,9 @@ export async function receiveWebhook(request: Request): Promise<Response> {
     // Not from Tula, changed on the way, or older than five minutes.
     return new Response(null, { status: isTulaAdminError(error) ? 400 : 500 })
   }
-  // Delivery is at least once: the same event id can arrive again.
-  if (await alreadyHandled(event.id)) {
+  // A test event an administrator sent: an example, nothing in it happened.
+  // And delivery is at least once: the same event id can arrive again.
+  if (event.test || (await alreadyHandled(event.id))) {
     return new Response(null, { status: 204 })
   }
   switch (event.type) {
@@ -90,7 +91,8 @@ export async function receiveWebhook(request: Request): Promise<Response> {
     default:
     // A type this code does not handle, or one a later server added: nothing to do.
   }
-  // Answer quickly, with a 2xx and a small body. Anything else counts as a failed delivery.
+  // Answer quickly, with a 2xx and a small body. Anything else is a failed request, which
+  // the server retries.
   return new Response(null, { status: 204 })
 }
 ```

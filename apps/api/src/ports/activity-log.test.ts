@@ -138,6 +138,13 @@ async function _webhookEndpoints(endpoints: WebhookEndpointStore): Promise<void>
   await endpoints.update(ENV, 'endpoint', { enabled: false }, AT)
   // @ts-expect-error
   await endpoints.delete(ENV, 'endpoint')
+  // @ts-expect-error the server switching an endpoint off changes where events are sent
+  await endpoints.disable(ENV, 'endpoint', 'failing', AT)
+  // @ts-expect-error
+  await endpoints.disable(ENV, 'endpoint', 'gone', AT, undefined)
+  // Since when an endpoint has been failing is the worker's bookkeeping: a method of its own
+  // that takes none (ADR 0012).
+  await endpoints.setHealth(ENV, 'endpoint', null, { failingSince: AT, lastFailedAt: AT })
 }
 
 /** The memory adapters are what tests hold (`TestDeps`): they are as strict as the ports. */
@@ -164,6 +171,8 @@ async function _memoryAdapters(deps: TestDeps): Promise<void> {
   await deps.webhookEndpoints.insert(endpoint)
   // @ts-expect-error
   await deps.webhookEndpoints.delete(ENV, 'endpoint')
+  // @ts-expect-error
+  await deps.webhookEndpoints.disable(ENV, 'endpoint', 'failing', AT)
 }
 
 function _reasons(): Recorded[] {

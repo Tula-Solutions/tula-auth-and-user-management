@@ -188,6 +188,14 @@ export const ERROR_DEFINITIONS = {
     status: 422,
     message: 'The server cannot deliver to that address.',
   },
+  // A past delivery cannot be sent again (ADR 0034). `params.reason` is a fixed word saying
+  // why: `delivery_pending` (the server is still retrying it), `endpoint_disabled` (nothing
+  // is sent to an endpoint that is off), `event_gone` (its payload is no longer kept) or
+  // `attempt_limit` (the delivery has had as many requests as one may have).
+  'webhook.cannot_redeliver': {
+    status: 409,
+    message: 'This delivery cannot be sent again.',
+  },
 
   // Passkeys (ADR 0027). A failed passkey sign-in is always `auth.invalid_credentials`.
   'passkey.registration_failed': {

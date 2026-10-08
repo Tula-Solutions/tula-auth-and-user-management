@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
-import { events, webhookDeliveries, webhookEndpoints, withTenant } from '@tula/db'
+import {
+  events,
+  webhookDeliveries,
+  webhookDeliveryAttempts,
+  webhookEndpoints,
+  withTenant,
+} from '@tula/db'
 import {
   createTestDatabase,
   createTestTenant,
@@ -52,6 +58,9 @@ function endpoint(tenant: TestTenant): WebhookEndpointRecord {
     eventTypes: ['user.created'],
     secret: 'v1.sealed.secret',
     enabled: true,
+    disabledReason: null,
+    failingSince: null,
+    lastFailedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   }
@@ -74,104 +83,217 @@ describeWebhookStores('Postgres', async () => {
       )
       return row?.deliveredAt ?? null
     },
+    eventExists: async (tenant, eventId) =>
+      (
+        await withTenant(testDb.db, tenant.environmentId, (tx) =>
+          tx.select({ id: events.id }).from(events).where(eq(events.id, eventId))
+        )
+      ).length === 1,
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }
 })
 
-test('row-level security hides another environment’s endpoints and deliveries even from a direct query', async () => {
-  const { a, b } = await tenants()
+/** A request that was made. */
+const attempt = () => ({
+  id: Bun.randomUUIDv7(),
+  attemptedAt: new Date(),
+  statusCode: 500,
+  durationMs: 3,
+  failureReason: null,
+})
+
+/** An endpoint with one queued delivery of a new event. */
+async function queued(tenant: TestTenant, at = new Date()) {
   const endpoints = new PostgresWebhookEndpointStore(testDb.db)
   const deliveries = new PostgresWebhookDeliveryStore(testDb.db)
-  const record = endpoint(a)
+  const record = endpoint(tenant)
   await endpoints.insert(record, Audit.none('fixture'))
-  const eventId = await seedEvent(a, {
-    type: 'user.created',
-    payload: {},
-    occurredAt: new Date(),
-  })
-  await deliveries.insert({
-    id: Bun.randomUUIDv7(),
-    projectId: a.projectId,
-    environmentId: a.environmentId,
-    endpointId: record.id,
-    eventId,
-    attemptedAt: new Date(),
-    outcome: 'delivered',
-    statusCode: 200,
-    durationMs: 3,
-    failureReason: null,
-  })
+  const eventId = await seedEvent(tenant, { type: 'user.created', payload: {}, occurredAt: at })
+  const id = Bun.randomUUIDv7()
+  await deliveries.enqueue([
+    {
+      id,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      endpointId: record.id,
+      eventId,
+      eventType: 'user.created',
+      at,
+    },
+  ])
+  return { endpoints, deliveries, record, eventId, id }
+}
+
+test('row-level security hides another environment’s endpoints, deliveries and attempts even from a direct query', async () => {
+  const { a, b } = await tenants()
+  const { deliveries, id } = await queued(a)
+  await deliveries.recordAttempt(
+    a.environmentId,
+    id,
+    attempt(),
+    { state: 'failed', nextAttemptAt: null, completedAt: new Date() },
+    'pending'
+  )
   const seenFromB = await withTenant(testDb.db, b.environmentId, async (tx) => ({
     endpoints: await tx.select({ id: webhookEndpoints.id }).from(webhookEndpoints),
     deliveries: await tx.select({ id: webhookDeliveries.id }).from(webhookDeliveries),
+    attempts: await tx.select({ id: webhookDeliveryAttempts.id }).from(webhookDeliveryAttempts),
   }))
-  expect(seenFromB).toEqual({ endpoints: [], deliveries: [] })
+  expect(seenFromB).toEqual({ endpoints: [], deliveries: [], attempts: [] })
   expect(await testDb.db.select({ id: webhookEndpoints.id }).from(webhookEndpoints)).toEqual([])
   expect(await testDb.db.select({ id: webhookDeliveries.id }).from(webhookDeliveries)).toEqual([])
+  expect(
+    await testDb.db.select({ id: webhookDeliveryAttempts.id }).from(webhookDeliveryAttempts)
+  ).toEqual([])
 })
 
-test('the runtime role cannot rewrite or remove a delivery row', async () => {
+test('the runtime role moves a delivery’s state and nothing else of it, and never rewrites an attempt', async () => {
   const { a } = await tenants()
-  const attempt = (statement: string) =>
+  const { deliveries, id } = await queued(a)
+  await deliveries.recordAttempt(a.environmentId, id, attempt(), null, 'pending')
+  const run = (statement: string) =>
     withTenant(testDb.db, a.environmentId, (tx) => tx.execute(sql.raw(statement))).then(
       () => 'allowed',
       (error: unknown) => String((error as Error).cause ?? error)
     )
-  expect(await attempt("update tula.webhook_deliveries set outcome = 'delivered'")).toContain(
-    'permission denied'
-  )
-  expect(await attempt('delete from tula.webhook_deliveries')).toContain('permission denied')
+  expect(await run("update tula.webhook_deliveries set state = 'failed'")).toBe('allowed')
+  for (const statement of [
+    'update tula.webhook_deliveries set endpoint_id = endpoint_id',
+    'update tula.webhook_deliveries set event_id = null',
+    "update tula.webhook_deliveries set created_at = now() - interval '1 year'",
+    'update tula.webhook_deliveries set test = true',
+    'update tula.webhook_delivery_attempts set status_code = 200',
+    'delete from tula.webhook_delivery_attempts',
+  ]) {
+    expect(await run(statement)).toContain('permission denied')
+  }
 })
 
-test('a delivery row has no column that could hold anything of the receiver’s answer but its status', async () => {
+test('the database keeps a recent delivery, a pending one and a recent or unsettled event from being deleted, whatever is asked', async () => {
+  const { a } = await tenants()
+  const { deliveries, id, eventId, record } = await queued(a)
+  const far = new Date(Date.now() + 365 * 86_400_000)
+  // Pending, and made today.
+  expect(await deliveries.deleteEndedBefore(a.environmentId, far, 10)).toBe(0)
+  await deliveries.giveUp(a.environmentId, [id], 'expired', new Date())
+  // Ended, but made today: the floor is seven days, in the database's own time.
+  expect(await deliveries.deleteEndedBefore(a.environmentId, far, 10)).toBe(0)
+  expect(await deliveries.find(a.environmentId, record.id, id)).not.toBeNull()
+  // The event: settled, but it happened today.
+  await deliveries.markDelivered(a.environmentId, [eventId], new Date(0))
+  expect(await deliveries.deleteSettledEvents(a.environmentId, far, 10)).toBe(0)
+  expect(await deliveries.eventsById(a.environmentId, [eventId])).toHaveLength(1)
+})
+
+test('neither a delivery nor an attempt has a column that could hold anything of the receiver’s answer but its status', async () => {
   await testDb.setRole('postgres')
   const result = (await testDb.db.execute(
-    sql`select column_name from information_schema.columns
-        where table_schema = 'tula' and table_name = 'webhook_deliveries' order by column_name`
-  )) as unknown as { rows: { column_name: string }[] }
+    sql`select table_name, column_name from information_schema.columns
+        where table_schema = 'tula'
+          and table_name in ('webhook_deliveries', 'webhook_delivery_attempts')
+        order by table_name, column_name`
+  )) as unknown as { rows: { table_name: string; column_name: string }[] }
   await testDb.setRole('tula_app')
-  expect(result.rows.map((row) => row.column_name)).toEqual([
-    'attempted_at',
+  const columns = (table: string) =>
+    result.rows.filter((row) => row.table_name === table).map((row) => row.column_name)
+  expect(columns('webhook_deliveries')).toEqual([
+    'attempts',
+    'completed_at',
     'created_at',
-    'duration_ms',
     'endpoint_id',
     'environment_id',
     'event_id',
+    'event_type',
     'failure_reason',
     'id',
-    'outcome',
+    'last_attempt_at',
+    'next_attempt_at',
+    'project_id',
+    'state',
+    'status_code',
+    'test',
+    'updated_at',
+  ])
+  expect(columns('webhook_delivery_attempts')).toEqual([
+    'attempt',
+    'attempted_at',
+    'delivery_id',
+    'duration_ms',
+    'environment_id',
+    'failure_reason',
+    'id',
     'project_id',
     'status_code',
-    'updated_at',
   ])
 })
 
-test('only a foreign-key violation is read as "gone"; any other failure of an insert is thrown', async () => {
+test('only a foreign-key violation is read as "the endpoint is gone"; any other failure of a write is thrown', async () => {
   const { a } = await tenants()
-  const deliveries = new PostgresWebhookDeliveryStore(testDb.db)
-  const record = endpoint(a)
-  await new PostgresWebhookEndpointStore(testDb.db).insert(record, Audit.none('fixture'))
-  const eventId = await seedEvent(a, { type: 'user.created', payload: {}, occurredAt: new Date() })
-  const broken = deliveries.insert({
+  const { deliveries, record, eventId } = await queued(a)
+  const row = {
     id: 'not-a-uuid',
     projectId: a.projectId,
     environmentId: a.environmentId,
     endpointId: record.id,
     eventId,
-    attemptedAt: new Date(),
-    outcome: 'delivered',
-    statusCode: 200,
-    durationMs: 3,
-    failureReason: null,
-  })
-  const error = await broken.then(
-    () => null,
-    (caught: unknown) => caught
+    eventType: 'user.created',
+    at: new Date(),
+  }
+  const failure = async (work: Promise<unknown>) =>
+    work.then(
+      () => null,
+      (caught: unknown) => caught
+    )
+  const queueing = await failure(deliveries.enqueue([{ ...row, eventId: Bun.randomUUIDv7() }]))
+  expect(queueing).not.toBeNull()
+  expect(isForeignKeyViolation(queueing)).toBe(false)
+  const testing = await failure(
+    deliveries.recordTest(
+      {
+        ...row,
+        eventId: null,
+        test: true,
+        state: 'failed',
+        attempts: 0,
+        nextAttemptAt: null,
+        lastAttemptAt: null,
+        statusCode: null,
+        failureReason: null,
+        completedAt: new Date(),
+        createdAt: new Date(),
+      },
+      null
+    )
   )
-  expect(error).not.toBeNull()
-  expect(isForeignKeyViolation(error)).toBe(false)
+  expect(testing).not.toBeNull()
+  expect(isForeignKeyViolation(testing)).toBe(false)
   expect(
     isForeignKeyViolation(Object.assign(new Error('wrapped'), { cause: { code: '23503' } }))
   ).toBe(true)
+})
+
+test('a failure while the batch is retried row by row is thrown too', async () => {
+  const { a } = await tenants()
+  const { deliveries, record, eventId } = await queued(a)
+  const row = (id: string, endpointId: string) => ({
+    id,
+    projectId: a.projectId,
+    environmentId: a.environmentId,
+    endpointId,
+    eventId: Bun.randomUUIDv7(),
+    eventType: 'user.created',
+    at: new Date(),
+  })
+  // The first row's endpoint is gone (a foreign-key violation: the batch is retried one at a
+  // time); the second is not a row at all.
+  const error = await deliveries
+    .enqueue([row(Bun.randomUUIDv7(), Bun.randomUUIDv7()), row('not-a-uuid', record.id)])
+    .then(
+      () => null,
+      (caught: unknown) => caught
+    )
+  expect(error).not.toBeNull()
+  expect(isForeignKeyViolation(error)).toBe(false)
+  expect(eventId).toBeString()
 })

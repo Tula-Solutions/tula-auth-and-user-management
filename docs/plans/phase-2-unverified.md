@@ -34,6 +34,65 @@ it is verified later.
 | **A wrong `TULA_MASTER_KEY` on one of several instances** | A test that stores a secret that does not open: the deliveries are settled as `signing_failed` and the log has one line per endpoint per round with a count. Two real instances with different keys, taking turns at the job lock, were not run; in that arrangement the endpoint would lose the events of every round the wrong instance wins. |
 | **The cap of ten endpoints under concurrent registrations, across instances** | Twelve concurrent registrations against the memory environment lock (ten succeed). The Postgres advisory lock behind `deps.environmentLock` is proved for its other scope by `environment-lock.integration.ts` (not run here); no test drives concurrent registrations against a real server. The `races.integration.ts` harness makes two store calls meet on a row lock and does not fit a service-level advisory lock. |
 
+## Step 2.2, retries and the delivery log (TULA-42, [ADR 0034](../adr/0034-webhooks.md))
+
+Three items of the first delivery's list are **closed by design**, not by a run against the
+real thing: "what a receiver loses when it is slow once" (nothing now: the rest of the round
+is put off, not settled) and "a wrong `TULA_MASTER_KEY` on one of several instances" (the
+deliveries wait instead of being given up; two real instances with different keys were still
+not run). They stay above as they were written.
+
+### External services
+
+| What | What it was tested against instead |
+| --- | --- |
+| **A real receiver that fails and recovers**: a backend behind a load balancer answering `502` during a deploy, a serverless function timing out cold, a receiver that rate-limits with `429` and `Retry-After` | A `Bun.serve` listener on loopback told which status to answer, and `Outbound.request` replaced by a stand-in that throws the guard's `timeout`. Every wait of the schedule was walked on the test's clock; no retry of this step waited in real time or crossed a network. |
+| **The schedule against what receivers expect** | The waits are the ones the Standard Webhooks reference implementation documents (5 s, 5 min, 30 min, 2 h, 5 h, 10 h, 10 h), copied from its documentation as remembered and **not re-read for this step**; nothing was fetched. Whether a given receiver library assumes anything about retry timing was not checked. |
+| **`410 Gone` from real infrastructure** (a CDN or a gateway answering `410` for a route that was removed, on the receiver's behalf) | A listener that answers `410`. That an intermediary can say it for a backend that did not mean it is a known way for the rule to misfire; it was reasoned about, not observed. |
+| **A receiver's handling of `test: true`** in a Standard Webhooks library of another language | `verifyWebhook` (`@tula/admin`) only. The field is an extra top-level key of the payload, which that specification does not forbid; no other library was given a test event. |
+
+### The server as it is deployed
+
+| What | What was run instead |
+| --- | --- |
+| **The stores against a real PostgreSQL** | PGlite, where the shared suite (both stores), the privilege tests, the two restrictive delete policies and the column-level `UPDATE` grants pass. `stores.integration.ts` was given the new context and **not run**: this checkout has no database settings. In particular the "requests recorded at the same time each get their own number" test ran on PGlite's single session, where concurrent calls take turns; on a real server it is the row lock of the `UPDATE` that orders them, which was not exercised. |
+| **Migration `0019` on a real database** | Applied to an empty PGlite database by every test, and to one holding six rows of the `0018` shape by `packages/db/src/migration-0019.test.ts`. **PGlite's role is a superuser**, which row-level security never binds, so the test does not show that the backfill reaches the rows when the migrating role is an ordinary owner under `FORCE ROW LEVEL SECURITY`; the migration lifts the force for the backfill for that case, and that it restores it is tested. How long the migration holds its locks on a large `events` table was not measured. |
+| **A cascade from a removed endpoint past the restrictive delete policy** | A test on PGlite as the runtime role: removing an endpoint removes its pending and recent deliveries, which the policy would refuse a direct delete of. On a real server this rests on referential actions running as the table's owner without the forced policy; the same PGlite caveat as above does not apply here (the test's session is the runtime role), but no real server ran it. |
+| **Two real API instances taking turns at retries** | Two `Deps` sharing the stores and the memory job lock, including two with different clocks. Not two processes and not the Postgres advisory lock. |
+| **Clock skew between instances on a real deployment** | Two `Deps` with clocks thirty seconds apart. |
+| **A crash between a request and its record** | A stand-in store whose `recordAttempt` throws once. The process was not killed. |
+| **Five concurrent outbound requests through the real guard under load** | Ten loopback endpoints and forty deliveries in one round, counting requests in flight (never more than five, never two to one endpoint). No measurement of sockets, memory or time on a real deployment. |
+| **The per-environment rate limit of test events and redelivery on Redis** | The memory limiter. The Redis limiter is the same port and is proved elsewhere; this bucket was not run against it. |
+| **A test event or a redelivery on the request path behind a real proxy with its own timeout** | In process. Such a call can take up to five seconds; whether a deployment's proxy cuts it off sooner was not looked at. |
+| **The retention job's two new purges on a large table** | The memory store and PGlite with a backlog a little over one batch. The purge of events uses a `NOT EXISTS` over `webhook_deliveries` per candidate; its plan and cost on millions of rows were not measured. |
+| **Scenario `49-webhook-retried-after-a-500` against a live server** | In process, with the test clock for the wait and one round of the real worker per `webhook` step (part of `bun run verify`). It is written to run unchanged against `bun run dev` with `CONFORMANCE_WEBHOOK_RECEIVER_HOST=127.0.0.1` (its waits are real sleeps there, nine seconds in all); that run was **not made**. Against a live server the steps that read the log right after a delivery rely on a one-second wait for the server to have recorded the answer, which was chosen, not measured. |
+| **The change to CI's `self-host` jobs** (the exact set of two skipped scenario names; `2 skipped` in the summary line) | The shell lines were extracted from `ci.yml` and run against six sample logs (both names, one name, another name in place of one, a third, none). The workflow itself only runs on GitHub and was not run. |
+
+### After the review
+
+| What | What was run instead |
+| --- | --- |
+| **The run-of-failures rule over real days** | The test clock: the review's case (eight failed requests, five quiet days, one failure), steady daily failures to the millisecond, and a silence exactly at and one millisecond over the limit. |
+| **An answer over the cap from a real receiver** (a framework's default error page, a proxy's HTML) | A loopback listener answering a body over 16 KiB with a chosen status, declared and streamed, and a `node:http` server that streams without end, which sees its connection closed. Chunked answers from a real proxy were not tried. |
+| **The capped count on a large table** | PGlite with five rows and a ceiling of three. That the planner reads the capped subquery through `webhook_deliveries_endpoint_log_idx` on millions of rows, and what a rare `state` or `eventType` filter costs inside one endpoint's log, was not measured. |
+| **The cap on a delivery's attempts under concurrent calls** | One call after another. Calls already in flight when the limit is reached are still recorded; the per-environment rate limit bounds them, which was reasoned, not run. |
+
+| **The compare-and-set of an endpoint's run against a concurrent administrator** | In the store suite (memory and PGlite) as a stale write after a reset, one call after the other, and in the service with the reset made from inside the receiver's handler while the request is in flight. Two real sessions meeting on the row were not run by this step; the comparison is in the `UPDATE`'s own `WHERE`, so the row lock orders them. |
+| **Dates in the tests of other modules** | Bun's `toMatchObject` does not compare dates. The webhook tests and the shared webhook store suite now compare them (`comparable()`), and nothing that had passed turned out wrong but one boundary. **No other test file was checked.** |
+
+### Not test-first
+
+(Of the first pass of this step. The fixes after the review were each written test first and
+seen to fail, with the exceptions named in the report: tests that confirm behaviour the
+review asked to keep.)
+
+The tests of the stores, the service, the router and the retention job were written **with**
+the implementation, in the same sitting, and mostly passed on their first run; they were not
+each seen to fail first. What was seen to fail first: the existing webhook tests (they stopped
+compiling and then failed until the model was in place), the database's privilege tests, the
+`@tula/core` bundle budget (three new error codes put it eight bytes over, which is why there
+is one code with a reason), and the handful of assertions that were wrong on their first run.
+
 ### Other runtimes
 
 | What | What was run instead |

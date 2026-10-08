@@ -58,6 +58,7 @@ describe('conformance scenarios, in process', () => {
       'admin user authentication',
       'webhook delivered and signed',
       'webhook endpoint on a refused address',
+      'webhook retried after a 500',
     ])
   })
 

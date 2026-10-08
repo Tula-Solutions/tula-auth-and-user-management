@@ -72,6 +72,18 @@ const provider = OAuthProviderSchema
 export const WEBHOOK_ENDPOINT_FIELDS = ['url', 'eventTypes', 'enabled'] as const
 
 /**
+ * Why the server switched a webhook endpoint off by itself, as `webhook_endpoint.disabled`
+ * says it: `failing` when every delivery to it has failed for days, `gone` when it answered
+ * `410 Gone`.
+ *
+ * @example
+ * ```ts
+ * const reason: (typeof WEBHOOK_DISABLED_REASONS)[number] = 'failing'
+ * ```
+ */
+export const WEBHOOK_DISABLED_REASONS = ['failing', 'gone'] as const
+
+/**
  * Most names an `environment.settings_updated` event lists in `changed`. Above what the
  * settings document can hold; the API has a test that builds the largest one.
  *
@@ -323,6 +335,14 @@ export const EVENT_DATA_SCHEMAS = {
     'A webhook endpoint was removed; nothing more is delivered to it.',
     {}
   ),
+  'webhook_endpoint.disabled': data(
+    'WebhookEndpointDisabled',
+    'The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again.',
+    {
+      /** Why: one of {@link WEBHOOK_DISABLED_REASONS}. */
+      reason: z.enum(WEBHOOK_DISABLED_REASONS),
+    }
+  ),
 } as const satisfies Record<ActivityType, z.ZodObject>
 
 /**
@@ -354,6 +374,9 @@ export const EventActorSchema = z
  * - `occurredAt`: ISO 8601, UTC.
  * - `actor`, `target`: who did it and what it was done to, by id.
  * - `data`: the details, per type.
+ * - `test`: `true` on a test event (one an administrator asked the server to send, built from
+ *   an example: nothing it describes happened), and absent on every real event. Signed with
+ *   the rest of the body. Check it before acting on an event.
  *
  * There is no IP address and no user agent: those stay in the audit log.
  */
@@ -365,6 +388,7 @@ export interface EventOf<T extends ActivityType> {
   actor: { type: AuditActorType; id: string | null }
   target: { type: EventTargetType<T>; id: string }
   data: EventData<T>
+  test?: true
 }
 
 /**
@@ -393,6 +417,8 @@ function envelope<T extends ActivityType>(type: T) {
       actor: EventActorSchema,
       target: z.object({ type: z.literal(EVENT_TARGET_TYPES[type]), id: id() }),
       data: details,
+      // Only ever `true`, and only on a test event: a real event has no such key.
+      test: z.literal(true).optional(),
     })
     .meta({ ref: String(ref).replace(/Data$/, ''), description })
 }

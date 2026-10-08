@@ -4,8 +4,11 @@ import {
   CreatedWebhookEndpointSchema,
   CreateWebhookEndpointRequestSchema,
   MAX_WEBHOOK_URL_LENGTH,
+  SendTestWebhookRequestSchema,
   UpdateWebhookEndpointRequestSchema,
+  WebhookDeliveryDetailSchema,
   WebhookEndpointSchema,
+  WebhookSendResultSchema,
 } from './webhook'
 
 const endpoint = {
@@ -13,6 +16,9 @@ const endpoint = {
   url: 'https://hooks.example.com/tula',
   eventTypes: ['user.created'],
   enabled: true,
+  disabledReason: null,
+  failingSince: null,
+  lastFailedAt: null,
   createdAt: '2026-10-08T09:30:00.000Z',
   updatedAt: '2026-10-08T09:30:00.000Z',
 }
@@ -105,5 +111,84 @@ describe('WebhookEndpointSchema', () => {
       'whsec_x'
     )
     expect(CreatedWebhookEndpointSchema.safeParse(endpoint).success).toBe(false)
+  })
+})
+
+describe('the delivery log', () => {
+  const delivery = {
+    id: '0199c2f4-7a19-7abb-99ca-cd7e8b4a5f10',
+    endpointId: endpoint.id,
+    eventId: '0199c2f5-0000-7000-8000-000000000001',
+    eventType: 'user.created',
+    test: false,
+    state: 'pending',
+    attemptCount: 1,
+    nextAttemptAt: '2026-10-08T09:30:05.000Z',
+    lastAttemptAt: '2026-10-08T09:30:00.000Z',
+    statusCode: 500,
+    failureReason: null,
+    completedAt: null,
+    createdAt: '2026-10-08T09:30:00.000Z',
+    attempts: [
+      {
+        attempt: 1,
+        attemptedAt: '2026-10-08T09:30:00.000Z',
+        statusCode: 500,
+        durationMs: 12,
+        failureReason: null,
+      },
+    ],
+  }
+
+  test('a delivery has no field for anything a receiver said but its status code', () => {
+    const parsed = WebhookDeliveryDetailSchema.parse({
+      ...delivery,
+      responseBody: 'canary',
+      attempts: [{ ...delivery.attempts[0], responseHeaders: { canary: 'canary' } }],
+    })
+    expect(JSON.stringify(parsed)).not.toContain('canary')
+    expect(parsed).toEqual(delivery)
+  })
+
+  test('a state, an event type and a failure word a later server added are still read', () => {
+    expect(
+      WebhookDeliveryDetailSchema.safeParse({
+        ...delivery,
+        state: 'paused',
+        eventType: 'user.exploded',
+        failureReason: 'something_new',
+      }).success
+    ).toBe(true)
+  })
+
+  test('a test event has no event id', () => {
+    expect(
+      WebhookDeliveryDetailSchema.safeParse({ ...delivery, eventId: null, test: true }).success
+    ).toBe(true)
+  })
+
+  test('a test event is asked for by a known type and nothing else', () => {
+    expect(SendTestWebhookRequestSchema.safeParse({ eventType: 'user.created' }).success).toBe(true)
+    expect(SendTestWebhookRequestSchema.safeParse({ eventType: 'user.exploded' }).success).toBe(
+      false
+    )
+    expect(SendTestWebhookRequestSchema.safeParse({}).success).toBe(false)
+    expect(
+      SendTestWebhookRequestSchema.safeParse({
+        eventType: 'user.created',
+        url: 'https://x.example',
+      }).success
+    ).toBe(false)
+  })
+
+  test('the outcome of a request made on demand is a status and a duration, nothing more', () => {
+    const result = {
+      deliveryId: delivery.id,
+      outcome: 'failed',
+      statusCode: 500,
+      durationMs: 3,
+      failureReason: null,
+    }
+    expect(WebhookSendResultSchema.parse({ ...result, body: 'canary' })).toEqual(result as never)
   })
 })

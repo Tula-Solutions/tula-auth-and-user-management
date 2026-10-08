@@ -28,6 +28,8 @@ describeWebhookStores('Memory', async () => {
     },
     deliveredAt: async (_owner, eventId) =>
       log.outbox.find((row) => row.id === eventId)?.deliveredAt ?? null,
+    eventExists: async (owner, eventId) =>
+      log.outbox.some((row) => row.id === eventId && row.environmentId === owner.environmentId),
     a,
     b: tenant('00000000-0000-7000-8000-00000000e002'),
   }
@@ -49,6 +51,9 @@ test('an endpoint id is stored once', async () => {
     eventTypes: ['user.created'],
     secret: 'v1.sealed',
     enabled: true,
+    disabledReason: null,
+    failingSince: null,
+    lastFailedAt: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   }

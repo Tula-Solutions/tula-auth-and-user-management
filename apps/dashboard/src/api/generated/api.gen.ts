@@ -80,6 +80,7 @@ export interface UserCreatedEvent {
   actor: EventActor;
   target: UserCreatedEventTarget;
   data: UserCreatedEventData;
+  test?: true;
 }
 
 /**
@@ -106,6 +107,7 @@ export interface UserEmailVerifiedEvent {
   actor: EventActor;
   target: UserEmailVerifiedEventTarget;
   data: UserEmailVerifiedEventData;
+  test?: true;
 }
 
 /**
@@ -132,6 +134,7 @@ export interface UserBannedEvent {
   actor: EventActor;
   target: UserBannedEventTarget;
   data: UserBannedEventData;
+  test?: true;
 }
 
 /**
@@ -158,6 +161,7 @@ export interface UserUnbannedEvent {
   actor: EventActor;
   target: UserUnbannedEventTarget;
   data: UserUnbannedEventData;
+  test?: true;
 }
 
 /**
@@ -184,6 +188,7 @@ export interface UserDeletedEvent {
   actor: EventActor;
   target: UserDeletedEventTarget;
   data: UserDeletedEventData;
+  test?: true;
 }
 
 export type UserPasswordChangedEventDataMethod = typeof UserPasswordChangedEventDataMethod[keyof typeof UserPasswordChangedEventDataMethod];
@@ -224,6 +229,7 @@ export interface UserPasswordChangedEvent {
   actor: EventActor;
   target: UserPasswordChangedEventTarget;
   data: UserPasswordChangedEventData;
+  test?: true;
 }
 
 export type UserMfaEnabledEventDataMethod = typeof UserMfaEnabledEventDataMethod[keyof typeof UserMfaEnabledEventDataMethod];
@@ -259,6 +265,7 @@ export interface UserMfaEnabledEvent {
   actor: EventActor;
   target: UserMfaEnabledEventTarget;
   data: UserMfaEnabledEventData;
+  test?: true;
 }
 
 export type UserMfaDisabledEventDataMethod = typeof UserMfaDisabledEventDataMethod[keyof typeof UserMfaDisabledEventDataMethod];
@@ -296,6 +303,7 @@ export interface UserMfaDisabledEvent {
   actor: EventActor;
   target: UserMfaDisabledEventTarget;
   data: UserMfaDisabledEventData;
+  test?: true;
 }
 
 /**
@@ -322,6 +330,7 @@ export interface UserBackupCodesRegeneratedEvent {
   actor: EventActor;
   target: UserBackupCodesRegeneratedEventTarget;
   data: UserBackupCodesRegeneratedEventData;
+  test?: true;
 }
 
 /**
@@ -348,6 +357,7 @@ export interface UserBackupCodeUsedEvent {
   actor: EventActor;
   target: UserBackupCodeUsedEventTarget;
   data: UserBackupCodeUsedEventData;
+  test?: true;
 }
 
 export type OAuthProvider = typeof OAuthProvider[keyof typeof OAuthProvider];
@@ -394,6 +404,7 @@ export interface UserIdentityLinkedEvent {
   actor: EventActor;
   target: UserIdentityLinkedEventTarget;
   data: UserIdentityLinkedEventData;
+  test?: true;
 }
 
 /**
@@ -422,6 +433,7 @@ export interface UserIdentityUnlinkedEvent {
   actor: EventActor;
   target: UserIdentityUnlinkedEventTarget;
   data: UserIdentityUnlinkedEventData;
+  test?: true;
 }
 
 /**
@@ -452,6 +464,7 @@ export interface UserPasskeyAddedEvent {
   actor: EventActor;
   target: UserPasskeyAddedEventTarget;
   data: UserPasskeyAddedEventData;
+  test?: true;
 }
 
 /**
@@ -481,6 +494,7 @@ export interface UserPasskeyRenamedEvent {
   actor: EventActor;
   target: UserPasskeyRenamedEventTarget;
   data: UserPasskeyRenamedEventData;
+  test?: true;
 }
 
 export type UserPasskeyRemovedEventDataMethod = typeof UserPasskeyRemovedEventDataMethod[keyof typeof UserPasskeyRemovedEventDataMethod];
@@ -520,6 +534,7 @@ export interface UserPasskeyRemovedEvent {
   actor: EventActor;
   target: UserPasskeyRemovedEventTarget;
   data: UserPasskeyRemovedEventData;
+  test?: true;
 }
 
 /**
@@ -549,6 +564,7 @@ export interface UserPasskeyCounterRegressedEvent {
   actor: EventActor;
   target: UserPasskeyCounterRegressedEventTarget;
   data: UserPasskeyCounterRegressedEventData;
+  test?: true;
 }
 
 export type SessionClient = typeof SessionClient[keyof typeof SessionClient];
@@ -589,6 +605,7 @@ export interface SessionCreatedEvent {
   actor: EventActor;
   target: SessionCreatedEventTarget;
   data: SessionCreatedEventData;
+  test?: true;
 }
 
 export type SessionRevokedEventDataReason = typeof SessionRevokedEventDataReason[keyof typeof SessionRevokedEventDataReason];
@@ -632,6 +649,7 @@ export interface SessionRevokedEvent {
   actor: EventActor;
   target: SessionRevokedEventTarget;
   data: SessionRevokedEventData;
+  test?: true;
 }
 
 /**
@@ -662,6 +680,7 @@ export interface SessionReuseDetectedEvent {
   actor: EventActor;
   target: SessionReuseDetectedEventTarget;
   data: SessionReuseDetectedEventData;
+  test?: true;
 }
 
 export type SessionSteppedUpEventDataMethodsItem = typeof SessionSteppedUpEventDataMethodsItem[keyof typeof SessionSteppedUpEventDataMethodsItem];
@@ -707,6 +726,7 @@ export interface SessionSteppedUpEvent {
   actor: EventActor;
   target: SessionSteppedUpEventTarget;
   data: SessionSteppedUpEventData;
+  test?: true;
 }
 
 export type ApiKeyCreatedEventDataKind = typeof ApiKeyCreatedEventDataKind[keyof typeof ApiKeyCreatedEventDataKind];
@@ -743,6 +763,7 @@ export interface ApiKeyCreatedEvent {
   actor: EventActor;
   target: ApiKeyCreatedEventTarget;
   data: ApiKeyCreatedEventData;
+  test?: true;
 }
 
 /**
@@ -769,6 +790,7 @@ export interface ApiKeyRevokedEvent {
   actor: EventActor;
   target: ApiKeyRevokedEventTarget;
   data: ApiKeyRevokedEventData;
+  test?: true;
 }
 
 /**
@@ -800,6 +822,7 @@ export interface SigningKeyRotatedEvent {
   actor: EventActor;
   target: SigningKeyRotatedEventTarget;
   data: SigningKeyRotatedEventData;
+  test?: true;
 }
 
 /**
@@ -841,6 +864,7 @@ export interface EnvironmentSettingsUpdatedEvent {
   actor: EventActor;
   target: EnvironmentSettingsUpdatedEventTarget;
   data: EnvironmentSettingsUpdatedEventData;
+  test?: true;
 }
 
 export type OAuthProviderUpdatedEventDataChangedItem = typeof OAuthProviderUpdatedEventDataChangedItem[keyof typeof OAuthProviderUpdatedEventDataChangedItem];
@@ -883,6 +907,7 @@ export interface OAuthProviderUpdatedEvent {
   actor: EventActor;
   target: OAuthProviderUpdatedEventTarget;
   data: OAuthProviderUpdatedEventData;
+  test?: true;
 }
 
 /**
@@ -911,6 +936,7 @@ export interface OAuthProviderDeletedEvent {
   actor: EventActor;
   target: OAuthProviderDeletedEventTarget;
   data: OAuthProviderDeletedEventData;
+  test?: true;
 }
 
 /**
@@ -919,7 +945,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 29
+     * @maximum 30
      */
   eventTypes: number;
   enabled: boolean;
@@ -944,6 +970,7 @@ export interface WebhookEndpointCreatedEvent {
   actor: EventActor;
   target: WebhookEndpointCreatedEventTarget;
   data: WebhookEndpointCreatedEventData;
+  test?: true;
 }
 
 export type WebhookEndpointUpdatedEventDataChangedItem = typeof WebhookEndpointUpdatedEventDataChangedItem[keyof typeof WebhookEndpointUpdatedEventDataChangedItem];
@@ -985,6 +1012,7 @@ export interface WebhookEndpointUpdatedEvent {
   actor: EventActor;
   target: WebhookEndpointUpdatedEventTarget;
   data: WebhookEndpointUpdatedEventData;
+  test?: true;
 }
 
 /**
@@ -1011,9 +1039,47 @@ export interface WebhookEndpointDeletedEvent {
   actor: EventActor;
   target: WebhookEndpointDeletedEventTarget;
   data: WebhookEndpointDeletedEventData;
+  test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent;
+export type WebhookEndpointDisabledEventDataReason = typeof WebhookEndpointDisabledEventDataReason[keyof typeof WebhookEndpointDisabledEventDataReason];
+
+
+export const WebhookEndpointDisabledEventDataReason = {
+  failing: 'failing',
+  gone: 'gone',
+} as const;
+
+/**
+ * The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again.
+ */
+export interface WebhookEndpointDisabledEventData {
+  reason: WebhookEndpointDisabledEventDataReason;
+}
+
+export type WebhookEndpointDisabledEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again.
+ */
+export interface WebhookEndpointDisabledEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.disabled';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointDisabledEventTarget;
+  data: WebhookEndpointDisabledEventData;
+  test?: true;
+}
+
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent;
 
 export interface StatusResponse {
   status: 'ok';
@@ -1069,6 +1135,7 @@ export const ErrorCode = {
   oauthalready_linked: 'oauth.already_linked',
   identitylast_sign_in_method: 'identity.last_sign_in_method',
   webhookurl_not_allowed: 'webhook.url_not_allowed',
+  webhookcannot_redeliver: 'webhook.cannot_redeliver',
   passkeyregistration_failed: 'passkey.registration_failed',
   passkeyalready_registered: 'passkey.already_registered',
   passkeylimit_reached: 'passkey.limit_reached',
@@ -1930,6 +1997,7 @@ export const ActivityType = {
   webhook_endpointcreated: 'webhook_endpoint.created',
   webhook_endpointupdated: 'webhook_endpoint.updated',
   webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
 } as const;
 
 export type AuditLogQueryActorType = typeof AuditLogQueryActorType[keyof typeof AuditLogQueryActorType];
@@ -2428,6 +2496,10 @@ export interface WebhookEndpoint {
   url: string;
   eventTypes: string[];
   enabled: boolean;
+  /** @nullable */
+  disabledReason: string | null;
+  failingSince: string | null;
+  lastFailedAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
@@ -2444,6 +2516,10 @@ export interface CreatedWebhookEndpoint {
   url: string;
   eventTypes: string[];
   enabled: boolean;
+  /** @nullable */
+  disabledReason: string | null;
+  failingSince: string | null;
+  lastFailedAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
@@ -2485,6 +2561,7 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   webhook_endpointcreated: 'webhook_endpoint.created',
   webhook_endpointupdated: 'webhook_endpoint.updated',
   webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
 } as const;
 
 export interface CreateWebhookEndpointRequest {
@@ -2496,7 +2573,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 29
+     * @maxItems 30
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -2535,6 +2612,7 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   webhook_endpointcreated: 'webhook_endpoint.created',
   webhook_endpointupdated: 'webhook_endpoint.updated',
   webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
 } as const;
 
 export interface UpdateWebhookEndpointRequest {
@@ -2546,10 +2624,168 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 29
+     * @maxItems 30
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
+}
+
+export interface WebhookDelivery {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  endpointId: string;
+  eventId: string | null;
+  eventType: string;
+  test: boolean;
+  state: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  attemptCount: number;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  statusCode: number | null;
+  /** @nullable */
+  failureReason: string | null;
+  completedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface WebhookDeliveryList {
+  meta: PaginationMeta;
+  data: WebhookDelivery[];
+}
+
+export type WebhookDeliveryQueryState = typeof WebhookDeliveryQueryState[keyof typeof WebhookDeliveryQueryState];
+
+
+export const WebhookDeliveryQueryState = {
+  pending: 'pending',
+  delivered: 'delivered',
+  failed: 'failed',
+} as const;
+
+export interface WebhookDeliveryQuery {
+  state?: WebhookDeliveryQueryState;
+  eventType?: ActivityType;
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+}
+
+export interface WebhookDeliveryAttempt {
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  attempt: number;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  attemptedAt: string;
+  statusCode: number | null;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  durationMs: number;
+  /** @nullable */
+  failureReason: string | null;
+}
+
+export interface WebhookDeliveryDetail {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  endpointId: string;
+  eventId: string | null;
+  eventType: string;
+  test: boolean;
+  state: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  attemptCount: number;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  statusCode: number | null;
+  /** @nullable */
+  failureReason: string | null;
+  completedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  attempts: WebhookDeliveryAttempt[];
+}
+
+export type WebhookSendResultOutcome = typeof WebhookSendResultOutcome[keyof typeof WebhookSendResultOutcome];
+
+
+export const WebhookSendResultOutcome = {
+  delivered: 'delivered',
+  failed: 'failed',
+} as const;
+
+export interface WebhookSendResult {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  deliveryId: string;
+  outcome: WebhookSendResultOutcome;
+  statusCode: number | null;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  durationMs: number;
+  /** @nullable */
+  failureReason: string | null;
+}
+
+export type SendTestWebhookRequestEventType = typeof SendTestWebhookRequestEventType[keyof typeof SendTestWebhookRequestEventType];
+
+
+export const SendTestWebhookRequestEventType = {
+  usercreated: 'user.created',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
+} as const;
+
+export interface SendTestWebhookRequest {
+  eventType: SendTestWebhookRequestEventType;
 }
 
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
@@ -2816,6 +3052,30 @@ export const ListAuditLogsActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+} as const;
+
+export type ListWebhookDeliveriesParams = {
+state?: ListWebhookDeliveriesState;
+eventType?: ActivityType;
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
+
+export type ListWebhookDeliveriesState = typeof ListWebhookDeliveriesState[keyof typeof ListWebhookDeliveriesState];
+
+
+export const ListWebhookDeliveriesState = {
+  pending: 'pending',
+  delivered: 'delivered',
+  failed: 'failed',
 } as const;
 
 export type ListWorkspacesParams = {
@@ -5471,7 +5731,7 @@ export const getUpdateWebhookEndpointUrl = (id: string,) => {
 }
 
 /**
- * Changes the address, the event types or whether the endpoint is on; a field left out keeps its value. While an endpoint is off nothing is delivered to it, and the events of that time are not sent later. The signing secret cannot be changed here. Recorded in the audit log by the names of the fields that changed, never their values. An address the server may not call is refused with `webhook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * Changes the address, the event types or whether the endpoint is on; a field left out keeps its value. While an endpoint is off nothing is delivered to it, and the events of that time are not sent later. Switching it on (also after the server switched it off: see `disabledReason`) forgets why it was off and since when it was failing; deliveries that were pending are tried again unless they are more than three days old. The signing secret cannot be changed here. Recorded in the audit log by the names of the fields that changed, never their values. An address the server may not call is refused with `webhook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
  * @summary Change a webhook endpoint
  */
 export const updateWebhookEndpoint = async (id: string,
@@ -5625,6 +5885,400 @@ export const useDeleteWebhookEndpoint = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteWebhookEndpointMutationOptions(options), queryClient);
+    }
+
+export const getListWebhookDeliveriesUrl = (id: string,
+    params?: ListWebhookDeliveriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/webhook-endpoints/${id}/deliveries?${stringifiedParams}` : `/v1/admin/webhook-endpoints/${id}/deliveries`
+}
+
+/**
+ * The deliveries of one endpoint, newest first: one per event it was owed, and one per test event. Each says where it stands (`pending`, `delivered`, `failed`), how many requests were made and how the latest ended. Filter by `state` and `eventType`. Deliveries are kept for 90 days. The list pages through the newest 10000 matching deliveries: a page past that (`page` × `size`) is refused with `validation.failed`, and `meta.totalCount` is counted no further.
+ * @summary List an endpoint’s deliveries
+ */
+export const listWebhookDeliveries = async (id: string,
+    params?: ListWebhookDeliveriesParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookDeliveryList> => {
+
+  return dashboardFetch<WebhookDeliveryList>(getListWebhookDeliveriesUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWebhookDeliveriesQueryKey = (id: string,
+    params?: ListWebhookDeliveriesParams,) => {
+    return [
+    `/v1/admin/webhook-endpoints/${id}/deliveries`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListWebhookDeliveriesQueryOptions = <TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(id: string,
+    params?: ListWebhookDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWebhookDeliveriesQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWebhookDeliveries>>> = ({ signal }) => listWebhookDeliveries(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListWebhookDeliveriesQueryResult = NonNullable<Awaited<ReturnType<typeof listWebhookDeliveries>>>
+export type ListWebhookDeliveriesQueryError = ErrorEnvelope
+
+
+export function useListWebhookDeliveries<TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(
+ id: string,
+    params: undefined |  ListWebhookDeliveriesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhookDeliveries>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhookDeliveries>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhookDeliveries<TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListWebhookDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhookDeliveries>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhookDeliveries>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhookDeliveries<TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListWebhookDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an endpoint’s deliveries
+ */
+
+export function useListWebhookDeliveries<TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListWebhookDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListWebhookDeliveriesQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWebhookDeliveryUrl = (id: string,
+    deliveryId: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/deliveries/${deliveryId}`
+}
+
+/**
+ * One delivery with every request the server made for it, oldest first. An attempt is a time, a status code or one of the server’s fixed words, and a duration: never a header or a body of the receiver’s answer.
+ * @summary Get a delivery and its attempts
+ */
+export const getWebhookDelivery = async (id: string,
+    deliveryId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookDeliveryDetail> => {
+
+  return dashboardFetch<WebhookDeliveryDetail>(getGetWebhookDeliveryUrl(id,deliveryId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWebhookDeliveryQueryKey = (id: string,
+    deliveryId: string,) => {
+    return [
+    `/v1/admin/webhook-endpoints/${id}/deliveries/${deliveryId}`
+    ] as const;
+    }
+
+
+export const getGetWebhookDeliveryQueryOptions = <TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(id: string,
+    deliveryId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWebhookDeliveryQueryKey(id,deliveryId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWebhookDelivery>>> = ({ signal }) => getWebhookDelivery(id,deliveryId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && deliveryId !== null && deliveryId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWebhookDeliveryQueryResult = NonNullable<Awaited<ReturnType<typeof getWebhookDelivery>>>
+export type GetWebhookDeliveryQueryError = ErrorEnvelope
+
+
+export function useGetWebhookDelivery<TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(
+ id: string,
+    deliveryId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhookDelivery>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhookDelivery>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhookDelivery<TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(
+ id: string,
+    deliveryId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhookDelivery>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhookDelivery>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhookDelivery<TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(
+ id: string,
+    deliveryId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a delivery and its attempts
+ */
+
+export function useGetWebhookDelivery<TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(
+ id: string,
+    deliveryId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWebhookDeliveryQueryOptions(id,deliveryId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSendTestWebhookUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/test`
+}
+
+/**
+ * Sends one test event of the chosen type to the endpoint, now, signed like every delivery. The event is an example with a new id and **`"test": true`** inside the signed body, which no real event has: nothing it describes happened, and a receiver should check the field before acting. It is one request with no retry, recorded as a delivery flagged `test`; it is not written to the audit log and changes nothing about the endpoint: a failed test does not count towards switching it off, and one that gets through does not clear `failingSince`. An endpoint that is off can be tested. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.
+ * @summary Send a test event
+ */
+export const sendTestWebhook = async (id: string,
+    sendTestWebhookRequest: SendTestWebhookRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookSendResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<WebhookSendResult>(getSendTestWebhookUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sendTestWebhookRequest)
+  }
+);}
+
+
+
+
+
+export const getSendTestWebhookMutationKey = () => ['sendTestWebhook'] as const;
+
+export const getSendTestWebhookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendTestWebhook>>, TError,SendTestWebhookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendTestWebhook>>, TError,SendTestWebhookMutationVariables, TContext> => {
+
+const mutationKey = getSendTestWebhookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendTestWebhook>>, SendTestWebhookMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  sendTestWebhook(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendTestWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof sendTestWebhook>>>
+    export type SendTestWebhookMutationBody = SendTestWebhookRequest
+    export type SendTestWebhookMutationError = ErrorEnvelope
+    export type SendTestWebhookMutationVariables = {id: string;data: SendTestWebhookRequest}
+
+    /**
+ * @summary Send a test event
+ */
+export const useSendTestWebhook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendTestWebhook>>, TError,SendTestWebhookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof sendTestWebhook>>,
+        TError,
+        SendTestWebhookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSendTestWebhookMutationOptions(options), queryClient);
+    }
+
+export const getRedeliverWebhookUrl = (id: string,
+    deliveryId: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/deliveries/${deliveryId}/redeliver`
+}
+
+/**
+ * Makes one more request for a past delivery, now: the event’s stored payload, to the endpoint it was owed to, with the same `webhook-id` (a receiver that drops repeats by id will drop it). The request is added to the delivery’s own attempts. A 2xx makes the delivery `delivered`; a failure leaves it as it was and is not retried. Refused with `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`: `delivery_pending` while the server is still retrying the delivery, `endpoint_disabled` for an endpoint that is switched off, `event_gone` once the event is no longer kept (30 days) or for a test event, and `attempt_limit` once the delivery has had 20 requests in all. A request that gets through also ends the endpoint’s run of failures (`failingSince`). The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment.
+ * @summary Send a delivery again
+ */
+export const redeliverWebhook = async (id: string,
+    deliveryId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookSendResult> => {
+
+  return dashboardFetch<WebhookSendResult>(getRedeliverWebhookUrl(id,deliveryId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRedeliverWebhookMutationKey = () => ['redeliverWebhook'] as const;
+
+export const getRedeliverWebhookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof redeliverWebhook>>, TError,RedeliverWebhookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof redeliverWebhook>>, TError,RedeliverWebhookMutationVariables, TContext> => {
+
+const mutationKey = getRedeliverWebhookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof redeliverWebhook>>, RedeliverWebhookMutationVariables> = (props) => {
+          const {id,deliveryId} = props ?? {};
+
+          return  redeliverWebhook(id,deliveryId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RedeliverWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof redeliverWebhook>>>
+
+    export type RedeliverWebhookMutationError = ErrorEnvelope
+    export type RedeliverWebhookMutationVariables = {id: string;deliveryId: string}
+
+    /**
+ * @summary Send a delivery again
+ */
+export const useRedeliverWebhook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof redeliverWebhook>>, TError,RedeliverWebhookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof redeliverWebhook>>,
+        TError,
+        RedeliverWebhookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRedeliverWebhookMutationOptions(options), queryClient);
     }
 
 export const getGetInstanceDiagnosticsUrl = () => {

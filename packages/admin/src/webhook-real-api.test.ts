@@ -25,18 +25,21 @@ interface Arrived {
 }
 
 let arrived: Arrived[] = []
+/** The statuses the receiver answers its next deliveries with; 204 after them. */
+let answers: number[] = []
 const receiver = Bun.serve({
   port: 0,
   hostname: '127.0.0.1',
   async fetch(request) {
     arrived.push({ body: await request.text(), headers: request.headers })
-    return new Response(null, { status: 204 })
+    return new Response(null, { status: answers.shift() ?? 204 })
   },
 })
 afterAll(() => receiver.stop(true))
 
 beforeEach(() => {
   arrived = []
+  answers = []
 })
 
 async function world() {
@@ -163,5 +166,109 @@ describe('a delivery the server made, given to verifyWebhook', () => {
       422,
       { reason: 'address_not_allowed' },
     ])
+  })
+})
+
+describe('retries, the delivery log, test events and sending again, through the typed client', () => {
+  test('a delivery that failed is in the log as pending, is retried by the worker, and the log then has both requests', async () => {
+    const { deps, admin, endpoint } = await world()
+    await admin.call('createUser', { body: { email: 'grace@example.com' } })
+    answers = [500]
+    await Webhooks.deliverPending(deps)
+
+    const pending = await admin.call('listWebhookDeliveries', {
+      params: { id: endpoint.id },
+      query: { state: 'pending', eventType: 'user.created' },
+    })
+    expect(pending.data.meta.totalCount).toBe(1)
+    const [delivery] = pending.data.data
+    expect(delivery).toMatchObject({ state: 'pending', attemptCount: 1, statusCode: 500 })
+    const failing = await admin.call('getWebhookEndpoint', { params: { id: endpoint.id } })
+    expect(failing.data.failingSince).not.toBeNull()
+
+    // The first wait of the schedule, and the worker's next round.
+    deps.clock.advance('5s')
+    await Webhooks.deliverPending(deps)
+    const detail = await admin.call('getWebhookDelivery', {
+      params: { id: endpoint.id, deliveryId: delivery?.id ?? '' },
+    })
+    expect(detail.data).toMatchObject({ state: 'delivered', attemptCount: 2 })
+    expect(detail.data.attempts.map((attempt) => attempt.statusCode)).toEqual([500, 204])
+    // The receiver saw the same event twice, with the same id, and verifies both.
+    expect(arrived).toHaveLength(2)
+    const events = await Promise.all(
+      arrived.map((one) =>
+        verifyWebhook(one.body, one.headers, endpoint.secret, { now: deps.clock.now().getTime() })
+      )
+    )
+    expect(events[0]?.id).toBe(events[1]?.id as string)
+    expect(events.every((event) => event.test === undefined)).toBe(true)
+  })
+
+  test('a test event verifies like any delivery and tells the receiver it is a test', async () => {
+    const { deps, admin, endpoint } = await world()
+    const sent = await admin.call('sendTestWebhook', {
+      params: { id: endpoint.id },
+      body: { eventType: 'session.reuse_detected' },
+    })
+    expect(sent.data).toEqual({
+      deliveryId: sent.data.deliveryId,
+      outcome: 'delivered',
+      statusCode: 204,
+      durationMs: 0,
+      failureReason: null,
+    })
+    const [delivery] = arrived as [Arrived]
+    const event = await verifyWebhook(delivery.body, delivery.headers, endpoint.secret, {
+      now: deps.clock.now().getTime(),
+    })
+    // What a receiver checks before it acts on an event.
+    expect(event.test).toBe(true)
+    expect(event.type).toBe('session.reuse_detected')
+    const logged = await admin.call('getWebhookDelivery', {
+      params: { id: endpoint.id, deliveryId: sent.data.deliveryId },
+    })
+    expect(logged.data).toMatchObject({ test: true, eventId: null, state: 'delivered' })
+  })
+
+  test('a delivery is sent again with its own id; one that is pending, or of an endpoint that is off, is refused with a reason', async () => {
+    const { deps, admin, endpoint } = await world()
+    await admin.call('createUser', { body: { email: 'edsger@example.com' } })
+    answers = [500]
+    await Webhooks.deliverPending(deps)
+    const listed = await admin.call('listWebhookDeliveries', { params: { id: endpoint.id } })
+    const deliveryId = listed.data.data[0]?.id ?? ''
+    const params = { id: endpoint.id, deliveryId }
+    const refusal = async () => {
+      try {
+        await admin.call('redeliverWebhook', { params })
+        return null
+      } catch (error) {
+        return isTulaAdminError(error) ? [error.code, error.status, error.params] : error
+      }
+    }
+    expect(await refusal()).toEqual([
+      'webhook.cannot_redeliver',
+      409,
+      { reason: 'delivery_pending' },
+    ])
+
+    deps.clock.advance('5s')
+    await Webhooks.deliverPending(deps)
+    const again = await admin.call('redeliverWebhook', { params })
+    expect(again.data).toMatchObject({ deliveryId, outcome: 'delivered', statusCode: 204 })
+    expect(new Set(arrived.map((one) => one.headers.get('webhook-id'))).size).toBe(1)
+    expect(arrived).toHaveLength(3)
+
+    await admin.call('updateWebhookEndpoint', {
+      params: { id: endpoint.id },
+      body: { enabled: false },
+    })
+    expect(await refusal()).toEqual([
+      'webhook.cannot_redeliver',
+      409,
+      { reason: 'endpoint_disabled' },
+    ])
+    expect(arrived).toHaveLength(3)
   })
 })

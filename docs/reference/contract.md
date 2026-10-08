@@ -1185,6 +1185,9 @@ An event of type `T`, as a webhook delivers it.
 - `occurredAt`: ISO 8601, UTC.
 - `actor`, `target`: who did it and what it was done to, by id.
 - `data`: the details, per type.
+- `test`: `true` on a test event (one an administrator asked the server to send, built from
+  an example: nothing it describes happened), and absent on every real event. Signed with
+  the rest of the body. Check it before acting on an event.
 
 There is no IP address and no user agent: those stay in the audit log.
 
@@ -1197,6 +1200,7 @@ export interface EventOf<T extends ActivityType> {
   actor: { type: AuditActorType; id: string | null }
   target: { type: EventTargetType<T>; id: string }
   data: EventData<T>
+  test?: true
 }
 ```
 
@@ -2753,6 +2757,26 @@ Prove a second factor for an attempt waiting on `needs_second_factor`.
 const SecondFactorRequestSchema
 ```
 
+### `SendTestWebhookRequest`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+Send-test-event request body.
+
+```ts
+export type SendTestWebhookRequest = z.infer<typeof SendTestWebhookRequestSchema>
+```
+
+### `SendTestWebhookRequestSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Body of `POST /v1/admin/webhook-endpoints/{id}/test`: the type of the example event to send.
+
+```ts
+const SendTestWebhookRequestSchema: z.ZodObject<{ eventType: z.ZodEnum<{}>; }, z.core.$strict>
+```
+
 ### `Session`
 
 _type_, defined in `packages/contract/src/session.ts`
@@ -3600,6 +3624,41 @@ Body of `POST /v1/admin/sessions/verify`: the value of a `stateful` session's co
 const VerifySessionRequestSchema: z.ZodObject<{ token: z.ZodString; }, z.core.$strip>
 ```
 
+### `WEBHOOK_DELIVERY_STATES`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Where a delivery stands: `pending` (not yet delivered, and the server will try, or try
+again), `delivered` (the receiver answered 2xx) or `failed` (given up).
+
+```ts
+const WEBHOOK_DELIVERY_STATES: readonly ["pending", "delivered", "failed"]
+```
+
+**Example**
+
+```ts
+const state: (typeof WEBHOOK_DELIVERY_STATES)[number] = 'pending'
+```
+
+### `WEBHOOK_DISABLED_REASONS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Why the server switched a webhook endpoint off by itself, as `webhook_endpoint.disabled`
+says it: `failing` when every delivery to it has failed for days, `gone` when it answered
+`410 Gone`.
+
+```ts
+const WEBHOOK_DISABLED_REASONS: readonly ["failing", "gone"]
+```
+
+**Example**
+
+```ts
+const reason: (typeof WEBHOOK_DISABLED_REASONS)[number] = 'failing'
+```
+
 ### `WEBHOOK_ENDPOINT_FIELDS`
 
 _constant_, defined in `packages/contract/src/events.ts`
@@ -3632,6 +3691,27 @@ const WEBHOOK_ID_HEADER: "webhook-id"
 
 ```ts
 const id = request.headers.get(WEBHOOK_ID_HEADER)
+```
+
+### `WEBHOOK_REDELIVER_REFUSALS`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Why a delivery cannot be sent again, as `webhook.cannot_redeliver` says it in
+`params.reason`: the server is still retrying it, its endpoint is switched off, its
+event's payload is no longer kept (also: it was a test event, which never had one), or it
+has had as many requests as one delivery may have.
+
+```ts
+const WEBHOOK_REDELIVER_REFUSALS: readonly ["delivery_pending", "endpoint_disabled", "event_gone", "attempt_limit"]
+```
+
+**Example**
+
+```ts
+if (error.code === 'webhook.cannot_redeliver' && error.params?.reason === 'event_gone') {
+  // too late to send this one again
+}
 ```
 
 ### `WEBHOOK_SECRET_PREFIX`
@@ -3729,6 +3809,102 @@ exact match. `http://` is accepted for `localhost`, `127.0.0.1` and `[::1]` only
 const WebOriginSchema: z.ZodString
 ```
 
+### `WebhookDelivery`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+The delivery of one event to one endpoint.
+
+```ts
+export type WebhookDelivery = z.infer<typeof WebhookDeliverySchema>
+```
+
+### `WebhookDeliveryAttempt`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+One request made for a delivery.
+
+```ts
+export type WebhookDeliveryAttempt = z.infer<typeof WebhookDeliveryAttemptSchema>
+```
+
+### `WebhookDeliveryAttemptSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+One request the server made for a delivery. **Nothing of the receiver's answer is here but
+its status code and how long it took**: no header and no body, which the server never keeps.
+
+```ts
+const WebhookDeliveryAttemptSchema
+```
+
+### `WebhookDeliveryDetail`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+A delivery with its attempts.
+
+```ts
+export type WebhookDeliveryDetail = z.infer<typeof WebhookDeliveryDetailSchema>
+```
+
+### `WebhookDeliveryDetailSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+One delivery with every request made for it, oldest first.
+
+```ts
+const WebhookDeliveryDetailSchema
+```
+
+### `WebhookDeliveryList`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+A page of deliveries.
+
+```ts
+export type WebhookDeliveryList = z.infer<typeof WebhookDeliveryListSchema>
+```
+
+### `WebhookDeliveryListSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+One page of an endpoint's deliveries, newest first.
+
+```ts
+const WebhookDeliveryListSchema
+```
+
+### `WebhookDeliverySchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+The delivery of one event to one endpoint: where it stands, and how its last try ended.
+
+`statusCode` and `failureReason` describe the latest thing that happened to it.
+`failureReason` can be a word for which **no request was made** (`endpoint_unresponsive`,
+`signing_failed`, `expired`, `event_gone`): those are not attempts and are not counted in
+`attemptCount`.
+
+```ts
+const WebhookDeliverySchema
+```
+
+### `WebhookDeliveryState`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+Where a delivery stands.
+
+```ts
+export type WebhookDeliveryState = (typeof WEBHOOK_DELIVERY_STATES)[number]
+```
+
 ### `WebhookEndpoint`
 
 _type_, defined in `packages/contract/src/webhook.ts`
@@ -3768,6 +3944,27 @@ by the call that created the endpoint.
 
 ```ts
 const WebhookEndpointSchema
+```
+
+### `WebhookSendResult`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+The outcome of a request made on demand.
+
+```ts
+export type WebhookSendResult = z.infer<typeof WebhookSendResultSchema>
+```
+
+### `WebhookSendResultSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+What became of a request the server made on demand (a test event, or a delivery sent again).
+Of the receiver's answer only the status code and the duration: never a header or a body.
+
+```ts
+const WebhookSendResultSchema
 ```
 
 ### `builtInSessionProfile`

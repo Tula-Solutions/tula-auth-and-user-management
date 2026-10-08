@@ -451,6 +451,7 @@ async function runWebhook(
   if (webhook.captureUrl !== undefined) {
     const receiver = named.get(webhook.receiver) ?? new WebhookReceiver(webhooks.hostname)
     named.set(webhook.receiver, receiver)
+    receiver.answerNext(webhook.answers ?? [])
     variables[webhook.captureUrl] = webhooks.url
       ? webhooks.url(receiver.port)
       : `http://${webhooks.hostname}:${receiver.port}/webhooks/tula`

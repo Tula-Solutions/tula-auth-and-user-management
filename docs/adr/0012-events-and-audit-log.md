@@ -207,9 +207,14 @@ of.
   is only started (it counts as nothing until confirmed, which is recorded); transient rows
   (flow attempts, verification tokens, WebAuthn challenges); and the retention job's deletes
   of rows that had already ended ([ADR 0017](0017-retention.md)); and what the webhook worker
-  writes ([ADR 0034](0034-webhooks.md)): a delivery row, which is itself the record of the
-  delivery, and an event's `delivered_at` (`WebhookDeliveryStore` has no method that takes an
-  activity; registering, changing and removing an endpoint *are* recorded). None of these
+  writes ([ADR 0034](0034-webhooks.md)): a delivery row and its attempts, which are themselves
+  the record of the delivery, an event's `delivered_at` (`WebhookDeliveryStore` has no method
+  that takes an activity), and an endpoint's run of failed requests (when it began and when
+  a request last failed: `WebhookEndpointStore.setHealth`, a method of its own that takes
+  none: bookkeeping that changes no one's access). Sending a test event and sending a delivery again are not
+  recorded either: each is a delivery row. Registering, changing and removing an endpoint *are*
+  recorded, and so is the server switching one off (`webhook_endpoint.disabled`, by the
+  `system` actor). None of these
   store methods takes an activity. The retention job's delete of **audit entries** past an environment's
   period is not recorded either (`deleteAuditBefore` takes no activity): an entry cannot
   record its own end, and one per run would grow the log the period bounds. What is recorded
@@ -228,10 +233,11 @@ of.
 - The outbox is read by the webhook worker since Phase 2, step 2.2
   ([ADR 0034](0034-webhooks.md)): every event is settled (`delivered_at`), whether or not an
   endpoint was owed it. Until then nothing read it and events accumulated undelivered. The
-  retention job ([ADR 0017](0017-retention.md)) still deletes no event: the purge of
-  delivered events is a later step of 2.2, so the outbox still grows without bound. Audit entries are deleted where an environment has set
-  `audit.retentionDays`, and kept for ever where it has not (the default). An event therefore
-  outlives the audit entry it shares an id with.
+  retention job ([ADR 0017](0017-retention.md)) deletes a settled event thirty days after it
+  was settled (since the second step of 2.2), so the outbox no longer grows without bound.
+  Audit entries are deleted where an environment has set `audit.retentionDays`, and kept for
+  ever where it has not (the default). An event and the audit entry it shares an id with
+  have separate lives: either can outlive the other.
 - Not recorded: token refreshes (about one a minute per session), failed sign-ins, lockouts and
   rate-limit refusals. They have no write to share a transaction with, and they are
   attacker-driven, so recording them needs its own volume limits first.

@@ -13,6 +13,10 @@ paths:
 - No network, no Docker, no real SMTP in unit tests. Postgres-backed tests are
   `*.integration.ts`.
 - Prefer `spyOn(obj, 'fn')` + `mockRestore()` over `mock.module` (process-global in Bun).
+- **Bun's `toMatchObject` does not compare `Date`s**: two different dates match. For a time
+  inside a subset match, pass both sides through `comparable()` from `~/testing/comparable`
+  (`expect(comparable(row)).toMatchObject(comparable({ nextAttemptAt: due }))`) or use
+  `toEqual`. When a test is about a boundary in time, make the mutation once and see it fail.
 - A spawn in a test has its own `timeout`; a test or hook that starts more than two processes
   also has an explicit per-test timeout with a one-line comment. Tests that spawn nothing keep
   the default. The one exception is `apps/dashboard` (30 s for the package, as

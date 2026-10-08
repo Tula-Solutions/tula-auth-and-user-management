@@ -391,6 +391,16 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "answers": {
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 200,
+                      "maximum": 599
+                    }
+                  },
                   "expect": {
                     "type": "object",
                     "properties": {
@@ -784,6 +794,16 @@
                   "captureUrl": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "answers": {
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 200,
+                      "maximum": 599
+                    }
                   },
                   "expect": {
                     "type": "object",

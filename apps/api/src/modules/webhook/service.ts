@@ -1,30 +1,45 @@
 import {
   type CreatedWebhookEndpoint,
   type CreateWebhookEndpointRequest,
+  DEFAULT_PAGE_SIZE,
+  durationToMs,
+  EVENT_FIXTURES,
   formatWebhookSecret,
   MAX_WEBHOOK_ENDPOINTS,
+  type SendTestWebhookRequest,
   signWebhook,
   type UpdateWebhookEndpointRequest,
   WEBHOOK_ENDPOINT_FIELDS,
   WEBHOOK_ID_HEADER,
   WEBHOOK_SIGNATURE_HEADER,
   WEBHOOK_TIMESTAMP_HEADER,
+  type WebhookDelivery,
+  type WebhookDeliveryDetail,
+  type WebhookDeliveryList,
+  type WebhookDeliveryState,
   type WebhookEndpoint,
+  type WebhookSendResult,
   webhookSecretBytes,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, ConflictError, NotFoundError } from '~/exceptions'
-import type { Actor } from '~/lib/actor'
+import { type Actor, systemActor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import * as Outbound from '~/lib/outbound'
 import { errorReason } from '~/lib/safe-error'
 import * as Audit from '~/modules/audit/service'
 import type {
-  PendingEvent,
+  DeliveryTransition,
+  NewWebhookAttempt,
+  NewWebhookDelivery,
+  OutboxEvent,
   WebhookDeliveryRecord,
-  WebhookFailureReason,
 } from '~/ports/webhook-delivery-store'
-import type { WebhookEndpointChanges, WebhookEndpointRecord } from '~/ports/webhook-endpoint-store'
+import type {
+  WebhookDisabledReason,
+  WebhookEndpointChanges,
+  WebhookEndpointRecord,
+} from '~/ports/webhook-endpoint-store'
 
 /** Key-separation label of the sealed signing secrets (`~/lib/secret-box`). */
 export const WEBHOOK_SECRET_PURPOSE = 'webhook-secrets'
@@ -35,7 +50,7 @@ export const WEBHOOK_SECRET_BYTES = 32
 /**
  * How often the delivery worker runs. Short, because a webhook is how an operator's backend
  * learns that something happened, and nothing else wakes the worker: the delay of a delivery
- * is at most this plus the round under way. An idle round costs one indexed query per
+ * is at most this plus the round under way. An idle round costs a few indexed queries per
  * environment, on the instance that holds the job lock.
  */
 export const WEBHOOK_DELIVERY_INTERVAL_MS = 5_000
@@ -44,9 +59,8 @@ export const WEBHOOK_DELIVERY_INTERVAL_MS = 5_000
 export const WEBHOOK_BATCH_SIZE = 100
 
 /**
- * Batches per environment per round: a ceiling of 1,000 events. A larger backlog (the outbox
- * of a deployment that has recorded events since before there was a worker) is finished by
- * the following rounds instead of one round that never ends.
+ * Batches per environment per round: a ceiling of 1,000 events turned into deliveries. A larger
+ * backlog is finished by the following rounds instead of one round that never ends.
  */
 export const WEBHOOK_MAX_BATCHES = 10
 
@@ -77,10 +91,124 @@ export const WEBHOOK_MAX_RESPONSE_BYTES = 16 * 1024
 
 /**
  * How long one environment's deliveries may take in one round. Environments are served one
- * after another, so this is what keeps an environment whose endpoint hangs from delaying the
- * others by more than a fixed amount: what it has left waits for the next round.
+ * after another, so this is what keeps an environment whose endpoints are slow from delaying
+ * the others by more than a fixed amount: what it has left waits for the next round.
  */
 export const WEBHOOK_ENVIRONMENT_BUDGET_MS = 15_000
+
+/** Requests made for one delivery before it is given up: the first, and seven retries. */
+export const WEBHOOK_MAX_ATTEMPTS = 8
+
+/**
+ * How long to wait after the first, second, … failed request before the next: the schedule
+ * of the Standard Webhooks reference implementation (roughly exponential, 27 hours 35 minutes
+ * in all). Constants, not settings: a receiver can be told what to expect.
+ *
+ * The first wait is one round of the worker, so a receiver that hiccups once is tried again
+ * almost at once; the last ones are long enough to outlast a night's outage.
+ */
+export const WEBHOOK_RETRY_DELAYS = ['5s', '5m', '30m', '2h', '5h', '10h', '10h'] as const
+
+/**
+ * How much longer than the schedule a wait may be, as a fraction: up to a fifth. Deliveries
+ * that failed together (an endpoint that was down) do not all come back in the same second.
+ * A wait is never shorter than the schedule says.
+ */
+export const WEBHOOK_RETRY_JITTER = 0.2
+
+/**
+ * How long a delivery may stay pending, from the moment it was queued, whatever happened to
+ * it: after this it is given up (`expired`). The schedule ends well inside it (33 hours with
+ * the most jitter); this is the bound for what the schedule does not count: a delivery put
+ * off because its endpoint was unresponsive or its secret would not open, one the round's
+ * caps kept leaving for later, and one whose endpoint is switched off.
+ */
+export const WEBHOOK_DELIVERY_MAX_AGE = '3d'
+
+/**
+ * The most deliveries made to one endpoint in one round, the most overdue first. An endpoint
+ * with a backlog (it was down for a night) takes this much of a round and no more; the rest
+ * is due in the next one, five seconds later.
+ */
+export const WEBHOOK_ENDPOINT_ROUND_CAP = 50
+
+/**
+ * The most requests in flight at once. Endpoints of one environment are served side by side,
+ * up to this many; each endpoint has one request in flight at a time, so a receiver is never
+ * sent two events at once by the worker.
+ */
+export const WEBHOOK_MAX_CONCURRENT_DELIVERIES = 5
+
+/**
+ * How long a run of failed requests must have lasted before the server switches an endpoint
+ * off. A **run** is failed requests with no success among them and no silence between two of
+ * them longer than {@link WEBHOOK_FAILURE_RUN_MAX_GAP_MS}. An endpoint that is down for an
+ * hour, a night or a weekend is not switched off, and one that has been sent things all week
+ * and taken none of them is.
+ */
+export const WEBHOOK_DISABLE_AFTER = '5d'
+
+/** What is added to the schedule's own length to get the longest silence a run may have. */
+export const WEBHOOK_FAILURE_RUN_MARGIN = '1h'
+
+/**
+ * The longest silence between two failed requests that still belong to one run: the whole
+ * retry schedule with the most jitter, and a margin. Computed from the schedule's constants,
+ * so it cannot drift from them.
+ *
+ * Why the whole schedule: while one delivery is being retried, its requests are at most this
+ * far apart in all, so an endpoint that is failing and still being sent things never has a
+ * longer silence. A longer one means nothing was sent for a while (the delivery was given up
+ * and no event followed), and then nothing says the endpoint stayed broken: it may have been
+ * fixed the same day. The next failure begins a run of its own.
+ */
+export const WEBHOOK_FAILURE_RUN_MAX_GAP_MS =
+  Math.round(
+    WEBHOOK_RETRY_DELAYS.reduce((sum, wait) => sum + durationToMs(wait), 0) *
+      (1 + WEBHOOK_RETRY_JITTER)
+  ) + durationToMs(WEBHOOK_FAILURE_RUN_MARGIN)
+
+/**
+ * The most requests one delivery may ever have: the worker's eight and what an administrator
+ * adds by sending it again. Past this "send it again" is refused (`attempt_limit`), so one
+ * delivery's log, and the answer that returns it, is bounded. Checked before the request is
+ * made: requests already in flight when the limit is reached are still recorded, and
+ * {@link WEBHOOK_SEND_RATE_LIMIT} bounds how many those can be.
+ */
+export const WEBHOOK_MAX_TOTAL_ATTEMPTS = 20
+
+/**
+ * How far into an endpoint's delivery log the admin API pages and counts: its newest ten
+ * thousand deliveries (500 pages of the default size). A page past it is refused, and
+ * `totalCount` stops there. The log can hold ninety days of deliveries; what an operator
+ * wants from further back is found with the `state` and `eventType` filters, not by paging.
+ */
+export const WEBHOOK_DELIVERY_LIST_WINDOW = 10_000
+
+/**
+ * How long the rest of an endpoint's due deliveries are put off after it let one run out its
+ * deadline. No request is made for them and no attempt is counted.
+ */
+export const WEBHOOK_UNRESPONSIVE_DELAY = '1m'
+
+/**
+ * How long an endpoint's due deliveries are put off when its signing secret cannot be opened.
+ * The fault is the server's (`TULA_MASTER_KEY`): nothing is sent and no attempt is counted.
+ */
+export const WEBHOOK_SIGNING_RETRY_DELAY = '5m'
+
+/** Deliveries given up for their age per statement. */
+export const WEBHOOK_EXPIRE_BATCH_SIZE = 500
+
+/** Such batches per environment per round. */
+export const WEBHOOK_MAX_EXPIRE_BATCHES = 10
+
+/**
+ * How often one environment may ask for a request on demand (a test event, or a delivery sent
+ * again), per minute. Its own bucket: each such call makes the server call an address, and the
+ * general admin limit would let that be done three hundred times a minute.
+ */
+export const WEBHOOK_SEND_RATE_LIMIT = 10
 
 /** What one delivery round did. Counts only: nothing here names an endpoint or an address. */
 export interface DeliveryReport {
@@ -88,20 +216,28 @@ export interface DeliveryReport {
   environments: number
   /** Environments whose round failed part-way; what was left is taken up next round. */
   failed: number
-  /** Events settled: marked delivered, whether or not anything had to be sent. */
+  /** Events settled: every endpoint they are owed to has a delivery row, or none is owed. */
   events: number
   /**
    * Of those, events settled in bulk, unread: they happened before any endpoint that is on
    * was registered (or the environment has none), so they were owed to nobody.
    */
   unowed: number
-  /** Deliveries a receiver answered with a 2xx status. */
+  /** Deliveries queued: one per endpoint an event is owed to. */
+  queued: number
+  /** Requests a receiver answered with a 2xx status. */
   delivered: number
-  /** Deliveries that got another status, or no answer. Recorded, not repeated. */
+  /** Requests that got another status, or no answer. Tried again unless given up. */
   undelivered: number
+  /** Deliveries put off without a request: an unresponsive endpoint, a secret that will not open. */
+  deferred: number
+  /** Deliveries given up: out of attempts, too old, answered 410, or their event is gone. */
+  givenUp: number
+  /** Endpoints the server switched off. */
+  disabled: number
   /**
    * Events never sent because their stored payload is not an event of the contract (rows
-   * recorded before the payload had a schema version). Marked delivered.
+   * recorded before the payload had a schema version). Settled.
    */
   skipped: number
 }
@@ -118,6 +254,9 @@ function view(record: WebhookEndpointRecord): WebhookEndpoint {
     url: record.url,
     eventTypes: record.eventTypes,
     enabled: record.enabled,
+    disabledReason: record.disabledReason,
+    failingSince: record.failingSince?.toISOString() ?? null,
+    lastFailedAt: record.lastFailedAt?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   }
@@ -156,6 +295,19 @@ export async function list(
   return (await deps.webhookEndpoints.list(tenant.environmentId)).map(view)
 }
 
+/** The stored endpoint, or the 404 every route answers for one that is not this environment's. */
+async function requireEndpoint(
+  deps: Pick<Deps, 'webhookEndpoints'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  id: string
+): Promise<WebhookEndpointRecord> {
+  const record = await deps.webhookEndpoints.find(tenant.environmentId, id)
+  if (!record) {
+    throw new NotFoundError()
+  }
+  return record
+}
+
 /**
  * Read one webhook endpoint.
  *
@@ -170,11 +322,7 @@ export async function get(
   tenant: Pick<Tenant, 'environmentId'>,
   id: string
 ): Promise<WebhookEndpoint> {
-  const record = await deps.webhookEndpoints.find(tenant.environmentId, id)
-  if (!record) {
-    throw new NotFoundError()
-  }
-  return view(record)
+  return view(await requireEndpoint(deps, tenant, id))
 }
 
 /**
@@ -246,6 +394,9 @@ async function register(
         aad(tenant.environmentId, id)
       ),
       enabled: input.enabled,
+      disabledReason: null,
+      failingSince: null,
+      lastFailedAt: null,
       // The instant of its own audit entry: an endpoint is sent the events from its creation
       // on, and within this instance "from" must not depend on which of two clock readings
       // came first. Between instances it depends on their clocks agreeing (ADR 0034).
@@ -269,6 +420,11 @@ function sameTypes(a: readonly string[], b: readonly string[]): boolean {
  * fields that changed and never their values. A request that changes nothing writes nothing.
  * The secret is not something an update can touch.
  *
+ * Switching an endpoint on, or giving it another address, forgets why the server switched it
+ * off and since when it was failing. Deliveries that were pending when it went off are tried
+ * again from then on, unless they have meanwhile grown older than
+ * {@link WEBHOOK_DELIVERY_MAX_AGE}; events from the time it was off are never sent.
+ *
  * @param deps - The endpoint store, the outbound guard's settings, ids and clock.
  * @param tenant - The environment.
  * @param id - The endpoint.
@@ -285,10 +441,7 @@ export async function update(
   input: UpdateWebhookEndpointRequest,
   actor: Actor
 ): Promise<WebhookEndpoint> {
-  const current = await deps.webhookEndpoints.find(tenant.environmentId, id)
-  if (!current) {
-    throw new NotFoundError()
-  }
+  const current = await requireEndpoint(deps, tenant, id)
   const changes: WebhookEndpointChanges = {}
   if (input.url !== undefined && input.url !== current.url) {
     await requireCallable(deps, input.url)
@@ -303,6 +456,11 @@ export async function update(
   const changed = WEBHOOK_ENDPOINT_FIELDS.filter((field) => changes[field] !== undefined)
   if (changed.length === 0) {
     return view(current)
+  }
+  // Switched on again, or pointed somewhere else: what the worker held against the endpoint
+  // was about the endpoint as it was.
+  if (changes.enabled === true || changes.url !== undefined) {
+    changes.resetHealth = true
   }
   const updated = await deps.webhookEndpoints.update(
     tenant.environmentId,
@@ -325,7 +483,7 @@ export async function update(
 
 /**
  * Remove a webhook endpoint. Nothing more is delivered to it, and the record of its deliveries
- * goes with it.
+ * goes with it, pending ones included.
  *
  * @param deps - The endpoint store, ids and clock.
  * @param tenant - The environment.
@@ -362,6 +520,7 @@ type DeliveryDeps = Pick<
   | 'secretBox'
   | 'ids'
   | 'clock'
+  | 'jitter'
 >
 
 /**
@@ -370,7 +529,7 @@ type DeliveryDeps = Pick<
  * Rows recorded before the event contract hold `{ actor, target, data }` with no
  * `schemaVersion`: a shape no receiver was promised, so one is never sent.
  */
-function isEvent(event: PendingEvent): boolean {
+function isEvent(event: OutboxEvent): boolean {
   const { payload } = event
   return (
     typeof payload.schemaVersion === 'number' &&
@@ -379,10 +538,10 @@ function isEvent(event: PendingEvent): boolean {
   )
 }
 
-/** The endpoints an event has to go to: switched on, subscribed, and there when it happened. */
+/** The endpoints an event is owed to: switched on, subscribed, and there when it happened. */
 function recipients(
   endpoints: readonly WebhookEndpointRecord[],
-  event: PendingEvent
+  event: OutboxEvent
 ): WebhookEndpointRecord[] {
   return endpoints.filter(
     (endpoint) =>
@@ -410,67 +569,375 @@ async function signingKey(
   }
 }
 
-/** What became of one attempt, in the terms of a delivery row. */
-type Attempt = Pick<
-  WebhookDeliveryRecord,
-  'attemptedAt' | 'outcome' | 'statusCode' | 'durationMs' | 'failureReason'
->
-
 /**
- * Send one event to one endpoint, once, signed.
+ * Make one signed request to an endpoint.
  *
  * The request goes through the outbound guard, which judges the address again now: what it
- * resolved to when it was saved says nothing about today. Of the answer only the status is
- * looked at; its headers and body are dropped here and never leave this function.
+ * resolved to when it was saved says nothing about today. **Of the answer only the status is
+ * looked at; its headers and body are dropped here and never leave this function.**
+ * `Retry-After` is among what is dropped: the schedule is the server's own.
+ *
+ * @param deps - The outbound guard's settings, ids and the clock.
+ * @param url - The endpoint's address.
+ * @param key - Its signing key.
+ * @param id - The `webhook-id`: the event's id.
+ * @param payload - The body, written out once: exactly that text is signed and sent.
+ * @returns The request as an attempt: when, the status or the guard's word, how long.
  */
-async function attempt(
-  deps: Pick<Deps, 'outbound' | 'secretBox' | 'clock'>,
-  endpoint: WebhookEndpointRecord,
-  event: PendingEvent
-): Promise<Attempt> {
+async function request(
+  deps: Pick<Deps, 'outbound' | 'ids' | 'clock'>,
+  url: string,
+  key: Uint8Array<ArrayBuffer>,
+  id: string,
+  payload: Record<string, unknown>
+): Promise<NewWebhookAttempt> {
   const attemptedAt = deps.clock.now()
-  const failed = (failureReason: WebhookFailureReason): Attempt => ({
-    attemptedAt,
-    outcome: 'failed',
-    statusCode: null,
-    durationMs: Math.max(0, deps.clock.now().getTime() - attemptedAt.getTime()),
-    failureReason,
-  })
-  const key = await signingKey(deps, endpoint)
-  if (!key) {
-    // The caller says so once per endpoint and round, not once per event.
-    return failed('signing_failed')
-  }
-  // The exact text that is sent is the text that is signed.
-  const body = JSON.stringify(event.payload)
+  const took = () => Math.max(0, deps.clock.now().getTime() - attemptedAt.getTime())
+  const body = JSON.stringify(payload)
   const timestamp = Math.floor(attemptedAt.getTime() / 1000)
-  let status: number
   try {
-    const answer = await Outbound.request(deps.outbound, endpoint.url, {
+    const answer = await Outbound.request(deps.outbound, url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        [WEBHOOK_ID_HEADER]: event.id,
+        [WEBHOOK_ID_HEADER]: id,
         [WEBHOOK_TIMESTAMP_HEADER]: String(timestamp),
-        [WEBHOOK_SIGNATURE_HEADER]: await signWebhook(key, event.id, timestamp, body),
+        [WEBHOOK_SIGNATURE_HEADER]: await signWebhook(key, id, timestamp, body),
       },
       body,
       timeoutMs: WEBHOOK_DELIVERY_TIMEOUT_MS,
       maxResponseBytes: WEBHOOK_MAX_RESPONSE_BYTES,
     })
-    status = answer.status
+    const { status } = answer
+    return {
+      id: deps.ids.next(),
+      attemptedAt,
+      statusCode: status,
+      durationMs: took(),
+      failureReason: null,
+    }
   } catch (error) {
     if (error instanceof Outbound.OutboundError) {
-      return failed(error.reason)
+      // An answer over the cap was still an answer, and its status line had arrived: the
+      // receiver took the event (2xx) or did not, and that is what is recorded. Its body was
+      // not read and is not looked at here either; the guard hands over the number alone.
+      const answered = error.reason === 'response_too_large' && error.status !== undefined
+      return {
+        id: deps.ids.next(),
+        attemptedAt,
+        statusCode: answered ? (error.status ?? null) : null,
+        durationMs: took(),
+        failureReason: answered ? null : error.reason,
+      }
     }
     throw error
   }
-  return {
-    attemptedAt,
-    outcome: status >= 200 && status < 300 ? 'delivered' : 'failed',
-    statusCode: status,
-    durationMs: Math.max(0, deps.clock.now().getTime() - attemptedAt.getTime()),
-    failureReason: null,
+}
+
+/** Any 2xx is a delivery. A redirect is an answer like any other and is never followed. */
+function succeeded(attempt: NewWebhookAttempt): boolean {
+  return attempt.statusCode !== null && attempt.statusCode >= 200 && attempt.statusCode < 300
+}
+
+/**
+ * When to try again after the `made`th request of a delivery failed.
+ *
+ * @param deps - The clock and the jitter source.
+ * @param made - How many requests the delivery has had, this one included.
+ * @returns The schedule's wait, stretched by up to {@link WEBHOOK_RETRY_JITTER}, from now; or
+ *   `null` when the delivery is out of attempts.
+ */
+export function nextAttemptAt(deps: Pick<Deps, 'clock' | 'jitter'>, made: number): Date | null {
+  const delay = WEBHOOK_RETRY_DELAYS[made - 1]
+  if (made >= WEBHOOK_MAX_ATTEMPTS || delay === undefined) {
+    return null
+  }
+  // Clamped: a source that misbehaves can stretch a wait by a fifth and no more, and can
+  // never shorten one.
+  const drawn = deps.jitter()
+  const spread =
+    (Number.isFinite(drawn) ? Math.min(Math.max(drawn, 0), 1) : 0) * WEBHOOK_RETRY_JITTER
+  return new Date(deps.clock.now().getTime() + Math.round(durationToMs(delay) * (1 + spread)))
+}
+
+/** The state of one environment's round that its lanes share. */
+interface Round {
+  environmentId: string
+  report: DeliveryReport
+  /** Out of budget, or the server is shutting down: either way what is left waits. */
+  outOfTime: () => boolean
+}
+
+/**
+ * Switch an endpoint off because of what its deliveries did. Recorded as the system's own act
+ * (`webhook_endpoint.disabled`), which is also an event its environment's other endpoints can
+ * subscribe to. Its pending deliveries are left pending: nothing is sent to an endpoint that
+ * is off, and they are tried again if it is switched on before they grow too old.
+ */
+async function switchOff(
+  deps: Pick<Deps, 'webhookEndpoints' | 'ids' | 'clock'>,
+  round: Round,
+  endpoint: WebhookEndpointRecord,
+  reason: WebhookDisabledReason
+): Promise<void> {
+  const disabled = await deps.webhookEndpoints.disable(
+    endpoint.environmentId,
+    endpoint.id,
+    reason,
+    deps.clock.now(),
+    Audit.entry(deps, endpoint, {
+      type: 'webhook_endpoint.disabled',
+      actor: systemActor(),
+      target: { type: 'webhook_endpoint', id: endpoint.id },
+      data: { reason },
+    })
+  )
+  // Off for this lane whoever switched it: nothing more is sent to it this round.
+  endpoint.enabled = false
+  if (disabled) {
+    round.report.disabled += 1
+    logger.warn('webhook endpoint switched off by the server', {
+      environmentId: endpoint.environmentId,
+      endpointId: endpoint.id,
+      reason,
+    })
+  }
+}
+
+/**
+ * Record a request the worker made, and move the delivery, the endpoint's health and, when it
+ * has kept failing, the endpoint itself.
+ */
+async function settle(
+  deps: DeliveryDeps,
+  round: Round,
+  endpoint: WebhookEndpointRecord,
+  delivery: WebhookDeliveryRecord,
+  attempt: NewWebhookAttempt
+): Promise<void> {
+  const now = deps.clock.now()
+  const delivered = succeeded(attempt)
+  // 410 Gone is a receiver saying "stop": this delivery is not tried again.
+  const gone = attempt.statusCode === 410
+  const retryAt = delivered || gone ? null : nextAttemptAt(deps, delivery.attempts + 1)
+  const next: DeliveryTransition = delivered
+    ? { state: 'delivered', nextAttemptAt: null, completedAt: now }
+    : retryAt
+      ? { state: 'pending', nextAttemptAt: retryAt, completedAt: null }
+      : { state: 'failed', nextAttemptAt: null, completedAt: now }
+  // `null`: the delivery is gone (its endpoint was removed meanwhile) or another worker has
+  // moved it on. Either way there is nothing more of it to record.
+  const recorded = await deps.webhookDeliveries.recordAttempt(
+    round.environmentId,
+    delivery.id,
+    attempt,
+    next,
+    'pending'
+  )
+  if (recorded === null) {
+    return
+  }
+  round.report[delivered ? 'delivered' : 'undelivered'] += 1
+  if (next.state === 'failed') {
+    round.report.givenUp += 1
+  }
+  if (delivered) {
+    await clearHealth(deps, endpoint)
+    return
+  }
+  if (gone) {
+    await switchOff(deps, round, endpoint, 'gone')
+    return
+  }
+  await noteFailure(deps, round, endpoint, now)
+}
+
+/** How often {@link noteFailure} reads the endpoint again before it lets the failure go. */
+const HEALTH_WRITE_TRIES = 3
+
+/**
+ * A request to an endpoint has just failed: continue its run of failures or begin one, and
+ * switch the endpoint off if the run has lasted long enough.
+ *
+ * A failure continues the run only if the one before it was recent. After a silence longer
+ * than the schedule itself, nothing says the endpoint stayed broken (it was sent nothing),
+ * so this failure begins a run of its own: one bad day, a fix and a hiccup a week later are
+ * two short runs, not one long one.
+ *
+ * The run is written **only over what was read** (`setHealth` compares). The lane read the
+ * endpoint when it began; since then an administrator may have switched it on again or given
+ * it another address, or a delivery sent again may have got through, and each of those ends
+ * the run. Then the row is read again and the rule applied to what it holds now, so a run
+ * that was reset is never brought back, and never switches off an endpoint that was just
+ * reset.
+ */
+async function noteFailure(
+  deps: Pick<Deps, 'webhookEndpoints' | 'ids' | 'clock'>,
+  round: Round,
+  endpoint: WebhookEndpointRecord,
+  now: Date
+): Promise<void> {
+  for (let tries = 0; tries < HEALTH_WRITE_TRIES; tries++) {
+    const read = { failingSince: endpoint.failingSince, lastFailedAt: endpoint.lastFailedAt }
+    const continues =
+      read.failingSince !== null &&
+      read.lastFailedAt !== null &&
+      now.getTime() - read.lastFailedAt.getTime() <= WEBHOOK_FAILURE_RUN_MAX_GAP_MS
+    const failingSince = continues && read.failingSince ? read.failingSince : now
+    const written = await deps.webhookEndpoints.setHealth(round.environmentId, endpoint.id, read, {
+      failingSince,
+      lastFailedAt: now,
+    })
+    if (written) {
+      endpoint.failingSince = failingSince
+      endpoint.lastFailedAt = now
+      if (now.getTime() - failingSince.getTime() >= durationToMs(WEBHOOK_DISABLE_AFTER)) {
+        await switchOff(deps, round, endpoint, 'failing')
+      }
+      return
+    }
+    const current = await deps.webhookEndpoints.find(round.environmentId, endpoint.id)
+    if (!current) {
+      // Removed meanwhile: there is no endpoint to keep a run for, and the lane ends.
+      endpoint.enabled = false
+      return
+    }
+    // Its run as it is now, and its switch: the lane sends nothing more to one that is off.
+    endpoint.failingSince = current.failingSince
+    endpoint.lastFailedAt = current.lastFailedAt
+    endpoint.enabled = current.enabled
+    if (!current.enabled) {
+      return
+    }
+  }
+  // Changed under the worker three times in a row. This one failure goes unrecorded on the
+  // endpoint (it is on its delivery); the next one is judged afresh.
+}
+
+/** A request got through: whatever run of failures the endpoint had is over. */
+async function clearHealth(
+  deps: Pick<Deps, 'webhookEndpoints'>,
+  endpoint: WebhookEndpointRecord
+): Promise<void> {
+  // Over whatever is there, read or not: a real event was taken, and that ends any run. An
+  // endpoint with none on record is not written to at all.
+  if (endpoint.failingSince !== null || endpoint.lastFailedAt !== null) {
+    await deps.webhookEndpoints.setHealth(endpoint.environmentId, endpoint.id, null, {
+      failingSince: null,
+      lastFailedAt: null,
+    })
+    endpoint.failingSince = null
+    endpoint.lastFailedAt = null
+  }
+}
+
+/**
+ * Serve one endpoint for one round: its due deliveries, the most overdue first, one request
+ * at a time, at most {@link WEBHOOK_ENDPOINT_ROUND_CAP} of them.
+ */
+async function serveEndpoint(
+  deps: DeliveryDeps,
+  round: Round,
+  endpoint: WebhookEndpointRecord
+): Promise<void> {
+  const { environmentId, report } = round
+  const due = await deps.webhookDeliveries.due(
+    environmentId,
+    endpoint.id,
+    deps.clock.now(),
+    WEBHOOK_ENDPOINT_ROUND_CAP
+  )
+  if (due.length === 0) {
+    return
+  }
+  const ids = (deliveries: readonly WebhookDeliveryRecord[]) => deliveries.map(({ id }) => id)
+  const later = (wait: string) => new Date(deps.clock.now().getTime() + durationToMs(wait))
+  const key = await signingKey(deps, endpoint)
+  if (!key) {
+    // Most often a TULA_MASTER_KEY that is not the one the secret was sealed with, on this
+    // instance or on all of them. The receiver did nothing wrong and was sent nothing, so no
+    // attempt is counted against it; the deliveries wait, and are sent once the key is right.
+    // Said once per endpoint per round, with the count, not once per event.
+    const events = await deps.webhookDeliveries.defer(
+      environmentId,
+      ids(due),
+      'signing_failed',
+      later(WEBHOOK_SIGNING_RETRY_DELAY),
+      deps.clock.now()
+    )
+    report.deferred += events
+    logger.warn(
+      'webhook signing secret could not be opened; nothing was sent to the endpoint this round',
+      { environmentId, endpointId: endpoint.id, events }
+    )
+    return
+  }
+  const events = new Map(
+    (
+      await deps.webhookDeliveries.eventsById(
+        environmentId,
+        due.flatMap(({ eventId }) => (eventId === null ? [] : [eventId]))
+      )
+    ).map((event) => [event.id, event])
+  )
+  for (const [index, delivery] of due.entries()) {
+    if (round.outOfTime() || !endpoint.enabled) {
+      // Left as they are: still due next round, with nothing counted.
+      return
+    }
+    const event = delivery.eventId === null ? undefined : events.get(delivery.eventId)
+    if (!event || !isEvent(event)) {
+      // The event's row is gone, or is not something a receiver was promised: there is
+      // nothing to send, now or later.
+      report.givenUp += await deps.webhookDeliveries.giveUp(
+        environmentId,
+        [delivery.id],
+        'event_gone',
+        deps.clock.now()
+      )
+      continue
+    }
+    const attempt = await request(deps, endpoint.url, key, event.id, event.payload)
+    await settle(deps, round, endpoint, delivery, attempt)
+    if (attempt.failureReason === 'timeout') {
+      // The endpoint let a request run out its whole deadline. Waiting that long again for
+      // each of the rest would spend the environment's budget on one endpoint, so the rest is
+      // put off WITHOUT being tried: no request, no attempt counted, and a word on each that
+      // says so. They are due again in a minute, by which time the one that timed out has
+      // been tried again and shown whether the endpoint is back.
+      report.deferred += await deps.webhookDeliveries.defer(
+        environmentId,
+        ids(due.slice(index + 1)),
+        'endpoint_unresponsive',
+        later(WEBHOOK_UNRESPONSIVE_DELAY),
+        deps.clock.now()
+      )
+      return
+    }
+  }
+}
+
+/** Run `work` over `items`, at most `width` at a time; the first failure is thrown at the end. */
+async function sideBySide<T>(
+  items: readonly T[],
+  width: number,
+  work: (item: T) => Promise<void>
+): Promise<void> {
+  const queue = [...items]
+  const failures: unknown[] = []
+  const lane = async () => {
+    for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
+      try {
+        await work(item)
+      } catch (error) {
+        // One endpoint's failure does not stop the lanes of the others.
+        failures.push(error)
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(width, queue.length) }, lane))
+  if (failures.length > 0) {
+    throw failures[0]
   }
 }
 
@@ -482,33 +949,17 @@ async function deliverEnvironment(
   signal: AbortSignal | undefined
 ): Promise<void> {
   const started = deps.clock.now().getTime()
-  // Endpoints that ran out a delivery's whole deadline in this round. Waiting that long again
-  // for every further event would spend the environment's budget on one endpoint and starve
-  // the others, so the rest of what such an endpoint is owed this round is settled WITHOUT
-  // being tried: recorded as failed (`endpoint_unresponsive`), never sent, and not sent later
-  // either until retries exist. An endpoint that was slow once loses up to a round's worth.
-  // The next round tries it afresh.
-  const unresponsive = new Set<string>()
-  // Per endpoint, how many deliveries were not made this round because its secret could not
-  // be opened. A fault on the server's side: said once per endpoint, with the count.
-  const unsigned = new Map<string, number>()
-  // Out of budget, or the server is shutting down: either way what is left waits.
-  const outOfTime = () =>
-    signal?.aborted === true ||
-    deps.clock.now().getTime() - started >= WEBHOOK_ENVIRONMENT_BUDGET_MS
-  try {
-    await settleUnowed(deps, environmentId, report, new Date(started), outOfTime)
-    await deliverOwed(deps, environmentId, report, outOfTime, unresponsive, unsigned)
-  } finally {
-    for (const [endpointId, events] of unsigned) {
-      // Most often a TULA_MASTER_KEY that is not the one the secret was sealed with, on this
-      // instance or on all of them. The receiver did nothing wrong and was sent nothing.
-      logger.warn(
-        'webhook signing secret could not be opened; nothing was sent to the endpoint this round',
-        { environmentId, endpointId, events }
-      )
-    }
+  const round: Round = {
+    environmentId,
+    report,
+    outOfTime: () =>
+      signal?.aborted === true ||
+      deps.clock.now().getTime() - started >= WEBHOOK_ENVIRONMENT_BUDGET_MS,
   }
+  await settleUnowed(deps, round, new Date(started))
+  await queueOwed(deps, round)
+  await expireOld(deps, round)
+  await deliverDue(deps, round)
 }
 
 /**
@@ -525,18 +976,13 @@ async function deliverEnvironment(
  * is owed to it and is left for the per-event path. So is anything at or after the instant
  * this pass began, which an endpoint registered meanwhile may be owed.
  */
-async function settleUnowed(
-  deps: DeliveryDeps,
-  environmentId: string,
-  report: DeliveryReport,
-  started: Date,
-  outOfTime: () => boolean
-): Promise<void> {
+async function settleUnowed(deps: DeliveryDeps, round: Round, started: Date): Promise<void> {
+  const { environmentId, report } = round
   const registered = (await deps.webhookEndpoints.list(environmentId))
     .filter((endpoint) => endpoint.enabled)
     .map((endpoint) => endpoint.createdAt.getTime())
   const before = new Date(Math.min(started.getTime(), ...registered))
-  for (let batch = 0; batch < WEBHOOK_MAX_SETTLE_BATCHES && !outOfTime(); batch++) {
+  for (let batch = 0; batch < WEBHOOK_MAX_SETTLE_BATCHES && !round.outOfTime(); batch++) {
     const settled = await deps.webhookDeliveries.settleBefore(
       environmentId,
       before,
@@ -551,129 +997,125 @@ async function settleUnowed(
   }
 }
 
-/** Send one environment's waiting events to the endpoints they are owed to, event by event. */
-async function deliverOwed(
-  deps: DeliveryDeps,
-  environmentId: string,
-  report: DeliveryReport,
-  outOfTime: () => boolean,
-  unresponsive: Set<string>,
-  unsigned: Map<string, number>
-): Promise<void> {
-  for (let batch = 0; batch < WEBHOOK_MAX_BATCHES; batch++) {
+/**
+ * Turn one environment's waiting events into deliveries: a `pending` row for every endpoint
+ * an event is owed to, and then the event is settled. **No request is made here**, so an
+ * endpoint that is slow, failing or being retried never holds an event, or the events behind
+ * it, in the outbox: once its deliveries exist the event is done with, and each delivery goes
+ * its own way.
+ */
+async function queueOwed(deps: DeliveryDeps, round: Round): Promise<void> {
+  const { environmentId, report } = round
+  for (let batch = 0; batch < WEBHOOK_MAX_BATCHES && !round.outOfTime(); batch++) {
     const pending = await deps.webhookDeliveries.pendingEvents(environmentId, WEBHOOK_BATCH_SIZE)
     if (pending.length === 0) {
       return
     }
-    // Read again for every batch: an endpoint switched off or removed stops being sent to.
+    // Read again for every batch: an endpoint switched off or removed stops being owed.
     const endpoints = await deps.webhookEndpoints.list(environmentId)
-    const sent = new Set(
-      (
-        await deps.webhookDeliveries.listForEvents(
-          environmentId,
-          pending.map((event) => event.id)
-        )
-      ).map((row) => `${row.endpointId}:${row.eventId}`)
-    )
-    const settled: string[] = []
+    const at = deps.clock.now()
+    const owed: NewWebhookDelivery[] = []
     let skipped = 0
-    let stopped = false
-    try {
-      for (const event of pending) {
-        if (!isEvent(event)) {
-          skipped += 1
-          settled.push(event.id)
-          continue
-        }
-        // Left over from a round that ended between sending and marking: not sent again.
-        const owed = recipients(endpoints, event).filter(
-          (endpoint) => !sent.has(`${endpoint.id}:${event.id}`)
-        )
-        for (const endpoint of owed) {
-          if (outOfTime()) {
-            stopped = true
-            break
-          }
-          const result: Attempt = unresponsive.has(endpoint.id)
-            ? {
-                attemptedAt: deps.clock.now(),
-                outcome: 'failed',
-                statusCode: null,
-                durationMs: 0,
-                failureReason: 'endpoint_unresponsive',
-              }
-            : await attempt(deps, endpoint, event)
-          if (result.failureReason === 'timeout') {
-            unresponsive.add(endpoint.id)
-          }
-          if (result.failureReason === 'signing_failed') {
-            unsigned.set(endpoint.id, (unsigned.get(endpoint.id) ?? 0) + 1)
-          }
-          // `gone` (the endpoint was removed meanwhile) and `duplicate` (another worker's row)
-          // both mean this endpoint is owed nothing more for this event.
-          await deps.webhookDeliveries.insert({
-            id: deps.ids.next(),
-            projectId: event.projectId,
-            environmentId,
-            endpointId: endpoint.id,
-            eventId: event.id,
-            ...result,
-          })
-          report[result.outcome === 'delivered' ? 'delivered' : 'undelivered'] += 1
-        }
-        if (stopped) {
-          break
-        }
-        settled.push(event.id)
+    for (const event of pending) {
+      if (!isEvent(event)) {
+        skipped += 1
+        continue
       }
-    } finally {
-      // Also when a later event failed: what was settled before it stays settled, so a
-      // failure does not send the earlier events of the batch a second time.
-      report.events += await deps.webhookDeliveries.markDelivered(
-        environmentId,
-        settled,
-        deps.clock.now()
-      )
-      report.skipped += skipped
+      for (const endpoint of recipients(endpoints, event)) {
+        owed.push({
+          id: deps.ids.next(),
+          projectId: event.projectId,
+          environmentId,
+          endpointId: endpoint.id,
+          eventId: event.id,
+          eventType: event.type,
+          at,
+        })
+      }
     }
-    if (stopped || pending.length < WEBHOOK_BATCH_SIZE) {
+    // A delivery that already has its row (a round that ended between queueing and settling)
+    // is left as it is, and one whose endpoint was removed meanwhile is not written.
+    report.queued += await deps.webhookDeliveries.enqueue(owed)
+    report.events += await deps.webhookDeliveries.markDelivered(
+      environmentId,
+      pending.map((event) => event.id),
+      at
+    )
+    report.skipped += skipped
+    if (pending.length < WEBHOOK_BATCH_SIZE) {
       return
     }
   }
 }
 
 /**
+ * Give up the deliveries of an environment that have waited longer than
+ * {@link WEBHOOK_DELIVERY_MAX_AGE}, whatever kept them waiting. This is what makes sure that
+ * nothing waits for ever: a delivery put off again and again without a request being made, and
+ * one whose endpoint is switched off, both end here.
+ */
+async function expireOld(deps: DeliveryDeps, round: Round): Promise<void> {
+  const before = new Date(deps.clock.now().getTime() - durationToMs(WEBHOOK_DELIVERY_MAX_AGE))
+  for (let batch = 0; batch < WEBHOOK_MAX_EXPIRE_BATCHES && !round.outOfTime(); batch++) {
+    const expired = await deps.webhookDeliveries.expire(
+      round.environmentId,
+      before,
+      deps.clock.now(),
+      WEBHOOK_EXPIRE_BATCH_SIZE
+    )
+    round.report.givenUp += expired
+    if (expired < WEBHOOK_EXPIRE_BATCH_SIZE) {
+      return
+    }
+  }
+}
+
+/** Make the requests that are due in one environment, its endpoints side by side. */
+async function deliverDue(deps: DeliveryDeps, round: Round): Promise<void> {
+  const endpoints = (await deps.webhookEndpoints.list(round.environmentId)).filter(
+    (endpoint) => endpoint.enabled
+  )
+  await sideBySide(endpoints, WEBHOOK_MAX_CONCURRENT_DELIVERIES, (endpoint) =>
+    serveEndpoint(deps, round, endpoint)
+  )
+}
+
+/**
  * One round of webhook delivery, in every environment.
  *
- * Per environment it takes the events no round has settled yet, oldest first, and sends each
- * to every endpoint that is switched on, subscribed to the event's type and was registered no
- * later than the event happened. **Each endpoint gets at most one attempt per event**: the outcome is
- * recorded (a status code and a duration, or a fixed word when there was no answer) and a
- * failure is not repeated. An event is marked delivered once every endpoint it had to go to
- * has a delivery row, which includes the event nobody subscribed to.
+ * Per environment, in this order:
  *
- * Delivery is at least once: a round that ends between sending and recording sends again, with
- * the same event id.
+ * 1. Events owed to nobody (from before the earliest endpoint that is on) are settled in bulk.
+ * 2. Every other waiting event becomes one `pending` delivery per endpoint it is **owed** to
+ *    (switched on, subscribed to its type, registered no later than it happened), and is then
+ *    settled. An event is settled once its deliveries exist, not once they have succeeded: a
+ *    failing endpoint never holds the outbox.
+ * 3. Deliveries that have been pending longer than {@link WEBHOOK_DELIVERY_MAX_AGE} are given up.
+ * 4. The deliveries that are due are sent, signed: the endpoints side by side (at most
+ *    {@link WEBHOOK_MAX_CONCURRENT_DELIVERIES} requests at once), each endpoint one request at
+ *    a time and at most {@link WEBHOOK_ENDPOINT_ROUND_CAP} a round. A 2xx is a delivery.
+ *    Anything else is tried again by {@link WEBHOOK_RETRY_DELAYS}, up to
+ *    {@link WEBHOOK_MAX_ATTEMPTS} requests, and then given up; a `410` is given up at once and
+ *    switches the endpoint off, as does a run of failed requests
+ *    {@link WEBHOOK_DISABLE_AFTER} long (no success, and no silence longer than
+ *    {@link WEBHOOK_FAILURE_RUN_MAX_GAP_MS}).
  *
- * Two kinds of event are settled without being tried, and are not sent later (there are no
- * retries yet). After an endpoint lets a delivery run out its deadline, the rest of what it
- * is owed in that round is recorded `endpoint_unresponsive`, so it cannot use up the budget
- * its environment's other endpoints share: a receiver that is slow once can lose up to a
- * round's worth. And what is owed to an endpoint whose secret cannot be opened is recorded
- * `signing_failed`, with one log line per endpoint per round.
+ * Delivery is at least once: a round that ends between a request and its record sends again,
+ * with the same event id, and the request that was not recorded is not counted.
  *
- * Before any of that, events owed to nobody (from before the earliest endpoint that is on)
- * are settled in bulk, so a long outbox does not stand between a new endpoint and its first
- * delivery.
+ * Two things put a delivery off **without a request and without counting an attempt**: an
+ * endpoint that has just let another delivery run out its deadline (`endpoint_unresponsive`),
+ * and an endpoint whose secret cannot be opened (`signing_failed`, logged once per endpoint
+ * per round).
  *
  * A failure in one environment is logged and skipped, and each environment has a time budget
  * ({@link WEBHOOK_ENVIRONMENT_BUDGET_MS}), so neither a broken nor a slow one keeps the
  * environments after it from being served.
  *
  * @param deps - Environments, the webhook stores, the outbound guard's settings, the secret
- *   box, ids and the clock.
- * @param signal - Aborted to end the round early (the server is shutting down): the delivery
- *   under way is finished and recorded, nothing further is sent, and what is left waits for
+ *   box, ids, the clock and the jitter source.
+ * @param signal - Aborted to end the round early (the server is shutting down): the requests
+ *   under way are finished and recorded, nothing further is sent, and what is left waits for
  *   the next round.
  * @returns What the round did. Counts from an environment that failed part-way are included.
  */
@@ -686,8 +1128,12 @@ export async function deliverPending(
     failed: 0,
     events: 0,
     unowed: 0,
+    queued: 0,
     delivered: 0,
     undelivered: 0,
+    deferred: 0,
+    givenUp: 0,
+    disabled: 0,
     skipped: 0,
   }
   for (const { id } of await deps.environments.listAll()) {
@@ -732,14 +1178,300 @@ export async function run(
     return null
   }
   const report = outcome.value
+  const did = report.events + report.queued + report.delivered + report.deferred + report.givenUp
   // An idle round is routine and frequent; one that sent something, or could not, is worth a
   // line.
   const log =
-    report.failed > 0 || report.undelivered > 0
+    report.failed > 0 || report.undelivered > 0 || report.disabled > 0
       ? logger.warn
-      : report.events > 0
+      : did > 0
         ? logger.info
         : logger.debug
   log('webhook delivery round finished', { ...report })
   return report
+}
+
+/** The public view of a stored delivery. */
+function viewDelivery(record: WebhookDeliveryRecord): WebhookDelivery {
+  return {
+    id: record.id,
+    endpointId: record.endpointId,
+    eventId: record.eventId,
+    eventType: record.eventType,
+    test: record.test,
+    state: record.state,
+    attemptCount: record.attempts,
+    nextAttemptAt: record.nextAttemptAt?.toISOString() ?? null,
+    lastAttemptAt: record.lastAttemptAt?.toISOString() ?? null,
+    statusCode: record.statusCode,
+    failureReason: record.failureReason,
+    completedAt: record.completedAt?.toISOString() ?? null,
+    createdAt: record.createdAt.toISOString(),
+  }
+}
+
+/** Filters and paging of {@link listDeliveries}. */
+export interface DeliveryListInput {
+  state?: WebhookDeliveryState
+  eventType?: string
+  page?: number
+  size?: number
+}
+
+/**
+ * List the deliveries of one endpoint, newest first, one page at a time.
+ *
+ * @param deps - The webhook stores.
+ * @param tenant - The environment.
+ * @param endpointId - The endpoint.
+ * @param input - Filters and paging (defaults: page 1, 20 per page).
+ * @returns The page and its paging details. `totalCount` is counted no further than
+ *   {@link WEBHOOK_DELIVERY_LIST_WINDOW}.
+ * @throws NotFoundError when the environment has no endpoint with that id.
+ */
+export async function listDeliveries(
+  deps: Pick<Deps, 'webhookEndpoints' | 'webhookDeliveries'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  endpointId: string,
+  input: DeliveryListInput = {}
+): Promise<WebhookDeliveryList> {
+  await requireEndpoint(deps, tenant, endpointId)
+  const page = input.page ?? 1
+  const perPage = input.size ?? DEFAULT_PAGE_SIZE
+  const { deliveries, totalCount } = await deps.webhookDeliveries.list(
+    tenant.environmentId,
+    endpointId,
+    {
+      state: input.state,
+      eventType: input.eventType,
+      page,
+      perPage,
+      maxCount: WEBHOOK_DELIVERY_LIST_WINDOW,
+    }
+  )
+  return {
+    meta: { totalCount, totalPages: Math.ceil(totalCount / perPage), page, perPage },
+    data: deliveries.map(viewDelivery),
+  }
+}
+
+/**
+ * Read one delivery of one endpoint, with every request made for it.
+ *
+ * @param deps - The delivery store.
+ * @param tenant - The environment.
+ * @param endpointId - The endpoint.
+ * @param deliveryId - The delivery.
+ * @returns The delivery and its attempts, oldest first.
+ * @throws NotFoundError when that endpoint of this environment has no such delivery.
+ */
+export async function getDelivery(
+  deps: Pick<Deps, 'webhookDeliveries'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  endpointId: string,
+  deliveryId: string
+): Promise<WebhookDeliveryDetail> {
+  const found = await deps.webhookDeliveries.find(tenant.environmentId, endpointId, deliveryId)
+  if (!found) {
+    throw new NotFoundError()
+  }
+  return {
+    ...viewDelivery(found.delivery),
+    attempts: found.attempts.map((attempt) => ({
+      attempt: attempt.attempt,
+      attemptedAt: attempt.attemptedAt.toISOString(),
+      statusCode: attempt.statusCode,
+      durationMs: attempt.durationMs,
+      failureReason: attempt.failureReason,
+    })),
+  }
+}
+
+type SendDeps = Pick<
+  Deps,
+  'webhookEndpoints' | 'webhookDeliveries' | 'outbound' | 'secretBox' | 'ids' | 'clock'
+>
+
+/** What a request made on demand came to, in the terms of the admin API. */
+function sendResult(deliveryId: string, attempt: NewWebhookAttempt): WebhookSendResult {
+  return {
+    deliveryId,
+    outcome: succeeded(attempt) ? 'delivered' : 'failed',
+    statusCode: attempt.statusCode,
+    durationMs: attempt.durationMs,
+    failureReason: attempt.failureReason,
+  }
+}
+
+/**
+ * Send a test event to one endpoint, now.
+ *
+ * The event is the contract's example of the chosen type with a new id, the time of the call
+ * and **`test: true`**: a real, signed delivery that a receiver can tell from a real event by
+ * a field inside the signed body. Nothing it describes happened, and nothing is written to
+ * the outbox or the audit log: the delivery row, flagged as a test, is the record.
+ *
+ * It goes through the outbound guard like every delivery, is one request with no retry, and
+ * **changes nothing about the endpoint, whichever way it ends**: a failed test does not count
+ * towards switching it off, a `410` to a test does not either, and a test that gets through
+ * does **not** end a run of failures. It is not the delivery of an event, and a receiver may
+ * well answer tests without doing what it does for a real one; only a real event getting
+ * through (the worker's, or one sent again) says the endpoint works. An endpoint that is switched off can be tested (that
+ * is how an operator finds out whether to switch it back on).
+ *
+ * @param deps - The webhook stores, the outbound guard's settings, the secret box, ids, clock.
+ * @param tenant - The environment.
+ * @param endpointId - The endpoint.
+ * @param input - The type of the example event.
+ * @returns The outcome: a status code and a duration, or one of the server's fixed words.
+ *   Nothing else of the receiver's answer.
+ * @throws NotFoundError when the environment has no endpoint with that id, or it was removed
+ *   while the test was under way.
+ */
+export async function sendTest(
+  deps: SendDeps,
+  tenant: Pick<Tenant, 'environmentId'>,
+  endpointId: string,
+  input: SendTestWebhookRequest
+): Promise<WebhookSendResult> {
+  const endpoint = await requireEndpoint(deps, tenant, endpointId)
+  const createdAt = deps.clock.now()
+  const key = await signingKey(deps, endpoint)
+  // With no key nothing is sent, and what is recorded says so: a delivery with no attempt.
+  // An id of its own, so a receiver that drops repeats by id takes every test.
+  const eventId = deps.ids.next()
+  const attempt = key
+    ? await request(deps, endpoint.url, key, eventId, {
+        ...EVENT_FIXTURES[input.eventType],
+        id: eventId,
+        occurredAt: createdAt.toISOString(),
+        test: true,
+      })
+    : null
+  const delivery: WebhookDeliveryRecord = {
+    id: deps.ids.next(),
+    projectId: endpoint.projectId,
+    environmentId: endpoint.environmentId,
+    endpointId: endpoint.id,
+    eventId: null,
+    eventType: input.eventType,
+    test: true,
+    state: attempt && succeeded(attempt) ? 'delivered' : 'failed',
+    attempts: attempt ? 1 : 0,
+    nextAttemptAt: null,
+    lastAttemptAt: attempt?.attemptedAt ?? null,
+    statusCode: attempt?.statusCode ?? null,
+    failureReason: attempt ? attempt.failureReason : 'signing_failed',
+    completedAt: deps.clock.now(),
+    createdAt,
+  }
+  if (!(await deps.webhookDeliveries.recordTest(delivery, attempt))) {
+    throw new NotFoundError()
+  }
+  return attempt
+    ? sendResult(delivery.id, attempt)
+    : {
+        deliveryId: delivery.id,
+        outcome: 'failed',
+        statusCode: null,
+        durationMs: 0,
+        failureReason: 'signing_failed',
+      }
+}
+
+/**
+ * Send a past delivery again, now: one more request for the event's stored payload, to the
+ * endpoint it was owed to, with the same `webhook-id`.
+ *
+ * The request is appended to the delivery's own log as its next attempt; no second delivery is
+ * made, so the log stays one honest list of what was sent. A 2xx makes the delivery
+ * `delivered`. A failure leaves its state as it was and is **not** retried: this is one
+ * request an administrator asked for, not a new run of the schedule.
+ *
+ * Refused for a delivery that is still `pending` (the worker will send it), for an endpoint
+ * that is switched off, for a test event (it has no stored event), for an event that is past
+ * its retention period, and for a delivery that has had {@link WEBHOOK_MAX_TOTAL_ATTEMPTS}
+ * requests. Not audited: it changes nothing about who can do what, and the attempt is its
+ * record.
+ *
+ * **What it does to the endpoint's health.** A request that gets through ends the endpoint's
+ * run of failures (`failingSince`, `lastFailedAt`): the receiver took a real event, which is
+ * exactly what the run says it has not been doing. A request that fails moves nothing, and
+ * neither it nor a `410` switches the endpoint off: one request made by hand is not the
+ * worker's evidence.
+ *
+ * @param deps - The webhook stores, the outbound guard's settings, the secret box, ids, clock.
+ * @param tenant - The environment. A delivery of another environment is not found.
+ * @param endpointId - The endpoint the delivery is of.
+ * @param deliveryId - The delivery.
+ * @returns The outcome: a status code and a duration, or one of the server's fixed words.
+ * @throws NotFoundError when that endpoint of this environment has no such delivery.
+ * @throws AuthError `webhook.cannot_redeliver`, with `params.reason` one of
+ *   `delivery_pending`, `endpoint_disabled`, `event_gone` and `attempt_limit`.
+ */
+export async function redeliver(
+  deps: SendDeps,
+  tenant: Pick<Tenant, 'environmentId'>,
+  endpointId: string,
+  deliveryId: string
+): Promise<WebhookSendResult> {
+  const { environmentId } = tenant
+  const found = await deps.webhookDeliveries.find(environmentId, endpointId, deliveryId)
+  if (!found) {
+    throw new NotFoundError()
+  }
+  const { delivery } = found
+  const endpoint = await requireEndpoint(deps, tenant, endpointId)
+  if (!endpoint.enabled) {
+    throw new AuthError('webhook.cannot_redeliver', { reason: 'endpoint_disabled' })
+  }
+  if (delivery.state === 'pending') {
+    throw new AuthError('webhook.cannot_redeliver', { reason: 'delivery_pending' })
+  }
+  if (delivery.attempts >= WEBHOOK_MAX_TOTAL_ATTEMPTS) {
+    throw new AuthError('webhook.cannot_redeliver', { reason: 'attempt_limit' })
+  }
+  // Read inside this environment: an id from anywhere else finds nothing.
+  const [event] =
+    delivery.eventId === null
+      ? []
+      : await deps.webhookDeliveries.eventsById(environmentId, [delivery.eventId])
+  if (!event || !isEvent(event)) {
+    throw new AuthError('webhook.cannot_redeliver', { reason: 'event_gone' })
+  }
+  const key = await signingKey(deps, endpoint)
+  if (!key) {
+    // The server's fault, and nothing was sent: said to the caller, and to the log once.
+    logger.warn('webhook signing secret could not be opened; nothing was sent', {
+      environmentId,
+      endpointId,
+    })
+    return {
+      deliveryId,
+      outcome: 'failed',
+      statusCode: null,
+      durationMs: 0,
+      failureReason: 'signing_failed',
+    }
+  }
+  const attempt = await request(deps, endpoint.url, key, event.id, event.payload)
+  const delivered = succeeded(attempt)
+  const recorded = await deps.webhookDeliveries.recordAttempt(
+    environmentId,
+    deliveryId,
+    attempt,
+    delivered ? { state: 'delivered', nextAttemptAt: null, completedAt: deps.clock.now() } : null,
+    'ended'
+  )
+  if (recorded === null) {
+    // Removed with its endpoint while the request was under way.
+    throw new NotFoundError()
+  }
+  if (delivered) {
+    // The receiver took a real event: its run of failures, if it had one, is over. (A
+    // failure here moves nothing: one request an administrator asked for is not evidence of
+    // a run. And a test event never clears a run, got through or not: see `sendTest`.)
+    await clearHealth(deps, endpoint)
+  }
+  return sendResult(deliveryId, attempt)
 }

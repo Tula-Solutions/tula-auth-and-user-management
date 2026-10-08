@@ -162,8 +162,16 @@ describeWebhookStores('Postgres on a real server', async () => {
       )
       return row?.deliveredAt ?? null
     },
-    a,
-    b,
+    eventExists: async (tenant, eventId) =>
+      (
+        await withTenant(db, tenant.environmentId, (tx) =>
+          tx.select({ id: events.id }).from(events).where(eq(events.id, eventId))
+        )
+      ).length === 1,
+    // The two ids and nothing else: the suite spreads a tenant into the records it expects
+    // back, and this fixture's tenant also carries helpers (`user`) no stored row has.
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
   }
 })
 
