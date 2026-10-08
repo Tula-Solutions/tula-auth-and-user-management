@@ -72,6 +72,32 @@ describe('the fixture’s test routes', () => {
     expect(source.match(/\/__test\/[a-z-]+'/g)?.length).toBe(routes.length)
   })
 
+  test('the webhook receiver is guarded on its own address, and the outbound guard is left alone', () => {
+    const receiver = '127.0.0.1:4320'
+    expect(source).toContain('export const RECEIVER_PORT = 4320')
+    // Bound to the loopback address and guarded for exactly that host: a page cannot post
+    // to it (an `Origin`), nor reach it under another name.
+    const at = source.indexOf('const receiver = Bun.serve(')
+    const body = source.slice(at, source.indexOf('process.stdout.write(', at))
+    expect(body).toContain("hostname: '127.0.0.1'")
+    expect(body).toContain('testRouteRefusal(request, `127.0.0.1:${RECEIVER_PORT}`)')
+    expect(body.indexOf('testRouteRefusal(')).toBeLessThan(body.indexOf('new URL(request.url)'))
+    expect(body.indexOf('new URL(request.url)')).toBeGreaterThan(-1)
+    const post = (headers: Record<string, string>) =>
+      new Request(`http://${receiver}/receive/204`, { method: 'POST', headers })
+    expect(testRouteRefusal(post({ host: receiver }), receiver)).toBeNull()
+    expect(
+      testRouteRefusal(post({ host: receiver, origin: 'http://localhost:4318' }), receiver)
+    ).not.toBeNull()
+    expect(testRouteRefusal(post({ host: 'localhost:4320' }), receiver)).not.toBeNull()
+    // The fixture gives the API no outbound settings of its own and teaches its resolver no
+    // name: deliveries pass the same guard a `local` deployment has.
+    expect(source).not.toMatch(/\boutbound\s*[:=(.]/)
+    expect(source).not.toContain('.point(')
+    expect(source).not.toContain('FakeOutbound')
+    expect(routes.map((route) => route[1])).toContain('/__test/webhook-round')
+  })
+
   test('the clock a scenario moved forward can be put back, behind the same guard', () => {
     const names = routes.map((route) => route[1])
     expect(names).toContain('/__test/advance-clock')

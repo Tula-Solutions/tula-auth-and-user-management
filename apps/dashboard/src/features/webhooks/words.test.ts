@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { WEBHOOK_REDELIVER_REFUSALS, WEBHOOK_ROTATION_REFUSALS } from '@tula/contract'
 import { ApiError } from '~/api/errors'
-import { deliverySearch } from './webhook-endpoint-screen'
+import { deliverySearch } from './delivery-search'
 import {
   answerText,
   deliveryStateLabel,
@@ -215,7 +215,7 @@ describe('the delivery list’s filters, read from an address', () => {
     [{ state: ['failed'], eventType: 7, page: '2' }, { page: 2 }],
     [{ state: 'pending', other: 'x', page: -1 }, { state: 'pending' }],
   ])('%j reads as %j', (search, filters) => {
-    expect(deliverySearch(search)).toEqual(filters)
+    expect<unknown>(deliverySearch(search)).toEqual(filters)
   })
 })
 
@@ -240,8 +240,8 @@ describe('the vocabulary', () => {
 
   test('the webhooks screens never say “hook” or “callback”', () => {
     const files = [...sources(HERE), ...sources(ROUTES)]
-    // Thirteen files of the feature and three routes: a walk that finds none proves nothing.
-    expect(files.length).toBe(16)
+    // Fourteen files of the feature and three routes: a walk that finds none proves nothing.
+    expect(files.length).toBe(17)
     const offending = files.filter((file) =>
       /callback|(?<!web)hook/i.test(readFileSync(file, 'utf8'))
     )

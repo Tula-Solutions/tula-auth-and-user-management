@@ -8,6 +8,7 @@ import { findDashboardDir } from '../apps/api/src/lib/dashboard-files'
 import * as Audit from '../apps/api/src/modules/audit/service'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
 import * as OAuth from '../apps/api/src/modules/oauth/service'
+import * as Webhooks from '../apps/api/src/modules/webhook/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '../apps/api/src/testing'
 import {
@@ -49,6 +50,8 @@ export const APP_PORT = 4317
  * fixture (`next start`). It reaches this API server to server; its pages never do.
  */
 export const NEXT_PORT = 4319
+/** The receiver the dashboard's webhook tests register as an endpoint (see `receiver`). */
+export const RECEIVER_PORT = 4320
 /** A fixed, fake key for the memory environment. It opens nothing outside this process. */
 export const PUBLISHABLE_KEY = 'tula_pk_dev_e2e000000000000000000000000000000'
 /**
@@ -327,6 +330,11 @@ function testRoute(request: Request): Response | Promise<Response> | null {
     clock.reset()
     return json({ now: clock.now().getTime() })
   }
+  if (request.method === 'POST' && url.pathname === '/__test/webhook-round') {
+    // One round of the webhook worker (`server.ts` runs it on a timer; the fixture has none),
+    // so that a test decides when what is owed is queued and sent.
+    return Webhooks.run(deps).then((report) => json({ report }))
+  }
   return json({ error: 'unknown test route' }, 404)
 }
 
@@ -360,6 +368,31 @@ const web = Bun.serve({
   },
 })
 
+/**
+ * Where the dashboard's webhook tests have deliveries sent: a receiver that answers with the
+ * status code its path names (`/receive/204`, `/receive/410`) and nothing else.
+ *
+ * It is bound to the loopback **address**, not to `localhost`: the fixture's outbound guard is
+ * the API's own, in the `local` tier, with a resolver that knows no name, so the one address
+ * it lets a delivery reach is a literal loopback one. Nothing about the guard is changed for
+ * it. It reads no body, keeps nothing and answers with no body, and it is behind the same
+ * guard as the test routes: a page, which sends an `Origin` with every `POST`, is refused.
+ */
+const receiver = Bun.serve({
+  port: RECEIVER_PORT,
+  hostname: '127.0.0.1',
+  fetch(request) {
+    if (testRouteRefusal(request, `127.0.0.1:${RECEIVER_PORT}`) !== null) {
+      return new Response(null, { status: 403 })
+    }
+    const status = /^\/receive\/([2-5]\d\d)$/.exec(new URL(request.url).pathname)?.[1]
+    return new Response(null, {
+      status: request.method === 'POST' && status ? Number(status) : 404,
+    })
+  },
+})
+
 process.stdout.write(
-  `e2e: API on ${api.url.origin} (memory adapters), example app on ${web.url.origin}\n`
+  `e2e: webhook receiver on ${receiver.url.origin}\n` +
+    `e2e: API on ${api.url.origin} (memory adapters), example app on ${web.url.origin}\n`
 )

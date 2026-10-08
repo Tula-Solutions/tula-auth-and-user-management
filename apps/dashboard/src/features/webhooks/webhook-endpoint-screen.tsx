@@ -3,11 +3,9 @@ import { WEBHOOK_DELIVERY_STATES } from '@tula/contract'
 import { ACTIVITY_TYPES } from '@tula/contract/event-types'
 import { useState } from 'react'
 import {
-  type ActivityType,
   useGetWebhookEndpoint,
   useListWebhookDeliveries,
   type WebhookDelivery,
-  type WebhookDeliveryQueryState,
 } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
 import { type Column, DataTable, Pagination } from '~/components/data-table'
@@ -18,42 +16,13 @@ import { NativeSelectOption } from '~/components/ui/native-select'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import type { EnvironmentScope } from '~/features/users/users-screen'
 import { formatDateTime } from '~/lib/format'
-import { pageSearch } from '~/lib/search'
+import { type DeliveryFilters, deliverySearch } from './delivery-search'
 import { EndpointCard } from './endpoint-card'
 import { Moment } from './rotate-secret-dialog'
 import { deliveryStateLabel, lastResultText } from './words'
 
 /** How many deliveries one page of the list holds (the API's default). */
 export const DELIVERY_PAGE_SIZE = 20
-
-/** The delivery list's filters and page, as the address holds them. */
-export interface DeliveryFilters {
-  /** One of the contract's delivery states. */
-  state?: string
-  /** One of the contract's event types. */
-  eventType?: string
-  page?: number
-}
-
-function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
-  return typeof value === 'string' && (values as readonly string[]).includes(value)
-}
-
-/**
- * Read the delivery list's filters from a route's search parameters. A state or a type the
- * contract does not know is left out, so a hand-edited address cannot produce a refused
- * request.
- *
- * @param search - The raw search parameters.
- * @returns The filters.
- */
-export function deliverySearch(search: Record<string, unknown>): DeliveryFilters {
-  return {
-    ...(isOneOf(WEBHOOK_DELIVERY_STATES, search.state) ? { state: search.state } : {}),
-    ...(isOneOf(ACTIVITY_TYPES, search.eventType) ? { eventType: search.eventType } : {}),
-    ...pageSearch(search),
-  }
-}
 
 /** Props of {@link WebhookEndpointScreen}. */
 export interface WebhookEndpointScreenProps {
@@ -120,8 +89,8 @@ function Deliveries({
   const deliveries = useListWebhookDeliveries(
     endpointId,
     {
-      ...(filters.state ? { state: filters.state as WebhookDeliveryQueryState } : {}),
-      ...(filters.eventType ? { eventType: filters.eventType as ActivityType } : {}),
+      ...(filters.state ? { state: filters.state } : {}),
+      ...(filters.eventType ? { eventType: filters.eventType } : {}),
       page: filters.page ?? 1,
       size: DELIVERY_PAGE_SIZE,
     },
@@ -132,7 +101,8 @@ function Deliveries({
   /** A new filter starts again at the first page; an empty choice removes the filter. */
   function choose(key: 'state' | 'eventType', value: string) {
     const { page: _page, [key]: _old, ...rest } = filters
-    onFilters(value === '' ? rest : { ...rest, [key]: value })
+    // Through the reader: only a state or a type the contract knows goes into the address.
+    onFilters(deliverySearch({ ...rest, [key]: value }))
   }
 
   return (

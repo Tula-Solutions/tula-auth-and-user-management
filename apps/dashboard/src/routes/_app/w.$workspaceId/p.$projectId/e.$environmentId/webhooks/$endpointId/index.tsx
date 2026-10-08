@@ -1,9 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
-import {
-  type DeliveryFilters,
-  deliverySearch,
-  WebhookEndpointScreen,
-} from '~/features/webhooks/webhook-endpoint-screen'
+// The search reader comes from a module of its own: this part of a route file is in the
+// entry chunk, and the screen's module (which reaches the contract's schemas) must not be.
+import { type DeliveryFilters, deliverySearch } from '~/features/webhooks/delivery-search'
+import { WebhookEndpointScreen } from '~/features/webhooks/webhook-endpoint-screen'
 
 export const Route = createFileRoute(
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/'
