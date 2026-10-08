@@ -10,6 +10,7 @@ import * as openapi from '~/openapi'
 import {
   CreatedWebhookEndpointSchema,
   CreateWebhookEndpointRequestSchema,
+  RotatedWebhookSecretSchema,
   SendTestWebhookRequestSchema,
   UpdateWebhookEndpointRequestSchema,
   WebhookDeliveryDetailSchema,
@@ -353,6 +354,93 @@ router.post(
     const { id, deliveryId } = c.req.valid('param')
     const result = await Webhooks.redeliver(c.get('deps'), c.get('tenant'), id, deliveryId)
     return c.json(WebhookSendResultSchema.parse(result))
+  }
+)
+
+router.post(
+  '/:id/secret/rotate',
+  describeRoute({
+    operationId: 'rotateWebhookSecret',
+    tags: ['Webhooks'],
+    summary: 'Replace an endpoint’s signing secret',
+    description:
+      'Makes a new signing secret (`whsec_…`) for the endpoint and returns it in this ' +
+      'response only. The secret it replaces is not dropped: for ' +
+      `${Webhooks.WEBHOOK_SECRET_OVERLAP} (until \`rotationOverlapEndsAt\`) every delivery ` +
+      'carries **two** signatures in `webhook-signature`, the new secret’s first and the ' +
+      'previous secret’s after a space, so a receiver verifies with whichever it holds. ' +
+      'Deploy the new secret to the receiver inside that time; after it only the new secret ' +
+      'signs, and the previous one is deleted. The request has no body and nothing in one is ' +
+      'read: the server makes the secret. Refused with `webhook.rotation_refused` ' +
+      '(409) and a fixed word in `params.reason`: `rotation_in_progress` while a previous ' +
+      'secret is still signing (an endpoint never has three: end the overlap first with ' +
+      '`DELETE …/secret/previous`), or `secret_unreadable` when the server cannot open the ' +
+      'current secret and so could not keep it signing. An endpoint that is switched off can ' +
+      'be rotated. Recorded in the audit log as `webhook_endpoint.secret_rotated`, with the ' +
+      'time and nothing of either secret.',
+    security: openapi.security.admin,
+    responses: {
+      200: {
+        description: 'The endpoint, with its new signing secret.',
+        content: json(RotatedWebhookSecretSchema),
+      },
+      409: openapi.responses[409],
+      422: openapi.responses[422],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', WebhookEndpointIdParamSchema, validationHook),
+  async (c) => {
+    const rotated = await Webhooks.rotateSecret(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('param').id,
+      adminActor(c)
+    )
+    // Never let an intermediary cache the one response that contains the secret.
+    c.header('Cache-Control', 'no-store')
+    return c.json(RotatedWebhookSecretSchema.parse(rotated))
+  }
+)
+
+router.delete(
+  '/:id/secret/previous',
+  describeRoute({
+    operationId: 'revokePreviousWebhookSecret',
+    tags: ['Webhooks'],
+    summary: 'End a secret rotation’s overlap now',
+    description:
+      'Ends the overlap of a rotation early: the endpoint’s previous signing secret stops ' +
+      'signing and is deleted, and deliveries carry the current secret’s signature only. For ' +
+      'a previous secret that has leaked, once the receiver verifies with the new one; and ' +
+      'what makes another rotation possible at once. A round of deliveries under way when ' +
+      'this is called may still add the previous secret’s signature, for a few seconds at ' +
+      'most. Refused with `webhook.rotation_refused` (409, `params.reason`: ' +
+      '`no_rotation_in_progress`) when no previous secret is signing. Recorded in the audit ' +
+      'log as `webhook_endpoint.previous_secret_revoked`.',
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'The endpoint as it is now.', content: json(WebhookEndpointSchema) },
+      409: openapi.responses[409],
+      422: openapi.responses[422],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', WebhookEndpointIdParamSchema, validationHook),
+  async (c) => {
+    const endpoint = await Webhooks.revokePreviousSecret(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('param').id,
+      adminActor(c)
+    )
+    return c.json(WebhookEndpointSchema.parse(endpoint))
   }
 )
 

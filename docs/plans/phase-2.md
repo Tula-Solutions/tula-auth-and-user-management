@@ -207,6 +207,12 @@ for a step it does not know; the native SDKs must do the same from their first v
   `tula.config.ts`, the dashboard screen, the worker as its own service, and deleting
   delivered events. What it did not verify is in
   [phase-2-unverified.md](phase-2-unverified.md).
+  *As built, third part (TULA-43, [ADR 0034](../adr/0034-webhooks.md#secret-rotation-added-2026-10-08-tula-43)):*
+  secret rotation. The new secret signs beside the previous one for a fixed 24 hours (two
+  signatures in the header, the new one's first); an endpoint never has three secrets (a
+  rotation during an overlap is refused); the overlap can be ended early; the previous secret
+  stops signing by the clock and is deleted by the worker's next round; `verifyWebhook` takes
+  one secret or two.
 - **Why now.** First, because it is the oldest promise in the codebase (the outbox has been
   filling since Phase 0) and needs nothing external. Before 2.3 because hooks reuse its
   outbound client, its secret handling and its dashboard patterns.

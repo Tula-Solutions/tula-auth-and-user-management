@@ -486,7 +486,11 @@ async function runWebhook(
     ])
   }
   const now = target.now ? target.now() : Date.now()
-  const { problems, id } = await checkDelivery(delivery, expected.secret, now, expected.body)
+  const { problems, id } = await checkDelivery(delivery, expected.secret, now, expected.body, {
+    alsoSecrets: expected.alsoSecrets,
+    notSecrets: expected.notSecrets,
+    signatures: expected.signatures,
+  })
   if (problems.length > 0) {
     throw new StepFailure(problems)
   }

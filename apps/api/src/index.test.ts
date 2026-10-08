@@ -259,6 +259,8 @@ describe('documentation routes', () => {
       '/v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}',
       '/v1/admin/webhook-endpoints/{id}/test',
       '/v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}/redeliver',
+      '/v1/admin/webhook-endpoints/{id}/secret/rotate',
+      '/v1/admin/webhook-endpoints/{id}/secret/previous',
       '/v1/instance/diagnostics',
       '/v1/instance/session',
       '/v1/instance/workspaces',

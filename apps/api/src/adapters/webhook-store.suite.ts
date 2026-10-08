@@ -65,6 +65,8 @@ export function describeWebhookStores(
       url: 'https://hooks.example.com/tula',
       eventTypes: ['user.created', 'session.created'],
       secret: 'v1.sealed.secret',
+      previousSecret: null,
+      previousSecretExpiresAt: null,
       enabled: true,
       disabledReason: null,
       failingSince: null,
@@ -81,7 +83,9 @@ export function describeWebhookStores(
       | 'webhook_endpoint.created'
       | 'webhook_endpoint.updated'
       | 'webhook_endpoint.deleted'
-      | 'webhook_endpoint.disabled',
+      | 'webhook_endpoint.disabled'
+      | 'webhook_endpoint.secret_rotated'
+      | 'webhook_endpoint.previous_secret_revoked',
     endpointId: string
   ): Activity {
     return {
@@ -98,7 +102,9 @@ export function describeWebhookStores(
           ? { changed: ['enabled'] }
           : type === 'webhook_endpoint.disabled'
             ? { reason: 'failing' }
-            : {},
+            : type === 'webhook_endpoint.secret_rotated'
+              ? { rotationOverlapEndsAt: later.toISOString() }
+              : {},
       occurredAt: now,
     }
   }
@@ -414,6 +420,219 @@ export function describeWebhookStores(
           lastFailedAt: null,
         })
       )
+    })
+
+    describe('replacing the secret', () => {
+      // A rotation made at `later`, whose overlap ends a day after.
+      const overlapEnds = new Date('2026-01-03T00:00:00.000Z')
+      const justBefore = new Date(overlapEnds.getTime() - 1)
+      const rotation = (record: WebhookEndpointRecord, secret = 'v1.sealed.new') => ({
+        expectedSecret: record.secret,
+        secret,
+        previousSecret: `previous:${record.secret}`,
+        previousSecretExpiresAt: overlapEnds,
+      })
+      const rotate = (
+        tenant: WebhookSuiteTenant,
+        record: WebhookEndpointRecord,
+        at: Date = later,
+        secret?: string
+      ) =>
+        ctx.endpoints.rotateSecret(
+          tenant.environmentId,
+          record.id,
+          rotation(record, secret),
+          at,
+          activity(tenant, 'webhook_endpoint.secret_rotated', record.id)
+        )
+      const revoke = (tenant: WebhookSuiteTenant, id: string, at: Date) =>
+        ctx.endpoints.revokePreviousSecret(
+          tenant.environmentId,
+          id,
+          at,
+          activity(tenant, 'webhook_endpoint.previous_secret_revoked', id)
+        )
+
+      test('a rotation stores the new secret, keeps the one it replaced with its end, and is recorded', async () => {
+        const record = await registered(ctx.a)
+        const rotated = await rotate(ctx.a, record)
+        const expected = {
+          ...record,
+          secret: 'v1.sealed.new',
+          previousSecret: 'previous:v1.sealed.secret',
+          previousSecretExpiresAt: overlapEnds,
+          updatedAt: later,
+        }
+        expect(rotated).toEqual(expected)
+        expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(expected)
+        expect(await ctx.recorded()).toEqual(['webhook_endpoint.secret_rotated'])
+      })
+
+      test('there are never three: a rotation is refused until the previous secret has stopped signing, to the millisecond', async () => {
+        const record = await registered(ctx.a)
+        const first = await rotate(ctx.a, record)
+        if (!first) {
+          throw new Error('the first rotation was refused')
+        }
+        // One millisecond before the overlap ends the previous secret still signs.
+        expect(await rotate(ctx.a, first, justBefore, 'v1.sealed.third')).toBeNull()
+        expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(first)
+        expect(await ctx.recorded()).toEqual(['webhook_endpoint.secret_rotated'])
+        // At the instant it ends it no longer does, cleared from the row yet or not: the
+        // rotation takes its place.
+        const second = await rotate(ctx.a, first, overlapEnds, 'v1.sealed.third')
+        expect(second).toEqual({
+          ...first,
+          secret: 'v1.sealed.third',
+          previousSecret: 'previous:v1.sealed.new',
+          previousSecretExpiresAt: overlapEnds,
+          updatedAt: overlapEnds,
+        })
+        expect(await ctx.recorded()).toEqual([
+          'webhook_endpoint.secret_rotated',
+          'webhook_endpoint.secret_rotated',
+        ])
+      })
+
+      test('a rotation worked out from a secret that is no longer the current one writes and records nothing', async () => {
+        const record = await registered(ctx.a)
+        const stale = { ...record, secret: 'v1.sealed.someone-elses-read' }
+        expect(await rotate(ctx.a, stale)).toBeNull()
+        expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(record)
+        expect(await ctx.recorded()).toEqual([])
+      })
+
+      test('two rotations at once: one wins, and the row holds exactly its two secrets', async () => {
+        const record = await registered(ctx.a)
+        const outcomes = await Promise.all([
+          rotate(ctx.a, record, later, 'v1.sealed.one'),
+          rotate(ctx.a, record, later, 'v1.sealed.two'),
+        ])
+        const won = outcomes.filter((outcome) => outcome !== null)
+        expect(won).toHaveLength(1)
+        const stored = await ctx.endpoints.find(ctx.a.environmentId, record.id)
+        expect(stored).toEqual(won[0] as WebhookEndpointRecord)
+        expect(stored?.previousSecret).toBe('previous:v1.sealed.secret')
+        expect(await ctx.recorded()).toEqual(['webhook_endpoint.secret_rotated'])
+      })
+
+      test('ending the overlap removes the previous secret and its end, once, and is recorded', async () => {
+        const record = await registered(ctx.a)
+        const rotated = await rotate(ctx.a, record)
+        const revoked = await revoke(ctx.a, record.id, justBefore)
+        const expected = {
+          ...rotated,
+          previousSecret: null,
+          previousSecretExpiresAt: null,
+          updatedAt: justBefore,
+        }
+        expect(revoked).toEqual(expected as WebhookEndpointRecord)
+        expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(
+          expected as WebhookEndpointRecord
+        )
+        // Nothing left to revoke: nothing changes and nothing more is recorded.
+        expect(await revoke(ctx.a, record.id, justBefore)).toBeNull()
+        expect(await ctx.recorded()).toEqual([
+          'webhook_endpoint.secret_rotated',
+          'webhook_endpoint.previous_secret_revoked',
+        ])
+      })
+
+      test('there is no overlap to end on an endpoint that never rotated, on one whose overlap is over, or on one that is not there', async () => {
+        const never = await registered(ctx.a)
+        expect(await revoke(ctx.a, never.id, later)).toBeNull()
+        const over = await registered(ctx.a)
+        const rotated = await rotate(ctx.a, over)
+        // At the instant the overlap ends the previous secret has stopped signing by itself:
+        // there is nothing to end early, and the row is the worker's to clear.
+        expect(await revoke(ctx.a, over.id, overlapEnds)).toBeNull()
+        expect(await ctx.endpoints.find(ctx.a.environmentId, over.id)).toEqual(
+          rotated as WebhookEndpointRecord
+        )
+        expect(await revoke(ctx.a, Bun.randomUUIDv7(), later)).toBeNull()
+        expect(await ctx.recorded()).toEqual(['webhook_endpoint.secret_rotated'])
+      })
+
+      test('a rotation of an endpoint that is not there writes and records nothing', async () => {
+        const ghost = endpoint(ctx.a)
+        expect(await rotate(ctx.a, ghost)).toBeNull()
+        expect(await ctx.endpoints.list(ctx.a.environmentId)).toEqual([])
+        expect(await ctx.recorded()).toEqual([])
+      })
+
+      test('another environment cannot rotate an endpoint’s secret, end its overlap or clear what expired', async () => {
+        const record = await registered(ctx.a)
+        expect(await rotate(ctx.b, record)).toBeNull()
+        expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(record)
+        const rotated = await rotate(ctx.a, record)
+        expect(await revoke(ctx.b, record.id, justBefore)).toBeNull()
+        expect(
+          await ctx.endpoints.clearExpiredPreviousSecrets(ctx.b.environmentId, overlapEnds, 10)
+        ).toBe(0)
+        expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(
+          rotated as WebhookEndpointRecord
+        )
+        expect(await ctx.recorded()).toEqual(['webhook_endpoint.secret_rotated'])
+      })
+
+      test('a previous secret is deleted from the row once it has stopped signing: at that instant, not a millisecond before, and unrecorded', async () => {
+        const record = await registered(ctx.a)
+        const untouched = await registered(ctx.a)
+        const rotated = await rotate(ctx.a, record)
+        expect(
+          await ctx.endpoints.clearExpiredPreviousSecrets(ctx.a.environmentId, justBefore, 10)
+        ).toBe(0)
+        expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual(
+          rotated as WebhookEndpointRecord
+        )
+        expect(
+          await ctx.endpoints.clearExpiredPreviousSecrets(ctx.a.environmentId, overlapEnds, 10)
+        ).toBe(1)
+        // The current secret stays, and no administrator changed the endpoint: `updatedAt`
+        // is still the rotation's.
+        expect(await ctx.endpoints.find(ctx.a.environmentId, record.id)).toEqual({
+          ...(rotated as WebhookEndpointRecord),
+          previousSecret: null,
+          previousSecretExpiresAt: null,
+        })
+        expect(await ctx.endpoints.find(ctx.a.environmentId, untouched.id)).toEqual(untouched)
+        expect(
+          await ctx.endpoints.clearExpiredPreviousSecrets(ctx.a.environmentId, overlapEnds, 10)
+        ).toBe(0)
+        expect(await ctx.recorded()).toEqual(['webhook_endpoint.secret_rotated'])
+      })
+
+      test('expired previous secrets are deleted a batch at a time', async () => {
+        const records = [await registered(ctx.a), await registered(ctx.a), await registered(ctx.a)]
+        for (const record of records) {
+          await rotate(ctx.a, record)
+        }
+        const clear = () =>
+          ctx.endpoints.clearExpiredPreviousSecrets(ctx.a.environmentId, overlapEnds, 2)
+        expect(await clear()).toBe(2)
+        expect(await clear()).toBe(1)
+        expect(await clear()).toBe(0)
+        const left = await ctx.endpoints.list(ctx.a.environmentId)
+        expect(left.map((one) => one.previousSecret)).toEqual([null, null, null])
+      })
+
+      test('an update of the address, the types or the switch keeps both secrets and the end of the overlap', async () => {
+        const record = await registered(ctx.a)
+        const rotated = await rotate(ctx.a, record)
+        const updated = await ctx.endpoints.update(
+          ctx.a.environmentId,
+          record.id,
+          { url: 'https://new.example.com/', enabled: false, resetHealth: true },
+          overlapEnds,
+          Audit.none('fixture')
+        )
+        expect(updated).toEqual({
+          ...(rotated as WebhookEndpointRecord),
+          url: 'https://new.example.com/',
+          enabled: false,
+          updatedAt: overlapEnds,
+        })
+      })
     })
 
     test('another environment cannot mark an endpoint as failing or switch it off', async () => {

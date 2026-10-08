@@ -256,12 +256,16 @@ export interface Operations {
   resetUserFactors: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Revoke an API key (`DELETE /v1/admin/api-keys/{id}`). */
   revokeApiKey: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ApiKey'] }
+  /** End a secret rotation’s overlap now (`DELETE /v1/admin/webhook-endpoints/{id}/secret/previous`). */
+  revokePreviousWebhookSecret: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookEndpoint'] }
   /** End one of a user’s sessions (`DELETE /v1/admin/users/{userId}/sessions/{sessionId}`). */
   revokeUserSession: { params: { userId: string; sessionId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Sign a user out everywhere (`DELETE /v1/admin/users/{userId}/sessions`). */
   revokeUserSessions: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['RevokedSessions'] }
   /** Rotate signing keys (`POST /v1/admin/signing-keys/rotate`). */
   rotateSigningKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SigningKeyList'] }
+  /** Replace an endpoint’s signing secret (`POST /v1/admin/webhook-endpoints/{id}/secret/rotate`). */
+  rotateWebhookSecret: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['RotatedWebhookSecret'] }
   /** Send a test event (`POST /v1/admin/webhook-endpoints/{id}/test`). */
   sendTestWebhook: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['SendTestWebhookRequest']; response: Schemas['WebhookSendResult'] }
   /** Set a user’s password (`PUT /v1/admin/users/{userId}/password`). */
@@ -325,7 +329,7 @@ export interface Schemas {
     amr?: string[]
     sp?: string
   }
-  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled'
+  ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked'
   ApiKey: {
     id: string
     kind: Schemas['ApiKeyKind']
@@ -412,7 +416,7 @@ export interface Schemas {
   }
   CreateWebhookEndpointRequest: {
     url: string
-    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled')[]
+    eventTypes: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked')[]
     enabled?: boolean
   }
   CreateWorkspaceRequest: {
@@ -442,6 +446,7 @@ export interface Schemas {
     disabledReason: string | null
     failingSince: string | null
     lastFailedAt: string | null
+    rotationOverlapEndsAt: string | null
     createdAt: string
     updatedAt: string
     /** The signing secret. Store it now: it is shown only once. */
@@ -584,7 +589,7 @@ export interface Schemas {
     managedBy?: string | null
     outsideConfig?: boolean
   }
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -724,8 +729,23 @@ export interface Schemas {
   RevokedSessions: {
     revoked: number
   }
+  RotatedWebhookSecret: {
+    id: string
+    url: string
+    eventTypes: string[]
+    enabled: boolean
+    disabledReason: string | null
+    failingSince: string | null
+    lastFailedAt: string | null
+    /** When the previous secret stops signing. Until then deliveries carry both signatures. */
+    rotationOverlapEndsAt: string
+    createdAt: string
+    updatedAt: string
+    /** The new signing secret. Store it now: it is shown only once. */
+    secret: string
+  }
   SendTestWebhookRequest: {
-    eventType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled'
+    eventType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked'
   }
   Session: {
     id: string
@@ -870,13 +890,13 @@ export interface Schemas {
     nextKeyId: string
   }
   SigningKeyStatus: 'next' | 'active' | 'retired'
-  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent']
+  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent']
   UpdateProjectRequest: {
     name: string
   }
   UpdateWebhookEndpointRequest: {
     url?: string
-    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled')[]
+    eventTypes?: ('user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked')[]
     enabled?: boolean
   }
   User: {
@@ -1215,6 +1235,7 @@ export interface Schemas {
     disabledReason: string | null
     failingSince: string | null
     lastFailedAt: string | null
+    rotationOverlapEndsAt: string | null
     createdAt: string
     updatedAt: string
   }
@@ -1267,6 +1288,36 @@ export interface Schemas {
   }
   WebhookEndpointList: {
     data: Schemas['WebhookEndpoint'][]
+  }
+  WebhookEndpointPreviousSecretRevokedEvent: {
+    id: string
+    type: 'webhook_endpoint.previous_secret_revoked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'webhook_endpoint'
+      id: string
+    }
+    data: Schemas['WebhookEndpointPreviousSecretRevokedEventData']
+    test?: true
+  }
+  WebhookEndpointPreviousSecretRevokedEventData: Record<string, never>
+  WebhookEndpointSecretRotatedEvent: {
+    id: string
+    type: 'webhook_endpoint.secret_rotated'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'webhook_endpoint'
+      id: string
+    }
+    data: Schemas['WebhookEndpointSecretRotatedEventData']
+    test?: true
+  }
+  WebhookEndpointSecretRotatedEventData: {
+    rotationOverlapEndsAt: string
   }
   WebhookEndpointUpdatedEvent: {
     id: string
@@ -1598,6 +1649,24 @@ export interface VerifyWebhookOptions {
 const options: VerifyWebhookOptions = { now: Date.now() }
 ```
 
+### `WEBHOOK_MAX_SECRETS`
+
+_constant_, defined in `packages/admin/src/webhook.ts`
+
+Most secrets {@link verifyWebhook} takes. Tula signs with one secret, and with two while a
+secret is being replaced: never three. A third in a receiver's list is one that should
+have been taken out, and a secret left in a list stays good for whoever holds it.
+
+```ts
+const WEBHOOK_MAX_SECRETS: 2
+```
+
+**Example**
+
+```ts
+secrets.length <= WEBHOOK_MAX_SECRETS
+```
+
 ### `WEBHOOK_MAX_SIGNATURES`
 
 _constant_, defined in `packages/admin/src/webhook.ts`
@@ -1633,6 +1702,24 @@ export type WebhookHeaders =
 
 ```ts
 const headers: WebhookHeaders = request.headers
+```
+
+### `WebhookSecrets`
+
+_type_, defined in `packages/admin/src/webhook.ts`
+
+The secret, or secrets, a delivery is verified with: one `whsec_…` secret, or a list of
+them (at most {@link WEBHOOK_MAX_SECRETS}) while a secret is being replaced.
+
+```ts
+export type WebhookSecrets = string | readonly string[]
+```
+
+**Example**
+
+```ts
+// The secret a rotation returned, and the one it replaced until the overlap has ended.
+const secrets: WebhookSecrets = [rotated.secret, secretInUseBefore]
 ```
 
 ### `createAdminClient`
@@ -1800,8 +1887,22 @@ A delivery is a `POST` whose body is the event as JSON and whose headers carry i
 (`webhook-id`), when it was sent (`webhook-timestamp`, in seconds) and one or more
 signatures (`webhook-signature`: `v1,<base64>`, separated by spaces): the Standard Webhooks
 scheme, HMAC-SHA256 over `<id>.<timestamp>.<body>` with the endpoint's secret. The delivery
-is accepted when **any one** signature is right and the timestamp is within five minutes of
-this server's clock, either way.
+is accepted when **any one** signature is right for **any one** of the secrets given and the
+timestamp is within five minutes of this server's clock, either way.
+
+**Replacing a secret without losing a delivery.** `secret` may be a list of two. When an
+endpoint's secret is rotated, the server signs every delivery with the new secret *and* the
+previous one for 24 hours, so the order of work is:
+
+1. Rotate (`rotateWebhookSecret`); the answer has the new secret and
+   `rotationOverlapEndsAt`. Nothing breaks: deliveries still carry the old signature.
+2. Inside those 24 hours, deploy the receiver with **both** secrets (or with the new one
+   alone: during the overlap either verifies).
+3. After `rotationOverlapEndsAt`, take the old secret out. Do take it out: a secret left
+   in the list stays good for anyone who holds it.
+
+The rotation comes first because the server makes the secret: there is nothing to deploy
+until it has answered. The overlap is what makes that order safe.
 
 A `webhook-id` or `webhook-timestamp` that was sent twice is refused (also where a `Headers`
 object has joined the two values with a comma). A `webhook-signature` sent twice is read as
@@ -1828,7 +1929,7 @@ endpoint's secret.
 export async function verifyWebhook(
   body: string | Uint8Array,
   headers: WebhookHeaders,
-  secret: string,
+  secret: WebhookSecrets,
   options: VerifyWebhookOptions = {}
 ): Promise<TulaWebhookEvent>
 ```
@@ -1837,7 +1938,10 @@ export async function verifyWebhook(
 
 - `body`: The request body as received: text or bytes.
 - `headers`: The request's headers.
-- `secret`: The endpoint's signing secret (`whsec_…`), as its registration returned it.
+- `secret`: The endpoint's signing secret (`whsec_…`), as its registration or a rotation
+  returned it; or a list of one or two of them. Every secret listed must be a signing
+  secret: an empty list, a third secret or a malformed entry is refused
+  (`webhook.invalid_secret`), whatever the delivery.
 - `options`: The clock to judge the timestamp by; the real one unless given.
 
 **Returns** The event. Its `type` may be one a later server added.
@@ -1845,11 +1949,12 @@ export async function verifyWebhook(
 **Throws**
 
 TulaAdminError with `status` 0 and one of these codes, and never with the secret, a
-signature or the body in it: `webhook.invalid_secret` (not a `whsec_…` secret),
+signature or the body in it, nor which of two secrets was the wrong one:
+`webhook.invalid_secret` (not a `whsec_…` secret, or not one or two of them),
 `webhook.invalid_headers` (a header missing or malformed, or an id or a timestamp sent
 twice),
 `webhook.timestamp_out_of_tolerance` (more than five minutes old, or ahead),
-`webhook.invalid_signature` (no signature matches), `webhook.invalid_payload` (signed
+`webhook.invalid_signature` (no signature matches any secret), `webhook.invalid_payload` (signed
 correctly, but not an event with the delivery's id).
 
 **Example**
@@ -1871,4 +1976,15 @@ export async function POST(request: Request) {
   }
   return new Response(null, { status: 204 })
 }
+```
+
+**Example**
+
+```ts
+// While a secret is being replaced: the new one, and the previous one until the overlap
+// has ended (`rotationOverlapEndsAt`), then deploy again without it.
+const secrets = [process.env.TULA_WEBHOOK_SECRET, process.env.TULA_WEBHOOK_SECRET_PREVIOUS].filter(
+  (secret): secret is string => Boolean(secret)
+)
+const event = await verifyWebhook(await request.text(), request.headers, secrets)
 ```

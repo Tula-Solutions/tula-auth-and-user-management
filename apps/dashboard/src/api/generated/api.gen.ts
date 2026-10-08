@@ -945,7 +945,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 30
+     * @maximum 32
      */
   eventTypes: number;
   enabled: boolean;
@@ -1079,7 +1079,64 @@ export interface WebhookEndpointDisabledEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent;
+/**
+ * A webhook endpoint’s signing secret was replaced. Deliveries carry a signature for the new secret and one for the previous secret until the time given; after it, for the new one only. Neither secret, nor any part of one, is in the event.
+ */
+export interface WebhookEndpointSecretRotatedEventData {
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  rotationOverlapEndsAt: string;
+}
+
+export type WebhookEndpointSecretRotatedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A webhook endpoint’s signing secret was replaced. Deliveries carry a signature for the new secret and one for the previous secret until the time given; after it, for the new one only. Neither secret, nor any part of one, is in the event.
+ */
+export interface WebhookEndpointSecretRotatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.secret_rotated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointSecretRotatedEventTarget;
+  data: WebhookEndpointSecretRotatedEventData;
+  test?: true;
+}
+
+/**
+ * An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only.
+ */
+export interface WebhookEndpointPreviousSecretRevokedEventData { [key: string]: unknown }
+
+export type WebhookEndpointPreviousSecretRevokedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only.
+ */
+export interface WebhookEndpointPreviousSecretRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.previous_secret_revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointPreviousSecretRevokedEventTarget;
+  data: WebhookEndpointPreviousSecretRevokedEventData;
+  test?: true;
+}
+
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent;
 
 export interface StatusResponse {
   status: 'ok';
@@ -1136,6 +1193,7 @@ export const ErrorCode = {
   identitylast_sign_in_method: 'identity.last_sign_in_method',
   webhookurl_not_allowed: 'webhook.url_not_allowed',
   webhookcannot_redeliver: 'webhook.cannot_redeliver',
+  webhookrotation_refused: 'webhook.rotation_refused',
   passkeyregistration_failed: 'passkey.registration_failed',
   passkeyalready_registered: 'passkey.already_registered',
   passkeylimit_reached: 'passkey.limit_reached',
@@ -1998,6 +2056,8 @@ export const ActivityType = {
   webhook_endpointupdated: 'webhook_endpoint.updated',
   webhook_endpointdeleted: 'webhook_endpoint.deleted',
   webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
 } as const;
 
 export type AuditLogQueryActorType = typeof AuditLogQueryActorType[keyof typeof AuditLogQueryActorType];
@@ -2500,6 +2560,7 @@ export interface WebhookEndpoint {
   disabledReason: string | null;
   failingSince: string | null;
   lastFailedAt: string | null;
+  rotationOverlapEndsAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
@@ -2520,6 +2581,7 @@ export interface CreatedWebhookEndpoint {
   disabledReason: string | null;
   failingSince: string | null;
   lastFailedAt: string | null;
+  rotationOverlapEndsAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
@@ -2562,6 +2624,8 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   webhook_endpointupdated: 'webhook_endpoint.updated',
   webhook_endpointdeleted: 'webhook_endpoint.deleted',
   webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
 } as const;
 
 export interface CreateWebhookEndpointRequest {
@@ -2573,7 +2637,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 30
+     * @maxItems 32
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -2613,6 +2677,8 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   webhook_endpointupdated: 'webhook_endpoint.updated',
   webhook_endpointdeleted: 'webhook_endpoint.deleted',
   webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
 } as const;
 
 export interface UpdateWebhookEndpointRequest {
@@ -2624,7 +2690,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 30
+     * @maxItems 32
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -2782,10 +2848,35 @@ export const SendTestWebhookRequestEventType = {
   webhook_endpointupdated: 'webhook_endpoint.updated',
   webhook_endpointdeleted: 'webhook_endpoint.deleted',
   webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
 } as const;
 
 export interface SendTestWebhookRequest {
   eventType: SendTestWebhookRequestEventType;
+}
+
+export interface RotatedWebhookSecret {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  url: string;
+  eventTypes: string[];
+  enabled: boolean;
+  /** @nullable */
+  disabledReason: string | null;
+  failingSince: string | null;
+  lastFailedAt: string | null;
+  /**
+     * When the previous secret stops signing. Until then deliveries carry both signatures.
+     * @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+     */
+  rotationOverlapEndsAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  /** The new signing secret. Store it now: it is shown only once. */
+  secret: string;
 }
 
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
@@ -6279,6 +6370,156 @@ export const useRedeliverWebhook = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getRedeliverWebhookMutationOptions(options), queryClient);
+    }
+
+export const getRotateWebhookSecretUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/secret/rotate`
+}
+
+/**
+ * Makes a new signing secret (`whsec_…`) for the endpoint and returns it in this response only. The secret it replaces is not dropped: for 24h (until `rotationOverlapEndsAt`) every delivery carries **two** signatures in `webhook-signature`, the new secret’s first and the previous secret’s after a space, so a receiver verifies with whichever it holds. Deploy the new secret to the receiver inside that time; after it only the new secret signs, and the previous one is deleted. The request has no body and nothing in one is read: the server makes the secret. Refused with `webhook.rotation_refused` (409) and a fixed word in `params.reason`: `rotation_in_progress` while a previous secret is still signing (an endpoint never has three: end the overlap first with `DELETE …/secret/previous`), or `secret_unreadable` when the server cannot open the current secret and so could not keep it signing. An endpoint that is switched off can be rotated. Recorded in the audit log as `webhook_endpoint.secret_rotated`, with the time and nothing of either secret.
+ * @summary Replace an endpoint’s signing secret
+ */
+export const rotateWebhookSecret = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<RotatedWebhookSecret> => {
+
+  return dashboardFetch<RotatedWebhookSecret>(getRotateWebhookSecretUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRotateWebhookSecretMutationKey = () => ['rotateWebhookSecret'] as const;
+
+export const getRotateWebhookSecretMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateWebhookSecret>>, TError,RotateWebhookSecretMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rotateWebhookSecret>>, TError,RotateWebhookSecretMutationVariables, TContext> => {
+
+const mutationKey = getRotateWebhookSecretMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rotateWebhookSecret>>, RotateWebhookSecretMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  rotateWebhookSecret(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RotateWebhookSecretMutationResult = NonNullable<Awaited<ReturnType<typeof rotateWebhookSecret>>>
+
+    export type RotateWebhookSecretMutationError = ErrorEnvelope
+    export type RotateWebhookSecretMutationVariables = {id: string}
+
+    /**
+ * @summary Replace an endpoint’s signing secret
+ */
+export const useRotateWebhookSecret = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateWebhookSecret>>, TError,RotateWebhookSecretMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof rotateWebhookSecret>>,
+        TError,
+        RotateWebhookSecretMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRotateWebhookSecretMutationOptions(options), queryClient);
+    }
+
+export const getRevokePreviousWebhookSecretUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/secret/previous`
+}
+
+/**
+ * Ends the overlap of a rotation early: the endpoint’s previous signing secret stops signing and is deleted, and deliveries carry the current secret’s signature only. For a previous secret that has leaked, once the receiver verifies with the new one; and what makes another rotation possible at once. A round of deliveries under way when this is called may still add the previous secret’s signature, for a few seconds at most. Refused with `webhook.rotation_refused` (409, `params.reason`: `no_rotation_in_progress`) when no previous secret is signing. Recorded in the audit log as `webhook_endpoint.previous_secret_revoked`.
+ * @summary End a secret rotation’s overlap now
+ */
+export const revokePreviousWebhookSecret = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookEndpoint> => {
+
+  return dashboardFetch<WebhookEndpoint>(getRevokePreviousWebhookSecretUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokePreviousWebhookSecretMutationKey = () => ['revokePreviousWebhookSecret'] as const;
+
+export const getRevokePreviousWebhookSecretMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>, TError,RevokePreviousWebhookSecretMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>, TError,RevokePreviousWebhookSecretMutationVariables, TContext> => {
+
+const mutationKey = getRevokePreviousWebhookSecretMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>, RevokePreviousWebhookSecretMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokePreviousWebhookSecret(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokePreviousWebhookSecretMutationResult = NonNullable<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>>
+
+    export type RevokePreviousWebhookSecretMutationError = ErrorEnvelope
+    export type RevokePreviousWebhookSecretMutationVariables = {id: string}
+
+    /**
+ * @summary End a secret rotation’s overlap now
+ */
+export const useRevokePreviousWebhookSecret = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>, TError,RevokePreviousWebhookSecretMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokePreviousWebhookSecret>>,
+        TError,
+        RevokePreviousWebhookSecretMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokePreviousWebhookSecretMutationOptions(options), queryClient);
     }
 
 export const getGetInstanceDiagnosticsUrl = () => {

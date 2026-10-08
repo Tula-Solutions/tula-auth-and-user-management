@@ -6,6 +6,7 @@ import type {
   WebhookEndpointHealth,
   WebhookEndpointRecord,
   WebhookEndpointStore,
+  WebhookSecretRotation,
 } from '~/ports/webhook-endpoint-store'
 
 /** In-memory webhook endpoints for tests. */
@@ -116,6 +117,87 @@ export class MemoryWebhookEndpointStore implements WebhookEndpointStore {
     record.failingSince = next.failingSince && new Date(next.failingSince)
     record.lastFailedAt = next.lastFailedAt && new Date(next.lastFailedAt)
     return true
+  }
+
+  /** @inheritdoc */
+  async rotateSecret(
+    environmentId: string,
+    id: string,
+    rotation: WebhookSecretRotation,
+    at: Date,
+    recorded: Recorded
+  ): Promise<WebhookEndpointRecord | null> {
+    const activity = activityOf(recorded)
+    const record = this.#records.get(id)
+    if (
+      !record ||
+      record.environmentId !== environmentId ||
+      record.secret !== rotation.expectedSecret ||
+      // A previous secret that still signs: there are never three.
+      (record.previousSecretExpiresAt !== null &&
+        record.previousSecretExpiresAt.getTime() > at.getTime())
+    ) {
+      return null
+    }
+    const next: WebhookEndpointRecord = {
+      ...record,
+      secret: rotation.secret,
+      previousSecret: rotation.previousSecret,
+      previousSecretExpiresAt: new Date(rotation.previousSecretExpiresAt),
+      updatedAt: at,
+    }
+    this.#records.set(id, next)
+    this.#activityLog.record(activity ? [activity] : [])
+    return structuredClone(next)
+  }
+
+  /** @inheritdoc */
+  async revokePreviousSecret(
+    environmentId: string,
+    id: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<WebhookEndpointRecord | null> {
+    const activity = activityOf(recorded)
+    const record = this.#records.get(id)
+    if (
+      !record ||
+      record.environmentId !== environmentId ||
+      record.previousSecretExpiresAt === null ||
+      record.previousSecretExpiresAt.getTime() <= at.getTime()
+    ) {
+      return null
+    }
+    const next: WebhookEndpointRecord = {
+      ...record,
+      previousSecret: null,
+      previousSecretExpiresAt: null,
+      updatedAt: at,
+    }
+    this.#records.set(id, next)
+    this.#activityLog.record(activity ? [activity] : [])
+    return structuredClone(next)
+  }
+
+  /** @inheritdoc */
+  async clearExpiredPreviousSecrets(
+    environmentId: string,
+    at: Date,
+    limit: number
+  ): Promise<number> {
+    const expired = [...this.#records.values()]
+      .filter(
+        (record) =>
+          record.environmentId === environmentId &&
+          record.previousSecretExpiresAt !== null &&
+          record.previousSecretExpiresAt.getTime() <= at.getTime()
+      )
+      .slice(0, limit)
+    for (const record of expired) {
+      record.previousSecret = null
+      record.previousSecretExpiresAt = null
+    }
+    return expired.length
   }
 
   /** @inheritdoc */

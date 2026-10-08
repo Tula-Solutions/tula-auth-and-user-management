@@ -271,4 +271,102 @@ describe('retries, the delivery log, test events and sending again, through the 
     ])
     expect(arrived).toHaveLength(3)
   })
+
+  test('a rotated secret: deliveries of the overlap verify with either secret, and after it with the new one only', async () => {
+    const { deps, admin, endpoint } = await world()
+    const at = () => ({ now: deps.clock.now().getTime() })
+    const code = async (work: Promise<unknown>) => {
+      try {
+        await work
+        return 'accepted'
+      } catch (error) {
+        return isTulaAdminError(error) ? error.code : 'threw something else'
+      }
+    }
+    /** Something happens and the worker delivers it: what arrived. */
+    const next = async (email: string): Promise<Arrived> => {
+      const before = arrived.length
+      await admin.call('createUser', { body: { email } })
+      await Webhooks.deliverPending(deps)
+      expect(arrived).toHaveLength(before + 1)
+      return arrived[before] as Arrived
+    }
+
+    const rotated = await admin.call('rotateWebhookSecret', { params: { id: endpoint.id } })
+    const { secret: fresh, rotationOverlapEndsAt } = rotated.data
+    expect(fresh).not.toBe(endpoint.secret)
+    expect(Date.parse(rotationOverlapEndsAt) - deps.clock.now().getTime()).toBe(24 * 3_600_000)
+
+    // During the overlap: two signatures, and a receiver on the old secret, on the new one or
+    // on both takes the delivery.
+    const during = await next('grace@example.com')
+    expect((during.headers.get('webhook-signature') ?? '').split(' ')).toHaveLength(2)
+    for (const secrets of [endpoint.secret, fresh, [fresh, endpoint.secret]]) {
+      const event = await verifyWebhook(during.body, during.headers, secrets, at())
+      expect(event.type).toBe('user.created')
+    }
+
+    // A second rotation while the first one's overlap lasts is refused: never three.
+    const refusal = async (work: Promise<unknown>) => {
+      try {
+        await work
+        return null
+      } catch (error) {
+        return isTulaAdminError(error) ? [error.code, error.status, error.params] : error
+      }
+    }
+    expect(
+      await refusal(admin.call('rotateWebhookSecret', { params: { id: endpoint.id } }))
+    ).toEqual(['webhook.rotation_refused', 409, { reason: 'rotation_in_progress' }])
+
+    // After the overlap: one signature, the new secret's. The old one alone no longer verifies,
+    // and a receiver that still lists both is not hurt.
+    deps.clock.set(new Date(rotationOverlapEndsAt))
+    const after = await next('ada@example.com')
+    expect((after.headers.get('webhook-signature') ?? '').split(' ')).toHaveLength(1)
+    expect(await code(verifyWebhook(after.body, after.headers, endpoint.secret, at()))).toBe(
+      'webhook.invalid_signature'
+    )
+    expect(await code(verifyWebhook(after.body, after.headers, fresh, at()))).toBe('accepted')
+    expect(
+      await code(verifyWebhook(after.body, after.headers, [fresh, endpoint.secret], at()))
+    ).toBe('accepted')
+    const read = await admin.call('getWebhookEndpoint', { params: { id: endpoint.id } })
+    expect(read.data.rotationOverlapEndsAt).toBeNull()
+    expect(JSON.stringify(read.data)).not.toContain('whsec_')
+  })
+
+  test('the overlap of a rotation can be ended early through the typed client, and then only the new secret verifies', async () => {
+    const { deps, admin, endpoint } = await world()
+    const params = { id: endpoint.id }
+    const refusal = async (work: Promise<unknown>) => {
+      try {
+        await work
+        return null
+      } catch (error) {
+        return isTulaAdminError(error) ? [error.code, error.status, error.params] : error
+      }
+    }
+    expect(await refusal(admin.call('revokePreviousWebhookSecret', { params }))).toEqual([
+      'webhook.rotation_refused',
+      409,
+      { reason: 'no_rotation_in_progress' },
+    ])
+    const rotated = await admin.call('rotateWebhookSecret', { params })
+    const revoked = await admin.call('revokePreviousWebhookSecret', { params })
+    expect(revoked.data.rotationOverlapEndsAt).toBeNull()
+    expect(JSON.stringify(revoked.data)).not.toContain('whsec_')
+
+    await admin.call('createUser', { body: { email: 'grace@example.com' } })
+    await Webhooks.deliverPending(deps)
+    const [delivery] = arrived as [Arrived]
+    expect((await verifyWebhook(delivery.body, delivery.headers, rotated.data.secret)).type).toBe(
+      'user.created'
+    )
+    expect(await refusal(verifyWebhook(delivery.body, delivery.headers, endpoint.secret))).toEqual([
+      'webhook.invalid_signature',
+      0,
+      {},
+    ])
+  })
 })

@@ -173,6 +173,7 @@ describe('registering an endpoint', () => {
       disabledReason: null,
       failingSince: null,
       lastFailedAt: null,
+      rotationOverlapEndsAt: null,
       createdAt: created.createdAt,
       updatedAt: created.updatedAt,
     })
@@ -321,6 +322,7 @@ describe('reading, changing and removing an endpoint', () => {
       disabledReason: null,
       failingSince: null,
       lastFailedAt: null,
+      rotationOverlapEndsAt: null,
       createdAt: created.createdAt,
       updatedAt: deps.clock.now().toISOString(),
     })
@@ -515,6 +517,7 @@ describe('a delivery round', () => {
       deferred: 0,
       givenUp: 0,
       disabled: 0,
+      secretsExpired: 0,
       skipped: 0,
     })
   })

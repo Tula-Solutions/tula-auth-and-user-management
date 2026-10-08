@@ -78,6 +78,13 @@ const SERVER_ONLY: Record<string, string> = {
     'server, an operator’s backend and the admin API with a secret key: a client SDK is on no ' +
     'side of them. `@tula/admin` is driven through the same operations against the real API ' +
     'and worker in `packages/admin/src/webhook-real-api.test.ts`.',
+  'webhook secret rotated with an overlap':
+    'a signing secret is rotated on the admin API with a secret key, and the two signatures of ' +
+    'the overlap travel from the server to an operator’s backend: a client SDK holds neither ' +
+    'the key nor a signing secret, and must never. The receiving side is `@tula/admin`’s ' +
+    '`verifyWebhook` with one secret or both, which `packages/admin/src/' +
+    'webhook-real-api.test.ts` hands deliveries the real worker made before, during and after ' +
+    'an overlap.',
   'two instances':
     'a property of the deployment (two API processes sharing Postgres and Redis). A client talks ' +
     'to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host ' +

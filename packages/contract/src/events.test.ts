@@ -64,6 +64,43 @@ describe('fixtures', () => {
   })
 })
 
+describe('a webhook secret being replaced', () => {
+  test('no field of either event is named like a secret: a time under such a key would be taken for one', () => {
+    for (const type of [
+      'webhook_endpoint.secret_rotated',
+      'webhook_endpoint.previous_secret_revoked',
+    ] as const) {
+      expect(
+        Object.keys(EVENT_DATA_SCHEMAS[type].shape).filter((key) => /secret|token|key/i.test(key))
+      ).toEqual([])
+    }
+  })
+
+  test('the rotation says when the previous secret stops signing, and has no place for a secret', () => {
+    const fixture = EVENT_FIXTURES['webhook_endpoint.secret_rotated']
+    expect(Object.keys(EVENT_DATA_SCHEMAS['webhook_endpoint.secret_rotated'].shape)).toEqual([
+      'rotationOverlapEndsAt',
+    ])
+    const leaky = { ...fixture, data: { ...fixture.data, secret: 'whsec_x', prefix: 'whsec_ab' } }
+    expect(EVENT_SCHEMAS['webhook_endpoint.secret_rotated'].parse(leaky)).toEqual(fixture)
+    expect(
+      EVENT_SCHEMAS['webhook_endpoint.secret_rotated'].safeParse({
+        ...fixture,
+        data: { rotationOverlapEndsAt: 'soon' },
+      }).success
+    ).toBe(false)
+  })
+
+  test('ending the overlap early is an event of its own, about the endpoint, with nothing in it', () => {
+    const fixture = EVENT_FIXTURES['webhook_endpoint.previous_secret_revoked']
+    expect(
+      Object.keys(EVENT_DATA_SCHEMAS['webhook_endpoint.previous_secret_revoked'].shape)
+    ).toEqual([])
+    expect(fixture.target.type).toBe('webhook_endpoint')
+    expect(fixture.data).toEqual({})
+  })
+})
+
 describe('an event schema', () => {
   test('is refused for another type’s payload', () => {
     const created = EVENT_FIXTURES['user.created']

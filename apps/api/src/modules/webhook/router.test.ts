@@ -58,6 +58,7 @@ interface Endpoint {
   eventTypes: string[]
   enabled: boolean
   secret?: string
+  createdAt?: string
 }
 
 async function create(body: unknown = { url: URL_OK, eventTypes: ['user.created'] }, key = SK) {
@@ -77,6 +78,8 @@ describe('authentication', () => {
     ['GET', `${PATH}/${id}/deliveries/${id}`],
     ['POST', `${PATH}/${id}/test`],
     ['POST', `${PATH}/${id}/deliveries/${id}/redeliver`],
+    ['POST', `${PATH}/${id}/secret/rotate`],
+    ['DELETE', `${PATH}/${id}/secret/previous`],
   ] as const
 
   test.each(routes)('%s %s requires a secret key', async (method, path) => {
@@ -118,6 +121,7 @@ describe('POST /v1/admin/webhook-endpoints', () => {
       disabledReason: null,
       failingSince: null,
       lastFailedAt: null,
+      rotationOverlapEndsAt: null,
       secret: expect.stringMatching(/^whsec_[A-Za-z0-9+/]{43}=$/),
       createdAt: deps.clock.now().toISOString(),
       updatedAt: deps.clock.now().toISOString(),
@@ -617,5 +621,185 @@ describe('POST /v1/admin/webhook-endpoints/:id/deliveries/:deliveryId/redeliver'
       headers,
     })
     expect(sent.status).toBe(200)
+  })
+})
+
+describe('POST /v1/admin/webhook-endpoints/:id/secret/rotate', () => {
+  const rotatePath = (id: string) => `${PATH}/${id}/secret/rotate`
+  const previousPath = (id: string) => `${PATH}/${id}/secret/previous`
+  const DAY_MS = 24 * 60 * 60 * 1000
+
+  test('answers the new secret once, with when the previous one stops signing, and tells intermediaries not to keep it', async () => {
+    const { body: created } = await create()
+    deps.clock.advance('5m')
+    const res = await call('POST', rotatePath(created.id))
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const rotated = (await res.json()) as Endpoint & { rotationOverlapEndsAt: string }
+    expect<unknown>(rotated).toEqual({
+      id: created.id,
+      url: URL_OK,
+      eventTypes: ['user.created'],
+      enabled: true,
+      disabledReason: null,
+      failingSince: null,
+      lastFailedAt: null,
+      rotationOverlapEndsAt: new Date(deps.clock.now().getTime() + DAY_MS).toISOString(),
+      secret: expect.stringMatching(/^whsec_[A-Za-z0-9+/]{43}=$/),
+      createdAt: created.createdAt,
+      updatedAt: deps.clock.now().toISOString(),
+    })
+    expect(rotated.secret).not.toBe(created.secret)
+
+    // Nothing reads either secret back: not a read, a list, an update or the audit log, which
+    // says a rotation happened and until when the previous secret signs.
+    for (const [method, path, payload] of [
+      ['GET', PATH, undefined],
+      ['GET', `${PATH}/${created.id}`, undefined],
+      ['PATCH', `${PATH}/${created.id}`, { enabled: false }],
+      ['GET', '/v1/admin/audit-logs', undefined],
+    ] as const) {
+      const text = await (await call(method, path, SK, payload)).text()
+      for (const secret of [created.secret as string, rotated.secret as string]) {
+        expect(text).not.toContain(secret)
+        expect(text).not.toContain(secret.slice('whsec_'.length))
+      }
+      expect(text).not.toContain('whsec_')
+    }
+    const read = (await (await call('GET', `${PATH}/${created.id}`)).json()) as Record<
+      string,
+      unknown
+    >
+    expect(read.rotationOverlapEndsAt).toBe(rotated.rotationOverlapEndsAt)
+    // No field of a read is even named like a secret: the time has a name of its own, so
+    // that nothing which scrubs or flags secret-looking keys ever has to make an exception.
+    expect(Object.keys(read).filter((key) => /secret|token|key/i.test(key))).toEqual([])
+    const audit = (await (await call('GET', '/v1/admin/audit-logs')).json()) as {
+      data: { action: string; actor: { type: string }; metadata: unknown }[]
+    }
+    const entry = audit.data.find((one) => one.action === 'webhook_endpoint.secret_rotated')
+    expect(entry?.actor.type).toBe('admin')
+    expect(entry?.metadata).toEqual({ rotationOverlapEndsAt: rotated.rotationOverlapEndsAt })
+  })
+
+  test.each([
+    ['a secret of the caller’s', { secret: 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw' }],
+    ['an overlap of the caller’s', { overlap: '1s' }],
+    ['the previous secret’s end', { rotationOverlapEndsAt: '2030-01-01T00:00:00.000Z' }],
+  ])('takes nothing from the request: %s changes nothing about what is made', async (_, body) => {
+    const { body: created } = await create()
+    const res = await call('POST', rotatePath(created.id), SK, body)
+    expect(res.status).toBe(200)
+    const rotated = (await res.json()) as Endpoint & { rotationOverlapEndsAt: string }
+    // The server's own secret and the fixed overlap, whatever the body said.
+    expect(rotated.secret).toMatch(/^whsec_[A-Za-z0-9+/]{43}=$/)
+    expect(rotated.secret).not.toBe('whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw')
+    expect(rotated.rotationOverlapEndsAt).toBe(
+      new Date(deps.clock.now().getTime() + DAY_MS).toISOString()
+    )
+  })
+
+  test('a second rotation during the overlap is a 409 with a fixed word, and no secret', async () => {
+    const { body: created } = await create()
+    await call('POST', rotatePath(created.id))
+    const res = await call('POST', rotatePath(created.id))
+    expect(res.status).toBe(409)
+    const text = await res.text()
+    expect(JSON.parse(text)).toMatchObject({
+      code: 'webhook.rotation_refused',
+      params: { reason: 'rotation_in_progress' },
+    })
+    expect(text).not.toContain('whsec_')
+  })
+
+  test('another environment’s key cannot rotate an endpoint or end its overlap: the answer is that of an id nobody has', async () => {
+    const { body: created } = await create()
+    const unknown = await call('POST', rotatePath(TEST_TENANT.environmentId), PROD_SK)
+    const foreign = await call('POST', rotatePath(created.id), PROD_SK)
+    expect([unknown.status, foreign.status]).toEqual([404, 404])
+    expect(await foreign.json()).toEqual(await unknown.json())
+    expect(foreign.headers.get('cache-control')).toBe(unknown.headers.get('cache-control'))
+
+    await call('POST', rotatePath(created.id))
+    const unknownRevoke = await call('DELETE', previousPath(TEST_TENANT.environmentId), PROD_SK)
+    const foreignRevoke = await call('DELETE', previousPath(created.id), PROD_SK)
+    expect([unknownRevoke.status, foreignRevoke.status]).toEqual([404, 404])
+    expect(await foreignRevoke.json()).toEqual(await unknownRevoke.json())
+    // Still under way, for its own environment.
+    const read = (await (await call('GET', `${PATH}/${created.id}`)).json()) as {
+      rotationOverlapEndsAt: string | null
+    }
+    expect(read.rotationOverlapEndsAt).not.toBeNull()
+    expect(
+      deps.activityLog.entries.filter((entry) => entry.type.includes('secret')).map((e) => e.type)
+    ).toEqual(['webhook_endpoint.secret_rotated'])
+  })
+
+  test.each([
+    ['POST', (id: string) => rotatePath(id)],
+    ['DELETE', (id: string) => previousPath(id)],
+  ] as const)('%s on an id that is not a UUID is a validation error', async (method, path) => {
+    const res = await call(method, path('not-a-uuid'))
+    expect(res.status).toBe(422)
+  })
+
+  test('the dashboard’s session can rotate, and the change is recorded as its own', async () => {
+    const { body: created } = await create()
+    const cookie = await dashboardSignIn(app)
+    const res = await app.request(rotatePath(created.id), {
+      method: 'POST',
+      // With the JSON content type and no body, as a browser client sends a call that has none.
+      headers: dashboardHeaders(cookie, TEST_TENANT.environmentId),
+    })
+    expect(res.status).toBe(200)
+    expect(deps.activityLog.entries.at(-1)).toMatchObject({
+      type: 'webhook_endpoint.secret_rotated',
+      actor: { type: 'instance_admin' },
+    })
+  })
+})
+
+describe('DELETE /v1/admin/webhook-endpoints/:id/secret/previous', () => {
+  const rotatePath = (id: string) => `${PATH}/${id}/secret/rotate`
+  const previousPath = (id: string) => `${PATH}/${id}/secret/previous`
+
+  test('ends the overlap: the endpoint has one secret again, no secret is in the answer, and it is recorded', async () => {
+    const { body: created } = await create()
+    await call('POST', rotatePath(created.id))
+    deps.clock.advance('1h')
+    const res = await call('DELETE', previousPath(created.id))
+    expect(res.status).toBe(200)
+    const text = await res.text()
+    expect(text).not.toContain('whsec_')
+    expect(JSON.parse(text)).toEqual({
+      id: created.id,
+      url: URL_OK,
+      eventTypes: ['user.created'],
+      enabled: true,
+      disabledReason: null,
+      failingSince: null,
+      lastFailedAt: null,
+      rotationOverlapEndsAt: null,
+      createdAt: created.createdAt,
+      updatedAt: deps.clock.now().toISOString(),
+    })
+    expect(deps.activityLog.entries.at(-1)).toMatchObject({
+      type: 'webhook_endpoint.previous_secret_revoked',
+      actor: { type: 'admin' },
+      target: { type: 'webhook_endpoint', id: created.id },
+      data: {},
+    })
+    // And a new rotation is possible at once.
+    expect((await call('POST', rotatePath(created.id))).status).toBe(200)
+  })
+
+  test('with no rotation under way it is a 409 with a fixed word', async () => {
+    const { body: created } = await create()
+    const res = await call('DELETE', previousPath(created.id))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({
+      code: 'webhook.rotation_refused',
+      params: { reason: 'no_rotation_in_progress' },
+    })
   })
 })

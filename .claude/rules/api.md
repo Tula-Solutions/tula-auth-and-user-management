@@ -36,6 +36,10 @@ paths:
 - A route that makes the server call an operator's address on demand (a webhook test event,
   a delivery sent again) has a per-environment rate limit of its own, mounted after
   `secretKey()`, and answers only the outcome, a status code and a duration.
+- A route that hands out a secret (a webhook endpoint's registration, a secret rotation)
+  takes none from the request, answers it once with `Cache-Control: no-store`, and no other
+  route returns it or any part of it. A webhook delivery is signed only in the service's
+  `signatures`, through `request`.
 - The server calls an address an operator typed only through `~/lib/outbound`
   (`Outbound.check` when the address is saved, `Outbound.request` to call it), with
   `deps.outbound`. Never `fetch`.

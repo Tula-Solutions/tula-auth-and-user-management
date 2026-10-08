@@ -50,6 +50,8 @@ test('an endpoint id is stored once', async () => {
     url: 'https://hooks.example.com/',
     eventTypes: ['user.created'],
     secret: 'v1.sealed',
+    previousSecret: null,
+    previousSecretExpiresAt: null,
     enabled: true,
     disabledReason: null,
     failingSince: null,

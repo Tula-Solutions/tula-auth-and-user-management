@@ -196,6 +196,14 @@ export const ERROR_DEFINITIONS = {
     status: 409,
     message: 'This delivery cannot be sent again.',
   },
+  // A signing secret cannot be replaced, or its overlap ended, right now (ADR 0034).
+  // `params.reason` is a fixed word: `rotation_in_progress` (two secrets already sign),
+  // `no_rotation_in_progress` (there is no previous secret to revoke) or `secret_unreadable`
+  // (the server cannot open the current secret, so it could not keep signing).
+  'webhook.rotation_refused': {
+    status: 409,
+    message: 'The signing secret cannot be changed now.',
+  },
 
   // Passkeys (ADR 0027). A failed passkey sign-in is always `auth.invalid_credentials`.
   'passkey.registration_failed': {

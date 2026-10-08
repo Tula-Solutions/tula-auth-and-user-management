@@ -327,4 +327,22 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     target: aboutWebhookEndpoint,
     data: { reason: 'failing' },
   },
+  'webhook_endpoint.secret_rotated': {
+    id: eventId(31),
+    type: 'webhook_endpoint.secret_rotated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: { rotationOverlapEndsAt: '2026-10-09T09:30:00.000Z' },
+  },
+  'webhook_endpoint.previous_secret_revoked': {
+    id: eventId(32),
+    type: 'webhook_endpoint.previous_secret_revoked',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: {},
+  },
 }

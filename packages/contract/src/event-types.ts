@@ -67,6 +67,11 @@ export const ACTIVITY_TYPES = [
   // The server switched an endpoint off by itself: its deliveries kept failing, or it answered
   // `410 Gone`. `reason` says which. Switching it back on is a `webhook_endpoint.updated`.
   'webhook_endpoint.disabled',
+  // An endpoint's signing secret was replaced: the new one signs beside the previous one until
+  // `rotationOverlapEndsAt`. Nothing of either secret is ever in the event.
+  'webhook_endpoint.secret_rotated',
+  // An administrator ended that overlap early: the previous secret stopped signing at once.
+  'webhook_endpoint.previous_secret_revoked',
 ] as const
 
 /** A recorded action type: one of {@link ACTIVITY_TYPES}. */
@@ -131,6 +136,8 @@ export const EVENT_TARGET_TYPES = {
   'webhook_endpoint.updated': 'webhook_endpoint',
   'webhook_endpoint.deleted': 'webhook_endpoint',
   'webhook_endpoint.disabled': 'webhook_endpoint',
+  'webhook_endpoint.secret_rotated': 'webhook_endpoint',
+  'webhook_endpoint.previous_secret_revoked': 'webhook_endpoint',
 } as const satisfies Record<ActivityType, AuditTargetType>
 
 /** What an event of type `T` is about. */

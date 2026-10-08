@@ -10,6 +10,7 @@ import { WEBHOOK_DELIVERY_LIST_WINDOW } from '~/modules/webhook/service'
 export {
   CreatedWebhookEndpointSchema,
   CreateWebhookEndpointRequestSchema,
+  RotatedWebhookSecretSchema,
   SendTestWebhookRequestSchema,
   UpdateWebhookEndpointRequestSchema,
   WebhookDeliveryDetailSchema,

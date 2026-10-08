@@ -333,7 +333,10 @@ export const OAuthStepSchema = z
  *   `webhook-signature`, of which one `v1,<base64>` entry is the HMAC-SHA256 of
  *   `<id>.<timestamp>.<body>` under `secret` (the `whsec_…` value the registration returned);
  *   a body that is an event of the contract whose `id` is the `webhook-id`; and `body`,
- *   matched as a request step's `expect.body` is.
+ *   matched as a request step's `expect.body` is. For a secret rotation (two secrets sign
+ *   during its overlap) the expectation can also name a secret that must sign as well
+ *   (`alsoSecrets`), secrets that must not (`notSecrets`: one that was replaced and whose
+ *   overlap is over), and how many signatures the header holds (`signatures`: 1 or 2).
  *
  * A runner needs a listener the server under test can reach, which is why a scenario with
  * such a step sets `needsWebhookReceiver` and is skipped by a target that has none. Where the
@@ -369,6 +372,18 @@ export const WebhookStepSchema = z
             body: z.unknown().optional(),
             /** Variable that receives the event's id (the `webhook-id` header). */
             captureId: z.string().min(1).optional(),
+            /**
+             * A secret that must sign the delivery as well as `secret`: the other one of a
+             * rotation's overlap. One at most: a server never signs with more than two.
+             */
+            alsoSecrets: z.array(z.string()).min(1).max(1).optional(),
+            /**
+             * Secrets no entry of the header may be a signature for: what a rotation replaced,
+             * once its overlap has ended or was ended early.
+             */
+            notSecrets: z.array(z.string()).min(1).max(4).optional(),
+            /** How many signatures the header holds, exactly: 1, or 2 during an overlap. */
+            signatures: z.number().int().min(1).max(2).optional(),
           })
           .strict()
           .optional(),

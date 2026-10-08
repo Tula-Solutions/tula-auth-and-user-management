@@ -268,3 +268,47 @@ export async function receiveWebhook(request: Request): Promise<Response> {
   return new Response(null, { status: 204 })
 }
 // #endregion
+
+/** The secret a rotation replaced, kept in your secret manager until the overlap has ended. */
+declare const previousWebhookSecret: string | undefined
+
+/** Replace an endpoint's signing secret: the new one is returned once, like the first. */
+export async function rotateWebhookSecret(
+  endpointId: string,
+  storeSecrets: (secrets: { current: string; previousUntil: string }) => Promise<void>
+) {
+  // #region webhook-rotate
+  const { data: rotated } = await admin.call('rotateWebhookSecret', {
+    params: { id: endpointId },
+  })
+  // The only time the new secret is returned. Keep the one you had beside it: until
+  // `rotationOverlapEndsAt` (24 hours from now) every delivery is signed with both.
+  await storeSecrets({ current: rotated.secret, previousUntil: rotated.rotationOverlapEndsAt })
+  // #endregion
+}
+
+// #region webhook-verify-rotating
+// While a secret is being replaced the receiver holds two: the new one and, until the
+// overlap has ended, the one before it. A delivery is accepted if either signed it.
+export async function verifyWhileRotating(request: Request): Promise<TulaWebhookEvent> {
+  const secrets = previousWebhookSecret ? [webhookSecret, previousWebhookSecret] : webhookSecret
+  return verifyWebhook(await request.text(), request.headers, secrets)
+}
+// #endregion
+
+/** End an overlap early: for a previous secret that has leaked. */
+export async function revokePreviousWebhookSecret(endpointId: string) {
+  // #region webhook-revoke-previous
+  // Once the receiver verifies with the new secret: stop the old one signing now, instead of
+  // at the end of the 24 hours. Then take it out of the receiver.
+  try {
+    await admin.call('revokePreviousWebhookSecret', { params: { id: endpointId } })
+  } catch (error) {
+    // 409 `webhook.rotation_refused`, `params.reason: 'no_rotation_in_progress'`: the overlap
+    // had already ended, and the old secret signs nothing.
+    if (!isTulaAdminError(error) || error.code !== 'webhook.rotation_refused') {
+      throw error
+    }
+  }
+  // #endregion
+}
