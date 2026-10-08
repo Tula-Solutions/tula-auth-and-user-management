@@ -3,9 +3,12 @@ import { join } from 'node:path'
 import { signWebhook, webhookSecretBytes } from '../../packages/contract/src/webhook-signature'
 import {
   deliveriesLogged,
+  OWED_WAIT_MS,
   type Received,
   receivedRequests,
+  STUCK_WITHIN_MS,
   signedEvent,
+  WEBHOOK_WAITING_TOO_LONG_MS,
 } from '../../scripts/worker-check/lib'
 
 const root = join(import.meta.dir, '..', '..')
@@ -154,6 +157,36 @@ describe('a request is the server’s only with the endpoint’s signature', () 
     expect(
       await signedEvent({ ...(await request(secret)), signature: null }, secret, now)
     ).toBeNull()
+  })
+})
+
+// The check leaves an owed event waiting long enough for the server's diagnostics to call
+// it stuck. Two numbers in two places would drift apart silently: the check would then pass
+// its "more than a minute" before the server had looked, or time out waiting for it.
+describe('how long the check waits, against the server’s own threshold', () => {
+  test('the server calls an event stuck after a minute', () => {
+    expect(WEBHOOK_WAITING_TOO_LONG_MS).toBe(60_000)
+  })
+
+  test('the owed event waits longer than that, and the check allows longer still', () => {
+    expect(OWED_WAIT_MS).toBe(65_000)
+    expect(OWED_WAIT_MS).toBeGreaterThan(WEBHOOK_WAITING_TOO_LONG_MS)
+    expect(STUCK_WITHIN_MS).toBe(120_000)
+    expect(STUCK_WITHIN_MS).toBeGreaterThan(OWED_WAIT_MS)
+  })
+
+  test('the check script uses those two, and no number of its own', async () => {
+    const source = await Bun.file(join(root, 'scripts/worker-check/check.ts')).text()
+    expect(source).toContain('owedSince + STUCK_WITHIN_MS')
+    expect(source).toContain('Date.now() - owedSince < OWED_WAIT_MS')
+    expect(source).not.toMatch(/const (OWED_WAIT_MS|STUCK_WITHIN_MS)\b/)
+  })
+
+  test('the instance service checks against the same constant', async () => {
+    const service = await import('../../apps/api/src/modules/instance/constants')
+    expect(service.WEBHOOK_WAITING_TOO_LONG_MS).toBe(WEBHOOK_WAITING_TOO_LONG_MS)
+    const source = await Bun.file(join(root, 'apps/api/src/modules/instance/service.ts')).text()
+    expect(source).not.toMatch(/const WEBHOOK_WAITING_TOO_LONG_MS\s*=/)
   })
 })
 

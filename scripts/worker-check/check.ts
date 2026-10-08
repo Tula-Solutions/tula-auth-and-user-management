@@ -23,16 +23,18 @@
  * It prints what it saw and never a key, a token or a signing secret. Exit code 0 only when
  * every step held.
  */
-import { deliveriesLogged, receivedRequests, signedEvent } from './lib'
+import {
+  deliveriesLogged,
+  OWED_WAIT_MS,
+  receivedRequests,
+  STUCK_WITHIN_MS,
+  signedEvent,
+} from './lib'
 
 /** The receiver's address, as the worker sees it: its own loopback (`receiver.ts`). */
 const RECEIVER_URL = 'http://127.0.0.1:8787/hook'
 /** The status the receiver answers with. */
 const RECEIVER_STATUS = 204
-/** How long the owed event is left waiting with no worker: the diagnostics' minute and a bit. */
-const OWED_WAIT_MS = 65_000
-/** By when, counted from the owed event, the diagnostics must have called it stuck. */
-const STUCK_WITHIN_MS = 120_000
 /** How long the worker has, once started, to make the delivery (a round every 5 s). */
 const DELIVERED_WITHIN_MS = 90_000
 /** How long the worker has to settle every environment's waiting events after that. */

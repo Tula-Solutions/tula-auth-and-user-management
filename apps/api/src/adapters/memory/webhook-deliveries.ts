@@ -97,6 +97,12 @@ export class MemoryWebhookDeliveryStore implements WebhookDeliveryStore {
   }
 
   /** @inheritdoc */
+  async oldestPendingEventAt(environmentId: string): Promise<Date | null> {
+    const [oldest] = await this.pendingEvents(environmentId, 1)
+    return oldest?.occurredAt ?? null
+  }
+
+  /** @inheritdoc */
   async eventsById(environmentId: string, eventIds: readonly string[]): Promise<OutboxEvent[]> {
     return this.#activityLog.outbox
       .filter((row) => row.environmentId === environmentId && eventIds.includes(row.id))

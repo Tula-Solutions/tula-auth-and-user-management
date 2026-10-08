@@ -1,4 +1,18 @@
+import { WEBHOOK_WAITING_TOO_LONG_MS } from '../../apps/api/src/modules/instance/constants'
 import { verifyWebhook } from '../../packages/admin/src/webhook'
+
+// The server's own threshold, not a copy of it: `.claude/hooks/worker-check.test.ts` holds
+// the three numbers and their order.
+export { WEBHOOK_WAITING_TOO_LONG_MS }
+
+/**
+ * How long the worker check leaves the owed event waiting with no worker: the time after
+ * which the server's diagnostics call an event stuck, and a bit.
+ */
+export const OWED_WAIT_MS = WEBHOOK_WAITING_TOO_LONG_MS + 5_000
+
+/** By when, counted from the owed event, the diagnostics must have called it stuck. */
+export const STUCK_WITHIN_MS = OWED_WAIT_MS + 55_000
 
 /** One request the receiver of the worker check was sent, as it wrote it to its output. */
 export interface Received {

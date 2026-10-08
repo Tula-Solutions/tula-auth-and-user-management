@@ -462,8 +462,9 @@ describe('the webhook_worker check', () => {
       id: 'webhook_worker',
       status: 'fail',
       summary:
-        'Events have waited a minute or more to be queued for delivery, in 1 environment: nothing is delivering them.',
-      fix: 'WEBHOOK_WORKER is `separate`, so no API instance makes a delivery: a worker process must be running. Start one (the same image with the command `bun run src/worker.ts`; with Compose, `docker compose --profile app --profile worker up -d`) and read its log, or set WEBHOOK_WORKER=api on every instance and restart them.',
+        'Events have waited a minute or more to be queued for delivery, in 1 environment: the worker is not running, or it cannot keep up or cannot work.',
+      // What the check knows is that events wait. It never saw a worker, running or not.
+      fix: 'WEBHOOK_WORKER is `separate`, so no API instance makes a delivery: only a worker process does, and this check sees what waits, not the worker. See whether one is running (the same image with the command `bun run src/worker.ts`; with Compose, `docker compose --profile app --profile worker up -d`). If one is, read its log: `could not run the webhook delivery job` or `webhook delivery failed in one environment` means it cannot work, and rounds that finish while events still wait mean it cannot keep up. Or set WEBHOOK_WORKER=api on every instance and restart them.',
     })
     expect(Instance.WEBHOOK_WAITING_TOO_LONG_MS).toBe(60_000)
   })
@@ -495,7 +496,7 @@ describe('the webhook_worker check', () => {
     deps.clock.advance('2m')
     const check = await worker({ ...deps, config: separate })
     expect(check.summary).toBe(
-      'Events have waited a minute or more to be queued for delivery, in 2 environments: nothing is delivering them.'
+      'Events have waited a minute or more to be queued for delivery, in 2 environments: the worker is not running, or it cannot keep up or cannot work.'
     )
     expect(JSON.stringify(check)).not.toContain(other)
     expect(JSON.stringify(check)).not.toContain(TEST_TENANT.environmentId)
@@ -517,7 +518,7 @@ describe('the webhook_worker check', () => {
   test('a store that fails: skipped, with nothing of the driver’s message', async () => {
     const { deps } = await setup()
     const broken = {
-      pendingEvents: async () => {
+      oldestPendingEventAt: async () => {
         throw new Error(`connection terminated ${CANARIES[0]}`)
       },
     }
@@ -534,19 +535,18 @@ describe('the webhook_worker check', () => {
     expectNoCanary(result)
   })
 
-  test('an event’s payload never reaches the answer', async () => {
+  test('it reads when the oldest event happened and no event: a payload never leaves the store', async () => {
     const { deps } = await setup()
+    let asked = 0
     const events = {
-      pendingEvents: async () => [
-        {
-          id: 'CANARY-event-id',
-          projectId: TEST_TENANT.projectId,
-          environmentId: TEST_TENANT.environmentId,
-          type: 'CANARY-type',
-          payload: { secret: 'CANARY-payload' },
-          occurredAt: new Date(deps.clock.now().getTime() - 3_600_000),
-        },
-      ],
+      oldestPendingEventAt: async () => {
+        asked += 1
+        return new Date(deps.clock.now().getTime() - 3_600_000)
+      },
+      // The read that returns whole rows, payload included, is not the check's to make.
+      pendingEvents: async () => {
+        throw new Error('the check read an event: CANARY-payload')
+      },
     }
     const result = await Instance.diagnostics({
       ...deps,
@@ -554,10 +554,11 @@ describe('the webhook_worker check', () => {
       webhookDeliveries: events as unknown as TestDeps['webhookDeliveries'],
     })
     expect(byId(result.checks, 'webhook_worker').status).toBe('fail')
+    expect(asked).toBe(1)
     expectNoCanary(result)
   })
 
-  test('more environments than one run reads: it says how many it looked at, and reads one event of each', async () => {
+  test('more environments than one run reads: it says how many it looked at, and asks once for each', async () => {
     const { deps } = await setup()
     for (let index = 1; index <= Instance.MAX_ENVIRONMENTS_CHECKED; index += 1) {
       deps.environments.add({
@@ -567,11 +568,11 @@ describe('the webhook_worker check', () => {
         createdAt: new Date(deps.clock.now().getTime() + index),
       })
     }
-    const limits: number[] = []
-    const pendingEvents = deps.webhookDeliveries.pendingEvents.bind(deps.webhookDeliveries)
-    deps.webhookDeliveries.pendingEvents = async (environmentId, limit) => {
-      limits.push(limit)
-      return pendingEvents(environmentId, limit)
+    const asked: string[] = []
+    const oldest = deps.webhookDeliveries.oldestPendingEventAt.bind(deps.webhookDeliveries)
+    deps.webhookDeliveries.oldestPendingEventAt = async (environmentId) => {
+      asked.push(environmentId)
+      return oldest(environmentId)
     }
     const check = await worker({ ...deps, config: separate })
     expect(check.status).toBe('warn')
@@ -579,8 +580,9 @@ describe('the webhook_worker check', () => {
       'Only the first 200 of 201 environments were looked at: no event of theirs has waited a minute or more to be queued for delivery. The other 1 was not read.'
     )
     expect(check.fix).toBeDefined()
-    // One row per environment, and only of the environments it says it looked at.
-    expect(limits).toEqual(Array.from({ length: Instance.MAX_ENVIRONMENTS_CHECKED }, () => 1))
+    // One question per environment, and only of the environments it says it looked at.
+    expect(asked).toHaveLength(Instance.MAX_ENVIRONMENTS_CHECKED)
+    expect(new Set(asked).size).toBe(Instance.MAX_ENVIRONMENTS_CHECKED)
 
     // An overdue event among those it did read is still a failure, and says its scope.
     happen(deps)
@@ -588,7 +590,7 @@ describe('the webhook_worker check', () => {
     const failing = await worker({ ...deps, config: separate })
     expect(failing.status).toBe('fail')
     expect(failing.summary).toBe(
-      'Events have waited a minute or more to be queued for delivery, in 1 environment of the first 200 of 201: nothing is delivering them.'
+      'Events have waited a minute or more to be queued for delivery, in 1 environment of the first 200 of 201: the worker is not running, or it cannot keep up or cannot work.'
     )
   })
 
@@ -604,10 +606,10 @@ describe('the webhook_worker check', () => {
     }
     let calls = 0
     const slow = {
-      pendingEvents: async () => {
+      oldestPendingEventAt: async () => {
         calls += 1
         await new Promise((resolve) => setTimeout(resolve, 80))
-        return []
+        return null
       },
     }
     const result = await Instance.diagnostics(
@@ -624,7 +626,7 @@ describe('the webhook_worker check', () => {
     const { deps } = await setup()
     let calls = 0
     const stuck = {
-      pendingEvents: () => {
+      oldestPendingEventAt: () => {
         calls += 1
         return new Promise<never>(() => {})
       },

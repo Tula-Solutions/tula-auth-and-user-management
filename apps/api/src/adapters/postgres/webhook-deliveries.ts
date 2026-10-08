@@ -111,6 +111,20 @@ export class PostgresWebhookDeliveryStore implements WebhookDeliveryStore {
   }
 
   /** @inheritdoc */
+  async oldestPendingEventAt(environmentId: string): Promise<Date | null> {
+    const [oldest] = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({ occurredAt: events.occurredAt })
+        .from(events)
+        .where(and(eq(events.environmentId, environmentId), isNull(events.deliveredAt)))
+        // The same index and order as `pendingEvents`, one column of one row.
+        .orderBy(asc(events.occurredAt), asc(events.id))
+        .limit(1)
+    )
+    return oldest?.occurredAt ?? null
+  }
+
+  /** @inheritdoc */
   async eventsById(environmentId: string, eventIds: readonly string[]): Promise<OutboxEvent[]> {
     if (eventIds.length === 0) {
       return []
