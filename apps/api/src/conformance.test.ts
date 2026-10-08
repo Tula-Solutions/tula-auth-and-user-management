@@ -66,6 +66,8 @@ describe('conformance scenarios, in process', () => {
       'sign-in denied by a hook',
       'claims added by a hook',
       'sign-in hook that times out',
+      'Microsoft sign-up and sign-in',
+      'Microsoft account linking',
     ])
   })
 

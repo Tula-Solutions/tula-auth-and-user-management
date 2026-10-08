@@ -21,6 +21,7 @@ import { isEcP256PrivateKey } from '~/lib/pkcs8'
 import * as Audit from '~/modules/audit/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
+import { isSignInMethod, unusableField } from '~/modules/oauth/provider-record'
 import * as Settings from '~/modules/settings/service'
 import type { OAuthCredentials, OAuthProfile } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
@@ -102,10 +103,13 @@ export async function secretOpens(
 }
 
 /**
- * The OAuth providers an environment offers at sign-in: configured **and** enabled.
+ * The OAuth providers an environment offers at sign-in: configured, enabled **and** with
+ * nothing stored that rules them out (`isSignInMethod`: a Microsoft row whose `tenant` the
+ * server cannot use is not a method, because every start through it is refused).
  *
  * Depends on the environment alone, never on an identifier or an account, like every other
- * first factor.
+ * first factor. Every count of the ways to sign in goes through this or through
+ * `isSignInMethod` itself, so they agree.
  *
  * @param deps - Provider store.
  * @param tenant - The environment.
@@ -117,7 +121,7 @@ export async function enabledProviders(
 ): Promise<OAuthProvider[]> {
   const enabled = new Set(
     (await deps.oauthProviders.list(tenant.environmentId))
-      .filter((record) => record.enabled)
+      .filter(isSignInMethod)
       .map((record) => record.provider)
   )
   return OAUTH_PROVIDERS.filter((provider) => enabled.has(provider))
@@ -129,12 +133,18 @@ export async function enabledProviders(
  * Checked on every step that uses the provider (start, callback, exchange), so a provider
  * switched off while an attempt is under way stops working at once.
  *
+ * Credentials the server cannot use answer exactly as a provider that is off does, and at the
+ * same point (before a redirect URL is judged, a ceiling charged or an attempt made): an
+ * anonymous caller learns that the method is not available and nothing about why. The reason
+ * is logged for the operator, by field name and never by value.
+ *
  * @param deps - Provider store and secret box.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @returns The opened credentials. Never log or return them.
- * @throws AuthError `auth.method_disabled` when the provider is not configured, not enabled, or
- *   its stored secret does not open (a changed master key): the method is unusable either way.
+ * @throws AuthError `auth.method_disabled` when the provider is not configured, not enabled,
+ *   its stored secret does not open (a changed master key) or a stored field is one the
+ *   provider cannot be called with (Microsoft's `tenant`): the method is unusable either way.
  */
 export async function credentials(
   deps: Pick<Deps, 'oauthProviders' | 'secretBox'>,
@@ -143,6 +153,15 @@ export async function credentials(
 ): Promise<OAuthCredentials> {
   const record = await deps.oauthProviders.find(tenant.environmentId, provider)
   if (!record?.enabled) {
+    throw new AuthError('auth.method_disabled', { method: strategyOf(provider) })
+  }
+  const field = unusableField(record)
+  if (field !== null) {
+    logger.error('stored OAuth credentials cannot be used', {
+      environmentId: tenant.environmentId,
+      provider,
+      field,
+    })
     throw new AuthError('auth.method_disabled', { method: strategyOf(provider) })
   }
   try {
@@ -169,6 +188,7 @@ function toSettings(
     clientId: record?.clientId ?? null,
     teamId: record?.config.teamId ?? null,
     keyId: record?.config.keyId ?? null,
+    tenant: record?.config.tenant ?? null,
     callbackUrl: callbackUrl(config, provider),
     updatedAt: record?.updatedAt.toISOString() ?? null,
   }
@@ -205,12 +225,14 @@ const PROVIDER_FIELDS = {
   google: { secret: 'clientSecret', config: [] },
   github: { secret: 'clientSecret', config: [] },
   apple: { secret: 'privateKey', config: ['teamId', 'keyId'] },
+  // `tenant` has no default: which Microsoft accounts may sign in is the operator's decision.
+  microsoft: { secret: 'clientSecret', config: ['tenant'] },
 } as const satisfies Record<
   OAuthProvider,
-  { secret: keyof SecretMaterial; config: readonly ('teamId' | 'keyId')[] }
+  { secret: keyof SecretMaterial; config: readonly ('teamId' | 'keyId' | 'tenant')[] }
 >
 
-const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId'] as const
+const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId', 'tenant'] as const
 
 /**
  * Refuse a change that would leave an environment with no way to sign in: its settings enable
@@ -237,6 +259,8 @@ async function requireWayIn(
 
 /**
  * Set a provider's credentials and whether sign-in offers it.
+ *
+ * Microsoft also takes `tenant` (which accounts may sign in); it is required and not a secret.
  *
  * The secret (a client secret, or Apple's private key) is sealed with the secret box, bound to
  * the environment and the provider, before it is stored, and is never returned or logged. It may
@@ -300,7 +324,7 @@ export async function update(
     }
 
     const now = deps.clock.now()
-    const config = { teamId: input.teamId, keyId: input.keyId }
+    const config = { teamId: input.teamId, keyId: input.keyId, tenant: input.tenant }
     // Typed by the event contract: the names of what changed are a closed set there.
     const changed: EventData<'oauth_provider.updated'>['changed'] = [
       ...(existing?.clientId !== input.clientId ? (['clientId'] as const) : []),

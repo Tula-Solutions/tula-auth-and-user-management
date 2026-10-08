@@ -34,7 +34,7 @@
             "properties": {
               "generate": {
                 "type": "string",
-                "enum": ["email", "password"]
+                "enum": ["email", "password", "uuid"]
               }
             },
             "required": ["generate"],
@@ -299,6 +299,12 @@
                     "type": "string"
                   },
                   "subject": {
+                    "type": "string"
+                  },
+                  "tenantId": {
+                    "type": "string"
+                  },
+                  "objectId": {
                     "type": "string"
                   },
                   "unverified": {
@@ -845,6 +851,12 @@
                     "type": "string"
                   },
                   "subject": {
+                    "type": "string"
+                  },
+                  "tenantId": {
+                    "type": "string"
+                  },
+                  "objectId": {
                     "type": "string"
                   },
                   "unverified": {

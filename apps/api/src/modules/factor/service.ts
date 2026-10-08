@@ -43,6 +43,10 @@ const FIRST_FACTORS: readonly FirstFactor[] = [
   { strategy: 'oauth_google', enabled: (_settings, providers) => providers.includes('google') },
   { strategy: 'oauth_github', enabled: (_settings, providers) => providers.includes('github') },
   { strategy: 'oauth_apple', enabled: (_settings, providers) => providers.includes('apple') },
+  {
+    strategy: 'oauth_microsoft',
+    enabled: (_settings, providers) => providers.includes('microsoft'),
+  },
 ]
 
 /**

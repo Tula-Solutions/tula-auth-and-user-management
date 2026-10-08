@@ -1,0 +1,564 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "Microsoft sign-up and sign-in",
+  "description": "An environment signs users in with Microsoft using its own credentials, which name the accounts that may sign in (`tenant`: common, organizations, consumers or one tenant id) and are refused without it. An account is the pair of the tenant id and the object id in Microsoft’s token, never an address: the same pair signs the same user in whatever address Microsoft reports later, and the same object id in another tenant is another account. An account of a tenant the environment does not accept is refused at the callback. An address counts as verified only when the token carries the verified-domain claim (xms_edov); without it a new account is refused. Uses the server’s mock provider (OAUTH_MOCK_PROVIDER, local tier only), whose consent form takes the tenant id, the object id and whether the claim is present. The provider’s credentials are removed afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "renamed": {
+      "generate": "email"
+    },
+    "unvouched": {
+      "generate": "email"
+    },
+    "outsider": {
+      "generate": "email"
+    },
+    "tenant": {
+      "generate": "uuid"
+    },
+    "otherTenant": {
+      "generate": "uuid"
+    },
+    "account": {
+      "generate": "uuid"
+    },
+    "otherAccount": {
+      "generate": "uuid"
+    }
+  },
+  "steps": [
+    {
+      "name": "credentials that do not say which accounts may sign in are refused",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/microsoft",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-microsoft-client",
+          "clientSecret": "conformance-microsoft-secret"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed",
+          "detail": "$any",
+          "errors": "$any"
+        }
+      }
+    },
+    {
+      "name": "a tenant that is a domain name, not an id, is refused",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/microsoft",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-microsoft-client",
+          "clientSecret": "conformance-microsoft-secret",
+          "tenant": "contoso.onmicrosoft.com"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "validation.failed",
+          "detail": "$any",
+          "errors": "$any"
+        }
+      }
+    },
+    {
+      "name": "an administrator accepts the accounts of one organization",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/microsoft",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-microsoft-client",
+          "clientSecret": "conformance-microsoft-secret",
+          "tenant": "{{tenant}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "microsoft",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-microsoft-client",
+          "tenant": "{{tenant}}",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-microsoft-secret"]
+      }
+    },
+    {
+      "name": "the client configuration offers it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": "$any",
+          "signIn": {
+            "methods": "$any",
+            "oauth": ["microsoft"]
+          },
+          "signUp": "$any",
+          "password": "$any",
+          "mfa": "$any"
+        }
+      }
+    },
+    {
+      "name": "start continuing with Microsoft",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "microsoft",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_microsoft"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "Microsoft vouches for an account of that organization, its domain verified",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{email}}",
+        "tenantId": "{{tenant}}",
+        "objectId": "{{account}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "the account is created and signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the new account has its Microsoft account connected",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "microsoft",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "start again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "microsoft",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_microsoft"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding"
+      }
+    },
+    {
+      "name": "the same tenant id and object id, now with another address and no verified-domain claim",
+      "oauth": {
+        "authorizationUrl": "{{bUrl}}",
+        "email": "{{renamed}}",
+        "tenantId": "{{tenant}}",
+        "objectId": "{{account}}",
+        "unverified": true,
+        "captureTicket": "bTicket",
+        "captureAttempt": "bId"
+      }
+    },
+    {
+      "name": "sign the same user in: the account is the two ids, not the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{bTicket}}",
+          "attemptId": "{{bId}}",
+          "binding": "{{bBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "someone starts with an account of another organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "microsoft",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_microsoft"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "cUrl": "authorizationUrl",
+        "cBinding": "binding"
+      }
+    },
+    {
+      "name": "a tenant the environment does not accept is refused at the callback, with no ticket",
+      "oauth": {
+        "authorizationUrl": "{{cUrl}}",
+        "email": "{{outsider}}",
+        "tenantId": "{{otherTenant}}",
+        "objectId": "{{account}}",
+        "expectError": "oauth.provider_error"
+      }
+    },
+    {
+      "name": "the administrator accepts any Microsoft account instead",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/microsoft",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-microsoft-client",
+          "clientSecret": "conformance-microsoft-secret",
+          "tenant": "common"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "microsoft",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-microsoft-client",
+          "tenant": "common",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-microsoft-secret"]
+      }
+    },
+    {
+      "name": "the other organization’s account, with the same object id, starts again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "microsoft",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_microsoft"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "dUrl": "authorizationUrl",
+        "dBinding": "binding"
+      }
+    },
+    {
+      "name": "Microsoft vouches for it, its domain verified",
+      "oauth": {
+        "authorizationUrl": "{{dUrl}}",
+        "email": "{{outsider}}",
+        "tenantId": "{{otherTenant}}",
+        "objectId": "{{account}}",
+        "captureTicket": "dTicket",
+        "captureAttempt": "dId"
+      }
+    },
+    {
+      "name": "it is another account, not the first user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{dTicket}}",
+          "attemptId": "{{dId}}",
+          "binding": "{{dBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "outsiderId": "step.userId",
+        "outsiderToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "with a Microsoft account of its own",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{outsiderToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "microsoft",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a new person starts, whose token has no verified-domain claim",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "microsoft",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_microsoft"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "eUrl": "authorizationUrl",
+        "eBinding": "binding"
+      }
+    },
+    {
+      "name": "Microsoft reports an address and nothing that proves it",
+      "oauth": {
+        "authorizationUrl": "{{eUrl}}",
+        "email": "{{unvouched}}",
+        "tenantId": "{{otherTenant}}",
+        "objectId": "{{otherAccount}}",
+        "unverified": true,
+        "captureTicket": "eTicket",
+        "captureAttempt": "eId"
+      }
+    },
+    {
+      "name": "no account is created on an address a tenant administrator may have typed",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{eTicket}}",
+          "attemptId": "{{eId}}",
+          "binding": "{{eBinding}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "oauth.email_unverified",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the microsoft credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/microsoft",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

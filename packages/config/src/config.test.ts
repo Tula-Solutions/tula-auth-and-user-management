@@ -102,12 +102,24 @@ describe('defineConfig', () => {
               keyId: 'KEY1234567',
               privateKey: env('APPLE_PRIVATE_KEY'),
             },
+            microsoft: {
+              clientId: 'ms-client',
+              clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+              tenant: '72F988BF-86F1-41AF-91AB-2D7CD011DB47',
+            },
           },
         },
       },
     })
     const prod = config.environments.prod
     expect(prod?.kind).toBe('production')
+    // The tenant is stored as the server stores it: lower-cased.
+    expect(prod?.providers.microsoft).toEqual({
+      clientId: 'ms-client',
+      clientSecret: { $env: 'MICROSOFT_CLIENT_SECRET' },
+      tenant: '72f988bf-86f1-41af-91ab-2d7cd011db47',
+      enabled: true,
+    })
     expect(prod?.providers.google).toEqual({
       clientId: 'g',
       clientSecret: { $env: 'GOOGLE_CLIENT_SECRET' },
@@ -118,7 +130,70 @@ describe('defineConfig', () => {
       apple: 'APPLE_PRIVATE_KEY',
       github: 'GITHUB_CLIENT_SECRET',
       google: 'GOOGLE_CLIENT_SECRET',
+      microsoft: 'MICROSOFT_CLIENT_SECRET',
     })
+  })
+
+  test.each([
+    ['common', 'common'],
+    ['organizations', 'organizations'],
+    ['consumers', 'consumers'],
+    [' Common ', 'common'],
+    ['9188040d-6c67-4c5b-b112-36a304b66dad', '9188040d-6c67-4c5b-b112-36a304b66dad'],
+  ])('Microsoft’s tenant %p is accepted as %p', (tenant, stored) => {
+    const config = defineConfig({
+      environments: {
+        dev: {
+          providers: { microsoft: { clientId: 'c', clientSecret: env('MS'), tenant } },
+        },
+      },
+    })
+    expect(config.environments.dev?.providers.microsoft?.tenant).toBe(stored)
+  })
+
+  test.each([
+    ['a domain name', 'contoso.onmicrosoft.com'],
+    ['an address of the authority', 'https://login.microsoftonline.com/common'],
+    ['a path', 'common/v2.0'],
+    ['a template', '{tenantid}'],
+    ['a short id', '72f988bf-86f1-41af-91ab'],
+    ['nothing', ''],
+    ['a number', 7],
+  ])('Microsoft’s tenant is refused when it is %s, without repeating it', (_name, tenant) => {
+    const input = {
+      environments: {
+        dev: {
+          providers: { microsoft: { clientId: 'c', clientSecret: { $env: 'MS' }, tenant } },
+        },
+      },
+    }
+    const error = refusal(() => defineConfig(input as never))
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      'environments.dev.providers.microsoft.tenant',
+    ])
+    if (typeof tenant === 'string' && tenant.length > 3) {
+      expect(JSON.stringify([error.message, error.issues])).not.toContain(tenant)
+    }
+  })
+
+  test('Microsoft’s client secret is a reference, as every secret is', () => {
+    const literal = 'literal-microsoft-secret-123'
+    const error = refusal(() =>
+      defineConfig({
+        environments: {
+          dev: {
+            providers: {
+              // @ts-expect-error a secret is never a string in a config file
+              microsoft: { clientId: 'c', clientSecret: literal, tenant: 'common' },
+            },
+          },
+        },
+      })
+    )
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      'environments.dev.providers.microsoft.clientSecret',
+    ])
+    expect(JSON.stringify([error.message, error.issues])).not.toContain(literal)
   })
 
   test('a literal secret is a type error and a run-time error that does not repeat it', () => {
@@ -211,6 +286,16 @@ describe('defineConfig', () => {
         },
       },
       'environments.dev.providers.apple.teamId',
+      '',
+    ],
+    [
+      'Microsoft without its tenant',
+      {
+        environments: {
+          dev: { providers: { microsoft: { clientId: 'c', clientSecret: { $env: 'M' } } } },
+        },
+      },
+      'environments.dev.providers.microsoft.tenant',
       '',
     ],
     ['not an object at all', 'nope', '', ''],
@@ -380,6 +465,7 @@ describe('the example config', () => {
       apple: 'APPLE_PRIVATE_KEY',
       github: 'GITHUB_CLIENT_SECRET',
       google: 'GOOGLE_CLIENT_SECRET',
+      microsoft: 'MICROSOFT_CLIENT_SECRET',
     })
     // The dev entry leaves the password policy to the deployment.
     expect(selectEnvironment(config, 'dev').settings.password).toBeUndefined()

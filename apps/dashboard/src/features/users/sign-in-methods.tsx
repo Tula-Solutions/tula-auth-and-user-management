@@ -9,6 +9,7 @@ const PROVIDER_NAME: Record<string, string> = {
   google: 'Google',
   github: 'GitHub',
   apple: 'Apple',
+  microsoft: 'Microsoft',
 }
 
 /** Display names of second factors; any other is shown as the API names it. */

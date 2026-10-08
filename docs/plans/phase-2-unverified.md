@@ -297,3 +297,15 @@ dashboard in a browser. Not verified:
 | The Next.js example | It does not show a custom claim: `auth().customClaims` is tested against the real API in process, for a token and for a stateful session, not on a page in a browser. |
 | `user.created_at` against `session.created_at` over HTTP | Told apart only in the API's own test, which moves the fixed clock between creating the user and signing in. Scenario 53 cannot: a scenario has no way to move a server's clock, its sign-up and sign-in fall in the same second, and the scenario format compares a claim with a value, not two claims with each other. |
 | A third party's JWT library | The token with `ext` is verified by the API's own verifier and by `@tula/nextjs`. No other verifier was tried. |
+
+## Step 2.5, Microsoft (TULA-12, [ADR 0026](../adr/0026-oauth.md))
+
+| What | What it was tested against instead |
+| --- | --- |
+| **A real Microsoft tenant, app registration and ID token** (work, school and personal accounts) | ID tokens the tests sign with their own keys, published through a stubbed keys document (`adapters/oauth/microsoft.test.ts`), and the API's mock provider for the whole flow (the conformance scenarios, the SDK journeys, the browser tests). No request went to `login.microsoftonline.com`. |
+| **That `xms_edov` arrives as a JSON boolean** | Microsoft's optional-claims reference ("Boolean value indicating whether the user's email domain owner has been verified"), as read on 2026-10-08. A token that carried the string `"true"` would be read as unverified. |
+| **Whether a personal Microsoft account's token ever carries `xms_edov`** (tenant `consumers`, and the personal accounts `common` admits) | Nothing. The optional-claims reference describes the claim as the verification of the address's *domain owner* and does not say what a personal account gets; no personal-account token was looked at. If it never carries the claim, personal accounts cannot sign up with Microsoft at all (they can still be connected from a signed-in profile). `docs/providers/microsoft.md` says this at its top. |
+| **That every signing key in Microsoft's keys document carries `issuer`**, templated for organizations and exact for the personal-account tenant | Microsoft's "Validate the signing key issuer" section, as read. The adapter refuses a key without one, so a keys document that differed would fail every sign-in, closed. |
+| **The portal steps of `docs/providers/microsoft.md`**, among them adding `xms_edov` as an optional claim | Written from the documentation; not clicked through. |
+| **Microsoft's token endpoint refusing a wrong PKCE verifier** | The requests the adapter builds (unit tests) and the mock provider, which refuses one. |
+| **The button against Microsoft's branding guidelines** | Not checked against the guidelines' page in this change: the four-square logo and its colours are drawn from memory of them, and the button keeps the theme's surface, type and "Continue with …" wording. |

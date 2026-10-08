@@ -128,6 +128,12 @@ describe('an event schema', () => {
       ['session.stepped_up', { userId, methods: ['telepathy'] }],
       ['api_key.created', { kind: 'master' }],
       ['oauth_provider.updated', { provider: 'google', changed: ['clientSecretValue'] }],
+      // A tenant change is recorded by its name; a tenant's id is not a name.
+      [
+        'oauth_provider.updated',
+        { provider: 'microsoft', changed: ['72f988bf-86f1-41af-91ab-2d7cd011db47'] },
+      ],
+      ['oauth_provider.updated', { provider: 'microsoft', changed: ['common'] }],
       ['environment.settings_updated', { revision: 2, changed: ['a key with spaces'] }],
       ['environment.settings_updated', { revision: 2, changed: [], managedBy: 'Not A Tool!' }],
     ] as const) {

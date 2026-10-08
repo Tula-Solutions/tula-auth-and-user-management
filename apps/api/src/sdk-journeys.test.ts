@@ -2035,6 +2035,18 @@ describe('SDK journeys: OAuth', () => {
     return s
   }
 
+  /** The same, with Microsoft configured too, for any Microsoft account. */
+  async function microsoftServer(): Promise<Server> {
+    const s = await oauthServer()
+    const saved = await s.admin('PUT', '/v1/admin/oauth-providers/microsoft', {
+      clientId: 'journey-microsoft-client',
+      clientSecret: 'journey-microsoft-secret',
+      tenant: 'common',
+    })
+    expect(saved.status).toBe(200)
+    return s
+  }
+
   /** One browser tab: `sessionStorage` that survives its navigations, and its address. */
   function tab() {
     const entries = new Map<string, string>()
@@ -2103,13 +2115,17 @@ describe('SDK journeys: OAuth', () => {
   async function continueWithGoogle(
     s: Server,
     consent: Record<string, string>,
-    options: { cookies?: Map<string, string>; browserTab?: ReturnType<typeof tab> } = {}
+    options: {
+      cookies?: Map<string, string>
+      browserTab?: ReturnType<typeof tab>
+      provider?: 'google' | 'microsoft'
+    } = {}
   ) {
     const browserTab = options.browserTab ?? tab()
     browserTab.open(SIGN_IN_PAGE)
     const first = s.client('web', { cookies: options.cookies })
     const { url } = await first.tula.signIn.withOAuth({
-      provider: 'google',
+      provider: options.provider ?? 'google',
       redirectUrl: CALLBACK_PAGE,
     })
     expect(browserTab.visited.at(-1)).toBe(url)
@@ -2268,6 +2284,171 @@ describe('SDK journeys: OAuth', () => {
       )
       expect(error.code).toBe('identity.last_sign_in_method')
       expect(await only.landing.tula.user.identities.list()).toHaveLength(1)
+    }
+  )
+
+  // Microsoft's token names an account by two ids and proves an address only with the
+  // verified-domain claim. The SDK needs to know none of it: it is given outcomes.
+  const CONTOSO = 'aaaabbbb-0000-cccc-1111-dddd2222eeee'
+  const FABRIKAM = 'bbbbcccc-1111-dddd-2222-eeee3333ffff'
+  const guid = () => crypto.randomUUID()
+  const withMicrosoft = (s: Server, consent: Record<string, string>) =>
+    continueWithGoogle(s, consent, { provider: 'microsoft' })
+
+  journey(
+    'Microsoft sign-up and sign-in',
+    'Microsoft: the config offers it, a sign-up comes back signed in, and the same account signs in again whatever address is reported',
+    async () => {
+      const s = await microsoftServer()
+      const email = freshEmail()
+      const account = { tenant_id: CONTOSO, object_id: guid() }
+      expect((await s.client('web').tula.config.get()).signIn.oauth).toEqual([
+        'google',
+        'microsoft',
+      ])
+      const first = await withMicrosoft(s, { email, ...account })
+      expect(first.outcome.status).toBe('complete')
+      expect(first.landing.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+      expect(first.location.href).toBe(CALLBACK_PAGE)
+      expect(first.browserTab.entries.size).toBe(0)
+      expect(await first.landing.tula.user.identities.list()).toMatchObject([
+        { provider: 'microsoft' },
+      ])
+      const userId =
+        first.landing.tula.state.status === 'signed-in'
+          ? (first.landing.tula.state.user?.id ?? '')
+          : ''
+      await first.landing.tula.session.signOut()
+
+      // The same two ids, another address, no verified-domain claim: the same user.
+      const again = await withMicrosoft(s, { email: freshEmail(), ...account, unverified: '1' })
+      expect(again.outcome.status).toBe('complete')
+      expect(again.landing.tula.state).toMatchObject({
+        status: 'signed-in',
+        user: { id: userId, email },
+      })
+
+      // The same object id in another tenant is somebody else.
+      const other = await withMicrosoft(s, {
+        email: freshEmail(),
+        tenant_id: FABRIKAM,
+        object_id: account.object_id,
+      })
+      expect(other.outcome.status).toBe('complete')
+      expect(other.landing.tula.state).not.toMatchObject({ user: { id: userId } })
+
+      // A new account whose token has no verified-domain claim is an outcome, not a session.
+      const unvouched = await withMicrosoft(s, {
+        email: freshEmail(),
+        tenant_id: FABRIKAM,
+        object_id: guid(),
+        unverified: '1',
+      })
+      expect(unvouched.outcome).toMatchObject({ status: 'error', code: 'oauth.email_unverified' })
+      expect(unvouched.landing.tula.state.status).not.toBe('signed-in')
+      expect(unvouched.browserTab.entries.size).toBe(0)
+    }
+  )
+
+  journey(
+    'Microsoft sign-up and sign-in',
+    'Microsoft: an account of a tenant the environment does not accept comes back as a provider error',
+    async () => {
+      const s = await oauthServer()
+      const saved = await s.admin('PUT', '/v1/admin/oauth-providers/microsoft', {
+        clientId: 'journey-microsoft-client',
+        clientSecret: 'journey-microsoft-secret',
+        tenant: CONTOSO,
+      })
+      expect(saved.status).toBe(200)
+      const email = freshEmail()
+      const outsider = await withMicrosoft(s, { email, tenant_id: FABRIKAM, object_id: guid() })
+      expect(outsider.outcome).toMatchObject({ status: 'error', code: 'oauth.provider_error' })
+      expect(outsider.landing.tula.state.status).not.toBe('signed-in')
+      expect(outsider.landing.cookies.size).toBe(0)
+      const member = await withMicrosoft(s, { email, tenant_id: CONTOSO, object_id: guid() })
+      expect(member.outcome.status).toBe('complete')
+    }
+  )
+
+  journey(
+    'Microsoft account linking',
+    'Microsoft: an address without the verified-domain claim links to nobody; with it, and a verified Tula address, it links; a profile links whatever the claim',
+    async () => {
+      const s = await microsoftServer()
+      const member = freshEmail()
+      const created = await s.admin('POST', '/v1/admin/users', {
+        email: member,
+        password: PASSWORD,
+        emailVerified: true,
+      })
+      const memberId = ((await created.json()) as { id: string }).id
+
+      // Another tenant's administrator typed the member's address into an account of theirs.
+      const attacker = { tenant_id: FABRIKAM, object_id: guid(), unverified: '1' }
+      const taken = await withMicrosoft(s, { email: member, ...attacker })
+      expect(taken.outcome).toMatchObject({ status: 'error', code: 'oauth.email_unverified' })
+      expect(taken.landing.tula.state.status).not.toBe('signed-in')
+      expect(taken.landing.cookies.size).toBe(0)
+      // The same outcome for an address nobody has.
+      const nobody = await withMicrosoft(s, { email: freshEmail(), ...attacker })
+      expect(nobody.outcome).toEqual(taken.outcome)
+
+      // The member's own organization, its domain verified: linked and signed in.
+      const linked = await withMicrosoft(s, {
+        email: member,
+        tenant_id: CONTOSO,
+        object_id: guid(),
+      })
+      expect(linked.outcome.status).toBe('complete')
+      expect(linked.landing.tula.state).toMatchObject({ user: { id: memberId } })
+      expect(await linked.landing.tula.user.identities.list()).toMatchObject([
+        { provider: 'microsoft' },
+      ])
+
+      // An account whose Tula address was never verified is not linked into, claim or not.
+      const squatted = freshEmail()
+      await s.admin('POST', '/v1/admin/users', { email: squatted, password: PASSWORD })
+      const refused = await withMicrosoft(s, {
+        email: squatted,
+        tenant_id: CONTOSO,
+        object_id: guid(),
+      })
+      expect(refused.outcome).toMatchObject({ status: 'error', code: 'oauth.account_exists' })
+
+      // From a profile the session is the proof: no claim, another address, connected.
+      const colleagueEmail = freshEmail()
+      const colleague = s.client('web')
+      await s.admin('POST', '/v1/admin/users', {
+        email: colleagueEmail,
+        password: PASSWORD,
+        emailVerified: true,
+      })
+      const signIn = await colleague.tula.signIn.start({ identifier: colleagueEmail })
+      await signIn.submitPassword({ password: PASSWORD })
+      const profileTab = tab()
+      profileTab.open(`${APP_ORIGIN}/account`)
+      // A client reads its tab when it is created: the profile page's own.
+      const profile = s.client('web', { cookies: colleague.cookies })
+      await profile.tula.load()
+      const { url } = await profile.tula.user.identities.link({
+        provider: 'microsoft',
+        redirectUrl: CALLBACK_PAGE,
+      })
+      const second = { tenant_id: CONTOSO, object_id: guid(), unverified: '1' }
+      profileTab.open(await atProvider(s, url, { email: freshEmail(), ...second }))
+      const landing = s.client('web', { cookies: profile.cookies })
+      await landing.tula.load()
+      expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
+        status: 'linked',
+        identity: { provider: 'microsoft' },
+      })
+      await landing.tula.session.signOut()
+      const back = await withMicrosoft(s, { email: freshEmail(), ...second })
+      expect(back.outcome.status).toBe('complete')
+      expect(back.landing.tula.state).toMatchObject({
+        user: { email: colleagueEmail },
+      })
     }
   )
 

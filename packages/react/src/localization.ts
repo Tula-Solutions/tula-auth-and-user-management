@@ -104,7 +104,7 @@ export interface TulaLocalization {
     /** The link back to `<SignIn>`. */
     signIn: string
   }
-  /** Signing in with a provider (Google, GitHub, Apple), and the page it returns to. */
+  /** Signing in with a provider (Google, GitHub, Apple, Microsoft), and the page it returns to. */
   oauth: {
     /** `{provider}` is the provider's name. */
     continueWith: string
@@ -497,7 +497,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     refusedTitle: 'We could not sign you in',
     noneTitle: 'Nothing to finish here',
     noneMessage:
-      'This page finishes a sign-in with Google, GitHub or Apple, and this address does not carry one.',
+      'This page finishes a sign-in with a provider such as Google or Microsoft, and this address does not carry one.',
     linkedTitle: 'Account connected',
     linkedMessage: 'Your {provider} account is connected. You can now use it to sign in.',
     errorTitle: 'We could not finish signing you in',

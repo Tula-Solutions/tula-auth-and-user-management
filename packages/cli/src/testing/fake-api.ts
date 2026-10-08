@@ -23,6 +23,8 @@ interface Provider {
   clientId: string
   teamId: string | null
   keyId: string | null
+  /** Microsoft's tenant; absent for every other provider. */
+  tenant?: string | null
   enabled: boolean
   /** Kept so that a test can check which secret was stored. Never answered. */
   secret: string | undefined
@@ -142,6 +144,7 @@ export function createFakeApi(baseUrl: string): FakeApi {
       clientId: entry?.clientId ?? null,
       teamId: entry?.teamId ?? null,
       keyId: entry?.keyId ?? null,
+      tenant: entry?.tenant ?? null,
       callbackUrl: `${baseUrl}/v1/oauth/${name}/callback`,
       updatedAt: entry ? '2026-01-01T00:00:00.000Z' : null,
     }
@@ -153,6 +156,7 @@ export function createFakeApi(baseUrl: string): FakeApi {
       clientId: String(body.clientId),
       teamId: typeof body.teamId === 'string' ? body.teamId : null,
       keyId: typeof body.keyId === 'string' ? body.keyId : null,
+      ...(typeof body.tenant === 'string' && { tenant: body.tenant }),
       enabled: body.enabled !== false,
       secret:
         (body.clientSecret as string | undefined) ??

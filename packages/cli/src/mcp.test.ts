@@ -359,6 +359,7 @@ describe('tula mcp against the real API', () => {
       clientId: 'google-client-id.apps.example',
       teamId: null,
       keyId: null,
+      tenant: null,
       callbackUrl: 'http://localhost:3003/v1/oauth/callback/google',
       updatedAt: expect.any(String),
     })

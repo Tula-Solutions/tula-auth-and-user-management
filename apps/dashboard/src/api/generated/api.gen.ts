@@ -50,6 +50,7 @@ export const UserCreatedEventDataMethod = {
   oauth_google: 'oauth_google',
   oauth_github: 'oauth_github',
   oauth_apple: 'oauth_apple',
+  oauth_microsoft: 'oauth_microsoft',
 } as const;
 
 /**
@@ -368,6 +369,7 @@ export const OAuthProvider = {
   google: 'google',
   github: 'github',
   apple: 'apple',
+  microsoft: 'microsoft',
 } as const;
 
 export type UserIdentityLinkedEventDataMethod = typeof UserIdentityLinkedEventDataMethod[keyof typeof UserIdentityLinkedEventDataMethod];
@@ -879,6 +881,7 @@ export const OAuthProviderUpdatedEventDataChangedItem = {
   secret: 'secret',
   teamId: 'teamId',
   keyId: 'keyId',
+  tenant: 'tenant',
   enabled: 'enabled',
 } as const;
 
@@ -887,7 +890,7 @@ export const OAuthProviderUpdatedEventDataChangedItem = {
  */
 export interface OAuthProviderUpdatedEventData {
   provider: OAuthProvider;
-  /** @maxItems 5 */
+  /** @maxItems 6 */
   changed: OAuthProviderUpdatedEventDataChangedItem[];
   created?: boolean;
 }
@@ -1293,6 +1296,7 @@ export const HookBeforeSignUpDataMethod = {
   oauth_google: 'oauth_google',
   oauth_github: 'oauth_github',
   oauth_apple: 'oauth_apple',
+  oauth_microsoft: 'oauth_microsoft',
 } as const;
 
 /**
@@ -1883,6 +1887,7 @@ export const FirstFactorStrategy = {
   oauth_google: 'oauth_google',
   oauth_github: 'oauth_github',
   oauth_apple: 'oauth_apple',
+  oauth_microsoft: 'oauth_microsoft',
 } as const;
 
 export type EmailVerificationStrategy = typeof EmailVerificationStrategy[keyof typeof EmailVerificationStrategy];
@@ -2690,6 +2695,8 @@ export interface OAuthProviderSettings {
   teamId: string | null;
   /** @nullable */
   keyId: string | null;
+  /** @nullable */
+  tenant: string | null;
   callbackUrl: string;
   updatedAt: string | null;
 }
@@ -2697,6 +2704,8 @@ export interface OAuthProviderSettings {
 export interface OAuthProviderSettingsList {
   data: OAuthProviderSettings[];
 }
+
+export type MicrosoftTenant = string;
 
 export interface OAuthProviderUpdate {
   /**
@@ -2724,6 +2733,7 @@ export interface OAuthProviderUpdate {
      * @maxLength 8192
      */
   privateKey?: string;
+  tenant?: MicrosoftTenant;
   enabled?: boolean;
 }
 
@@ -5680,7 +5690,7 @@ export const getListOAuthProvidersUrl = () => {
 }
 
 /**
- * Every provider (Google, GitHub, Apple), configured or not: whether credentials are stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to paste into the provider’s console exactly. Never a secret.
+ * Every provider (Google, GitHub, Apple, Microsoft), configured or not: whether credentials are stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to paste into the provider’s console exactly. Never a secret.
  * @summary List OAuth providers
  */
 export const listOAuthProviders = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<OAuthProviderSettingsList> => {
@@ -5782,7 +5792,7 @@ export const getUpdateOAuthProviderUrl = (provider: OAuthProvider,) => {
 }
 
 /**
- * Stores the environment’s own credentials for the provider and whether sign-in offers it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM). The secret is stored encrypted and never returned; leave it out to keep the stored one. Recorded in the audit log by key, never by value. `enabled: false` is refused (422) when it would leave the environment with no way to sign in.
+ * Stores the environment’s own credentials for the provider and whether sign-in offers it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM); Microsoft takes `clientId`, `clientSecret` and `tenant` (`common`, `organizations`, `consumers` or a tenant id: which accounts may sign in). The secret is stored encrypted and never returned; leave it out to keep the stored one. Recorded in the audit log by key, never by value. `enabled: false` is refused (422) when it would leave the environment with no way to sign in.
  * @summary Set an OAuth provider’s credentials
  */
 export const updateOAuthProvider = async (provider: OAuthProvider,

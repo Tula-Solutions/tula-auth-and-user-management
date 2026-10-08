@@ -45,7 +45,7 @@ function signInPage(options: { oauth?: string[]; storage?: boolean; signedIn?: b
   const tabStorage = fakeLinkStorage()
   const page = fakePage('http://localhost:5173/sign-in')
   const w = world({
-    oauth: options.oauth ?? ['google', 'github', 'apple'],
+    oauth: options.oauth ?? ['google', 'github', 'apple', 'microsoft'],
     tabStorage: options.storage === false ? undefined : tabStorage,
     page,
     signedIn: options.signedIn,
@@ -62,6 +62,7 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
       'Continue with Google',
       'Continue with GitHub',
       'Continue with Apple',
+      'Continue with Microsoft',
     ])
     for (const button of buttons) {
       // The mark is decoration: the name comes from the text.
@@ -77,7 +78,7 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
   })
 
   test('a provider this version does not know is left out, and so is everything without a callback page', async () => {
-    const { w } = signInPage({ oauth: ['google', 'microsoft'] })
+    const { w } = signInPage({ oauth: ['google', 'a-later-provider'] })
     const { unmount } = w.mount(<SignIn oauthCallbackUrl={CALLBACK} />)
     expect(await screen.findAllByRole('button', { name: /^Continue with / })).toHaveLength(1)
     unmount()
@@ -85,6 +86,28 @@ describe('provider buttons on <SignIn> and <SignUp>', () => {
     await screen.findByLabelText('Email address')
     expectAbsent(screen.queryByRole('button', { name: /^Continue with / }))
     expectAbsent(screen.queryByText('or'))
+  })
+
+  test('Microsoft: its name is the text, its mark is drawn in the page and asks the network for nothing', async () => {
+    const { w, page } = signInPage({ oauth: ['microsoft'] })
+    w.api.on(START, () => json(200, started()))
+    w.mount(<SignIn oauthCallbackUrl={CALLBACK} />)
+    const button = await screen.findByRole('button', { name: 'Continue with Microsoft' })
+    const mark = button.querySelector('svg')
+    expect(mark?.getAttribute('aria-hidden')).toBe('true')
+    expect(mark?.getAttribute('focusable')).toBe('false')
+    // Four squares, each a colour of its own: the logo is recognisable without the name.
+    const fills = [...(mark?.querySelectorAll('path') ?? [])].map((path) =>
+      path.getAttribute('fill')
+    )
+    expect(fills).toHaveLength(4)
+    expect(new Set(fills).size).toBe(4)
+    // Nothing in the mark refers to anything outside the page.
+    expect(button.innerHTML).not.toMatch(/https?:|url\(|<image|<use|href/i)
+    expectAbsent(button.querySelector('img'))
+    await w.user.click(button)
+    await waitFor(() => expect(page.assigned).toHaveLength(1))
+    expect(w.api.calls(START)[0]?.body).toEqual({ provider: 'microsoft', redirectUrl: CALLBACK })
   })
 
   test('nothing is offered where no provider is enabled, or where the tab cannot keep the binding', async () => {
@@ -417,6 +440,19 @@ describe('connected accounts in <UserProfile>', () => {
     }
   }
 
+  test('a Microsoft account is listed by name, and can be connected where it is offered', async () => {
+    const microsoft = {
+      id: 'identity_9',
+      provider: 'microsoft',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }
+    const first = await profile([GOOGLE, microsoft], ['google', 'microsoft'])
+    const view = within(first.section)
+    await view.findByText('Microsoft')
+    expect(view.getByRole('button', { name: 'Disconnect Microsoft' })).toBeTruthy()
+    expectAbsent(view.queryByRole('button', { name: 'Connect Microsoft' }))
+  })
+
   test('lists the connected accounts and offers to connect the providers that are not', async () => {
     const { section } = await profile([GOOGLE])
     const view = within(section)
@@ -484,8 +520,8 @@ describe('connected accounts in <UserProfile>', () => {
     const heading = await screen.findByRole('heading', { name: 'Connected accounts' })
     expect(await within(heading.closest('section') as HTMLElement).findByRole('alert')).toBeTruthy()
     unmount()
-    const { section } = await profile([{ ...GOOGLE, provider: 'microsoft' }])
-    expect(await within(section).findByText('microsoft')).toBeTruthy()
+    const { section } = await profile([{ ...GOOGLE, provider: 'a-later-provider' }])
+    expect(await within(section).findByText('a-later-provider')).toBeTruthy()
   })
 
   test('where no provider is enabled the section and its request are left out', async () => {

@@ -51,13 +51,19 @@ function provider(
     clientId: null,
     teamId: null,
     keyId: null,
+    tenant: null,
     callbackUrl: `https://auth.example.com/v1/oauth/${name}/callback`,
     updatedAt: null,
     ...over,
   }
 }
 
-const NO_PROVIDERS = [provider('google'), provider('github'), provider('apple')]
+const NO_PROVIDERS = [
+  provider('google'),
+  provider('github'),
+  provider('apple'),
+  provider('microsoft'),
+]
 
 function remote(over: Partial<RemoteState> = {}): RemoteState {
   return { revision: 3, settings: settings(), managedBy: null, providers: NO_PROVIDERS, ...over }
@@ -188,6 +194,115 @@ describe('planProviders', () => {
       ['apple', 'none', 'keep'],
       ['google', 'none', 'keep'],
     ])
+  })
+
+  describe('Microsoft', () => {
+    const microsoft = {
+      clientId: 'ms-client',
+      clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+      tenant: 'organizations',
+    }
+    const file = (over: Partial<typeof microsoft> & { enabled?: boolean } = {}) =>
+      environment({ providers: { microsoft: { ...microsoft, ...over } } }).providers
+    const stored = (over: Partial<RemoteProvider> = {}) => [
+      provider('microsoft', {
+        configured: true,
+        enabled: true,
+        clientId: 'ms-client',
+        tenant: 'organizations',
+        ...over,
+      }),
+    ]
+    const TENANT_ID = '72f988bf-86f1-41af-91ab-2d7cd011db47'
+
+    test('it is created with its tenant as a field and its secret from the environment', () => {
+      expect(planProviders(NO_PROVIDERS, file(), {})).toEqual([
+        {
+          provider: 'microsoft',
+          action: 'create',
+          fields: [
+            { path: 'clientId', kind: 'added', after: 'ms-client' },
+            { path: 'tenant', kind: 'added', after: 'organizations' },
+            { path: 'enabled', kind: 'added', after: true },
+          ],
+          secret: 'set',
+          secretEnv: 'MICROSOFT_CLIENT_SECRET',
+          enabledBefore: false,
+          enabledAfter: true,
+        },
+      ])
+    })
+
+    // What each difference between the file and the server does to the provider and to its
+    // stored secret. The tenant says which accounts may sign in, not which app registration
+    // the secret belongs to: changing it keeps the secret, as switching the provider does.
+    test.each([
+      ['nothing differs', {}, {}, 'none', [], 'keep'],
+      ['the tenant', { tenant: TENANT_ID }, {}, 'update', ['tenant'], 'keep'],
+      [
+        'the tenant, written in capitals',
+        { tenant: TENANT_ID.toUpperCase() },
+        { tenant: TENANT_ID },
+        'none',
+        [],
+        'keep',
+      ],
+      ['an alias in capitals', { tenant: 'Organizations' }, {}, 'none', [], 'keep'],
+      [
+        'the tenant and the switch',
+        { tenant: 'common', enabled: false },
+        {},
+        'update',
+        ['tenant', 'enabled'],
+        'keep',
+      ],
+      ['the client id', { clientId: 'other' }, {}, 'update', ['clientId'], 'set'],
+      [
+        'the client id and the tenant',
+        { clientId: 'other', tenant: 'common' },
+        {},
+        'update',
+        ['clientId', 'tenant'],
+        'set',
+      ],
+      ['a server that reports no tenant', {}, { tenant: null }, 'update', ['tenant'], 'keep'],
+    ] as const)('%s', (_name, inFile, onServer, action, fields, secret) => {
+      const [plan] = planProviders(stored(onServer), file(inFile), {})
+      expect(plan?.action).toBe(action)
+      expect(plan?.fields.map((field) => field.path)).toEqual([...fields])
+      expect(plan?.secret).toBe(secret)
+    })
+
+    // Pinned, not decided (TULA-12): a wider tenant admits accounts from more directories,
+    // and nothing here calls that a weakening, so `apply --yes` makes the change without
+    // `--allow-weaker`. Whether it should be one is the owner's question; this row is what
+    // changes when it is answered.
+    test.each([
+      ['one organization to every organization', TENANT_ID, 'organizations'],
+      ['one organization to any account', TENANT_ID, 'common'],
+      ['every organization to any account', 'organizations', 'common'],
+      ['personal accounts to any account', 'consumers', 'common'],
+    ])(
+      'widening the tenant (%s) is a change and is not flagged as a weakening',
+      (_name, was, is) => {
+        const state = remote({
+          providers: [
+            ...NO_PROVIDERS.filter((entry) => entry.provider !== 'microsoft'),
+            ...stored({ tenant: was }),
+          ],
+        })
+        const result = plan({ providers: { microsoft: { ...microsoft, tenant: is } } }, state)
+        expect(result.providers.find((entry) => entry.provider === 'microsoft')?.fields).toEqual([
+          { path: 'tenant', kind: 'changed', before: was, after: is },
+        ])
+        expect(result.weakened).toEqual([])
+      }
+    )
+
+    test('a tenant change with --rotate-secrets sends the secret', () => {
+      const [plan] = planProviders(stored(), file({ tenant: 'common' }), { rotateSecrets: true })
+      expect(plan).toMatchObject({ action: 'update', secret: 'set' })
+    })
   })
 
   test('a changed client id is an update that sends the secret again', () => {

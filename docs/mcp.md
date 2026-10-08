@@ -108,7 +108,7 @@ refused.
 - An **audit entry** is `id`, `action`, `actor`, `target`, `ipAddress`, `userAgent`,
   `metadata` (known keys only) and `occurredAt`.
 - A **provider** is `provider`, `configured`, `enabled`, `clientId`, `teamId`, `keyId`,
-  `callbackUrl`, `updatedAt`.
+  `tenant` (Microsoft's: an alias or a tenant id, not a secret), `callbackUrl`, `updatedAt`.
 - `run_doctor` needs only `TULA_API_URL`; with `TULA_ADMIN_TOKEN` it includes the checks the
   API makes of itself.
 

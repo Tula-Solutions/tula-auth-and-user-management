@@ -119,7 +119,14 @@ export const MAX_SETTING_NAME_LENGTH = 128
 export const EVENT_DATA_SCHEMAS = {
   'user.created': data('UserCreated', 'A user account was created.', {
     /** How: by an admin, by a completed sign-up, or by a first sign-in with a provider. */
-    method: z.enum(['admin', 'sign_up', 'oauth_google', 'oauth_github', 'oauth_apple']),
+    method: z.enum([
+      'admin',
+      'sign_up',
+      'oauth_google',
+      'oauth_github',
+      'oauth_apple',
+      'oauth_microsoft',
+    ]),
     /** Whether the account's email address was proven when it was created. */
     emailVerified: z.boolean(),
     /** `true` when the account was created without a password; absent otherwise. */
@@ -334,7 +341,9 @@ export const EVENT_DATA_SCHEMAS = {
     {
       provider,
       /** Which fields changed. Names only: `secret` says a secret changed, never what it is. */
-      changed: z.array(z.enum(['clientId', 'secret', 'teamId', 'keyId', 'enabled'])).max(5),
+      changed: z
+        .array(z.enum(['clientId', 'secret', 'teamId', 'keyId', 'tenant', 'enabled']))
+        .max(6),
       /** `true` when the provider was configured for the first time; absent otherwise. */
       created: z.boolean().optional(),
     }

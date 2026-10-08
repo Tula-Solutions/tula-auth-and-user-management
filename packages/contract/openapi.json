@@ -40,7 +40,7 @@
     },
     {
       "name": "OAuth",
-      "description": "Sign-in with Google, GitHub and Apple: provider credentials (admin), the provider callback, and a user’s connected accounts."
+      "description": "Sign-in with Google, GitHub, Apple and Microsoft: provider credentials (admin), the provider callback, and a user’s connected accounts."
     },
     {
       "name": "Settings",
@@ -132,7 +132,8 @@
               "sign_up",
               "oauth_google",
               "oauth_github",
-              "oauth_apple"
+              "oauth_apple",
+              "oauth_microsoft"
             ]
           },
           "emailVerified": {
@@ -852,7 +853,8 @@
         "enum": [
           "google",
           "github",
-          "apple"
+          "apple",
+          "microsoft"
         ]
       },
       "UserIdentityLinkedEventData": {
@@ -2014,7 +2016,7 @@
             "$ref": "#/components/schemas/OAuthProvider"
           },
           "changed": {
-            "maxItems": 5,
+            "maxItems": 6,
             "type": "array",
             "items": {
               "type": "string",
@@ -2023,6 +2025,7 @@
                 "secret",
                 "teamId",
                 "keyId",
+                "tenant",
                 "enabled"
               ]
             }
@@ -3011,7 +3014,8 @@
               "passwordless",
               "oauth_google",
               "oauth_github",
-              "oauth_apple"
+              "oauth_apple",
+              "oauth_microsoft"
             ]
           },
           "client": {
@@ -4377,7 +4381,8 @@
           "passkey",
           "oauth_google",
           "oauth_github",
-          "oauth_apple"
+          "oauth_apple",
+          "oauth_microsoft"
         ]
       },
       "EmailVerificationStrategy": {
@@ -6411,6 +6416,12 @@
               "null"
             ]
           },
+          "tenant": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "callbackUrl": {
             "type": "string",
             "format": "uri"
@@ -6435,6 +6446,7 @@
           "clientId",
           "teamId",
           "keyId",
+          "tenant",
           "callbackUrl",
           "updatedAt"
         ]
@@ -6452,6 +6464,9 @@
         "required": [
           "data"
         ]
+      },
+      "MicrosoftTenant": {
+        "type": "string"
       },
       "OAuthProviderUpdate": {
         "type": "object",
@@ -6480,6 +6495,9 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 8192
+          },
+          "tenant": {
+            "$ref": "#/components/schemas/MicrosoftTenant"
           },
           "enabled": {
             "default": true,
@@ -11765,7 +11783,7 @@
           "Flows"
         ],
         "summary": "Start signing in with an OAuth provider",
-        "description": "\"Continue with Google, GitHub or Apple\": a sign-in that creates the account when the provider’s verified address has none. The provider must be enabled for the environment (`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user comes back to, must be exactly one of `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the browser there) and `binding`, once: keep it for the tab and send it back with the ticket that page receives. The provider returns to this API, which redirects to `redirectUrl` with `#tula_ticket=…&tula_attempt=…` (or `#tula_error=<code>`). No token is ever put in a URL. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
+        "description": "\"Continue with Google, GitHub, Apple or Microsoft\": a sign-in that creates the account when the provider’s verified address has none. The provider must be enabled for the environment (`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user comes back to, must be exactly one of `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the browser there) and `binding`, once: keep it for the tab and send it back with the ticket that page receives. The provider returns to this API, which redirects to `redirectUrl` with `#tula_ticket=…&tula_attempt=…` (or `#tula_error=<code>`). No token is ever put in a URL. The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused with `request.origin_not_allowed` from an origin the environment does not allow.",
         "security": [
           {
             "publishableKey": []
@@ -17314,7 +17332,7 @@
           "OAuth"
         ],
         "summary": "List OAuth providers",
-        "description": "Every provider (Google, GitHub, Apple), configured or not: whether credentials are stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to paste into the provider’s console exactly. Never a secret.",
+        "description": "Every provider (Google, GitHub, Apple, Microsoft), configured or not: whether credentials are stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to paste into the provider’s console exactly. Never a secret.",
         "security": [
           {
             "secretKey": []
@@ -17414,7 +17432,7 @@
           "OAuth"
         ],
         "summary": "Set an OAuth provider’s credentials",
-        "description": "Stores the environment’s own credentials for the provider and whether sign-in offers it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM). The secret is stored encrypted and never returned; leave it out to keep the stored one. Recorded in the audit log by key, never by value. `enabled: false` is refused (422) when it would leave the environment with no way to sign in.",
+        "description": "Stores the environment’s own credentials for the provider and whether sign-in offers it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM); Microsoft takes `clientId`, `clientSecret` and `tenant` (`common`, `organizations`, `consumers` or a tenant id: which accounts may sign in). The secret is stored encrypted and never returned; leave it out to keep the stored one. Recorded in the audit log by key, never by value. `enabled: false` is refused (422) when it would leave the environment with no way to sign in.",
         "security": [
           {
             "secretKey": []
@@ -17761,7 +17779,7 @@
           "OAuth"
         ],
         "summary": "List my connected accounts",
-        "description": "The provider accounts (Google, GitHub, Apple) connected to the signed-in user. Never the provider’s own id for an account.",
+        "description": "The provider accounts (Google, GitHub, Apple, Microsoft) connected to the signed-in user. Never the provider’s own id for an account.",
         "security": [
           {
             "publishableKey": [],

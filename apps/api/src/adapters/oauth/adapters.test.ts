@@ -9,6 +9,8 @@ import {
   emailClaims,
   exchangeFailure,
   PROVIDER_TIMEOUT_MS,
+  remoteKeySet,
+  verifyIdToken,
   withDeadline,
 } from '~/adapters/oauth/id-token'
 import { createMockProvider, issueMockCode, type MockGrant, s256 } from '~/adapters/oauth/mock'
@@ -859,6 +861,57 @@ describe('a provider that never answers', () => {
     expect(await withDeadline(Promise.resolve('ok'), 1000)).toBe('ok')
     await expect(withDeadline(Promise.reject(new Error('boom')), 1000)).rejects.toThrow('boom')
     expect(await failureOf(withDeadline(new Promise(() => undefined), 5))).toBe('unavailable')
+  })
+})
+
+describe('who checks the issuer is said at every call', () => {
+  const JWKS_URL = 'https://keys.provider.test/jwks'
+  const expected = { audience: CLIENT_ID, nonce: NONCE }
+
+  function keySet() {
+    stubFetch({ [JWKS_URL]: () => jsonResponse({ keys: [provider.jwk] }) })
+    return remoteKeySet(JWKS_URL, 1000)
+  }
+
+  test('a call that does not say is refused, by the compiler and at run time', async () => {
+    const token = await idToken()
+    expect(
+      await failureOf(
+        // @ts-expect-error -- `issuers` is required: leaving it out must not turn the check off.
+        verifyIdToken(keySet(), token, expected, 1000)
+      )
+    ).toBe('invalid_token')
+  })
+
+  test('a list is checked here: an issuer that is not on it is refused', async () => {
+    const token = await idToken({ issuer: 'https://accounts.elsewhere.test' })
+    const issuers = ['https://accounts.google.com']
+    expect(await failureOf(verifyIdToken(keySet(), token, { ...expected, issuers }, 1000))).toBe(
+      'invalid_token'
+    )
+    fetchSpy?.mockRestore()
+    const listed = await idToken()
+    expect(await failureOf(verifyIdToken(keySet(), listed, { ...expected, issuers }, 1000))).toBe(
+      'resolved'
+    )
+  })
+
+  test('an empty list accepts no issuer', async () => {
+    const token = await idToken()
+    expect(
+      await failureOf(verifyIdToken(keySet(), token, { ...expected, issuers: [] }, 1000))
+    ).toBe('invalid_token')
+  })
+
+  test('a caller that says it verifies gets the claims with iss unjudged', async () => {
+    const token = await idToken({ issuer: 'https://accounts.elsewhere.test' })
+    const verified = await verifyIdToken(
+      keySet(),
+      token,
+      { ...expected, issuers: 'caller-verifies' },
+      1000
+    )
+    expect(verified.payload.iss).toBe('https://accounts.elsewhere.test')
   })
 })
 
