@@ -261,9 +261,9 @@ describe('a refusal in words', () => {
     const unavailable = (params?: Record<string, unknown>) =>
       new ApiError({ status: 501, code: 'not_implemented', detail: DETAIL, params })
     const TEST =
-      'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are still delivered: to see a delivery, cause an event (create a test user, for example) and look at this endpoint’s deliveries.'
+      'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are delivered by that worker, to an endpoint that is switched on and subscribed to their type; this endpoint’s deliveries show them.'
     const AGAIN =
-      'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. Real events are still delivered, and a delivery that is pending is still retried by the worker.'
+      'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. A delivery that is pending is retried by that worker.'
 
     test('a test event and a delivery sent again each say so, in their own words', () => {
       const refused = unavailable({ reason: 'worker_separate' })
@@ -272,6 +272,8 @@ describe('a refusal in words', () => {
       for (const sentence of [TEST, AGAIN]) {
         // A webhook is never called a hook, and no setting's name is the explanation.
         expect(sentence).not.toMatch(/\bhooks?\b|WEBHOOK_WORKER|not_implemented|501/)
+        // The answer says how the deployment is set up, not that a worker is running.
+        expect(sentence).not.toContain('are still delivered')
       }
     })
 

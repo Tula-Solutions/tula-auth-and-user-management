@@ -202,9 +202,9 @@ const REFUSALS: Record<string, { reasons: Record<string, string>; other: string 
  * was asked for; what the operator needs to hear is that only this is unavailable.
  */
 const WORKER_SEPARATE: Record<'test' | 'redeliver', string> = {
-  test: 'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are still delivered: to see a delivery, cause an event (create a test user, for example) and look at this endpoint’s deliveries.',
+  test: 'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are delivered by that worker, to an endpoint that is switched on and subscribed to their type; this endpoint’s deliveries show them.',
   redeliver:
-    'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. Real events are still delivered, and a delivery that is pending is still retried by the worker.',
+    'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. A delivery that is pending is retried by that worker.',
 }
 
 /** The fixed word in a refusal's `params.reason`: the answer's own, and a string, or nothing. */

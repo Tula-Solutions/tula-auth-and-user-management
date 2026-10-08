@@ -732,8 +732,9 @@ calls the routes this page describes and adds nothing of its own:
   again" are still offered (the dashboard is not told how the deployment is set up) and the
   server refuses them (`501`, `worker_separate`). The dashboard says that in a sentence of
   its own: this deployment delivers webhooks from a separate worker, so the request cannot
-  be made from here, and real events are still delivered. Nothing is sent or recorded, and
-  it is not tried again.
+  be made from here; real events are delivered by that worker, to an endpoint that is
+  switched on and subscribed to their type, and a pending delivery is retried by it.
+  Nothing is sent or recorded, and it is not tried again.
 
 What the dashboard cannot show is what the server does not keep: no header and no body of a
 receiver's answer ([What the server keeps](#what-the-server-keeps)).

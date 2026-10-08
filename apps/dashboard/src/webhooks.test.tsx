@@ -668,7 +668,7 @@ describe('sending a test event', () => {
     await user.click(send)
     await waitFor(() =>
       expect(alerts()).toEqual([
-        'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are still delivered: to see a delivery, cause an event (create a test user, for example) and look at this endpoint’s deliveries.',
+        'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are delivered by that worker, to an endpoint that is switched on and subscribed to their type; this endpoint’s deliveries show them.',
       ])
     )
     // No result, no delivery, and the request was made once: a refusal is not retried.
@@ -1117,7 +1117,7 @@ describe('one delivery', () => {
     await user.click(again)
     await waitFor(() =>
       expect(screen.getAllByRole('alert').map((alert) => alert.textContent)).toEqual([
-        'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. Real events are still delivered, and a delivery that is pending is still retried by the worker.',
+        'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. A delivery that is pending is retried by that worker.',
       ])
     )
     // No result, and one request: a refusal is not retried.
