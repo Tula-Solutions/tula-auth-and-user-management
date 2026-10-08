@@ -17,7 +17,7 @@ import {
   type WebhookSendResult,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, ConflictError, NotFoundError } from '~/exceptions'
+import { AuthError, ConflictError, NotFoundError, NotImplementedError } from '~/exceptions'
 import { type Actor, systemActor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import * as Outbound from '~/lib/outbound'
@@ -722,8 +722,39 @@ export async function revokePreviousSecret(
   return view(revoked, activity.occurredAt)
 }
 
+/**
+ * The fixed word, in `params.reason` of a `not_implemented` (501), with which an API instance
+ * of a deployment whose worker is its own service (`WEBHOOK_WORKER=separate`) refuses a
+ * request on demand: a test event, a delivery sent again.
+ */
+export const WEBHOOK_WORKER_SEPARATE_REASON = 'worker_separate'
+
+/**
+ * Refuse a request on demand in a process that does not deliver.
+ *
+ * With the worker separate, **no** request to a webhook endpoint leaves an API instance: that
+ * is what an operator who separated the two for a network policy was promised, and a request
+ * made from here anyway would fail against that policy and be written to the delivery log as
+ * the receiver's failure. Handing the request to the worker is not built, which is what the
+ * code says. Checked before anything is read, so the answer is the same for an endpoint that
+ * exists and one that does not.
+ *
+ * @param deps - The configuration.
+ * @throws NotImplementedError `not_implemented`, `params.reason` `worker_separate`.
+ */
+function requireDeliveryHere(deps: Pick<Deps, 'config'>): void {
+  if (!deps.config.deliversWebhooks) {
+    throw new NotImplementedError({
+      message:
+        'This deployment sends webhooks from a separate worker (WEBHOOK_WORKER=separate). A test event or a delivery sent again cannot be asked of an API instance yet.',
+      params: { reason: WEBHOOK_WORKER_SEPARATE_REASON },
+    })
+  }
+}
+
 type DeliveryDeps = Pick<
   Deps,
+  | 'config'
   | 'environments'
   | 'webhookEndpoints'
   | 'webhookDeliveries'
@@ -1385,8 +1416,13 @@ async function deliverDue(deps: DeliveryDeps, round: Round): Promise<void> {
  * ({@link WEBHOOK_ENVIRONMENT_BUDGET_MS}), so neither a broken nor a slow one keeps the
  * environments after it from being served.
  *
- * @param deps - Environments, the webhook stores, the outbound guard's settings, the secret
- *   box, ids, the clock and the jitter source.
+ * In a process that does not deliver (`config.deliversWebhooks` is `false`: an API instance of
+ * a deployment whose worker is its own service) it does none of this: nothing is read, queued,
+ * settled or sent, and the report is all zeros. The queueing is the worker's as much as the
+ * requests are; an API instance that queued would be a second place that decides what is owed.
+ *
+ * @param deps - The configuration, environments, the webhook stores, the outbound guard's
+ *   settings, the secret box, ids, the clock and the jitter source.
  * @param signal - Aborted to end the round early (the server is shutting down): the requests
  *   under way are finished and recorded, nothing further is sent, and what is left waits for
  *   the next round.
@@ -1410,6 +1446,9 @@ export async function deliverPending(
     secretsExpired: 0,
     skipped: 0,
   }
+  if (!deps.config.deliversWebhooks) {
+    return report
+  }
   for (const { id } of await deps.environments.listAll()) {
     if (signal?.aborted) {
       break
@@ -1429,22 +1468,30 @@ export async function deliverPending(
 }
 
 /**
- * Run a delivery round, unless one is running: here or on another API instance.
+ * Run a delivery round, unless one is running: here or in another process.
  *
- * Called on boot and every {@link WEBHOOK_DELIVERY_INTERVAL_MS} by `server.ts`, on every
- * instance; the job lock lets one of them through, and a round that is still running when the
+ * Called on boot and every {@link WEBHOOK_DELIVERY_INTERVAL_MS} by every process that delivers
+ * (`startJobs` in `~/jobs`: every API instance, or every worker when the worker is its own
+ * service); the job lock lets one of them through, and a round that is still running when the
  * next one is due is not started twice. Logs one line per round that did something, with
  * counts only.
  *
+ * A process that does not deliver never starts the timer. Called there anyway it does nothing
+ * and does not take the lock, which a worker may be asking for at that moment.
+ *
  * @param deps - Everything {@link deliverPending} needs, plus the job lock.
  * @param signal - Aborted to end the round early; see {@link deliverPending}.
- * @returns The round's report, or `null` when the lock was held (nothing is logged).
+ * @returns The round's report, or `null` when the lock was held or this process does not
+ *   deliver (nothing is logged).
  * @throws When the lock or the list of environments cannot be read (the database is down).
  */
 export async function run(
   deps: DeliveryDeps & Pick<Deps, 'jobLock'>,
   signal?: AbortSignal
 ): Promise<DeliveryReport | null> {
+  if (!deps.config.deliversWebhooks) {
+    return null
+  }
   const outcome = await deps.jobLock.runExclusive('webhook_delivery', () =>
     deliverPending(deps, signal)
   )
@@ -1569,7 +1616,7 @@ export async function getDelivery(
 
 type SendDeps = Pick<
   Deps,
-  'webhookEndpoints' | 'webhookDeliveries' | 'outbound' | 'secretBox' | 'ids' | 'clock'
+  'config' | 'webhookEndpoints' | 'webhookDeliveries' | 'outbound' | 'secretBox' | 'ids' | 'clock'
 >
 
 /** What a request made on demand came to, in the terms of the admin API. */
@@ -1607,6 +1654,8 @@ function sendResult(deliveryId: string, attempt: NewWebhookAttempt): WebhookSend
  *   Nothing else of the receiver's answer.
  * @throws NotFoundError when the environment has no endpoint with that id, or it was removed
  *   while the test was under way.
+ * @throws NotImplementedError `not_implemented`, `params.reason` `worker_separate`, in an API
+ *   instance of a deployment whose worker is its own service: nothing is read or sent.
  */
 export async function sendTest(
   deps: SendDeps,
@@ -1614,6 +1663,7 @@ export async function sendTest(
   endpointId: string,
   input: SendTestWebhookRequest
 ): Promise<WebhookSendResult> {
+  requireDeliveryHere(deps)
   const endpoint = await requireEndpoint(deps, tenant, endpointId)
   const createdAt = deps.clock.now()
   const keys = await signingKeys(deps, endpoint, createdAt)
@@ -1691,6 +1741,8 @@ export async function sendTest(
  * @throws NotFoundError when that endpoint of this environment has no such delivery.
  * @throws AuthError `webhook.cannot_redeliver`, with `params.reason` one of
  *   `delivery_pending`, `endpoint_disabled`, `event_gone` and `attempt_limit`.
+ * @throws NotImplementedError `not_implemented`, `params.reason` `worker_separate`, in an API
+ *   instance of a deployment whose worker is its own service: nothing is read or sent.
  */
 export async function redeliver(
   deps: SendDeps,
@@ -1698,6 +1750,7 @@ export async function redeliver(
   endpointId: string,
   deliveryId: string
 ): Promise<WebhookSendResult> {
+  requireDeliveryHere(deps)
   const { environmentId } = tenant
   const found = await deps.webhookDeliveries.find(environmentId, endpointId, deliveryId)
   if (!found) {

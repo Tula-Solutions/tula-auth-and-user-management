@@ -53,7 +53,13 @@ const onlyTheOutcome =
   'The answer is the outcome, the receiver’s status code and how long it took: nothing else ' +
   'of what the receiver said is read or kept. When there was no answer, `failureReason` is ' +
   'one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). ' +
-  `Limited to ${Webhooks.WEBHOOK_SEND_RATE_LIMIT} such requests a minute per environment.`
+  `Limited to ${Webhooks.WEBHOOK_SEND_RATE_LIMIT} such requests a minute per environment. ` +
+  'In a deployment whose webhook worker is its own service (`WEBHOOK_WORKER=separate`) an ' +
+  'API instance calls no webhook endpoint, and this request is refused with ' +
+  `\`not_implemented\` (501), \`params.reason\`: \`${Webhooks.WEBHOOK_WORKER_SEPARATE_REASON}\`.`
+
+/** What an API instance that does not deliver answers a request on demand with. */
+const workerSeparate = { 501: openapi.responses[501] }
 
 const refusedAddress =
   'An address the server may not call is refused with `webhook.url_not_allowed` (422): it must ' +
@@ -299,6 +305,7 @@ router.post(
       200: { description: 'What became of the request.', content: json(WebhookSendResultSchema) },
       413: openapi.responses[413],
       422: openapi.responses[422],
+      ...workerSeparate,
       ...errors,
       ...openapi.adminResponses,
     },
@@ -342,6 +349,7 @@ router.post(
       200: { description: 'What became of the request.', content: json(WebhookSendResultSchema) },
       409: openapi.responses[409],
       422: openapi.responses[422],
+      ...workerSeparate,
       ...errors,
       ...openapi.adminResponses,
     },
