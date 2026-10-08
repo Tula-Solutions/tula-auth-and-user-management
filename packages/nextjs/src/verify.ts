@@ -1,3 +1,8 @@
+import {
+  CUSTOM_CLAIMS_CLAIM,
+  type CustomClaims,
+  readCustomClaims,
+} from '@tula/contract/custom-claims'
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify } from 'jose'
 import type { FetchLike, TulaConfig } from './config'
 
@@ -29,7 +34,47 @@ export interface SessionClaims {
   auth_time?: number
   /** The methods the session was authenticated with. */
   amr?: string[]
+  /**
+   * The session's custom claims: what the JWT template of its profile defines (a frozen
+   * record of strings, numbers and booleans). Present only in exactly that shape; anything
+   * else under this name was left out. The same record as `auth().customClaims`.
+   */
+  ext?: CustomClaims
   [claim: string]: unknown
+}
+
+/** No custom claims: what a session without a template has. */
+export const NO_CUSTOM_CLAIMS: CustomClaims = Object.freeze({})
+
+/**
+ * Claims as the application gets them, or `null` when they are not a session of this
+ * environment ({@link isSessionOf}).
+ *
+ * The namespace claim is replaced by what `readCustomClaims` accepts of it: a frozen record
+ * in the one shape a Tula server issues, or nothing. A value of any other shape under that
+ * name is dropped here, for a token and for a `stateful` session's answer alike, so that it
+ * never reaches an application as something to rely on.
+ *
+ * @param candidate - Claims that were verified: a token's payload after `jwtVerify`, the
+ *   API's answer, or the contents of this app's own sealed header.
+ * @param config - The configuration.
+ * @returns A copy of the claims, or `null`.
+ *
+ * @example
+ * ```ts
+ * sessionClaims({ ...claims, ext: ['admin'] }, config)?.ext // undefined
+ * ```
+ */
+export function sessionClaims(
+  candidate: unknown,
+  config: Pick<TulaConfig, 'issuer' | 'environmentId'>
+): SessionClaims | null {
+  if (!isSessionOf(candidate, config)) {
+    return null
+  }
+  const { [CUSTOM_CLAIMS_CLAIM]: _unchecked, ...claims } = candidate
+  const custom = readCustomClaims(candidate)
+  return custom ? { ...claims, [CUSTOM_CLAIMS_CLAIM]: custom } : claims
 }
 
 /** Seconds of clock difference tolerated between this server and the API. */
@@ -109,7 +154,9 @@ export function isSessionOf(
  * @param token - The token, as the cookie holds it.
  * @param config - The configuration.
  * @returns The claims, or `null` when the token cannot be relied on (also when the keys
- *   cannot be fetched).
+ *   cannot be fetched). Their namespace claim (`ext`) is there only in the shape a Tula
+ *   server issues ({@link sessionClaims}); a token whose `ext` is anything else is still a
+ *   session, without custom claims.
  *
  * @example
  * ```ts
@@ -135,7 +182,7 @@ export async function verifyAccessToken(
       clockTolerance: CLOCK_TOLERANCE_SECONDS,
       requiredClaims: ['sub', 'sid', 'exp', 'iss', 'aud'],
     })
-    return isSessionOf(payload, config) ? payload : null
+    return sessionClaims(payload, config)
   } catch {
     return null
   }
