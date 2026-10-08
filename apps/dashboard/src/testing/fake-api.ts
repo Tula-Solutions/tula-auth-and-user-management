@@ -209,6 +209,7 @@ function initialState(): FakeState {
     webhookNow: NOW,
     hooks: [],
     hookNow: NOW,
+    webhookWorkerSeparate: false,
     canStillSignIn: true,
     authentication: {
       hasPassword: true,

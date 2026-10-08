@@ -35,6 +35,10 @@ import { type FakeCall, type FakeHandler, failure, IDS } from './fake-api'
 // - One clock (`webhookNow`) that only a test moves; no worker, so nothing is ever retried,
 //   given up or switched off by the server here. A test writes such a state itself.
 // - `disabledReason` is whatever a test wrote: the fake never sets one.
+// - The worker is "in the API" unless a test sets `webhookWorkerSeparate`. With it set, a
+//   test event and a delivery sent again are answered as the API's `deliveredHere` answers
+//   them where `WEBHOOK_WORKER=separate`: 501 `not_implemented`, `params.reason`
+//   `worker_separate`, before the path or the body is looked at, with nothing recorded.
 // - An environment that does not exist is not a 404 here (the shell's own routes decide
 //   that): an endpoint is simply not found under it.
 
@@ -117,6 +121,11 @@ export interface FakeWebhookState {
   webhookReceiver: { statusCode: number | null; durationMs: number; failureReason: string | null }
   /** The server's clock, as the webhook routes read it. Only a test moves it. */
   webhookNow: string
+  /**
+   * Whether the deployment's webhook worker is a service of its own (`WEBHOOK_WORKER=separate`):
+   * requests on demand are then refused. Off unless a test sets it.
+   */
+  webhookWorkerSeparate: boolean
 }
 
 let made = 0
@@ -183,7 +192,8 @@ export function fakeWebhookDelivery(
     completedAt: NOW,
     createdAt: NOW,
     ...overrides,
-    attempts,
+    // A copy: a request made on demand appends to it, and a test may pass one list to several.
+    attempts: attempts.map((attempt) => ({ ...attempt })),
   }
 }
 
@@ -286,6 +296,22 @@ export function webhookRoutes(state: FakeWebhookState): [string, RegExp, FakeHan
     return state.webhookEndpoints.find(
       (entry) => entry.id === id && entry.environmentId === call.headers.get(ENVIRONMENT)
     )
+  }
+
+  /**
+   * A request on demand, where the API makes them: refused before anything of the request is
+   * read where the worker is a service of its own (the router's `deliveredHere`).
+   */
+  function deliveredHere(handler: FakeHandler): FakeHandler {
+    return (call, match) =>
+      state.webhookWorkerSeparate
+        ? refused(
+            501,
+            'not_implemented',
+            'This deployment sends webhooks from a separate worker (WEBHOOK_WORKER=separate). A test event or a delivery sent again cannot be asked of an API instance yet.',
+            'worker_separate'
+          )
+        : handler(call, match)
   }
 
   /**
@@ -527,54 +553,58 @@ export function webhookRoutes(state: FakeWebhookState): [string, RegExp, FakeHan
     [
       'POST',
       /^\/v1\/admin\/webhook-endpoints\/([^/]+)\/test$/,
-      onEndpoint(SendTestWebhookRequestSchema, (endpoint, body) => {
-        // One request, recorded as a delivery flagged `test`, ended whichever way it went.
-        // The endpoint is not touched.
-        const delivery = fakeWebhookDelivery(endpoint.id, {
-          eventId: null,
-          eventType: body.eventType,
-          test: true,
-          state: 'failed',
-          attemptCount: 0,
-          attempts: [],
-          createdAt: state.webhookNow,
-          completedAt: state.webhookNow,
+      deliveredHere(
+        onEndpoint(SendTestWebhookRequestSchema, (endpoint, body) => {
+          // One request, recorded as a delivery flagged `test`, ended whichever way it went.
+          // The endpoint is not touched.
+          const delivery = fakeWebhookDelivery(endpoint.id, {
+            eventId: null,
+            eventType: body.eventType,
+            test: true,
+            state: 'failed',
+            attemptCount: 0,
+            attempts: [],
+            createdAt: state.webhookNow,
+            completedAt: state.webhookNow,
+          })
+          state.webhookDeliveries.unshift(delivery)
+          return attemptNow(delivery)
         })
-        state.webhookDeliveries.unshift(delivery)
-        return attemptNow(delivery)
-      }),
+      ),
     ],
     [
       'POST',
       /^\/v1\/admin\/webhook-endpoints\/([^/]+)\/deliveries\/([^/]+)\/redeliver$/,
-      onDelivery((endpoint, delivery) => {
-        // In the service's order.
-        const reason = !endpoint.enabled
-          ? 'endpoint_disabled'
-          : delivery.state === 'pending'
-            ? 'delivery_pending'
-            : delivery.attemptCount >= MAX_TOTAL_ATTEMPTS
-              ? 'attempt_limit'
-              : delivery.eventId === null
-                ? 'event_gone'
-                : null
-        if (reason !== null) {
-          return refused(
-            409,
-            'webhook.cannot_redeliver',
-            'This delivery cannot be sent again.',
-            reason
-          )
-        }
-        const result = attemptNow(delivery)
-        // A real event that got through ends the endpoint's run of failures. One that
-        // failed moves nothing about the endpoint.
-        if (result.outcome === 'delivered') {
-          endpoint.failingSince = null
-          endpoint.lastFailedAt = null
-        }
-        return result
-      }),
+      deliveredHere(
+        onDelivery((endpoint, delivery) => {
+          // In the service's order.
+          const reason = !endpoint.enabled
+            ? 'endpoint_disabled'
+            : delivery.state === 'pending'
+              ? 'delivery_pending'
+              : delivery.attemptCount >= MAX_TOTAL_ATTEMPTS
+                ? 'attempt_limit'
+                : delivery.eventId === null
+                  ? 'event_gone'
+                  : null
+          if (reason !== null) {
+            return refused(
+              409,
+              'webhook.cannot_redeliver',
+              'This delivery cannot be sent again.',
+              reason
+            )
+          }
+          const result = attemptNow(delivery)
+          // A real event that got through ends the endpoint's run of failures. One that
+          // failed moves nothing about the endpoint.
+          if (result.outcome === 'delivered') {
+            endpoint.failingSince = null
+            endpoint.lastFailedAt = null
+          }
+          return result
+        })
+      ),
     ],
   ]
 }

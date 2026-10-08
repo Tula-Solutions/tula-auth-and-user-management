@@ -155,6 +155,8 @@ export function messageFor(error: unknown): string {
       ? 'Too many requests. Wait a moment, then try again.'
       : `Too many requests. Try again in ${failure.retryAfter} seconds.`
   }
+  // The table's own entries only: a code such as `constructor` names something every object
+  // has, which is no message.
   return (
     (Object.hasOwn(MESSAGES, failure.code) ? MESSAGES[failure.code] : undefined) ?? failure.detail
   )

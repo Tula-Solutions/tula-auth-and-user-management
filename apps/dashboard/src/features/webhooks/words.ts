@@ -196,33 +196,65 @@ const REFUSALS: Record<string, { reasons: Record<string, string>; other: string 
   },
 }
 
+/**
+ * What a deployment whose webhook worker is a service of its own says to a request made on
+ * demand, by action. Its API instances call no endpoint, so the answer is the same whatever
+ * was asked for; what the operator needs to hear is that only this is unavailable.
+ */
+const WORKER_SEPARATE: Record<'test' | 'redeliver', string> = {
+  test: 'This deployment delivers webhooks from a separate worker, so a test event cannot be sent from here. Real events are delivered by that worker, to an endpoint that is switched on and subscribed to their type; this endpoint’s deliveries show them.',
+  redeliver:
+    'This deployment delivers webhooks from a separate worker, so a delivery cannot be sent again from here. A delivery that is pending is retried by that worker.',
+}
+
+/** The fixed word in a refusal's `params.reason`: the answer's own, and a string, or nothing. */
+function reasonOf(params: Record<string, unknown>): string | undefined {
+  const reason = Object.hasOwn(params, 'reason') ? params.reason : undefined
+  return typeof reason === 'string' ? reason : undefined
+}
+
 /** Which action failed, for the refusals that mean something different by action. */
-export type WebhookAction = 'create' | 'send' | 'other'
+export type WebhookAction = 'create' | 'test' | 'redeliver' | 'other'
 
 /**
  * The sentence to show when a webhook call was refused or failed.
  *
  * The three webhook codes carry a fixed word in `params.reason`; each word has a sentence of
  * the dashboard's own. Registering an eleventh endpoint has its own too, and a refusal for
- * too many requests made on demand says that those have an allowance of their own. Anything
- * else is what every other screen says.
+ * too many requests made on demand says that those have an allowance of their own. So does
+ * `not_implemented` with the reason `worker_separate`, for those two requests: a deployment
+ * whose worker is a service of its own makes neither. Anything else, a `not_implemented`
+ * with another reason or none among it, is what every other screen says.
  *
  * @param error - What the mutation threw.
  * @param action - What was being done: `create` (the endpoint limit is a conflict there),
- *   `send` (a test event or a delivery sent again, which share an allowance), or `other`.
+ *   `test` (a test event) or `redeliver` (a delivery sent again), which are the requests
+ *   made on demand and share an allowance, or `other`.
  * @returns A sentence for the operator, never a bare code.
  */
 export function webhookMessageFor(error: unknown, action: WebhookAction = 'other'): string {
   const failure = toApiError(error)
-  const refusal = REFUSALS[failure.code]
+  // Own properties only, of the answer and of both tables: a code or a reason such as
+  // `constructor` would otherwise find what every object has, which is no sentence.
+  const refusal = Object.hasOwn(REFUSALS, failure.code) ? REFUSALS[failure.code] : undefined
   if (refusal) {
-    const reason = failure.params.reason
-    return (typeof reason === 'string' ? refusal.reasons[reason] : undefined) ?? refusal.other
+    const reason = reasonOf(failure.params)
+    return reason !== undefined && Object.hasOwn(refusal.reasons, reason)
+      ? (refusal.reasons[reason] ?? refusal.other)
+      : refusal.other
   }
   if (action === 'create' && failure.code === 'resource.conflict') {
     return `This environment already has ${MAX_WEBHOOK_ENDPOINTS} webhook endpoints, the most one can have. Delete one first.`
   }
-  if (action === 'send' && failure.code === 'rate_limited') {
+  const onDemand = action === 'test' || action === 'redeliver'
+  if (
+    onDemand &&
+    failure.code === 'not_implemented' &&
+    reasonOf(failure.params) === 'worker_separate'
+  ) {
+    return WORKER_SEPARATE[action]
+  }
+  if (onDemand && failure.code === 'rate_limited') {
     // The answer says "too many" and how long to wait, not which limit it was (the admin
     // API's general one counts too). So no number is named: only that these requests have
     // an allowance beside it, which is why this may be said after very few of them.
