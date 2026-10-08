@@ -1,6 +1,7 @@
 import {
   AT_LEAST_ONE_SIGN_IN_METHOD,
   type EnvironmentSettings,
+  type EventData,
   type FirstFactorStrategy,
   hasEnabledSignInMethod,
   type Identity,
@@ -53,7 +54,9 @@ export function callbackUrl(config: Pick<AppConfig, 'publicUrl'>, provider: OAut
  * @param provider - The provider.
  * @returns `oauth_<provider>`.
  */
-export function strategyOf(provider: OAuthProvider): FirstFactorStrategy {
+export function strategyOf(
+  provider: OAuthProvider
+): FirstFactorStrategy & `oauth_${OAuthProvider}` {
   return `oauth_${provider}`
 }
 
@@ -296,11 +299,12 @@ export async function update(
 
     const now = deps.clock.now()
     const config = { teamId: input.teamId, keyId: input.keyId }
-    const changed = [
-      ...(existing?.clientId !== input.clientId ? ['clientId'] : []),
-      ...(secret !== undefined ? ['secret'] : []),
+    // Typed by the event contract: the names of what changed are a closed set there.
+    const changed: EventData<'oauth_provider.updated'>['changed'] = [
+      ...(existing?.clientId !== input.clientId ? (['clientId'] as const) : []),
+      ...(secret !== undefined ? (['secret'] as const) : []),
       ...fields.config.filter((field) => existing?.config[field] !== config[field]),
-      ...(existing?.enabled !== input.enabled ? ['enabled'] : []),
+      ...(existing?.enabled !== input.enabled ? (['enabled'] as const) : []),
     ]
     const record: OAuthProviderRecord = {
       id: existing?.id ?? deps.ids.next(),

@@ -1,4 +1,5 @@
 import type { ActivityType } from '@tula/contract'
+import { type EventPayload, eventPayload } from '~/lib/event-payload'
 import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
 
 /**
@@ -10,11 +11,18 @@ import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/a
 export class MemoryActivityLog implements ActivityLog {
   /** Everything recorded so far, oldest first. */
   readonly entries: Activity[]
+  /**
+   * The outbox: the event payload of everything recorded so far, oldest first. What the
+   * Postgres stores write to `events.payload`, built by the same function. Not part of the
+   * port (nothing reads the outbox yet): tests read it here.
+   */
+  readonly events: EventPayload[]
 
   constructor() {
     // Assigned here rather than as a field initializer: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.entries = []
+    this.events = []
   }
 
   /**
@@ -24,6 +32,7 @@ export class MemoryActivityLog implements ActivityLog {
    */
   record(activities: readonly Activity[]): void {
     this.entries.push(...activities.map((activity) => structuredClone(activity)))
+    this.events.push(...activities.map(eventPayload))
   }
 
   /**

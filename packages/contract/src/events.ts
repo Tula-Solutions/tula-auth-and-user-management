@@ -1,0 +1,326 @@
+import { z } from 'zod'
+import { AUDIT_ACTOR_TYPES, type AuditActorType } from './audit'
+import { CONFIG_TOOL_PATTERN } from './environment-settings'
+import {
+  ACTIVITY_TYPES,
+  type ActivityType,
+  EVENT_SCHEMA_VERSION,
+  EVENT_TARGET_TYPES,
+  type EventTargetType,
+} from './event-types'
+import { OAuthProviderSchema } from './oauth'
+import { SessionClientSchema } from './session'
+import { AUTHENTICATION_METHODS } from './tokens'
+
+// The payload of every event the API records: what a webhook delivers. Each type has a `data`
+// schema and an envelope around it, both published as OpenAPI components.
+//
+// A payload is an ALLOW-LIST. A field is here because someone decided a third party may see
+// it; nothing reaches a payload by being passed along. So, for every `data` schema:
+//
+//   - no email address, name, IP address, user agent, token, code, hash or key material, ever;
+//   - a value from a closed set is an enum, not a string;
+//   - a string is an id the server made, or matches a pattern that cannot hold a secret.
+//
+// Within `EVENT_SCHEMA_VERSION` a payload only grows (see `./event-types`).
+
+/**
+ * An id the server generated (a UUID): a user, a session, a key, a passkey. Never client
+ * input, and never a string that could hold anything else.
+ */
+const id = () => z.uuid()
+
+/**
+ * A `data` schema and the description its event is published with.
+ *
+ * @param name - The event's name in the OpenAPI document, e.g. `UserCreated`.
+ * @param description - One sentence: when the event is recorded.
+ * @param shape - The fields. Exactly what the event carries, nothing optional "just in case".
+ */
+function data<Shape extends z.ZodRawShape>(name: string, description: string, shape: Shape) {
+  return z.object(shape).meta({ ref: `${name}EventData`, description })
+}
+
+const provider = OAuthProviderSchema
+
+/**
+ * The `data` of each event type: the details beyond who (`actor`) and what (`target`).
+ *
+ * Typed so that a type in {@link ACTIVITY_TYPES} without an entry does not compile; the
+ * contract's tests check the same at run time.
+ *
+ * @example
+ * ```ts
+ * EVENT_DATA_SCHEMAS['session.revoked'].parse({ userId: 'u_1', reason: 'sign_out' })
+ * ```
+ */
+export const EVENT_DATA_SCHEMAS = {
+  'user.created': data('UserCreated', 'A user account was created.', {
+    /** How: by an admin, by a completed sign-up, or by a first sign-in with a provider. */
+    method: z.enum(['admin', 'sign_up', 'oauth_google', 'oauth_github', 'oauth_apple']),
+    /** Whether the account's email address was proven when it was created. */
+    emailVerified: z.boolean(),
+    /** `true` when the account was created without a password; absent otherwise. */
+    passwordless: z.boolean().optional(),
+  }),
+  'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
+  'user.banned': data('UserBanned', 'A user was banned; their sessions end.', {}),
+  'user.unbanned': data('UserUnbanned', 'A user’s ban was lifted.', {}),
+  'user.deleted': data('UserDeleted', 'A user account was deleted.', {}),
+  'user.password_changed': data(
+    'UserPasswordChanged',
+    'A user’s password was set, replaced or removed.',
+    {
+      /**
+       * By whom: an admin (`admin_reset`), the signed-in user (`self`), a password reset
+       * (`reset`), or the address being proven by someone who did not prove the password
+       * (`email_verification`, always with `removed`).
+       */
+      method: z.enum(['admin_reset', 'self', 'reset', 'email_verification']),
+      /** `true` when the account had no password before; absent otherwise. */
+      created: z.boolean().optional(),
+      /** `true` when the password was removed and none was set; absent otherwise. */
+      removed: z.boolean().optional(),
+    }
+  ),
+  'user.mfa_enabled': data('UserMfaEnabled', 'A user turned two-step verification on.', {
+    /** The factor that was confirmed. */
+    method: z.enum(['totp']),
+  }),
+  'user.mfa_disabled': data('UserMfaDisabled', 'A user’s two-step verification was removed.', {
+    /**
+     * By the user (`self`), by an admin (`admin_reset`), or by the server undoing an enrolment
+     * that a sign-in could not finish (`enrolment_incomplete`).
+     */
+    method: z.enum(['self', 'admin_reset', 'enrolment_incomplete']),
+  }),
+  'user.backup_codes_regenerated': data(
+    'UserBackupCodesRegenerated',
+    'A user replaced their backup codes; the earlier set no longer works.',
+    {}
+  ),
+  'user.backup_code_used': data(
+    'UserBackupCodeUsed',
+    'A user proved their second factor with a backup code.',
+    {}
+  ),
+  'user.identity_linked': data(
+    'UserIdentityLinked',
+    'A provider account was connected to a user.',
+    {
+      provider,
+      /** `auto`: at a sign-in, by a verified address; `profile`: by the signed-in user. */
+      method: z.enum(['auto', 'profile']),
+    }
+  ),
+  'user.identity_unlinked': data(
+    'UserIdentityUnlinked',
+    'A provider account was disconnected from a user.',
+    { provider }
+  ),
+  'user.passkey_added': data('UserPasskeyAdded', 'A user registered a passkey.', {
+    passkeyId: id(),
+    /** Whether the authenticator reports the passkey as backed up (a synced passkey). */
+    synced: z.boolean(),
+  }),
+  'user.passkey_renamed': data('UserPasskeyRenamed', 'A user renamed a passkey.', {
+    passkeyId: id(),
+  }),
+  'user.passkey_removed': data(
+    'UserPasskeyRemoved',
+    'A passkey was removed, or every passkey of a user by an admin reset.',
+    {
+      /** The passkey removed by its owner. Absent for an admin reset, which removes them all. */
+      passkeyId: id().optional(),
+      method: z.enum(['user', 'admin_reset']),
+      /** After an admin reset: whether the user still has a way to sign in. */
+      canStillSignIn: z.boolean().optional(),
+    }
+  ),
+  'user.passkey_counter_regressed': data(
+    'UserPasskeyCounterRegressed',
+    'A passkey’s signature counter did not grow: it may have been cloned. The sign-in was refused.',
+    { passkeyId: id() }
+  ),
+  'session.created': data('SessionCreated', 'A user signed in.', {
+    userId: id(),
+    client: SessionClientSchema,
+  }),
+  'session.revoked': data('SessionRevoked', 'A session was ended before it expired.', {
+    userId: id(),
+    reason: z.enum([
+      'sign_out',
+      'revoked_by_user',
+      'revoked_by_admin',
+      'password_changed',
+      'user_banned',
+      'mfa_changed',
+      'session_limit',
+    ]),
+  }),
+  'session.reuse_detected': data(
+    'SessionReuseDetected',
+    'A rotated refresh token was presented again: the session was ended as possibly stolen.',
+    { userId: id(), reason: z.literal('reuse_detected') }
+  ),
+  'session.stepped_up': data(
+    'SessionSteppedUp',
+    'A signed-in user proved a factor again for a session.',
+    {
+      userId: id(),
+      /** What was proven, as the access token’s `amr` names it. A set: order means nothing. */
+      methods: z.array(z.enum(AUTHENTICATION_METHODS)).max(AUTHENTICATION_METHODS.length),
+    }
+  ),
+  'api_key.created': data('ApiKeyCreated', 'An API key was created.', {
+    kind: z.enum(['publishable', 'secret']),
+  }),
+  'api_key.revoked': data('ApiKeyRevoked', 'An API key was revoked.', {}),
+  'signing_key.rotated': data(
+    'SigningKeyRotated',
+    'An environment’s access-token signing keys were rotated. The target is the new active key.',
+    { retiredKeyId: id(), nextKeyId: id() }
+  ),
+  'environment.settings_updated': data(
+    'EnvironmentSettingsUpdated',
+    'An environment’s settings were replaced.',
+    {
+      /** The settings’ revision after this change. */
+      revision: z.number().int().positive(),
+      /** The dotted keys that changed, e.g. `password.minLength`. Never a value. */
+      changed: z.array(
+        z
+          .string()
+          .max(128)
+          .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/)
+      ),
+      /** `true` when the change made an account easier to take over; absent otherwise. */
+      weakened: z.boolean().optional(),
+      /** The tool that applied a config file; `null` when its record was removed. */
+      managedBy: z.string().regex(CONFIG_TOOL_PATTERN).nullable().optional(),
+      /** `true` when settings a config file manages were changed around it. */
+      outsideConfig: z.boolean().optional(),
+    }
+  ),
+  'oauth_provider.updated': data(
+    'OAuthProviderUpdated',
+    'An OAuth provider’s credentials were set or changed.',
+    {
+      provider,
+      /** Which fields changed. Names only: `secret` says a secret changed, never what it is. */
+      changed: z.array(z.enum(['clientId', 'secret', 'teamId', 'keyId', 'enabled'])).max(5),
+      /** `true` when the provider was configured for the first time; absent otherwise. */
+      created: z.boolean().optional(),
+    }
+  ),
+  'oauth_provider.deleted': data(
+    'OAuthProviderDeleted',
+    'An OAuth provider’s credentials were removed.',
+    { provider }
+  ),
+} as const satisfies Record<ActivityType, z.ZodObject>
+
+/**
+ * The `data` of an event of type `T`; without `T`, of any event.
+ *
+ * @example
+ * ```ts
+ * const data: EventData<'session.created'> = { userId: 'u_1', client: 'ios' }
+ * ```
+ */
+export type EventData<T extends ActivityType = ActivityType> = z.infer<
+  (typeof EVENT_DATA_SCHEMAS)[T]
+>
+
+/**
+ * Who did it. `id` is a user's id, an API key's (`admin`), a dashboard session's
+ * (`instance_admin`), or `null`: the server itself, or the instance admin token.
+ */
+export const EventActorSchema = z
+  .object({ type: z.enum(AUDIT_ACTOR_TYPES), id: z.string().min(1).max(128).nullable() })
+  .meta({ ref: 'EventActor' })
+
+/**
+ * An event of type `T`, as a webhook delivers it.
+ *
+ * - `id`: the event's id, the same as its audit log entry's. A delivery that is repeated
+ *   carries the same id: use it to drop duplicates.
+ * - `schemaVersion`: {@link EVENT_SCHEMA_VERSION}.
+ * - `occurredAt`: ISO 8601, UTC.
+ * - `actor`, `target`: who did it and what it was done to, by id.
+ * - `data`: the details, per type.
+ *
+ * There is no IP address and no user agent: those stay in the audit log.
+ */
+export interface EventOf<T extends ActivityType> {
+  id: string
+  type: T
+  schemaVersion: typeof EVENT_SCHEMA_VERSION
+  occurredAt: string
+  actor: { type: AuditActorType; id: string | null }
+  target: { type: EventTargetType<T>; id: string }
+  data: EventData<T>
+}
+
+/**
+ * Any event: a union discriminated by `type`.
+ *
+ * @example
+ * ```ts
+ * function handle(event: Event) {
+ *   if (event.type === 'session.reuse_detected') {
+ *     alertSecurity(event.data.userId)
+ *   }
+ * }
+ * ```
+ */
+export type Event = { [T in ActivityType]: EventOf<T> }[ActivityType]
+
+function envelope<T extends ActivityType>(type: T) {
+  const details = EVENT_DATA_SCHEMAS[type]
+  const { ref, description } = z.globalRegistry.get(details) ?? {}
+  return z
+    .object({
+      id: id(),
+      type: z.literal(type),
+      schemaVersion: z.literal(EVENT_SCHEMA_VERSION),
+      occurredAt: z.iso.datetime(),
+      actor: EventActorSchema,
+      target: z.object({ type: z.literal(EVENT_TARGET_TYPES[type]), id: id() }),
+      data: details,
+    })
+    .meta({ ref: String(ref).replace(/Data$/, ''), description })
+}
+
+const envelopes = ACTIVITY_TYPES.map((type) => [type, envelope(type)] as const)
+
+/**
+ * The schema of each event type: the envelope around its {@link EVENT_DATA_SCHEMAS} entry.
+ *
+ * Parsing strips every key a schema does not name, at each level.
+ *
+ * @example
+ * ```ts
+ * const event = EVENT_SCHEMAS['user.created'].parse(JSON.parse(body))
+ * ```
+ */
+export const EVENT_SCHEMAS = Object.fromEntries(envelopes) as unknown as {
+  readonly [T in ActivityType]: z.ZodType<EventOf<T>>
+}
+
+/**
+ * Any event, told apart by `type`: what a webhook receiver parses a delivery with.
+ *
+ * @example
+ * ```ts
+ * const event = EventSchema.parse(JSON.parse(body))
+ * ```
+ */
+export const EventSchema = z
+  .discriminatedUnion(
+    'type',
+    // Never empty: there is an envelope per activity type. The casts say what the mapped
+    // list cannot: its members are the object schemas of `EVENT_SCHEMAS`, one per type.
+    envelopes.map(([, schema]) => schema) as unknown as [z.ZodObject, ...z.ZodObject[]]
+  )
+  .meta({ ref: 'Event' }) as unknown as z.ZodType<Event>

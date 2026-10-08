@@ -1,4 +1,5 @@
 import {
+  type AuthenticationMethod,
   type EnvironmentSettings,
   MAX_PASSKEYS_PER_USER,
   originMatchesRelyingParty,
@@ -489,7 +490,7 @@ export interface Asserted {
    * What it adds to a session's `amr`: `hwk` for a credential bound to one device or `swk` for
    * one eligible for backup, and `user` (the authenticator verified the user).
    */
-  methods: string[]
+  methods: AuthenticationMethod[]
 }
 
 /**

@@ -1,4 +1,4 @@
-import { DASHBOARD_SESSION_COOKIE, ErrorEnvelopeSchema } from '@tula/contract'
+import { DASHBOARD_SESSION_COOKIE, ErrorEnvelopeSchema, EventSchema } from '@tula/contract'
 import type { GenerateSpecOptions } from 'hono-openapi'
 import { resolver } from 'hono-openapi'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
@@ -209,4 +209,20 @@ export const documentation: GenerateSpecOptions['documentation'] = {
       },
     },
   },
+}
+
+/**
+ * The event payloads as OpenAPI components: `Event` (any event, told apart by `type`), one
+ * `<Name>Event` and `<Name>EventData` per activity type, and what they refer to.
+ *
+ * No route returns an event (a webhook delivers one to the operator's endpoint), so nothing
+ * in `paths` refers to these schemas and the generator, which collects components from the
+ * routes, would leave them out. They are added to the document's `components.schemas` where
+ * it is assembled (`createApp`), converted by the same resolver as every route's schema.
+ *
+ * @returns The schemas by component name.
+ */
+export async function eventSchemas() {
+  const { components } = await resolver(EventSchema).toOpenAPISchema()
+  return components?.schemas ?? {}
 }

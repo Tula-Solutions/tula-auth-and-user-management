@@ -2,6 +2,7 @@ import {
   ACCESS_TOKEN_ALGORITHM,
   ACCESS_TOKEN_VERSION,
   type AccessTokenClaims,
+  type AuthenticationMethod,
   durationToMs,
   environmentIssuer,
   MAX_ACCESS_TOKEN_TTL,
@@ -200,12 +201,22 @@ function revoked(
   reason: SessionRevokeReason,
   actor: Actor
 ) {
-  return Audit.entry(deps, scope, {
-    type: reason === 'reuse_detected' ? 'session.reuse_detected' : 'session.revoked',
-    actor,
-    target: { type: 'session', id: session.id },
-    data: { userId: session.userId, reason },
-  })
+  const target = { type: 'session', id: session.id } as const
+  // Two calls, not one with a computed type: each type's `reason` is checked against its own
+  // event schema.
+  return reason === 'reuse_detected'
+    ? Audit.entry(deps, scope, {
+        type: 'session.reuse_detected',
+        actor,
+        target,
+        data: { userId: session.userId, reason },
+      })
+    : Audit.entry(deps, scope, {
+        type: 'session.revoked',
+        actor,
+        target,
+        data: { userId: session.userId, reason },
+      })
 }
 
 /** `now + the profile's idle timeout`, never past the session's absolute limit. */
@@ -478,7 +489,7 @@ export async function recordAuthentication(
   deps: TokenDeps & ProfileDeps & Pick<Deps, 'sessions'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
-  methods: readonly string[],
+  methods: readonly AuthenticationMethod[],
   actor: Actor
 ): Promise<SessionTokens> {
   const now = deps.clock.now()

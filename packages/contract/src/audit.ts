@@ -1,48 +1,10 @@
 import { z } from 'zod'
+import { ACTIVITY_TYPES } from './event-types'
 import { PaginationMetaSchema } from './user'
 
-/**
- * Everything the API records. Each entry is written to the event outbox (for webhooks) and to
- * the audit log, in the same database transaction as the change it describes.
- *
- * A session ends with exactly one of `session.revoked` (its `reason` says why) or
- * `session.reuse_detected` (a rotated refresh token was replayed, so the session was revoked as
- * possibly stolen).
- */
-export const ACTIVITY_TYPES = [
-  'user.created',
-  'user.email_verified',
-  'user.banned',
-  'user.unbanned',
-  'user.deleted',
-  'user.password_changed',
-  // Two-step verification: turned on (a confirmed authenticator), turned off (`method` says by
-  // the user or by an admin reset), a new set of backup codes, and a backup code used to get in.
-  'user.mfa_enabled',
-  'user.mfa_disabled',
-  'user.backup_codes_regenerated',
-  'user.backup_code_used',
-  // A provider account (Google, GitHub, Apple) connected to or disconnected from a user;
-  // `provider` says which, `method` how (`auto`, `profile`).
-  'user.identity_linked',
-  'user.identity_unlinked',
-  'user.passkey_added',
-  'user.passkey_renamed',
-  'user.passkey_removed',
-  'user.passkey_counter_regressed',
-  'session.created',
-  'session.revoked',
-  'session.reuse_detected',
-  // A signed-in user proved a factor again for a session (a step-up); `methods` says which.
-  'session.stepped_up',
-  'api_key.created',
-  'api_key.revoked',
-  'signing_key.rotated',
-  'environment.settings_updated',
-  // An OAuth provider's credentials set, changed or removed. `changed` lists keys, never values.
-  'oauth_provider.updated',
-  'oauth_provider.deleted',
-] as const
+// The list of types lives in the Zod-free `./event-types`; re-exported so that this module
+// stays the one place to import everything about the audit log from.
+export { ACTIVITY_TYPES, type ActivityType } from './event-types'
 
 /** One of {@link ACTIVITY_TYPES}. */
 export const ActivityTypeSchema = z.enum(ACTIVITY_TYPES).meta({ ref: 'ActivityType' })
@@ -122,8 +84,6 @@ export const AuditLogListSchema = z
 export type InstanceActivityType = z.infer<typeof InstanceActivityTypeSchema>
 /** What an instance action was about. */
 export type InstanceAuditTargetType = (typeof INSTANCE_AUDIT_TARGET_TYPES)[number]
-/** A recorded action type. */
-export type ActivityType = z.infer<typeof ActivityTypeSchema>
 /** Who performed an action. */
 export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number]
 /** What an action was about. */

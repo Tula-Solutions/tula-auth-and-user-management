@@ -328,6 +328,7 @@ describe('what a store is told about the audit entry of a write', () => {
       type: 'user.created',
       actor: { type: 'system', id: null, ipAddress: null, userAgent: null },
       target: { type: 'user', id: 'user' },
+      data: { method: 'admin', emailVerified: false },
     })
     const none = Audit.none('fixture')
     expect(isUnrecorded(none)).toBe(true)

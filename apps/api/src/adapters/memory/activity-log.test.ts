@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { EVENT_SCHEMA_VERSION, EVENT_SCHEMAS } from '@tula/contract'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryApiKeyRepository } from '~/adapters/memory/api-keys'
@@ -47,4 +48,33 @@ test('MemoryActivityLog keeps its own copies, so later mutation cannot rewrite h
   ;(listed.entries[0] as Activity).data.reason = 'tampered'
   expect(log.entries[0]?.data).toEqual({ reason: 'original' })
   expect(log.ofType('user.deleted')).toEqual([])
+})
+
+test('MemoryActivityLog keeps the outbox the Postgres stores write: the typed event, not the activity', () => {
+  const log = new MemoryActivityLog()
+  const entry: Activity = {
+    id: '00000000-0000-7000-8000-0000000000e1',
+    ...tenant('00000000-0000-7000-8000-00000000e001'),
+    type: 'session.created',
+    actor: { type: 'user', id: '00000000-0000-7000-8000-0000000000a1' },
+    target: { type: 'session', id: '00000000-0000-7000-8000-0000000000b1' },
+    ipAddress: '203.0.113.7',
+    userAgent: 'suite/1.0',
+    data: { userId: '00000000-0000-7000-8000-0000000000a1', client: 'web', note: 'audit only' },
+    occurredAt: new Date('2026-01-01T00:00:00.000Z'),
+  }
+  log.record([entry])
+  const payload = {
+    id: entry.id,
+    type: 'session.created',
+    schemaVersion: EVENT_SCHEMA_VERSION,
+    occurredAt: '2026-01-01T00:00:00.000Z',
+    actor: entry.actor,
+    target: entry.target,
+    data: { userId: entry.actor.id, client: 'web' },
+  }
+  expect(log.events).toEqual([payload as never])
+  expect(EVENT_SCHEMAS['session.created'].parse(log.events[0])).toEqual(payload as never)
+  // The audit entry keeps what it was given.
+  expect(log.entries[0]?.data).toEqual(entry.data)
 })

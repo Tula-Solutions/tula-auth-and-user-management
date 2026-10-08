@@ -24,8 +24,8 @@ interpreter). An application under such a policy should switch the attempt off *
 the contract is imported: `import { config } from 'zod'; config({ jitless: true })` in a
 module that the entry point imports first (the dashboard's `src/lib/zod-csp.ts`), or, for a
 bundle that carries its own copy of Zod, `globalThis.__zod_globalConfig = { jitless: true }`
-in a script that runs before it. The Zod-free entry points (`/error-codes`, `/headers`,
-`/password-rules`, `/theme`, `/issuer`) need nothing.
+in a script that runs before it. The Zod-free entry points (`/error-codes`,
+`/event-types`, `/headers`, `/password-rules`, `/theme`, `/issuer`) need nothing.
 
 ## How a package is built and checked
 

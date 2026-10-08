@@ -69,7 +69,68 @@ of.
 - **What is recorded.** `user.created`, `user.email_verified`, `user.banned`, `user.unbanned`,
   `user.deleted`, `user.password_changed`, `session.created`, `session.revoked` (with its
   `reason`), `session.reuse_detected`, `api_key.created`, `api_key.revoked` and
-  `signing_key.rotated`. The list is `ACTIVITY_TYPES` in `@tula/contract`.
+  `signing_key.rotated` at first; later steps added two-step verification, identities,
+  passkeys, step-up, settings and OAuth providers. The list is `ACTIVITY_TYPES`, in
+  `@tula/contract/event-types`: an entry point that imports no Zod, so a receiver can switch
+  on a type without a schema library.
+- **An event's payload is a typed, versioned contract** (added in Phase 2, step 2.1, before
+  anything delivers one). `events.payload` holds the event exactly as a webhook will deliver
+  it:
+
+  ```json
+  {
+    "id": "0199c2f5-0000-7000-8000-000000000018",
+    "type": "session.revoked",
+    "schemaVersion": 1,
+    "occurredAt": "2026-10-08T09:30:00.000Z",
+    "actor": { "type": "user", "id": "0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01" },
+    "target": { "type": "session", "id": "0199c2f4-7a11-7d42-8e0b-1c9a3b7d5e02" },
+    "data": { "userId": "0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01", "reason": "sign_out" }
+  }
+  ```
+
+  - `id` is the activity's id, shared with its audit entry: a receiver drops a repeated
+    delivery by it. The payload carries its own `id`, `type` and `occurredAt` (they are also
+    columns of `events`) so that a delivery is this one value and nothing assembled later.
+  - Every type has a `data` schema (`EVENT_DATA_SCHEMAS`), an envelope schema around it
+    (`EVENT_SCHEMAS`; `EventSchema` is their union by `type`), a target type
+    (`EVENT_TARGET_TYPES`: what `target.id` is the id of) and an example (`EVENT_FIXTURES`),
+    all in `@tula/contract`. The records are typed so that a type without one does not
+    compile, and the contract's tests check the same at run time. The schemas are published
+    as components of the OpenAPI document (`Event`, `<Name>Event`, `<Name>EventData`); no
+    route returns one, so `createApp` adds them where the document is assembled.
+  - `schemaVersion` is `EVENT_SCHEMA_VERSION` (1). **Within a version a payload only grows**:
+    a later server may add a type, an optional field or a value to a closed set, and a
+    receiver ignores what it does not know. Removing or renaming a field, making one
+    required, or changing what one means is a new version.
+  - **A payload is an allow-list.** A field is in a payload because the contract names it,
+    never because a call site passed it. A `data` schema holds ids the server made (UUIDs),
+    values from closed sets (enums: `method`, `reason`, `provider`, `client`, `kind`),
+    booleans, a revision number, and two strings bound by a pattern: the dotted **names** of
+    changed settings (never a value) and the name of the tool that manages them. Never an
+    email address, a name, an IP address, a user agent, a token, a code, a hash or key
+    material.
+  - **One function builds it**, `eventPayload` (`~/lib/event-payload`), called by the memory
+    and the Postgres stores alike. It keeps a key of the activity's `data` only if the type's
+    schema names it **and** that field's own schema accepts the value, so a named field
+    cannot carry a string where an enum or an id belongs. What it refuses it drops and logs
+    by key (never by value); it never throws, because a record that cannot be written undoes
+    the change it records.
+  - **Call sites are checked at compile time.** `Audit.entry` takes a union discriminated by
+    `type`: each type's `target.type` and `data` are the contract's, so recording a detail
+    the contract has no field for does not compile. `Activity.data` itself stays loose (a
+    store adds to it, and the log may hold another version's entries).
+  - **The audit entry is not narrowed.** `audit_logs.metadata` keeps the activity's `data` as
+    given, and `GET /v1/admin/audit-logs` answers as before. The allow-list is about what
+    leaves the deployment.
+  - **A canary test** (`apps/api/src/event-canary.test.ts`) runs every conformance scenario
+    against the API in process with a recognisable address and password in every variable
+    and the wire tapped: whatever a request carried, whatever a response handed out as a
+    secret and whatever was emailed is then searched for in every recorded payload (and in
+    every audit entry's details). `conformance.test.ts` also holds every recorded payload to
+    its schema and to "nothing was dropped", so a call site and the contract cannot drift.
+  - A new activity type is three things: its name (and target type) in `event-types.ts`, a
+    `data` schema in `EVENT_DATA_SCHEMAS` and an example in `EVENT_FIXTURES`.
 - **A replayed refresh token is `session.reuse_detected`,** not `session.revoked`, so it can be
   alerted on by itself. A session ends with exactly one of the two.
 - **Actors.** `admin` is a secret key (the id is the API key's, so a leaked key's actions can be
@@ -119,8 +180,22 @@ of.
 - Not recorded: token refreshes (about one a minute per session), failed sign-ins, lockouts and
   rate-limit refusals. They have no write to share a transaction with, and they are
   attacker-driven, so recording them needs its own volume limits first.
-- Event payloads (`{ actor, target, data }`) are not yet a typed contract per event type. They
-  will be fixed when webhooks ship; until then treat `data` as informative.
+- Event payloads were `{ actor, target, data }` with an untyped `data` until Phase 2, step
+  2.1; they are now the typed, versioned event described above. **The stored shape changed
+  with no migration**: nothing had read the outbox and nothing was deployed, so a database
+  that holds rows of the earlier shape (a development one) holds rows no delivery worker
+  should send. They are told apart by `schemaVersion`, which the earlier shape lacks; what the
+  worker does with such a row is decided with the worker (2.2).
+- The payload schemas are a public contract from the first delivery: a mistake in one (a
+  field that should not have been there, a name that reads badly) costs a new
+  `schemaVersion`. Each `data` field is therefore what its call sites record today and no
+  more; three of them are judgement calls, listed in the step's review: the names of changed
+  settings (`environment.settings_updated.changed`, which include an operator's own session
+  profile names), the managing tool's name (`managedBy`, operator-supplied, bound by
+  `CONFIG_TOOL_PATTERN`), and `canStillSignIn` on `user.passkey_removed`.
+- A payload is not validated as a whole when it is written (only field by field): an event
+  whose call site left out a required field is stored without it rather than refused. The
+  compiler and the conformance run are what keep that from happening.
 - Audit entries keep IP addresses after a user is deleted, and outlive the sessions they name
   (which are deleted 30 days after they end). The audit retention setting has to cover that.
 - Every write that records activity costs two more inserts in its transaction.
