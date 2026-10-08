@@ -16,11 +16,13 @@ import {
   EnvironmentSettingsSchema,
 } from '../packages/contract/src/index'
 import { testRouteRefusal } from './guard'
+import { RECEIVER_PORT, receiverResponse } from './receiver'
 
 // The server the browser tests run against: the REAL API (`createApp`, every route and
-// middleware) on memory adapters, plus the built example app, on two local ports. Nothing is
-// mocked; the only differences from production are where data lives (memory) and where email
-// goes (an outbox the tests read).
+// middleware) on memory adapters, the built example app, and a receiver for the dashboard's
+// webhook tests to have deliveries sent to, on three local ports (`API_PORT`, `APP_PORT`,
+// `RECEIVER_PORT`). Nothing of the API is mocked; the only differences from production are
+// where data lives (memory) and where email goes (an outbox the tests read).
 //
 //   E2E=1 bun run e2e/server.ts
 //
@@ -50,8 +52,6 @@ export const APP_PORT = 4317
  * fixture (`next start`). It reaches this API server to server; its pages never do.
  */
 export const NEXT_PORT = 4319
-/** The receiver the dashboard's webhook tests register as an endpoint (see `receiver`). */
-export const RECEIVER_PORT = 4320
 /** A fixed, fake key for the memory environment. It opens nothing outside this process. */
 export const PUBLISHABLE_KEY = 'tula_pk_dev_e2e000000000000000000000000000000'
 /**
@@ -369,27 +369,16 @@ const web = Bun.serve({
 })
 
 /**
- * Where the dashboard's webhook tests have deliveries sent: a receiver that answers with the
- * status code its path names (`/receive/204`, `/receive/410`) and nothing else.
- *
- * It is bound to the loopback **address**, not to `localhost`: the fixture's outbound guard is
- * the API's own, in the `local` tier, with a resolver that knows no name, so the one address
- * it lets a delivery reach is a literal loopback one. Nothing about the guard is changed for
- * it. It reads no body, keeps nothing and answers with no body, and it is behind the same
- * guard as the test routes: a page, which sends an `Origin` with every `POST`, is refused.
+ * Where the dashboard's webhook tests have deliveries sent: `receiverResponse`
+ * (`e2e/receiver.ts`), which answers with the status code a path names and nothing else,
+ * behind the same guard as the test routes. Bound to the loopback **address**, which is the
+ * one place the API's own outbound guard lets a delivery go in the `local` tier; nothing
+ * about that guard is changed for it.
  */
 const receiver = Bun.serve({
   port: RECEIVER_PORT,
   hostname: '127.0.0.1',
-  fetch(request) {
-    if (testRouteRefusal(request, `127.0.0.1:${RECEIVER_PORT}`) !== null) {
-      return new Response(null, { status: 403 })
-    }
-    const status = /^\/receive\/([2-5]\d\d)$/.exec(new URL(request.url).pathname)?.[1]
-    return new Response(null, {
-      status: request.method === 'POST' && status ? Number(status) : 404,
-    })
-  },
+  fetch: (request) => receiverResponse(request),
 })
 
 process.stdout.write(

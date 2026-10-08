@@ -202,9 +202,15 @@ test('a secret is rotated with an overlap, the overlap is ended, and the endpoin
   await dialog(page).getByRole('checkbox', { name: 'user.created' }).check()
   await dialog(page).getByRole('button', { name: 'Add endpoint' }).click()
   const first = (await dialog(page).getByTestId('webhook-secret').textContent()) ?? ''
+  // The form became the secret under the reader: the focus is on what the dialog now says.
+  await expect(
+    dialog(page).getByRole('heading', { name: 'Copy the signing secret now' })
+  ).toBeFocused()
   // Escape closes the dialog as the button does, and takes the secret with it.
   await page.keyboard.press('Escape')
   await expect(dialog(page)).toBeHidden()
+  // Checked at once, with no wait: the secret has left the document before the dialog is
+  // seen to be closed.
   await expectNoSecretKept(page, [first])
 
   await card(page, address)
@@ -242,9 +248,15 @@ test('a secret is rotated with an overlap, the overlap is ended, and the endpoin
   await overlap.getByRole('button', { name: `End the secret overlap of ${address} now` }).click()
   await expect(dialog(page)).toContainText('The previous secret stops signing at once')
   await expectScreenAccessible(page, 'confirm ending the overlap')
+  // The dialog names the endpoint it acts on.
+  await expect(dialog(page).getByRole('heading')).toHaveText(
+    `End the secret overlap of ${address} now?`
+  )
   await dialog(page).getByRole('button', { name: 'End the overlap' }).click()
   await expect(page.getByText('Overlap ended: one secret signs')).toBeVisible()
   await expect(overlap).toBeHidden()
+  // The button that had the focus went with the overlap: the endpoint's name has it now.
+  await expect(card(page, address).getByRole('heading', { level: 2 })).toBeFocused()
 
   await card(page, address)
     .getByRole('button', { name: `Switch off ${address}` })
@@ -267,6 +279,8 @@ test('a secret is rotated with an overlap, the overlap is ended, and the endpoin
   await dialog(page).getByRole('button', { name: 'Delete endpoint' }).click()
   await expect(page.getByText('Endpoint deleted')).toBeVisible()
   await expect(card(page, address)).toHaveCount(0)
+  // The card and its dialog are gone, and the focus with them: the page's heading has it.
+  await expect(page.getByRole('heading', { level: 1, name: 'Webhooks' })).toBeFocused()
   await page.reload()
   await expect(page.getByRole('heading', { level: 1, name: 'Webhooks' })).toBeVisible()
   await expectNoSecretKept(page, [first, second])
@@ -281,4 +295,71 @@ test('a secret is rotated with an overlap, the overlap is ended, and the endpoin
   expect(log).not.toContain(first)
   expect(log).not.toContain(second)
   expect(log).not.toContain('/receive/')
+})
+
+test('a long address with nowhere to break wraps at a phone’s width, wherever it is shown', async ({
+  page,
+}) => {
+  // 600 characters with no space, hyphen or slash to break at.
+  const long = `${RECEIVER}/204?long=${Date.now()}&q=${'a'.repeat(600)}`
+  await open(page, `${ENVIRONMENT_PATH}/webhooks`, 'Webhooks')
+  await page.getByRole('button', { name: 'Add endpoint' }).click()
+  await dialog(page).getByLabel('Address').fill(long)
+  await dialog(page).getByRole('checkbox', { name: 'user.created' }).check()
+  await dialog(page).getByRole('button', { name: 'Add endpoint' }).click()
+  await expect(dialog(page)).toContainText('Copy the signing secret now')
+  await dialog(page).getByRole('button', { name: 'I have copied it' }).click()
+  await expect(dialog(page)).toBeHidden()
+  await expect(card(page, long)).toBeVisible()
+
+  /** Whether the open dialog lies inside the window and nothing in it scrolls sideways. */
+  async function dialogFits(): Promise<{ inside: boolean; overflow: number }> {
+    return dialog(page).evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return {
+        inside: box.left >= 0 && box.right <= window.innerWidth,
+        overflow: Math.max(0, element.scrollWidth - element.clientWidth),
+      }
+    })
+  }
+
+  await page.setViewportSize(PHONE)
+  expect(await sidewaysScroll(page), 'sideways scroll on the list').toBe(0)
+  await expectScreenAccessible(page, 'the list with a long address at 375px')
+
+  // Every dialog that names the endpoint: in its title (delete, switch off) or its text.
+  for (const [control, close] of [
+    [`Delete ${long}`, 'Cancel'],
+    [`Switch off ${long}`, 'Cancel'],
+    [`Rotate the secret of ${long}`, 'Cancel'],
+    [`Send a test event to ${long}`, 'Close'],
+  ] as const) {
+    await card(page, long).getByRole('button', { name: control }).click()
+    await expect(dialog(page)).toContainText('a'.repeat(600))
+    expect(await dialogFits(), `the dialog of “${control.slice(0, 20)}…”`).toEqual({
+      inside: true,
+      overflow: 0,
+    })
+    expect(await sidewaysScroll(page), `sideways scroll under “${control.slice(0, 20)}…”`).toBe(0)
+    if (control.startsWith('Delete')) {
+      await expectScreenAccessible(page, 'deleting an endpoint with a long address at 375px')
+    }
+    await dialog(page).getByRole('button', { name: close }).click()
+    await expect(dialog(page)).toBeHidden()
+  }
+
+  await card(page, long).getByRole('link', { name: 'Deliveries' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Webhook endpoint' })).toBeVisible()
+  await expect(card(page, long)).toBeVisible()
+  expect(await sidewaysScroll(page), 'sideways scroll on the endpoint’s screen').toBe(0)
+  await expectScreenAccessible(page, 'an endpoint with a long address at 375px')
+
+  // Deleted from its own screen: back at the list, which no longer has it.
+  await card(page, long)
+    .getByRole('button', { name: `Delete ${long}` })
+    .click()
+  await dialog(page).getByRole('button', { name: 'Delete endpoint' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Webhooks' })).toBeVisible()
+  await expect(card(page, long)).toHaveCount(0)
+  await page.setViewportSize(DESKTOP)
 })

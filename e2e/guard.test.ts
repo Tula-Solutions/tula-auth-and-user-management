@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { testRouteRefusal } from './guard'
+import { RECEIVER_HOST, receiverResponse } from './receiver'
 
 // Run with the harness tests (`bun run test:harness`, part of verify): the browser suite
 // itself is not, and this guard is what keeps the fixture's test routes away from web pages.
@@ -55,6 +56,96 @@ describe('who may call the e2e fixture’s test routes', () => {
   )
 })
 
+describe('the fixture’s webhook receiver', () => {
+  // Called, not read: the handler is a module of its own that starts nothing.
+  function ask(
+    path: string,
+    init: { method?: string; headers?: Record<string, string> } = {}
+  ): number {
+    const request = new Request(`http://${RECEIVER_HOST}${path}`, {
+      method: init.method ?? 'POST',
+      headers: { host: RECEIVER_HOST, ...init.headers },
+    })
+    return receiverResponse(request).status
+  }
+
+  test.each([
+    ['/receive/204', 204],
+    ['/receive/200', 200],
+    ['/receive/410', 410],
+    ['/receive/503', 503],
+    ['/receive/599', 599],
+  ])('the API’s delivery: POST %s is answered %i, with no body', async (path, status) => {
+    expect(ask(path)).toBe(status)
+    const answer = receiverResponse(
+      new Request(`http://${RECEIVER_HOST}${path}`, {
+        method: 'POST',
+        headers: { host: RECEIVER_HOST },
+      })
+    )
+    expect(await answer.text()).toBe('')
+  })
+
+  test.each([
+    ['a page (it sends Origin)', { origin: 'http://localhost:4318' }],
+    ['a page on the receiver’s own origin', { origin: `http://${RECEIVER_HOST}` }],
+    ['another name for the same port', { host: 'localhost:4320' }],
+    ['a rebound name', { host: 'evil.example:4320' }],
+    ['the API’s port', { host: '127.0.0.1:4318' }],
+    ['a cross-site fetch', { 'sec-fetch-site': 'cross-site' }],
+    ['a same-site fetch', { 'sec-fetch-site': 'same-site' }],
+  ])('%s is refused with 403, whatever status the path names', (_name, headers) => {
+    expect(ask('/receive/204', { headers })).toBe(403)
+    expect(ask('/receive/500', { headers })).toBe(403)
+    // The refusal comes first: not even "no such path" is said to a page.
+    expect(ask('/nothing-here', { headers })).toBe(403)
+  })
+
+  test('a request with no Host header is refused', () => {
+    const bare = new Request(`http://${RECEIVER_HOST}/receive/204`, { method: 'POST' })
+    bare.headers.delete('host')
+    expect(receiverResponse(bare).status).toBe(403)
+  })
+
+  test.each([
+    ['GET', '/receive/204'],
+    ['PUT', '/receive/204'],
+    ['DELETE', '/receive/204'],
+    ['POST', '/'],
+    ['POST', '/receive'],
+    ['POST', '/receive/'],
+    ['POST', '/receive/20'],
+    ['POST', '/receive/2040'],
+    ['POST', '/receive/199'],
+    ['POST', '/receive/600'],
+    ['POST', '/receive/abc'],
+    ['POST', '/receive/204/more'],
+    ['POST', '/__test/outbox'],
+  ])('%s %s is 404: only a POST to a status it can answer with', (method, path) => {
+    expect(ask(path, { method })).toBe(404)
+  })
+
+  test('the host it answers on is an argument, and the default is the address it is bound to', () => {
+    const elsewhere = new Request('http://127.0.0.1:5000/receive/204', {
+      method: 'POST',
+      headers: { host: '127.0.0.1:5000' },
+    })
+    expect(receiverResponse(elsewhere).status).toBe(403)
+    expect(receiverResponse(elsewhere, '127.0.0.1:5000').status).toBe(204)
+  })
+})
+
+/**
+ * Whether a source text gives the API outbound settings of its own or teaches a resolver a
+ * name. Comments are left out: the fixture explains, in prose, that it does neither.
+ */
+function outboundTouched(text: string): boolean {
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+  // `outbound` as a key (`outbound:`), a shorthand (`{ …, outbound }`, `{ outbound, … }`),
+  // an assignment, a call or a member; any call of `.point(`; the fake guard by name.
+  return /\boutbound\s*[:=(.,}]|[{,]\s*outbound\b|\.point\(|FakeOutbound/.test(code)
+}
+
 describe('the fixture’s test routes', () => {
   // The fixture cannot be imported here (it refuses to start without E2E=1 and binds ports),
   // so its source is read: a test route answered before the guard would be open to any page.
@@ -72,30 +163,39 @@ describe('the fixture’s test routes', () => {
     expect(source.match(/\/__test\/[a-z-]+'/g)?.length).toBe(routes.length)
   })
 
-  test('the webhook receiver is guarded on its own address, and the outbound guard is left alone', () => {
-    const receiver = '127.0.0.1:4320'
-    expect(source).toContain('export const RECEIVER_PORT = 4320')
-    // Bound to the loopback address and guarded for exactly that host: a page cannot post
-    // to it (an `Origin`), nor reach it under another name.
+  test('the webhook receiver is served by its handler alone, on the loopback address', () => {
+    // The handler is tested below by calling it. What can only be read is that the fixture
+    // serves nothing else on that port, and binds it to the address the handler answers on.
     const at = source.indexOf('const receiver = Bun.serve(')
-    const body = source.slice(at, source.indexOf('process.stdout.write(', at))
-    expect(body).toContain("hostname: '127.0.0.1'")
-    expect(body).toContain('testRouteRefusal(request, `127.0.0.1:${RECEIVER_PORT}`)')
-    expect(body.indexOf('testRouteRefusal(')).toBeLessThan(body.indexOf('new URL(request.url)'))
-    expect(body.indexOf('new URL(request.url)')).toBeGreaterThan(-1)
-    const post = (headers: Record<string, string>) =>
-      new Request(`http://${receiver}/receive/204`, { method: 'POST', headers })
-    expect(testRouteRefusal(post({ host: receiver }), receiver)).toBeNull()
-    expect(
-      testRouteRefusal(post({ host: receiver, origin: 'http://localhost:4318' }), receiver)
-    ).not.toBeNull()
-    expect(testRouteRefusal(post({ host: 'localhost:4320' }), receiver)).not.toBeNull()
-    // The fixture gives the API no outbound settings of its own and teaches its resolver no
-    // name: deliveries pass the same guard a `local` deployment has.
-    expect(source).not.toMatch(/\boutbound\s*[:=(.]/)
-    expect(source).not.toContain('.point(')
-    expect(source).not.toContain('FakeOutbound')
+    expect(at).toBeGreaterThan(-1)
+    const served = source.slice(at, source.indexOf('process.stdout.write(', at))
+    expect(served.replace(/\s+/g, ' ')).toBe(
+      "const receiver = Bun.serve({ port: RECEIVER_PORT, hostname: '127.0.0.1', fetch: (request) => receiverResponse(request), }) "
+    )
+    expect(RECEIVER_HOST).toBe('127.0.0.1:4320')
     expect(routes.map((route) => route[1])).toContain('/__test/webhook-round')
+  })
+
+  test.each([
+    // No outbound settings of its own, however they are written, and no name taught to a
+    // resolver: deliveries pass the same guard a `local` deployment has.
+    ['an `outbound` property', 'createTestDeps({ outbound: { tier } })'],
+    ['the shorthand in a spread', 'const made = { ...deps, outbound }'],
+    ['the shorthand alone', 'createApp({ outbound })'],
+    ['the shorthand before another key', 'createApp({ outbound, clock })'],
+    ['an assignment', 'deps.outbound = loose'],
+    ['a member of it', 'deps.outbound.resolver.point(name, address)'],
+    ['a resolver taught a name', 'resolver.point("receiver.test", "127.0.0.1")'],
+    ['the fake guard', 'new FakeOutbound("local")'],
+  ])('the check that the outbound guard is left alone would catch %s', (_name, line) => {
+    expect(outboundTouched(line)).toBe(true)
+  })
+
+  test('the fixture leaves the outbound guard alone', () => {
+    expect(outboundTouched(source)).toBe(false)
+    // The check reads code, not prose: the fixture's comments do speak of the guard.
+    expect(source).toContain('outbound guard')
+    expect(outboundTouched('// the fixture’s outbound guard is the API’s own')).toBe(false)
   })
 
   test('the clock a scenario moved forward can be put back, behind the same guard', () => {
