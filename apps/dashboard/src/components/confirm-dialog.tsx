@@ -9,7 +9,7 @@ import { Label } from './ui/label'
 export interface ConfirmDialogProps {
   open: boolean
   /** The question, naming what is acted on ("Ban ada@example.com?"). */
-  title: string
+  title: ReactNode
   /** What will happen, in a sentence or two. */
   children?: ReactNode
   /** The confirming button's label ("Ban user"). */
@@ -79,8 +79,9 @@ export function ConfirmDialog({
         {requireText !== undefined ? (
           <div className='flex flex-col gap-2'>
             <Label htmlFor={inputId}>
-              Type <span className='font-mono font-semibold break-all'>{requireText}</span> to
-              confirm
+              {/* Kept apart from the sentence's direction: what is typed is a name, an
+                  address, text from the server, in whatever script it is in. */}
+              Type <bdi className='font-mono font-semibold break-all'>{requireText}</bdi> to confirm
             </Label>
             <Input
               id={inputId}

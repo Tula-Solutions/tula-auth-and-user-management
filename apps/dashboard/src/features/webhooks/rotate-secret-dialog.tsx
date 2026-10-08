@@ -6,6 +6,7 @@ import { Modal } from '~/components/modal'
 import { SecretRequestActions } from '~/components/secret-request-actions'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
+import { Address } from './address'
 import { refreshWebhooks } from './queries'
 import { SecretOnce } from './secret-once'
 import { webhookMessageFor } from './words'
@@ -105,10 +106,9 @@ export function RotateSecretDialog({
       busy={rotate.isPending}
       description={
         <>
-          The server makes a new secret for{' '}
-          <span className='font-mono break-all'>{endpoint.url}</span> and shows it once. The current
-          secret is not dropped: for 24 hours every delivery is signed with both, so your receiver
-          keeps verifying while you deploy the new one.
+          The server makes a new secret for <Address url={endpoint.url} /> and shows it once. The
+          current secret is not dropped: for 24 hours every delivery is signed with both, so your
+          receiver keeps verifying while you deploy the new one.
         </>
       }
     >

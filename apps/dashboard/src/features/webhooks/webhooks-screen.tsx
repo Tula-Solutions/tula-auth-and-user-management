@@ -1,5 +1,5 @@
 import { MAX_WEBHOOK_ENDPOINTS } from '@tula/contract'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useListWebhookEndpoints } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
 import { PageHeader } from '~/components/page'
@@ -19,9 +19,25 @@ export function WebhooksScreen({ scope }: { scope: EnvironmentScope }) {
   const environment = useEnvironment()
   const endpoints = useListWebhookEndpoints({ request: useEnvironmentRequest() })
   const [adding, setAdding] = useState(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const deleted = useRef(false)
+  const listed = endpoints.data?.data.map((endpoint) => endpoint.id).join(' ')
+
+  // A deleted endpoint's card goes, and with it the dialog that had the focus: it would
+  // fall to the document. Once the list no longer holds the card, the page's heading takes
+  // it. (Not sooner: while the dialog is open nothing outside it can be focused.)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the list changed, which is what `listed` says
+  useEffect(() => {
+    if (deleted.current) {
+      deleted.current = false
+      heading.current?.focus()
+    }
+  }, [listed])
+
   return (
     <>
       <PageHeader
+        headingRef={heading}
         title='Webhooks'
         description='A webhook is a signed notice, sent to your backend, of something that has already happened in this environment. Its answer changes nothing here.'
         actions={<ActionButton onClick={() => setAdding(true)}>Add endpoint</ActionButton>}
@@ -42,7 +58,13 @@ export function WebhooksScreen({ scope }: { scope: EnvironmentScope }) {
                 {list.data.map((endpoint) => (
                   // The environment is part of the key: a card holds open dialogs and a form.
                   <li key={`${environment.id}:${endpoint.id}`}>
-                    <EndpointCard scope={scope} endpoint={endpoint} />
+                    <EndpointCard
+                      scope={scope}
+                      endpoint={endpoint}
+                      onDeleted={() => {
+                        deleted.current = true
+                      }}
+                    />
                   </li>
                 ))}
               </ul>

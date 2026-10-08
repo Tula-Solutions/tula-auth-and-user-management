@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { act, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { expectFocus } from '~/testing/harness'
 import { Modal } from './modal'
 
@@ -16,10 +17,33 @@ function escapeRefused(): boolean {
   return asked.defaultPrevented
 }
 
-test('a dialog that is not busy lets Escape through and reports the close', () => {
+test('Escape on a dialog that is not busy asks its owner to close it, and closes nothing itself', () => {
   let closed = 0
   render(<Modal open onClose={() => closed++} title='Add a thing' />)
-  expect(escapeRefused()).toBe(false)
+  // The browser is not left to close it: the owner takes the body away first.
+  expect(escapeRefused()).toBe(true)
+  expect(closed).toBe(1)
+  expect(dialog().open).toBe(true)
+})
+
+test('a dialog closes, with its body gone, when its owner says so after Escape', () => {
+  function Owner() {
+    const [open, setOpen] = useState(true)
+    return (
+      <Modal open={open} onClose={() => setOpen(false)} title='Add a thing'>
+        <p>shown once</p>
+      </Modal>
+    )
+  }
+  render(<Owner />)
+  escapeRefused()
+  expect(screen.queryByText('shown once') === null).toBe(true)
+  expect((document.querySelector('dialog') as HTMLDialogElement).open).toBe(false)
+})
+
+test('a close the browser makes by itself is reported', () => {
+  let closed = 0
+  render(<Modal open onClose={() => closed++} title='Add a thing' />)
   act(() => dialog().close())
   expect(closed).toBe(1)
 })
@@ -28,6 +52,7 @@ test('a busy dialog refuses Escape, and undoes a close the browser forces', () =
   let closed = 0
   render(<Modal open busy onClose={() => closed++} title='Add a thing' />)
   expect(escapeRefused()).toBe(true)
+  expect(closed).toBe(0)
   act(() => dialog().close())
   expect(dialog().open).toBe(true)
   expect(closed).toBe(0)
@@ -37,8 +62,7 @@ test('a dialog that stops being busy can be closed again', () => {
   let closed = 0
   const view = render(<Modal open busy onClose={() => closed++} title='Add a thing' />)
   view.rerender(<Modal open onClose={() => closed++} title='Add a thing' />)
-  expect(escapeRefused()).toBe(false)
-  act(() => dialog().close())
+  escapeRefused()
   expect(closed).toBe(1)
 })
 

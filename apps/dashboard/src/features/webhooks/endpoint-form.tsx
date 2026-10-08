@@ -5,6 +5,7 @@ import { fieldErrorMap, toApiError } from '~/api/errors'
 import { TextField } from '~/components/field'
 import { Checkbox } from '~/components/ui/checkbox'
 import { Label } from '~/components/ui/label'
+import { eventTypeNote } from './event-type-notes'
 import { type WebhookAction, webhookMessageFor } from './words'
 
 /** What is wrong with an endpoint's form, by field. */
@@ -155,18 +156,33 @@ export function EventTypesField({
         backend handles.
       </p>
       <div className='grid max-h-64 gap-x-4 gap-y-2 overflow-y-auto rounded-md border bg-field p-3 sm:grid-cols-2'>
-        {ACTIVITY_TYPES.map((type) => (
-          <div key={type} className='flex items-center gap-2'>
-            <Checkbox
-              id={`${id}-${type}`}
-              checked={value.has(type)}
-              onCheckedChange={(checked) => toggle(type, checked === true)}
-            />
-            <Label htmlFor={`${id}-${type}`} className='font-mono text-xs font-normal break-all'>
-              {type}
-            </Label>
-          </div>
-        ))}
+        {ACTIVITY_TYPES.map((type) => {
+          // A type whose name could be taken for something else says what it is about.
+          const note = eventTypeNote(type)
+          return (
+            <div key={type} className='flex items-start gap-2'>
+              <Checkbox
+                id={`${id}-${type}`}
+                checked={value.has(type)}
+                aria-describedby={note ? `${id}-${type}-note` : undefined}
+                onCheckedChange={(checked) => toggle(type, checked === true)}
+              />
+              <div className='flex min-w-0 flex-col gap-0.5'>
+                <Label
+                  htmlFor={`${id}-${type}`}
+                  className='font-mono text-xs font-normal break-all'
+                >
+                  {type}
+                </Label>
+                {note ? (
+                  <span id={`${id}-${type}-note`} className='text-xs text-muted-foreground'>
+                    {note}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          )
+        })}
       </div>
       {error ? (
         <p id={errorId} role='alert' className='text-sm text-destructive'>

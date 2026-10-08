@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { type ReactNode, useId, useState } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import {
   useDeleteWebhookEndpoint,
   useRevokePreviousWebhookSecret,
@@ -14,6 +14,7 @@ import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environm
 import type { EnvironmentScope } from '~/features/users/users-screen'
 import { formatDateTime } from '~/lib/format'
 import { cn } from '~/lib/utils'
+import { Address, shownAddress } from './address'
 import { EditEndpointDialog } from './edit-endpoint-dialog'
 import { forgetEndpoint, refreshWebhooks } from './queries'
 import { Moment, RotateSecretDialog } from './rotate-secret-dialog'
@@ -91,7 +92,22 @@ export function EndpointCard({
   const [rotating, setRotating] = useState(false)
   const [testing, setTesting] = useState(false)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const title = useRef<HTMLHeadingElement>(null)
+  const [overlapsEnded, setOverlapsEnded] = useState(0)
   const url = endpoint.url
+  // How the address is said in a control's name and typed to confirm: what is shown.
+  const shown = shownAddress(url)
+  const address = <Address url={url} />
+
+  // The button that ended the overlap is gone with the overlap, and so is the focus a closing
+  // dialog would have given back to it: it goes to this endpoint's name. In an effect, after
+  // the dialog's own (a child's effects run first): until the dialog has closed, nothing
+  // outside it can take the focus.
+  useEffect(() => {
+    if (overlapsEnded > 0) {
+      title.current?.focus()
+    }
+  }, [overlapsEnded])
 
   function closeConfirmation() {
     update.reset()
@@ -116,7 +132,7 @@ export function EndpointCard({
   const dialogs: Record<
     Confirmation,
     {
-      title: string
+      title: ReactNode
       label: string
       body: ReactNode
       destructive?: boolean
@@ -128,7 +144,7 @@ export function EndpointCard({
     }
   > = {
     off: {
-      title: `Switch off ${url}?`,
+      title: <>Switch off {address}?</>,
       label: 'Switch off',
       body: 'Nothing is sent to it while it is off, and events that happen while it is off are not sent later. Deliveries that are pending wait, and are given up once they are three days old.',
       pending: update.isPending,
@@ -136,7 +152,7 @@ export function EndpointCard({
       run: () => switchTo(false),
     },
     on: {
-      title: `Switch on ${url}?`,
+      title: <>Switch on {address}?</>,
       label: 'Switch on',
       body: 'Events of its types are delivered to it again from now on. Deliveries that were pending are tried again unless they are more than three days old. The server forgets why it was off and since when it was failing.',
       pending: update.isPending,
@@ -144,20 +160,28 @@ export function EndpointCard({
       run: () => switchTo(true),
     },
     'end-overlap': {
-      title: 'End the overlap now?',
+      title: <>End the secret overlap of {address} now?</>,
       label: 'End the overlap',
       body: 'The previous secret stops signing at once and is deleted. Do this once your receiver verifies with the new secret, or when the previous one has leaked. A receiver that still verifies with the previous secret alone refuses every delivery from then on, until it is given the new one.',
       destructive: true,
+      // A receiver that holds only the previous secret is cut off at once: in production the
+      // endpoint is named by typing it, as for a deletion.
+      typed: environment.kind === 'production',
       pending: revoke.isPending,
       error: revoke.error,
       run: () =>
         revoke.mutate(
           { id: endpoint.id },
-          { onSuccess: () => done('Overlap ended: one secret signs') }
+          {
+            onSuccess: async () => {
+              await done('Overlap ended: one secret signs')
+              setOverlapsEnded((count) => count + 1)
+            },
+          }
         ),
     },
     delete: {
-      title: `Delete ${url}?`,
+      title: <>Delete {address}?</>,
       label: 'Delete endpoint',
       body: 'Nothing more is delivered to it. Its signing secret, its pending deliveries and the log of everything delivered to it are deleted with it, and cannot be brought back.',
       destructive: true,
@@ -189,8 +213,13 @@ export function EndpointCard({
     >
       <div className='flex flex-col gap-2'>
         {/* The address is the endpoint's name. Server text: rendered as text, never a link. */}
-        <h2 id={titleId} className='font-mono text-sm font-semibold break-all'>
-          {url}
+        <h2
+          ref={title}
+          id={titleId}
+          tabIndex={-1}
+          className='text-sm font-semibold outline-none focus-visible:underline'
+        >
+          {address}
         </h2>
         <EndpointState endpoint={endpoint} />
       </div>
@@ -217,7 +246,7 @@ export function EndpointCard({
           <ActionButton
             variant='outline'
             size='sm'
-            aria-label={`End the secret overlap of ${url} now`}
+            aria-label={`End the secret overlap of ${shown} now`}
             onClick={() => setConfirmation('end-overlap')}
           >
             End the overlap now
@@ -237,7 +266,7 @@ export function EndpointCard({
         <ActionButton
           variant='outline'
           size='sm'
-          aria-label={`Edit ${url}`}
+          aria-label={`Edit ${shown}`}
           onClick={() => setEditing(true)}
         >
           Edit
@@ -245,7 +274,7 @@ export function EndpointCard({
         <ActionButton
           variant='outline'
           size='sm'
-          aria-label={`${endpoint.enabled ? 'Switch off' : 'Switch on'} ${url}`}
+          aria-label={`${endpoint.enabled ? 'Switch off' : 'Switch on'} ${shown}`}
           onClick={() => setConfirmation(endpoint.enabled ? 'off' : 'on')}
         >
           {endpoint.enabled ? 'Switch off' : 'Switch on'}
@@ -253,7 +282,7 @@ export function EndpointCard({
         <ActionButton
           variant='outline'
           size='sm'
-          aria-label={`Send a test event to ${url}`}
+          aria-label={`Send a test event to ${shown}`}
           onClick={() => setTesting(true)}
         >
           Send a test event
@@ -261,7 +290,7 @@ export function EndpointCard({
         <ActionButton
           variant='outline'
           size='sm'
-          aria-label={`Rotate the secret of ${url}`}
+          aria-label={`Rotate the secret of ${shown}`}
           onClick={() => setRotating(true)}
         >
           Rotate the secret
@@ -269,7 +298,7 @@ export function EndpointCard({
         <ActionButton
           variant='destructive'
           size='sm'
-          aria-label={`Delete ${url}`}
+          aria-label={`Delete ${shown}`}
           onClick={() => setConfirmation('delete')}
         >
           Delete
@@ -288,7 +317,7 @@ export function EndpointCard({
         title={active?.title ?? ''}
         confirmLabel={active?.label ?? ''}
         destructive={active?.destructive}
-        requireText={active?.typed ? url : undefined}
+        requireText={active?.typed ? shown : undefined}
         pending={active?.pending}
         error={active?.error}
         errorText={webhookMessageFor}

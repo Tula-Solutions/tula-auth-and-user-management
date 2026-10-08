@@ -7,8 +7,11 @@ export interface ModalProps {
   open: boolean
   /** Called when the operator dismisses it (Escape, or a button that calls it). */
   onClose: () => void
-  /** The dialog's heading; it names the dialog for assistive technology. */
-  title: string
+  /**
+   * The dialog's heading; it names the dialog for assistive technology. Text, or text with
+   * a part that needs an element of its own (an address kept apart from the sentence).
+   */
+  title: ReactNode
   /** A sentence under the heading that describes the dialog. */
   description?: ReactNode
   /** The body; rendered only while the dialog is open. */
@@ -70,12 +73,19 @@ export function Modal({
 
   // A dialog that becomes another one while it is open (a form, then its result) took away
   // what had the focus and said nothing: the focus goes to the new title, which is read.
+  // After every render, by what the heading says: a title may be more than a string.
   useEffect(() => {
-    if (open && shownTitle.current !== null && shownTitle.current !== title) {
-      heading.current?.focus()
+    const said = open ? (heading.current?.textContent ?? null) : null
+    if (said !== null && shownTitle.current !== null && shownTitle.current !== said) {
+      // Focusable only from here on, never as rendered: `showModal()` gives the focus to the
+      // first thing in the dialog that can take it, and that must stay the first field.
+      if (heading.current !== null) {
+        heading.current.tabIndex = -1
+        heading.current.focus()
+      }
     }
-    shownTitle.current = open ? title : null
-  }, [open, title])
+    shownTitle.current = said
+  })
 
   return (
     <dialog
@@ -83,9 +93,13 @@ export function Modal({
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
       // Escape. The backdrop needs nothing: a click on it does not close a `<dialog>`.
+      // The dialog is closed by the effect above, after the commit that took its body away,
+      // and not by the browser first: what it showed (a secret) is out of the document by
+      // the time the dialog is seen to be closed, not a moment after.
       onCancel={(event) => {
-        if (busy) {
-          event.preventDefault()
+        event.preventDefault()
+        if (!busy) {
+          onClose()
         }
       }}
       onClose={() => {
@@ -109,7 +123,6 @@ export function Modal({
             <h2
               ref={heading}
               id={titleId}
-              tabIndex={-1}
               className='text-lg font-semibold break-words outline-none'
             >
               {title}

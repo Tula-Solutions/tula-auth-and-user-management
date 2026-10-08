@@ -12,6 +12,8 @@ import { SelectField } from '~/components/field'
 import { Modal } from '~/components/modal'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import type { EnvironmentScope } from '~/features/users/users-screen'
+import { Address } from './address'
+import { eventTypeNote } from './event-type-notes'
 import { refreshWebhooks } from './queries'
 import { SendResult } from './send-result'
 import { webhookMessageFor } from './words'
@@ -89,8 +91,8 @@ export function TestEventDialog({
       title='Send a test event'
       description={
         <>
-          One request is made to <span className='font-mono break-all'>{endpoint.url}</span>, now,
-          signed like any delivery. Its body is an example of the type you choose, with{' '}
+          One request is made to <Address url={endpoint.url} />, now, signed like any delivery. Its
+          body is an example of the type you choose, with{' '}
           <code className='font-mono'>"test": true</code> in it so that your receiver can tell it
           from a real event.
         </>
@@ -113,6 +115,7 @@ export function TestEventDialog({
       </p>
       <SelectField
         label='Event type'
+        hint={eventTypeNote(eventType)}
         value={eventType}
         onChange={(event) => setEventType(event.target.value as ActivityType)}
       >
