@@ -107,6 +107,40 @@ describe('JWT templates', () => {
     expect(screen.getByText('No unsaved changes.')).toBeTruthy()
   })
 
+  // The contract's rule, not a copy of it: these three pass a looser pattern and are refused
+  // by the server, so the operator would only learn of them at the save.
+  test.each(['a_b', 'a--b', 'a-'])(
+    'a template named %p is refused in the form, before any save',
+    async (name) => {
+      const current = start()
+      await addTemplate(current, name)
+      expect(
+        screen.getByText(
+          'Use lowercase letters, digits and single “-”, starting with a letter (up to 32).'
+        )
+      ).toBeTruthy()
+      expect(screen.getByText('No templates yet.')).toBeTruthy()
+      expect(screen.getByText('No unsaved changes.')).toBeTruthy()
+      await save(current)
+      expect(current.api.calls.filter((call) => call.method === 'PUT')).toHaveLength(0)
+    }
+  )
+
+  test.each(['a_b', 'a--b', 'a-'])(
+    'a profile named %p is refused in the form too',
+    async (name) => {
+      const current = start()
+      await current.user.type(await screen.findByLabelText('New profile name'), name)
+      await current.user.click(screen.getByRole('button', { name: 'Add profile' }))
+      expect(
+        screen.getByText(
+          'Use lowercase letters, digits and single “-”, starting with a letter (up to 32).'
+        )
+      ).toBeTruthy()
+      expect(screen.getByText('No unsaved changes.')).toBeTruthy()
+    }
+  )
+
   test('a second template of the same name is refused, and Enter adds one', async () => {
     const current = start()
     await current.user.type(await screen.findByLabelText('New template name'), 'app{Enter}')

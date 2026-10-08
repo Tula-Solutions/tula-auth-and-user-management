@@ -5133,6 +5133,34 @@ isRelyingPartyId('northline.app') // true
 isRelyingPartyId('https://northline.app') // false
 ```
 
+### `isSessionProfileName`
+
+_function_, defined in `packages/contract/src/session-profile.ts`
+
+Whether a value is a valid name for a session profile, which is also the grammar of a JWT
+template's name: lowercase letters, digits and single hyphens, starting with a letter, at
+most {@link MAX_SESSION_PROFILE_NAME_LENGTH} characters.
+
+The one rule: {@link SessionProfileNameSchema} and the settings schema use it, and so does
+a form that asks for a name, so that nothing accepts a name a save then refuses.
+
+```ts
+export function isSessionProfileName(name: unknown): name is string
+```
+
+**Parameters**
+
+- `name`: The candidate.
+
+**Returns** Whether it is a valid name.
+
+**Example**
+
+```ts
+isSessionProfileName('back-office') // true
+isSessionProfileName('back_office') // false
+```
+
 ### `isValidThemeValue`
 
 _function_, defined in `packages/contract/src/theme.ts`

@@ -1,4 +1,8 @@
-import { BUILT_IN_SESSION_PROFILES, MAX_SESSIONS_PER_USER } from '@tula/contract'
+import {
+  BUILT_IN_SESSION_PROFILES,
+  isSessionProfileName,
+  MAX_SESSIONS_PER_USER,
+} from '@tula/contract'
 import { useState } from 'react'
 import type { SessionProfile } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
@@ -9,7 +13,6 @@ import { numberOrNull, textOrNull } from './inputs'
 import { JwtTemplatesSection } from './jwt-templates-section'
 import { type SettingsEditor, SettingsFrame } from './settings-editor'
 
-const PROFILE_NAME = /^[a-z][a-z0-9_-]{0,31}$/
 const DURATION_HINT = 'A number and a unit: 60s, 15m, 12h, 7d.'
 
 function isBuiltIn(name: string): boolean {
@@ -159,9 +162,9 @@ function SessionFields({ draft, update, errors }: SettingsEditor) {
 
   function addProfile() {
     const name = newName.trim()
-    if (!PROFILE_NAME.test(name)) {
+    if (!isSessionProfileName(name)) {
       setNameProblem(
-        'Use lowercase letters, digits, “-” or “_”, starting with a letter (up to 32).'
+        'Use lowercase letters, digits and single “-”, starting with a letter (up to 32).'
       )
       return
     }

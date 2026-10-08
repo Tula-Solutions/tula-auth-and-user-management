@@ -15,7 +15,8 @@ the one claim `ext` of the access token, and in what the server answers for a st
 session. A token of a profile without a template is unchanged.
 
 - `@tula/contract`: `JwtTemplateSchema`, `JwtTemplateClaimSchema`, `JWT_TEMPLATE_SOURCES`,
-  `jwtTemplateMaxBytes`, `readStoredJwtTemplate`, `jwtTemplateOfProfile`, the optional `ext`
+  `jwtTemplateMaxBytes`, `readStoredJwtTemplate`, `jwtTemplateOfProfile`,
+  `isSessionProfileName` (the one rule for a profile's and a template's name), the optional `ext`
   on `AccessTokenClaimsSchema`, and `settingsWeakenings` reports
   `sessions.profiles.<name>.jwtTemplate` when a profile's sessions lose a claim or get a
   redefined one. A new Zod-free entry point, `@tula/contract/custom-claims`:

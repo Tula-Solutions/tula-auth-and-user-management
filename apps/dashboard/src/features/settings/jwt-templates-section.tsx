@@ -1,5 +1,6 @@
 import {
   isCustomClaimKey,
+  isSessionProfileName,
   JWT_TEMPLATE_SOURCES,
   type JwtTemplateSource,
   jwtTemplateMaxBytes,
@@ -17,8 +18,6 @@ import { Section } from '~/components/page'
 import { NativeSelectOption } from '~/components/ui/native-select'
 import { wholeNumber } from './inputs'
 import type { SettingsEditor } from './settings-editor'
-
-const TEMPLATE_NAME = /^[a-z][a-z0-9_-]{0,31}$/
 
 /** What a claim's value is, as the select offers it: a source, or a kind of constant. */
 type ClaimKind = JwtTemplateSource | 'text' | 'number' | 'boolean'
@@ -320,8 +319,8 @@ export function JwtTemplatesSection({ draft, update, errors }: SettingsEditor) {
 
   function addTemplate() {
     const name = newName.trim()
-    const problem = !TEMPLATE_NAME.test(name)
-      ? 'Use lowercase letters, digits, “-” or “_”, starting with a letter (up to 32).'
+    const problem = !isSessionProfileName(name)
+      ? 'Use lowercase letters, digits and single “-”, starting with a letter (up to 32).'
       : Object.hasOwn(templates, name)
         ? 'A template with that name exists.'
         : Object.keys(templates).length >= MAX_JWT_TEMPLATES

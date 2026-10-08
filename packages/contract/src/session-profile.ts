@@ -73,6 +73,31 @@ export type BuiltInSessionProfile = (typeof BUILT_IN_SESSION_PROFILES)[number]
 const PROFILE_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 
 /**
+ * Whether a value is a valid name for a session profile, which is also the grammar of a JWT
+ * template's name: lowercase letters, digits and single hyphens, starting with a letter, at
+ * most {@link MAX_SESSION_PROFILE_NAME_LENGTH} characters.
+ *
+ * The one rule: {@link SessionProfileNameSchema} and the settings schema use it, and so does
+ * a form that asks for a name, so that nothing accepts a name a save then refuses.
+ *
+ * @param name - The candidate.
+ * @returns Whether it is a valid name.
+ *
+ * @example
+ * ```ts
+ * isSessionProfileName('back-office') // true
+ * isSessionProfileName('back_office') // false
+ * ```
+ */
+export function isSessionProfileName(name: unknown): name is string {
+  return (
+    typeof name === 'string' &&
+    name.length <= MAX_SESSION_PROFILE_NAME_LENGTH &&
+    PROFILE_NAME.test(name)
+  )
+}
+
+/**
  * A session profile's name: lowercase letters, digits and single hyphens, starting with a
  * letter, at most {@link MAX_SESSION_PROFILE_NAME_LENGTH} characters (`web`, `admin`,
  * `back-office`). Also the shape of the `x-tula-session-profile` header.
@@ -253,15 +278,9 @@ function profilesOf(profile: ProfileSchema) {
   return z
     .object({ web: profile.prefault({}), mobile: profile.prefault({}) })
     .catchall(profile)
-    .refine(
-      (profiles) =>
-        customNames(profiles).every(
-          (name) => name.length <= MAX_SESSION_PROFILE_NAME_LENGTH && PROFILE_NAME.test(name)
-        ),
-      {
-        message: `a profile name is lowercase letters, digits and single hyphens, starting with a letter, at most ${MAX_SESSION_PROFILE_NAME_LENGTH} characters`,
-      }
-    )
+    .refine((profiles) => customNames(profiles).every(isSessionProfileName), {
+      message: `a profile name is lowercase letters, digits and single hyphens, starting with a letter, at most ${MAX_SESSION_PROFILE_NAME_LENGTH} characters`,
+    })
     .refine((profiles) => customNames(profiles).length <= MAX_CUSTOM_SESSION_PROFILES, {
       message: `at most ${MAX_CUSTOM_SESSION_PROFILES} profiles besides web and mobile`,
     })
@@ -273,16 +292,15 @@ function profilesOf(profile: ProfileSchema) {
 
 const TEMPLATE_NAME_RULE = `a template name is lowercase letters, digits and single hyphens, starting with a letter, at most ${MAX_SESSION_PROFILE_NAME_LENGTH} characters`
 
-function isTemplateName(name: string): boolean {
-  return name.length <= MAX_SESSION_PROFILE_NAME_LENGTH && PROFILE_NAME.test(name)
-}
-
 /**
  * The environment's JWT templates by name (the grammar of a profile name), at most
  * {@link MAX_JWT_TEMPLATES}. See `JwtTemplate`.
  */
 const JwtTemplates = z
-  .record(z.string().refine(isTemplateName, { message: TEMPLATE_NAME_RULE }), JwtTemplateSchema)
+  .record(
+    z.string().refine(isSessionProfileName, { message: TEMPLATE_NAME_RULE }),
+    JwtTemplateSchema
+  )
   .refine((templates) => Object.keys(templates).length <= MAX_JWT_TEMPLATES, {
     message: `at most ${MAX_JWT_TEMPLATES} templates`,
   })
@@ -300,7 +318,11 @@ const StoredJwtTemplates = z
     }
     for (const name of Object.keys(stored)) {
       const template = readStoredJwtTemplate((stored as Record<string, unknown>)[name])
-      if (template && isTemplateName(name) && Object.keys(templates).length < MAX_JWT_TEMPLATES) {
+      if (
+        template &&
+        isSessionProfileName(name) &&
+        Object.keys(templates).length < MAX_JWT_TEMPLATES
+      ) {
         templates[name] = template
       }
     }
