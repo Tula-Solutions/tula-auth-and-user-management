@@ -231,6 +231,21 @@ describe('a template’s claims', () => {
     expect(decoded(refreshed).ext).toMatchObject({ verified: true })
   })
 
+  // The two times are different facts. Everywhere else in this file the user and the session
+  // begin at the same instant of the fixed clock, where reading one for the other goes unseen.
+  test('`user.created_at` and `session.created_at` are each their own time', async () => {
+    expect(deps.clock.now().toISOString()).toBe('2026-01-01T00:00:00.000Z')
+    deps.clock.advance('3d')
+    const tokens = await create()
+    expect(decoded(tokens).ext).toMatchObject({ since: 1_767_225_600, signed_in: 1_767_484_800 })
+    deps.clock.advance('30s')
+    const refreshed = await Sessions.refresh(deps, tenant, refreshToken(tokens))
+    expect(decoded(refreshed).ext).toMatchObject({
+      since: 1_767_225_600,
+      signed_in: 1_767_484_800,
+    })
+  })
+
   test('`session.created_at` does not move with a refresh or a step-up', async () => {
     const signedIn = seconds(deps.clock.now())
     const tokens = await create()
