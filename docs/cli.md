@@ -122,6 +122,7 @@ tula doctor --json             # for a pipeline
 | `clock` | server | The API's clock against the database's. |
 | `public_url` | server, or here | `PUBLIC_URL` reaches the API. A loopback one is checked from this machine, and only when it is the API URL you gave: an address the server names is never requested otherwise (`skipped`; run `tula doctor --api-url <PUBLIC_URL>`). |
 | `oauth_redirect_uris` | server | The redirect URI to register with each enabled provider (listed, not verified). |
+| `webhook_worker` | server | No event has waited a minute or more to be queued for delivery (in the 200 oldest environments). With `WEBHOOK_WORKER=separate` a waiting event is a failure: the worker is not running, or it cannot keep up or cannot work (the check cannot tell which). Where the API instances deliver it is a warning. It looks at what waits, never at the worker: `ok` with nothing waiting says nothing about whether a worker runs ([self-host.md](self-host.md#the-webhook-worker-as-its-own-service)). |
 | `server_checks` | here | Appears when the server's checks could not run, with why. |
 
 The server's checks need the instance admin token: set `TULA_ADMIN_TOKEN` in the API's

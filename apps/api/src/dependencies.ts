@@ -76,6 +76,15 @@ export interface AppConfig {
    * period, in its settings (`audit.retentionDays`, ADR 0017), not this one.
    */
   instanceAuditRetentionDays: number
+  /**
+   * Whether this process may make a request to a webhook endpoint: the worker's rounds, a test
+   * event, a delivery sent again. `false` only in an API instance of a deployment whose
+   * worker is its own service (`WEBHOOK_WORKER=separate`): there `Webhooks.run` does nothing
+   * and the two on-demand routes are refused (`not_implemented`, 501, with
+   * `params.reason: 'worker_separate'`). Decided once, by
+   * `planProcess` (`~/process`), from the command the process was started with.
+   */
+  deliversWebhooks: boolean
 }
 
 /**

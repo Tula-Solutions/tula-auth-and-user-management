@@ -44,6 +44,7 @@ describe('createContainer', () => {
       dashboardDir: null,
       apiDocs: true,
       instanceAuditRetentionDays: 365,
+      deliversWebhooks: true,
     })
     expect(deps.breachChecker).toBeInstanceOf(HibpBreachChecker)
     expect(deps.mailer).toBeInstanceOf(SmtpMailer)
@@ -109,6 +110,60 @@ describe('createContainer', () => {
     expect(deps.revokedSessions).toBeInstanceOf(RedisRevokedSessions)
     expect(deps.probes.map((probe) => probe.name)).toEqual(['database', 'redis'])
     await close()
+  })
+})
+
+describe('the webhook worker as its own service (WEBHOOK_WORKER)', () => {
+  test.each([
+    ['api', 'api', true],
+    ['api', 'separate', false],
+    ['worker', 'separate', true],
+  ] as const)(
+    'a process started as %s where WEBHOOK_WORKER is %s: deliversWebhooks is %p',
+    async (role, mode, expected) => {
+      const { deps, close } = createContainer(parseEnv({ ...base, WEBHOOK_WORKER: mode }), role)
+      expect(deps.config.deliversWebhooks).toBe(expected)
+      await close()
+    }
+  )
+
+  test('a worker where the API instances deliver is refused before anything is built', () => {
+    expect(() => createContainer(parseEnv({ ...base, WEBHOOK_WORKER: 'api' }), 'worker')).toThrow(
+      'Set WEBHOOK_WORKER=separate on every container'
+    )
+  })
+
+  test('the role defaults to the API: every existing caller is an API instance', async () => {
+    const { deps, close } = createContainer(parseEnv({ ...base, WEBHOOK_WORKER: 'separate' }))
+    expect(deps.config.deliversWebhooks).toBe(false)
+    await close()
+  })
+
+  test.each(['api', 'worker'] as const)(
+    'the outbound guard of a %s process is the tier and nothing else',
+    async (role) => {
+      const { deps, close } = createContainer(
+        parseEnv({ ...base, WEBHOOK_WORKER: 'separate' }),
+        role
+      )
+      expect(deps.outbound).toEqual({ tier: 'dev' })
+      await close()
+    }
+  )
+
+  test('a worker is ready when the database answers: it uses nothing of Redis', async () => {
+    const env = parseEnv({
+      ...base,
+      WEBHOOK_WORKER: 'separate',
+      REDIS_URL: 'redis://127.0.0.1:1',
+    })
+    const worker = createContainer(env, 'worker')
+    expect(worker.deps.probes.map((probe) => probe.name)).toEqual(['database'])
+    await worker.close()
+    // An API instance of the same deployment still checks both.
+    const api = createContainer(env, 'api')
+    expect(api.deps.probes.map((probe) => probe.name)).toEqual(['database', 'redis'])
+    await api.close()
   })
 })
 

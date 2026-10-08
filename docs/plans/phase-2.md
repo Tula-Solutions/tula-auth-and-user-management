@@ -213,6 +213,13 @@ for a step it does not know; the native SDKs must do the same from their first v
   rotation during an overlap is refused); the overlap can be ended early; the previous secret
   stops signing by the clock and is deleted by the worker's next round; `verifyWebhook` takes
   one secret or two.
+  *As built, the worker as its own service (TULA-52, decision D9, [ADR 0034](../adr/0034-webhooks.md#the-worker-as-its-own-service-added-2026-10-08-tula-52)):*
+  `WEBHOOK_WORKER=separate` on every process moves the deliveries into a worker process from
+  the same image (`bun run src/worker.ts`; the `worker` service of the Compose file, profile
+  `worker`), and an API instance then makes no delivery. A test event and a delivery sent
+  again are refused there (`not_implemented`, `worker_separate`); hooks and retention stay in
+  the API. The diagnostics gain `webhook_worker`, and CI's `self-host-worker` job delivers a
+  webhook through the worker's container.
 - **Why now.** First, because it is the oldest promise in the codebase (the outbox has been
   filling since Phase 0) and needs nothing external. Before 2.3 because hooks reuse its
   outbound client, its secret handling and its dashboard patterns.

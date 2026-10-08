@@ -47,6 +47,7 @@ import { findDashboardDir } from '~/lib/dashboard-files'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import * as logger from '~/lib/logger'
 import { createSecretBox } from '~/lib/secret-box'
+import { type ProcessPlan, type ProcessRole, planProcess } from '~/process'
 
 /** How long verification keys are cached per instance. See the rotation invariant. */
 export const SIGNING_KEY_CACHE_TTL_MS = 60_000
@@ -76,6 +77,8 @@ export const ENVIRONMENT_SETTINGS_VERSION_SEGMENT = 'es'
 /** Production dependencies plus the function that releases their resources. */
 export interface Container {
   deps: Deps
+  /** What this process does (`planProcess`): what it serves and which jobs it starts. */
+  plan: ProcessPlan
   close: () => Promise<void>
 }
 
@@ -85,9 +88,15 @@ export interface Container {
  * Connections are lazy, so building the container does not touch the network.
  *
  * @param env - Validated environment.
+ * @param role - What the process was started as: the API (the default) or the webhook worker
+ *   (`src/worker.ts`). With `WEBHOOK_WORKER` it decides whether this process may call a
+ *   webhook endpoint, and a worker's readiness is the database alone.
  * @returns The dependencies and a `close` for graceful shutdown.
+ * @throws WorkerNotSeparateError for a worker where `WEBHOOK_WORKER` is `api`, before
+ *   anything is built.
  */
-export function createContainer(env: Env): Container {
+export function createContainer(env: Env, role: ProcessRole = 'api'): Container {
+  const plan = planProcess(role, env.WEBHOOK_WORKER)
   const database = createDatabase(env.DATABASE_URL)
   const clock = systemClock
   const mailer = new SmtpMailer({ url: env.SMTP_URL, from: env.MAIL_FROM })
@@ -122,6 +131,7 @@ export function createContainer(env: Env): Container {
       dashboardDir: findDashboardDir(env.DASHBOARD_DIR),
       apiDocs: env.API_DOCS,
       instanceAuditRetentionDays: env.INSTANCE_AUDIT_RETENTION_DAYS,
+      deliversWebhooks: plan.deliversWebhooks,
     },
     clock,
     ids: uuidV7Ids,
@@ -177,7 +187,12 @@ export function createContainer(env: Env): Container {
     outbound: { tier: env.ENVIRONMENT },
     // From the CSPRNG like everything else here, though nothing depends on it being secret.
     jitter: () => (crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) / 2 ** 32,
-    probes: redis ? [databaseProbe(database.db), redisProbe(redis)] : [databaseProbe(database.db)],
+    // A worker's rounds are database work and requests to receivers: nothing of it goes
+    // through Redis, so a Redis outage must not mark a working worker unready.
+    probes:
+      redis && plan.role === 'api'
+        ? [databaseProbe(database.db), redisProbe(redis)]
+        : [databaseProbe(database.db)],
     diagnostics: createDiagnostics({
       db: database.db,
       mailer,
@@ -186,6 +201,7 @@ export function createContainer(env: Env): Container {
   }
   return {
     deps,
+    plan,
     close: async () => {
       mailer.close()
       redis?.close()

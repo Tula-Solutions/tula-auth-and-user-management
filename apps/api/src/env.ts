@@ -6,6 +6,12 @@ export const TIERS = ['local', 'dev', 'staging', 'prod'] as const
 /** A deployment tier. */
 export type Tier = (typeof TIERS)[number]
 
+/** The values of `WEBHOOK_WORKER`: where a deployment makes its webhook deliveries. */
+export const WEBHOOK_WORKER_MODES = ['api', 'separate'] as const
+
+/** Where a deployment makes its webhook deliveries: in its API instances, or in a worker. */
+export type WebhookWorkerMode = (typeof WEBHOOK_WORKER_MODES)[number]
+
 /**
  * Tiers that face real users: they must send real email, check real breach data and share
  * rate-limit, lockout and revoked-session state through Redis.
@@ -238,6 +244,20 @@ const fields = z.object({
   REDIS_URL: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
     z.url({ protocol: /^(rediss?|valkeys?)$/ }).optional()
+  ),
+  /**
+   * Where webhook deliveries are made (ADR 0034, "The worker as its own service"). `api`, the
+   * default: inside every API instance. `separate`: only in a worker process (the same image
+   * started with `bun run src/worker.ts`), and an API instance then makes no request to a
+   * webhook endpoint at all. One value for the whole deployment, the same in every container:
+   * what a process is follows from the command it was started with, never from this.
+   *
+   * A closed set, matched exactly: a misspelling stops the boot, because falling back to
+   * either value would decide, silently, who delivers.
+   */
+  WEBHOOK_WORKER: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.enum(WEBHOOK_WORKER_MODES, 'must be `api` or `separate`').default('api')
   ),
 })
 

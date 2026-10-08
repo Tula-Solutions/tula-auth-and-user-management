@@ -324,12 +324,87 @@ jobs:
         if: failure()
         run: docker compose --profile app logs --no-color
 
+  # The webhook worker as a service of its own (docs/self-host.md, "The webhook worker as its
+  # own service"): the same image, `WEBHOOK_WORKER=separate` on every container. The stack is
+  # started WITHOUT the worker first, so the check can see that an API instance delivers
+  # nothing; it then starts the worker itself and sees the delivery made.
+  #
+  # The conformance scenarios with a receiver stay skipped in the jobs above: their receiver
+  # is on the runner, at a private address for a server in a container, and the outbound
+  # guard refuses those. This job does not loosen the guard either. Its receiver is a
+  # container in the worker's own network namespace (docker/worker-check/compose.yml), which
+  # the worker reaches on the loopback, allowed in the `local` tier Compose runs the stack in,
+  # and which the API instances cannot reach at all: a request it gets is the worker's.
+  self-host-worker:
+    name: self-host (worker as its own service)
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    # The build, then about two minutes: one for an event to count as stuck with no worker.
+    timeout-minutes: 20
+    env:
+      # A throwaway value for this job's own containers.
+      TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      # Read by Compose for the API instances and for the worker alike.
+      WEBHOOK_WORKER: separate
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: Generate the instance admin token
+        run: |
+          # The diagnostics are behind it. Generated per run: the API refuses a typed value.
+          set -euo pipefail
+          token=$(openssl rand -hex 32)
+          echo "::add-mask::$token"
+          echo "TULA_ADMIN_TOKEN=$token" >> "$GITHUB_ENV"
+      - name: Build and start the stack, without the worker
+        run: docker compose --profile app up -d --build
+      - name: Wait until both API instances are ready
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:3003/v1/ready > /dev/null &&
+              curl -fsS http://localhost:3004/v1/ready > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "the API instances did not both become ready" >&2
+          exit 1
+      - name: Create an environment and its secret key
+        run: |
+          set -euo pipefail
+          compose() { docker compose --profile app run --rm -T api "$@"; }
+          seed=$(compose bun run ../../packages/db/src/scripts/seed.ts)
+          environment=$(echo "$seed" | awk '/development environment/ {print $NF}')
+          if ! echo "$environment" | grep -Eq '^[0-9a-f-]{36}$'; then
+            echo "seed did not print a development environment id" >&2
+            exit 1
+          fi
+          minted=$(compose bun run src/scripts/create-api-key.ts --environment "$environment" --kind secret)
+          key=$(echo "$minted" | tail -1)
+          case "$key" in
+            tula_sk_*) ;;
+            *) echo "could not create a secret key" >&2; exit 1 ;;
+          esac
+          echo "::add-mask::$key"
+          echo "WORKER_CHECK_SECRET_KEY=$key" >> "$GITHUB_ENV"
+      - name: A webhook is delivered by the worker, and by no API instance
+        run: |
+          set -euo pipefail
+          export WORKER_CHECK_ADMIN_TOKEN="$TULA_ADMIN_TOKEN"
+          bun run scripts/worker-check/check.ts -- docker compose -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker
+      - name: Stack logs
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker logs --no-color
+
   # The marker `duplicate` looks for. It needs every other job, with no status function in its
   # condition, so it is written only when all of them succeeded, and never by a run that
   # skipped them. Only a push writes one: its run read no cache, and a fork cannot push.
   passed:
     name: record the pass
-    needs: [duplicate, verify, e2e, self-host]
+    needs: [duplicate, verify, e2e, self-host, self-host-worker]
     if: needs.duplicate.outputs.skip != 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5

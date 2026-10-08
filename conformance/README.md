@@ -333,6 +333,14 @@ the set of skipped scenarios with that list and fails on any difference, in eith
 All three run in process as part of `bun run verify`, through the real guard and a real socket on
 loopback.
 
+That a **packaged** server delivers a webhook at all is shown by another CI job,
+`self-host-worker`, without a scenario and without the runner's listener: its receiver is a
+container in the webhook worker's own network namespace, reached on the worker's loopback
+(`docker/worker-check/compose.yml`, `scripts/worker-check/check.ts`). It runs the stack with
+`WEBHOOK_WORKER=separate`. The scenarios themselves are for a deployment whose API instances
+deliver (the default): `49` asks for a test event and for a delivery to be sent again, which
+a deployment with a separate worker refuses (`501`, `worker_separate`).
+
 `49` needs time to pass for the retry. In process its `wait` steps move the test's clock and
 the `webhook` step runs a round of the worker; against a live server they are real sleeps and
 the step waits for the server's own worker. Nothing else is needed of a target.

@@ -704,6 +704,25 @@ export function describeWebhookStores(
       expect(limited.map((event) => event.id)).toEqual([first, second])
     })
 
+    test('the oldest waiting event’s time: one environment’s, undelivered only, nothing else of it', async () => {
+      expect(await ctx.deliveries.oldestPendingEventAt(ctx.a.environmentId)).toBeNull()
+      // Another environment's older event is not this one's.
+      await ctx.seedEvent(ctx.b, seeded(0))
+      expect(await ctx.deliveries.oldestPendingEventAt(ctx.a.environmentId)).toBeNull()
+      await ctx.seedEvent(ctx.a, seeded(3))
+      const first = await ctx.seedEvent(ctx.a, seeded(1))
+      await ctx.seedEvent(ctx.a, seeded(2))
+      // `toEqual` compares dates; `toMatchObject` would not.
+      expect(await ctx.deliveries.oldestPendingEventAt(ctx.a.environmentId)).toEqual(
+        seeded(1).occurredAt
+      )
+      // Settled, the oldest no longer waits: the next one is the oldest.
+      await ctx.deliveries.markDelivered(ctx.a.environmentId, [first], now)
+      expect(await ctx.deliveries.oldestPendingEventAt(ctx.a.environmentId)).toEqual(
+        seeded(2).occurredAt
+      )
+    })
+
     test('a payload is read back as it was stored, whatever its shape', async () => {
       const legacy = { actor: { type: 'system', id: null }, target: null, data: { reason: 'x' } }
       const id = await ctx.seedEvent(ctx.a, { ...seeded(0), payload: legacy })

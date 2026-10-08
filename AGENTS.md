@@ -100,8 +100,8 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `native/{swift,android}` | Native SDKs (Phase 2). |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema. |
-| `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. |
-| `docker/` | `postgres/init.sql` (the roles of a fresh local database) and `lb/` (the nginx proxy that puts the two packaged API instances behind one address in the Compose `app` profile; a development and CI fixture). |
+| `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
+| `docker/` | `postgres/init.sql` (the roles of a fresh local database), `lb/` (the nginx proxy that puts the two packaged API instances behind one address in the Compose `app` profile; a development and CI fixture) and `worker-check/compose.yml` (the worker check's receiver, in the worker's network namespace; laid over the Compose file by that check only). |
 | `examples/docs-snippets` | The `@tula/core` and `@tula/admin` calls shown in `docs/methods/*.md`, as compiled TypeScript (`typecheck:scripts`). Not a workspace package; nothing runs it. A sample in the docs is a `#region` here or a file of an example app. |
 | `examples/core-playground` | A static page for trying `@tula/core` by hand in a browser (`bun run playground`). Not a workspace package. |
 | `examples/tula-config` | `@tula/example-config` — an example `tula.config.ts` (two environments), typechecked and loaded by `@tula/config`'s tests. |
@@ -331,7 +331,51 @@ whose answer decides what happens next (step 2.3).
   web platform APIs only): `v1,` + base64 HMAC-SHA256 over `<id>.<timestamp>.<body>`, the
   body being the exact text sent. The server, `@tula/admin`'s `verifyWebhook` and the
   conformance runner all use it; the contract's tests hold the reference libraries' example.
-- **The worker is `Webhooks.run`, on every instance, under its own job lock**
+- **Where deliveries are made is one variable, `WEBHOOK_WORKER`, and what a process is, is
+  its command** (ADR 0034, "The worker as its own service"). `api` (the default): every API
+  instance runs the delivery job. `separate`: only a worker process does (`src/worker.ts`,
+  the same image; the Compose `worker` service, profile `worker`), and **an API instance
+  makes no request to an endpoint**. `planProcess(role, mode)` (`~/process`) is the one place
+  that decides, `container.ts` turns it into `config.deliversWebhooks`, and the webhook
+  service reads nothing else: where it is false `Webhooks.run` returns before the job lock,
+  `deliverPending` does nothing, and `sendTest` and `redeliver` are refused with
+  `not_implemented` (501) and `params.reason: 'worker_separate'`. **The refusal has a fixed
+  place on those two routes: after `secretKey()` (no key is still 401), before
+  `sendRateLimit` and before any validator** (`deliveredHere` in the router), so a refused
+  call is never a 429 or a 422 and spends nothing of the send bucket; the service refuses
+  again (`requireDeliveryHere`, before any store is read). Keep both, and that order. A new
+  path that calls an endpoint checks `deliversWebhooks` first
+  and gets a test in `modules/webhook/worker-separate.test.ts`. A worker under `api` refuses
+  to start (never let it run beside instances that deliver: the lock would keep it correct
+  and the operator would believe traffic is separated). Never add a second variable, a
+  per-container role or another code for the refusal (`@tula/core`'s message table has every
+  contract code, and its bundle budget has no room to give away).
+- **The worker process serves health and nothing else** (`createWorkerApp`: `/v1/status`,
+  `/v1/ready`, the contract's 404 for the rest), runs no migration, creates no signing key
+  and imports no router: `worker.test.ts` walks `worker.ts`'s import graph and fails for a
+  router, the API app, the JWKS bootstrap or a migration. The walk follows `~/` and
+  relative specifiers through the API's own files (never into a package), by every way of
+  loading a module Bun's parser reports (`import … from`, a bare `import '…'`,
+  `export … from`, `require('…')`, `import('…')`; not an import of types only). It **fails**
+  for a file with an `import(` or `require(` whose argument is anything but one string
+  written out (a variable, a concatenation, a conditional, a template with a substitution),
+  and for a file with `new Function(` or a bare `eval(`. Those two rules read the
+  transpiled text, so a string that contains such a call fails the walk too: reword the
+  string, never loosen the rule. Never load a module in the worker's graph by a name that
+  is not written out. It is built by the same
+  `createContainer`, so `deps.outbound` is `{ tier }` there too. **The Compose `worker`
+  service is not given `TULA_ADMIN_TOKEN`**, nor anything else only the API reads and a
+  process starts without (`compose.test.ts` holds its environment to the API's minus a
+  named list): a new variable goes in `x-process-environment` only if the worker uses it or
+  `env.ts` demands it of every process. On `SIGTERM` it lets the
+  round under way record the requests it is making and exits; what was not sent waits for
+  the next round of any worker.
+- **"Nobody delivers" is said by the diagnostics, from the outbox** (`webhook_worker`, ADR
+  0031): an event that has waited a minute to be queued is `fail` under `separate` and `warn`
+  under `api`, read inside the one bounded scan `master_key` makes (never a second scan),
+  fixed text, counts only. It looks at what waits, not at a worker, and its `ok` says so:
+  never reword it to claim a worker is running. There is no heartbeat, on purpose.
+- **The worker is `Webhooks.run`, on every process that delivers, under its own job lock**
   (`'webhook_delivery'`, advisory lock id 2: never renumber). Per environment, four passes in
   this order: settle in bulk what is owed to nobody; **queue** (every other waiting event
   becomes one `pending` delivery per endpoint it is **owed** to: switched on, subscribed to
@@ -437,6 +481,15 @@ whose answer decides what happens next (step 2.3).
   (`.github/workflows/ci.yml`): a new scenario with a receiver is added to that list (and
   to the count in the two summary lines beside it), never covered by a count alone. What cannot be shown over HTTP (a name re-pointed between save and delivery)
   is an API test, and the scenario's description says so.
+- **The one delivery CI makes from a container is the worker check's** (the
+  `self-host-worker` job, `scripts/worker-check/check.ts`), and it keeps to the guard: its
+  receiver runs in the **worker's network namespace** (`docker/worker-check/compose.yml`,
+  `network_mode: service:worker`) and listens on 127.0.0.1, which the `local` tier allows
+  and which no API container can reach. Never give the receiver a port, a network of its
+  own or a private address, never set `ENVIRONMENT` or anything else in that job to make an
+  address pass, and keep the job starting the stack **without** the worker: the check has to
+  see an owed event wait before it starts the worker itself.
+  `.claude/hooks/{ci,compose,worker-check}.test.ts` hold all of it.
 - A new event type, a new store method that changes an endpoint, or a new kind of secret
   follows the existing rules: a schema and a fixture in the contract, an `Activity` and a
   `@ts-expect-error` line, a pattern in `@tula/mcp`'s `SECRET_SHAPES`.
@@ -882,12 +935,18 @@ one environment across instances (a Postgres advisory lock): `Settings.replace` 
 `OAuth.update` take `sign_in_methods` so that neither switches off the last way to sign in on
 a snapshot the other is changing ([ADR 0026](docs/adr/0026-oauth.md)).
 
-**Background jobs** are service functions `server.ts` runs on boot and on a timer, on every
-instance; `deps.jobLock.runExclusive(job, fn)` lets one instance through and the others skip
+**Background jobs** are service functions started on boot and on a timer by `startJobs`
+(`apps/api/src/jobs.ts`), the one scheduling path: `server.ts` and `worker.ts` both call
+`bootJobs(container)`, which starts the jobs their `ProcessPlan` names; neither names a job
+or sets a timer of its own (`jobs.test.ts` reads both files).
+`deps.jobLock.runExclusive(job, fn)` lets one process through and the others skip
 the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are two,
 each with its own job name and lock id (`JOB_LOCK_IDS`: never renumber, only add):
 the webhook worker (`Webhooks.run` in `modules/webhook`,
-[ADR 0034](docs/adr/0034-webhooks.md)) and `modules/retention`, which has no router. The
+[ADR 0034](docs/adr/0034-webhooks.md)) and `modules/retention`, which has no router.
+Retention runs in every API instance and never in a worker; the delivery job runs in every
+API instance, or with `WEBHOOK_WORKER=separate` only in the worker processes ("Webhooks"
+above). A new job is added to `ProcessPlan.jobs` for the role that runs it. The
 retention job's deletes go through store methods that take
 an environment, a cutoff and a batch limit, never through a query of its own. That includes
 an environment's audit entries past its `audit.retentionDays`.
@@ -1647,6 +1706,10 @@ A change is done only when all of these hold:
 apps/api/src/
 ├── index.ts          # createApp(deps), middleware, lazy route registration, openapi + Scalar
 ├── server.ts         # Bun.serve entrypoint (loads env, builds container)
+├── worker.ts         # the webhook worker's entrypoint: delivery rounds and a health endpoint
+├── worker-app.ts     # what the worker serves: /v1/status, /v1/ready, 404 for the rest
+├── process.ts        # planProcess(role, WEBHOOK_WORKER): what a process serves and runs
+├── jobs.ts           # startJobs(): the one place background jobs are put on a timer
 ├── env.ts            # Zod env schema — fails fast at boot
 ├── container.ts      # composition root: env → adapters → Deps
 ├── dependencies.ts   # Deps, AppConfig and Hono context Variables
@@ -1692,6 +1755,14 @@ docker compose --profile app up -d --build
                             # roles come from docker/postgres/init.sql on a FRESH volume only;
                             # after changing it: docker compose --profile app down -v
                             # (wipes local data; the profile also stops the packaged API)
+WEBHOOK_WORKER=separate docker compose --profile app --profile worker up -d --build
+                            # the same, with the webhook worker as a container of its own and
+                            # no delivery made by the two API instances; stop with both profiles
+bun run scripts/worker-check/check.ts -- docker compose -f docker-compose.yml \
+  -f docker/worker-check/compose.yml --profile app --profile worker
+                            # what CI's self-host-worker job runs: against that stack started
+                            # WITHOUT the worker (--profile app only), with WORKER_CHECK_SECRET_KEY
+                            # and WORKER_CHECK_ADMIN_TOKEN; it starts the worker itself
 bun run dev                 # API on http://localhost:3003, docs at /v1/docs
 bun run verify              # full quality gate (what CI runs)
 bun run verify:changed      # affected packages only (what the Stop hook runs)

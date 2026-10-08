@@ -553,6 +553,13 @@ event never has the field.
 - The call waits for your endpoint, up to five seconds.
 - Test events and deliveries sent again share a limit of **ten a minute per environment**
   (`429`, `rate_limited`).
+- **Where the server's webhook worker runs as a service of its own, both are refused**:
+  `501`, code `not_implemented`, `params.reason: "worker_separate"`. Nothing is sent and
+  nothing is recorded. The API instance that takes the call would have to make the request
+  itself, and in such a deployment it makes none
+  ([self-host.md](self-host.md#the-webhook-worker-as-its-own-service)). To see a real
+  delivery there, cause an event (create a test user) and read the
+  [delivery log](#the-delivery-log).
 
 ## Send a delivery again
 
@@ -594,6 +601,10 @@ event drops it by its id, as it would a retry.
   | `endpoint_disabled` | The endpoint is switched off. Switch it on first. |
   | `event_gone` | The event is no longer kept (older than 30 days), or the delivery is a test event. |
   | `attempt_limit` | The delivery has had twenty requests. |
+
+- Where the server's webhook worker runs as a service of its own it is refused before any of
+  that, like a [test event](#send-a-test-event): `501`, `not_implemented`,
+  `params.reason: "worker_separate"`.
 
 - It is not in the audit log; the attempt is its record.
 
@@ -647,6 +658,14 @@ For the operator of the server:
 - Deliveries are made by a worker inside each API instance; with several instances one of
   them does a round and the others skip it (the same lock arrangement as the retention job).
   There is nothing to configure.
+- The worker can run as a service of its own instead (`WEBHOOK_WORKER=separate`, the same
+  image started with `bun run src/worker.ts`), so that these requests leave from other
+  machines than the ones that take sign-in traffic. An API instance then makes **no**
+  request to an endpoint, and a worker has to be running. Everything on this page holds for
+  it unchanged, with one exception: [a test event](#send-a-test-event) and
+  [a delivery sent again](#send-a-delivery-again) are refused (`501`). When to do it, and what
+  it does and does not isolate:
+  [self-host.md](self-host.md#the-webhook-worker-as-its-own-service).
 - The endpoints' secrets are encrypted with `TULA_MASTER_KEY`. If the key changes, nothing is
   sent (`signing_failed`, with a line in the log naming the endpoint's id) until the key is
   right again or the endpoints are registered again. Deliveries wait for up to three days.
@@ -666,7 +685,9 @@ For the operator of the server:
   per endpoint, **fifty deliveries per endpoint per round**, each with a five-second deadline,
   within fifteen seconds per environment. Environments are served one after another.
 - A test event and a delivery sent again are made by the API instance that takes the call,
-  not by the worker, and wait for the receiver for up to five seconds.
+  not by the worker, and wait for the receiver for up to five seconds. That is why a
+  deployment whose worker is separate refuses both: its API instances make no request to an
+  endpoint.
 - The retention job deletes settled events after 30 days and ended deliveries after 90
   ([ADR 0017](adr/0017-retention.md)). Its log line counts them (`events`,
   `webhookDeliveries`).
@@ -715,6 +736,8 @@ receiver's answer ([What the server keeps](#what-the-server-keeps)).
 
 - **Settings for the schedule**: the waits, the number of requests and the periods are fixed.
 - **Sending again in bulk**: one delivery per call.
+- **A test event or a delivery sent again where the worker is a service of its own**: both
+  are refused there, not handed to the worker.
 
 What of these steps was not verified against the real thing (a public `https` receiver, a
 verifier in another language) is in
