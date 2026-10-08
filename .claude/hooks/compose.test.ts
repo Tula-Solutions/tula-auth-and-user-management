@@ -289,6 +289,49 @@ describe.skipIf(!hasCompose)('the optional worker service', () => {
   })
 })
 
+// The receiver CI's `self-host-worker` job delivers to (scripts/worker-check). The server's
+// outbound guard refuses a private address in every tier, so a receiver in a container of its
+// own could not be reached without loosening it. This one shares the worker's network
+// namespace instead: the worker reaches it on the loopback, which the `local` tier allows,
+// and the API instances cannot reach it at all.
+describe.skipIf(!hasCompose)('docker/worker-check/compose.yml', () => {
+  const CHECK = ['docker/worker-check/compose.yml']
+  const stack = (variables: Record<string, string> = {}) =>
+    resolved({ WEBHOOK_WORKER: 'separate', ...variables }, ['app', 'worker'], CHECK)
+
+  test('the receiver lives in the worker’s network namespace and publishes nothing', () => {
+    const { receiver } = stack()
+    expect(receiver?.network_mode).toBe('service:worker')
+    expect(receiver?.ports ?? []).toEqual([])
+  })
+
+  test('it is the API image running the repository’s script, mounted read-only', () => {
+    const { receiver, api } = stack({ API_IMAGE: 'tula-api:other' })
+    // No third-party image: Bun is already in the image the job built.
+    expect(receiver?.image).toBe(api?.image ?? '')
+    expect(receiver?.image).toBe('tula-api:other')
+    expect(receiver?.command).toEqual(['bun', 'run', '/check/receiver.ts'])
+    expect(receiver?.volumes).toEqual([
+      expect.objectContaining({
+        source: join(root, 'scripts/worker-check/receiver.ts'),
+        target: '/check/receiver.ts',
+        read_only: true,
+      }),
+    ])
+  })
+
+  test('it is given nothing of the deployment: no key, no database, no settings', () => {
+    expect(stack({ TULA_MASTER_KEY: 'ab'.repeat(32) }).receiver?.environment ?? {}).toEqual({})
+  })
+
+  test('the file adds the receiver and changes no other service', () => {
+    const { receiver: _receiver, ...rest } = stack()
+    expect(rest).toEqual(resolved({ WEBHOOK_WORKER: 'separate' }, ['app', 'worker']))
+    // Without the worker profile there is no receiver either: it has nothing to live in.
+    expect(Object.keys(resolved({}, ['app'], CHECK))).not.toContain('receiver')
+  })
+})
+
 describe('docker/lb/nginx.conf', () => {
   const config = Bun.file(join(root, 'docker/lb/nginx.conf')).text()
 
