@@ -65,7 +65,7 @@ const AUDIT_RETENTION = 'audit.retentionDays'
 
 const WEAKENINGS: Record<string, string> = {
   [AUDIT_RETENTION]:
-    'Audit entries older than the new period are deleted for good, within ten minutes',
+    'Audit entries older than the new period are deleted for good, starting with the next retention run',
   'password.minLength': 'Passwords may be shorter',
   'password.breachCheck': 'Breached passwords are checked less strictly',
   'password.requireLowercase': 'A lowercase letter is no longer required',

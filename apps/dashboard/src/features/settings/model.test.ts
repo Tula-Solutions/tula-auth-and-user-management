@@ -115,7 +115,7 @@ describe('an audit retention period', () => {
 
   test('is described as what it is: a deletion that cannot be undone', () => {
     expect(describeWeakening('audit.retentionDays')).toBe(
-      'Audit entries older than the new period are deleted for good, within ten minutes'
+      'Audit entries older than the new period are deleted for good, starting with the next retention run'
     )
     expect(confirmationTitle(['audit.retentionDays'])).toBe(
       'This deletes older audit entries for good. Save anyway?'

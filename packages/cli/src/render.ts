@@ -69,6 +69,25 @@ const MARKER_REASONS: Record<Plan['marker']['reason'], string> = {
 }
 
 /**
+ * Whether applying a plan makes the server delete audit entries, and from what age: the plan
+ * sets an audit retention period where there was none, or a shorter one.
+ *
+ * @param plan - The plan.
+ * @returns The new period in days; `null` when the plan deletes nothing.
+ *
+ * @example
+ * ```ts
+ * deletedAuditAge(plan) // 90
+ * ```
+ */
+export function deletedAuditAge(plan: Pick<Plan, 'weakened' | 'body'>): number | null {
+  const retentionDays = plan.body.audit?.retentionDays
+  return plan.weakened.includes('audit.retentionDays') && typeof retentionDays === 'number'
+    ? retentionDays
+    : null
+}
+
+/**
  * The warnings of a plan, as sentences.
  *
  * @param plan - The plan.
@@ -86,11 +105,12 @@ export function planWarnings(plan: Plan): string[] {
       `weakens security: ${plan.weakened.join(', ')} (\`tula apply --yes\` needs --allow-weaker)`
     )
   }
-  // "Weakens security" undersells this one: applying it destroys something.
-  const retentionDays = plan.body.audit?.retentionDays
-  if (plan.weakened.includes('audit.retentionDays') && typeof retentionDays === 'number') {
+  // "Weakens security" undersells this one: applying it destroys something. Only "for good"
+  // is promised: a run deletes a bounded number of entries, so a backlog takes several.
+  const doomed = deletedAuditAge(plan)
+  if (doomed !== null) {
     warnings.push(
-      `deletes audit entries older than ${retentionDays} days, for good, within ten minutes of applying`
+      `deletes audit entries older than ${doomed} days, for good, starting with the next retention run (every ten minutes; a large backlog takes several)`
     )
   }
   if (plan.marker.reason === 'other-tool') {

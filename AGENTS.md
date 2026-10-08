@@ -722,7 +722,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   and keeps the entries of an environment whose settings it cannot read. Setting a period or
   shortening one is a weakening (`settingsWeakenings` lists `audit.retentionDays`): the audit
   entry says `weakened: true`, `tula apply --yes` needs `--allow-weaker`, and the dashboard
-  asks first, saying that entries are deleted for good. The runtime role
+  asks first, saying that entries are deleted for good. Promise only "for good", never a
+  time: deletion starts with the next run and a large backlog takes several. The runtime role
   has `DELETE` on `audit_logs` for it and still no `UPDATE`; row-level security bounds the
   delete to the environment in scope and, by the restrictive policy
   `audit_logs_retention_floor`, to entries older than one day, whatever a statement asks.

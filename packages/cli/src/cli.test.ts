@@ -829,8 +829,50 @@ describe('a plan that sets or shortens the audit retention period', () => {
     const run = await tula(['diff', '--config', config])
     expect(run.stdout).toContain('! weakens security: audit.retentionDays')
     expect(run.stdout).toContain(
-      '! deletes audit entries older than 90 days, for good, within ten minutes of applying'
+      '! deletes audit entries older than 90 days, for good, starting with the next retention run'
     )
+  })
+})
+
+describe('the question apply asks at a terminal before a plan that deletes audit entries', () => {
+  const ask = async (settings: Record<string, unknown>) => {
+    const config = await configFile({ dev: { settings } })
+    const asked: string[] = []
+    const run = await tula(['apply', '--config', config], {
+      isTTY: true,
+      prompt: async (question) => {
+        asked.push(question)
+        return 'no'
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(writes()).toEqual([])
+    return asked
+  }
+
+  test('says that older audit entries are deleted for good, and from what age', async () => {
+    api.revision = 2
+    expect(await ask({ audit: { retentionDays: 90 } })).toEqual([
+      'This DELETES audit entries older than 90 days, for good (audit.retentionDays). ' +
+        `Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
+  })
+
+  test('says both when the plan also weakens something else', async () => {
+    api.revision = 2
+    api.settings.mfa.policy = 'required'
+    expect(await ask({ audit: { retentionDays: 90 }, mfa: { policy: 'off' } })).toEqual([
+      'This WEAKENS security (audit.retentionDays, mfa.policy) and DELETES audit entries older ' +
+        `than 90 days, for good. Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
+  })
+
+  test('a longer period is asked about like any other change', async () => {
+    api.revision = 2
+    api.settings.audit.retentionDays = 30
+    expect(await ask({ audit: { retentionDays: 90 } })).toEqual([
+      `Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
   })
 })
 

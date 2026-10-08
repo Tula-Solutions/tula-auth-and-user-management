@@ -86,9 +86,10 @@ Every settings screen works the same way: change the form, then **Save changes**
   sessions) asks for confirmation and lists what gets weaker. The audit entry records
   `weakened: true`.
 - **This deletes older audit entries for good.** Setting an audit retention period where
-  there was none, or a shorter one, asks in those words: within ten minutes of the save the
-  server deletes every audit entry of the environment older than the new period, and
-  nothing brings them back. A longer period, or none, saves without asking. It is recorded
+  there was none, or a shorter one, asks in those words: starting with its next retention
+  run (they run every ten minutes, and a large backlog takes several) the server deletes
+  every audit entry of the environment older than the new period, and nothing brings them
+  back. A longer period, or none, saves without asking. It is recorded
   as a weakening too.
 - **Managed by a config file.** When the settings were applied with `tula apply`
   ([config.md](config.md)), a banner says so on every settings screen. You can still edit

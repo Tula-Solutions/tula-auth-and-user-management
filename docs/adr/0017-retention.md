@@ -175,7 +175,7 @@ statement that asks for entries younger than a day gets none of them, whoever wr
 does not bound a bad *period*. A period of one day is a valid setting, and with it everything
 older than a day goes; the floor has no opinion on whether the environment's period was
 meant. Someone who holds a secret key, a dashboard session or the runtime role can set an
-environment's period to one day and wait ten minutes. Two clocks are involved, too: the
+environment's period to one day and wait for the next runs. Two clocks are involved, too: the
 job's cutoff and the policy's `now()` are read when the purge runs (the API's clock and the
 database's), while `occurred_at` was written earlier by whichever instance recorded the
 entry, from its own clock. An entry stamped in the future by an instance whose clock ran
