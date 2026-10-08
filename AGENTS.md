@@ -681,6 +681,62 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
   (`settingsWeakenings`: `sessions.profiles.<name>.jwtTemplate`), shared by the audit entry,
   the dashboard's confirmation and `tula apply --yes`.
 
+### Phone numbers and SMS (`modules/phone`, `modules/sms`, see ADR 0037)
+
+A user has one optional phone number, proven with a texted code. It is contact data: nobody
+signs in with one (TULA-27), and it is **not unique**.
+
+- **Text messages go through the `SmsSender` port and fail closed.** `SMS_PROVIDER=none` (the
+  default) is an adapter whose every send throws; a message that could not be sent is
+  `sms.unavailable` (503), never treated as sent, and no adapter falls back to another. A real
+  provider is a new adapter and a new value of `SMS_PROVIDER`, nothing else. A sender says
+  whether the deployment has one (`configured`): without one `phone.enabled` in the client
+  config is `false`, and `Sms.requireSender` refuses after `Settings.requireSms` and **before
+  any send limit is counted**. Keep that order.
+- **The development inbox hands every code to whoever asks, and is gated like the mock OAuth
+  provider.** `SMS_PROVIDER=dev` needs `ENVIRONMENT=local` **and** a loopback `PUBLIC_URL`
+  (`env.ts` refuses to boot otherwise), `container.ts` builds the inbox in that tier only and
+  warns on every boot, and `/v1/dev/sms/messages` is mounted only there and checks again in
+  the handler. It refuses a request with an `Origin` or a cross-site `Sec-Fetch-Site`, and one
+  whose `Host` header is not a loopback name (`isLoopbackHost` in `env.ts`, the same rule as
+  for `PUBLIC_URL`: a DNS-rebinding page is same-origin with itself and only its `Host` gives
+  it away), and is not in the OpenAPI document. Never loosen its guards. The inbox is per process.
+- **`Settings.requireSms` is the one place the `sms` settings are checked**, and every step
+  that sends a code by SMS or accepts one calls it first, before anything is counted, spent
+  or sent: a code asked for before SMS was switched off, or its country removed, is not
+  honoured after. Off and "on with no country" are the same answer; **an empty
+  `sms.allowedCountries` never means every country**. A number's country comes from the
+  contract's `COUNTRY_CALLING_PREFIXES` (`packages/contract/src/phone.ts`, plain data); a calling code it
+  does not know is refused.
+- **A phone number is personal data.** It is returned to its owner and by the admin user
+  routes, and nowhere else: never in a log line, an audit entry, an event payload, an error,
+  a rate-limit or lockout key (a keyed hash there) or an `@tula/mcp` projection. The two
+  activity types (`user.phone_number_added`, `user.phone_number_removed`) have an empty
+  payload. The event-canary test taps the SMS outbox and holds this.
+- **There is no unverified number on an account.** A number is stored only by confirming a
+  code (`users.setPhoneNumber`, with its `Activity`); the database holds the number and its
+  verified-at together or neither (`users_phone_number_whole`). The pending number lives on
+  the code's verification token (`destination`), which is stored only after the message was
+  sent.
+- **A phone code is a verification token of purpose `phone_verification`**, a keyed hash that
+  also covers the user's id and the number. Guesses are counted before the check under
+  `Phone.codeLockKey` (`CREDENTIAL_LOCKOUT`), a per-user key **of its own**: never
+  `Mfa.stepUpLockKey`, because a success clears the key and anyone with a session can succeed
+  here with their own phone.
+- **The three routes (`/v1/client/me/phone`) are behind `requireRecentAuth()`.** Removing
+  needs no SMS and works with SMS off.
+- **A message's words are written in `modules/sms/templates.ts` and nowhere else**: the app
+  name through `smsAppName`, a text that starts with a word, and the origin-bound last line
+  (`@host #code`) whose host is the environment's first allowed origin, never a request's.
+  The code is the last run of six digits (the conformance runner and the tests read it so).
+- **Switching SMS on is not a weakening yet** (it adds no way in). It becomes one with
+  sign-in by SMS, in `settingsWeakenings`, in that change. The send limits here are per user
+  and per number only; what bounds cost is TULA-28 and belongs before `Sms.sendCode`.
+- The `smsCode` conformance step reads the development inbox; a scenario with one sets
+  `needsSmsInbox`. CI's `self-host` jobs run with `SMS_PROVIDER=dev` and name both instances
+  in `CONFORMANCE_SMS_INBOX_URLS`, and check the scenario **passed**, not only that it was
+  not skipped.
+
 ### React SDK (see ADR 0022)
 
 - **Dialogs that must outlive a page belong to the provider.** The step-up dialog and the
@@ -1064,7 +1120,8 @@ settings document (`EnvironmentSettings` in `@tula/contract`; [ADR 0018](docs/ad
 app name and support address, password policy, enabled sign-in methods (`password`,
 `emailCode`, `emailLink`, `passkey`), the WebAuthn relying-party id (`passkeys.rpId`), whether
 a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit
-retention, which security notices are emailed (`notifications`), whether two-step
+retention, which security notices are emailed (`notifications`), whether text messages are
+sent and to which countries (`sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)), whether two-step
 verification is `off`, `optional` or `required` (`mfa.policy`), and the session profiles and
 the concurrent-session rule (`sessions`, [ADR 0028](docs/adr/0028-session-profiles.md)). **Read it through
 `~/modules/settings/service`** (`Settings.current(deps, tenant)`), never from `deps.config`:
@@ -1350,7 +1407,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   [ADR 0033](docs/adr/0033-mcp-server.md); webhooks: [ADR 0034](docs/adr/0034-webhooks.md);
   hooks, where one is asked and what it cannot do: [ADR 0035](docs/adr/0035-hooks.md);
   JWT templates, the `ext` namespace, reserved claims and the size cap:
-  [ADR 0036](docs/adr/0036-jwt-templates.md); webhooks (endpoints, the signing secret, the
+  [ADR 0036](docs/adr/0036-jwt-templates.md); a phone number on an account, the SMS sender
+  and its development inbox, and the `sms` settings:
+  [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md); webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
@@ -1588,7 +1647,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms}`,
   `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
@@ -1768,7 +1827,8 @@ apps/api/src/
 │                     # outbound (the guarded request to an operator's address),
 │                     # event-payload (an activity's typed, allow-listed event)
 ├── ports/            # interfaces the domain depends on
-├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/, oauth/
+├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/, oauth/,
+│                     # sms/ (the development inbox, and the sender that refuses)
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
 │                     # request-log, instance-admin (TULA_ADMIN_TOKEN, for /v1/instance/*),
 │                     # dashboard-session (the dashboard's cookie and its CSRF rules)
@@ -1785,7 +1845,9 @@ apps/api/src/
                       # webhook (endpoints, the delivery worker: a background job, the
                       # delivery log, test events and sending a delivery again),
                       # hook (the questions asked before a sign-up, a session and a token,
-                      # and their admin routes)
+                      # and their admin routes),
+                      # phone (a phone number on an account), sms (the text of a message
+                      # and its sending: service only; the dev-only inbox route)
 ```
 
 ## Common commands

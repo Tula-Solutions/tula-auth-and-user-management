@@ -2,9 +2,15 @@ import type { Deps, Tenant } from '~/dependencies'
 import * as Email from '~/modules/email/service'
 import type { VerificationPurpose } from '~/ports/verification-token-store'
 
+/**
+ * The purposes whose code goes out by email. A `phone_verification` code is texted, by the
+ * caller's own delivery (`modules/phone`): there is no email for it.
+ */
+export type EmailedPurpose = Exclude<VerificationPurpose, 'phone_verification'>
+
 /** What a verification email needs. */
 export interface CodeEmail {
-  purpose: VerificationPurpose
+  purpose: EmailedPurpose
   /** Recipient, as the user entered it. */
   to: string
   code: string

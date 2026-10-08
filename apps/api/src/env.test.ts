@@ -221,6 +221,52 @@ describe('OAUTH_MOCK_PROVIDER', () => {
   )
 })
 
+// The development SMS inbox hands every code to whoever asks: the same two guards as the
+// mock provider (ADR 0037).
+describe('SMS_PROVIDER', () => {
+  test('is none unless asked for, and dev is allowed in the local tier', () => {
+    expect(parseEnv(base).SMS_PROVIDER).toBe('none')
+    expect(parseEnv({ ...base, SMS_PROVIDER: 'none' }).SMS_PROVIDER).toBe('none')
+    expect(parseEnv({ ...base, SMS_PROVIDER: 'dev' }).SMS_PROVIDER).toBe('dev')
+  })
+
+  test('refuses a provider it does not know', () => {
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'twilio' })).toThrow(/SMS_PROVIDER/)
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'true' })).toThrow(/SMS_PROVIDER/)
+  })
+
+  test.each(['dev', 'staging', 'prod'])('refuses to boot with the inbox in %s', (tier) => {
+    const source = tier === 'dev' ? base : live
+    expect(() => parseEnv({ ...source, ENVIRONMENT: tier, SMS_PROVIDER: 'dev' })).toThrow(
+      /SMS_PROVIDER: dev is only allowed with ENVIRONMENT=local/
+    )
+    // Without it the same environment boots.
+    expect(parseEnv({ ...source, ENVIRONMENT: tier }).SMS_PROVIDER).toBe('none')
+  })
+
+  test.each([
+    'http://localhost:3003',
+    'http://127.0.0.1:3003',
+    'http://[::1]:3003',
+    'http://auth.localhost:3003',
+  ])('boots with the inbox when PUBLIC_URL is the loopback address %p', (url) => {
+    expect(parseEnv({ ...base, SMS_PROVIDER: 'dev', PUBLIC_URL: url }).SMS_PROVIDER).toBe('dev')
+  })
+
+  test.each([
+    'http://192.168.1.20:3003',
+    'http://0.0.0.0:3003',
+    'https://auth.example.com',
+    'http://localhost.example.com:3003',
+    'http://my-laptop.local:3003',
+  ])('refuses the inbox when PUBLIC_URL is %p, even in the local tier', (url) => {
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'dev', PUBLIC_URL: url })).toThrow(
+      /SMS_PROVIDER: dev is only allowed when PUBLIC_URL is a loopback address/
+    )
+    expect(parseEnv({ ...base, PUBLIC_URL: url }).SMS_PROVIDER).toBe('none')
+  })
+})
+
 // Same finding (F8), the live tiers: their cross-field rules parsed SMTP_URL and PUBLIC_URL too.
 describe('a live tier with a URL that does not parse', () => {
   test.each([

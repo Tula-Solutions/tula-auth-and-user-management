@@ -1325,6 +1325,138 @@
         ],
         "description": "A passkey’s signature counter did not grow: it may have been cloned. The sign-in was refused."
       },
+      "UserPhoneNumberAddedEventData": {
+        "type": "object",
+        "properties": {},
+        "description": "A user verified a phone number, which is now the account’s (replacing an earlier one)."
+      },
+      "UserPhoneNumberAddedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "user.phone_number_added"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "user"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserPhoneNumberAddedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A user verified a phone number, which is now the account’s (replacing an earlier one)."
+      },
+      "UserPhoneNumberRemovedEventData": {
+        "type": "object",
+        "properties": {},
+        "description": "A user took the phone number off their account."
+      },
+      "UserPhoneNumberRemovedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "user.phone_number_removed"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "user"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserPhoneNumberRemovedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A user took the phone number off their account."
+      },
       "SessionClient": {
         "type": "string",
         "enum": [
@@ -2180,7 +2312,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 35
+            "maximum": 37
           },
           "enabled": {
             "type": "boolean"
@@ -2941,6 +3073,12 @@
             "$ref": "#/components/schemas/UserPasskeyCounterRegressedEvent"
           },
           {
+            "$ref": "#/components/schemas/UserPhoneNumberAddedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/UserPhoneNumberRemovedEvent"
+          },
+          {
             "$ref": "#/components/schemas/SessionCreatedEvent"
           },
           {
@@ -3379,6 +3517,10 @@
           "passkey.already_registered",
           "passkey.limit_reached",
           "passkey.last_sign_in_method",
+          "phone.invalid",
+          "sms.disabled",
+          "sms.country_not_allowed",
+          "sms.unavailable",
           "session.invalid_token",
           "session.expired",
           "session.revoked",
@@ -5059,6 +5201,24 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "phoneNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phoneNumberVerifiedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5339,6 +5499,24 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
           },
+          "phoneNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phoneNumberVerifiedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "hasPassword": {
             "type": "boolean"
           }
@@ -5554,6 +5732,8 @@
           "user.passkey_renamed",
           "user.passkey_removed",
           "user.passkey_counter_regressed",
+          "user.phone_number_added",
+          "user.phone_number_removed",
           "session.created",
           "session.revoked",
           "session.reuse_detected",
@@ -5842,6 +6022,9 @@
         },
         "additionalProperties": false
       },
+      "SmsCountry": {
+        "type": "string"
+      },
       "SettingsManagedBy": {
         "type": "object",
         "properties": {
@@ -6080,6 +6263,25 @@
               },
               "sessions": {
                 "$ref": "#/components/schemas/SessionSettings"
+              },
+              "sms": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "allowedCountries": {
+                    "default": [],
+                    "maxItems": 243,
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/SmsCountry"
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [
@@ -6309,6 +6511,25 @@
           },
           "sessions": {
             "$ref": "#/components/schemas/SessionSettings"
+          },
+          "sms": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "default": false,
+                "type": "boolean"
+              },
+              "allowedCountries": {
+                "default": [],
+                "maxItems": 243,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SmsCountry"
+                }
+              }
+            },
+            "additionalProperties": false
           }
         },
         "additionalProperties": false
@@ -6377,6 +6598,17 @@
             },
             "required": [
               "policy"
+            ]
+          },
+          "phone": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
             ]
           }
         },
@@ -6800,6 +7032,47 @@
           "name"
         ]
       },
+      "PhoneCodeSent": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "destination",
+          "expiresAt"
+        ]
+      },
+      "PhoneNumberRequest": {
+        "type": "object",
+        "properties": {
+          "phoneNumber": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "phoneNumber"
+        ]
+      },
+      "PhoneNumberVerifyRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^\\d{6}$"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
       "WebhookEndpoint": {
         "type": "object",
         "properties": {
@@ -7002,7 +7275,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 35,
+            "maxItems": 37,
             "type": "array",
             "items": {
               "type": "string",
@@ -7023,6 +7296,8 @@
                 "user.passkey_renamed",
                 "user.passkey_removed",
                 "user.passkey_counter_regressed",
+                "user.phone_number_added",
+                "user.phone_number_removed",
                 "session.created",
                 "session.revoked",
                 "session.reuse_detected",
@@ -7067,7 +7342,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 35,
+            "maxItems": 37,
             "type": "array",
             "items": {
               "type": "string",
@@ -7088,6 +7363,8 @@
                 "user.passkey_renamed",
                 "user.passkey_removed",
                 "user.passkey_counter_regressed",
+                "user.phone_number_added",
+                "user.phone_number_removed",
                 "session.created",
                 "session.revoked",
                 "session.reuse_detected",
@@ -7513,6 +7790,8 @@
               "user.passkey_renamed",
               "user.passkey_removed",
               "user.passkey_counter_regressed",
+              "user.phone_number_added",
+              "user.phone_number_removed",
               "session.created",
               "session.revoked",
               "session.reuse_detected",
@@ -18860,6 +19139,357 @@
             "required": true
           }
         ]
+      }
+    },
+    "/v1/client/me/phone": {
+      "post": {
+        "operationId": "requestPhoneCode",
+        "tags": [
+          "Phone"
+        ],
+        "summary": "Text a code to a phone number",
+        "description": "Sends a 6-digit code to a number the signed-in user wants on their account. The number becomes the **pending** number (replacing an earlier pending one); the account’s own number is unchanged until `POST /v1/client/me/phone/verify`. The number is given in international form (`+14155550100`; spaces, hyphens and parentheses are ignored), otherwise `phone.invalid` (422). Where the environment has SMS off, or allows no country, it answers `sms.disabled` (403); a number whose country is not allowed, `sms.country_not_allowed` (422). Nothing is sent in either case. Codes are limited to one a minute and five an hour per user and per number (`rate_limited`). A message the server could not send is `sms.unavailable` (503), and an earlier code then keeps working. The code works for ten minutes and for five guesses. Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include a second factor) it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request with the access token it returns.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The code was sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhoneCodeSent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneNumberRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removePhoneNumber",
+        "tags": [
+          "Phone"
+        ],
+        "summary": "Remove my phone number",
+        "description": "Takes the phone number off the signed-in user’s account. Succeeds when there is none. A number that is only pending is not affected: it is not the account’s, and its code expires by itself. Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include a second factor) it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request with the access token it returns.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The account has no phone number."
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/phone/verify": {
+      "post": {
+        "operationId": "verifyPhoneNumber",
+        "tags": [
+          "Phone"
+        ],
+        "summary": "Confirm a phone number with its code",
+        "description": "Checks the code texted to the pending number and, when it is right, makes that number the account’s (replacing the one it had) and returns the user. A wrong code is `verification.invalid_code` (422) and counts against the code’s five guesses and the user’s lockout; with nothing pending, or a code that expired, was used or was replaced by a newer one, `verification.expired` (410). A code is honoured only while the environment still allows a message to that number: `sms.disabled` (403) or `sms.country_not_allowed` (422) otherwise, with nothing counted. Needs a recent authentication: when the session’s last proof is older than ten minutes (or, for a user with two-step verification, did not include a second factor) it answers `auth.step_up_required` (403) with `params.methods`; call `POST /v1/client/sessions/step-up` and repeat the request with the access token it returns.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user, with the number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneNumberVerifyRequest"
+              }
+            }
+          }
+        }
       }
     },
     "/v1/admin/webhook-endpoints": {

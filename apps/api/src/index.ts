@@ -38,6 +38,7 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/settings/router')).default],
   ['/v1', (await import('~/modules/oauth/router')).default],
   ['/v1', (await import('~/modules/passkey/router')).default],
+  ['/v1', (await import('~/modules/phone/router')).default],
   ['/v1/admin/webhook-endpoints', (await import('~/modules/webhook/router')).default],
   ['/v1/admin/hooks', (await import('~/modules/hook/router')).default],
   ['/v1/instance', (await import('~/modules/instance/router')).default],
@@ -47,6 +48,10 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
 // Mounted only where the deployment runs the mock OAuth provider (`ENVIRONMENT=local` with
 // `OAUTH_MOCK_PROVIDER=true`): in every other deployment the paths do not exist.
 const devOAuthRouter = (await import('~/modules/oauth/dev-router')).default
+
+// Mounted only where the deployment has the development SMS inbox (`ENVIRONMENT=local` with
+// `SMS_PROVIDER=dev`): in every other deployment the path does not exist.
+const devSmsRouter = (await import('~/modules/sms/dev-router')).default
 
 // Looked up once: where the reference's bundle is in the installed package, if it is.
 const docsBundle = findApiDocsBundle()
@@ -108,6 +113,9 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   }
   if (deps.config.oauthMock && deps.config.tier === 'local') {
     app.route('/v1/dev/oauth', devOAuthRouter)
+  }
+  if (deps.smsInbox !== null && deps.config.tier === 'local') {
+    app.route('/v1/dev/sms', devSmsRouter)
   }
 
   // Built on the first request and kept: the routes, and beside them the schemas no route

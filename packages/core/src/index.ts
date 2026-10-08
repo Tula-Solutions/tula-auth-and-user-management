@@ -69,6 +69,7 @@ export type {
   MfaPolicy,
   Passkey,
   PasswordPolicy,
+  PhoneCodeSent,
   SecondFactorMethod,
   SecondFactorProof,
   Session,

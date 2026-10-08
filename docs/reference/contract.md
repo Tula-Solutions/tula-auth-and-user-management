@@ -427,6 +427,27 @@ const CONFIG_UNMANAGED: "none"
 headers[CONFIG_MANAGED_BY_HEADER] = CONFIG_UNMANAGED
 ```
 
+### `COUNTRY_CALLING_PREFIXES`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+The prefixes of the E.164 numbers of each country, by ISO 3166-1 alpha-2 code (plus `XK`,
+the user-assigned code in common use for Kosovo).
+
+A prefix is a country calling code, or a calling code and the leading digits that tell one
+country's numbers from another's inside a shared code (the Caribbean members of `+1`,
+Kazakhstan inside `+7`). **Countries that share a prefix cannot be told apart by this
+table**, and are treated as one destination by {@link phoneNumberCountries}: the United
+States and Canada (`+1`), the United Kingdom and the Crown Dependencies (`+44`), Italy and
+the Vatican (`+39`), and a few more.
+
+It is here for the SMS country allow-list and holds nothing else about a country: no
+number lengths, no line types, no names.
+
+```ts
+const COUNTRY_CALLING_PREFIXES: Readonly<Record<string, readonly string[]>>
+```
+
 ### `CUSTOM_CLAIMS_CLAIM`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -497,7 +518,10 @@ nothing an operator would not put on that screen.
 - `mfa.policy` says whether a profile screen should offer two-step verification (`off`: hide
   it) and whether it can be turned off (`required`: it cannot). Optional in the schema, so a
   client reading an older server's answer treats a missing one as `off`.
-- The allow-lists (`urls`), the audit settings, the notice switches (`notifications`) and
+- `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
+  on and at least one country is allowed. Which countries is not said. Optional in the
+  schema, so a client reading an older server's answer treats a missing one as `false`.
+- The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the notice switches (`notifications`) and
   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
   absent: a client learns how its session is held from the response that starts it.
 
@@ -1176,6 +1200,8 @@ otherwise silently reset the password policy to its default.
 - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
 - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
+- `sms`: whether text messages are sent (`enabled`, off by default) and to which countries
+  (`allowedCountries`, empty by default, which sends nothing). See ADR 0037.
 
 ```ts
 const EnvironmentSettingsSchema
@@ -2575,6 +2601,16 @@ Longest name a user can give a passkey.
 const MAX_PASSKEY_NAME_LENGTH: 64
 ```
 
+### `MAX_PHONE_NUMBER_DIGITS`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+Most digits of an E.164 number (after the `+`): the limit of ITU-T E.164.
+
+```ts
+const MAX_PHONE_NUMBER_DIGITS: 15
+```
+
 ### `MAX_REUSE_GRACE_PERIOD`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -2728,6 +2764,16 @@ user-chosen password). Every built-in preset is at or above it.
 
 ```ts
 const MIN_PASSWORD_MIN_LENGTH: 8
+```
+
+### `MIN_PHONE_NUMBER_DIGITS`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+Fewest digits of an E.164 number Tula accepts (after the `+`).
+
+```ts
+const MIN_PHONE_NUMBER_DIGITS: 8
 ```
 
 ### `MIN_REUSE_GRACE_PERIOD`
@@ -3501,6 +3547,69 @@ export interface PasswordUserInfo {
 }
 ```
 
+### `PhoneCodeSent`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+Where a phone code went and when it expires.
+
+```ts
+export type PhoneCodeSent = z.infer<typeof PhoneCodeSentSchema>
+```
+
+### `PhoneCodeSentSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+What asking for a phone code answers: where it went, masked, and when it stops working.
+Never the code.
+
+```ts
+const PhoneCodeSentSchema: z.ZodObject<{ destination: z.ZodString; expiresAt: z.ZodISODateTime; }, z.core.$strip>
+```
+
+### `PhoneNumberRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+A phone number to send a code to.
+
+```ts
+export type PhoneNumberRequest = z.infer<typeof PhoneNumberRequestSchema>
+```
+
+### `PhoneNumberRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+Ask for a code to be sent to a phone number the signed-in user wants on their account
+(`POST /v1/client/me/phone`). Spaces, hyphens and parentheses are taken out; anything else
+that is not a `+` and 8 to 15 digits is `phone.invalid`.
+
+```ts
+const PhoneNumberRequestSchema: z.ZodObject<{ phoneNumber: z.ZodString; }, z.core.$strip>
+```
+
+### `PhoneNumberVerifyRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+The code that confirms a phone number.
+
+```ts
+export type PhoneNumberVerifyRequest = z.infer<typeof PhoneNumberVerifyRequestSchema>
+```
+
+### `PhoneNumberVerifyRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The code a phone number is confirmed with (`POST /v1/client/me/phone/verify`).
+
+```ts
+const PhoneNumberVerifyRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+```
+
 ### `REFRESH_TOKEN_PREFIX`
 
 _constant_, defined in `packages/contract/src/session.ts`
@@ -3642,6 +3751,16 @@ await fetch(`${api}/v1/client/sign-ins`, {
   headers: { [SESSION_PROFILE_HEADER]: 'admin', ...others },
   body: JSON.stringify({ identifier }),
 })
+```
+
+### `SMS_COUNTRIES`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+Every country code of {@link COUNTRY_CALLING_PREFIXES}, in alphabetical order.
+
+```ts
+const SMS_COUNTRIES: readonly string[]
 ```
 
 ### `STEP_UP_MAX_AGE_SECONDS`
@@ -4050,6 +4169,18 @@ password and signs in with an emailed code or link.
 
 ```ts
 const SignUpRequestSchema
+```
+
+### `SmsCountrySchema`
+
+_constant_, defined in `packages/contract/src/environment-settings.ts`
+
+A country SMS may be sent to: an ISO 3166-1 alpha-2 code in upper case that the contract's
+calling-prefix table knows (`COUNTRY_CALLING_PREFIXES`). A code the table does not have is
+refused rather than stored: it could never match a number.
+
+```ts
+const SmsCountrySchema: z.ZodString
 ```
 
 ### `StepUpEmailCode`
@@ -5329,6 +5460,34 @@ isCustomClaimValue('admin') // true
 isCustomClaimValue(['admin']) // false
 ```
 
+### `isPhoneNumberAllowed`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+Whether an SMS allow-list lets a message go to a number: one of the countries the number
+may belong to is listed. An empty list allows nothing.
+
+```ts
+export function isPhoneNumberAllowed(
+  phoneNumber: string,
+  allowedCountries: readonly string[]
+): boolean
+```
+
+**Parameters**
+
+- `phoneNumber`: A number in E.164 form.
+- `allowedCountries`: The environment's `sms.allowedCountries`.
+
+**Returns** `true` when the number's destination is allowed.
+
+**Example**
+
+```ts
+isPhoneNumberAllowed('+4915112345678', ['DE', 'AT']) // true
+isPhoneNumberAllowed('+4915112345678', []) // false
+```
+
 ### `isRelyingPartyId`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -5380,6 +5539,30 @@ export function isSessionProfileName(name: unknown): name is string
 ```ts
 isSessionProfileName('back-office') // true
 isSessionProfileName('back_office') // false
+```
+
+### `isSmsCountry`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+Whether a string is a country code the SMS allow-list accepts: upper case, and a key of
+{@link COUNTRY_CALLING_PREFIXES}.
+
+```ts
+export function isSmsCountry(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a known country code.
+
+**Example**
+
+```ts
+isSmsCountry('DE') // true
+isSmsCountry('de') // false
 ```
 
 ### `isValidThemeValue`
@@ -5503,6 +5686,28 @@ no longer exists (possible only in a stored document: a save is refused).
 jwtTemplateOfProfile(settings.sessions, settings.sessions.profiles.web)?.name // 'app'
 ```
 
+### `maskPhoneNumber`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+Mask a phone number for display: its last two digits behind a fixed-width mask.
+
+```ts
+export function maskPhoneNumber(phoneNumber: string): string
+```
+
+**Parameters**
+
+- `phoneNumber`: A number in E.164 form.
+
+**Returns** The mask, e.g. `***00`.
+
+**Example**
+
+```ts
+maskPhoneNumber('+14155550100') // '***00'
+```
+
 ### `normalizePassword`
 
 _function_, defined in `packages/contract/src/password-rules.ts`
@@ -5548,6 +5753,37 @@ originMatchesRelyingParty('https://app.northline.app', 'northline.app') // true
 originMatchesRelyingParty('https://northline.app.evil.test', 'northline.app') // false
 ```
 
+### `parsePhoneNumber`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+Read a phone number as a person typed it and return it in E.164 form.
+
+The only tidying is taking out spaces, hyphens and parentheses. What is left must be a `+`,
+then {@link MIN_PHONE_NUMBER_DIGITS} to {@link MAX_PHONE_NUMBER_DIGITS} digits, the first of
+which is not `0`. A national number (`0171 …`), a `00` prefix, letters and any other
+punctuation are refused rather than guessed at: guessing a country is how a code ends up on
+somebody else's phone.
+
+This says the input has the shape of a number, not that the number exists.
+
+```ts
+export function parsePhoneNumber(input: string): string | null
+```
+
+**Parameters**
+
+- `input`: The number as entered.
+
+**Returns** The number in E.164 form, or `null` when the input is not one.
+
+**Example**
+
+```ts
+parsePhoneNumber('+1 (415) 555-0100') // '+14155550100'
+parsePhoneNumber('0171 5550100') // null: no country calling code
+```
+
 ### `parseStoredEnvironmentSettings`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -5571,6 +5807,37 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
 
 ```ts
 parseStoredEnvironmentSettings({ app: { name: 'Acme' } }).password.minLength // 10
+```
+
+### `phoneNumberCountries`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The countries a number may belong to, by the **longest** prefix of the table it starts with.
+
+Longest, so that `+1 242 …` is the Bahamas and never "the United States or Canada": the
+shorter prefix is the cheaper destination, and a match on it would let a number of the
+dearer one through an allow-list that names only the cheaper.
+
+```ts
+export function phoneNumberCountries(phoneNumber: string): readonly string[]
+```
+
+**Parameters**
+
+- `phoneNumber`: A number in E.164 form.
+
+**Returns**
+
+The country codes that share that prefix, or none for a calling code the table
+does not have.
+
+**Example**
+
+```ts
+phoneNumberCountries('+4915112345678') // ['DE']
+phoneNumberCountries('+14155550100') // ['CA', 'US']
+phoneNumberCountries('+12425550100') // ['BS']
 ```
 
 ### `profileOfSession`
@@ -5679,9 +5946,10 @@ Settings are read on the request path, so a stored document must not be able to 
 environment down:
 - fields added since it was written take their defaults;
 - keys this version does not know are dropped rather than refused (a rollback);
-- an entry of `urls.allowedOrigins` or `urls.allowedRedirectUrls` that this version would not
-  accept (not a valid origin or URL, a duplicate, or beyond the list's limit) is left out
-  rather than failing the read. Leaving an entry out of an allow-list only ever allows less.
+- an entry of `urls.allowedOrigins`, `urls.allowedRedirectUrls` or `sms.allowedCountries`
+  that this version would not accept (not a valid origin, URL or country, a duplicate, or
+  beyond the list's limit) is left out rather than failing the read. Leaving an entry out
+  of an allow-list only ever allows less.
 
 ```ts
 export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmentSettingsRead
@@ -5798,7 +6066,9 @@ A path is listed when:
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
 measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
-weakening.
+weakening. Nor is any change to `sms`: a phone number is contact data that no account is
+signed in to or recovered with (ADR 0037), so neither switching SMS on or off nor a wider
+or narrower country list makes an account easier to take.
 
 ```ts
 export function settingsWeakenings(

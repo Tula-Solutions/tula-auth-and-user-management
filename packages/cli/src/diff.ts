@@ -29,15 +29,20 @@ export const MANAGING_TOOL = 'tula-apply'
 
 /**
  * Lists in the settings document that are **sets**: their order means nothing to the server
- * (an origin is allowed or it is not), so a reordering is not a change, and a change is shown
- * as the entries added and removed. Every other list is compared in order.
+ * (an origin is allowed or it is not, a country is texted or it is not), so a reordering is
+ * not a change, and a change is shown as the entries added and removed. Every other list is
+ * compared in order.
  *
  * @example
  * ```ts
  * diffValues(current, desired, SET_PATHS)
  * ```
  */
-export const SET_PATHS: readonly string[] = ['urls.allowedOrigins', 'urls.allowedRedirectUrls']
+export const SET_PATHS: readonly string[] = [
+  'urls.allowedOrigins',
+  'urls.allowedRedirectUrls',
+  'sms.allowedCountries',
+]
 
 /**
  * Maps whose entries are whole things with a name (a session profile, a JWT template and,

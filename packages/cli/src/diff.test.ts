@@ -108,6 +108,26 @@ describe('diffValues', () => {
     ])
   })
 
+  test.each([
+    ['urls.allowedOrigins', ['https://a.test', 'https://b.test'], 'https://c.test'],
+    ['urls.allowedRedirectUrls', ['https://a.test/cb', 'https://b.test/cb'], 'https://c.test/cb'],
+    ['sms.allowedCountries', ['US', 'DE'], 'FR'],
+  ])('%s is a set by default: order is no change, an entry is', (path, entries, extra) => {
+    const [section, key] = path.split('.') as [string, string]
+    const doc = (list: string[]) => ({ [section]: { [key]: list } })
+    expect(diffValues(doc(entries), doc([...entries].reverse()))).toEqual([])
+    expect(diffValues(doc(entries), doc([...entries].reverse().concat(extra)))).toEqual([
+      {
+        path,
+        kind: 'changed',
+        before: entries,
+        after: [...entries].reverse().concat(extra),
+        added: [extra],
+        removed: [],
+      },
+    ])
+  })
+
   test('a list on a set path ignores order and duplicates, and reports entries', () => {
     const paths = ['urls.allowedOrigins']
     expect(

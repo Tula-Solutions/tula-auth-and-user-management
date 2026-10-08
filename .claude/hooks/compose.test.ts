@@ -247,6 +247,9 @@ describe.skipIf(!hasCompose)('the optional worker service', () => {
     'CORS_ORIGINS',
     'OAUTH_MOCK_PROVIDER',
     'PASSWORD_POLICY',
+    // The worker sends no text message (ADR 0037), and a development inbox in it would be
+    // one nobody reads.
+    'SMS_PROVIDER',
     'TRUST_PROXY',
     'TULA_ADMIN_TOKEN',
   ]

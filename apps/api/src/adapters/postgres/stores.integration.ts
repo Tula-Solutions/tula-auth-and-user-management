@@ -64,6 +64,7 @@ const log = new PostgresActivityLog(db)
 
 describeUserRepository('PostgresUserRepository on a real server', async () => ({
   users: new PostgresUserRepository(db),
+  log,
   ...(await tenants()),
 }))
 

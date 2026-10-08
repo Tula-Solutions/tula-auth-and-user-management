@@ -11,6 +11,7 @@ import {
   type EnvironmentSettingsInput,
   EnvironmentSettingsSchema,
   hasEnabledSignInMethod,
+  isPhoneNumberAllowed,
   type OAuthProvider,
   type SignInMethod,
   settingsWeakenings,
@@ -478,12 +479,16 @@ export function etag(revision: number): string {
  *
  * @param settings - The environment's settings.
  * @param oauth - The OAuth providers the environment has enabled.
+ * @param smsSender - Whether the deployment has a way to send a text message
+ *   (`deps.sms.configured`). Without one no phone number is offered, whatever the settings
+ *   say: every try would be refused.
  * @returns App name and support address, enabled sign-in methods and providers, whether a
- *   sign-up needs a password, and the password policy.
+ *   sign-up needs a password, the password policy and whether a phone number can be added.
  */
 export function clientConfig(
   settings: EnvironmentSettings,
-  oauth: readonly OAuthProvider[] = []
+  oauth: readonly OAuthProvider[] = [],
+  smsSender = false
 ): ClientConfig {
   return {
     app: { name: settings.app.name, supportEmail: settings.app.supportEmail },
@@ -496,6 +501,10 @@ export function clientConfig(
     signUp: { password: settings.signUp.password },
     password: settings.password,
     mfa: { policy: settings.mfa.policy },
+    // Whether a number can be added at all, and nothing of which countries.
+    phone: {
+      enabled: smsSender && settings.sms.enabled && settings.sms.allowedCountries.length > 0,
+    },
   }
 }
 
@@ -518,6 +527,39 @@ export async function requireMethod(
   const { signIn } = await current(deps, tenant)
   if (!signIn.methods[method].enabled) {
     throw new AuthError('auth.method_disabled', { method })
+  }
+}
+
+/**
+ * Refuse a request that would send a text message the environment does not allow.
+ *
+ * The one place the `sms` settings are checked: every step that sends a code by SMS, or
+ * accepts one, calls this first, before anything is counted, spent or sent, so a code asked
+ * for before SMS was switched off (or its country taken off the list) is not honoured after.
+ *
+ * Off, and on with an empty country list, are the same answer: nothing can be sent. The two
+ * refusals are told apart on purpose: the caller is the signed-in owner of the request, and
+ * both say something about the environment and the number they typed, nothing about anyone
+ * else.
+ *
+ * @param deps - Settings store and config.
+ * @param tenant - The environment.
+ * @param phoneNumber - The destination in E.164 form. Left out where no number is known
+ *   yet: only the switch and "any country at all" are then checked.
+ * @throws AuthError `sms.disabled` (403) when SMS is off or no country is allowed, or
+ *   `sms.country_not_allowed` (422) when the number's country is not on the list.
+ */
+export async function requireSms(
+  deps: ReadDeps,
+  tenant: Pick<Tenant, 'environmentId'>,
+  phoneNumber?: string
+): Promise<void> {
+  const { sms } = await current(deps, tenant)
+  if (!sms.enabled || sms.allowedCountries.length === 0) {
+    throw new AuthError('sms.disabled')
+  }
+  if (phoneNumber !== undefined && !isPhoneNumberAllowed(phoneNumber, sms.allowedCountries)) {
+    throw new AuthError('sms.country_not_allowed')
   }
 }
 

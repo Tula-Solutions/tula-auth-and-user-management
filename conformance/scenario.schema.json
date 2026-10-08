@@ -19,6 +19,9 @@
     "needsWebhookReceiver": {
       "type": "boolean"
     },
+    "needsSmsInbox": {
+      "type": "boolean"
+    },
     "variables": {
       "type": "object",
       "propertyNames": {
@@ -34,7 +37,7 @@
             "properties": {
               "generate": {
                 "type": "string",
-                "enum": ["email", "password", "uuid"]
+                "enum": ["email", "password", "uuid", "phone"]
               }
             },
             "required": ["generate"],
@@ -251,6 +254,34 @@
             "required": ["name", "emailLink"],
             "additionalProperties": false,
             "ref": "ConformanceEmailLinkStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "smsCode": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  }
+                },
+                "required": ["to", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "smsCode"],
+            "additionalProperties": false,
+            "ref": "ConformanceSmsCodeStep"
           },
           {
             "type": "object",
@@ -803,6 +834,34 @@
             "required": ["name", "emailLink"],
             "additionalProperties": false,
             "ref": "ConformanceEmailLinkStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "smsCode": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  }
+                },
+                "required": ["to", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "smsCode"],
+            "additionalProperties": false,
+            "ref": "ConformanceSmsCodeStep"
           },
           {
             "type": "object",

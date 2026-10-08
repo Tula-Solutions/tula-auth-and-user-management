@@ -164,6 +164,30 @@ export const EmailCodeStepSchema = z
   .meta({ ref: 'ConformanceEmailCodeStep' })
 
 /**
+ * Read the 6-digit code from the newest text message sent to a phone number.
+ *
+ * The message is read from the server's development SMS inbox (`SMS_PROVIDER=dev`, the
+ * `local` tier only), so a scenario with such a step sets `needsSmsInbox` and is skipped by
+ * a target that has none.
+ */
+export const SmsCodeStepSchema = z
+  .object({
+    name: z.string().min(1),
+    smsCode: z
+      .object({
+        /** The number in E.164 form, as the server stored it. */
+        to: z.string(),
+        /** Variable to store the code in. */
+        capture: z.string(),
+        /** Variable to store a code that is guaranteed to be wrong in. */
+        captureWrong: z.string().optional(),
+      })
+      .strict(),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceSmsCodeStep' })
+
+/**
  * Read the sign-in link from the newest email to an address that carries a code, and take it
  * apart the way the page it leads to does: the link token and the attempt id are in the URL's
  * fragment (`#tula_link=…&tula_attempt=…`), never in its query.
@@ -494,6 +518,7 @@ export const StepSchema = z
     RequestStepSchema,
     EmailCodeStepSchema,
     EmailLinkStepSchema,
+    SmsCodeStepSchema,
     TotpStepSchema,
     OAuthStepSchema,
     PasskeyStepSchema,
@@ -506,10 +531,15 @@ export const StepSchema = z
 /**
  * A variable's starting value: a literal, or a value generated fresh for each run. `email` is a
  * unique address; `password` is a long random one that meets every built-in policy and is in no
- * breach list; `uuid` is a random lower-case GUID (a Microsoft tenant id or object id).
+ * breach list; `uuid` is a random lower-case GUID (a Microsoft tenant id or object id);
+ * `phone` is a United States number in E.164 form from the range kept for fiction
+ * (`+1 NXX 555 01XX`), so that per-number limits start clean and no real phone is ever named.
  */
 export const VariableSchema = z
-  .union([z.string(), z.object({ generate: z.enum(['email', 'password', 'uuid']) }).strict()])
+  .union([
+    z.string(),
+    z.object({ generate: z.enum(['email', 'password', 'uuid', 'phone']) }).strict(),
+  ])
   .meta({ ref: 'ConformanceVariable' })
 
 /**
@@ -530,6 +560,11 @@ export const ScenarioSchema = z
      * listener the runner starts, so a target that offers none skips the scenario.
      */
     needsWebhookReceiver: z.boolean().optional(),
+    /**
+     * `true` when a step reads a text message: the server has to have a development SMS
+     * inbox the runner can read, so a target that offers none skips the scenario.
+     */
+    needsSmsInbox: z.boolean().optional(),
     variables: z.record(z.string(), VariableSchema).optional(),
     steps: z.array(StepSchema).min(1),
     /**
@@ -560,6 +595,13 @@ export const ScenarioSchema = z
         (step) => !('webhook' in step) && !('hook' in step)
       ),
     { message: 'a scenario with a `webhook` or `hook` step must set `needsWebhookReceiver: true`' }
+  )
+  // And for the SMS inbox, which only a server in the `local` tier has.
+  .refine(
+    (scenario) =>
+      scenario.needsSmsInbox === true ||
+      [...scenario.steps, ...(scenario.cleanup ?? [])].every((step) => !('smsCode' in step)),
+    { message: 'a scenario with an `smsCode` step must set `needsSmsInbox: true`' }
   )
   .meta({ ref: 'ConformanceScenario' })
 

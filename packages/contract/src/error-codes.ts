@@ -239,6 +239,27 @@ export const ERROR_DEFINITIONS = {
     message: 'This is your only way to sign in. Add a password or connect an account first.',
   },
 
+  // Phone numbers and SMS (ADR 0037). Both refusals of a send are answered to the signed-in
+  // owner of the request, about the environment and the number they typed: neither says
+  // anything about another account.
+  'phone.invalid': {
+    status: 422,
+    message: 'Enter a phone number with its country code, such as +14155550100.',
+  },
+  // The environment's settings have SMS off (`sms.enabled`), or allow no country at all.
+  'sms.disabled': { status: 403, message: 'Text messages are not available.' },
+  // The number's country is not in the environment's `sms.allowedCountries`. Nothing was sent.
+  'sms.country_not_allowed': {
+    status: 422,
+    message: 'Text messages cannot be sent to that country.',
+  },
+  // The message could not be handed to a sender (none is configured, or it failed). Nothing
+  // was stored: an earlier code keeps working.
+  'sms.unavailable': {
+    status: 503,
+    message: 'The text message could not be sent. Try again later.',
+  },
+
   'session.invalid_token': { status: 401, message: 'Your session is invalid. Sign in again.' },
   'session.expired': { status: 401, message: 'Your session has expired. Sign in again.' },
   'session.revoked': { status: 401, message: 'Your session was signed out. Sign in again.' },

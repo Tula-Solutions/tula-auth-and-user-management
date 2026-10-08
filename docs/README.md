@@ -29,6 +29,12 @@ by error code. Their code samples are copied from files of this repository by
 | [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
 | [Sessions](methods/sessions.md) | Profiles, devices, the concurrent-session limit, what your server sees. |
 
+## More about a user
+
+| | |
+| --- | --- |
+| [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, the development SMS inbox, the SDK calls, the error codes, and what is not built yet (sign-in by SMS among them). |
+
 ## Claims for your backend
 
 | | |

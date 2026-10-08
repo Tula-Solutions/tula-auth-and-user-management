@@ -227,6 +227,181 @@ describe('session and user calls', () => {
   })
 })
 
+describe('user.phone', () => {
+  const NUMBER = '+14155550142'
+  const ASK = 'POST /v1/client/me/phone'
+  const VERIFY = 'POST /v1/client/me/phone/verify'
+  const REMOVE = 'DELETE /v1/client/me/phone'
+  const WITH_NUMBER = {
+    ...TEST_USER,
+    phoneNumber: NUMBER,
+    phoneNumberVerifiedAt: '2030-01-01T00:05:00.000Z',
+  }
+
+  test('request sends the number with the access token and returns only the receipt', async () => {
+    const { api, tula } = await signedIn()
+    api.on(ASK, () =>
+      json(200, {
+        destination: '***42',
+        expiresAt: '2030-01-01T00:10:00.000Z',
+        // Not part of the answer: whatever else a 200 held does not travel further.
+        code: '123456',
+      })
+    )
+    expect(await tula.user.phone.request({ phoneNumber: '+1 (415) 555-0142' })).toEqual({
+      destination: '***42',
+      expiresAt: '2030-01-01T00:10:00.000Z',
+    })
+    const sent = api.calls(ASK)[0]
+    expect(sent?.body).toEqual({ phoneNumber: '+1 (415) 555-0142' })
+    expect(sent?.headers.get('authorization')).toMatch(/^Bearer ey/)
+    // Asking changes nothing about who is signed in or what is known of them.
+    expect(tula.state).toMatchObject({ status: 'signed-in', user: TEST_USER })
+  })
+
+  test.each([
+    ['a page', 'not json'],
+    ['no destination', { expiresAt: '2030-01-01T00:10:00.000Z' }],
+    ['no expiry', { destination: '***42' }],
+  ])('a 200 that is not a receipt (%s) is response.invalid', async (_name, body) => {
+    const { api, tula } = await signedIn()
+    api.on(ASK, () =>
+      typeof body === 'string' ? new Response(body, { status: 200 }) : json(200, body)
+    )
+    expect((await caught(tula.user.phone.request({ phoneNumber: NUMBER }))).code).toBe(
+      'response.invalid'
+    )
+  })
+
+  test('verify sends the code, returns the user and shows the number in the state', async () => {
+    const { api, tula } = await signedIn()
+    api.on(VERIFY, () => json(200, WITH_NUMBER))
+    expect(await tula.user.phone.verify({ code: '123456' })).toEqual(WITH_NUMBER)
+    expect(api.calls(VERIFY)[0]?.body).toEqual({ code: '123456' })
+    expect(tula.state).toMatchObject({ status: 'signed-in', user: WITH_NUMBER })
+  })
+
+  test('a number verified for one session is not installed into the next one', async () => {
+    const { api, tula } = await signedIn()
+    let release: (response: Response) => void = () => undefined
+    api.on(VERIFY, () => new Promise<Response>((resolve) => (release = resolve)))
+    const verifying = tula.user.phone.verify({ code: '123456' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const other = { ...TEST_USER, id: 'user_2', email: 'other@northline.app' }
+    api.on('GET /v1/client/me', () => json(200, other))
+    api.on('POST /v1/client/sign-ins', () =>
+      json(200, {
+        id: 'attempt_1',
+        kind: 'sign_in',
+        expiresAt: '2030-01-01T00:10:00.000Z',
+        step: { status: 'complete', userId: 'user_2', sessionId: 'session_2' },
+        attemptSecret: 'tula_at_secret',
+        session: sessionTokens('b', { sessionId: 'session_2', refreshToken: 'rt_2' }),
+      })
+    )
+    await tula.signIn.start({ identifier: other.email })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    release(json(200, WITH_NUMBER))
+    expect(await verifying).toEqual(WITH_NUMBER)
+    expect(tula.state).toMatchObject({ sessionId: 'session_2', user: other })
+  })
+
+  test('remove deletes the number and the state’s user no longer has one', async () => {
+    const { api, tula } = await signedIn()
+    api.on(VERIFY, () => json(200, WITH_NUMBER))
+    await tula.user.phone.verify({ code: '123456' })
+    api.on(REMOVE, () => new Response(null, { status: 204 }))
+    expect(await tula.user.phone.remove()).toBeUndefined()
+    expect(api.calls(REMOVE)).toHaveLength(1)
+    expect(tula.state).toMatchObject({
+      status: 'signed-in',
+      user: { ...TEST_USER, phoneNumber: null, phoneNumberVerifiedAt: null },
+    })
+  })
+
+  test.each([
+    [
+      'request',
+      ASK,
+      'sms.disabled',
+      403,
+      (tula: Core.TulaClient) => tula.user.phone.request({ phoneNumber: NUMBER }),
+    ],
+    [
+      'request',
+      ASK,
+      'sms.country_not_allowed',
+      422,
+      (tula: Core.TulaClient) => tula.user.phone.request({ phoneNumber: NUMBER }),
+    ],
+    [
+      'request',
+      ASK,
+      'phone.invalid',
+      422,
+      (tula: Core.TulaClient) => tula.user.phone.request({ phoneNumber: 'x' }),
+    ],
+    [
+      'request',
+      ASK,
+      'sms.unavailable',
+      503,
+      (tula: Core.TulaClient) => tula.user.phone.request({ phoneNumber: NUMBER }),
+    ],
+    [
+      'verify',
+      VERIFY,
+      'verification.invalid_code',
+      422,
+      (tula: Core.TulaClient) => tula.user.phone.verify({ code: '000000' }),
+    ],
+    [
+      'verify',
+      VERIFY,
+      'verification.expired',
+      410,
+      (tula: Core.TulaClient) => tula.user.phone.verify({ code: '000000' }),
+    ],
+    [
+      'remove',
+      REMOVE,
+      'auth.step_up_required',
+      403,
+      (tula: Core.TulaClient) => tula.user.phone.remove(),
+    ],
+  ] as const)(
+    '%s refused by the API (%s on %s) throws that code, with a message, and changes nothing',
+    async (_name, route, code, status, call) => {
+      const { api, tula } = await signedIn()
+      api.on(route, () => failure(status, code))
+      const error = await caught(call(tula))
+      expect(error).toMatchObject({ code, status })
+      // A message of the client's own table, not the server's detail.
+      expect(error.message).not.toBe('')
+      expect(error.message).not.toContain('detail of')
+      expect(api.calls(route)).toHaveLength(1)
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: TEST_USER })
+    }
+  )
+
+  test('nothing of a number or a code is kept in storage', async () => {
+    const storage = memoryStorage()
+    await storage.set(`tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`, 'rt_0')
+    const set = spyOn(storage, 'set')
+    const { api, tula } = setup({ storage })
+    await tula.load()
+    api.on(ASK, () => json(200, { destination: '***42', expiresAt: '2030-01-01T00:10:00.000Z' }))
+    api.on(VERIFY, () => json(200, WITH_NUMBER))
+    await tula.user.phone.request({ phoneNumber: NUMBER })
+    await tula.user.phone.verify({ code: '654321' })
+    const written = JSON.stringify(set.mock.calls)
+    expect(written).not.toContain(NUMBER)
+    expect(written).not.toContain('654321')
+  })
+})
+
 describe('user.get belongs to the session that asked', () => {
   test('a user fetched for one session is not installed into the next one', async () => {
     const { api, tula } = await signedIn()

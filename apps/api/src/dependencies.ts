@@ -27,6 +27,7 @@ import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
 import type { SessionStore } from '~/ports/session-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
+import type { SmsInbox, SmsSender } from '~/ports/sms-sender'
 import type { UserRepository } from '~/ports/user-repository'
 import type { VerificationTokenStore } from '~/ports/verification-token-store'
 import type { WebhookDeliveryStore } from '~/ports/webhook-delivery-store'
@@ -117,6 +118,18 @@ export interface Deps {
   /** Revoked session ids whose access tokens may still be unexpired. */
   revokedSessions: RevokedSessions
   mailer: Mailer
+  /**
+   * Sends text messages. Send through `~/modules/sms/service`, after `Settings.requireSms`.
+   * A deployment with no sender (`SMS_PROVIDER=none`) has one that refuses every message.
+   */
+  sms: SmsSender
+  /**
+   * The development SMS inbox (`SMS_PROVIDER=dev`): what the local-tier route
+   * `GET /v1/dev/sms/messages` reads. `null` everywhere else, and the route then does not
+   * exist. Only ever set in the `local` tier: `env.ts` refuses the development sender
+   * anywhere else (ADR 0037).
+   */
+  smsInbox: SmsInbox | null
   rateLimiter: RateLimiter
   /** Exponential backoff for failed attempts at guessing a secret. */
   lockout: Lockout

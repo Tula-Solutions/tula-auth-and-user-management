@@ -683,6 +683,24 @@ export interface PasswordUserInfo {
 }
 ```
 
+### `PhoneCodeSent`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The receipt of a code texted to a phone number: where it went (masked) and when it stops
+working. Never the code, and never the whole number.
+
+```ts
+export type PhoneCodeSent = Schemas['PhoneCodeSent']
+```
+
+**Example**
+
+```ts
+const sent: PhoneCodeSent = await tula.user.phone.request({ phoneNumber: '+14155550142' })
+show(`We texted a code to the number ending ${sent.destination.slice(-2)}`)
+```
+
 ### `REFRESH_RETRY_WINDOW_MS`
 
 _constant_, defined in `packages/core/src/session.ts`
@@ -1506,6 +1524,61 @@ export interface TulaClient {
        * ```
        */
       remove(input: { passkeyId: string }): Promise<void>
+    }
+    /**
+     * The signed-in user's phone number: one, optional, proven with a 6-digit code sent by
+     * text message. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     *
+     * Whether a number can be added at all is `phone.enabled` of `config.get()`. The number
+     * itself is `phoneNumber` of the user, with `phoneNumberVerifiedAt`.
+     */
+    readonly phone: {
+      /**
+       * Text a 6-digit code to a number the user wants on their account. The number is
+       * only pending: the account's own number, if it has one, stays until `verify`.
+       *
+       * @param input - The number, with its country code (`+14155550142`; spaces, hyphens
+       *   and parentheses are ignored).
+       * @returns The receipt: the number masked and when the code expires. Never the code.
+       * @throws TulaError `phone.invalid` for what is not a phone number, `sms.disabled`
+       *   where the application sends no text messages, `sms.country_not_allowed` for a
+       *   number of a country it does not send to, `sms.unavailable` when the message could
+       *   not be sent, `rate_limited` when a code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.phone.request({ phoneNumber: '+1 415 555 0142' })
+       * ```
+       */
+      request(input: { phoneNumber: string }): Promise<PhoneCodeSent>
+      /**
+       * Prove the pending number with the code texted to it. The number becomes the
+       * account's, replacing one it had, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the number.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it expired,
+       *   was used or was replaced), `verification.too_many_attempts` or `rate_limited`
+       *   after repeated wrong codes, `sms.disabled` or `sms.country_not_allowed` when the
+       *   application stopped sending to that number since the code was asked for.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.phone.verify({ code: '482913' })
+       * user.phoneNumber // '+14155550142'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+      /**
+       * Take the phone number off the account. Nothing happens when it has none.
+       *
+       * @example
+       * ```ts
+       * await tula.user.phone.remove()
+       * ```
+       */
+      remove(): Promise<void>
     }
     /** The provider accounts (Google, GitHub, Apple, Microsoft) connected to the signed-in user. */
     readonly identities: {

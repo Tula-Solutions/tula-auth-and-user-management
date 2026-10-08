@@ -1,4 +1,4 @@
-import type { Target } from '@tula/conformance'
+import { smsCodeIn, type Target } from '@tula/conformance'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import * as Webhooks from '~/modules/webhook/service'
@@ -13,7 +13,7 @@ const EMAIL_LINK = /https?:\/\/\S+#\S*tula_link=\S+/
 
 /**
  * A fresh in-process server to run a conformance scenario against: memory adapters, a clock
- * that `wait` steps advance, and an outbox the email steps read. The requests are the same
+ * that `wait` steps advance, and the outboxes the email and SMS steps read. The requests are the same
  * ones `bun run conformance` sends to a live server.
  *
  * Test support: used by `conformance.test.ts` and by `event-canary.test.ts`, which runs the
@@ -76,6 +76,14 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
         throw new Error(`no email with a link was sent to ${to}`)
       }
       return link
+    },
+    smsCode: async (to) => {
+      // The memory sender is the inbox here: no route is involved, as for the emails.
+      const code = smsCodeIn(deps.sms.messages(to).at(-1)?.text ?? '')
+      if (!code) {
+        throw new Error('no text message with a code was sent to that number')
+      }
+      return code
     },
     wait: async (ms) => {
       deps.clock.advance(ms)

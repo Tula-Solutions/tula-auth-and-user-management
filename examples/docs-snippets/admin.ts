@@ -174,6 +174,17 @@ export async function jwtTemplateSettings() {
   // #endregion
 }
 
+/** Text messages: switched on, to the countries listed and no other (ADR 0037). */
+export async function smsSettings() {
+  // #region settings-sms
+  const { data } = await admin.call('getEnvironmentSettings')
+  await admin.call('replaceEnvironmentSettings', {
+    headers: { 'If-Match': ifMatch(data.revision) },
+    body: { ...data.settings, sms: { enabled: true, allowedCountries: ['US', 'DE'] } },
+  })
+  // #endregion
+}
+
 /** Store a provider's credentials and read the redirect URI to register with it. */
 export async function providers(clientSecret: string) {
   // #region providers

@@ -38,6 +38,8 @@ import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
 import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
 import { RedisVersions } from '~/adapters/redis/versions'
+import { DevSmsSender } from '~/adapters/sms/dev'
+import { unconfiguredSmsSender } from '~/adapters/sms/unconfigured'
 import { systemClock } from '~/adapters/system/clock'
 import { createDiagnostics } from '~/adapters/system/diagnostics'
 import { uuidV7Ids } from '~/adapters/system/ids'
@@ -118,6 +120,18 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
       'OAUTH_MOCK_PROVIDER is on: every OAuth provider is served by the built-in mock, which signs in anyone as any address. It must never be used outside local development.'
     )
   }
+  // `env.ts` has already refused the development sender outside the `local` tier; checked
+  // again here, as for the mock provider. Anywhere else, and with `SMS_PROVIDER=none`, the
+  // sender is the one that refuses every message: nothing falls back to a log line.
+  const smsInbox =
+    env.SMS_PROVIDER === 'dev' && env.ENVIRONMENT === 'local' ? new DevSmsSender(clock) : null
+  if (smsInbox) {
+    // Loud on purpose, on every boot: with the inbox on, anyone who can reach this API reads
+    // every code it "sends".
+    logger.warn(
+      'SMS_PROVIDER is dev: text messages are not sent. They are kept in memory and readable by anyone who can reach this API at /v1/dev/sms/messages. It must never be used outside local development.'
+    )
+  }
   const deps: Deps = {
     config: {
       tier: env.ENVIRONMENT,
@@ -176,6 +190,8 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
       ? new RedisRevokedSessions(redis, clock)
       : new MemoryRevokedSessions(clock),
     mailer,
+    sms: smsInbox ?? unconfiguredSmsSender,
+    smsInbox,
     secretBox,
     keyedHash,
     // On Postgres even when Redis is configured: the jobs it guards are database work.

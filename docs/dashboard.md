@@ -46,7 +46,7 @@ deletes a workspace, project or environment yet.
 | Screen | What you can do |
 | --- | --- |
 | Users | Search by email or name; create a user; open one. |
-| A user | Profile and state; how they sign in (password, verified address, linked accounts, two-step verification and backup codes left, passkeys: never a secret); active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
+| A user | Profile and state, the phone number and when it was verified; how they sign in (password, verified address, linked accounts, two-step verification and backup codes left, passkeys: never a secret); active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
 | Sign-in methods | Switch password, emailed code, emailed link and passkeys on or off; set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub, Apple and Microsoft. |
 | Password policy | A preset or custom rules. |
 | Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. **JWT templates** ([docs](jwt-templates.md)): add a template and its claims (a source or a fixed value each), see how large it can get against the 1,024-byte cap and which profiles use it, and choose a template on a profile's card. A reserved or malformed claim name and the caps are refused in the form; a template a profile uses cannot be taken out until the profile lets go of it; a save that takes claims away from a profile's sessions asks first. |
@@ -57,7 +57,7 @@ deletes a workspace, project or environment yet.
 | A delivery | Every request the server made for it (status code, duration, time, and why one failed), and "Send again". |
 | Hooks | The three points at which the server asks your backend a question (`before_sign_up`, `before_session`, `before_token`), each with its hook or none: its address, whether it is on, its deadline, what happens when a call fails, and the last call that failed. Add a hook (its signing secret is shown once), change it, switch it off and on, remove it. |
 | Audit log | An environment's entries, filtered by action, actor type, actor, target and day. |
-| Settings | App name, support address, allowed origins and redirect URLs, security notices, audit retention. |
+| Settings | App name, support address, allowed origins and redirect URLs, security notices, text messages (on or off, and the countries they may go to), audit retention. |
 | Instance audit log | Dashboard sign-ins, and workspaces, projects and environments being created. |
 | Diagnostics | The checks `tula doctor` runs, each with its fix. |
 

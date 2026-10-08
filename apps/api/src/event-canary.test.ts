@@ -27,11 +27,19 @@ import { inProcessTarget } from '~/testing/in-process-target'
  */
 const MARKERS = /canary|s3cretpass|c0ffeec0ffee/i
 
+/** What every canary phone number starts with: a fictional United States number. */
+const CANARY_PHONE_PREFIX = '+12025550'
+
 /** The same scenario with a canary for every address and password it would generate. */
 function withCanaries(scenario: Scenario): Scenario {
   const variables = Object.entries(scenario.variables ?? {}).map(([name, value], index) => {
     if (typeof value === 'string') {
       return [name, value]
+    }
+    if (value.generate === 'phone') {
+      // A number has no room for a marker: a fixed, recognisable one per variable, which
+      // the tap collects from the request that carries it.
+      return [name, `${CANARY_PHONE_PREFIX}${String(index).padStart(2, '0')}`]
     }
     if (value.generate === 'uuid') {
       return [name, `${index.toString(16).padStart(8, '0')}-c0de-4c0d-8c0d-c0ffeec0ffee`]
@@ -223,6 +231,11 @@ class Tap {
     }
   }
 
+  sms(message: { to: string; text: string }): void {
+    this.add(message.to)
+    this.addAll(message.text.match(/(?<![0-9])[0-9]{6}(?![0-9])/g) ?? [])
+  }
+
   /** The target with every request and response of it (and of its second instance) recorded. */
   around<T extends Target>(target: T): T {
     const through =
@@ -263,6 +276,9 @@ async function record(scenario: Scenario) {
   const result = await runScenario(withCanaries(scenario), tap.around(target))
   for (const message of target.deps.mailer.outbox) {
     tap.email(message)
+  }
+  for (const message of target.deps.sms.outbox) {
+    tap.sms(message)
   }
   const { events, entries } = target.deps.activityLog
   return { tap, result, events, details: entries.map((entry) => entry.data) }
@@ -356,6 +372,42 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
     }
     for (const { events } of runs) {
       expect(leaks(events, new Set(inputs))).toEqual([])
+    }
+  })
+
+  // The same for a phone number (ADR 0037): personal data, and the code texted to it.
+  test('the tap sees a phone number and the code texted to it, and no payload holds either', async () => {
+    const found = scenarios.find(({ scenario }) => scenario.name === 'phone number on an account')
+    if (!found) {
+      throw new Error('no phone number scenario')
+    }
+    const { tap, result, events, details } = await record(found.scenario)
+    expect(result.status).toBe('passed')
+    expect([...tap.requests]).toContain('POST /v1/client/me/phone')
+    expect([...tap.requests]).toContain('POST /v1/client/me/phone/verify')
+    expect([...tap.requests]).toContain('DELETE /v1/client/me/phone')
+    const inputs = [...tap.inputs]
+    const numbers = inputs.filter((input) => input.startsWith(CANARY_PHONE_PREFIX))
+    // Maya's and Sam's.
+    expect(numbers).toHaveLength(2)
+    // The emailed codes of two sign-ups, and the texted codes.
+    expect(inputs.filter((input) => /^[0-9]{6}$/.test(input)).length).toBeGreaterThanOrEqual(4)
+
+    const types = events.map((event) => event.type)
+    expect(types).toContain('user.phone_number_added')
+    expect(types).toContain('user.phone_number_removed')
+    for (const event of events.filter((recorded) =>
+      recorded.type.startsWith('user.phone_number')
+    )) {
+      expect(event.data).toEqual({})
+    }
+    expect(leaks(events, tap.inputs)).toEqual([])
+    expect(leaks(details, tap.inputs)).toEqual([])
+    // And had a payload carried one, the search would have said so.
+    for (const number of numbers) {
+      expect(leaks([...events, { data: { note: `sent to ${number}` } }], tap.inputs)).toHaveLength(
+        1
+      )
     }
   })
 

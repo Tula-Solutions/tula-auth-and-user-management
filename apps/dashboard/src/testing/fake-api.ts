@@ -103,6 +103,8 @@ export interface FakeState extends FakeWebhookState, FakeHookState {
     id: string
     email: string
     emailVerifiedAt: string | null
+    phoneNumber?: string | null
+    phoneNumberVerifiedAt?: string | null
     firstName: string | null
     lastName: string | null
     bannedAt: string | null

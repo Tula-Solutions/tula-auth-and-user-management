@@ -67,16 +67,23 @@ export function isFactors(value: unknown): value is Schemas['Factors'] {
 }
 
 /**
+ * Whether a value is the receipt of a code texted to a phone number.
+ *
+ * @param value - The parsed body.
+ * @returns `true` when it names a destination and an expiry.
+ */
+export function isPhoneCodeSent(value: unknown): value is Schemas['PhoneCodeSent'] {
+  return (
+    isRecord(value) && typeof value.destination === 'string' && typeof value.expiresAt === 'string'
+  )
+}
+
+/**
  * Whether a value is the receipt of an emailed step-up code.
  *
  * @param value - The parsed body.
  * @returns `true` when it names the method, a destination and an expiry.
  */
 export function isStepUpPrepared(value: unknown): value is Schemas['StepUpEmailCode'] {
-  return (
-    isRecord(value) &&
-    value.method === 'email_code' &&
-    typeof value.destination === 'string' &&
-    typeof value.expiresAt === 'string'
-  )
+  return isPhoneCodeSent(value) && (value as { method?: unknown }).method === 'email_code'
 }

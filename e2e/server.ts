@@ -302,6 +302,14 @@ function testRoute(request: Request): Response | Promise<Response> | null {
       .map(({ to: recipient, subject, text }) => ({ to: recipient, subject, text }))
     return json({ data: messages })
   }
+  if (request.method === 'GET' && url.pathname === '/__test/sms') {
+    // The text messages the API "sent" (the memory sender's outbox), as the emails above.
+    // The API's own development inbox (`/v1/dev/sms`) is not mounted in the fixture.
+    const messages = deps.sms
+      .messages(url.searchParams.get('to') ?? undefined)
+      .map(({ to, text }) => ({ to, text }))
+    return json({ data: messages })
+  }
   if (request.method === 'POST' && url.pathname === '/__test/reset-limits') {
     rateLimiter.reset()
     return json({ ok: true })

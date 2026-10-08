@@ -733,15 +733,16 @@ function canonical(value: unknown): unknown {
 }
 
 /**
- * The environment as it is hashed: without the two defaults JWT templates added to every
- * settings document (no templates; a profile that names none).
+ * The environment as it is hashed: without the defaults later versions added to every
+ * settings document. JWT templates added two (no templates; a profile that names none), text
+ * messages one (`sms`: off, with no country).
  *
  * The fingerprint says which version of the file is applied. A field that every document
  * gained by upgrading must not change it, or each applied environment would report a new
  * version of a file nobody touched.
  */
-function withoutUnusedTemplates(environment: EnvironmentConfig): unknown {
-  const { sessions } = environment.settings
+function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
+  const { sessions, sms, ...settings } = environment.settings
   const { jwtTemplates, ...rest } = sessions
   const profiles = Object.fromEntries(
     Object.entries(sessions.profiles).map(([name, profile]) => {
@@ -752,12 +753,14 @@ function withoutUnusedTemplates(environment: EnvironmentConfig): unknown {
   return {
     ...environment,
     settings: {
-      ...environment.settings,
+      ...settings,
       sessions: {
         ...rest,
         profiles,
         ...(Object.keys(jwtTemplates).length > 0 && { jwtTemplates }),
       },
+      // Left out exactly when it is the default: switched on with no country is written.
+      ...((sms.enabled || sms.allowedCountries.length > 0) && { sms }),
     },
   }
 }
@@ -772,8 +775,8 @@ function withoutUnusedTemplates(environment: EnvironmentConfig): unknown {
  * reveals nothing about one. An endpoint's event types count as a set, and an environment
  * that does not mention webhooks or hooks hashes as it did before they could be written (a
  * hook's defaults count as written). So does one
- * that defines no JWT template and whose profiles name none; the order templates and their
- * claims are written in never counts.
+ * that defines no JWT template and whose profiles name none, and one that leaves text messages
+ * (`sms`) at their default; the order templates and their claims are written in never counts.
  *
  * @param environment - The environment's validated config.
  * @returns `sha256:` and 64 hex characters. The same for the same content in any key order.
@@ -784,7 +787,7 @@ function withoutUnusedTemplates(environment: EnvironmentConfig): unknown {
  * ```
  */
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string> {
-  const text = JSON.stringify(canonical(withoutUnusedTemplates(environment)))
+  const text = JSON.stringify(canonical(withoutUnusedDefaults(environment)))
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
   return `sha256:${hex}`

@@ -43,6 +43,8 @@ const columns = {
   bannedAt: users.bannedAt,
   lastSignInAt: users.lastSignInAt,
   createdAt: users.createdAt,
+  phoneNumber: users.phoneNumber,
+  phoneNumberVerifiedAt: users.phoneNumberVerifiedAt,
 }
 
 /** Escape `LIKE` wildcards so a search term only ever matches literally. */
@@ -532,6 +534,56 @@ export class PostgresUserRepository implements UserRepository {
       }
       const [unchanged] = await tx.select(columns).from(users).where(isUser).limit(1)
       return unchanged ?? null
+    })
+  }
+
+  /** @inheritdoc */
+  async setPhoneNumber(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [changed] = await tx
+        .update(users)
+        .set({ phoneNumber, phoneNumberVerifiedAt: at, updatedAt: at })
+        .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+        .returning(columns)
+      if (!changed) {
+        return null
+      }
+      await recordActivity(tx, activity ? [activity] : [])
+      return changed
+    })
+  }
+
+  /** @inheritdoc */
+  async removePhoneNumber(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<boolean> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      // Guarded so only a real removal writes and is recorded: of two at once, one.
+      const rows = await tx
+        .update(users)
+        .set({ phoneNumber: null, phoneNumberVerifiedAt: null, updatedAt: at })
+        .where(
+          and(
+            eq(users.id, userId),
+            eq(users.environmentId, environmentId),
+            isNotNull(users.phoneNumber)
+          )
+        )
+        .returning({ id: users.id })
+      const removed = rows.length === 1
+      await recordActivity(tx, removed && activity ? [activity] : [])
+      return removed
     })
   }
 

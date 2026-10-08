@@ -8,13 +8,16 @@ import { users } from './users'
 /**
  * What a verification token proves. The column is plain `text`, so a new purpose needs no
  * migration; `sign_in` is the emailed code or link that is a sign-in's first factor, `step_up`
- * the emailed code a signed-in user without a second factor steps up with.
+ * the emailed code a signed-in user without a second factor steps up with,
+ * `phone_verification` the texted code that proves a phone number a signed-in user is adding
+ * (its `destination` is that number: the pending number lives nowhere else).
  */
 export const VERIFICATION_PURPOSES = [
   'email_verification',
   'password_reset',
   'sign_in',
   'step_up',
+  'phone_verification',
 ] as const
 
 /**
@@ -33,7 +36,7 @@ export const verificationTokens = tula.table(
     userId: uuid('user_id'),
     flowAttemptId: uuid('flow_attempt_id'),
     purpose: text('purpose', { enum: VERIFICATION_PURPOSES }).notNull(),
-    /** Where it was sent (normalized email). */
+    /** Where it was sent: a normalized email, or for `phone_verification` an E.164 number. */
     destination: text('destination').notNull(),
     codeHash: text('code_hash').notNull(),
     linkTokenHash: text('link_token_hash'),

@@ -1,6 +1,6 @@
 import { durationToMs } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, InternalError, RateLimitError } from '~/exceptions'
+import { AuthError, InternalError, RateLimitError, ServiceException } from '~/exceptions'
 import { randomDigits, randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail } from '~/lib/email'
 import { describeMailFailure } from '~/lib/safe-error'
@@ -33,7 +33,10 @@ type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 /** What to issue a code for. Give a flow attempt, a user, or both. */
 export interface IssueInput {
   purpose: VerificationPurpose
-  /** Email as the user entered it. */
+  /**
+   * Email as the user entered it. For `phone_verification`: the number in E.164 form, which
+   * the stored token keeps as the pending number (and {@link IssueInput.deliver} texts).
+   */
   destination: string
   flowAttemptId?: string
   userId?: string
@@ -52,6 +55,10 @@ export interface IssueInput {
    * Replaces the standard code email. A flow uses it to send something else to the same
    * address (e.g. an "account already exists" notice) while everything a caller can observe,
    * the stored token, the send limits and the timing of one email, stays the same.
+   *
+   * Required for `phone_verification`, whose code is texted and has no email. A
+   * `ServiceException` it throws is passed on as it is (the caller chose that answer);
+   * anything else is an internal error, as for the email.
    */
   deliver?: (delivery: Delivery) => Promise<void>
   /**
@@ -104,7 +111,11 @@ export interface Delivery {
 /** What `issue` reports back. Never the code or link token. */
 export interface IssuedVerification {
   id: string
-  /** Masked destination for the `needs_email_verification` step, e.g. `m***@northline.app`. */
+  /**
+   * Masked destination for the `needs_email_verification` step, e.g. `m***@northline.app`.
+   * For a destination that is not an address (a phone number) it is `***`: the caller masks
+   * that itself.
+   */
   destination: string
   expiresAt: Date
 }
@@ -186,10 +197,17 @@ export async function issue(
     ttlMinutes: durationToMs(TOKEN_TTL) / 60_000,
   }
   try {
-    await (input.deliver
-      ? input.deliver(delivery)
-      : sendCode(deps, scope, { purpose: input.purpose, ...delivery }))
+    if (input.deliver) {
+      await input.deliver(delivery)
+    } else if (input.purpose === 'phone_verification') {
+      throw new InternalError({ internalMessage: 'a phone code needs a delivery of its own' })
+    } else {
+      await sendCode(deps, scope, { purpose: input.purpose, ...delivery })
+    }
   } catch (error) {
+    if (error instanceof ServiceException) {
+      throw error
+    }
     throw new InternalError({
       internalMessage: `verification email could not be sent (${describeMailFailure(error)})`,
     })

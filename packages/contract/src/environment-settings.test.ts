@@ -74,6 +74,7 @@ describe('EnvironmentSettingsSchema', () => {
       mfa: { policy: 'optional' },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
+      sms: { enabled: false, allowedCountries: [] },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -358,6 +359,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       mfa: { policy: 'optional' },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
+      sms: { enabled: false, allowedCountries: [] },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -646,5 +648,72 @@ describe('passkeys', () => {
     const { settings } = readStoredEnvironmentSettings({ app: { name: 'Acme' } })
     expect(settings.signIn.methods.passkey).toEqual({ enabled: false })
     expect(settings.passkeys).toEqual({ rpId: null })
+  })
+})
+
+describe('sms', () => {
+  test('is off and allows no country until an environment says otherwise', () => {
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.sms).toEqual({ enabled: false, allowedCountries: [] })
+    expect(parseStoredEnvironmentSettings({ app: { name: 'Acme' } }).sms).toEqual({
+      enabled: false,
+      allowedCountries: [],
+    })
+  })
+
+  test.each([
+    ['strict', EnvironmentSettingsSchema],
+    ['input', EnvironmentSettingsInputSchema],
+  ] as const)('the %s schema takes upper-case country codes the table knows', (_name, schema) => {
+    expect(schema.parse({ sms: { enabled: true, allowedCountries: ['DE', 'US'] } }).sms).toEqual({
+      enabled: true,
+      allowedCountries: ['DE', 'US'],
+    })
+    for (const allowedCountries of [
+      ['de'],
+      ['DEU'],
+      ['ZZ'],
+      ['D'],
+      [''],
+      ['+49'],
+      ['constructor'],
+      ['DE', 'DE'],
+      [49],
+      'DE',
+    ]) {
+      const result = schema.safeParse({ sms: { allowedCountries } })
+      expect(result.success).toBe(false)
+      expect(result.error?.issues[0]?.path.slice(0, 2)).toEqual(['sms', 'allowedCountries'])
+    }
+    expect(schema.safeParse({ sms: { enabled: 'yes' } }).success).toBe(false)
+    expect(schema.safeParse({ sms: { provider: 'twilio' } }).success).toBe(false)
+  })
+
+  test('a stored document keeps the countries this version knows and counts the rest', () => {
+    const { settings, dropped } = readStoredEnvironmentSettings({
+      sms: { enabled: true, allowedCountries: ['DE', 'de', 'ZZ', 'DE', 'US', 7], sender: 'x' },
+    })
+    expect(settings.sms).toEqual({ enabled: true, allowedCountries: ['DE', 'US'] })
+    expect(dropped).toBe(4)
+    expect(readStoredEnvironmentSettings({ sms: null })).toEqual({
+      settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      dropped: 0,
+    })
+    expect(readStoredEnvironmentSettings({ sms: { allowedCountries: 'DE' } })).toEqual({
+      settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      dropped: 1,
+    })
+  })
+
+  test('the client config has a place for whether a phone number can be added', () => {
+    const config = {
+      app: { name: 'Acme', supportEmail: null },
+      signIn: { methods: ['password'] },
+      password: PASSWORD_POLICY_PRESETS.recommended,
+    }
+    expect(ClientConfigSchema.parse({ ...config, phone: { enabled: true } }).phone).toEqual({
+      enabled: true,
+    })
+    // An older server's answer has none.
+    expect(ClientConfigSchema.parse(config).phone).toBeUndefined()
   })
 })
