@@ -204,6 +204,7 @@ function initialState(): FakeState {
     webhookDeliveries: [],
     webhookReceiver: { statusCode: 204, durationMs: 41, failureReason: null },
     webhookNow: NOW,
+    webhookWorkerSeparate: false,
     canStillSignIn: true,
     authentication: {
       hasPassword: true,

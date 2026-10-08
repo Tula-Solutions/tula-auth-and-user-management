@@ -127,7 +127,7 @@ export function TestEventDialog({
       </SelectField>
       {send.error ? (
         <p role='alert' className='text-sm text-destructive'>
-          {webhookMessageFor(send.error, 'send')}
+          {webhookMessageFor(send.error, 'test')}
         </p>
       ) : null}
       {result ? (

@@ -728,6 +728,13 @@ calls the routes this page describes and adds nothing of its own:
 - **A delivery** lists every request with its status code, its duration, its time and, for a
   failure, the server's reason as a sentence. "Send again" makes one request and shows what
   became of it; a refusal says why. A test event is marked as one and cannot be sent again.
+- **Where the webhook worker runs as a service of its own**, "Send test event" and "Send
+  again" are still offered (the dashboard is not told how the deployment is set up) and the
+  server refuses them (`501`, `worker_separate`). The dashboard says that in a sentence of
+  its own: this deployment delivers webhooks from a separate worker, so the request cannot
+  be made from here; real events are delivered by that worker, to an endpoint that is
+  switched on and subscribed to their type, and a pending delivery is retried by it.
+  Nothing is sent or recorded, and it is not tried again.
 
 What the dashboard cannot show is what the server does not keep: no header and no body of a
 receiver's answer ([What the server keeps](#what-the-server-keeps)).
