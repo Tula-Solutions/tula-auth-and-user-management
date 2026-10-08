@@ -4,6 +4,7 @@ import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   EnvironmentSettingsSchema,
+  readCustomClaims,
 } from '@tula/contract'
 import {
   type AuthState,
@@ -2536,6 +2537,48 @@ describe('SDK journeys: session profiles and rules', () => {
       expect(await as('kept')).toBe('mobile')
       expect(await as('no-such-profile')).toBe('mobile')
       expect(await as()).toBe('mobile')
+    }
+  )
+
+  journey(
+    'jwt template custom claims',
+    'the token @tula/core hands out carries the template’s claims, from the next refresh on',
+    async () => {
+      const s = await server()
+      const claims = async (tula: TulaClient) =>
+        readCustomClaims(decodeJwt((await tula.session.getToken()) ?? ''))
+      // `server` is not a browser: its sessions take the `mobile` profile.
+      const { tula, email } = await signUp(s)
+      expect(await claims(tula)).toBeNull()
+
+      configure(s, {
+        jwtTemplates: {
+          app: {
+            claims: {
+              role: { value: 'member' },
+              email: { from: 'user.email' },
+              verified: { from: 'user.email_verified' },
+              client: { from: 'session.client' },
+            },
+          },
+        },
+        profiles: { mobile: { jwtTemplate: 'app' } },
+      })
+      // The token in hand is unchanged; the one a refresh brings has the claims.
+      expect(await claims(tula)).toBeNull()
+      const refreshed = await tula.session.refresh()
+      expect(readCustomClaims(decodeJwt(refreshed ?? ''))).toEqual({
+        role: 'member',
+        email,
+        verified: true,
+        client: 'server',
+      })
+
+      const again = await signIn(s, email)
+      expect(await claims(again.tula)).toMatchObject({ role: 'member', client: 'server' })
+
+      configure(s, { jwtTemplates: { app: { claims: {} } } })
+      expect(readCustomClaims(decodeJwt((await tula.session.refresh()) ?? ''))).toBeNull()
     }
   )
 
