@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AdminFetch } from '@tula/admin'
@@ -7,6 +7,7 @@ import type { EnvironmentConfigInput } from '@tula/config'
 import { createApp } from '../../../apps/api/src/index'
 import { createTestDeps, seedApiKey, type TestDeps } from '../../../apps/api/src/testing'
 import { type CliIo, COMMANDS, runCli } from './index'
+import { createProcessHost } from './process-host'
 
 // The real `tula` entry (`runCli` with its real commands) against the real API in process:
 // memory adapters, `fetch` handed straight to the app, and a config file on disk that is
@@ -32,6 +33,8 @@ async function applePrivateKey(): Promise<{ pem: string; body: string }> {
 const APPLE = await applePrivateKey()
 const APPLE_KEY = APPLE.pem
 const SECRETS = [SECRET_KEY, GOOGLE_SECRET, GITHUB_SECRET, APPLE.pem, APPLE.body]
+/** A webhook signing secret as the server makes one: `whsec_` and 32 bytes in base64. */
+const WHSEC = /whsec_[A-Za-z0-9+/]{43}=/
 
 let deps: TestDeps
 let app: ReturnType<typeof createApp>
@@ -81,6 +84,13 @@ interface RunOptions {
   prompt?: CliIo['prompt']
   /** Answer a request in the API's place. */
   intercept?: (method: string, path: string) => Response | undefined
+  /** Collects the body of every write the run makes. */
+  bodies?: string[]
+  /**
+   * The run was asked to print a secret (`--show-secrets`): its output is kept out of what
+   * the last test scans, and the test that sets this checks it itself.
+   */
+  shown?: boolean
 }
 
 async function tula(args: string[], options: RunOptions = {}): Promise<Run> {
@@ -91,6 +101,9 @@ async function tula(args: string[], options: RunOptions = {}): Promise<Run> {
     const method = init?.method ?? 'GET'
     const path = url.slice(BASE_URL.length)
     requests.push(`${method} ${path}`)
+    if (method !== 'GET' && typeof init?.body === 'string') {
+      options.bodies?.push(init.body)
+    }
     return options.intercept?.(method, path) ?? app.request(url, init)
   }
   const code = await runCli(
@@ -110,10 +123,14 @@ async function tula(args: string[], options: RunOptions = {}): Promise<Run> {
       isTTY: options.isTTY ?? false,
       prompt: options.prompt,
       fetch,
+      // The real host: a secrets file is written with the modes and refusals an operator gets.
+      host: createProcessHost({}),
     },
     COMMANDS
   )
-  everythingPrinted.push(stdout, stderr)
+  if (!options.shown) {
+    everythingPrinted.push(stdout, stderr)
+  }
   return { code, stdout, stderr, requests }
 }
 
@@ -533,11 +550,548 @@ describe('tula diff / tula apply against the API', () => {
   })
 })
 
+const HOOK = 'https://hooks.example.test/tula'
+const TYPES = ['user.created', 'user.deleted']
+
+interface Endpoint {
+  id: string
+  url: string
+  eventTypes: string[]
+  enabled: boolean
+  disabledReason: string | null
+  secret?: string
+}
+
+async function endpoints(): Promise<Endpoint[]> {
+  const body = (await (await admin('/v1/admin/webhook-endpoints')).json()) as { data: Endpoint[] }
+  return body.data
+}
+
+/** Register an endpoint the way a person would, outside the file. Its secret is never to be printed. */
+async function register(url: string, eventTypes = ['user.created']): Promise<Endpoint> {
+  const res = await admin('/v1/admin/webhook-endpoints', {
+    method: 'POST',
+    body: JSON.stringify({ url, eventTypes }),
+  })
+  expect(res.status).toBe(201)
+  const created = (await res.json()) as Endpoint
+  SECRETS.push(created.secret as string)
+  return created
+}
+
+async function patch(id: string, body: Record<string, unknown>): Promise<void> {
+  const res = await admin(`/v1/admin/webhook-endpoints/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+  expect(res.status).toBe(200)
+}
+
+/**
+ * The run's writes to webhook endpoints, ids masked. (A run of a file the server has not seen
+ * also replaces the settings, to record the file as their manager: not what these tests are
+ * about.)
+ */
+const webhookWrites = (run: Run) =>
+  writes(run)
+    .filter((request) => request.includes('/webhook-endpoints'))
+    .map((request) => request.replace(/[0-9a-f-]{36}/, '<id>'))
+
+/** Apply a file that changes no endpoint, so that only what a test does next is pending. */
+async function settle(config: string): Promise<void> {
+  const run = await tula(['apply', '--config', config, '--yes'])
+  expect(run.code).toBe(0)
+  expect(webhookWrites(run)).toEqual([])
+}
+
+const hook = (name: string, over: Record<string, unknown> = {}) => ({
+  url: `${HOOK}/${name}`,
+  eventTypes: ['user.created'],
+  ...over,
+})
+
+describe('webhook endpoints in the config file', () => {
+  beforeEach(() => {
+    // The API's own guard judges every address; in tests a name resolves only where told to.
+    deps.outbound.point('hooks.example.test', '93.184.216.34')
+  })
+
+  test('an endpoint is planned (exit 2), created, its secret kept in a file only its owner reads, and then nothing is left', async () => {
+    const config = await dev({ webhooks: [{ url: HOOK, eventTypes: [...TYPES].reverse() }] })
+
+    const before = await tula(['diff', '--config', config])
+    expect(before.code).toBe(2)
+    expect(before.stdout).toContain(
+      `+ ${HOOK}: create (eventTypes "user.created" "user.deleted"; a signing secret is made, shown once)`
+    )
+    expect(before.stdout).toContain(
+      '! creates 1 webhook endpoint: its signing secret is shown once, to the run that creates it (`tula apply` needs --secrets-file <path>, --show-secrets or --discard-secrets)'
+    )
+    expect(writes(before)).toEqual([])
+    expect(await endpoints()).toEqual([])
+
+    const applied = await tula([
+      'apply',
+      '--config',
+      config,
+      '--yes',
+      '--secrets-file',
+      'hooks.json',
+    ])
+    expect(applied.code).toBe(0)
+    expect(writes(applied)).toEqual(['PUT /v1/admin/settings', 'POST /v1/admin/webhook-endpoints'])
+    expect(applied.stdout).toContain(`done  webhook ${HOOK}: create`)
+    expect(applied.stdout).toContain(
+      `Wrote 1 signing secret to ${join(dir, 'hooks.json')} (mode 0600). It is not shown again: give it to the receiver, then delete the file.`
+    )
+    expect(applied.stdout + applied.stderr).not.toContain('whsec_')
+    const [created] = await endpoints()
+    expect(created).toMatchObject({ url: HOOK, eventTypes: TYPES, enabled: true })
+    const file = join(dir, 'hooks.json')
+    expect((await stat(file)).mode & 0o777).toBe(0o600)
+    const kept = JSON.parse(await readFile(file, 'utf8')) as Endpoint[]
+    expect(kept).toHaveLength(1)
+    expect(kept[0]?.id).toBe(created?.id as string)
+    expect(kept[0]?.url).toBe(HOOK)
+    expect(kept[0]?.secret).toMatch(new RegExp(`^${WHSEC.source}$`))
+    SECRETS.push(kept[0]?.secret as string)
+
+    const after = await tula(['diff', '--config', config])
+    expect(after.code).toBe(0)
+    expect(after.stdout).toContain(`= ${HOOK}: unchanged`)
+    const second = await tula(['apply', '--config', config, '--yes'])
+    expect(second.stdout).toContain('No changes')
+    expect(writes(second)).toEqual([])
+  })
+
+  test('a plan that creates an endpoint is refused before any write until the run is told what to do with the secret', async () => {
+    const config = await dev({ settings: { app: { name: 'Northline' } }, webhooks: [hook('a')] })
+    const asked: string[] = []
+    for (const options of [
+      {},
+      { isTTY: true, prompt: async (q: string) => String(asked.push(q)) },
+    ]) {
+      const run = await tula(
+        ['apply', '--config', config, '--yes'].slice(0, options.isTTY ? 3 : 4),
+        options
+      )
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain(
+        'error: This plan creates 1 webhook endpoint, and the server shows its signing secret only once, in its answer to this run. Nothing was changed. Say what to do with it:'
+      )
+      expect(run.stderr).toContain('--secrets-file <path>')
+      expect(run.stderr).toContain('--show-secrets')
+      expect(run.stderr).toContain(
+        '--discard-secrets      keep nothing. To get a secret later, rotate it: for the 24 hours of the overlap deliveries are then also signed with the first secret, which nobody holds. That is harmless.'
+      )
+      expect(writes(run)).toEqual([])
+    }
+    expect(asked).toEqual([])
+    expect(await endpoints()).toEqual([])
+    expect((await state()).revision).toBe(0)
+  })
+
+  test('--show-secrets prints the secret once, on standard output; without it nothing ever does', async () => {
+    const config = await dev({ webhooks: [hook('a')] })
+    const run = await tula(['apply', '--config', config, '--yes', '--show-secrets'], {
+      shown: true,
+    })
+    expect(run.code).toBe(0)
+    const shown = run.stdout.match(new RegExp(WHSEC.source, 'g')) ?? []
+    expect(shown).toHaveLength(1)
+    expect(run.stdout).toContain(`signing secret, shown this once: ${shown[0]}`)
+    expect(run.stderr).not.toContain('whsec_')
+    SECRETS.push(shown[0] as string)
+  })
+
+  test('--discard-secrets creates the endpoint and keeps nothing, and says how to get a secret later', async () => {
+    const config = await dev({ webhooks: [hook('a')] })
+    const run = await tula(['apply', '--config', config, '--yes', '--discard-secrets'])
+    expect(run.code).toBe(0)
+    expect(run.stdout + run.stderr).not.toContain('whsec_')
+    const [created] = await endpoints()
+    expect(run.stdout).toContain(
+      `1 signing secret was not kept (--discard-secrets). To get one, rotate it: POST /v1/admin/webhook-endpoints/<id>/secret/rotate.`
+    )
+    expect(created?.url).toBe(`${HOOK}/a`)
+  })
+
+  test('--discard-secrets with a way to keep them is a contradiction, refused before anything is read', async () => {
+    const config = await dev({ webhooks: [hook('a')] })
+    const run = await tula([
+      'apply',
+      '--config',
+      config,
+      '--yes',
+      '--discard-secrets',
+      '--show-secrets',
+    ])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('--discard-secrets cannot be combined')
+    expect(run.requests).toEqual([])
+  })
+
+  test('--secrets-file never replaces a file that is there, and never writes through a link', async () => {
+    const config = await dev({ webhooks: [hook('a')] })
+    await writeFile(join(dir, 'earlier.json'), '[{"secret":"from an earlier run"}]\n')
+    const existing = await tula([
+      'apply',
+      '--config',
+      config,
+      '--yes',
+      '--secrets-file',
+      'earlier.json',
+    ])
+    expect(existing.code).toBe(1)
+    expect(existing.stderr).toContain('already exists')
+    expect(existing.stderr).toContain('Nothing was changed.')
+    expect(writes(existing)).toEqual([])
+    expect(await readFile(join(dir, 'earlier.json'), 'utf8')).toContain('from an earlier run')
+
+    await symlink(join(dir, 'elsewhere.json'), join(dir, 'link.json'))
+    const linked = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'link.json'])
+    expect(linked.code).toBe(1)
+    expect(linked.stderr).toContain('symbolic link')
+    expect(linked.stderr).toContain('Nothing was changed.')
+    expect(writes(linked)).toEqual([])
+    expect(await endpoints()).toEqual([])
+  })
+
+  test('event types are a set: another order is no change, and a changed set is one PATCH of that field', async () => {
+    const existing = await register(HOOK, ['user.deleted', 'user.created'])
+    const same = await dev({
+      webhooks: [{ url: HOOK, eventTypes: ['user.created', 'user.deleted', 'user.created'] }],
+    })
+    await settle(same)
+    expect((await tula(['diff', '--config', same])).code).toBe(0)
+
+    const changed = await dev({
+      webhooks: [{ url: HOOK, eventTypes: ['user.created', 'session.created'] }],
+    })
+    const plan = await tula(['diff', '--config', changed])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain(
+      `~ ${HOOK}: update (eventTypes +"session.created" -"user.deleted")`
+    )
+    const bodies: string[] = []
+    const run = await tula(['apply', '--config', changed, '--yes'], { bodies })
+    expect(run.code).toBe(0)
+    expect(webhookWrites(run)).toEqual(['PATCH /v1/admin/webhook-endpoints/<id>'])
+    expect(bodies.at(-1)).toBe('{"eventTypes":["session.created","user.created"]}')
+    expect((await endpoints())[0]).toMatchObject({
+      id: existing.id,
+      eventTypes: ['session.created', 'user.created'],
+    })
+  })
+
+  test('enabled left out is not managed; written, it is set, and switching on is said in the plan', async () => {
+    const existing = await register(HOOK)
+    await patch(existing.id, { enabled: false })
+    const silent = await dev({ webhooks: [{ url: HOOK, eventTypes: ['user.created'] }] })
+    await settle(silent)
+    expect((await tula(['diff', '--config', silent])).code).toBe(0)
+    expect((await endpoints())[0]?.enabled).toBe(false)
+
+    const on = await dev({ webhooks: [{ url: HOOK, eventTypes: ['user.created'], enabled: true }] })
+    const plan = await tula(['diff', '--config', on])
+    expect(plan.stdout).toContain(`~ ${HOOK}: update (enabled false → true)`)
+    const run = await tula(['apply', '--config', on, '--yes'])
+    expect(run.code).toBe(0)
+    expect((await endpoints())[0]?.enabled).toBe(true)
+  })
+
+  test('an endpoint the list leaves out is left alone; --prune removes it, and under --yes only with --allow-webhook-removal', async () => {
+    await register(`${HOOK}/old`)
+    const config = await dev({ webhooks: [] })
+    await settle(config)
+    const kept = await tula(['diff', '--config', config])
+    expect(kept.code).toBe(0)
+    expect(kept.stdout).toContain(
+      `= ${HOOK}/old: unmanaged (on the server, not in the file; --prune removes it, with its pending deliveries and its delivery log)`
+    )
+
+    const plan = await tula(['diff', '--config', config, '--prune'])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain(
+      `- ${HOOK}/old: remove, with its pending deliveries and its delivery log`
+    )
+    expect(plan.stdout).toContain(
+      '! removes 1 webhook endpoint with its pending deliveries and its delivery log, for good (`tula apply --yes` needs --allow-webhook-removal)'
+    )
+    expect(plan.stdout).toContain(
+      '`tula apply --yes` refuses this plan without --allow-webhook-removal: it removes a webhook endpoint and its delivery log.'
+    )
+
+    const refused = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain(
+      'error: This plan removes 1 webhook endpoint with its pending deliveries and its delivery log, for good, and with --yes nobody is asked. Nothing was changed. Pass --allow-webhook-removal with --yes to apply it.'
+    )
+    expect(writes(refused)).toEqual([])
+    expect(await endpoints()).toHaveLength(1)
+
+    const allowed = await tula([
+      'apply',
+      '--config',
+      config,
+      '--yes',
+      '--prune',
+      '--allow-webhook-removal',
+    ])
+    expect(allowed.code).toBe(0)
+    expect(webhookWrites(allowed)).toEqual(['DELETE /v1/admin/webhook-endpoints/<id>'])
+    expect(await endpoints()).toEqual([])
+  })
+
+  test('at a terminal the question says what a removal deletes', async () => {
+    await register(`${HOOK}/old`)
+    const config = await dev({ webhooks: [] })
+    const asked: string[] = []
+    const run = await tula(['apply', '--config', config, '--prune'], {
+      isTTY: true,
+      prompt: async (question) => {
+        asked.push(question)
+        return 'no'
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(asked).toEqual([
+      `This REMOVES 1 webhook endpoint with its pending deliveries and its delivery log, for good. Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
+    expect(await endpoints()).toHaveLength(1)
+  })
+
+  test('a file without a webhooks list does not read the endpoints, and --prune does not touch them', async () => {
+    await register(`${HOOK}/old`)
+    const config = await dev({ settings: { app: { name: 'Northline' } } })
+    const plan = await tula(['diff', '--config', config, '--prune'])
+    expect(plan.requests.filter((request) => request.includes('webhook'))).toEqual([])
+    expect(plan.stdout).not.toContain('Webhooks')
+    const run = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(run.code).toBe(0)
+    expect(run.requests.filter((request) => request.includes('webhook'))).toEqual([])
+    expect(await endpoints()).toHaveLength(1)
+  })
+
+  test('an address the server has twice cannot be matched: diff fails with the plan, apply writes nothing', async () => {
+    const one = await register(HOOK)
+    const two = await register(HOOK)
+    const config = await dev({
+      settings: { app: { name: 'Northline' } },
+      webhooks: [{ url: HOOK, eventTypes: ['user.deleted'] }],
+    })
+    const message =
+      `error: The server has 2 webhook endpoints with the address ${HOOK} (ids ${one.id}, ${two.id}): ` +
+      'tula cannot tell which one the file means and changes none of them. Remove all but one by hand ' +
+      '(DELETE /v1/admin/webhook-endpoints/<id>), then run again.'
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.code).toBe(1)
+    expect(plan.stdout).toContain(
+      `! ${HOOK}: cannot be matched (the server has 2 endpoints with this address)`
+    )
+    expect(plan.stderr).toContain(message)
+    for (const flags of [[], ['--prune', '--allow-webhook-removal']]) {
+      const run = await tula(['apply', '--config', config, '--yes', ...flags])
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain(`${message} Nothing was changed.`)
+      expect(writes(run)).toEqual([])
+    }
+    expect((await state()).revision).toBe(0)
+    expect((await endpoints()).map((entry) => entry.eventTypes)).toEqual([
+      ['user.created'],
+      ['user.created'],
+    ])
+  })
+
+  test('an address the server refuses: its code and its fixed reason and no more, with the settings and the endpoint before it applied', async () => {
+    const config = await dev({
+      settings: { app: { name: 'Northline' } },
+      webhooks: [
+        hook('a'),
+        { url: 'https://canary-nowhere.example.test/in', eventTypes: ['user.created'] },
+        hook('c'),
+      ],
+    })
+    const run = await tula(['apply', '--config', config, '--yes', '--secrets-file', 'hooks.json'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('Failed: webhook https://canary-nowhere.example.test/in: create')
+    expect(run.stderr).toContain(
+      'error: The server cannot deliver to that address. (webhook.url_not_allowed, HTTP 422)\n  reason: resolve_failed\n'
+    )
+    expect(run.stderr).toContain(
+      `Applied before the failure:\n  settings: replace\n  webhook ${HOOK}/a: create\n` +
+        `Not applied:\n  webhook https://canary-nowhere.example.test/in: create\n  webhook ${HOOK}/c: create\n`
+    )
+    expect(run.stderr).toContain(
+      `Wrote 1 signing secret to ${join(dir, 'hooks.json')} (mode 0600).`
+    )
+    expect(run.stdout + run.stderr).not.toContain('whsec_')
+    expect((await state()).settings.app.name).toBe('Northline')
+    expect((await endpoints()).map((entry) => entry.url)).toEqual([`${HOOK}/a`])
+    const kept = JSON.parse(await readFile(join(dir, 'hooks.json'), 'utf8')) as Endpoint[]
+    expect(kept.map((entry) => entry.url)).toEqual([`${HOOK}/a`])
+    SECRETS.push(kept[0]?.secret as string)
+  })
+
+  test('a failure midway through several webhook writes says what was and was not applied, and a second run finishes', async () => {
+    const stay = await register(`${HOOK}/stay`)
+    await register(`${HOOK}/old`)
+    const config = await dev({
+      webhooks: [hook('stay', { eventTypes: ['user.deleted'] }), hook('new')],
+    })
+    const flags = [
+      'apply',
+      '--config',
+      config,
+      '--yes',
+      '--prune',
+      '--allow-webhook-removal',
+      '--discard-secrets',
+    ]
+    const broken = await tula(flags, {
+      intercept: (method) =>
+        method === 'POST'
+          ? Response.json(
+              { status: 503, code: 'service.unavailable', detail: 'The service is unavailable.' },
+              { status: 503 }
+            )
+          : undefined,
+    })
+    expect(broken.code).toBe(1)
+    expect(broken.stderr).toContain(
+      `Failed: webhook ${HOOK}/new: create\n` +
+        'error: The service is unavailable. (service.unavailable, HTTP 503)\n' +
+        `Applied before the failure:\n  settings: replace\n  webhook ${HOOK}/stay: update\n` +
+        `Not applied:\n  webhook ${HOOK}/new: create\n  webhook ${HOOK}/old: remove\n`
+    )
+    // The endpoint being replaced was not removed: nothing is worse than before.
+    expect((await endpoints()).map((entry) => entry.url)).toEqual([`${HOOK}/stay`, `${HOOK}/old`])
+
+    const retry = await tula(flags)
+    expect(retry.code).toBe(0)
+    expect(webhookWrites(retry)).toEqual([
+      'POST /v1/admin/webhook-endpoints',
+      'DELETE /v1/admin/webhook-endpoints/<id>',
+    ])
+    expect(await endpoints()).toMatchObject([
+      { id: stay.id, eventTypes: ['user.deleted'] },
+      { url: `${HOOK}/new` },
+    ])
+  })
+
+  test('at the limit of ten, one replaced: one removal goes first and the plan says so; an eleventh is refused whole', async () => {
+    for (let index = 0; index < 10; index += 1) {
+      await register(`${HOOK}/${index}`)
+    }
+    const eight = Array.from({ length: 8 }, (_, index) => hook(String(index)))
+    // Ten on the server that the file does not list, and one more in the file.
+    const eleven = await dev({ webhooks: [hook('new')] })
+    const tooMany = await tula(['apply', '--config', eleven, '--yes', '--discard-secrets'])
+    expect(tooMany.code).toBe(1)
+    expect(tooMany.stderr).toContain(
+      'error: The environment would have 11 webhook endpoints and may have 10. Nothing was changed. List fewer in the file, or remove the ones it does not list (--prune).'
+    )
+    expect(writes(tooMany)).toEqual([])
+
+    const replaced = await dev({ webhooks: [...eight, hook('new')] })
+    const flags = ['--config', replaced, '--prune']
+    const plan = await tula(['diff', ...flags])
+    expect(plan.stdout).toContain(
+      '! the environment is at its limit of 10 webhook endpoints: 1 of the removals is made before the new endpoint is created, to make room'
+    )
+    const run = await tula([
+      'apply',
+      ...flags,
+      '--yes',
+      '--allow-webhook-removal',
+      '--discard-secrets',
+    ])
+    expect(run.code).toBe(0)
+    expect(webhookWrites(run)).toEqual([
+      'DELETE /v1/admin/webhook-endpoints/<id>',
+      'POST /v1/admin/webhook-endpoints',
+      'DELETE /v1/admin/webhook-endpoints/<id>',
+    ])
+    expect((await endpoints()).map((entry) => entry.url)).toEqual([
+      ...eight.map((entry) => entry.url),
+      `${HOOK}/new`,
+    ])
+  })
+
+  test('endpoints changed by someone else between the plan and the write are not written to; the settings already were', async () => {
+    const existing = await register(HOOK)
+    const config = await dev({
+      settings: { app: { name: 'Northline' } },
+      webhooks: [{ url: HOOK, eventTypes: ['user.deleted'] }],
+    })
+    const run = await tula(['apply', '--config', config], {
+      isTTY: true,
+      prompt: async () => {
+        await patch(existing.id, { eventTypes: ['session.created'] })
+        return 'yes'
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(
+      'error: The webhook endpoints were changed by someone else after this plan was made. Nothing was written to them. Run `tula diff` again and review the new plan.\n' +
+        'Applied before the failure:\n  settings: replace\n' +
+        `Not applied:\n  webhook ${HOOK}: update\n`
+    )
+    expect(writes(run)).toEqual(['PUT /v1/admin/settings'])
+    expect((await endpoints())[0]?.eventTypes).toEqual(['session.created'])
+  })
+
+  test('a secret written in the file is refused before any request, and not repeated', async () => {
+    const literal = 'whsec_d3JpdHRlbi1pbi10aGUtZmlsZS1kby1ub3QtcHJpbnQ='
+    SECRETS.push(literal)
+    const config = await dev({
+      webhooks: [{ url: HOOK, eventTypes: ['user.created'], secret: literal }],
+    })
+    const run = await tula(['diff', '--config', config])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('environments.dev.webhooks.0.secret: unknown key')
+    expect(run.requests).toEqual([])
+  })
+
+  test('--json carries the endpoints, what apply will ask for, and a secret only when asked', async () => {
+    await register(`${HOOK}/old`)
+    const config = await dev({ webhooks: [hook('a')] })
+    const plan = JSON.parse(
+      (await tula(['diff', '--config', config, '--json', '--prune'])).stdout
+    ) as {
+      webhooks: { managed: boolean; endpoints: { url: string; action: string }[] }
+      applyRequires: Record<string, boolean>
+    }
+    expect(plan.webhooks.managed).toBe(true)
+    expect(plan.webhooks.endpoints).toMatchObject([
+      { url: `${HOOK}/a`, action: 'create' },
+      { url: `${HOOK}/old`, action: 'delete' },
+    ])
+    expect(plan.applyRequires).toEqual({
+      allowUnknown: false,
+      allowWeaker: false,
+      allowWebhookRemoval: true,
+      webhookSecrets: true,
+    })
+    const quiet = await tula(['apply', '--config', config, '--yes', '--json', '--discard-secrets'])
+    expect(quiet.code).toBe(0)
+    expect(quiet.stdout).not.toContain('whsec_')
+    expect(JSON.parse(quiet.stdout)).toMatchObject({
+      applied: ['settings: replace', `webhook ${HOOK}/a: create`],
+    })
+    expect(Object.hasOwn(JSON.parse(quiet.stdout) as object, 'webhookSecrets')).toBe(false)
+  })
+})
+
 // Declared last, so it runs after every run above.
 test('no secret that passed through any run was printed, to either stream', () => {
   const printed = everythingPrinted.join('\n')
   expect(printed.length).toBeGreaterThan(1000)
+  expect(SECRETS.filter((secret) => secret.startsWith('whsec_')).length).toBeGreaterThan(10)
   for (const secret of SECRETS) {
     expect(printed).not.toContain(secret)
   }
+  // Whatever the server made in any run, known to this file or not: nothing shaped like a
+  // webhook signing secret was printed by a run that was not asked to (`shown`).
+  expect(printed).not.toMatch(WHSEC)
 })

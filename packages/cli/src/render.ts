@@ -1,4 +1,6 @@
-import type { Change, Operation, Plan, ProviderChange } from './diff'
+import { MAX_WEBHOOK_ENDPOINTS, MAX_WEBHOOK_URL_LENGTH } from '@tula/contract'
+import type { Change, Operation, Plan, ProviderChange, WebhookChange } from './diff'
+import { printable } from './doctor'
 import type { Output } from './output'
 
 /** Longest a value is shown before it is cut: a plan is read by a person. */
@@ -60,6 +62,132 @@ function providerLine(output: Output, change: ProviderChange): string {
   }
 }
 
+/**
+ * An endpoint's address for a person. Whole (two endpoints may differ in their last
+ * character), and, since it may be one the server sent, with nothing a terminal would act on
+ * and nothing a reader cannot see.
+ */
+function address(url: string): string {
+  return printable(url, MAX_WEBHOOK_URL_LENGTH)
+}
+
+const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
+
+/** `1 webhook endpoint with its pending deliveries and its delivery log`, or the plural. */
+function removedEndpoints(count: number): string {
+  return `${count} webhook ${plural(count, 'endpoint with its', 'endpoints with their')} pending deliveries and ${plural(count, 'its delivery log', 'their delivery logs')}`
+}
+
+function webhookFields(change: WebhookChange): string[] {
+  return change.fields.map((field) => {
+    if (field.path === 'eventTypes') {
+      const entries =
+        field.kind === 'added'
+          ? (field.after as unknown[]).map((entry) => show(entry))
+          : [
+              ...(field.added ?? []).map((entry) => `+${show(entry)}`),
+              ...(field.removed ?? []).map((entry) => `-${show(entry)}`),
+            ]
+      return `eventTypes ${entries.join(' ')}`
+    }
+    if (field.kind === 'added') {
+      return `${field.path} ${show(field.after)}`
+    }
+    const why =
+      change.reenables === undefined
+        ? ''
+        : ` (the server had switched it off: ${printable(change.reenables, 60)})`
+    return `${field.path} ${show(field.before)} → ${show(field.after)}${why}`
+  })
+}
+
+function webhookLine(output: Output, change: WebhookChange): string {
+  const { style } = output
+  const url = address(change.url)
+  const fields = webhookFields(change).join(', ')
+  switch (change.action) {
+    case 'create':
+      return style.green(`  + ${url}: create (${fields}; a signing secret is made, shown once)`)
+    case 'update':
+      return style.yellow(`  ~ ${url}: update (${fields})`)
+    case 'delete':
+      return style.red(`  - ${url}: remove, with its pending deliveries and its delivery log`)
+    case 'unmanaged':
+      return style.dim(
+        `  = ${url}: unmanaged (on the server, not in the file; --prune removes it, with its pending deliveries and its delivery log)`
+      )
+    case 'ambiguous':
+      return style.red(
+        `  ! ${url}: cannot be matched (the server has ${change.duplicates?.length ?? 0} endpoints with this address)`
+      )
+    default:
+      return style.dim(`  = ${url}: unchanged`)
+  }
+}
+
+/**
+ * How many webhook endpoints a plan creates and removes.
+ *
+ * @param plan - The plan.
+ * @returns The two counts.
+ *
+ * @example
+ * ```ts
+ * webhookCounts(plan) // { created: 1, removed: 0 }
+ * ```
+ */
+export function webhookCounts(plan: Pick<Plan, 'webhooks'>): { created: number; removed: number } {
+  const count = (action: WebhookChange['action']) =>
+    plan.webhooks.endpoints.filter((endpoint) => endpoint.action === action).length
+  return { created: count('create'), removed: count('delete') }
+}
+
+/**
+ * Why a plan cannot be applied at all, whatever flags a run is given: an address the server
+ * has more than once (which endpoint the file means cannot be known), or more endpoints than
+ * an environment may have. `tula diff` fails on these and `tula apply` writes nothing.
+ *
+ * @param plan - The plan.
+ * @returns One sentence per reason; empty when the plan can be applied.
+ *
+ * @example
+ * ```ts
+ * planBlockers(plan) // ['The environment would have 11 webhook endpoints and may have 10.']
+ * ```
+ */
+export function planBlockers(plan: Pick<Plan, 'webhooks'>): string[] {
+  const blockers: string[] = []
+  for (const change of plan.webhooks.endpoints) {
+    if (change.action === 'ambiguous') {
+      const ids = (change.duplicates ?? []).map((id) => printable(id, 40))
+      blockers.push(
+        `The server has ${ids.length} webhook endpoints with the address ${address(change.url)} ` +
+          `(ids ${ids.join(', ')}): tula cannot tell which one the file means and changes none ` +
+          'of them. Remove all but one by hand (DELETE /v1/admin/webhook-endpoints/<id>), then ' +
+          'run again.'
+      )
+    }
+  }
+  if (plan.webhooks.overLimit !== null) {
+    blockers.push(
+      `The environment would have ${plan.webhooks.overLimit} webhook endpoints and may have ${MAX_WEBHOOK_ENDPOINTS}.`
+    )
+  }
+  return blockers
+}
+
+/**
+ * What to do about a plan that would leave too many endpoints, said after "Nothing was
+ * changed" by `tula apply` and after the blocker by `tula diff`.
+ *
+ * @example
+ * ```ts
+ * output.error(`${blocker} Nothing was changed. ${OVER_LIMIT_ADVICE}`)
+ * ```
+ */
+export const OVER_LIMIT_ADVICE =
+  'List fewer in the file, or remove the ones it does not list (--prune).'
+
 const MARKER_REASONS: Record<Plan['marker']['reason'], string> = {
   unmanaged: 'the server does not record a config file as the source of these settings yet',
   'other-tool': 'another tool is on record as managing these settings',
@@ -113,6 +241,30 @@ export function planWarnings(plan: Plan): string[] {
       `deletes audit entries older than ${doomed} days, for good, starting with the next retention run (every ten minutes; a large backlog takes several)`
     )
   }
+  const { created, removed } = webhookCounts(plan)
+  if (removed > 0) {
+    warnings.push(
+      `removes ${removedEndpoints(removed)}, for good (\`tula apply --yes\` needs --allow-webhook-removal)`
+    )
+  }
+  if (created > 0) {
+    warnings.push(
+      `creates ${created} webhook ${plural(created, 'endpoint: its signing secret is', 'endpoints: each signing secret is')} shown once, to the run that creates it (\`tula apply\` needs --secrets-file <path>, --show-secrets or --discard-secrets)`
+    )
+  }
+  for (const change of plan.webhooks.endpoints) {
+    if (change.reenables !== undefined) {
+      warnings.push(
+        `switches on a webhook endpoint the server switched off (${address(change.url)}: ${printable(change.reenables, 60)}); if it still fails the server switches it off again`
+      )
+    }
+  }
+  const first = plan.webhooks.removedFirst
+  if (first > 0) {
+    warnings.push(
+      `the environment is at its limit of ${MAX_WEBHOOK_ENDPOINTS} webhook endpoints: ${first} of the removals ${plural(first, 'is', 'are')} made before the new ${plural(created, 'endpoint is', 'endpoints are')} created, to make room`
+    )
+  }
   if (plan.marker.reason === 'other-tool') {
     warnings.push(MARKER_REASONS['other-tool'])
   }
@@ -132,26 +284,58 @@ export function planWarnings(plan: Plan): string[] {
 
 /**
  * What `tula apply` will not do to a plan without being told to: reset settings this version
- * does not know (`--allow-unknown`), and, when nobody is asked (`--yes`), weaken security
- * (`--allow-weaker`).
+ * does not know (`--allow-unknown`); when nobody is asked (`--yes`), weaken security
+ * (`--allow-weaker`) or remove a webhook endpoint with its delivery log
+ * (`--allow-webhook-removal`); and create a webhook endpoint without a word on what becomes
+ * of its signing secret (`--secrets-file`, `--show-secrets` or `--discard-secrets`).
  *
  * @param plan - The plan.
- * @returns Which of the two flags the plan needs.
+ * @returns Which of them the plan needs.
  *
  * @example
  * ```ts
- * applyRequirements(plan) // { allowUnknown: false, allowWeaker: true }
+ * applyRequirements(plan)
+ * // { allowUnknown: false, allowWeaker: true, allowWebhookRemoval: false, webhookSecrets: false }
  * ```
  */
-export function applyRequirements(plan: Plan): { allowUnknown: boolean; allowWeaker: boolean } {
-  return { allowUnknown: plan.unknown.length > 0, allowWeaker: plan.weakened.length > 0 }
+export function applyRequirements(plan: Plan): {
+  allowUnknown: boolean
+  allowWeaker: boolean
+  allowWebhookRemoval: boolean
+  webhookSecrets: boolean
+} {
+  const { created, removed } = webhookCounts(plan)
+  return {
+    allowUnknown: plan.unknown.length > 0,
+    allowWeaker: plan.weakened.length > 0,
+    allowWebhookRemoval: removed > 0,
+    webhookSecrets: created > 0,
+  }
+}
+
+/**
+ * What a run says, under `--yes`, to a plan that removes webhook endpoints without
+ * `--allow-webhook-removal`, and at a terminal before its question: what is deleted.
+ *
+ * @param plan - The plan.
+ * @returns E.g. `1 webhook endpoint with its pending deliveries and its delivery log`; `null`
+ *   when the plan removes none.
+ *
+ * @example
+ * ```ts
+ * removedWebhooks(plan) // '2 webhook endpoints with their pending deliveries and their delivery logs'
+ * ```
+ */
+export function removedWebhooks(plan: Pick<Plan, 'webhooks'>): string | null {
+  const { removed } = webhookCounts(plan)
+  return removed > 0 ? removedEndpoints(removed) : null
 }
 
 /**
  * One line that says what a write does.
  *
  * @param operation - The write.
- * @returns E.g. `settings: replace`, `provider google: create`.
+ * @returns E.g. `settings: replace`, `provider google: create`, `webhook https://…: remove`.
  *
  * @example
  * ```ts
@@ -162,9 +346,18 @@ export function describeOperation(operation: Operation): string {
   if (operation.kind === 'settings') {
     return 'settings: replace'
   }
-  return operation.kind === 'provider.delete'
-    ? `provider ${operation.provider}: delete`
-    : `provider ${operation.provider}: ${operation.change.action}`
+  if (operation.kind === 'provider.delete') {
+    return `provider ${operation.provider}: delete`
+  }
+  if (operation.kind === 'provider.set') {
+    return `provider ${operation.provider}: ${operation.change.action}`
+  }
+  const action = {
+    'webhook.create': 'create',
+    'webhook.update': 'update',
+    'webhook.delete': 'remove',
+  }
+  return `webhook ${address(operation.url)}: ${action[operation.kind]}`
 }
 
 /**
@@ -211,6 +404,26 @@ export function renderPlan(
       output.line(providerLine(output, change))
     }
   }
+  if (plan.webhooks.managed) {
+    output.line()
+    output.line(style.bold('Webhooks'))
+    if (plan.webhooks.endpoints.length === 0) {
+      output.line(style.dim('  none in the file, none on the server'))
+    }
+    for (const change of plan.webhooks.endpoints) {
+      output.line(webhookLine(output, change))
+    }
+    const actions = new Set(plan.webhooks.endpoints.map((endpoint) => endpoint.action))
+    // The file cannot say "this address moved": it shows as one endpoint appearing and
+    // another the file no longer lists. Said in words, where both are on screen.
+    if (actions.has('create') && (actions.has('delete') || actions.has('unmanaged'))) {
+      output.line(
+        style.dim(
+          '  an endpoint is its address: a changed address is a new endpoint with a new signing secret; the old one stays until it is removed (--prune), and its pending deliveries and its delivery log go with it'
+        )
+      )
+    }
+  }
   const warnings = planWarnings(plan)
   if (warnings.length > 0) {
     output.line()
@@ -223,7 +436,8 @@ export function renderPlan(
 
 /**
  * A plan for a machine: the same content as {@link renderPlan}, as plain data. A provider's
- * secret appears as `set` or `keep` and the name of its variable, never as a value.
+ * secret appears as `set` or `keep` and the name of its variable, never as a value; a webhook
+ * endpoint's secret does not appear at all (no read returns one).
  *
  * @param target - The environment's name in the config and the API's URL.
  * @param plan - The plan.
@@ -248,6 +462,13 @@ export function planToJson(
     kept: plan.kept,
     unknown: plan.unknown,
     providers: plan.providers,
+    webhooks: {
+      managed: plan.webhooks.managed,
+      endpoints: plan.webhooks.endpoints,
+      removedFirst: plan.webhooks.removedFirst,
+      overLimit: plan.webhooks.overLimit,
+    },
+    blockers: planBlockers(plan),
     managedBy: {
       supported: plan.marker.supported,
       pending: plan.marker.pending,

@@ -4,6 +4,7 @@ import {
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
   hasEnabledSignInMethod,
+  MAX_WEBHOOK_ENDPOINTS,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   parseStoredEnvironmentSettings,
@@ -173,6 +174,250 @@ export interface RemoteState {
   managedBy?: SettingsManagedBy | null
   /** Every provider, configured or not. */
   providers: readonly RemoteProvider[]
+  /**
+   * The webhook endpoints, oldest first. Left out when the config does not manage webhooks:
+   * they are then not even read.
+   */
+  webhooks?: readonly RemoteWebhook[]
+}
+
+/**
+ * A webhook endpoint as the admin API lists it. Never with its signing secret: no read
+ * returns one.
+ *
+ * @example
+ * ```ts
+ * const { data } = await admin.call('listWebhookEndpoints')
+ * const endpoints: RemoteWebhook[] = data.data
+ * ```
+ */
+export type RemoteWebhook = AdminSchemas['WebhookEndpoint']
+
+/**
+ * What a run does with one webhook endpoint.
+ *
+ * @example
+ * ```ts
+ * const change: WebhookChange = planWebhooks(remote.webhooks, environment.webhooks, {}).endpoints[0]
+ * ```
+ */
+export interface WebhookChange {
+  /**
+   * The endpoint's address, which is what identifies it: the file's for an entry of the file,
+   * the server's for an endpoint only the server has. Compared exactly, as the server stores
+   * and compares it.
+   */
+  url: string
+  /** The server's id of the endpoint. Absent for one to create and for one that is `ambiguous`. */
+  id?: string
+  /**
+   * `create`, `update`, `delete`; `none` when it already is as the config says; `unmanaged`
+   * when the server has it and the config's list does not (left alone without `--prune`);
+   * `ambiguous` when the server has the address more than once, so the entry cannot be
+   * matched to one endpoint and nothing is done to any of them.
+   */
+  action: 'create' | 'update' | 'delete' | 'none' | 'unmanaged' | 'ambiguous'
+  /**
+   * The differences in `eventTypes` (a set: the types added and removed, sorted) and, only
+   * when the file writes it, `enabled`.
+   */
+  fields: Change[]
+  /**
+   * Set when the run switches on an endpoint the **server** switched off: the server's reason
+   * (`failing`, `gone`), so that a pipeline does not quietly undo it on every run.
+   */
+  reenables?: string
+  /** For `ambiguous`: the ids of the server's endpoints with this address. */
+  duplicates?: string[]
+}
+
+/**
+ * What a run does with an environment's webhook endpoints.
+ *
+ * @example
+ * ```ts
+ * if (plan.webhooks.overLimit !== null) {
+ *   // the run is refused before any write
+ * }
+ * ```
+ */
+export interface WebhookPlan {
+  /** Whether the config has a `webhooks` list at all. Without one nothing is read or changed. */
+  managed: boolean
+  /** One entry per entry of the file, in its order, then the endpoints only the server has. */
+  endpoints: WebhookChange[]
+  /**
+   * How many removals are made **before** the creations because the environment is too close
+   * to its limit to hold the new endpoints beside the ones being removed. Otherwise `0`:
+   * everything is created before anything is removed.
+   */
+  removedFirst: number
+  /**
+   * How many endpoints the environment would have after the run, when that is more than it
+   * may have (`MAX_WEBHOOK_ENDPOINTS`); `null` when the plan fits.
+   */
+  overLimit: number | null
+  /**
+   * What the plan read of the server's endpoints ({@link webhookSnapshot}): `tula apply` reads
+   * them again before its first webhook write and stops if this no longer matches.
+   */
+  seen: string
+}
+
+/**
+ * A fingerprint of the fields of an environment's webhook endpoints that a plan reads: each
+ * endpoint's id, address, event types (as a set), switch and the reason the server gave for
+ * switching it off. Endpoints have no revision, so this is what a run compares to notice that
+ * someone changed them after the plan was made. What deliveries move (`failingSince`,
+ * `updatedAt`) and a secret rotation are left out: they do not change what a plan does.
+ *
+ * @param endpoints - The endpoints as the server lists them.
+ * @returns The same text for the same endpoints in any order.
+ *
+ * @example
+ * ```ts
+ * if (webhookSnapshot(now.data.data) !== plan.webhooks.seen) {
+ *   // changed since the plan was made
+ * }
+ * ```
+ */
+export function webhookSnapshot(endpoints: readonly RemoteWebhook[]): string {
+  return JSON.stringify(
+    endpoints
+      .map((endpoint) => [
+        endpoint.id,
+        endpoint.url,
+        [...new Set(endpoint.eventTypes)].sort(),
+        endpoint.enabled,
+        endpoint.disabledReason,
+      ])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  )
+}
+
+/** What a run does with one entry of the file, given the server's endpoints at its address. */
+function planEndpoint(
+  desired: NonNullable<EnvironmentConfig['webhooks']>[number],
+  matches: readonly RemoteWebhook[]
+): WebhookChange {
+  const { url } = desired
+  const types = [...desired.eventTypes].sort()
+  if (matches.length > 1) {
+    // Which of them the file means cannot be known, and a guess would change (or, with
+    // --prune, remove) the wrong one. Nothing is done to any.
+    return { url, action: 'ambiguous', fields: [], duplicates: matches.map((match) => match.id) }
+  }
+  const current = matches[0]
+  if (!current) {
+    const fields: Change[] = [{ path: 'eventTypes', kind: 'added', after: types }]
+    // Left out, the switch is not sent: the server's default (on) decides.
+    if (desired.enabled !== undefined) {
+      fields.push({ path: 'enabled', kind: 'added', after: desired.enabled })
+    }
+    return { url, action: 'create', fields }
+  }
+  const fields = diffSets('eventTypes', [...new Set(current.eventTypes)].sort(), types).map(
+    (change): Change => ({
+      ...change,
+      added: [...(change.added ?? [])].sort(),
+      removed: [...(change.removed ?? [])].sort(),
+    })
+  )
+  // Left out, the switch is not managed: an endpoint the server (or a person) switched off
+  // stays off, and is not a difference.
+  const switched = desired.enabled !== undefined && desired.enabled !== current.enabled
+  if (switched) {
+    fields.push({
+      path: 'enabled',
+      kind: 'changed',
+      before: current.enabled,
+      after: desired.enabled,
+    })
+  }
+  const reenables =
+    switched && desired.enabled === true && typeof current.disabledReason === 'string'
+      ? current.disabledReason
+      : undefined
+  return {
+    url,
+    id: current.id,
+    action: fields.length > 0 ? 'update' : 'none',
+    fields,
+    ...(reenables !== undefined && { reenables }),
+  }
+}
+
+/**
+ * Decide what to do with each webhook endpoint.
+ *
+ * An endpoint has no name in a config: it is **its address**, matched to the server's endpoint
+ * with exactly the same `url` (the server keeps an address as it was typed and compares it as
+ * text, so nothing is normalised here either). A changed address is therefore a new endpoint,
+ * with a new signing secret, and the old one is an endpoint the file no longer lists.
+ *
+ * As with providers, what the file does not list is left alone (`unmanaged`) unless `prune`
+ * asks for it to be removed. A file with no `webhooks` list at all manages nothing: not even
+ * `prune` touches an endpoint then.
+ *
+ * @param remote - The endpoints as the server lists them; ignored when `desired` is absent.
+ * @param desired - The config's list, or `undefined` when the file does not manage webhooks.
+ * @param options - `prune`.
+ * @returns The plan for the endpoints.
+ *
+ * @example
+ * ```ts
+ * planWebhooks(remote.webhooks, environment.webhooks, { prune: true }).endpoints
+ * ```
+ */
+export function planWebhooks(
+  remote: readonly RemoteWebhook[] | undefined,
+  desired: EnvironmentConfig['webhooks'],
+  options: Pick<PlanOptions, 'prune'>
+): WebhookPlan {
+  if (desired === undefined) {
+    return {
+      managed: false,
+      endpoints: [],
+      removedFirst: 0,
+      overLimit: null,
+      seen: webhookSnapshot([]),
+    }
+  }
+  const existing = remote ?? []
+  const listed = new Set(desired.map((endpoint) => endpoint.url))
+  const endpoints: WebhookChange[] = [
+    ...desired.map((endpoint) =>
+      planEndpoint(
+        endpoint,
+        existing.filter((candidate) => candidate.url === endpoint.url)
+      )
+    ),
+    ...existing
+      .filter((endpoint) => !listed.has(endpoint.url))
+      .map(
+        (endpoint): WebhookChange => ({
+          url: endpoint.url,
+          id: endpoint.id,
+          action: options.prune ? 'delete' : 'unmanaged',
+          fields: [],
+        })
+      ),
+  ]
+  const count = (action: WebhookChange['action']) =>
+    endpoints.filter((endpoint) => endpoint.action === action).length
+  const creates = count('create')
+  const after = existing.length + creates - count('delete')
+  const overLimit = after > MAX_WEBHOOK_ENDPOINTS ? after : null
+  return {
+    managed: true,
+    endpoints,
+    // Only as many as it takes for every creation to fit, and only endpoints that are being
+    // removed anyway; none when the plan does not fit at all (it is refused whole).
+    removedFirst:
+      overLimit === null ? Math.max(0, existing.length + creates - MAX_WEBHOOK_ENDPOINTS) : 0,
+    overLimit,
+    seen: webhookSnapshot(existing),
+  }
 }
 
 /**
@@ -358,6 +603,8 @@ export interface Plan {
   unknown: string[]
   /** What happens to each provider. */
   providers: ProviderChange[]
+  /** What happens to each webhook endpoint, when the config manages them. */
+  webhooks: WebhookPlan
   /** Whether the server records this config as the settings' manager. */
   marker: MarkerPlan
   /** The document a replace would send. */
@@ -439,6 +686,7 @@ export function buildPlan(
     )
     .map((change) => change.path)
   const providers = planProviders(remote.providers, environment.providers, options)
+  const webhooks = planWebhooks(remote.webhooks, environment.webhooks, options)
   const marker = planMarker(remote, options.configHash)
   return {
     revision: remote.revision,
@@ -447,12 +695,18 @@ export function buildPlan(
     kept,
     unknown,
     providers,
+    webhooks,
     marker,
     body,
     changes:
       settings.length > 0 ||
       marker.pending ||
-      providers.some((provider) => ['create', 'update', 'delete'].includes(provider.action)),
+      providers.some((provider) => ['create', 'update', 'delete'].includes(provider.action)) ||
+      // An address that cannot be matched is pending too: the environment is not as the file
+      // says, though `tula apply` will not be the one to put it right.
+      webhooks.endpoints.some((endpoint) =>
+        ['create', 'update', 'delete', 'ambiguous'].includes(endpoint.action)
+      ),
   }
 }
 
@@ -470,6 +724,9 @@ export type Operation =
   | { kind: 'settings' }
   | { kind: 'provider.set'; provider: OAuthProvider; change: ProviderChange }
   | { kind: 'provider.delete'; provider: OAuthProvider; change: ProviderChange }
+  | { kind: 'webhook.create'; url: string; change: WebhookChange }
+  | { kind: 'webhook.update'; url: string; id: string; change: WebhookChange }
+  | { kind: 'webhook.delete'; url: string; id: string; change: WebhookChange }
 
 /**
  * The writes of a plan, in an order in which every intermediate state is one the server
@@ -486,6 +743,17 @@ export type Operation =
  * own: nothing after them can then be refused for want of a way in, and a settings revision
  * that turned out stale stops the run before anything was written. Only when the file
  * switches every native method off do the settings wait for the providers they rely on.
+ *
+ * **Webhook endpoints come last**, after the settings and every provider. Nothing about
+ * signing in depends on them, and a registration is the write most likely to be refused for
+ * a reason outside the file (the server could not resolve the address, the environment is at
+ * its limit): a failure there must find the settings and the providers already as the file
+ * says, and a stale settings revision must stop the run before an endpoint is touched.
+ * Among themselves: changes to existing endpoints, then new ones, then removals, so that an
+ * address being replaced is never without an endpoint. The one exception is the limit
+ * (`MAX_WEBHOOK_ENDPOINTS`): when the new endpoints do not fit beside the ones being removed,
+ * exactly as many removals as it takes (`plan.webhooks.removedFirst`, oldest first) go before
+ * the creations.
  *
  * @param plan - The plan.
  * @returns The writes, in order; empty when the plan changes nothing.
@@ -512,7 +780,29 @@ export function orderOperations(plan: Plan): Operation[] {
   const deleting = plan.providers
     .filter((change) => change.action === 'delete')
     .map((change): Operation => ({ kind: 'provider.delete', provider: change.provider, change }))
-  return hasEnabledSignInMethod(plan.body)
+  const signIn = hasEnabledSignInMethod(plan.body)
     ? [...settings, ...adding, ...removing, ...deleting]
     : [...adding, ...settings, ...removing, ...deleting]
+  return [...signIn, ...orderWebhooks(plan.webhooks)]
+}
+
+function orderWebhooks(webhooks: WebhookPlan): Operation[] {
+  const updates: Operation[] = []
+  const creates: Operation[] = []
+  const removals: Operation[] = []
+  for (const change of webhooks.endpoints) {
+    if (change.action === 'create') {
+      creates.push({ kind: 'webhook.create', url: change.url, change })
+    } else if (change.id !== undefined && change.action === 'update') {
+      updates.push({ kind: 'webhook.update', url: change.url, id: change.id, change })
+    } else if (change.id !== undefined && change.action === 'delete') {
+      removals.push({ kind: 'webhook.delete', url: change.url, id: change.id, change })
+    }
+  }
+  return [
+    ...updates,
+    ...removals.slice(0, webhooks.removedFirst),
+    ...creates,
+    ...removals.slice(webhooks.removedFirst),
+  ]
 }

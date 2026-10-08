@@ -12,8 +12,12 @@ import {
   orderOperations,
   type Plan,
   planProviders,
+  planWebhooks,
   type RemoteProvider,
   type RemoteState,
+  type RemoteWebhook,
+  type WebhookChange,
+  webhookSnapshot,
 } from './diff'
 
 const HASH = `sha256:${'a1'.repeat(32)}`
@@ -423,7 +427,9 @@ describe('orderOperations', () => {
 
   function kinds(result: Plan): string[] {
     return orderOperations(result).map((operation) =>
-      operation.kind === 'settings' ? 'settings' : `${operation.kind}:${operation.provider}`
+      operation.kind === 'provider.set' || operation.kind === 'provider.delete'
+        ? `${operation.kind}:${operation.provider}`
+        : operation.kind
     )
   }
 
@@ -494,5 +500,376 @@ describe('orderOperations', () => {
       'provider.set:github',
       'provider.delete:apple',
     ])
+  })
+})
+
+const HOOK = 'https://hooks.northline.app/tula'
+
+function endpoint(id: number, over: Partial<RemoteWebhook> = {}): RemoteWebhook {
+  return {
+    id: `00000000-0000-7000-8000-${String(id).padStart(12, '0')}`,
+    url: `${HOOK}/${id}`,
+    eventTypes: ['user.created'],
+    enabled: true,
+    disabledReason: null,
+    failingSince: null,
+    lastFailedAt: null,
+    rotationOverlapEndsAt: null,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
+    ...over,
+  }
+}
+
+const idOf = (id: number) => endpoint(id).id
+
+describe('planWebhooks', () => {
+  type Row = [
+    name: string,
+    remote: RemoteWebhook[],
+    desired: NonNullable<EnvironmentConfigInput['webhooks']>,
+    prune: boolean,
+    expected: Partial<WebhookChange>[],
+  ]
+  const rows: Row[] = [
+    [
+      'an address the server does not have is created; enabled left out is not sent',
+      [],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.deleted', 'user.created'] }],
+      false,
+      [
+        {
+          url: `${HOOK}/1`,
+          action: 'create',
+          fields: [{ path: 'eventTypes', kind: 'added', after: ['user.created', 'user.deleted'] }],
+        },
+      ],
+    ],
+    [
+      'enabled written on a new endpoint is part of the creation',
+      [],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'], enabled: false }],
+      false,
+      [
+        {
+          action: 'create',
+          fields: [
+            { path: 'eventTypes', kind: 'added', after: ['user.created'] },
+            { path: 'enabled', kind: 'added', after: false },
+          ],
+        },
+      ],
+    ],
+    [
+      'the same address with the same event types is no change',
+      [endpoint(1)],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'] }],
+      false,
+      [{ url: `${HOOK}/1`, id: idOf(1), action: 'none', fields: [] }],
+    ],
+    [
+      'event types are a set: another order, and repeats in the file, are no change',
+      [endpoint(1, { eventTypes: ['user.deleted', 'user.created'] })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created', 'user.deleted', 'user.created'] }],
+      false,
+      [{ action: 'none', fields: [] }],
+    ],
+    [
+      'a changed set shows the types added and removed, sorted',
+      [endpoint(1, { eventTypes: ['user.updated', 'user.created'] })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.deleted', 'user.created', 'session.created'] }],
+      false,
+      [
+        {
+          action: 'update',
+          id: idOf(1),
+          fields: [
+            {
+              path: 'eventTypes',
+              kind: 'changed',
+              before: ['user.created', 'user.updated'],
+              after: ['session.created', 'user.created', 'user.deleted'],
+              added: ['session.created', 'user.deleted'],
+              removed: ['user.updated'],
+            },
+          ],
+        },
+      ],
+    ],
+    [
+      'enabled left out is not managed: an endpoint that is off stays off, unmentioned',
+      [endpoint(1, { enabled: false, disabledReason: 'failing' })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'] }],
+      false,
+      [{ action: 'none', fields: [] }],
+    ],
+    [
+      'enabled written is managed: switching an endpoint off',
+      [endpoint(1)],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'], enabled: false }],
+      false,
+      [
+        {
+          action: 'update',
+          fields: [{ path: 'enabled', kind: 'changed', before: true, after: false }],
+        },
+      ],
+    ],
+    [
+      'switching on an endpoint an administrator switched off carries no reason',
+      [endpoint(1, { enabled: false })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'], enabled: true }],
+      false,
+      [
+        {
+          action: 'update',
+          fields: [{ path: 'enabled', kind: 'changed', before: false, after: true }],
+        },
+      ],
+    ],
+    [
+      'switching on an endpoint the server switched off says why it was off',
+      [endpoint(1, { enabled: false, disabledReason: 'failing' })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'], enabled: true }],
+      false,
+      [
+        {
+          action: 'update',
+          reenables: 'failing',
+          fields: [{ path: 'enabled', kind: 'changed', before: false, after: true }],
+        },
+      ],
+    ],
+    [
+      'an endpoint the list leaves out is unmanaged',
+      [endpoint(1), endpoint(2)],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'] }],
+      false,
+      [{ action: 'none' }, { url: `${HOOK}/2`, id: idOf(2), action: 'unmanaged', fields: [] }],
+    ],
+    [
+      'and removed with --prune',
+      [endpoint(1), endpoint(2)],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'] }],
+      true,
+      [{ action: 'none' }, { url: `${HOOK}/2`, id: idOf(2), action: 'delete', fields: [] }],
+    ],
+    [
+      'an empty list manages webhooks and has none: what the server has is unmanaged',
+      [endpoint(1)],
+      [],
+      false,
+      [{ action: 'unmanaged' }],
+    ],
+    [
+      'a changed address is a new endpoint, and the old one is another: never an update',
+      [endpoint(1)],
+      [{ url: `${HOOK}/moved`, eventTypes: ['user.created'] }],
+      true,
+      [
+        { url: `${HOOK}/moved`, action: 'create' },
+        { url: `${HOOK}/1`, action: 'delete' },
+      ],
+    ],
+    [
+      'an address is compared exactly, as the server stores it: a trailing slash is another',
+      [endpoint(1, { url: `${HOOK}/a/` })],
+      [{ url: `${HOOK}/a`, eventTypes: ['user.created'] }],
+      false,
+      [
+        { url: `${HOOK}/a`, action: 'create' },
+        { url: `${HOOK}/a/`, action: 'unmanaged' },
+      ],
+    ],
+    [
+      'an address the server has twice cannot be matched: neither is touched',
+      [endpoint(1, { url: HOOK }), endpoint(2, { url: HOOK }), endpoint(3)],
+      [{ url: HOOK, eventTypes: ['user.deleted'], enabled: false }],
+      true,
+      [
+        { url: HOOK, action: 'ambiguous', duplicates: [idOf(1), idOf(2)], fields: [] },
+        { url: `${HOOK}/3`, action: 'delete' },
+      ],
+    ],
+    [
+      'an address the server has twice and the file does not name is two endpoints like any',
+      [endpoint(1, { url: HOOK }), endpoint(2, { url: HOOK })],
+      [],
+      true,
+      [
+        { url: HOOK, id: idOf(1), action: 'delete' },
+        { url: HOOK, id: idOf(2), action: 'delete' },
+      ],
+    ],
+  ]
+
+  test.each(rows)('%s', (_, remoteEndpoints, desired, prune, expected) => {
+    const result = planWebhooks(remoteEndpoints, environment({ webhooks: desired }).webhooks, {
+      prune,
+    })
+    expect(result.managed).toBe(true)
+    expect(result.endpoints).toHaveLength(expected.length)
+    expect(result.endpoints).toMatchObject(expected)
+  })
+
+  test('a file without the key manages nothing: no entry, whatever the server has, even with --prune', () => {
+    expect(planWebhooks([endpoint(1)], undefined, { prune: true })).toEqual({
+      managed: false,
+      endpoints: [],
+      removedFirst: 0,
+      overLimit: null,
+      seen: webhookSnapshot([]),
+    })
+    const result = plan({}, remote({ webhooks: undefined }), { prune: true })
+    expect(result.webhooks.managed).toBe(false)
+    expect(orderOperations(result).some((operation) => operation.kind.startsWith('webhook.'))).toBe(
+      false
+    )
+  })
+
+  test('an unchanged or unmanaged endpoint is not a change; a create, update or delete is', () => {
+    const state = remote({
+      managedBy: { tool: 'tula-apply', configHash: HASH, at: 'x', revision: 3, drifted: false },
+      webhooks: [endpoint(1), endpoint(2)],
+    })
+    const same = { url: `${HOOK}/1`, eventTypes: ['user.created' as const] }
+    expect(plan({ webhooks: [same] }, state).changes).toBe(false)
+    expect(plan({ webhooks: [same] }, state, { prune: true }).changes).toBe(true)
+    expect(plan({ webhooks: [{ ...same, enabled: false }] }, state).changes).toBe(true)
+    expect(plan({ webhooks: [same, { ...same, url: `${HOOK}/3` }] }, state).changes).toBe(true)
+  })
+
+  test('the snapshot is the same for the same endpoints in any order, and moves with any field a plan reads', () => {
+    const base = webhookSnapshot([endpoint(1), endpoint(2)])
+    expect(webhookSnapshot([endpoint(2), endpoint(1)])).toBe(base)
+    // Not what a plan reads: a delivery failing or a rotation must not make a plan stale.
+    expect(
+      webhookSnapshot([
+        endpoint(1, { failingSince: '2026-10-02T00:00:00.000Z', updatedAt: 'later' }),
+        endpoint(2),
+      ])
+    ).toBe(base)
+    for (const moved of [
+      [endpoint(1)],
+      [endpoint(1), endpoint(2), endpoint(3)],
+      [endpoint(1, { url: `${HOOK}/x` }), endpoint(2)],
+      [endpoint(1, { eventTypes: ['user.deleted'] }), endpoint(2)],
+      [endpoint(1, { enabled: false }), endpoint(2)],
+      [endpoint(1, { enabled: false, disabledReason: 'gone' }), endpoint(2)],
+    ]) {
+      expect(webhookSnapshot(moved)).not.toBe(base)
+    }
+  })
+})
+
+describe('orderOperations: webhooks', () => {
+  const google = { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') }
+  const types = ['user.created' as const]
+
+  function steps(result: Plan): string[] {
+    return orderOperations(result).map((operation) => {
+      if (operation.kind === 'settings') {
+        return 'settings'
+      }
+      return operation.kind === 'provider.set' || operation.kind === 'provider.delete'
+        ? `${operation.kind}:${operation.provider}`
+        : `${operation.kind}:${operation.url.slice(HOOK.length + 1)}`
+    })
+  }
+
+  const webhookSteps = (result: Plan) => steps(result).filter((step) => step.startsWith('webhook.'))
+
+  test('webhooks come after the settings and every provider: nothing about sign-in waits for them', () => {
+    const state = remote({
+      providers: [provider('github', { configured: true, enabled: true, clientId: 'gh' })],
+      webhooks: [endpoint(1), endpoint(2, { eventTypes: ['user.deleted'] })],
+    })
+    const result = plan(
+      {
+        settings: { app: { name: 'New' } },
+        providers: { google },
+        webhooks: [
+          { url: `${HOOK}/3`, eventTypes: types },
+          { url: `${HOOK}/2`, eventTypes: types },
+        ],
+      },
+      state,
+      { prune: true }
+    )
+    expect(steps(result)).toEqual([
+      'settings',
+      'provider.set:google',
+      'provider.delete:github',
+      'webhook.update:2',
+      'webhook.create:3',
+      'webhook.delete:1',
+    ])
+  })
+
+  test('also when the settings wait for a provider', () => {
+    const result = plan(
+      {
+        settings: { signIn: { methods: { password: { enabled: false } } } },
+        providers: { google },
+        webhooks: [{ url: `${HOOK}/1`, eventTypes: types }],
+      },
+      remote({ webhooks: [] })
+    )
+    expect(steps(result)).toEqual(['provider.set:google', 'settings', 'webhook.create:1'])
+  })
+
+  const ten = Array.from({ length: 10 }, (_, index) => endpoint(index + 1))
+  const keep = (from: number, to: number) =>
+    ten.slice(from - 1, to).map((entry) => ({ url: entry.url, eventTypes: types }))
+  const fresh = (name: string) => ({ url: `${HOOK}/${name}`, eventTypes: types })
+
+  test.each([
+    [
+      'room for the new one: created before anything is removed',
+      ten.slice(0, 9),
+      [...keep(1, 8), fresh('new')],
+      0,
+      ['webhook.create:new', 'webhook.delete:9'],
+    ],
+    [
+      'at the limit, one replaced: exactly one removal goes first, the oldest being removed',
+      ten,
+      [...keep(1, 8), fresh('new')],
+      1,
+      ['webhook.delete:9', 'webhook.create:new', 'webhook.delete:10'],
+    ],
+    [
+      'at the limit, two replaced by two: both removals first',
+      ten,
+      [...keep(1, 8), fresh('a'), fresh('b')],
+      2,
+      ['webhook.delete:9', 'webhook.delete:10', 'webhook.create:a', 'webhook.create:b'],
+    ],
+    [
+      'one under the limit, two new, two removed: one removal first, no more than needed',
+      ten.slice(0, 9),
+      [...keep(1, 7), fresh('a'), fresh('b')],
+      1,
+      ['webhook.delete:8', 'webhook.create:a', 'webhook.create:b', 'webhook.delete:9'],
+    ],
+  ])('the limit of ten, %s', (_, existing, desired, removedFirst, expected) => {
+    const result = plan({ webhooks: desired }, remote({ webhooks: existing }), { prune: true })
+    expect(result.webhooks.removedFirst).toBe(removedFirst)
+    expect(result.webhooks.overLimit).toBeNull()
+    expect(webhookSteps(result)).toEqual(expected)
+  })
+
+  test('a plan that would leave more than ten says how many, and removes nothing first', () => {
+    const result = plan({ webhooks: [fresh('new')] }, remote({ webhooks: ten }))
+    expect(result.webhooks.overLimit).toBe(11)
+    expect(result.webhooks.removedFirst).toBe(0)
+  })
+
+  test('an address that cannot be matched is no operation', () => {
+    const result = plan(
+      { webhooks: [{ url: HOOK, eventTypes: types, enabled: false }] },
+      remote({ webhooks: [endpoint(1, { url: HOOK }), endpoint(2, { url: HOOK })] })
+    )
+    expect(webhookSteps(result)).toEqual([])
   })
 })

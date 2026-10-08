@@ -783,10 +783,15 @@ describe('settings this version does not know', () => {
     expect(text.stdout).toContain('`tula apply` refuses this plan without --allow-unknown')
     const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
       unknown: string[]
-      applyRequires: { allowUnknown: boolean; allowWeaker: boolean }
+      applyRequires: Record<string, boolean>
     }
     expect(json.unknown).toEqual(['mfa.methods', 'future'])
-    expect(json.applyRequires).toEqual({ allowUnknown: true, allowWeaker: false })
+    expect(json.applyRequires).toEqual({
+      allowUnknown: true,
+      allowWeaker: false,
+      allowWebhookRemoval: false,
+      webhookSecrets: false,
+    })
   })
 })
 
@@ -927,10 +932,15 @@ describe('a plan that weakens security', () => {
     expect(text.stdout).toContain('`tula apply --yes` refuses this plan without --allow-weaker')
     const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
       weakened: string[]
-      applyRequires: { allowUnknown: boolean; allowWeaker: boolean }
+      applyRequires: Record<string, boolean>
     }
     expect(json.weakened).toEqual(['mfa.policy'])
-    expect(json.applyRequires).toEqual({ allowUnknown: false, allowWeaker: true })
+    expect(json.applyRequires).toEqual({
+      allowUnknown: false,
+      allowWeaker: true,
+      allowWebhookRemoval: false,
+      webhookSecrets: false,
+    })
   })
 })
 
