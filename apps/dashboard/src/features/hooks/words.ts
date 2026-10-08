@@ -7,6 +7,13 @@ import type { Hook } from '~/api/generated/api.gen'
 // reads is the dashboard's own text for each. A word this version does not know is shown as
 // the text it is, never as markup and never as the only thing said.
 
+// The key of every lookup below is text from the server. A plain object also answers for
+// `constructor`, `toString` and `__proto__`, with a function or its prototype: only what the
+// table itself holds is a word of the dashboard's.
+function own<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined
+}
+
 /** What the screen says about one point at which a hook is asked. */
 export interface PointWords {
   /** The point's name as a heading. */
@@ -61,7 +68,7 @@ const UNKNOWN_POINT: Omit<PointWords, 'label'> = {
  *   the point's own name.
  */
 export function pointWords(point: string): PointWords {
-  return POINTS[point] ?? { label: point, ...UNKNOWN_POINT }
+  return own(POINTS, point) ?? { label: point, ...UNKNOWN_POINT }
 }
 
 /**
@@ -140,7 +147,7 @@ const FAILURE_MODES: Record<string, string> = {
  * @returns The words; an unknown mode as it is.
  */
 export function failureModeText(mode: string): string {
-  return FAILURE_MODES[mode] ?? mode
+  return own(FAILURE_MODES, mode) ?? mode
 }
 
 const FAILURE_REASONS: Record<string, string> = {
@@ -170,7 +177,7 @@ const FAILURE_REASONS: Record<string, string> = {
  * @returns The sentence; for a word this version does not know, a sentence that quotes it.
  */
 export function failureReasonText(reason: string): string {
-  return FAILURE_REASONS[reason] ?? `The server gave this reason: ${reason}`
+  return own(FAILURE_REASONS, reason) ?? `The server gave this reason: ${reason}`
 }
 
 /** How the last failed call ended, for the `data-outcome` of its line. */
@@ -219,9 +226,9 @@ export type HookAction = 'create' | 'change'
 export function hookMessageFor(error: unknown, action: HookAction = 'change'): string {
   const failure = toApiError(error)
   if (failure.code === 'hook.url_not_allowed') {
-    const reason = failure.params.reason
+    const reason = own(failure.params, 'reason')
     return (
-      (typeof reason === 'string' ? URL_REFUSALS[reason] : undefined) ??
+      (typeof reason === 'string' ? own(URL_REFUSALS, reason) : undefined) ??
       'The server cannot call that address.'
     )
   }

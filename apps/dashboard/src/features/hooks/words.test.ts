@@ -133,6 +133,57 @@ describe('a hook’s state and its last failed call in words', () => {
   })
 })
 
+describe('a word from the server that is also a name every object has', () => {
+  // The tables of words are plain objects, and the server's text chooses the key: without an
+  // own-property check `constructor` finds `Object`, `toString` a function and `__proto__`
+  // the prototype, and the screen would draw "undefined" or a function's source.
+  const inherited = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']
+
+  test.each(inherited)('a point named %s gets the unknown point’s words', (key) => {
+    const words = pointWords(key)
+    expect(words).toEqual({ ...pointWords('a_later_point'), label: key })
+    for (const sentence of [words.label, words.asked, words.allowing, words.gone]) {
+      expect(typeof sentence).toBe('string')
+    }
+  })
+
+  test.each(inherited)('a hook at a point named %s is described without "undefined"', (key) => {
+    for (const enabled of [true, false]) {
+      for (const failureMode of ['deny', 'allow']) {
+        const state = hookState({ point: key, enabled, failureMode })
+        expect(typeof state.detail).toBe('string')
+        expect(`${state.label} ${state.detail}`).not.toContain('undefined')
+      }
+    }
+    for (const sentence of weakeningSentences(key, null, { enabled: true, failureMode: 'allow' })) {
+      expect(typeof sentence).toBe('string')
+    }
+  })
+
+  test.each(inherited)('a failure mode named %s is shown as the text it is', (key) => {
+    expect(failureModeText(key)).toBe(key)
+  })
+
+  test.each(inherited)('a failure reason named %s is quoted, as any unknown one is', (key) => {
+    expect(failureReasonText(key)).toBe(`The server gave this reason: ${key}`)
+  })
+
+  test.each(inherited)('an address refused for the reason %s gets the general sentence', (key) => {
+    const refused = refusal(422, 'hook.url_not_allowed', { reason: key })
+    expect(hookMessageFor(refused, 'create')).toBe('The server cannot call that address.')
+  })
+
+  test('a reason that is not the answer’s own property is not read', () => {
+    const params: Record<string, unknown> = Object.create({ reason: 'scheme_not_allowed' })
+    const refused = refusal(422, 'hook.url_not_allowed', params)
+    expect(hookMessageFor(refused, 'create')).toBe('The server cannot call that address.')
+  })
+
+  test.each(inherited)('an error code named %s is said in the server’s own words', (key) => {
+    expect(hookMessageFor(refusal(400, key), 'create')).toBe('The server’s own words.')
+  })
+})
+
 describe('a refusal in words', () => {
   test('a conflict means one thing when adding and another when changing', () => {
     const conflict = refusal(409, 'resource.conflict')
