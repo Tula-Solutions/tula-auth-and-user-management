@@ -33,6 +33,9 @@ paths:
   instance, under `deps.jobLock.runExclusive(<its own job name>, …)`; a new job gets a new id
   in `JOB_LOCK_IDS` (never renumber). It serves environments one at a time and a failure in
   one is logged and skipped (`modules/retention`, `modules/webhook`).
+- A route that makes the server call an operator's address on demand (a webhook test event,
+  a delivery sent again) has a per-environment rate limit of its own, mounted after
+  `secretKey()`, and answers only the outcome, a status code and a duration.
 - The server calls an address an operator typed only through `~/lib/outbound`
   (`Outbound.check` when the address is saved, `Outbound.request` to call it), with
   `deps.outbound`. Never `fetch`.

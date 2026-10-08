@@ -179,6 +179,57 @@ export async function registerWebhook(storeSecret: (secret: string) => Promise<v
   // #endregion
 }
 
+/** Wherever you look at such things: yours. */
+declare function show(...values: unknown[]): void
+
+/** Read an endpoint's delivery log, test it, and send a failed delivery again. */
+export async function inspectWebhook(endpointId: string) {
+  // #region webhook-deliveries
+  // What the server gave up on, newest first.
+  const { data: failed } = await admin.call('listWebhookDeliveries', {
+    params: { id: endpointId },
+    query: { state: 'failed' },
+  })
+  for (const delivery of failed.data) {
+    // Every request made for it: when, the status code (or why there was none), how long.
+    const { data: detail } = await admin.call('getWebhookDelivery', {
+      params: { id: endpointId, deliveryId: delivery.id },
+    })
+    show(
+      delivery.eventType,
+      detail.attempts.map((attempt) => attempt.statusCode)
+    )
+  }
+  // #endregion
+  // #region webhook-test
+  // One signed example event, now. Your receiver sees `event.test === true`.
+  const { data: test } = await admin.call('sendTestWebhook', {
+    params: { id: endpointId },
+    body: { eventType: 'user.created' },
+  })
+  if (test.outcome === 'failed') {
+    // `statusCode` is what your endpoint answered; without an answer, `failureReason` says why.
+    show(test.statusCode ?? test.failureReason)
+  }
+  // #endregion
+  // #region webhook-redeliver
+  // After fixing the receiver: send what it missed once more, with the same `webhook-id`.
+  for (const delivery of failed.data) {
+    try {
+      await admin.call('redeliverWebhook', {
+        params: { id: endpointId, deliveryId: delivery.id },
+      })
+    } catch (error) {
+      // 409 `webhook.cannot_redeliver`: `params.reason` is `event_gone` (older than 30 days),
+      // `endpoint_disabled` or `delivery_pending`.
+      if (!isTulaAdminError(error) || error.code !== 'webhook.cannot_redeliver') {
+        throw error
+      }
+    }
+  }
+  // #endregion
+}
+
 /** What handles an event once: yours. */
 declare function alreadyHandled(eventId: string): Promise<boolean>
 declare function provisionWorkspace(userId: string): Promise<void>
@@ -197,8 +248,9 @@ export async function receiveWebhook(request: Request): Promise<Response> {
     // Not from Tula, changed on the way, or older than five minutes.
     return new Response(null, { status: isTulaAdminError(error) ? 400 : 500 })
   }
-  // Delivery is at least once: the same event id can arrive again.
-  if (await alreadyHandled(event.id)) {
+  // A test event an administrator sent: an example, nothing in it happened.
+  // And delivery is at least once: the same event id can arrive again.
+  if (event.test || (await alreadyHandled(event.id))) {
     return new Response(null, { status: 204 })
   }
   switch (event.type) {
@@ -211,7 +263,8 @@ export async function receiveWebhook(request: Request): Promise<Response> {
     default:
     // A type this code does not handle, or one a later server added: nothing to do.
   }
-  // Answer quickly, with a 2xx and a small body. Anything else counts as a failed delivery.
+  // Answer quickly, with a 2xx and a small body. Anything else is a failed request, which
+  // the server retries.
   return new Response(null, { status: 204 })
 }
 // #endregion

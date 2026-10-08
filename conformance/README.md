@@ -36,7 +36,7 @@ bun run conformance
 | `CONFORMANCE_BASE_URL` | `http://localhost:3003` | Origin of the API. |
 | `CONFORMANCE_MAILPIT_URL` | `http://localhost:8025` | Mailpit's web address. |
 | `CONFORMANCE_SETTLE_MS` | `0` | For a run through one address in front of several instances ([below](#behind-one-address)): how long to wait after each step that changes the environment's settings. At most 60000. |
-| `CONFORMANCE_WEBHOOK_RECEIVER_HOST` | none | An address of this machine that the server can reach, for the [webhook scenario](#the-webhook-scenario-needs-a-receiver-the-server-can-reach): `127.0.0.1` for a server running on this machine in the `local` tier. Without it, scenarios marked `needsWebhookReceiver` are skipped. |
+| `CONFORMANCE_WEBHOOK_RECEIVER_HOST` | none | An address of this machine that the server can reach, for the [webhook scenarios](#the-webhook-scenarios-need-a-receiver-the-server-can-reach): `127.0.0.1` for a server running on this machine in the `local` tier. Without it, scenarios marked `needsWebhookReceiver` are skipped. |
 | `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
@@ -214,7 +214,10 @@ included: use `attempt`).
 - **Webhook steps** (`webhook: { receiver, captureUrl }` or `webhook: { receiver, expect }`)
   play the operator's backend that receives webhooks (ADR 0034). The first form starts a named
   receiver, an HTTP listener the runner owns that answers every request `204`, and stores the
-  URL to register as an endpoint's address. The second takes the next delivery that reached it
+  URL to register as an endpoint's address. With `answers` (a list of HTTP statuses, 200 to
+  599) the receiver answers its next deliveries with those, one each and in order, and `204`
+  again after them: `"answers": [500]` is a backend that fails once and recovers. A delivery
+  it failed is kept all the same, for a later step to check. The second takes the next delivery that reached it
   (`type` narrows it to one event type) and checks what a receiver must check: a `POST` of
   JSON; the Standard Webhooks headers `webhook-id`, `webhook-timestamp` (whole seconds, within
   five minutes of the server's clock) and `webhook-signature`, one of whose space-separated
@@ -224,7 +227,9 @@ included: use `attempt`).
   matched as a subset like a response. `captureId` stores the event's id. Against a live
   server the step waits for the server's own worker (30 seconds at most); in process the
   target runs one round of it. A runner for another language needs an HTTP listener and
-  HMAC-SHA256 for these steps. Receivers are stopped when the scenario ends.
+  HMAC-SHA256 for these steps. Receivers are stopped when the scenario ends. A scenario that
+  needs the server's **retry** to be due uses an ordinary wait step for it (below): the first
+  retry is five to six seconds after the failure, plus up to one round of the worker.
 - **Wait steps** let time pass: a real sleep against a live server, a clock advance in process.
 - **`cleanup`** (optional, beside `steps`) lists steps that run after the scenario's steps
   **whether or not they passed**, with whatever was captured before the failure. A scenario
@@ -271,6 +276,7 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `41-stateful-session` | A `stateful` profile: sign-in sets one httpOnly cookie and returns no token; the cookie authenticates `/v1/client/me`; `POST /v1/admin/sessions/verify` returns the claims; another origin, a cross-site request and an unsafe request with no `Origin` are refused; ending the session is seen by the very next request, on both instances. |
 | `42-step-up-window-per-profile` | A profile's `stepUpAfter` replaces the ten-minute window of routes that require recent authentication. Waits 61 seconds. |
 | `47-webhook-delivered-and-signed` | An endpoint is registered with a secret key and its signing secret (`whsec_…`) is returned once, never by a read or a list; a user's creation is delivered to it with the Standard Webhooks headers, signed with that secret, as the typed event whose id is the audit entry's; the registration and a change are in the audit log by count and field name, never with the address or the secret (needs a secret key and a receiver the server can reach). |
+| `49-webhook-retried-after-a-500` | A backend answers a delivery `500` and recovers: the delivery is `pending` with one attempt on record and cannot be sent again by hand meanwhile (`webhook.cannot_redeliver`, `delivery_pending`); a few seconds later the server sends it again with the same `webhook-id`, and the delivery log has both requests, a status code and a duration each. A test event arrives signed, marked `"test": true`, of a type the endpoint did not subscribe to, and is in the delivery log and not in the audit log. A delivered delivery is sent again by hand, with the same id, and is refused once the endpoint is off (`endpoint_disabled`). Waits 9 seconds (needs a secret key and a receiver the server can reach). |
 | `48-webhook-refused-address` | The outbound guard at the moment an address is saved: a private address, the metadata service, a private address spelled as one number, private IPv6 and IPv4-in-IPv6 addresses, credentials and a non-http scheme are refused with `webhook.url_not_allowed` and a fixed `params.reason`, on a registration and on a change, and nothing of the address is repeated or stored (needs a secret key). |
 | `43-settings-managed-by-config` | A replace that names its tool and config fingerprint (`x-tula-managed-by`, `x-tula-config-hash`) is recorded as the settings' manager; a later replace without them keeps the record and shows as `drifted`; one header without the other is refused. Cleanup restores the settings and removes the record. |
 
@@ -310,19 +316,25 @@ keeps the callback's path so a later step can replay it (`callback`). The scenar
 against an environment whose Google credentials you want to keep. They add about 95 seconds
 (a 61-second wait for a ticket to expire and a 31-second one for the next authenticator code).
 
-### The webhook scenario needs a receiver the server can reach
+### The webhook scenarios need a receiver the server can reach
 
-`47-webhook-delivered-and-signed` registers a listener the runner starts as a webhook endpoint,
-and the server has to be able to call it. The server calls an operator's address only through
+`47-webhook-delivered-and-signed` and `49-webhook-retried-after-a-500` each register a
+listener the runner starts as a webhook endpoint, and the server has to be able to call it. The server calls an operator's address only through
 its outbound guard, which refuses private and loopback addresses and plain `http`, except
-loopback and `http` in the `local` tier. So against a live server the scenario runs only where
+loopback and `http` in the `local` tier. So against a live server they run only where
 that server is in the `local` tier **on the runner's own machine** (`bun run dev`), with
-`CONFORMANCE_WEBHOOK_RECEIVER_HOST=127.0.0.1`. Anywhere else it is skipped, and its line says
-why (`needs a webhook receiver the server can reach`): a server in a container sees the
+`CONFORMANCE_WEBHOOK_RECEIVER_HOST=127.0.0.1`. Anywhere else they are skipped, and each line
+says why (`needs a webhook receiver the server can reach`): a server in a container sees the
 runner's machine at a private address, and a remote one would need a public `https` listener.
-The guard is never loosened to make the scenario run. CI's `self-host` jobs run the server in
-containers and therefore skip it, and only it; it runs in process as part of `bun run verify`,
-through the real guard and a real socket on loopback.
+The guard is never loosened to make a scenario run. CI's `self-host` jobs run the server in
+containers and therefore skip these two, **and only these two, by name**: the job compares
+the set of skipped scenarios with that list and fails on any difference, in either direction.
+Both run in process as part of `bun run verify`, through the real guard and a real socket on
+loopback.
+
+`49` needs time to pass for the retry. In process its `wait` steps move the test's clock and
+the `webhook` step runs a round of the worker; against a live server they are real sleeps and
+the step waits for the server's own worker. Nothing else is needed of a target.
 
 `48-webhook-refused-address` needs no receiver and runs everywhere. It leaves out one half of
 its subject on purpose: that an address which passed when it was saved is refused **when a

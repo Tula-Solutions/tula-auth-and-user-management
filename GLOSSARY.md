@@ -21,6 +21,18 @@ _Avoid_: Device verification, device attestation
 A signed notice, sent to an operator's endpoint, of something that has already happened. Its answer changes nothing.
 _Avoid_: Callback, event hook
 
+**Delivery**:
+One event owed to one endpoint, from the moment it is queued until it is delivered or given up. One delivery can take several attempts.
+_Avoid_: Message, dispatch, send
+
+**Attempt**:
+One request the server made for a delivery. What the server decided not to send is not an attempt.
+_Avoid_: Try, retry (a retry is an attempt after the first)
+
+**Test event**:
+An example event an administrator asks the server to send to one endpoint, marked as a test inside its signed body. Nothing it describes happened.
+_Avoid_: Ping, sample, dry run
+
 **Hook**:
 A signed question, sent to an operator's endpoint, whose answer decides what happens next: allow, deny, or claims to add.
 _Avoid_: Webhook, plugin, callback

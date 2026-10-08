@@ -50,8 +50,10 @@ webhook worker of Phase 2, so today every event is undelivered and none is safe 
 Shipping the delete now would mean dead code and a `DELETE` grant on the outbox for the runtime
 role (migration 0003 deliberately gives it none) with nothing to use it. The delete, its grant
 and a policy limiting it to delivered rows land with the worker that marks rows delivered.
-*Since 2026-10-08 a worker marks them ([ADR 0034](0034-webhooks.md)); the delete itself, and
-one for delivery rows, is still to come, as a later step of the same work.*
+*Since 2026-10-08 a worker marks them ([ADR 0034](0034-webhooks.md)), and since the step after
+that this job deletes them: see
+[Outbox events and webhook deliveries](#outbox-events-and-webhook-deliveries-added-2026-10-08)
+below, which replaces this paragraph.*
 
 **Deletes go through the stores, per environment, in batches.** Each store has one purge method
 (`deleteExpired`, `deleteEnded`) taking an environment, a cutoff and a limit. The Postgres
@@ -117,8 +119,8 @@ entries are never deleted by this job" above and "append-only for the server" in
 **What is deleted.** In each environment whose settings hold a number in `audit.retentionDays`
 (1 to 3650), the rows of `audit_logs` that occurred more than that many days before the run.
 An entry exactly as old as the period is kept, like the instance audit log's. Nothing else:
-not the outbox event that shares the entry's id (still no delete until something delivers
-events), and no entry of an environment whose period is `null`, which is the default and
+not the outbox event that shares the entry's id (an event has its own period, below), and no
+entry of an environment whose period is `null`, which is the default and
 what an environment that never saved settings has. The deletion is permanent; there is no
 archive and no undo. An operator who needs the entries longer than the period exports them
 first (`GET /v1/admin/audit-logs`).
@@ -220,6 +222,80 @@ type, and how types are defined is being changed elsewhere.
 limits from their own stores, the passkey counter from the passkey row. No behaviour changes
 when old entries go; what changes is what an operator can look up.
 
+### Outbox events and webhook deliveries (added 2026-10-08)
+
+With retries and the delivery log (TULA-42, [ADR 0034](0034-webhooks.md)). It replaces
+"outbox events are not deleted yet" above.
+
+**What is deleted**, per environment, in batches, through two methods of the delivery store
+that take an environment, a cutoff and a limit like every other purge here:
+
+| | Period | Constant | Store method |
+| --- | --- | --- | --- |
+| Deliveries that have ended (`delivered` or `failed`), with every request recorded for them | 90 days after they were queued | `ENDED_DELIVERY_RETENTION` | `deleteEndedBefore` |
+| Outbox events the worker has settled | 30 days after they were settled | `SETTLED_EVENT_RETENTION` | `deleteSettledEvents` |
+
+Both periods are constants, like the session's and the token's.
+
+**Why thirty days for an event.** An event's row is its payload, and the payload has one use
+left once the worker has queued its deliveries: being sent again. The worker itself is done
+with a delivery after a day and a few hours, and gives up whatever is left after three days;
+"send it again" is for an operator who learns later that their receiver dropped something. A
+month covers a billing cycle's worth of "we only noticed at month end", and it is the period
+this record planned from the start. It is also far longer than any receiver needs to remember
+ids for: a repeat can only come while the event exists, so thirty-one days of remembered ids
+is always enough.
+
+**Why ninety days for a delivery, and why longer than its event.** The record of a delivery is
+small and holds nothing sensitive: ids, a type, times, status codes, durations and the
+server's own fixed words; no payload, no address, and nothing of a receiver's answer. Its use
+is an operator asking "what happened to our webhooks last quarter", which outlives the
+payload's use. So the log is kept three times as long as the thing it is a log of.
+
+**How the two are kept apart.** Until this step a delivery row referenced its event with a
+foreign key that cascaded, so deleting an event at thirty days would have deleted the record
+of its deliveries with it. That reference is no longer a foreign key (migration `0019`): the
+delivery keeps the event's id and type as plain columns, and outlives the event. For the
+sixty days in between, the delivery reads exactly as before and "send it again" answers
+`webhook.cannot_redeliver` with the reason `event_gone`.
+
+**An event is never deleted from under a delivery that is still to be sent.**
+`deleteSettledEvents` leaves any event that a `pending` delivery is of, whatever its age. In
+practice nothing is pending that long (the worker gives a delivery up at three days), so this
+is a guard, not a path; and should an event's row be gone all the same, the worker gives the
+delivery up with the word `event_gone` instead of failing the round.
+
+**The order inside a run** is deliveries, then events. Neither depends on the other.
+
+**What bounds the two new deletes in the database**, as migration `0017` bounded the audit
+log's (migration `0019`):
+
+- The tenant policy of each table covers `DELETE`: only rows of the environment in scope, and
+  none when no environment is set.
+- A restrictive policy on each, ANDed with it. `events_retention_floor`: only an event that
+  is settled (`delivered_at` is set) **and** that happened more than a day ago.
+  `webhook_deliveries_retention_floor`: only a delivery that is not `pending` **and** was
+  queued more than seven days ago. Whatever a statement asks for, the API's role cannot
+  delete an event no worker has settled, a delivery the worker still has, or anything recent.
+- The floors cannot be got past by changing a row first. The runtime role may update exactly
+  one column of `events` (`delivered_at`; the grant on the whole table that it held since
+  `0003` is revoked), so it cannot backdate `occurred_at`; and of a delivery only its state
+  columns, not `created_at`. It *can* set `delivered_at` or `state`, which is the worker's
+  job; that is why each floor also has a time on a column it cannot touch.
+- `webhook_delivery_attempts` gets no `DELETE` at all: its rows go with their delivery, by a
+  cascade, which runs as the table's owner.
+
+These floors are deliberately far below the periods (a day against thirty, a week against
+ninety): they are what stops a bug or a wrong cutoff from emptying a table, not a second
+definition of the period.
+
+**Not recorded**, like every other delete of rows that had already ended
+([ADR 0012](0012-events-and-audit-log.md)): the run's log line has the counts (`events`,
+`webhookDeliveries`).
+
+**An event and the audit entry of the same id still have separate lives.** Deleting one does
+not delete the other, in either direction.
+
 ## Consequences
 
 - The lock is a session-level advisory lock, so `DATABASE_URL` must be a direct connection or a
@@ -239,9 +315,9 @@ when old entries go; what changes is what an operator can look up.
   adapter and prove the SQL is valid.
 - The purge finds its rows through each table's `environment_id` index and filters the rest.
   If a table grows large enough for that to matter, an index on the cutoff column is the fix.
-- `events` still grows without bound: its rows are settled by the webhook worker since
-  [ADR 0034](0034-webhooks.md) and not yet deleted, and `webhook_deliveries` grows with it. `audit_logs` grows without bound in every
-  environment that has not set `audit.retentionDays`, which is the default.
+- `events` and `webhook_deliveries` no longer grow without bound (since 2026-10-08: thirty
+  and ninety days, below). `audit_logs` grows without bound in every environment that has not
+  set `audit.retentionDays`, which is the default.
 - A session's audit entries can now be gone before or after its row, depending on the
   environment's period; neither waits for the other.
 - An idle pass costs one more query per environment (the fresh settings read), and one more

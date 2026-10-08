@@ -259,14 +259,29 @@ Before finishing any change here, confirm each item holds and has a test:
     word and never the address or what it resolved to. Of a receiver's answer only the status
     code and the duration are kept: test with a canary in the answer's headers and body
     against the delivery row, the logs and every store. One endpoint's failure, slowness or
-    removal mid-round must not fail the round or another environment's deliveries. A row with
-    `endpoint_unresponsive` or `signing_failed` means nothing was sent: never write either for
-    an event that was, log `signing_failed` once per endpoint per round with a count, and keep
-    the docs saying these events are lost until retries exist. Bulk settling
+    removal mid-round must not fail the round or another environment's deliveries. Bulk settling
     (`settleBefore`) is strict at its cutoff: test the event at the very instant of the
     earliest switched-on endpoint's registration (owed, not settled), a switched-off
     endpoint, and another environment. The endpoint cap is counted and inserted under
     `deps.environmentLock` (`webhook_endpoints`): keep the concurrent-registrations test.
+    **Retries and the log (TULA-42):** an event is settled when its deliveries are queued,
+    never held for a failing endpoint. Test the whole schedule on the test clock (a
+    millisecond early is too early), the eighth failure, and that a request sent and not
+    recorded is sent again and not counted. `endpoint_unresponsive` and `signing_failed` mean
+    nothing was sent: never an attempt row, never counted (test many more rounds than there
+    are attempts), bounded only by age. Switching an endpoint off: `410` at once, five days
+    of nothing but failures and not a millisecond less, one success resets it, re-enabling
+    resets it, and the `webhook_endpoint.disabled` entry is the `system`'s with no address or
+    secret. A test event carries `test: true` inside the signed body, writes no outbox row
+    and no audit entry, goes through the guard (test a name re-pointed at a private address),
+    and its answer has five named fields and no canary. Sending again: the stored payload
+    only, appended to the same delivery, refused while pending, for an endpoint that is off
+    and for an event that is gone, and **impossible across environments** (their key with our
+    endpoint id, with their own, and a sibling endpoint: 404, nothing sent). Both are behind
+    `sendRateLimit` (per environment, refuses when it cannot count). The retention deletes
+    are bounded in the database: test a recent event, an unsettled one, a pending delivery
+    and a recent one against the store on PGlite, and that `created_at` and `occurred_at`
+    cannot be updated to get past the floor.
 48. **The outbound guard (`lib/outbound.ts`):** every rule of `request` is a rule of `check`,
     and both share the functions that hold them; a new rule gets a row in both tables of
     `outbound.test.ts`. Its settings come from `deps.outbound` only, which `container.ts`

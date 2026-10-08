@@ -651,8 +651,10 @@ period (`environment.settings_updated`, `weakened: true`) is deleted like any ot
 is older than the period, so after that the server's log is the only record that entries
 were deleted and under which period. The entries' outbox events are not deleted.
 
-It never deletes outbox events, nor the record of webhook deliveries: both are kept until a
-later version gives them an end. Each run logs one line, `retention run finished`, with
+It also deletes what the webhook worker leaves behind, on fixed periods: an outbox event 30
+days after the worker settled it, and the record of a delivery (with every request made for
+it) 90 days after it was queued, once it has ended. An event that a delivery still pending is
+of is kept. See [webhooks.md](webhooks.md#what-the-server-keeps). Each run logs one line, `retention run finished`, with
 counts only (at `debug` level when there was nothing to delete). The other periods are fixed
 for now. See [ADR 0017](adr/0017-retention.md).
 
@@ -695,6 +697,7 @@ reports whether the database is at the version the running image ships.
 | `0014` diagnostics | A function, owned by the schema owner, that tells the API which migrations are applied (for `tula doctor`). | Nothing, as long as migrations run as the owner and the API as a member of `tula_app`: the function is how the non-owner role reads that one fact. |
 | `0015` instance audit log | The log of dashboard sign-ins and of workspaces, projects and environments being created. | Nothing. It is written only where `TULA_ADMIN_TOKEN` is set. |
 | `0016` instance audit retention | Lets the API delete instance audit entries older than `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30). | Set the variable if a year is not what you want. |
+| `0019` webhook retries | Webhook deliveries are retried and logged ([webhooks.md](webhooks.md#retries)): the delivery table gains a state and a schedule, a new table holds every request made, and endpoints gain `failing_since` and `disabled_reason`. The API's role loses `UPDATE` on `events` but for one column, and gains two bounded `DELETE`s for the retention job. | **Apply it in a quiet window if the outbox is large.** It builds one more index on `events` and takes short exclusive locks on that table (a policy, and lifting and restoring forced row-level security around a backfill), all held until the migration commits; inserts into `events`, which every sign-in, sign-out and admin change makes, wait until then. Nothing is built `CONCURRENTLY` (migrations run in a transaction). `webhook_deliveries` is rewritten in place: existing rows keep their outcome, and each request becomes the first entry of the new log. **From this version on the retention job deletes**: settled events after 30 days and ended deliveries after 90. A deployment that has recorded events for longer than that loses the older ones with the first retention runs (they were never sent to anyone: no endpoint existed). Their audit entries are separate and are not touched. |
 | `0018` webhooks | Tables for webhook endpoints and the record of their deliveries; a unique key and a different index on `events`, the outbox. Starts the delivery worker ([webhooks.md](webhooks.md)). | **Apply it in a quiet window if the outbox is large.** The unique key and the index are each built under a lock that blocks inserts into `events`, and every sign-in, sign-out and admin change inserts an event: those requests wait until both are built (they are not built `CONCURRENTLY`; migrations run in a transaction). The first start of the new version then marks every event recorded so far as settled, in bulk (up to 100,000 per environment every five seconds), sending none of them: no endpoint existed when they happened. |
 | `0017` audit retention | Lets the API delete an environment's audit entries older than its `audit.retentionDays` setting, and adds a database rule that no entry of the last day can be deleted. Until this version the setting was stored and did nothing. | **Check the setting in every environment before you upgrade.** One that already holds a number starts deleting older entries, for good, with the first retention run of the new version (at start-up; a large backlog takes several runs). `null` (the default) keeps everything, as before. |
 
@@ -716,15 +719,11 @@ DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_
 ## Not there yet
 
 - No published image; build it from source.
-- Outbox events are kept for ever, delivered or not, and so is the record of each webhook
-  delivery (it goes only with its endpoint): the delete lands with a later step of
-  [webhooks](webhooks.md). Audit entries are kept for ever too unless an environment sets
-  `audit.retentionDays`.
-- Webhooks are tried once. A delivery your endpoint did not answer with a 2xx is not repeated
-  until retries are built, and two kinds of event are settled without being tried at all:
-  what an endpoint was owed in the rest of a round after it let one delivery time out, and
-  everything owed to an endpoint whose signing secret this server could not open
-  ([webhooks.md](webhooks.md#what-can-be-lost-today)).
+- Audit entries are kept for ever unless an environment sets `audit.retentionDays`. (Outbox
+  events and the record of webhook deliveries have fixed periods: 30 and 90 days.)
+- The periods and the schedule of webhooks are fixed, not settings: eight requests over a day
+  and a few hours, then the delivery is given up; an endpoint that takes nothing for five
+  days is switched off ([webhooks.md](webhooks.md#what-can-still-be-lost)).
 - A `TULA_MASTER_KEY` that does not match the stored signing keys does not stop the server. It
   logs `signing keys are unusable in some environments` at start-up, and sign-in fails in those
   environments until the right key is restored.

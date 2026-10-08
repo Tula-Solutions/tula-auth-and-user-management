@@ -2,6 +2,10 @@
 
 - Status: accepted
 - Date: 2026-10-08
+- Amended: 2026-10-08, by the second step of 2.2 (TULA-42): [Retries, disabling and the delivery log](#retries-disabling-and-the-delivery-log-added-2026-10-08-tula-42).
+  That section changes four decisions of this record (one attempt per delivery, when an event
+  is settled, the insert-only delivery table, the cascade from an event to its deliveries);
+  the paragraphs it supersedes are marked.
 
 ## Context
 
@@ -16,9 +20,9 @@ A **webhook** is a signed notice of something that has already happened; its ans
 nothing ([GLOSSARY](../../GLOSSARY.md)). A *hook*, whose answer decides what happens next, is
 step 2.3 and not this.
 
-This record covers the tracer bullet only: one endpoint, one signed delivery, one attempt.
-What it deliberately leaves out is listed under [Not built yet](#not-built-yet); each of those
-is a later step of 2.2 and none of them needs what is decided here to be undone.
+This record began as the tracer bullet only: one endpoint, one signed delivery, one attempt.
+What it deliberately left out is listed under [Not built yet](#not-built-yet). The next step
+is recorded in this same file, in [Retries, disabling and the delivery log](#retries-disabling-and-the-delivery-log-added-2026-10-08-tula-42).
 
 ## Decision
 
@@ -31,6 +35,9 @@ environment/project foreign key and the fail-closed row-level-security policy, f
 `ACTIVITY_TYPES`, validated by the API; the database does not know the list), `secret`
 (sealed, below), `enabled`. The runtime role has `SELECT`, `INSERT`, `UPDATE` and `DELETE`: an
 administrator removes an endpoint on the request path.
+
+*Superseded in part by [Retries, disabling and the delivery log](#retries-disabling-and-the-delivery-log-added-2026-10-08-tula-42): the row now has a state and is updated, each request
+is a row of a second table, and the reference to the event is no longer a foreign key.*
 
 **`webhook_deliveries`**: one row per endpoint and event (a unique key on the pair):
 `endpoint_id`, `event_id`, `attempted_at`, `outcome` (`delivered` or `failed`), `status_code`
@@ -240,6 +247,9 @@ One round (`Webhooks.deliverPending`), per environment:
 4. Mark the event delivered once every endpoint it was owed to has a row, **which includes
    the event that was owed to nobody**. This is what stops the outbox growing.
 
+*Superseded by [Retries, disabling and the delivery log](#retries-disabling-and-the-delivery-log-added-2026-10-08-tula-42): a failed request is retried, and steps 3 and 4 above are now
+two passes (queue, then send).*
+
 **At most one attempt per endpoint and event.** (Two cases below are settled with none.) A
 failure is recorded and not repeated: retries, with
 backoff and a point of giving up, are the next step. The row was shaped for them: it is keyed
@@ -267,6 +277,9 @@ retention job. Environments are served one after another, so each has a time bud
 its budget is spent and what it has left waits for the next round. The list of endpoints is
 read again for every batch, so one switched off or removed stops being sent to; one removed
 while its delivery is under way leaves no row (the foreign key) and does not fail the round.
+
+*Superseded by [Retries, disabling and the delivery log](#retries-disabling-and-the-delivery-log-added-2026-10-08-tula-42): the rest of the round is put off for a minute, not settled,
+and nothing is lost to it. The same holds for the secret that cannot be opened, below.*
 
 **An endpoint that does not answer costs one deadline a round, and loses the rest of that
 round.** Deliveries within an environment are made one after another, so an endpoint that
@@ -378,26 +391,376 @@ Neither has a `@tula/core` journey: both are listed as server-only, with the rea
 `@tula/admin` is driven against the real API and worker in
 `packages/admin/src/webhook-real-api.test.ts`.
 
+## Retries, disabling and the delivery log (added 2026-10-08, TULA-42)
+
+The second step of 2.2. It changes four things the first one decided, and each is said here
+rather than rewritten above, so that the first decision can still be read: **a delivery is no
+longer one attempt**; **an event is settled when its deliveries exist, not when they have been
+tried**; **`webhook_deliveries` is no longer insert-only**; and **the delivery row no longer
+cascades from its event**. Where a paragraph above says otherwise (one attempt, "settled
+without being tried", "lost until retries exist", "no API to read these records"), this
+section is what holds.
+
+### The model: the delivery is the unit of work
+
+The first step sent each event to each endpoint while it walked the outbox, and settled the
+event when every endpoint had been tried. With retries that would let one failing endpoint
+hold its environment's outbox for a day: the worker reads unsettled events oldest first, so an
+event waiting for its eighth attempt would stand in front of everything that happened after
+it. **Head-of-line blocking of an environment's outbox by one endpoint was the main risk of
+this step**, and the model is chosen to make it impossible rather than unlikely.
+
+A round, per environment, is now four passes:
+
+1. **Settle what is owed to nobody**, in bulk, as before. "Owed" keeps its definition
+   (switched on, subscribed, registered no later than the event), so the bulk settle is as
+   correct as it was: it only ever marks events that would get no delivery row.
+2. **Queue.** Every other waiting event becomes one `pending` delivery row per endpoint it is
+   owed to, due at once, and the event is then marked settled. **No request is made in this
+   pass.** `delivered_at` on an event therefore means "its deliveries exist" (or none was
+   owed), not "it was received"; the column keeps its name because renaming it would touch an
+   index and a grant for nothing. From here on the event is done with, and each delivery goes
+   its own way: a failing endpoint holds nothing.
+3. **Give up what is too old**: a delivery that has been `pending` for more than three days
+   (`WEBHOOK_DELIVERY_MAX_AGE`), whatever kept it waiting, becomes `failed` with the word
+   `expired`. One statement a batch.
+4. **Send what is due.** For each endpoint that is on: its `pending` deliveries whose
+   `next_attempt_at` has come, the most overdue first.
+
+A delivery (`webhook_deliveries`) has a `state` and moves like this:
+
+| From | What happened | To | Attempt counted |
+| --- | --- | --- | --- |
+| (none) | an event is owed to the endpoint | `pending`, due now | no |
+| `pending` | a request was answered 2xx | `delivered` | yes |
+| `pending` | a request was answered otherwise, or not at all, and attempts are left | `pending`, due by the schedule | yes |
+| `pending` | the same, and it was the eighth request | `failed` | yes |
+| `pending` | a request was answered `410` | `failed`, and the endpoint is switched off | yes |
+| `pending` | the endpoint had just let another delivery time out | `pending`, due in a minute, word `endpoint_unresponsive` | **no** |
+| `pending` | the endpoint's secret would not open | `pending`, due in five minutes, word `signing_failed` | **no** |
+| `pending` | it was queued more than three days ago | `failed`, word `expired` | no |
+| `pending` | its event's row no longer exists | `failed`, word `event_gone` | no |
+| `delivered` or `failed` | an administrator sends it again, answered 2xx | `delivered` | yes |
+| `delivered` or `failed` | the same, answered otherwise | unchanged | yes |
+
+`delivered` and `failed` are final for the worker: it reads only `pending` rows. A test event
+is a row that never was `pending`.
+
+**Every request is a row of `webhook_delivery_attempts`**: the delivery, the attempt's number,
+when, the status code or `null`, the duration, and the outbound guard's fixed word when there
+was no answer. The delivery row keeps a count and the latest status and word, so a list does
+not have to read the attempts. An attempt and the delivery's new state are written in one
+transaction: the update takes the row's lock and counts, and the insert uses the number it
+returned, so two writers never record the same number and the count is never off.
+
+*What is an attempt.* A request the worker tried to make, including one the outbound guard
+refused or that could not connect: those are the operator's address failing, and they use up
+the schedule like any other. **`endpoint_unresponsive` and `signing_failed` are not attempts
+and have no attempt row**, as the first step already insisted of its own rows: nothing was
+sent. Neither counts against the eight. For `signing_failed` the receiver did nothing wrong (the
+server could not open its own secret), and giving its deliveries up after eight rounds would
+punish it for the server's key. For `endpoint_unresponsive` the request that did time out is
+counted, on its own delivery; counting the ones that were only put off behind it would give
+up a whole backlog in eight rounds, forty seconds, because one request was slow. What bounds
+both is the age limit, not the count. This closes the two losses the first step had to
+document: nothing is settled without being tried any more.
+
+### The schedule
+
+Eight requests: the first, and seven more after waits of **5 seconds, 5 minutes, 30 minutes,
+2 hours, 5 hours, 10 hours and 10 hours** (`WEBHOOK_RETRY_DELAYS`; 27 hours 35 minutes in
+all). It is the schedule of the Standard Webhooks reference implementation, which receivers
+that have used another provider already expect. Each wait is stretched by up to a fifth
+(`WEBHOOK_RETRY_JITTER`) and never shortened, so deliveries that failed together do not come
+back together; with the most jitter the last request is made 33 hours after the first. They
+are constants, not settings: a receiver can be told what to expect, and a setting would be one
+more thing whose safe range has to be argued.
+
+The jitter is drawn from `deps.jitter`, a new entry of `Deps`: the system's CSPRNG in
+production (nothing depends on it being secret; it is simply the only source the codebase
+allows), a fixed `0` in tests. The service clamps what it draws, so a source that misbehaves
+can stretch a wait by a fifth and no more.
+
+**`Retry-After` is not honoured.** It is part of the receiver's answer, and nothing of the
+answer but its status code is read. A receiver that wants to be left alone for a while answers
+`503`; the schedule backs off by itself.
+
+**What counts as success is any 2xx.** A 3xx is a failure and is never followed, as before.
+
+### Switching an endpoint off
+
+Two rules, both applied by the worker as the `system` actor, both recorded with a new activity
+type, `webhook_endpoint.disabled`, whose `data` is `{ reason }`:
+
+- **`gone`: the endpoint answered `410`.** A receiver saying "stop" in the one way HTTP has
+  for it. The delivery is given up and the endpoint is switched off at once. Included because
+  the alternative is a day of retries against an address that has said it will never take
+  them; a receiver that answers `410` by mistake finds the endpoint off, with the reason, and
+  switches it back on.
+- **`failing`: every request to it has failed for five days** (`WEBHOOK_DISABLE_AFTER`). The
+  endpoint row has `failing_since`: set by the first failed request after a success, cleared
+  by the next success. When a request fails and `failing_since` is five days or more ago, the
+  endpoint is switched off. One bad hour, night or weekend does not trip it; one success
+  starts the count again. **No scan**: the rule reads one column of a row the worker already
+  holds, and is looked at only when a request has just failed. It follows that an endpoint
+  that is sent nothing is never switched off, which is right: nothing is being wasted on it.
+
+A new type rather than `webhook_endpoint.updated` with a reason: an operator subscribes to
+exactly this to be told ("your endpoint was switched off"), and an administrator's own change
+should not look like it. The event goes to the environment's **other** endpoints that
+subscribed (the one switched off is owed nothing from that instant). Its payload, like every
+payload about an endpoint, has no address and no secret. Additive: `EVENT_SCHEMA_VERSION`
+stays 1.
+
+The endpoint as the admin API shows it gains two fields, both additive: `disabledReason`
+(`failing`, `gone`, or `null` when it is on or an administrator switched it off) and
+`failingSince`.
+
+**Switching it on again** is the existing `PATCH` with `enabled: true`. It clears
+`failing_since` and `disabled_reason`; so does a change of address (a new address is a fresh
+start; a change of event types is not). It is recorded as any update is
+(`webhook_endpoint.updated`, `changed: ['enabled']`).
+
+**What happens to its pending deliveries.** While an endpoint is off, by the server or by an
+administrator, nothing is sent to it: its `pending` deliveries are not tried and their count
+does not move. They are not given up for its being off, either. When it is switched on again
+they are due (their time has long come) and go on from the attempt they had reached. The one
+thing that does not stop is their age: a delivery queued more than three days ago is given up
+(`expired`) whether its endpoint is on or off, so nothing waits for ever. Events from the time
+an endpoint is off are, as before, owed to nobody and never sent to it.
+
+`failing_since` is the worker's bookkeeping and is written with no `Activity`
+(`setFailingSince`, a method of its own that takes none; [ADR 0012](0012-events-and-audit-log.md)
+lists it). It changes nothing about who can do what; what it leads to, the endpoint being
+switched off, is recorded.
+
+### Fairness
+
+- **A deadline per request**: five seconds, unchanged.
+- **A cap per endpoint per round**: fifty deliveries (`WEBHOOK_ENDPOINT_ROUND_CAP`), the most
+  overdue first. An endpoint with a backlog takes that much of a round; the rest is due in
+  the next one, five seconds later, uncounted.
+- **A cap on requests in flight**: five (`WEBHOOK_MAX_CONCURRENT_DELIVERIES`). The endpoints
+  of an environment are served side by side, and **each endpoint has one request in flight at
+  a time**: a receiver is never sent two events at once by the worker. So a hung endpoint
+  costs its own lane one deadline and its neighbours nothing.
+- **A budget per environment per round**: fifteen seconds, unchanged. Environments are still
+  served one after another; with the lanes a slow endpoint now costs the environments after
+  it about one deadline rather than the whole budget.
+- After an endpoint lets a request run out its deadline, the rest of what it has due in the
+  round is put off for a minute without being tried, as described above: one deadline a
+  round, as in the first step, but nothing is lost to it.
+
+**Order is not guaranteed, and now visibly so.** A retry of an older event arrives after
+newer ones; endpoints are served side by side. A receiver orders by the event's `occurredAt`
+and drops repeats by its id. The documentation says so in as many words.
+
+### The admin API
+
+All behind `secretKey()`, like the endpoint routes:
+
+| | |
+| --- | --- |
+| `GET /:id/deliveries` | An endpoint's deliveries, newest first, paged like the other admin lists (`page`, `size`), filtered by `state` and `eventType`. |
+| `GET /:id/deliveries/:deliveryId` | One delivery with its attempts, oldest first. |
+| `POST /:id/test` | Send a test event of a chosen type, now. |
+| `POST /:id/deliveries/:deliveryId/redeliver` | Send a past delivery again, now. |
+
+A delivery is always addressed under its endpoint, and the store finds it only there: an id
+from another endpoint, or another environment, is a `404` like an id nobody has.
+
+**A test event** is the contract's example of the chosen type (`EVENT_FIXTURES`) with a new id,
+the time of the call and one more field, **`test: true`**, signed and sent like any delivery.
+
+- *How it is marked.* The envelope gains an optional top-level `test`, which is only ever
+  `true` and only ever on a test event; a real event has no such key. It is inside the signed
+  body, so it cannot be added to a real delivery or taken off a test on the way, and a
+  receiver using `verifyWebhook` reads it as `event.test`. A header would have been outside
+  the signature; an id with a prefix would not be a UUID; a type of its own (`test.ping`)
+  would not exercise the receiver's handler for the type the operator wants to test. The
+  field is additive (`schemaVersion` stays 1) and Standard Webhooks says nothing about the
+  payload beyond recommending `type`, `timestamp` and `data`. `verifyWebhook` refuses a `test`
+  that is anything but `true`.
+- It goes through the outbound guard, is one request with no retry, and is recorded as a
+  delivery flagged `test` with no event. **It never touches the outbox** and is not in the
+  audit log.
+- It changes nothing about the endpoint: a failed test does not start `failing_since`, and a
+  `410` to a test does not switch the endpoint off. An endpoint that is off **can** be tested:
+  that is how an operator finds out whether to switch it back on.
+- The caller chooses the type and nothing else: not the address, not the payload.
+
+**Sending again** makes one more request for the event's stored payload, with the same
+`webhook-id`, and **appends it to the existing delivery's attempts** as the next number. A
+second delivery row for the same endpoint and event was the alternative; it would have needed
+the unique key to go, and would split one event's history over two rows. A 2xx makes the
+delivery `delivered`. A failure leaves its state as it was and is not retried: this is one
+request an administrator asked for, not a new run of the schedule. It is refused with
+`webhook.cannot_redeliver` (409) and a fixed word in `params.reason`:
+
+| `reason` | |
+| --- | --- |
+| `delivery_pending` | The worker still has it and will send it. |
+| `endpoint_disabled` | Nothing is sent to an endpoint that is off (a test is the exception, above). |
+| `event_gone` | The event is past its retention period, or the delivery is a test, which never had one. |
+
+One code with a reason, as `webhook.url_not_allowed` has, rather than three codes: every
+contract code and its message is in `@tula/core`'s table and so in every browser bundle, and
+three more put it eight bytes over its budget.
+
+**The answer of both** is the delivery's id, the outcome, the status code, the duration and,
+when there was no answer, one of the server's fixed words. Nothing else of the receiver's
+answer is read or kept, as everywhere.
+
+**Their own rate limit.** Ten a minute per environment (`WEBHOOK_SEND_RATE_LIMIT`), one bucket
+for both, mounted after `secretKey()` so that it is counted by the environment the key
+resolved. Each such call makes the server call an address; the general admin limit (300 a
+minute per IP) would let an administrator use them to hammer one. It refuses when the limiter
+cannot count.
+
+**Neither is audited.** [ADR 0012](0012-events-and-audit-log.md) records what changes who can
+do what, and neither does; the delivery row and its attempt are the record of each. (An
+endpoint being switched off, or on, is audited: that changes where events go.)
+
+### Data and privileges (migration `0019`)
+
+- **`webhook_delivery_attempts`** is new and **append-only** for the runtime role: `SELECT`
+  and `INSERT`. No `UPDATE`, no `DELETE`: the log of what was tried cannot be rewritten. A row
+  goes only with its delivery, by cascade.
+- **`webhook_deliveries`** was `SELECT` and `INSERT`. It gains **`UPDATE` on eight columns and
+  no others**: `state`, `attempts`, `next_attempt_at`, `last_attempt_at`, `status_code`,
+  `failure_reason`, `completed_at`, `updated_at`. Not the endpoint, the event, the type, the
+  test flag or `created_at`: a delivery cannot be pointed elsewhere or made to look older. And
+  `DELETE`, for the retention job, bounded by a restrictive policy
+  (`webhook_deliveries_retention_floor`): never a row that is `pending`, never one younger
+  than seven days.
+- **`events`**: the runtime role held `UPDATE` on the whole table since `0003`. Every writer
+  was checked: the stores insert (`recordActivity`), and the only update anywhere is the
+  delivery store setting `delivered_at`. So the grant is **narrowed to that one column**, and
+  a payload, a type or a time can no longer be changed by the API's role. It gains `DELETE`,
+  bounded by `events_retention_floor`: only an event that is settled (`delivered_at` set) and
+  that happened more than a day ago. `occurred_at` is no longer updatable, so the floor cannot
+  be got past by backdating.
+- **`webhook_deliveries.event_id` is no longer a foreign key**, and may be `NULL` (a test
+  event). A settled event is deleted after thirty days and the record of its deliveries is
+  kept for ninety ([ADR 0017](0017-retention.md)); the cascade that tied the two would have
+  deleted the log with the payload. What the foreign key guaranteed, that a row cannot join
+  one environment's endpoint to another's event, is kept by how the column is used: it is
+  written only by the worker, from an event it read in the same environment, and read back
+  only inside that environment, under row-level security. The endpoint reference is still a
+  tenant foreign key and still cascades. A delivery keeps the event's id and its type, so the
+  log reads the same with the event gone.
+- The rows `0018` wrote are carried over: each request becomes attempt 1; a `delivered` row
+  stays delivered and a failed request stays given up (its receiver was never told to expect
+  a retry). The exception is a row settled **without being tried** (`endpoint_unresponsive`,
+  `signing_failed`) in the last three days, which is handed back to the worker: the first
+  step promised that retries would pick those up.
+
+### What the retention job now deletes
+
+[ADR 0017](0017-retention.md) has the periods and their reasons: settled events after 30
+days, ended deliveries (with their attempts) after 90. An event with a delivery still
+`pending` is kept whatever its age, so what the worker will send is always there; and the
+worker, should the row be gone all the same, gives the delivery up as `event_gone` rather than
+fail.
+
+### Conformance
+
+`49-webhook-retried-after-a-500` (needs a receiver): the backend answers 500, the delivery is
+`pending` with one attempt and cannot be sent again by hand, the server retries it with the
+same id, the log has both requests, a test event arrives marked and is in the log and not in
+the audit log, and a delivered delivery is sent again. The `webhook` step's receiver can now
+be told the statuses of its next answers (`answers: [500]`); the wait for the retry is an
+ordinary `wait` step, which is a real sleep against a live server and the test clock in
+process, so the scenario needs no new mechanism and runs unchanged against `bun run dev`.
+CI's `self-host` jobs run the server in containers and skip it for the reason they skip `47`;
+their check is now the **exact set of the two names**, both ways, never a count alone.
+
+### What is still lost, and what is no longer
+
+No longer: a failed request (retried), a delivery behind an unresponsive endpoint (put off,
+not settled), a secret the server could not open (put off until it can).
+
+Still, and by design:
+
+- **A delivery given up after eight requests or three days.** It stays in the log as `failed`
+  and can be sent again by hand for as long as its event is kept.
+- **Events from while an endpoint was off**, by an administrator or by the server.
+- **A delivery whose endpoint is removed** goes with it.
+- **The clock skew window right after a registration**, unchanged from the first step.
+
+### Consequences of this step
+
+- A missed notice is no longer final: a receiver that is down for a night gets what it missed.
+  Webhooks can be relied on to the extent the schedule says, and the documentation now says
+  what that extent is instead of "do not rely on them".
+- **`webhook_deliveries` grows by one row per event and subscribed endpoint, and
+  `webhook_delivery_attempts` by one per request**, where the first step wrote one row for
+  both. Both end after ninety days.
+- **Migration `0019` blocks writes to `events` while it runs**: it builds a partial index on
+  the table and takes short exclusive locks for a policy and for lifting and restoring forced
+  row-level security around its backfill, all held to the end of its transaction. Apply it in
+  a quiet window. `webhook_deliveries` is rewritten in place; it has existed only since
+  `0018`.
+- **A round's requests are concurrent** (five at once), so the server holds up to five
+  outbound connections where it held one.
+- A test event and a delivery sent again are made **on the request path**, not by the worker:
+  an admin call can take up to the five-second deadline, and such a request can be in flight
+  to an endpoint at the same time as the worker's. Bounded by the rate limit.
+- **A wrong `TULA_MASTER_KEY` no longer loses events**: deliveries wait, up to three days, and
+  are sent once the key is right.
+- An endpoint switched off by an administrator **while a round is sending to it** can still be
+  sent the rest of that round's cap (at most fifty): the round read the endpoint before it
+  began the lane. Nothing is sent from the next round on.
+- If recording a request fails (the database), the delivery is still `pending` and due, and is
+  sent again next round with nothing counted. A cause that persists would repeat that every
+  round, as the first step noted; what bounds it now is the three-day age.
+
+### Alternatives considered for this step
+
+- **Keep delivering inside the walk of the outbox, with a retry count on the event.**
+  Rejected: head-of-line blocking, as above.
+- **A new delivery row per redelivery.** Rejected: the unique key is what makes the worker
+  idempotent, and one event's history would be split.
+- **Settings for the schedule and the caps.** Rejected for now: constants can be documented to
+  a receiver; a setting is a promise to support every value.
+- **Honouring `Retry-After`.** Rejected: it would mean reading a header of the answer.
+- **Counting `signing_failed` as an attempt.** Rejected: it gives up a receiver's deliveries
+  for the server's fault.
+- **Keeping the foreign key to `events` with `ON DELETE SET NULL (event_id)`.** It would keep
+  the log but lose the event's id from it, which is the first thing a reader of the log
+  wants.
+- **Deleting a delivery with its event (one period for both).** Simpler, and it would keep the
+  cascade; rejected because the payload and the log have different reasons to be kept and
+  different costs.
+- **Disabling after N consecutive given-up deliveries.** It trips on volume rather than time:
+  a busy endpoint that is down for an hour gives up nothing, and a quiet one that is down for
+  a month gives up two.
+
 ## Not built yet
 
-Each is a later step of 2.2 and is named so that its absence is not mistaken for a decision:
+Each is a later step of 2.2 and is named so that its absence is not mistaken for a decision.
+Struck out: built since, in the section above.
 
-- **Retries**, backoff and giving up; disabling an endpoint that keeps failing.
-- **The delivery log's admin routes**, "send a test event" and "redeliver".
+- ~~**Retries**, backoff and giving up; disabling an endpoint that keeps failing.~~
+- ~~**The delivery log's admin routes**, "send a test event" and "redeliver".~~
 - **Secret rotation** with an overlap (the verifier already accepts either signature).
 - **Endpoints in `tula.config.ts`**, `tula diff` and `tula apply`.
 - **The dashboard's webhooks screen.**
-- **The worker as its own service**, a cap on concurrent deliveries, more than one environment
-  at a time.
-- **Deleting delivered events** and old delivery rows (the retention job, with its grant).
+- **The worker as its own service**, and more than one environment at a time. (A cap on
+  concurrent deliveries exists now, within an environment.)
+- ~~**Deleting delivered events** and old delivery rows (the retention job, with its grant).~~
+- **A wake-up on write** (`LISTEN`/`NOTIFY`), so that a delivery does not wait for the timer.
 
 ## Consequences
+
+Of the first step. Three of them no longer hold and are struck out; what replaced them is
+under "Consequences of this step" above.
 
 - An operator's backend can be told what happens in an environment, and can verify that it
   was Tula that said so, with a standard any verifier library speaks.
 - The outbox stops growing without bound in the sense that matters first: every event is
-  settled. Rows are still never deleted; delivered events and delivery rows accumulate until
-  the retention step.
+  settled. ~~Rows are still never deleted; delivered events and delivery rows accumulate until
+  the retention step.~~
 - **A deployment upgraded from before this version has its whole outbox to settle, and does
   it in bulk.** No endpoint existed when those events happened, so they are owed to nobody
   and are marked 5,000 a statement, up to 100,000 per environment per round: a million rows
@@ -410,17 +773,19 @@ Each is a later step of 2.2 and is named so that its absence is not mistaken for
   on a large outbox those requests wait (and may time out) for as long as the build takes.
   Apply it in a quiet window. It is not built `CONCURRENTLY`: the migrator runs each
   migration in a transaction, where that is not allowed.
-- A failed delivery is lost until retries exist. This step is not yet something to rely on
-  for anything a missed notice would break; the docs say so.
+- ~~A failed delivery is lost until retries exist. This step is not yet something to rely on
+  for anything a missed notice would break; the docs say so.~~
 - Rounds are sequential across environments. A deployment with many environments whose
   endpoints are slow sees a delay of up to the budget per such environment; and an idle round
   is one query per environment every five seconds. Both are what "the worker as its own
   service" and a wake-up on write are for.
-- `TULA_MASTER_KEY` now also opens webhook secrets: changing it makes every endpoint's
-  deliveries fail with `signing_failed` until the endpoints are registered again.
-- `tula_app` holds `UPDATE` on the whole of `events`, as it has since `0003`, although the
+- `TULA_MASTER_KEY` now also opens webhook secrets: changing it stops every endpoint's
+  deliveries (`signing_failed`) until the key is right again or the endpoints are registered
+  again. (Since the second step the deliveries wait for up to three days instead of being
+  given up.)
+- ~~`tula_app` holds `UPDATE` on the whole of `events`, as it has since `0003`, although the
   worker only needs `delivered_at`. Narrowing it to that column is possible and was left
-  alone here: it changes a grant older than this step.
+  alone here: it changes a grant older than this step.~~ Narrowed by migration `0019`.
 
 ## Alternatives considered
 
