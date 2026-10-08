@@ -359,8 +359,9 @@ Before finishing any change here, confirm each item holds and has a test:
     refresh, its replay in the grace window and both ways through a stateful check, and an
     address that grew. `before_session`'s question has no email address; `before_token`'s
     has neither an email nor an IP address. An enrolment inside a sign-in that a hook then
-    refuses leaves the user's earlier sessions alive and not denylisted, the factor absent
-    and no backup code valid; one that completes ends them, after the new session exists.
+    refuses leaves the factor absent, no backup code valid and no new session, and the
+    user's earlier sessions ended and denylisted (they end before the factor is on, as
+    ADR 0025 orders it: pinned, not fixed).
     A backup code used for a refused sign-in is spent (nine left): pinned, not fixed.
 50. **JWT templates (ADR 0036):** custom claims are issued only under `ext`, only from the
     closed source list or an operator's constant, and only through `CustomClaims.build`.

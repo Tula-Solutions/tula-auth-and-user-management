@@ -629,38 +629,36 @@ advice that follows (an operator who cannot keep the endpoint up should weigh `a
 refused user should not retry with backup codes). A test pins it (a refused sign-in with a
 backup code leaves nine), so that a change is a decision.
 
-**An enrolment inside a sign-in no longer ends the user's other sessions before the
-attempt is known to complete.** `Mfa.confirmTotp` ended them before it turned the factor
-on; `finish` then asked `before_session`; a denial or a failure removed the factor again
-but not the sweep, so a refused sign-in signed the user out everywhere. The
-concurrent-session rule could already cause that; a hook made it reachable at will. Now
-the flow tells `confirmTotp` to leave the sweep to it (`sweep: 'caller'`) and ends the other
-sessions **after** `finish` returned, keeping the new one
-(`Mfa.endSessionsWithoutFactor`). A refused `finish` leaves the factor absent, its backup
-codes gone and every earlier session alive and not denylisted. The standalone confirmation
-from a signed-in session is unchanged (sweep, confirm, sweep again).
+**A refusal while a user enrols an authenticator inside a sign-in ends their other
+sessions and undoes the enrolment. That order is kept.** Where the environment requires
+two-step verification, `Mfa.confirmTotp` ends every other session of the user before it
+turns the factor on (ADR 0025: the sessions that did not prove a factor end before anything
+else); `finish` then asks `before_session`, and `Sessions.create` asks `before_token`. A
+denial, or a failure under `deny`, removes the factor and its backup codes again, and the
+sessions are already gone: the user is signed out on their other devices and enrols afresh
+at the next sign-in. The concurrent-session rule could cause the same before this ticket; a
+hook makes it reachable whenever the operator's endpoint refuses or is down. It is
+accepted: it is safe (nothing is left that should not be), it happens at most once per
+user (an enrolment inside a sign-in), and `docs/hooks.md` says it. Tests pin it for a
+denial, a `before_session` that hangs and a `before_token` that hangs: the factor absent,
+no backup code, no new session, the earlier session ended and denylisted.
 
-What this costs, accepted:
+Rejected (built in review round 1 and taken out again the same day): ending the other
+sessions only once the attempt's session exists, after `finish`. It kept the user's sessions
+through a refused sign-in, and cost a weaker guarantee in the place that guards it:
 
-- For the time `finish` takes (at most the two hooks' deadlines) the factor is on beside
-  sessions that did not prove it. Before, they were ended first, so that a failed sweep
-  left nothing changed.
-- The sweep after `finish` can fail (the store). It is logged and not retried: the session
-  exists and the backup codes, shown once, must still reach the user. The standalone path's
-  second sweep has always had this shape. When `finish` failed **and** the factor could not
-  be removed again, the sweep is still attempted, because the factor stayed on.
-- Under a concurrent-session rule that refuses the newest session, a user at the limit
-  could, before, complete an enrolling sign-in because the sweep had made room. Now that
-  sign-in is refused with `session.limit_reached` like any other at the limit, and the
-  enrolment is undone.
+- a process that dies, or a sweep that fails, between `finish` and the sweep leaves the
+  factor on beside sessions that never proved it, silently and until they expire;
+- for the length of `finish` (up to the two hooks' deadlines) the factor is on beside such
+  sessions, where before they were ended first so that a failure left nothing changed;
+- under a concurrent-session rule that refuses the newest session, a user at the limit
+  could no longer complete an enrolling sign-in, which today works because the enrolment
+  has made room (a test now pins that it does).
 
-Rejected: asking `before_session` before the sweep, inside the confirmation. The code is
-checked there, so the hook would be asked either before the factor is proven (ruled out) or
-from a callback between the proof and the sweep, with the attempt spent before the factor
-is confirmed; and the claims hook, which is asked as the session is created, would still
-fail after the sweep. Ending the sessions once the new one exists covers every reason
-`finish` can fail with one rule. "No session before the second factor" and "a hook is
-asked only after every factor is proven" are untouched: `finish` is as it was.
+Also rejected: asking `before_session` before the sweep, inside the confirmation. The hook
+would be asked before the factor is proven, or from a callback between the proof and the
+sweep with the attempt spent before the factor is confirmed; and the claims hook, asked as
+the session is created, would still fail after the sweep.
 
 ### Conformance
 

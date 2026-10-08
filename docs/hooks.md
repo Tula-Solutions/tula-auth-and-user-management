@@ -486,12 +486,17 @@ One case asks your endpoint about a session that then does not exist: an environ
 concurrent-session rule refuses the newest session (`session.limit_reached`) refuses it
 after both hooks were asked.
 
-**A refused sign-in does not sign the user out elsewhere.** Where the environment requires
-two-step verification and the user sets up an authenticator inside the sign-in, their other
-sessions end because they were made without it; they end only once the new session exists.
-If a hook refuses that sign-in, the authenticator is removed again, its backup codes with
-it, and the sessions the user had are still there. They set it up again at their next
-sign-in.
+**A refusal while a user sets up an authenticator inside a sign-in ends their other
+sessions and undoes the setup.** Where the environment requires two-step verification, a
+user without an authenticator sets one up as part of signing in. Confirming it ends every
+other session they have, at once, because those sessions were made without it. If your
+hook then denies the sign-in, or fails under `deny` (`before_session` or `before_token`),
+the authenticator and its backup codes are removed again and no session is created, but
+the other sessions **stay ended**: the user is signed out on their other devices and sets
+the authenticator up again at their next sign-in. This can happen once per user, at that
+first setup. The order is not changed to spare it: a session that did not prove the
+authenticator must never outlive it being turned on, not for the seconds a hook takes to
+answer and not when something fails in between.
 
 ## What a hook cannot do
 

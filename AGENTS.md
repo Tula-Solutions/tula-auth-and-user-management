@@ -512,11 +512,11 @@ for `before_sign_up` and hold for all three unless they name it.
   `HookBeforeTokenDataSchema`, strict). A claim is stored and issued with every later
   token, so it must not depend on the address of one request. Never a password, a code, a
   token, the attempt's id or the user agent in either.
-- **An enrolment inside a sign-in ends the user's other sessions only after `finish`
-  returned** (`Mfa.confirmTotp` with `sweep: 'caller'`, then `Mfa.endSessionsWithoutFactor`
-  keeping the new session). A sign-in that a hook, the claims hook or the session limit
-  then refuses removes the factor again and leaves every earlier session alive: never sweep
-  before the attempt is known to complete. The standalone confirmation still sweeps first.
+- **A hook that refuses an enrolling sign-in costs the user their other sessions, and that
+  is kept.** `Mfa.confirmTotp` ends the sessions that did not prove the factor before it
+  turns the factor on (ADR 0025), inside an attempt too; a refusal after that undoes the
+  factor, not the sweep. Never move the sweep after the session exists to spare it: tests
+  pin the cost, and ADR 0035 has the alternative and why it was taken out.
 - **A proof is spent before a hook is asked and is never given back**: a backup code, a time
   step, an emailed code, a passkey's counter. Never reorder to save one, and never un-spend
   one. A test pins the backup code (nine left after a refused sign-in).
