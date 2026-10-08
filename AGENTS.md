@@ -654,6 +654,29 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
   inject styles), toasts are the app's own live region, selects are shadcn's `native-select`,
   and Zod runs in its interpreter (`src/lib/zod-csp.ts`, imported first by `main.tsx`: Zod
   otherwise probes `new Function`). Never loosen `DASHBOARD_CSP` for a library.
+- **A route file's `validateSearch` and `beforeLoad`, and anything they import at module
+  level, must not reach `zod` or `@tula/contract`'s schema modules** (the Zod-free entry
+  points are fine). They are in the entry chunk and run before `src/lib/zod-csp.ts` switches
+  Zod to its interpreter, so the page then violates the policy; a screen may import schemas,
+  because the router splits a route's `component` into a chunk loaded after the switch.
+  Nothing in happy-dom notices: the test "what a route file runs before its screen is loaded
+  stays free of Zod" (`src/features/webhooks/words.test.ts`, with
+  `src/testing/entry-imports.ts`) walks the imports, and the browser tests fail on the
+  violation. A new route file with a `validateSearch` or a `beforeLoad` that imports
+  anything is added to that test's list.
+- **A dialog whose answer carries a secret cannot be dismissed while its request is in
+  flight.** The server has made the endpoint or rotated the secret by then, and a dialog
+  that let go would drop the only answer that holds it. `Modal`'s `busy` refuses Escape and
+  undoes a forced close, `SecretRequestActions` keeps Cancel focusable but unavailable and
+  says why, and the list is refreshed by the mutation hook's own `onSuccess`, never the one
+  passed to `mutate()`. A navigation or an environment switch still loses the secret:
+  accepted, and nothing of it is shown under another environment.
+  `src/secret-dialogs.test.tsx` holds each.
+- **An address from the server is shown so that it can be checked.** A webhook endpoint's
+  address goes through `printable()` (`src/lib/printable.ts`: what a reader cannot see is
+  written as an escape) inside `<bdi dir="ltr">` (`features/webhooks/address.tsx`), in
+  cards, headings, dialog titles and the text to type for a confirmation; what is typed is
+  compared with what is displayed.
 - **No secret outlives its form.** The admin token, a created API key, a typed password and a
   provider secret are component state only while their form or dialog is open: never
   `localStorage`, `sessionStorage`, the address or a log. A mutation that carries one uses

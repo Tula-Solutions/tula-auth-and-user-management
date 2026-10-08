@@ -22,6 +22,16 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   `eval`, no library that injects a `<style>` element (check before adding one: Radix's
   dialog and select, and toast libraries, do). Dialogs are `components/modal.tsx` (the
   platform's `<dialog>`); keep `src/lib/zod-csp.ts` the first import of `main.tsx`.
+- A route file's `validateSearch` and `beforeLoad`, and anything they import at module level,
+  must not reach `zod` or `@tula/contract`'s schema modules: they run in the entry chunk,
+  before `zod-csp.ts`, and the page then violates the policy. Read search parameters with a
+  Zod-free reader (`features/webhooks/delivery-search.ts`) and add the route file to the
+  import-walk test in `src/features/webhooks/words.test.ts`.
+- A dialog whose answer carries a secret cannot be dismissed while its request is in flight
+  (`Modal`'s `busy`, `SecretRequestActions`); refresh the list from the mutation hook's own
+  `onSuccess`. `src/secret-dialogs.test.tsx` holds it.
+- An address from the server is shown through `features/webhooks/address.tsx` (`printable()`
+  inside `<bdi dir="ltr">`), also in a dialog's title and in the text to type to confirm.
 - The address holds the selection and every filter; route files read parameters and pass
   them to a screen as props. Call `syncScope` in the `beforeLoad` of a route that has scope
   parameters.
