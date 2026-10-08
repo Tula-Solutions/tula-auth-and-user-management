@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 // The worker's entrypoint, started as the image starts it (`bun run src/worker.ts`), with a
 // database address nothing listens on: no Docker, and what it does when its one dependency is
@@ -51,7 +51,7 @@ describe('what the worker is built from', () => {
       )) {
         const base = specifier?.startsWith('~/')
           ? join(src, specifier.slice(2))
-          : join(file, '..', specifier ?? '')
+          : join(dirname(file), specifier ?? '')
         for (const candidate of [`${base}.ts`, join(base, 'index.ts'), base]) {
           if (/\.ts$/.test(candidate) && (await Bun.file(candidate).exists())) {
             queue.push(candidate)

@@ -1148,6 +1148,131 @@ skip `47` and `49`; their check is now the exact set of three names.
   a revocation that revoked nothing, or it records nothing and answers two different outcomes
   alike.
 
+## The worker as its own service (added 2026-10-08, TULA-52)
+
+A larger deployment wants the requests to tenants' addresses to leave from other machines
+than the ones that take sign-in traffic: other egress rules, and delivery load that cannot
+take from sign-ins. Until now the worker ran inside every API instance and nowhere else.
+
+### One variable for the deployment, the command for the process
+
+`WEBHOOK_WORKER` is `api` (the default: today's behaviour, unchanged) or `separate`, a closed
+set validated in `env.ts`. It says **where the deployment delivers**, and every process is
+given the same value. What a process **is** comes from its command: `src/server.ts` is an API
+instance, `src/worker.ts` a worker. The two are combined in one pure function, `planProcess`
+(`apps/api/src/process.ts`), which `container.ts` calls and both entrypoints follow:
+
+| Process | `api` | `separate` |
+| --- | --- | --- |
+| API instance | serves the API; runs retention and the delivery job | serves the API; runs retention; **makes no delivery** |
+| Worker | **refuses to start** | serves health only; runs the delivery job |
+
+`config.deliversWebhooks` is the plan's answer and the one thing the webhook service reads.
+Where it is false `Webhooks.run` returns before it takes the job lock, `deliverPending`
+reads, queues and sends nothing, and the two requests on demand are refused (below): there
+is no path by which such a process calls an endpoint.
+
+A worker under `api` refuses to start rather than run beside instances that deliver. The job
+lock would keep that correct (one round at a time), but the operator who started a worker
+believes outbound traffic is separated, and it would not be: an API instance would still take
+every round it wins.
+
+*Not chosen: a role per container in the variable* (`api`, `worker`, `off`). Then no single
+value describes the deployment, a fleet is configured container by container, and "every API
+instance is off and there is no worker" is three settings that each look right. *Not chosen:
+a flag on the server's command* (`server.ts --no-worker`): the ticket asks for one variable,
+and a flag is not in the settings table an operator reads.
+
+### The worker process
+
+`src/worker.ts`: the same image, the same environment schema, the same container
+(`createContainer(env, 'worker')`), so the adapters, the secret box and the outbound guard
+are the API's own. `deps.outbound` is still `{ tier }` and nothing else. It serves
+`createWorkerApp`: `GET`/`HEAD` `/v1/status` and `/v1/ready` (the database only, its answer
+reused for a second because nothing rate-limits this port) and the contract's 404 for
+everything else. No router of the API is reachable from the file (a test walks its import
+graph), it runs no migration and does not create signing keys.
+
+The schedule has one implementation, `startJobs` (`apps/api/src/jobs.ts`), which both
+entrypoints call with the plan's jobs: the delivery job still runs `Webhooks.run` every
+`WEBHOOK_DELIVERY_INTERVAL_MS`, one round at a time per process, under the job lock
+`webhook_delivery` (advisory lock id 2, not renumbered). Several workers are several holders
+of that lock, as several API instances were: one is let through per round.
+
+On `SIGTERM` the timers stop, the round under way is told to stop through its signal,
+finishes the requests it is making and records them, and the process exits 0; after
+`SHUTDOWN_TIMEOUT_MS` (10 s) it exits 1 regardless. What was not sent is still `pending`, or
+still an unsettled event, and is taken by the next round of any worker. A request sent and
+not recorded is sent again: at least once, as before. A database that is away does not end
+the process: rounds fail and are logged, `/v1/ready` answers 503.
+
+### What moves and what cannot
+
+- **The delivery job moves.** Nothing else does.
+- **Retention stays in the API instances.** It makes no outbound request, so there is nothing
+  to separate, and a deployment with no worker (the default) must still clean up.
+- **Hooks cannot move** ([ADR 0035](0035-hooks.md)). A hook is asked inside the request that
+  waits for its answer. An API instance of a deployment that uses hooks still calls
+  operators' addresses, and the documentation says so: the separation is of webhook
+  deliveries, not of all outbound traffic.
+- **A test event and a delivery sent again are refused** in a process that does not deliver:
+  `not_implemented` (501) with the fixed `params.reason: 'worker_separate'`, before anything
+  is read. Both are requests the instance that takes the call makes itself. Allowing them
+  would make "an API instance makes no delivery" false exactly where an operator relies on
+  it, and under an egress policy they would fail in a way that reads as the receiver's
+  fault. *Not chosen: handing them to the worker* (a row the worker picks up, the caller
+  polling for the outcome): it changes both routes from "answers the outcome" to
+  asynchronous, which is a contract change of its own and not needed to separate the
+  traffic. It is listed under "Not built yet". *Not chosen: a new error code*
+  (`webhook.worker_separate`) or a new `WEBHOOK_REDELIVER_REFUSALS` value: `not_implemented`
+  already means "this server does not do that", a test event has no refusal list of its own,
+  and a new code is a line in `@tula/core`'s message table, whose bundle budget has some
+  forty bytes left.
+- **Saving an endpoint still resolves its host** in the API instance (`Outbound.check`): a
+  lookup, no connection.
+
+### "Nobody delivers" must not be silent
+
+`separate` everywhere and no worker started is the one misconfiguration that loses nothing
+and delivers nothing. An API instance cannot see a worker. It can see the outbox: every round
+settles every waiting event, so an event that has waited a minute was seen by no round. The
+diagnostics gain `webhook_worker` (ADR 0031): `fail` under `separate`, `warn` under `api`,
+fixed text and a count of environments. Each API instance also says at start-up that it
+makes no delivery. The check reads the oldest waiting event of each environment inside the
+scan `master_key` already makes (one bounded pass, the same deadline and cap of 200
+environments), and says `ok` with nothing waiting **and that it did not look at the worker**.
+
+*Not chosen: a heartbeat.* A session advisory lock held for the worker's lifetime (visible in
+`pg_locks`) needs a connection kept for that alone, reads "no worker" whenever that
+connection drops, and says nothing about a worker that runs and cannot work. A heartbeat
+table is a migration and a write every few seconds for one diagnostic. Redis is optional.
+The outbox says what an operator wants to know (is anything stuck?) with what is already
+there. Its cost is stated in the docs: until something has happened, it cannot tell.
+
+*Accepted:* API instances given different values are not detected. Those with `api` deliver.
+
+### Compose and CI
+
+The Compose file gains `worker` (profile `worker`: the API's anchor, the command
+`bun run src/worker.ts`, no port) and passes `WEBHOOK_WORKER` to every container.
+`--profile app` alone is unchanged.
+
+CI's `self-host-worker` job runs the packaged stack with `separate` and no worker, then
+`scripts/worker-check/check.ts`: an owed event waits more than a minute with no delivery row,
+both instances refuse a test event, the diagnostics fail; the check starts the worker; the
+delivery log says `delivered` with the receiver's status after one request, the receiver got
+that event signed with the endpoint's secret, and the worker's log counts it while neither
+instance's does.
+
+**The outbound guard is not loosened for it.** Compose runs the stack in the `local` tier,
+where the guard allows `http` and loopback and still refuses every private address, so a
+receiver in a container of its own cannot be delivered to. The receiver is therefore started
+in the **worker's network namespace** (`network_mode: service:worker`,
+`docker/worker-check/compose.yml`) and listens on 127.0.0.1 only: for the worker it is its
+own loopback, and for an API container it does not exist, which is also the proof of who
+delivered. It is the API image running a script of the repository, given no secret. The
+conformance scenarios with a receiver stay skipped in the `self-host` jobs, by name.
+
 ## Not built yet
 
 Each is a later step of 2.2 and is named so that its absence is not mistaken for a decision.
@@ -1158,8 +1283,11 @@ Struck out: built since, in the section above.
 - ~~**Secret rotation** with an overlap (the verifier already accepts either signature).~~
 - **Endpoints in `tula.config.ts`**, `tula diff` and `tula apply`.
 - **The dashboard's webhooks screen.**
-- **The worker as its own service**, and more than one environment at a time. (A cap on
-  concurrent deliveries exists now, within an environment.)
+- ~~**The worker as its own service**~~ (TULA-52, above), and more than one environment at a
+  time: still one after another. (A cap on concurrent deliveries exists now, within an
+  environment.)
+- **A test event and a delivery sent again where the worker is separate**: refused there
+  (`not_implemented`, `worker_separate`), not handed to the worker.
 - ~~**Deleting delivered events** and old delivery rows (the retention job, with its grant).~~
 - **A wake-up on write** (`LISTEN`/`NOTIFY`), so that a delivery does not wait for the timer.
 

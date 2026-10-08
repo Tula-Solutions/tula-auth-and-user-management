@@ -252,6 +252,30 @@ outbound guard in the `local` tier. Not verified:
 
 Tests seen to fail first, and the ones that were not, are listed in the step's report.
 
+## Step 2.2, the worker as its own service (TULA-52, [ADR 0034](../adr/0034-webhooks.md#the-worker-as-its-own-service-added-2026-10-08-tula-52))
+
+Run for real, once, by hand on one machine (Docker 29.8.1, macOS): the image built from this
+tree, the Compose stack as an isolated project with `WEBHOOK_WORKER=separate` and no worker,
+then `scripts/worker-check/check.ts` as CI's `self-host-worker` job runs it. It passed: no
+delivery row and a failing `webhook_worker` after an owed event had waited over a minute,
+`501 worker_separate` from both instances, then, with the worker started, one delivery
+`delivered` (204, one request), received on the worker's loopback and signed with the
+endpoint's secret, counted in the worker's log and in neither instance's. Also seen there:
+an API container gets `ConnectionRefused` at the receiver's address; a worker given
+`WEBHOOK_WORKER=api` prints its refusal and exits 1; `docker compose stop worker` ends the
+worker with exit code 0. Not verified:
+
+| What | What was run instead |
+| --- | --- |
+| **The `self-host-worker` job on GitHub** | Its steps by hand, on macOS with Docker Desktop. The workflow itself only runs on GitHub; `.claude/hooks/ci.test.ts` holds its shape (the variable, the order, that the worker is not started by the job). Whether a Linux runner's Docker shares a network namespace the same way (`network_mode: service:worker`) is expected and was not seen. |
+| **Several worker containers against one real PostgreSQL** | The job lock with several holders is tested on the memory lock and a stand-in for advisory locks (`modules/webhook/worker-separate.test.ts`, the job-lock suite); `job-lock.integration.ts` covers two real sessions and was not run for this step. Two worker containers were not started side by side: the check's receiver lives in one worker's namespace, so a second worker that wins a round cannot reach it. |
+| **Shutdown in the middle of a round** | `startJobs` is tested with injected timers and a stand-in round: finishing aborts the round's signal and waits for the round. That a round told to stop records the requests it is making is a test of `Webhooks.run` from TULA-42. The two were not run together in a process that then exits, and the container was stopped while idle (exit code 0), not while a request to a slow receiver was open. |
+| **The worker when the database goes away and returns** | The spawned worker with no database: it starts, `/v1/ready` answers 503, it does not exit (`worker.test.ts`). A database lost and restored under a running container was not staged. |
+| **Egress separation itself** | Nothing was run with a network policy. What is shown is that an API instance makes no request to an endpoint (unit tests, and the check's log and delivery-log evidence), not that a firewall in front of the API instances breaks nothing: an API instance still resolves an endpoint's host when it is saved, and still calls hooks. |
+| **`webhook_worker` with more than 200 environments, on a real database** | The memory stores with 201 environments. The read is one indexed lookup per environment (`pendingEvents(environment, 1)`) inside the existing scan; its cost on a large outbox was not measured. |
+| **Mixed values across API instances** | Not detected by anything, and said so in the docs. Not tested beyond each process following its own value. |
+| **`tula doctor` printing the new check** | The check is a row of the server's answer, which the CLI prints as it prints the others; no CLI test names `webhook_worker`. |
+
 ## JWT templates (TULA-10, [ADR 0036](../adr/0036-jwt-templates.md))
 
 Custom claims are tested through the API in process (memory adapters), the conformance
