@@ -8,6 +8,7 @@ import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import { MOCK_MICROSOFT_TENANT_ID } from '~/modules/oauth/dev-router'
 import * as OAuth from '~/modules/oauth/service'
+import * as Settings from '~/modules/settings/service'
 import { OAuthProviderError } from '~/ports/oauth-provider'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -344,6 +345,99 @@ describe('credentials the server cannot use', () => {
       await storeTenant(tenant)
       expect((await OAuth.credentials(deps, TEST_TENANT, 'microsoft')).tenant).toBe(tenant)
     }
+  })
+
+  // A row nobody can sign in through must not be what keeps an environment "open": every
+  // count of the ways to sign in leaves it out, as it leaves out a provider that is off.
+  describe('is not counted as a way to sign in', () => {
+    const PASSWORD_OFF = { signIn: { methods: { password: { enabled: false } } } }
+
+    async function replaceSettings(body: Record<string, unknown>) {
+      const current = await admin('GET', '/settings')
+      return app.request('/v1/admin/settings', {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${SK}`,
+          'content-type': 'application/json',
+          'if-match': current.headers.get('etag') ?? '',
+        },
+        body: JSON.stringify(body),
+      })
+    }
+
+    const errorsOf = async (res: Response) =>
+      ((await res.json()) as { errors?: { field: string; message: string }[] }).errors
+
+    test('the password cannot be switched off when it is the only other "method": refused as with no provider', async () => {
+      const without = await replaceSettings(PASSWORD_OFF)
+      expect(without.status).toBe(422)
+      const expected = await errorsOf(without)
+      expect(expected).toMatchObject([{ field: 'signIn.methods' }])
+
+      await storeTenant('Common')
+      const res = await replaceSettings(PASSWORD_OFF)
+      expect(res.status).toBe(422)
+      expect(await errorsOf(res)).toEqual(expected)
+    })
+
+    test('with a usable tenant the same change is accepted', async () => {
+      await storeTenant('common')
+      expect((await replaceSettings(PASSWORD_OFF)).status).toBe(200)
+    })
+
+    test('another provider cannot be switched off or removed on the strength of it', async () => {
+      const google = (body: Record<string, unknown>) =>
+        admin('PUT', '/oauth-providers/google', { clientId: 'g', clientSecret: 's', ...body })
+      expect((await google({})).status).toBe(200)
+      expect((await replaceSettings(PASSWORD_OFF)).status).toBe(200)
+      await storeTenant('Common')
+      const disabled = await google({ enabled: false })
+      expect(disabled.status).toBe(422)
+      expect(await errorsOf(disabled)).toMatchObject([{ field: 'enabled' }])
+      expect((await admin('DELETE', '/oauth-providers/google')).status).toBe(422)
+    })
+
+    test('an identity of it is no way to sign in, exactly as an identity of a provider that is off', async () => {
+      const settings = await Settings.current(deps, TEST_TENANT)
+      const left = {
+        hasPassword: false,
+        emailVerified: false,
+        providers: ['microsoft' as const],
+        passkeys: 0,
+      }
+      const counted = async () =>
+        OAuth.canStillSignIn(settings, await OAuth.enabledProviders(deps, TEST_TENANT), left)
+
+      await configure({ tenant: CONTOSO })
+      expect(await counted()).toBe(true)
+      await configure({ tenant: CONTOSO, enabled: false, clientSecret: undefined })
+      expect(await OAuth.enabledProviders(deps, TEST_TENANT)).toEqual([])
+      expect(await counted()).toBe(false)
+
+      await configure({ tenant: CONTOSO, enabled: true, clientSecret: undefined })
+      await storeTenant('Common')
+      expect(await OAuth.enabledProviders(deps, TEST_TENANT)).toEqual([])
+      expect(await counted()).toBe(false)
+    })
+
+    test('it is not offered at sign-in, and the admin list still shows the row as it is stored', async () => {
+      await storeTenant('Common')
+      const config = await app.request('/v1/client/config', {
+        headers: { 'x-tula-publishable-key': PK },
+      })
+      expect(((await config.json()) as { signIn: unknown }).signIn).toEqual({
+        methods: ['password'],
+        oauth: [],
+      })
+      const { data } = (await (await admin('GET', '/oauth-providers')).json()) as {
+        data: OAuthProviderSettings[]
+      }
+      expect(data.find((entry) => entry.provider === 'microsoft')).toMatchObject({
+        configured: true,
+        enabled: true,
+        tenant: 'Common',
+      })
+    })
   })
 
   test('an adapter that cannot build its URL makes no attempt either', async () => {

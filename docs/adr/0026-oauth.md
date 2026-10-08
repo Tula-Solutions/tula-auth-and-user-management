@@ -230,7 +230,14 @@ Phase 2 (TULA-12). Scopes `openid profile email` and nothing else; no Graph call
   that holds anything else (changed in the database) is not repaired: `OAuth.credentials`
   answers `auth.method_disabled`, at the point and in the words of a provider that is off,
   so a start makes no attempt and an anonymous caller learns nothing about why, and the
-  field's name is logged for the operator.
+  field's name is logged for the operator. **Such a row is not counted as a way to sign in**
+  (`isSignInMethod`, behind `OAuth.enabledProviders` and the settings' "at least one
+  sign-in method"): it is not offered, an identity of it is no way in for a user, and it
+  cannot be what lets the last working method be switched off; the admin list still shows it
+  as stored, `enabled` included, so it can be repaired. "Enabled" is not "usable" in one
+  other case, which is left as it was: a provider whose stored secret no longer opens (a
+  changed master key) is still counted, because telling means opening the secret on every
+  count; the diagnostics' master-key check is what reports it.
 - **An account is `<tid>:<oid>`**, both GUIDs, lower-cased. Never `sub` (pairwise: another
   value for every application, so it would not survive a new app registration), and never
   `email`, `preferred_username` or `upn`, which a tenant's administrator sets. The object id

@@ -1152,7 +1152,10 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   default, is an alias or a GUID (never a domain name), and is not a secret. A stored
   `tenant` that is anything else is the provider being unavailable: `OAuth.credentials`
   answers `auth.method_disabled` exactly as for a provider that is off, before a redirect
-  URL is judged or an attempt made, and logs the field's name, never its value. A new refusal
+  URL is judged or an attempt made, and logs the field's name, never its value. Such a row
+  is **not a way to sign in**: `isSignInMethod` (`modules/oauth/provider-record.ts`) is
+  the one rule behind `OAuth.enabledProviders` and the settings' "at least one sign-in
+  method", so never count providers by `enabled` alone. A new refusal
   gets a row in the table of `adapters/oauth/microsoft.test.ts`, with a token the test
   signs.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider

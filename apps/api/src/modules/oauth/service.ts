@@ -5,7 +5,6 @@ import {
   type FirstFactorStrategy,
   hasEnabledSignInMethod,
   type Identity,
-  MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   type OAuthProviderSettings,
@@ -22,6 +21,7 @@ import { isEcP256PrivateKey } from '~/lib/pkcs8'
 import * as Audit from '~/modules/audit/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
+import { isSignInMethod, unusableField } from '~/modules/oauth/provider-record'
 import * as Settings from '~/modules/settings/service'
 import type { OAuthCredentials, OAuthProfile } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
@@ -103,10 +103,13 @@ export async function secretOpens(
 }
 
 /**
- * The OAuth providers an environment offers at sign-in: configured **and** enabled.
+ * The OAuth providers an environment offers at sign-in: configured, enabled **and** with
+ * nothing stored that rules them out (`isSignInMethod`: a Microsoft row whose `tenant` the
+ * server cannot use is not a method, because every start through it is refused).
  *
  * Depends on the environment alone, never on an identifier or an account, like every other
- * first factor.
+ * first factor. Every count of the ways to sign in goes through this or through
+ * `isSignInMethod` itself, so they agree.
  *
  * @param deps - Provider store.
  * @param tenant - The environment.
@@ -118,27 +121,10 @@ export async function enabledProviders(
 ): Promise<OAuthProvider[]> {
   const enabled = new Set(
     (await deps.oauthProviders.list(tenant.environmentId))
-      .filter((record) => record.enabled)
+      .filter(isSignInMethod)
       .map((record) => record.provider)
   )
   return OAUTH_PROVIDERS.filter((provider) => enabled.has(provider))
-}
-
-/**
- * The stored field that makes a provider's credentials unusable as they are, if any.
- *
- * Microsoft's `tenant` becomes a path segment of Microsoft's endpoints and decides whose
- * accounts sign in. The admin route stores only what {@link MicrosoftTenantSchema} returns; a
- * row that holds anything else (written before a rule, or changed in the database) is not
- * repaired or guessed at.
- */
-function unusableField(record: OAuthProviderRecord): 'tenant' | null {
-  if (record.provider !== 'microsoft') {
-    return null
-  }
-  const tenant = MicrosoftTenantSchema.safeParse(record.config.tenant)
-  // Exactly the stored spelling: the schema trims and lower-cases, the adapter does neither.
-  return tenant.success && tenant.data === record.config.tenant ? null : 'tenant'
 }
 
 /**

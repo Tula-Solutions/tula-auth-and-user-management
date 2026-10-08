@@ -19,6 +19,7 @@ import type { AppConfig, Deps, Tenant } from '~/dependencies'
 import { AuthError, ServiceException, ValidationError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Audit from '~/modules/audit/service'
+import { isSignInMethod } from '~/modules/oauth/provider-record'
 import type { EnvironmentSettingsState } from '~/modules/settings/schema'
 import type {
   SettingsManagerInput,
@@ -274,7 +275,8 @@ async function requireWayIn(
     return
   }
   const providers = await deps.oauthProviders.list(tenant.environmentId)
-  if (!providers.some((provider) => provider.enabled)) {
+  // The rule the OAuth service counts by: a row nobody can sign in through is no way in.
+  if (!providers.some(isSignInMethod)) {
     throw new ValidationError({
       errors: [
         {
