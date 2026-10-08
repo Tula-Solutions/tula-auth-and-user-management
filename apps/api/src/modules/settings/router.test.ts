@@ -403,7 +403,16 @@ describe('GET /v1/client/config', () => {
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
       mfa: { policy: 'optional' },
+      phone: { enabled: false },
     })
+  })
+
+  test('a phone number is offered only where the deployment has an SMS sender', async () => {
+    await put({ sms: { enabled: true, allowedCountries: ['US'] } }, '"0"')
+    const offered = async () => ClientConfigSchema.parse(await (await config()).json()).phone
+    expect(await offered()).toEqual({ enabled: true })
+    deps.sms.configured = false
+    expect(await offered()).toEqual({ enabled: false })
   })
 
   test('reflects a change at once on the instance that made it, and nothing operator-only', async () => {
@@ -426,6 +435,7 @@ describe('GET /v1/client/config', () => {
       signUp: { password: 'required' },
       password: strictPolicy,
       mfa: { policy: 'optional' },
+      phone: { enabled: false },
     })
     expect(text).not.toContain('https://acme.test')
     expect(text).not.toContain('retentionDays')

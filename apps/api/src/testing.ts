@@ -23,6 +23,7 @@ import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
+import { MemorySmsSender } from '~/adapters/memory/sms-sender'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
 import { MemoryWebhookDeliveryStore } from '~/adapters/memory/webhook-deliveries'
@@ -54,6 +55,7 @@ export interface TestDeps extends Deps {
   activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
   mailer: MemoryMailer
+  sms: MemorySmsSender
   rateLimiter: MemoryRateLimiter
   lockout: MemoryLockout
   breachChecker: MemoryBreachChecker
@@ -122,6 +124,9 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     oauth: fakeOAuthProviders(),
     revokedSessions: new MemoryRevokedSessions(clock),
     mailer: new MemoryMailer(),
+    sms: new MemorySmsSender(clock),
+    // No inbox route unless a test asks for one (`smsInbox: deps.sms`).
+    smsInbox: null,
     rateLimiter: new MemoryRateLimiter(clock),
     lockout: new MemoryLockout(clock),
     breachChecker: new MemoryBreachChecker(),

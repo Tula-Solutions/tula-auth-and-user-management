@@ -1,0 +1,962 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "phone number on an account",
+  "description": "A signed-in user adds a phone number to their account and proves it with a 6-digit code sent by text message. Nothing is sent while SMS is off or no country is allowed, and only to a country on the environment's list; the client config says only whether a number can be added. The receipt holds neither the code nor the number, asking again within a minute is rate limited, and the account has no number until the code is confirmed. Another user's code, a wrong code and a used code confirm nothing; a code asked for before its country was removed or SMS was switched off is not honoured after. Adding and removing are in the audit log without the number. The codes are read from the server's development SMS inbox. The last steps put the original settings back.",
+  "needsSecretKey": true,
+  "needsSmsInbox": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "otherEmail": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "phone": {
+      "generate": "phone"
+    },
+    "otherPhone": {
+      "generate": "phone"
+    },
+    "german": "+4915112345678"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "sms": {
+              "enabled": "$any"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "s_app": "settings.app",
+        "s_password": "settings.password",
+        "s_signIn": "settings.signIn",
+        "s_signUp": "settings.signUp",
+        "s_urls": "settings.urls",
+        "s_audit": "settings.audit",
+        "s_notifications": "settings.notifications",
+        "s_mfa": "settings.mfa",
+        "s_passkeys": "settings.passkeys",
+        "s_sessions": "settings.sessions"
+      }
+    },
+    {
+      "name": "an administrator switches text messages off, with no country allowed",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "sms": {
+            "enabled": false,
+            "allowedCountries": []
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": false,
+              "allowedCountries": []
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "Maya starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "mayaSignUp": "id",
+        "mayaSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Maya reads the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "mayaEmailCode"
+      }
+    },
+    {
+      "name": "Maya verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{mayaSignUp}}/verify-email",
+        "attempt": "{{mayaSecret}}",
+        "body": {
+          "code": "{{mayaEmailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "maya": "session.accessToken",
+        "mayaId": "step.userId"
+      }
+    },
+    {
+      "name": "the client config says no phone number can be added",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phone": {
+            "enabled": false
+          }
+        }
+      }
+    },
+    {
+      "name": "with text messages off, asking for a code is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "sms.disabled"
+        }
+      }
+    },
+    {
+      "name": "switched on with an empty country list, still nothing is sent",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": []
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": true,
+              "allowedCountries": []
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "on with no country allowed is the same refusal",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "sms.disabled"
+        }
+      }
+    },
+    {
+      "name": "the administrator allows the United States",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"]
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": true,
+              "allowedCountries": ["US"]
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "the client config says a number can be added, and not which countries",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phone": {
+            "enabled": true
+          }
+        },
+        "bodyExcludes": ["allowedCountries"]
+      }
+    },
+    {
+      "name": "a signed-out caller cannot ask for a code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "what is not a phone number is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "555-0142"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "phone.invalid"
+        }
+      }
+    },
+    {
+      "name": "a number of a country that is not allowed is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{german}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "sms.country_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "Maya asks for a code to her number: a receipt, never the code or the number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "destination": {
+            "$matches": "^\\*\\*\\*[0-9]{2}$"
+          },
+          "expiresAt": "$any",
+          "code": "$absent",
+          "phoneNumber": "$absent"
+        },
+        "bodyExcludes": ["{{phone}}"]
+      }
+    },
+    {
+      "name": "asking again within the minute is rate limited",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "status": 429,
+          "code": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "until the code is confirmed the account has no number",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{mayaId}}",
+          "phoneNumber": "$absent",
+          "phoneNumberVerifiedAt": "$absent"
+        }
+      }
+    },
+    {
+      "name": "read the texted code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "code",
+        "captureWrong": "wrongCode"
+      }
+    },
+    {
+      "name": "Sam starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{otherEmail}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "samSignUp": "id",
+        "samSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Sam reads the emailed code",
+      "emailCode": {
+        "to": "{{otherEmail}}",
+        "capture": "samEmailCode"
+      }
+    },
+    {
+      "name": "Sam verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{samSignUp}}/verify-email",
+        "attempt": "{{samSecret}}",
+        "body": {
+          "code": "{{samEmailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "sam": "session.accessToken",
+        "samId": "step.userId"
+      }
+    },
+    {
+      "name": "Maya’s code confirms nothing for Sam",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{sam}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "status": 410,
+          "code": "verification.expired"
+        }
+      }
+    },
+    {
+      "name": "and Sam has no number",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{sam}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{samId}}",
+          "phoneNumber": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a wrong code is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{wrongCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "verification.invalid_code"
+        }
+      }
+    },
+    {
+      "name": "the right code makes the number the account’s",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{mayaId}}",
+          "phoneNumber": "{{phone}}",
+          "phoneNumberVerifiedAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "the code works once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "status": 410,
+          "code": "verification.expired"
+        }
+      }
+    },
+    {
+      "name": "an administrator sees the number on the user",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{mayaId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{mayaId}}",
+          "phoneNumber": "{{phone}}",
+          "phoneNumberVerifiedAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "adding it is in the audit log, without the number",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{mayaId}}&action=user.phone_number_added",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "user.phone_number_added",
+              "actor": {
+                "type": "user",
+                "id": "{{mayaId}}"
+              },
+              "target": {
+                "type": "user",
+                "id": "{{mayaId}}"
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{phone}}"]
+      }
+    },
+    {
+      "name": "Sam asks for a code to a number of his own",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{otherPhone}}"
+        },
+        "accessToken": "{{sam}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "expiresAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "read Sam’s code",
+      "smsCode": {
+        "to": "{{otherPhone}}",
+        "capture": "samCode"
+      }
+    },
+    {
+      "name": "the administrator takes the United States off the list",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["DE"]
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": true,
+              "allowedCountries": ["DE"]
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "a code asked for before the country was removed is not honoured after",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{sam}}",
+        "body": {
+          "code": "{{samCode}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "sms.country_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "the administrator switches text messages off",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "sms": {
+            "enabled": false,
+            "allowedCountries": ["DE"]
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": false,
+              "allowedCountries": ["DE"]
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "nor after text messages are switched off",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{sam}}",
+        "body": {
+          "code": "{{samCode}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "sms.disabled"
+        }
+      }
+    },
+    {
+      "name": "Sam still has no number",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{sam}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phoneNumber": "$absent"
+        }
+      }
+    },
+    {
+      "name": "Maya removes her number, which needs no text message",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/phone",
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "and it is gone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phoneNumber": "$absent",
+          "phoneNumberVerifiedAt": "$absent"
+        }
+      }
+    },
+    {
+      "name": "removing it again changes nothing",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/phone",
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "the removal is in the audit log once, without the number",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{mayaId}}&action=user.phone_number_removed",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "user.phone_number_removed",
+              "actor": {
+                "type": "user",
+                "id": "{{mayaId}}"
+              },
+              "target": {
+                "type": "user",
+                "id": "{{mayaId}}"
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{phone}}"]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

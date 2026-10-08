@@ -13,6 +13,7 @@ import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { createContainer } from '~/container'
 import { parseEnv } from '~/env'
 import * as logger from '~/lib/logger'
+import { SmsSendError } from '~/ports/sms-sender'
 
 const base = {
   ENVIRONMENT: 'dev',
@@ -189,6 +190,72 @@ describe('the mock OAuth provider', () => {
       warn.mockRestore()
     }
   })
+})
+
+describe('the SMS sender', () => {
+  const local = { ...base, ENVIRONMENT: 'local' }
+  const message = { to: '+14155550142', text: 'Your Acme verification code is 123456.' }
+
+  test('without a provider every send is refused, there is no inbox and nothing is logged', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    const info = spyOn(logger, 'info').mockImplementation(() => {})
+    try {
+      const { deps, close } = createContainer(parseEnv(local))
+      expect(deps.smsInbox).toBeNull()
+      expect(deps.sms.configured).toBe(false)
+      let thrown: unknown
+      try {
+        await deps.sms.send(message)
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown).toBeInstanceOf(SmsSendError)
+      expect((thrown as SmsSendError).reason).toBe('not_configured')
+      // Never a log line in place of a message: it would hold the code.
+      expect(warn).not.toHaveBeenCalled()
+      expect(info).not.toHaveBeenCalled()
+      await close()
+    } finally {
+      warn.mockRestore()
+      info.mockRestore()
+    }
+  })
+
+  test('the development inbox keeps what is sent, and says loudly at boot that it is on', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    try {
+      const { deps, close } = createContainer(parseEnv({ ...local, SMS_PROVIDER: 'dev' }))
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(
+        /SMS_PROVIDER is dev.*never.*outside local development/i
+      )
+      await deps.sms.send(message)
+      expect(deps.smsInbox?.messages().map((sent) => sent.text)).toEqual([message.text])
+      // The sender and the inbox are one object: what is sent is what is read.
+      expect(deps.smsInbox as unknown).toBe(deps.sms)
+      await close()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  // The tier is checked again in the container, behind `env.ts`: an environment object that
+  // did not come through `parseEnv` must not get an inbox either.
+  test.each(['dev', 'staging', 'prod'] as const)(
+    'no inbox in %s, whatever the variable says',
+    async (tier) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+      try {
+        const env = { ...parseEnv(local), ENVIRONMENT: tier, SMS_PROVIDER: 'dev' as const }
+        const { deps, close } = createContainer(env)
+        expect(deps.smsInbox).toBeNull()
+        await expect(deps.sms.send(message)).rejects.toBeInstanceOf(SmsSendError)
+        await close()
+      } finally {
+        warn.mockRestore()
+      }
+    }
+  )
 })
 
 describe('the instance admin token', () => {

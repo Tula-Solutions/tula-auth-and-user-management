@@ -435,8 +435,27 @@ describe('clientConfig', () => {
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
       mfa: { policy: 'optional' },
+      phone: { enabled: false },
     })
     expect(JSON.stringify(config)).not.toContain('https://acme.test')
+  })
+
+  // A screen needs to know whether to offer "add a phone number", and nothing more: which
+  // countries an operator pays to text is theirs to know.
+  test.each<[EnvironmentSettings['sms'], boolean]>([
+    [{ enabled: false, allowedCountries: [] }, false],
+    [{ enabled: false, allowedCountries: ['US'] }, false],
+    [{ enabled: true, allowedCountries: [] }, false],
+    [{ enabled: true, allowedCountries: ['US', 'DE'] }, true],
+  ])('a number can be added (%j) only with SMS on and a country allowed: %p', (sms, enabled) => {
+    const config = Settings.clientConfig(document({ sms }), [], true)
+    expect(config.phone).toEqual({ enabled })
+    // A deployment that has no way to send a message offers nothing, whatever the settings
+    // say; and that is what is assumed when the caller does not say.
+    expect(Settings.clientConfig(document({ sms }), [], false).phone).toEqual({ enabled: false })
+    expect(Settings.clientConfig(document({ sms })).phone).toEqual({ enabled: false })
+    expect(JSON.stringify(config)).not.toContain('allowedCountries')
+    expect(JSON.stringify(config)).not.toContain('"DE"')
   })
 
   test.each<[EnvironmentSettings['mfa']['policy']]>([['off'], ['optional'], ['required']])(
@@ -482,6 +501,65 @@ describe('requireMethod', () => {
       params: { method: 'password' },
     })
     await Settings.requireMethod(deps, other, 'password')
+  })
+})
+
+describe('requireSms', () => {
+  const seed = (sms: EnvironmentSettings['sms']) =>
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: document({ sms }),
+    })
+  const US = '+14155550142'
+  const DE = '+4915112345678'
+
+  test('an environment that has saved nothing sends no text message', async () => {
+    expect((await rejection(Settings.requireSms(deps, tenant))).toJSON()).toEqual({
+      status: 403,
+      code: 'sms.disabled',
+      detail: 'Text messages are not available.',
+    })
+    expect((await rejection(Settings.requireSms(deps, tenant, US))).code).toBe('sms.disabled')
+  })
+
+  test.each<[string, EnvironmentSettings['sms']]>([
+    ['off, with countries listed', { enabled: false, allowedCountries: ['US'] }],
+    ['on, with no country listed', { enabled: true, allowedCountries: [] }],
+  ])('%s: disabled, whatever the number', async (_name, sms) => {
+    seed(sms)
+    expect((await rejection(Settings.requireSms(deps, tenant))).code).toBe('sms.disabled')
+    expect((await rejection(Settings.requireSms(deps, tenant, US))).code).toBe('sms.disabled')
+  })
+
+  test('on with a list: a listed country passes, another is refused, and only there', async () => {
+    seed({ enabled: true, allowedCountries: ['US'] })
+    await Settings.requireSms(deps, tenant)
+    await Settings.requireSms(deps, tenant, US)
+    const error = await rejection(Settings.requireSms(deps, tenant, DE))
+    expect(error.status).toBe(422)
+    expect(error.code).toBe('sms.country_not_allowed')
+    // The refusal names no number and no country.
+    expect(JSON.stringify(error.toJSON())).not.toContain('49')
+    // Another environment has its own settings.
+    expect((await rejection(Settings.requireSms(deps, other, US))).code).toBe('sms.disabled')
+  })
+
+  test('a number whose calling code is no country’s is not allowed by any list', async () => {
+    seed({ enabled: true, allowedCountries: ['US', 'DE', 'GB'] })
+    expect((await rejection(Settings.requireSms(deps, tenant, '+99912345678'))).code).toBe(
+      'sms.country_not_allowed'
+    )
+  })
+})
+
+describe('changedKeys: sms', () => {
+  test('a change of the switch and of the country list are one key each', () => {
+    const before = document()
+    const after = document({ sms: { enabled: true, allowedCountries: ['US', 'DE'] } })
+    expect(Settings.changedKeys(before, after)).toEqual(['sms.allowedCountries', 'sms.enabled'])
+    // Never weaker by the audit entry's definition: it lets nobody in (ADR 0037).
+    expect(Settings.weakened(before, after)).toBe(false)
+    expect(Settings.weakened(after, before)).toBe(false)
   })
 })
 

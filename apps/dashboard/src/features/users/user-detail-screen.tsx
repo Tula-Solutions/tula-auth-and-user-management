@@ -423,6 +423,16 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
                   <Detail label='Email verified'>
                     {formatDateTime(account.emailVerifiedAt, 'Not verified')}
                   </Detail>
+                  <Detail label='Phone number'>
+                    {account.phoneNumber ? (
+                      <>
+                        <span dir='ltr'>{account.phoneNumber}</span>
+                        {`, verified ${formatDateTime(account.phoneNumberVerifiedAt, 'at an unknown time')}`}
+                      </>
+                    ) : (
+                      'None'
+                    )}
+                  </Detail>
                   <Detail label='Banned'>{formatDateTime(account.bannedAt, 'No')}</Detail>
                   <Detail label='Last sign-in'>{formatDateTime(account.lastSignInAt)}</Detail>
                   <Detail label='Created'>{formatDateTime(account.createdAt)}</Detail>

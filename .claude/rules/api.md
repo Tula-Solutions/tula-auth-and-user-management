@@ -51,6 +51,9 @@ paths:
 - The server calls an address an operator typed only through `~/lib/outbound`
   (`Outbound.check` when the address is saved, `Outbound.request` to call it), with
   `deps.outbound`. Never `fetch`.
+- A text message (ADR 0037) is sent through `Sms.sendCode` only, after `Settings.requireSms`
+  for its number; its words are in `modules/sms/templates.ts`. A user's phone number is
+  written only by `users.setPhoneNumber` / `removePhoneNumber`, each with its `Activity`.
 - A hook (ADR 0035) is asked through `Hooks.beforeSignUp` only, and only where a sign-up is
   about to create an account for a proven address (after the emailed code in
   `Flows.verifyEmail`; the new-user row of `OAuth.resolveAccount`). The caller gets `'clear'`

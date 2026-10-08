@@ -90,6 +90,8 @@ export interface TestSettings {
   }
   signUp?: { password: 'required' | 'optional' }
   mfa?: { policy: 'off' | 'optional' | 'required' }
+  /** Text messages (ADR 0037). Off, with no country allowed, when left out. */
+  sms?: { enabled: boolean; allowedCountries: string[] }
   /** Session profiles and the concurrent-session rule (ADR 0028). */
   sessions?: {
     profiles?: Record<
@@ -112,6 +114,49 @@ export async function useSettings(
 ): Promise<void> {
   const response = await request.post(`${API_URL}/__test/settings`, { data: settings })
   expect(response.ok()).toBe(true)
+}
+
+/** Text messages on, to United States numbers only. */
+export const SMS_ON: TestSettings = { sms: { enabled: true, allowedCountries: ['US'] } }
+
+let phoneNumbers = 0
+/**
+ * A United States number nobody has (`555-01XX` is kept for fiction), different on every
+ * call so that one test's per-number limits are not another's.
+ */
+export function uniquePhoneNumber(): string {
+  phoneNumbers += 1
+  const picked = 201 + (Math.floor(Date.now() / 1000) % 700)
+  // Never an N11 service code (211, 311, …): no number has one as its area code.
+  const area = picked % 100 === 11 ? picked + 1 : picked
+  return `+1${area}55501${String(phoneNumbers % 100).padStart(2, '0')}`
+}
+
+/**
+ * The 6-digit code in the newest text message to a number, read from the fixture's SMS
+ * outbox.
+ *
+ * @param request - Playwright's API client (the test process, not the page).
+ * @param to - The number in E.164 form.
+ */
+export async function latestSmsCode(request: APIRequestContext, to: string): Promise<string> {
+  let code: string | undefined
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`${API_URL}/__test/sms?to=${encodeURIComponent(to)}`)
+        const { data } = (await response.json()) as { data: { text: string }[] }
+        // The last run of exactly six digits: the origin-bound line repeats the code last.
+        code = data
+          .at(-1)
+          ?.text.match(/(?<![0-9])[0-9]{6}(?![0-9])/g)
+          ?.at(-1)
+        return code
+      },
+      { message: 'a text message with a code' }
+    )
+    .toBeTruthy()
+  return code as string
 }
 
 /** Every email method on, beside the password. */

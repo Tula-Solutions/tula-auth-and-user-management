@@ -209,6 +209,20 @@ describe('the read tools', () => {
     expect(requests[0]?.search).toBe('?q=maya&page=1&size=10&sort=-createdAt')
   })
 
+  test('a user’s phone number is not returned, by a list or by a read', async () => {
+    // Personal data no tool needs (ADR 0037): the projection does not name it.
+    const { client } = await world()
+    for (const [tool, args] of [
+      ['list_users', SAMPLE_ARGS.list_users],
+      ['get_user', SAMPLE_ARGS.get_user],
+    ] as const) {
+      const result = await callTool(client, tool, args)
+      expect(result.isError).toBe(false)
+      expect(result.text).not.toContain('4155550142')
+      expect(result.text).not.toContain('phoneNumber')
+    }
+  })
+
   test('list_users without arguments asks for the default page size', async () => {
     const { client, requests } = await world()
     await callTool(client, 'list_users')
@@ -288,6 +302,7 @@ describe('the read tools', () => {
       app: { name: 'Northline', supportEmail: 'help@example.com' },
       password: { preset: 'recommended', minLength: 12 },
       mfa: { policy: 'optional' },
+      sms: { enabled: true, allowedCountries: ['US', 'DE'] },
       urls: { allowedOrigins: ['https://app.example.com'], allowedRedirectUrls: [] },
       sessions: { profiles: { web: { type: 'hybrid', accessTokenTtl: '60s' } }, maxPerUser: 5 },
     })

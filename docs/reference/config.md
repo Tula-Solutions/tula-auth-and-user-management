@@ -605,8 +605,8 @@ each secret as the **name** of its variable: no secret value is hashed, so the f
 reveals nothing about one. An endpoint's event types count as a set, and an environment
 that does not mention webhooks or hooks hashes as it did before they could be written (a
 hook's defaults count as written). So does one
-that defines no JWT template and whose profiles name none; the order templates and their
-claims are written in never counts.
+that defines no JWT template and whose profiles name none, and one that leaves text messages
+(`sms`) at their default; the order templates and their claims are written in never counts.
 
 ```ts
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string>

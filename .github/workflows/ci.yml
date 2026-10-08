@@ -198,6 +198,9 @@ jobs:
       # The OAuth scenarios run against the API's own mock provider (ADR 0026). Compose runs
       # the stack in the `local` tier, the only one the API accepts this in.
       OAUTH_MOCK_PROVIDER: 'true'
+      # The phone number scenario reads its codes from the development SMS inbox (ADR 0037),
+      # accepted in the `local` tier only like the mock provider.
+      SMS_PROVIDER: dev
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -261,6 +264,9 @@ jobs:
           CONFORMANCE_BASE_URL: ${{ matrix.base_url }}
           CONFORMANCE_SECOND_BASE_URL: ${{ matrix.second_base_url }}
           CONFORMANCE_SETTLE_MS: ${{ matrix.settle_ms }}
+          # Each instance keeps its own inbox, and through the one address a request may reach
+          # either: the runner asks both, on their own ports, in both modes.
+          CONFORMANCE_SMS_INBOX_URLS: http://localhost:3003,http://localhost:3004
         run: |
           # Every scenario must run: a missing secret key would skip the admin ones.
           test -n "$CONFORMANCE_PUBLISHABLE_KEY" && test -n "$CONFORMANCE_SECRET_KEY"
@@ -297,6 +303,9 @@ jobs:
           # The outbound guard's refusals at save time need no receiver: they run here,
           # against the packaged server and a real Postgres.
           grep -Eq '(^|: )PASSED webhook endpoint on a refused address$' conformance.log
+          # The texted code is read from the instances' development inboxes: the scenario
+          # must have run, not been skipped for want of one.
+          grep -Eq '(^|: )PASSED phone number on an account$' conformance.log
           if [ "${{ matrix.mode }}" = two-ports ]; then
             # The cross-instance scenario must have run against two instances: without the
             # second URL its steps would all go to one server and prove nothing about sharing.

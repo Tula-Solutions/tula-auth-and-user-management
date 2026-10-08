@@ -202,8 +202,9 @@ be active on this device, with "Try again". The same holds for `<UserProfile>`.
 
 ### `<UserProfile>`
 
-Profile, change password (other devices are signed out), two-step verification, "Where you're
-signed in" with this device marked, sign out one device or all the others, sign out. Props:
+Profile, change password (other devices are signed out), phone number (where the environment
+sends text messages: add one with a texted code, change it, remove it), two-step verification,
+"Where you're signed in" with this device marked, sign out one device or all the others, sign out. Props:
 `afterSignOutUrl`, `appearance`, `headingLevel`.
 
 ## Two-step verification

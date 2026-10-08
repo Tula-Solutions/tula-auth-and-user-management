@@ -196,7 +196,9 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
  * measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
- * weakening.
+ * weakening. Nor is any change to `sms`: a phone number is contact data that no account is
+ * signed in to or recovered with (ADR 0037), so neither switching SMS on or off nor a wider
+ * or narrower country list makes an account easier to take.
  *
  * @param before - The settings being replaced.
  * @param after - The new settings.

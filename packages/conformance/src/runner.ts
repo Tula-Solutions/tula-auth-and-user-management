@@ -54,6 +54,16 @@ export interface Target {
    */
   emailLink?: (to: string) => Promise<string>
   /**
+   * The 6-digit code in the newest text message to a phone number, read from the server's
+   * development SMS inbox. Left out, scenarios marked `needsSmsInbox` are skipped: only a
+   * server in the `local` tier started with `SMS_PROVIDER=dev` has an inbox.
+   *
+   * @param to - The number in E.164 form.
+   * @returns The code.
+   * @throws Error when no such message arrived.
+   */
+  smsCode?: (to: string) => Promise<string>
+  /**
    * Let time pass on the server: a real sleep for a live one, a clock advance in-process.
    *
    * @param ms - How long.
@@ -119,6 +129,9 @@ function changesSettings(request: ScenarioRequest): boolean {
 /** Why a scenario marked `needsWebhookReceiver` is skipped by a target that offers none. */
 export const WEBHOOK_RECEIVER_SKIP_REASON = 'needs a webhook receiver the server can reach'
 
+/** Why a scenario marked `needsSmsInbox` is skipped by a target that offers none. */
+export const SMS_INBOX_SKIP_REASON = 'needs a development SMS inbox the runner can read'
+
 /** How one step went. */
 export interface StepResult {
   name: string
@@ -179,11 +192,28 @@ function wrongCode(code: string): string {
   return `${code.slice(0, -1)}${(Number(code.at(-1)) + 1) % 10}`
 }
 
+/**
+ * A United States number nobody has: `555-0100` to `555-0199` is kept for fiction in every
+ * area code. The area code is random (first digit 2 to 9, never an `N11` service code), so
+ * runs rarely share a number and its per-number limits.
+ */
+function fictionalPhoneNumber(): string {
+  const [a = 0, b = 0, c = 0] = crypto.getRandomValues(new Uint32Array(3))
+  const first = 2 + (a % 8)
+  const rest = b % 100
+  const area = `${first}${String(rest === 11 ? 12 : rest).padStart(2, '0')}`
+  return `+1${area}55501${String(c % 100).padStart(2, '0')}`
+}
+
 function initialVariables(scenario: Scenario, origin: string): Record<string, string> {
   const variables: Record<string, string> = { origin }
   for (const [name, value] of Object.entries(scenario.variables ?? {})) {
     if (typeof value === 'string') {
       variables[name] = value
+      continue
+    }
+    if (value.generate === 'phone') {
+      variables[name] = fictionalPhoneNumber()
       continue
     }
     if (value.generate === 'uuid') {
@@ -272,6 +302,17 @@ async function runStep(
     variables[step.emailCode.capture] = code
     if (step.emailCode.captureWrong) {
       variables[step.emailCode.captureWrong] = wrongCode(code)
+    }
+    return
+  }
+  if ('smsCode' in step) {
+    if (!target.smsCode) {
+      throw new Error('this target cannot read text messages')
+    }
+    const code = await target.smsCode(fill(step.smsCode.to, variables))
+    variables[step.smsCode.capture] = code
+    if (step.smsCode.captureWrong) {
+      variables[step.smsCode.captureWrong] = wrongCode(code)
     }
     return
   }
@@ -754,6 +795,9 @@ export async function runScenario(scenario: Scenario, target: Target): Promise<S
       steps: [],
       reason: WEBHOOK_RECEIVER_SKIP_REASON,
     }
+  }
+  if (scenario.needsSmsInbox && !target.smsCode) {
+    return { name: scenario.name, status: 'skipped', steps: [], reason: SMS_INBOX_SKIP_REASON }
   }
   const variables = initialVariables(scenario, nextOrigin())
   const steps: StepResult[] = []

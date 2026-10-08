@@ -574,6 +574,60 @@ export interface UserPasskeyCounterRegressedEvent {
   test?: true;
 }
 
+/**
+ * A user verified a phone number, which is now the account’s (replacing an earlier one).
+ */
+export interface UserPhoneNumberAddedEventData { [key: string]: unknown }
+
+export type UserPhoneNumberAddedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user verified a phone number, which is now the account’s (replacing an earlier one).
+ */
+export interface UserPhoneNumberAddedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.phone_number_added';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPhoneNumberAddedEventTarget;
+  data: UserPhoneNumberAddedEventData;
+  test?: true;
+}
+
+/**
+ * A user took the phone number off their account.
+ */
+export interface UserPhoneNumberRemovedEventData { [key: string]: unknown }
+
+export type UserPhoneNumberRemovedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user took the phone number off their account.
+ */
+export interface UserPhoneNumberRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.phone_number_removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPhoneNumberRemovedEventTarget;
+  data: UserPhoneNumberRemovedEventData;
+  test?: true;
+}
+
 export type SessionClient = typeof SessionClient[keyof typeof SessionClient];
 
 
@@ -956,7 +1010,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 35
+     * @maximum 37
      */
   eventTypes: number;
   enabled: boolean;
@@ -1289,7 +1343,7 @@ export interface HookDeletedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent;
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -1479,6 +1533,10 @@ export const ErrorCode = {
   passkeyalready_registered: 'passkey.already_registered',
   passkeylimit_reached: 'passkey.limit_reached',
   passkeylast_sign_in_method: 'passkey.last_sign_in_method',
+  phoneinvalid: 'phone.invalid',
+  smsdisabled: 'sms.disabled',
+  smscountry_not_allowed: 'sms.country_not_allowed',
+  smsunavailable: 'sms.unavailable',
   sessioninvalid_token: 'session.invalid_token',
   sessionexpired: 'session.expired',
   sessionrevoked: 'session.revoked',
@@ -2145,6 +2203,9 @@ export interface User {
   lastSignInAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
+  /** @nullable */
+  phoneNumber?: string | null;
+  phoneNumberVerifiedAt?: string | null;
 }
 
 export interface UserList {
@@ -2244,6 +2305,9 @@ export interface CurrentUser {
   lastSignInAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
+  /** @nullable */
+  phoneNumber?: string | null;
+  phoneNumberVerifiedAt?: string | null;
   hasPassword: boolean;
 }
 
@@ -2328,6 +2392,8 @@ export const ActivityType = {
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -2471,6 +2537,8 @@ export interface SessionSettings {
   jwtTemplates?: SessionSettingsJwtTemplates;
 }
 
+export type SmsCountry = string;
+
 export interface SettingsManagedBy {
   /** @pattern ^[a-z0-9][a-z0-9._-]{0,31}$ */
   tool: string;
@@ -2551,6 +2619,12 @@ export type EnvironmentSettingsStateSettingsPasskeys = {
   rpId?: string | null;
 };
 
+export type EnvironmentSettingsStateSettingsSms = {
+  enabled?: boolean;
+  /** @maxItems 243 */
+  allowedCountries?: SmsCountry[];
+};
+
 export type EnvironmentSettingsStateSettings = {
   version?: 1;
   app?: EnvironmentSettingsStateSettingsApp;
@@ -2563,6 +2637,7 @@ export type EnvironmentSettingsStateSettings = {
   mfa?: EnvironmentSettingsStateSettingsMfa;
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
   sessions?: SessionSettings;
+  sms?: EnvironmentSettingsStateSettingsSms;
 };
 
 export interface EnvironmentSettingsState {
@@ -2652,6 +2727,12 @@ export type EnvironmentSettingsInputPasskeys = {
   rpId?: string | null;
 };
 
+export type EnvironmentSettingsInputSms = {
+  enabled?: boolean;
+  /** @maxItems 243 */
+  allowedCountries?: SmsCountry[];
+};
+
 export interface EnvironmentSettingsInput {
   version?: 1;
   app?: EnvironmentSettingsInputApp;
@@ -2664,6 +2745,7 @@ export interface EnvironmentSettingsInput {
   mfa?: EnvironmentSettingsInputMfa;
   passkeys?: EnvironmentSettingsInputPasskeys;
   sessions?: SessionSettings;
+  sms?: EnvironmentSettingsInputSms;
 }
 
 export type ClientConfigApp = {
@@ -2685,12 +2767,17 @@ export type ClientConfigMfa = {
   policy: MfaPolicy;
 };
 
+export type ClientConfigPhone = {
+  enabled: boolean;
+};
+
 export interface ClientConfig {
   app: ClientConfigApp;
   signIn: ClientConfigSignIn;
   signUp?: ClientConfigSignUp;
   password: PasswordPolicy;
   mfa?: ClientConfigMfa;
+  phone?: ClientConfigPhone;
 }
 
 export interface OAuthProviderSettings {
@@ -2871,6 +2958,22 @@ export interface PasskeyRenameRequest {
   name: string;
 }
 
+export interface PhoneCodeSent {
+  destination: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface PhoneNumberRequest {
+  /** @maxLength 64 */
+  phoneNumber: string;
+}
+
+export interface PhoneNumberVerifyRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
+}
+
 export interface WebhookEndpoint {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   id: string;
@@ -2931,6 +3034,8 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -2961,7 +3066,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 35
+     * @maxItems 37
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -2987,6 +3092,8 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
@@ -3017,7 +3124,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 35
+     * @maxItems 37
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3161,6 +3268,8 @@ export const SendTestWebhookRequestEventType = {
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',

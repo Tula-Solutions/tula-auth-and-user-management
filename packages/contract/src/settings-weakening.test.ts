@@ -226,6 +226,37 @@ describe('settingsWeakenings', () => {
   })
 })
 
+describe('settingsWeakenings and SMS', () => {
+  // SMS protects no account in this version: nobody signs in or recovers with a number. So
+  // no change to it, in either direction, is a weakening (ADR 0037).
+  test.each([
+    [
+      'switched on',
+      { enabled: false, allowedCountries: [] },
+      { enabled: true, allowedCountries: ['DE'] },
+    ],
+    [
+      'switched off',
+      { enabled: true, allowedCountries: ['DE'] },
+      { enabled: false, allowedCountries: ['DE'] },
+    ],
+    [
+      'a country added',
+      { enabled: true, allowedCountries: ['DE'] },
+      { enabled: true, allowedCountries: ['DE', 'US'] },
+    ],
+    [
+      'a country removed',
+      { enabled: true, allowedCountries: ['DE', 'US'] },
+      { enabled: true, allowedCountries: ['DE'] },
+    ],
+  ])('%s is not a weakening', (_name, was, is) => {
+    const before = EnvironmentSettingsSchema.parse({ sms: was })
+    const after = EnvironmentSettingsSchema.parse({ sms: is })
+    expect(settingsWeakenings(before, after)).toEqual([])
+  })
+})
+
 describe('settingsWeakenings and custom claims', () => {
   const templated: EnvironmentSettings = EnvironmentSettingsSchema.parse({
     sessions: {

@@ -324,3 +324,19 @@ dashboard in a browser. Not verified:
 | **That LinkedIn has no PKCE and echoes no nonce for this flow** | LinkedIn's authorization-code flow page and discovery document, as read on 2026-10-08: no such parameter, no `code_challenge_methods_supported`, no `nonce` in `claims_supported`. One of that page's error messages mentions a code verifier, which suggests PKCE exists for some other kind of client; it was not looked into. |
 | **The portal steps of `docs/providers/discord.md` and `docs/providers/linkedin.md`** | Written from the documentation; not clicked through. |
 | **The two buttons against Discord's and LinkedIn's brand guidelines** | Not checked. Both marks (the paths and the colours `#5865F2` and `#0A66C2`) were drawn from memory, without either brand page open. |
+
+## A phone number on an account (TULA-11, [ADR 0037](../adr/0037-phone-numbers-and-sms.md))
+
+Adding, confirming and removing a number are tested through the API in process (memory
+adapters), the conformance scenario, the `@tula/core` journeys, the React components in
+happy-dom and in a browser, and the dashboard's component tests. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| A real text message | There is no adapter for a provider: no message has ever left the server. The message's text is checked for its length in GSM-7 by counting characters, not by a carrier. |
+| The origin-bound line on a phone | The format (`@host #code`) is written as specified. No phone or browser was asked to offer a code from it. |
+| A real PostgreSQL server | The migration (`0023_phone_number.sql`) was generated and read, not applied: `db:migrate` and the integration tests (`*.integration.ts`, the user repository's new methods and the check `users_phone_number_whole` among them) were **not run** from the worktree. |
+| The conformance scenario against a live server | `phone number on an account` ran in process only. The `self-host` CI jobs were changed to start the stack with `SMS_PROVIDER=dev` and to read both instances' inboxes; that workflow has not run. |
+| The development inbox behind several instances | The runner's reading of several inboxes (the newest message across them) is unit-tested against fakes, not against two API processes. |
+| The calling-code table | Hand-written. Not checked against a provider's own table, and it does not know number ranges inside a country (premium rates, satellite). |
+| The dashboard in a browser | The "Text messages" section and the phone number on a user's screen are covered by component tests (happy-dom); the `dashboard` Playwright project has no scenario for them. |

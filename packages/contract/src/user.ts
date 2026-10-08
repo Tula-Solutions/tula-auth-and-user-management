@@ -34,6 +34,16 @@ export const UserSchema = z
     bannedAt: z.iso.datetime().nullable(),
     lastSignInAt: z.iso.datetime().nullable(),
     createdAt: z.iso.datetime(),
+    /**
+     * The account's phone number in E.164 form (`+14155550100`), or `null`. Only a number the
+     * user proved with a code sent to it is ever here, so one that is present is verified
+     * (`phoneNumberVerifiedAt` says when). It is contact data: nobody signs in with it, and
+     * two accounts may have the same one (ADR 0037). Optional in the schema, so a client
+     * reading an older server's answer treats a missing one as `null`.
+     */
+    phoneNumber: z.string().nullable().optional(),
+    /** When the phone number was verified; `null` without one. */
+    phoneNumberVerifiedAt: z.iso.datetime().nullable().optional(),
   })
   .meta({ ref: 'User' })
 
@@ -121,6 +131,32 @@ export const ChangePasswordRequestSchema = z
   })
   .meta({ ref: 'ChangePasswordRequest' })
 
+/**
+ * Ask for a code to be sent to a phone number the signed-in user wants on their account
+ * (`POST /v1/client/me/phone`). Spaces, hyphens and parentheses are taken out; anything else
+ * that is not a `+` and 8 to 15 digits is `phone.invalid`.
+ */
+export const PhoneNumberRequestSchema = z
+  .object({ phoneNumber: z.string().max(64) })
+  .meta({ ref: 'PhoneNumberRequest' })
+
+/**
+ * What asking for a phone code answers: where it went, masked, and when it stops working.
+ * Never the code.
+ */
+export const PhoneCodeSentSchema = z
+  .object({
+    /** The number's last two digits behind a mask, e.g. `***00`. */
+    destination: z.string(),
+    expiresAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'PhoneCodeSent' })
+
+/** The code a phone number is confirmed with (`POST /v1/client/me/phone/verify`). */
+export const PhoneNumberVerifyRequestSchema = z
+  .object({ code: z.string().regex(/^\d{6}$/) })
+  .meta({ ref: 'PhoneNumberVerifyRequest' })
+
 /** Paging details. */
 export type PaginationMeta = z.infer<typeof PaginationMetaSchema>
 /** A user. */
@@ -133,6 +169,12 @@ export type UserAuthentication = z.infer<typeof UserAuthenticationSchema>
 export type UserList = z.infer<typeof UserListSchema>
 /** User sort key. */
 export type UserSort = z.infer<typeof UserSortSchema>
+/** A phone number to send a code to. */
+export type PhoneNumberRequest = z.infer<typeof PhoneNumberRequestSchema>
+/** Where a phone code went and when it expires. */
+export type PhoneCodeSent = z.infer<typeof PhoneCodeSentSchema>
+/** The code that confirms a phone number. */
+export type PhoneNumberVerifyRequest = z.infer<typeof PhoneNumberVerifyRequestSchema>
 /** Create-user request body. */
 export type CreateUserRequest = z.infer<typeof CreateUserRequestSchema>
 /** Set-password request body. */

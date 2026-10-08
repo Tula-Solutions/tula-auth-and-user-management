@@ -68,6 +68,10 @@ async function _users(users: UserRepository): Promise<void> {
   // @ts-expect-error
   await users.setBanned(ENV, 'user', AT, AT)
   // @ts-expect-error
+  await users.setPhoneNumber(ENV, 'user', '+14155550100', AT)
+  // @ts-expect-error
+  await users.removePhoneNumber(ENV, 'user', AT)
+  // @ts-expect-error
   await users.delete(ENV, 'user')
   // The two that are never recorded (ADR 0012) are methods of their own and take none.
   await users.upgradePasswordHash(ENV, 'user', 'old', 'new', AT)

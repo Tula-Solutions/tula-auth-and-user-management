@@ -46,6 +46,11 @@ export interface ListEditorProps {
   hint?: string
   values: string[]
   onChange: (values: string[]) => void
+  /**
+   * Bring a typed entry to the form the list keeps (a country code in upper case), before
+   * it is compared with the list and checked. Left out, an entry is kept as typed.
+   */
+  normalize?: (value: string) => string
   /** Check a new entry; returns the problem or `undefined`. */
   validate: (value: string) => string | undefined
   /** The server's error for the list. */
@@ -66,6 +71,7 @@ export function ListEditor({
   hint,
   values,
   onChange,
+  normalize,
   validate,
   error,
   placeholder,
@@ -76,7 +82,8 @@ export function ListEditor({
 
   function add(event?: FormEvent | KeyboardEvent) {
     event?.preventDefault()
-    const value = text.trim()
+    const typed = text.trim()
+    const value = normalize ? normalize(typed) : typed
     const found =
       value === ''
         ? `Enter the ${itemName} to add.`

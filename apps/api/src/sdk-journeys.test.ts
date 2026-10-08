@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
-import { loadScenarios, VirtualAuthenticator } from '@tula/conformance'
+import { loadScenarios, smsCodeIn, VirtualAuthenticator } from '@tula/conformance'
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
@@ -3103,6 +3103,144 @@ describe('SDK journeys: session profiles and rules', () => {
       expect((await tula.user.get()).id).toBeString()
       await tula.session.stepUp({ method: 'password', password: PASSWORD })
       expect((await tula.mfa.startTotp()).secret).toBeString()
+    }
+  )
+
+  /** Replace the environment's `sms` settings through the admin API, as an operator does. */
+  async function setSms(s: Server, sms: EnvironmentSettings['sms']): Promise<void> {
+    const read = await s.admin('GET', '/v1/admin/settings')
+    const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+    const replaced = await s.admin(
+      'PUT',
+      '/v1/admin/settings',
+      { ...settings, sms },
+      { 'if-match': read.headers.get('etag') ?? '' }
+    )
+    expect(replaced.status).toBe(200)
+  }
+
+  /** The code in the newest text message to a number, read from the memory sender. */
+  function textedCode(s: Server, to: string): string {
+    const code = smsCodeIn(s.deps.sms.messages(to).at(-1)?.text ?? '')
+    if (!code) {
+      throw new Error('no text message with a code was sent to that number')
+    }
+    return code
+  }
+
+  journey(
+    'phone number on an account',
+    'a signed-in user adds a phone number with a texted code, and removes it; every refusal is a code the app can show',
+    async () => {
+      const s = await server()
+      const NUMBER = '+12025550142'
+      const { tula } = await signUp(s)
+      const other = await signUp(s)
+
+      // Off by default: the config says so, and asking is refused.
+      expect((await tula.config.get()).phone).toEqual({ enabled: false })
+      expect((await caught(tula.user.phone.request({ phoneNumber: NUMBER }))).code).toBe(
+        'sms.disabled'
+      )
+      // On with no country allowed is still off.
+      await setSms(s, { enabled: true, allowedCountries: [] })
+      expect((await caught(tula.user.phone.request({ phoneNumber: NUMBER }))).code).toBe(
+        'sms.disabled'
+      )
+      expect(s.deps.sms.outbox).toHaveLength(0)
+
+      await setSms(s, { enabled: true, allowedCountries: ['US'] })
+      // A client made after the change reads the config as it is now, and not which countries.
+      const config = await s.client('server').tula.config.get()
+      expect(config.phone).toEqual({ enabled: true })
+      expect(JSON.stringify(config)).not.toContain('allowedCountries')
+
+      expect((await caught(tula.user.phone.request({ phoneNumber: '555-0142' }))).code).toBe(
+        'phone.invalid'
+      )
+      expect((await caught(tula.user.phone.request({ phoneNumber: '+4915112345678' }))).code).toBe(
+        'sms.country_not_allowed'
+      )
+      expect(s.deps.sms.outbox).toHaveLength(0)
+
+      // The number as a person types it; the receipt holds neither the number nor the code.
+      const sent = await tula.user.phone.request({ phoneNumber: '+1 (202) 555-0142' })
+      expect(sent.destination).toBe('***42')
+      expect(new Date(sent.expiresAt).getTime()).toBeGreaterThan(s.deps.clock.now().getTime())
+      const code = textedCode(s, NUMBER)
+      expect(JSON.stringify(sent)).not.toContain(code)
+      expect((await caught(tula.user.phone.request({ phoneNumber: NUMBER }))).code).toBe(
+        'rate_limited'
+      )
+      // Pending is not the account's: nothing has changed yet.
+      expect((await tula.user.get()).phoneNumber).toBeNull()
+
+      // Another user's code, a wrong one, the right one, and the right one again.
+      expect((await caught(other.tula.user.phone.verify({ code }))).code).toBe(
+        'verification.expired'
+      )
+      const wrong = `${code.slice(0, -1)}${(Number(code.at(-1)) + 1) % 10}`
+      expect((await caught(tula.user.phone.verify({ code: wrong }))).code).toBe(
+        'verification.invalid_code'
+      )
+      const user = await tula.user.phone.verify({ code })
+      expect(user.phoneNumber).toBe(NUMBER)
+      expect(user.phoneNumberVerifiedAt).toBeString()
+      // The state shows it without another request.
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: { phoneNumber: NUMBER } })
+      expect((await caught(tula.user.phone.verify({ code }))).code).toBe('verification.expired')
+      expect((await other.tula.user.get()).phoneNumber).toBeNull()
+
+      // A code asked for before the country was removed, or SMS switched off, is not
+      // honoured after.
+      await other.tula.user.phone.request({ phoneNumber: '+12025550143' })
+      const pending = textedCode(s, '+12025550143')
+      await setSms(s, { enabled: true, allowedCountries: ['DE'] })
+      expect((await caught(other.tula.user.phone.verify({ code: pending }))).code).toBe(
+        'sms.country_not_allowed'
+      )
+      await setSms(s, { enabled: false, allowedCountries: ['DE'] })
+      expect((await caught(other.tula.user.phone.verify({ code: pending }))).code).toBe(
+        'sms.disabled'
+      )
+      expect((await other.tula.user.get()).phoneNumber).toBeNull()
+
+      // Removing needs no text message, so it works with SMS off, and twice.
+      await tula.user.phone.remove()
+      expect(tula.state).toMatchObject({ status: 'signed-in', user: { phoneNumber: null } })
+      expect((await tula.user.get()).phoneNumber).toBeNull()
+      await tula.user.phone.remove()
+
+      // No request of the client carried the number anywhere but the body that asked for it.
+      const carrying = s.exchanges.filter(
+        (exchange) =>
+          exchange.requestBody.includes('5550142') ||
+          [...exchange.headers.values()].some((value) => value.includes('5550142'))
+      )
+      expect(carrying.length).toBeGreaterThan(0)
+      expect([
+        ...new Set(carrying.map((exchange) => `${exchange.method} ${exchange.path}`)),
+      ]).toEqual(['POST /v1/client/me/phone'])
+    }
+  )
+
+  journey(
+    'phone number on an account',
+    'a phone number change past the step-up window asks for a step-up, and works after it',
+    async () => {
+      const s = await server()
+      await setSms(s, { enabled: true, allowedCountries: ['US'] })
+      const { tula } = await signUp(s)
+      s.advance(11 * 60_000)
+      const error = await caught(tula.user.phone.request({ phoneNumber: '+12025550142' }))
+      expect(isStepUpRequired(error)).toBe(true)
+      expect(stepUpMethods(error)).toContain('password')
+      expect(s.deps.sms.outbox).toHaveLength(0)
+      expect(isStepUpRequired(await caught(tula.user.phone.remove()))).toBe(true)
+      await tula.session.stepUp({ method: 'password', password: PASSWORD })
+      expect((await tula.user.phone.request({ phoneNumber: '+12025550142' })).destination).toBe(
+        '***42'
+      )
     }
   )
 })

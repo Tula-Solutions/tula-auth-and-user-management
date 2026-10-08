@@ -10,7 +10,7 @@ import {
   signInFlow,
   signUpFlow,
 } from './flows'
-import { isBackupCodes, isFactors, isStepUpPrepared, isTotpEnrolment } from './mfa'
+import { isBackupCodes, isFactors, isPhoneCodeSent, isStepUpPrepared, isTotpEnrolment } from './mfa'
 import {
   createOAuthStore,
   createOAuthTicketHolder,
@@ -48,6 +48,7 @@ import type {
   Factors,
   FetchLike,
   Passkey,
+  PhoneCodeSent,
   Session,
   StepUpPrepared,
   StepUpProof,
@@ -569,6 +570,61 @@ export interface TulaClient {
        */
       remove(input: { passkeyId: string }): Promise<void>
     }
+    /**
+     * The signed-in user's phone number: one, optional, proven with a 6-digit code sent by
+     * text message. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     *
+     * Whether a number can be added at all is `phone.enabled` of `config.get()`. The number
+     * itself is `phoneNumber` of the user, with `phoneNumberVerifiedAt`.
+     */
+    readonly phone: {
+      /**
+       * Text a 6-digit code to a number the user wants on their account. The number is
+       * only pending: the account's own number, if it has one, stays until `verify`.
+       *
+       * @param input - The number, with its country code (`+14155550142`; spaces, hyphens
+       *   and parentheses are ignored).
+       * @returns The receipt: the number masked and when the code expires. Never the code.
+       * @throws TulaError `phone.invalid` for what is not a phone number, `sms.disabled`
+       *   where the application sends no text messages, `sms.country_not_allowed` for a
+       *   number of a country it does not send to, `sms.unavailable` when the message could
+       *   not be sent, `rate_limited` when a code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.phone.request({ phoneNumber: '+1 415 555 0142' })
+       * ```
+       */
+      request(input: { phoneNumber: string }): Promise<PhoneCodeSent>
+      /**
+       * Prove the pending number with the code texted to it. The number becomes the
+       * account's, replacing one it had, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the number.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it expired,
+       *   was used or was replaced), `verification.too_many_attempts` or `rate_limited`
+       *   after repeated wrong codes, `sms.disabled` or `sms.country_not_allowed` when the
+       *   application stopped sending to that number since the code was asked for.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.phone.verify({ code: '482913' })
+       * user.phoneNumber // '+14155550142'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+      /**
+       * Take the phone number off the account. Nothing happens when it has none.
+       *
+       * @example
+       * ```ts
+       * await tula.user.phone.remove()
+       * ```
+       */
+      remove(): Promise<void>
+    }
     /** The provider accounts (Google, GitHub, Apple, Microsoft, Discord, LinkedIn) connected to the signed-in user. */
     readonly identities: {
       /**
@@ -808,6 +864,29 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     }
     return answer
   }
+  /**
+   * Run a call that answers the signed-in user, and show that user in the state.
+   *
+   * The user belongs to the session that asked. If that session ended, or someone else
+   * signed in, while the request was in flight, it must not become the new state's user.
+   */
+  async function asUser<T extends User | null>(call: () => Promise<T>): Promise<T> {
+    // Settle who is signed in first (a client that has not loaded yet restores its session
+    // here), so that the answer can be tied to that session.
+    await session.getToken()
+    const asked = session.state()
+    const user = await call()
+    const now = session.state()
+    if (
+      user &&
+      asked.status === 'signed-in' &&
+      now.status === 'signed-in' &&
+      now.sessionId === asked.sessionId
+    ) {
+      session.setUser(user)
+    }
+    return user
+  }
   let handlingLink: Promise<EmailLinkOutcome> | null = null
   let handlingOAuth: Promise<OAuthCallbackOutcome> | null = null
 
@@ -900,23 +979,28 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       },
     },
     user: {
-      async get() {
-        // Settle who is signed in first (a client that has not loaded yet restores its
-        // session here), so that the answer can be tied to that session.
-        await session.getToken()
-        const asked = session.state()
-        const user = await session.authorized('getMe', {})
-        const now = session.state()
-        // The user belongs to the session that asked. If that session ended, or someone else
-        // signed in, while the request was in flight, it must not become the new state's user.
-        if (
-          asked.status === 'signed-in' &&
-          now.status === 'signed-in' &&
-          now.sessionId === asked.sessionId
-        ) {
-          session.setUser(user)
-        }
-        return user
+      get: () => asUser(() => session.authorized('getMe', {})),
+      phone: {
+        async request(input) {
+          const { destination, expiresAt } = checked(
+            await session.authorized('requestPhoneCode', { body: input }),
+            isPhoneCodeSent
+          )
+          // Only the receipt: whatever else an answer held does not travel further.
+          return { destination, expiresAt }
+        },
+        verify: (input) => asUser(() => session.authorized('verifyPhoneNumber', { body: input })),
+        async remove() {
+          await asUser(async () => {
+            await session.authorized('removePhoneNumber', {})
+            const now = session.state()
+            // What the server now holds, without asking it again. `null` when the state has
+            // no user to correct: nothing is installed then.
+            return now.status === 'signed-in' && now.user
+              ? { ...now.user, phoneNumber: null, phoneNumberVerifiedAt: null }
+              : null
+          })
+        },
       },
       async changePassword(input) {
         await session.authorized('changeMyPassword', { body: input })

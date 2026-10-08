@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from './password-policy'
+import { isSmsCountry, SMS_COUNTRIES } from './phone'
 import { SessionSettingsSchema, StoredSessionSettingsSchema } from './session-profile'
 
 /** App name used until an environment sets its own. Emails and prebuilt screens show it. */
@@ -337,6 +338,39 @@ function passkeyHasRpId(settings: {
   return !settings.signIn.methods.passkey.enabled || settings.passkeys.rpId !== null
 }
 
+/**
+ * A country SMS may be sent to: an ISO 3166-1 alpha-2 code in upper case that the contract's
+ * calling-prefix table knows (`COUNTRY_CALLING_PREFIXES`). A code the table does not have is
+ * refused rather than stored: it could never match a number.
+ */
+export const SmsCountrySchema = z
+  .string()
+  .refine(isSmsCountry, {
+    message: 'must be an ISO 3166-1 alpha-2 country code in upper case, such as DE',
+  })
+  .meta({ ref: 'SmsCountry' })
+
+const SmsCountries = z
+  .array(SmsCountrySchema)
+  .max(SMS_COUNTRIES.length)
+  .refine(distinct, { message: 'must not list a country twice' })
+
+const Sms = z.object({
+  /**
+   * Whether the server sends text messages for this environment at all. Off by default: a
+   * message costs money, and an endpoint that sends one is what SMS pumping abuses.
+   */
+  enabled: z.boolean().default(false),
+  /**
+   * The countries a message may go to, as ISO 3166-1 alpha-2 codes in upper case; a set, in
+   * no order. **Empty (the default) means nothing is sent**, whatever `enabled` says. A
+   * number is matched by the longest calling prefix the contract's table has for it, and
+   * countries that share a prefix count as one destination: listing `US` also allows
+   * Canadian numbers (ADR 0037).
+   */
+  allowedCountries: SmsCountries.default([]),
+})
+
 const password = PasswordPolicySchema.default(PASSWORD_POLICY_PRESETS.recommended)
 const version = z.literal(1).default(1)
 
@@ -388,6 +422,8 @@ const minLengthFloor = {
  * - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
  * - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
  *   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
+ * - `sms`: whether text messages are sent (`enabled`, off by default) and to which countries
+ *   (`allowedCountries`, empty by default, which sends nothing). See ADR 0037.
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({
@@ -402,6 +438,7 @@ export const EnvironmentSettingsSchema = z
     mfa: Mfa.strict().prefault({}),
     passkeys: Passkeys.strict().prefault({}),
     sessions: SessionSettingsSchema.prefault({}),
+    sms: Sms.strict().prefault({}),
   })
   // On the document, not on `PasswordPolicy` itself: that shape is shared with every SDK and
   // with documents stored before the floor existed.
@@ -448,6 +485,7 @@ export const EnvironmentSettingsInputSchema = z
     mfa: Mfa.strict().prefault({}),
     passkeys: Passkeys.strict().prefault({}),
     sessions: SessionSettingsSchema.prefault({}),
+    sms: Sms.strict().prefault({}),
   })
   .refine(
     (settings) =>
@@ -489,6 +527,7 @@ const Stored = z.object({
   mfa: Mfa.prefault({}),
   passkeys: Passkeys.prefault({}),
   sessions: StoredSessionSettingsSchema.prefault({}),
+  sms: Sms.prefault({}),
 })
 
 /** The settings of an environment that has never saved any. */
@@ -506,9 +545,16 @@ interface ListRule {
   max: number
 }
 
-const LIST_RULES: Record<keyof EnvironmentSettings['urls'], ListRule> = {
-  allowedOrigins: { entry: WebOriginSchema, max: MAX_ALLOWED_ORIGINS },
-  allowedRedirectUrls: { entry: RedirectUrlSchema, max: MAX_ALLOWED_REDIRECT_URLS },
+// The lists of a stored document that are read entry by entry, by section: each is an
+// allow-list, so leaving an entry out only ever allows less.
+const LIST_RULES: Record<string, Record<string, ListRule>> = {
+  urls: {
+    allowedOrigins: { entry: WebOriginSchema, max: MAX_ALLOWED_ORIGINS },
+    allowedRedirectUrls: { entry: RedirectUrlSchema, max: MAX_ALLOWED_REDIRECT_URLS },
+  },
+  sms: {
+    allowedCountries: { entry: SmsCountrySchema, max: SMS_COUNTRIES.length },
+  },
 }
 
 /** The entries of a stored list this version accepts, and how many it does not. */
@@ -534,9 +580,10 @@ function usable(list: unknown, rule: ListRule): { kept: string[]; dropped: numbe
  * environment down:
  * - fields added since it was written take their defaults;
  * - keys this version does not know are dropped rather than refused (a rollback);
- * - an entry of `urls.allowedOrigins` or `urls.allowedRedirectUrls` that this version would not
- *   accept (not a valid origin or URL, a duplicate, or beyond the list's limit) is left out
- *   rather than failing the read. Leaving an entry out of an allow-list only ever allows less.
+ * - an entry of `urls.allowedOrigins`, `urls.allowedRedirectUrls` or `sms.allowedCountries`
+ *   that this version would not accept (not a valid origin, URL or country, a duplicate, or
+ *   beyond the list's limit) is left out rather than failing the read. Leaving an entry out
+ *   of an allow-list only ever allows less.
  *
  * @param stored - The stored document.
  * @returns The settings, and how many list entries were left out.
@@ -553,25 +600,27 @@ export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmen
   if (typeof stored !== 'object' || stored === null) {
     return { settings: Stored.parse(stored), dropped: 0 }
   }
-  const { urls } = stored as { urls?: unknown }
-  if (typeof urls !== 'object' || urls === null) {
-    // A `urls` that is not a section at all is read as a missing one.
-    return { settings: Stored.parse({ ...stored, urls: undefined }), dropped: 0 }
-  }
-  const lists: Record<string, string[]> = {}
+  const sections: Record<string, unknown> = {}
   let dropped = 0
-  for (const [name, rule] of Object.entries(LIST_RULES)) {
-    const list = (urls as Record<string, unknown>)[name]
-    if (list !== undefined) {
-      const result = usable(list, rule)
-      lists[name] = result.kept
-      dropped += result.dropped
+  for (const [name, rules] of Object.entries(LIST_RULES)) {
+    const section = (stored as Record<string, unknown>)[name]
+    if (typeof section !== 'object' || section === null) {
+      // A section that is not a section at all is read as a missing one.
+      sections[name] = undefined
+      continue
     }
+    const lists: Record<string, string[]> = {}
+    for (const [key, rule] of Object.entries(rules)) {
+      const list = (section as Record<string, unknown>)[key]
+      if (list !== undefined) {
+        const result = usable(list, rule)
+        lists[key] = result.kept
+        dropped += result.dropped
+      }
+    }
+    sections[name] = { ...section, ...lists }
   }
-  return {
-    settings: Stored.parse({ ...stored, urls: { ...urls, ...lists } }),
-    dropped,
-  }
+  return { settings: Stored.parse({ ...stored, ...sections }), dropped }
 }
 
 /**
@@ -640,7 +689,10 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  * - `mfa.policy` says whether a profile screen should offer two-step verification (`off`: hide
  *   it) and whether it can be turned off (`required`: it cannot). Optional in the schema, so a
  *   client reading an older server's answer treats a missing one as `off`.
- * - The allow-lists (`urls`), the audit settings, the notice switches (`notifications`) and
+ * - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
+ *   on and at least one country is allowed. Which countries is not said. Optional in the
+ *   schema, so a client reading an older server's answer treats a missing one as `false`.
+ * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the notice switches (`notifications`) and
  *   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
  *   absent: a client learns how its session is held from the response that starts it.
  */
@@ -654,6 +706,7 @@ export const ClientConfigSchema = z
     signUp: z.object({ password: SignUpPasswordModeSchema }).optional(),
     password: PasswordPolicySchema,
     mfa: z.object({ policy: MfaPolicySchema }).optional(),
+    phone: z.object({ enabled: z.boolean() }).optional(),
   })
   .meta({ ref: 'ClientConfig' })
 

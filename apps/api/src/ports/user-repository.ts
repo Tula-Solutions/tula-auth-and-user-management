@@ -16,10 +16,20 @@ export interface UserRecord {
   bannedAt: Date | null
   lastSignInAt: Date | null
   createdAt: Date
+  /**
+   * The account's phone number in E.164 form, or `null`. Only ever a number the user proved
+   * with a code sent to it. Contact data: not unique, and nothing is looked up by it
+   * (ADR 0037). Personal data like the email address: never in a log line, an audit entry,
+   * an event payload or an error.
+   */
+  phoneNumber: string | null
+  /** When {@link UserRecord.phoneNumber} was verified; `null` exactly when there is none. */
+  phoneNumberVerifiedAt: Date | null
 }
 
 /** A user to create together with their email identity and, if they have one, their password. */
-export interface NewUser extends Omit<UserRecord, 'bannedAt' | 'lastSignInAt'> {
+export interface NewUser
+  extends Omit<UserRecord, 'bannedAt' | 'lastSignInAt' | 'phoneNumber' | 'phoneNumberVerifiedAt'> {
   /** Id for the `email` identity row. */
   identityId: string
   /** Id for the `password` credential row. Unused when there is no password. */
@@ -299,6 +309,42 @@ export interface UserRepository {
     at: Date,
     activity: Recorded
   ): Promise<UserRecord | null>
+
+  /**
+   * Store a phone number the user has just proven, with the time it was proven, replacing
+   * the one they had. Always a write, and always recorded: proving the same number again
+   * moves its verification time.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param phoneNumber - The number, in E.164 form.
+   * @param at - Verification time.
+   * @param activity - Recorded in the same transaction, only if the user exists.
+   * @returns The user as they now are, or `null` when they do not exist (nothing is written).
+   */
+  setPhoneNumber(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    activity: Recorded
+  ): Promise<UserRecord | null>
+
+  /**
+   * Take the phone number, and its verification time, off a user.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if a number was removed.
+   * @returns `false` when the user has no number, or does not exist (nothing is recorded).
+   */
+  removePhoneNumber(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    activity: Recorded
+  ): Promise<boolean>
 
   /**
    * Delete a user and, by cascade, their identities, credentials, sessions and attempts.

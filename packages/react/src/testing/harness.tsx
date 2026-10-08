@@ -53,6 +53,9 @@ export const ROUTE = {
   signOut: 'POST /v1/client/sessions/sign-out',
   revokeOthers: 'POST /v1/client/sessions/revoke-others',
   changePassword: 'POST /v1/client/me/password',
+  phone: 'POST /v1/client/me/phone',
+  phoneVerify: 'POST /v1/client/me/phone/verify',
+  phoneRemove: 'DELETE /v1/client/me/phone',
   signIn: 'POST /v1/client/sign-ins',
   signInPassword: 'POST /v1/client/sign-ins/attempt_1/password',
   signInVerify: 'POST /v1/client/sign-ins/attempt_1/verify-email',
@@ -175,6 +178,11 @@ export interface WorldOptions {
   signUpPassword?: 'required' | 'optional'
   /** The environment's `mfa.policy`. Left out, the config says nothing (an older server). */
   mfaPolicy?: 'off' | 'optional' | 'required'
+  /**
+   * Whether the environment can text a code to a new phone number (`phone.enabled`). Left
+   * out, the config says nothing (an older server).
+   */
+  phone?: boolean
   /** Storage shared by the browser's tabs; without it an emailed link cannot be used. */
   linkStorage?: FakeLinkStorage
   /** The tab's `sessionStorage`: where an OAuth round trip's binding is kept. */
@@ -218,6 +226,7 @@ export function world(options: WorldOptions = {}): World {
       signUp: { password: options.signUpPassword ?? 'required' },
       password: options.policy ?? PASSWORD_POLICY_PRESETS.recommended,
       ...(options.mfaPolicy && { mfa: { policy: options.mfaPolicy } }),
+      ...(options.phone !== undefined && { phone: { enabled: options.phone } }),
     })
   )
   api.on(ROUTE.signOut, () => new Response(null, { status: 204 }))
