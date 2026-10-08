@@ -33,6 +33,12 @@ export {
   type Schemas as AdminSchemas,
 } from './generated/api.gen'
 export {
+  HOOK_QUESTION_TYPE_NAMES,
+  type TulaHookAnswer,
+  type TulaHookQuestion,
+  verifyHook,
+} from './hook'
+export {
   type TulaWebhookEvent,
   type VerifyWebhookOptions,
   verifyWebhook,

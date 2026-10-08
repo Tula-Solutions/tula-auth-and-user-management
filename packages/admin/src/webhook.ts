@@ -209,7 +209,8 @@ function bodyText(body: string | Uint8Array): string | undefined {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** Whether a parsed value is a JSON object (not a list, not `null`). */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
@@ -327,9 +328,43 @@ export async function verifyWebhook(
   secret: WebhookSecrets,
   options: VerifyWebhookOptions = {}
 ): Promise<TulaWebhookEvent> {
+  const { id, payload } = await verifySigned('webhook', body, headers, secret, options)
+  if (!isEvent(payload, id)) {
+    throw clientError('webhook.invalid_payload')
+  }
+  return payload
+}
+
+/**
+ * Verify a request Tula signed (a webhook delivery, or a hook's question) and parse its body.
+ * The one implementation of the checks both share: the secret's form, the three headers, the
+ * timestamp, the signature in constant time. What the body must be is the caller's to judge.
+ *
+ * @param kind - Which request: decides the prefix of the error codes (`webhook.*`, `hook.*`).
+ * @param body - The request body as received: text or bytes.
+ * @param headers - The request's headers.
+ * @param secret - One signing secret, or a list of one or two.
+ * @param options - The clock to judge the timestamp by.
+ * @returns The request's id (the `webhook-id` header) and its body, parsed from JSON.
+ * @throws TulaAdminError `<kind>.invalid_secret`, `.invalid_headers`,
+ *   `.timestamp_out_of_tolerance`, `.invalid_signature`, or `.invalid_payload` for signed
+ *   text that is not JSON. Never with the secret, a signature or the body in it.
+ *
+ * @example
+ * ```ts
+ * const { id, payload } = await verifySigned('hook', body, request.headers, secret)
+ * ```
+ */
+export async function verifySigned(
+  kind: 'webhook' | 'hook',
+  body: string | Uint8Array,
+  headers: WebhookHeaders,
+  secret: WebhookSecrets,
+  options: VerifyWebhookOptions = {}
+): Promise<{ id: string; payload: unknown }> {
   const keys = signingKeys(secret)
   if (!keys) {
-    throw clientError('webhook.invalid_secret')
+    throw clientError(`${kind}.invalid_secret`)
   }
   const id = single(headers, WEBHOOK_ID_HEADER)
   const sentAt = single(headers, WEBHOOK_TIMESTAMP_HEADER)
@@ -344,16 +379,16 @@ export async function verifyWebhook(
     !TIMESTAMP.test(sentAt) ||
     entries === undefined
   ) {
-    throw clientError('webhook.invalid_headers')
+    throw clientError(`${kind}.invalid_headers`)
   }
   const timestamp = Number(sentAt)
   const now = Math.floor((options.now ?? Date.now()) / 1000)
   if (Math.abs(now - timestamp) > WEBHOOK_TOLERANCE_SECONDS) {
-    throw clientError('webhook.timestamp_out_of_tolerance')
+    throw clientError(`${kind}.timestamp_out_of_tolerance`)
   }
   const text = bodyText(body)
   if (text === undefined) {
-    throw clientError('webhook.invalid_signature')
+    throw clientError(`${kind}.invalid_signature`)
   }
   // The signature every secret would have made, all of them, before anything is compared.
   const expected: string[] = []
@@ -372,16 +407,11 @@ export async function verifyWebhook(
     }
   }
   if (matched === 0) {
-    throw clientError('webhook.invalid_signature')
+    throw clientError(`${kind}.invalid_signature`)
   }
-  let parsed: unknown
   try {
-    parsed = JSON.parse(text)
+    return { id, payload: JSON.parse(text) as unknown }
   } catch {
-    throw clientError('webhook.invalid_payload')
+    throw clientError(`${kind}.invalid_payload`)
   }
-  if (!isEvent(parsed, id)) {
-    throw clientError('webhook.invalid_payload')
-  }
-  return parsed
 }

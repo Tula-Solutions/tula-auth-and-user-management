@@ -43,6 +43,7 @@ import * as logger from '~/lib/logger'
 import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
+import * as Hooks from '~/modules/hook/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
@@ -1797,7 +1798,9 @@ async function redeemOAuthTicket(
  *   tokens and with the new `attemptSecret`.
  * @throws AuthError `oauth.ticket_invalid`, `oauth.different_browser`,
  *   `request.origin_not_allowed`, `auth.method_disabled`, `oauth.email_missing`,
- *   `oauth.email_unverified`, `oauth.account_exists` or `auth.user_banned`.
+ *   `oauth.email_unverified`, `oauth.account_exists`, `auth.user_banned`, or, where the
+ *   sign-in would create an account, the `before_sign_up` hook's `hook.denied` or
+ *   `hook.unavailable`.
  */
 export async function exchangeOAuth(
   deps: Deps,
@@ -1812,7 +1815,8 @@ export async function exchangeOAuth(
     tenant,
     provider,
     redeemed.profile,
-    context
+    context,
+    state.client
   )
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
@@ -1911,7 +1915,8 @@ export async function exchangeOAuthLink(
  * @param context - The requesting device.
  * @returns `complete` with tokens, or `needs_second_factor` without.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
- *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`.
+ *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`; for a sign-up, the
+ *   `before_sign_up` hook's `hook.denied` or `hook.unavailable` (the attempt has then ended).
  */
 export async function verifyEmail(
   deps: Deps,
@@ -1981,6 +1986,14 @@ export async function verifyEmail(
     // Answer as if the guess was wrong: the attempt can never create or enter an account.
     throw new AuthError('verification.invalid_code', { attemptsRemaining: 0 })
   }
+  // The address is proven and the attempt is no decoy: an account is about to be created, and
+  // only now is the environment's hook asked (ADR 0035). A refusal ends the attempt.
+  const clearance = await clearSignUp(deps, tenant, attempt, {
+    email: attempt.identifier,
+    method: state.passwordHash ? 'password' : 'passwordless',
+    client: state.client,
+    ipAddress: cleanOrigin(context).ipAddress,
+  })
   const userId = deps.ids.next()
   const created = await deps.users.create(
     {
@@ -2006,6 +2019,7 @@ export async function verifyEmail(
         method: 'sign_up',
         emailVerified: true,
         ...(!state.passwordHash && { passwordless: true }),
+        ...(clearance === 'bypassed' && { hookBypassed: true }),
       },
     })
   )
@@ -2024,6 +2038,62 @@ export async function verifyEmail(
     ...required,
   })
   return advance(deps, tenant, attempt, proven(state, 'email'), userId, next, required, context)
+}
+
+/**
+ * Ask the environment's `before_sign_up` hook about a sign-up whose address has just been
+ * proven, and end the attempt when the answer is no (ADR 0035).
+ *
+ * **Why here and nowhere earlier.** A sign-up's start answers the same for an address that has
+ * an account and one that has none, and an attempt for an existing address is a decoy whose
+ * code nobody knows. The hook is asked only for a new address, so asking it at the start (or
+ * at any step a decoy also reaches) would make "was the hook asked", its answer and its time
+ * an oracle for which addresses exist. This is the first point where the flow already answers
+ * differently: the caller has presented the emailed code, which only the address's owner
+ * holds and which no decoy attempt accepts.
+ *
+ * It is also behind every check the step makes first: the attempt's secret and origin
+ * (`load`), the method's switch, the environment's ceiling and a spent code. Nobody makes the
+ * server call the operator's endpoint without an inbox of their own and a code from it.
+ *
+ * **A refusal ends the attempt.** The code is spent by then, so an attempt left open could
+ * only be continued by asking for another code, with the user none the wiser about why. It is
+ * deleted (with the password hash it holds), nothing of an account exists, and the client is
+ * told which of the two it was: `hook.denied` (with the operator's code) or
+ * `hook.unavailable` (try again later). If the delete itself fails, that is logged and the
+ * hook's error is still the answer: the attempt then expires by itself. Any other error (the environment's cap on hook calls,
+ * a store that is down) leaves the attempt as it is.
+ *
+ * @returns What the hook module returns: `clear` or `bypassed`, and nothing of an answer.
+ * @throws AuthError `hook.denied` or `hook.unavailable`.
+ */
+async function clearSignUp(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: Pick<FlowAttemptRecord, 'id'>,
+  question: Hooks.SignUpQuestion
+): Promise<Hooks.SignUpClearance> {
+  try {
+    return await Hooks.beforeSignUp(deps, tenant, question)
+  } catch (error) {
+    if (
+      error instanceof AuthError &&
+      (error.code === 'hook.denied' || error.code === 'hook.unavailable')
+    ) {
+      try {
+        await deps.flowAttempts.delete(tenant.environmentId, attempt.id)
+      } catch (cleanup) {
+        // The hook's verdict is what the client must hear, not that tidying up after it
+        // failed. The attempt is left to expire; its code is spent, and nothing was created.
+        logger.warn('could not end a sign-up attempt after its hook refused it', {
+          environmentId: tenant.environmentId,
+          attemptId: attempt.id,
+          err: cleanup instanceof Error ? cleanup.name : 'unknown',
+        })
+      }
+    }
+    throw error
+  }
 }
 
 /**

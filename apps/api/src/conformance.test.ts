@@ -60,6 +60,8 @@ describe('conformance scenarios, in process', () => {
       'webhook endpoint on a refused address',
       'webhook retried after a 500',
       'webhook secret rotated with an overlap',
+      'sign-up denied by a hook',
+      'hook that times out',
     ])
   })
 

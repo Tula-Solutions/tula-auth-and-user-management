@@ -9,6 +9,7 @@ import {
   type OAuthProvider,
   type OAuthProviderSettings,
   type OAuthProviderUpdate,
+  type SessionClient,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError, ValidationError } from '~/exceptions'
@@ -18,6 +19,7 @@ import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import { isEcP256PrivateKey } from '~/lib/pkcs8'
 import * as Audit from '~/modules/audit/service'
+import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
 import * as Settings from '~/modules/settings/service'
 import type { OAuthCredentials, OAuthProfile } from '~/ports/oauth-provider'
@@ -398,7 +400,16 @@ export interface ResolvedAccount {
 
 type AccountDeps = Pick<
   Deps,
-  'users' | 'ids' | 'clock' | 'mailer' | 'environmentSettings' | 'config' | 'rateLimiter'
+  | 'users'
+  | 'ids'
+  | 'clock'
+  | 'mailer'
+  | 'environmentSettings'
+  | 'config'
+  | 'rateLimiter'
+  | 'hooks'
+  | 'outbound'
+  | 'secretBox'
 >
 
 /**
@@ -412,7 +423,11 @@ type AccountDeps = Pick<
  *    (`oauth.email_missing`, `oauth.email_unverified`), **before** the address is looked up, so
  *    an unverified address can neither create an account nor reveal whether one exists.
  * 3. **No user has that address** → a new user with the identity, the address marked verified
- *    (the provider vouches for it) and no password.
+ *    (the provider vouches for it) and no password. **This row is a sign-up**, and the only
+ *    place the environment's `before_sign_up` hook is asked on this path (ADR 0035): after
+ *    the provider has proven the address, where the answer already differs by whether an
+ *    account exists (rows 4 and 5), and never for rows 1, 2, 4 or 5. A refusal creates
+ *    nothing.
  * 4. **A user has that address, and it is verified on their Tula account** → the identity is
  *    connected to them and they sign in (a second factor still applies afterwards). Both sides
  *    have proven the same inbox.
@@ -429,20 +444,24 @@ type AccountDeps = Pick<
  * @param tenant - The environment.
  * @param provider - The provider that vouched.
  * @param profile - What it said.
- * @param origin - The request, for the audit entries.
+ * @param origin - The request, for the audit entries and the hook's question.
+ * @param client - The kind of client the sign-in was started from, for the hook's question.
  * @returns The account.
  * @throws AuthError `oauth.email_missing`, `oauth.email_unverified`, `oauth.account_exists`,
- *   `auth.user_banned` (a banned user is not connected to anything), or `flow.invalid_step`
- *   when two rounds both lost a race.
+ *   `auth.user_banned` (a banned user is not connected to anything), `flow.invalid_step`
+ *   when two rounds both lost a race, or the hook's `hook.denied` or `hook.unavailable`.
  */
 export async function resolveAccount(
   deps: AccountDeps,
   tenant: Scope,
   provider: OAuthProvider,
   profile: OAuthProfile,
-  origin: Partial<Origin>
+  origin: Partial<Origin>,
+  client: SessionClient
 ): Promise<ResolvedAccount> {
   const { environmentId } = tenant
+  // Asked once: a second round (the insert lost a race) creates on the answer already given.
+  let clearance: Hooks.SignUpClearance | undefined
   for (let round = 0; round < 2; round += 1) {
     const known = await deps.users.findByIdentity(environmentId, provider, profile.subject)
     if (known) {
@@ -458,6 +477,12 @@ export async function resolveAccount(
     const now = deps.clock.now()
     const owner = await deps.users.findByEmail(environmentId, parsed.normalized)
     if (!owner) {
+      clearance ??= await Hooks.beforeSignUp(deps, tenant, {
+        email: parsed.normalized,
+        method: strategyOf(provider),
+        client,
+        ipAddress: cleanOrigin(origin).ipAddress,
+      })
       const userId = deps.ids.next()
       const created = await deps.users.create(
         {
@@ -479,7 +504,12 @@ export async function resolveAccount(
           type: 'user.created',
           actor: { type: 'user', id: userId, ...cleanOrigin(origin) },
           target: { type: 'user', id: userId },
-          data: { method: strategyOf(provider), emailVerified: true, passwordless: true },
+          data: {
+            method: strategyOf(provider),
+            emailVerified: true,
+            passwordless: true,
+            ...(clearance === 'bypassed' && { hookBypassed: true }),
+          },
         })
       )
       const user = created ? await deps.users.findById(environmentId, userId) : null

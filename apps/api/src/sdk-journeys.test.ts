@@ -23,7 +23,15 @@ import { decodeJwt } from 'jose'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
 import { base32Decode, totp } from '~/lib/totp'
-import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
+import * as Hooks from '~/modules/hook/service'
+import {
+  createTestDeps,
+  seedApiKey,
+  TEST_ACTOR,
+  TEST_CONFIG,
+  TEST_TENANT,
+  type TestDeps,
+} from '~/testing'
 
 // The SDK, driven through its public API against the real server in process: memory adapters,
 // a clock the tests advance, and `fetch` handed straight to the app. Every conformance
@@ -340,6 +348,107 @@ describe('SDK journeys against the API in process', () => {
     expect((await tula.user.get()).emailVerifiedAt).not.toBeNull()
     expect((await tula.session.getToken())?.split('.')).toHaveLength(3)
   })
+
+  /** The operator's endpoint of a `before_sign_up` hook: a listener in this process. */
+  async function withHook(
+    s: Server,
+    respond: () => Response | Promise<Response>,
+    run: (asked: () => number) => Promise<void>
+  ): Promise<void> {
+    let asked = 0
+    const endpoint = Bun.serve({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch: () => {
+        asked += 1
+        return respond()
+      },
+    })
+    try {
+      await Hooks.create(
+        s.deps,
+        { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId },
+        {
+          point: 'before_sign_up',
+          url: `http://127.0.0.1:${endpoint.port}/before-sign-up`,
+          enabled: true,
+          deadlineMs: 100,
+          failureMode: 'deny',
+        },
+        TEST_ACTOR
+      )
+      await run(() => asked)
+    } finally {
+      await endpoint.stop(true)
+    }
+  }
+
+  journey(
+    'sign-up denied by a hook',
+    'sign-up denied by a hook: the client gets the operator’s code, stays signed out, and can start again',
+    async () => {
+      const s = await server()
+      const { tula } = s.client('server')
+      const email = freshEmail()
+      let answer: unknown = { decision: 'deny', code: 'disposable_email' }
+      await withHook(
+        s,
+        () => Response.json(answer),
+        async (asked) => {
+          const flow = await tula.signUp.start({ email, password: PASSWORD })
+          expect(flow.step.status).toBe('needs_email_verification')
+          expect(asked()).toBe(0)
+
+          const error = await caught(flow.verifyEmail({ code: s.code(email) }))
+          expect(error.code).toBe('hook.denied')
+          expect(error.status).toBe(403)
+          expect(error.params).toEqual({ code: 'disposable_email' })
+          expect(error.message).toBe('This sign-up was not allowed.')
+          expect(asked()).toBe(1)
+          expect(tula.state.status).not.toBe('signed-in')
+          expect(await tula.session.getToken()).toBeNull()
+
+          // The attempt has ended on the server: the flow object the client holds is spent.
+          expect((await caught(flow.verifyEmail({ code: s.code(email) }))).code).toBe(
+            'flow.not_found'
+          )
+          answer = { decision: 'allow' }
+          const other = freshEmail()
+          const again = await tula.signUp.start({ email: other, password: PASSWORD })
+          expect((await again.verifyEmail({ code: s.code(other) })).status).toBe('complete')
+          expect(tula.state.status).toBe('signed-in')
+        }
+      )
+    }
+  )
+
+  journey(
+    'hook that times out',
+    'hook that times out: the client is told to try again later, not that it was refused',
+    async () => {
+      const s = await server()
+      const { tula } = s.client('server')
+      const email = freshEmail()
+      await withHook(
+        s,
+        () => new Promise<Response>(() => undefined),
+        async (asked) => {
+          const flow = await tula.signUp.start({ email, password: PASSWORD })
+          const started = performance.now()
+          const error = await caught(flow.verifyEmail({ code: s.code(email) }))
+          // The hook's deadline is 100 ms: bounded well inside a second.
+          expect(performance.now() - started).toBeLessThan(1500)
+          expect(error.code).toBe('hook.unavailable')
+          expect(error.status).toBe(503)
+          // Nothing of an operator's code: this was not a denial.
+          expect(error.params?.code).toBeUndefined()
+          expect(asked()).toBe(1)
+          expect(tula.state.status).not.toBe('signed-in')
+          expect(await tula.session.getToken()).toBeNull()
+        }
+      )
+    }
+  )
 
   journey(
     'sign-in',

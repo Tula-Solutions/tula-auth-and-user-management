@@ -1,4 +1,4 @@
-import { TulaEventSchema } from '@tula/contract'
+import { type HookAnswer, HookQuestionSchema, TulaEventSchema } from '@tula/contract'
 import {
   signWebhook,
   WEBHOOK_ID_HEADER,
@@ -19,6 +19,13 @@ export interface ReceivedDelivery {
 }
 
 /**
+ * How a receiver answers the questions of a hook: with an answer of the contract (as the JSON
+ * body of a `200`), with a bare status, or not at all (`hang`: the request is left open until
+ * the receiver stops, which is how a scenario plays an endpoint that never answers).
+ */
+export type HookScript = HookAnswer | { status: number } | 'hang'
+
+/**
  * The operator's backend of a scenario: an HTTP listener on a port the system picks, which
  * keeps what it is sent and answers `204`, unless it was told to answer its next deliveries
  * otherwise ({@link WebhookReceiver.answerNext}): that is how a scenario plays a backend that
@@ -36,6 +43,7 @@ export class WebhookReceiver {
   readonly #server: ReturnType<typeof Bun.serve>
   readonly #waiting: ReceivedDelivery[]
   readonly #answers: number[]
+  #script: HookScript | undefined
 
   /** @param hostname - The address to listen on, e.g. `127.0.0.1`. */
   constructor(hostname: string) {
@@ -50,6 +58,16 @@ export class WebhookReceiver {
           headers: Object.fromEntries(request.headers),
           body: await request.text(),
         })
+        const script = this.#script
+        if (script === 'hang') {
+          // Never answered: the server under test gives up at its own deadline.
+          return new Promise<Response>(() => undefined)
+        }
+        if (script !== undefined) {
+          return 'status' in script
+            ? new Response(null, { status: script.status })
+            : Response.json(script)
+        }
         // What a receiver should do: take the event, answer, and work afterwards. A status a
         // scenario asked for is used once, in order; after those, 204 again.
         return new Response(null, { status: this.#answers.shift() ?? 204 })
@@ -64,6 +82,15 @@ export class WebhookReceiver {
    */
   answerNext(statuses: readonly number[]): void {
     this.#answers.push(...statuses)
+  }
+
+  /**
+   * Answer every request from now on as a hook's endpoint would, until told otherwise.
+   *
+   * @param script - The answer, a bare status, or `hang`.
+   */
+  answerHook(script: HookScript): void {
+    this.#script = script
   }
 
   /** The port the listener got. */
@@ -89,6 +116,7 @@ export class WebhookReceiver {
     void this.#server.stop(true)
     this.#waiting.length = 0
     this.#answers.length = 0
+    this.#script = undefined
   }
 }
 
@@ -234,6 +262,79 @@ export async function checkDelivery(
   }
   if (expected !== undefined) {
     problems.push(...match(expected, parsed, 'event').map((mismatch) => mismatch.message))
+  }
+  return { problems, id }
+}
+
+/**
+ * Check one question a hook's endpoint was asked, as a receiver must: a `POST` of JSON with
+ * the Standard Webhooks headers, a signature that is right for the hook's secret, a timestamp
+ * close to now, and a body that is a question of the contract with the request's id (and so
+ * is not an event, and holds no key the contract does not name).
+ *
+ * No problem quotes the secret, a signature or the body: the report is read in CI logs.
+ *
+ * @param question - What arrived.
+ * @param secret - The hook's signing secret (`whsec_…`).
+ * @param now - The time on the server, in milliseconds since the Unix epoch.
+ * @param expected - A subset the question must match, as a request step's `expect.body`.
+ * @returns The problems found, and the question's id.
+ *
+ * @example
+ * ```ts
+ * const { problems } = await checkQuestion(asked, secret, Date.now(), { type: 'hook.before_sign_up' })
+ * ```
+ */
+export async function checkQuestion(
+  question: ReceivedDelivery,
+  secret: string,
+  now: number,
+  expected?: unknown
+): Promise<DeliveryCheck> {
+  const problems: string[] = []
+  if (question.method !== 'POST') {
+    problems.push(`the question was a ${question.method}, not a POST`)
+  }
+  if (!(question.headers['content-type'] ?? '').startsWith('application/json')) {
+    problems.push('the question’s content-type is not application/json')
+  }
+  const id = question.headers[WEBHOOK_ID_HEADER]
+  const sentAt = question.headers[WEBHOOK_TIMESTAMP_HEADER]
+  const signatures = question.headers[WEBHOOK_SIGNATURE_HEADER]
+  if (!id || !sentAt || !signatures || !/^[0-9]+$/.test(sentAt)) {
+    problems.push('the question lacks a webhook-id, webhook-timestamp or webhook-signature header')
+    return { problems }
+  }
+  const timestamp = Number(sentAt)
+  if (Math.abs(Math.floor(now / 1000) - timestamp) > WEBHOOK_TOLERANCE_SECONDS) {
+    problems.push(`${WEBHOOK_TIMESTAMP_HEADER} is more than five minutes from the server’s clock`)
+  }
+  const key = webhookSecretBytes(secret)
+  if (!key) {
+    problems.push('the secret given to the step is not a signing secret (whsec_…)')
+  } else if (signatures !== (await signWebhook(key, id, timestamp, question.body))) {
+    problems.push(`${WEBHOOK_SIGNATURE_HEADER} is not the one signature for the hook’s secret`)
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(question.body)
+  } catch {
+    problems.push('the question’s body is not JSON')
+    return { problems, id }
+  }
+  const asked = HookQuestionSchema.safeParse(parsed)
+  if (!asked.success) {
+    // The path of an issue is a field name of the schema, never a value.
+    const fields = [...new Set(asked.error.issues.map((issue) => issue.path.join('.') || 'body'))]
+    problems.push(`the body is not a hook question of the contract (${fields.join(', ')})`)
+  } else if (asked.data.id !== id) {
+    problems.push(`the question’s id is not the ${WEBHOOK_ID_HEADER} header`)
+  }
+  if (TulaEventSchema.safeParse(parsed).success) {
+    problems.push('the question is also an event of the contract: the two must never be mistaken')
+  }
+  if (expected !== undefined) {
+    problems.push(...match(expected, parsed, 'question').map((mismatch) => mismatch.message))
   }
   return { problems, id }
 }

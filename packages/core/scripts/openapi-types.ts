@@ -74,6 +74,12 @@ export const BROWSER_ONLY_INSTANCE_OPERATIONS: readonly string[] = [
 /** The component that is any event a webhook delivers: a union told apart by `type`. */
 export const WEBHOOK_EVENT_SCHEMA = 'TulaEvent'
 
+/**
+ * The components a hook's receiver is typed from: the question the server posts (a union told
+ * apart by `type`) and the answer it reads. No operation refers to either.
+ */
+export const HOOK_SCHEMAS = ['HookQuestion', 'HookAnswer'] as const
+
 /** Security scheme of an admin operation: the environment's secret key. */
 export const SECRET_KEY_SECURITY_SCHEME = 'secretKey'
 
@@ -419,6 +425,10 @@ export function renderAdminApi(document: OpenApiDocument): string {
     ...(Object.hasOwn(document.components.schemas, WEBHOOK_EVENT_SCHEMA)
       ? [{ $ref: `${REF_PREFIX}${WEBHOOK_EVENT_SCHEMA}` }]
       : []),
+    // What a hook is asked and what it answers: `verifyHook` is typed from them.
+    ...HOOK_SCHEMAS.filter((name) => Object.hasOwn(document.components.schemas, name)).map(
+      (name) => ({ $ref: `${REF_PREFIX}${name}` })
+    ),
   ])
 
   const schemaLines = schemas.map((name) => {

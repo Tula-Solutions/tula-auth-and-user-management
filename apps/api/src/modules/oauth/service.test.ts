@@ -38,7 +38,7 @@ function newUser(overrides: Partial<NewUser> = {}): NewUser {
 }
 
 const resolve = (answer: OAuthProfile = profile) =>
-  OAuth.resolveAccount(deps, tenant, 'google', answer, origin)
+  OAuth.resolveAccount(deps, tenant, 'google', answer, origin, 'web')
 const codeOf = (promise: Promise<unknown>) =>
   promise.then(
     () => 'resolved',

@@ -289,7 +289,8 @@ whose answer decides what happens next (step 2.3).
   rotation opens the current secret and seals it again. The current secret's binding is what
   it has always been: never change it, existing rows must keep opening (a test seals one the
   old way). A current secret that cannot be opened cannot be rotated (`secret_unreadable`).
-- **A delivery is signed in one place, `signatures`, reached only through `request`** (the
+- **A delivery is signed in one place, `signedHeaders` (`~/lib/signing-secret`, shared with
+  hooks), reached only through `request`** (the
   worker, a test event and a delivery sent again): the current secret's signature first,
   then, separated by a space, the previous secret's while its overlap lasts. **Whether the
   previous secret signs is decided there, at each request, from its stored end and
@@ -439,6 +440,58 @@ whose answer decides what happens next (step 2.3).
 - A new event type, a new store method that changes an endpoint, or a new kind of secret
   follows the existing rules: a schema and a fixture in the contract, an `Activity` and a
   `@ts-expect-error` line, a pattern in `@tula/mcp`'s `SECRET_SHAPES`.
+
+### Hooks (`modules/hook`, see ADR 0035)
+
+A **hook** is a signed question whose answer decides what happens next
+([GLOSSARY.md](GLOSSARY.md)). Never call it a webhook, and never call a webhook a hook. The
+one point so far is `before_sign_up`.
+
+- **The hook is asked only where a new account is about to be created for a proven
+  address**: in `Flows.verifyEmail` after `Verification.verifyCode` and the decoy check, and
+  on the "no user has that address" row of `OAuth.resolveAccount`. Never at a start, never
+  at a step a decoy attempt also reaches, never for an existing account, never from
+  `Users.create` (an administrator's own act). Asked anywhere earlier, whether it was asked
+  tells an observer whether an address has an account. A new way to create an account by a
+  sign-up calls `Hooks.beforeSignUp` at that same point, and gets the side-by-side test (an
+  existing and a new address: same answers, and the receiver called for neither before the
+  proof).
+- **A hook is not an authority.** `Hooks.beforeSignUp` returns `'clear'` or `'bypassed'` and
+  throws otherwise; the parsed answer never leaves `call` in the service. Never return more
+  of an answer, never widen the two-member verdict, and never let a key of the answer reach
+  a user, an attempt's state or a session. Keep the test that answers `emailVerified`,
+  `userId`, `amr` and compares the account with one made without a hook.
+- **Anything but a 2xx whose body is exactly an answer is a failure**: another status
+  whatever its body, a redirect, a body over `HOOK_MAX_RESPONSE_BYTES`, an unknown key, no
+  answer in time, a guard refusal, a secret that does not open. A failure is never read as
+  an allow or as a denial; the hook's `failureMode` decides (`deny` by default). Unknown
+  keys are a failure on purpose: never make the answer's schema lenient.
+- **The deadline is 100 to 5000 ms, held three times**: the contract's schema, the check
+  `hooks_deadline_bounds`, and the service (`Math.min(…, HOOK_MAX_DEADLINE_MS)`). Never
+  loosen one because another holds.
+- **A refusal ends the attempt and leaves nothing**: no user, identity, credential, session
+  or `user.created`. `hook.denied` (403, `params.code` is the operator's code) and
+  `hook.unavailable` (503) are different codes on purpose. Any other error leaves the
+  attempt alone.
+- **What removes the check is a recorded weakening** (`hookWeakenings` in the contract,
+  shared with the later `tula apply` and dashboard): `failureMode: 'allow'`, switching a
+  hook off, removing one that is on. The store's `update` and `delete` are compare-and-sets
+  on what the weakening was judged against. An account let through by a failed hook carries
+  `hookBypassed: true` in `user.created`.
+- **The secret and the signature are the webhooks' own code** (`~/lib/signing-secret`:
+  `newSigningSecret`, `openSigningSecret`, `signedHeaders`), under a purpose of its own
+  (`hook-secrets`, bound to environment and hook id). Never a second place that signs.
+- **The question is an allow-list and is never stored**: the address, the method, the client
+  kind and the IP address (`HookBeforeSignUpDataSchema`, strict), named field by field where
+  the body is built. Never in the outbox, the audit log or a log line; the rule that an
+  event payload holds no email or IP address is unchanged. Of an answer only the decision
+  and the code are kept; `last_failure_reason` is one of `HOOK_FAILURE_REASONS`.
+- **Calls are counted per environment** (`HOOK_CALLS_PER_MINUTE`, just before a call, only
+  where a hook is on), and there is no route that asks a hook on demand.
+- `verifyHook` (`@tula/admin`) and `verifyWebhook` share `verifySigned` and refuse each
+  other's bodies: a question has a type from a closed list and no `actor` or `target`.
+- The `hook` conformance step uses the `webhook` step's receiver; a scenario with one sets
+  `needsWebhookReceiver` and is added, by name, to the skipped set in `.github/workflows/ci.yml`.
 
 ### React SDK (see ADR 0022)
 
@@ -1039,7 +1092,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   CLI: [ADR 0031](docs/adr/0031-instance-admin-and-cli.md); the dashboard's session, its CSRF
   rules, the control plane and how the app is served: [ADR 0032](docs/adr/0032-dashboard.md);
   the MCP server, what it may return and why it has no write tools:
-  [ADR 0033](docs/adr/0033-mcp-server.md); webhooks (endpoints, the signing secret, the
+  [ADR 0033](docs/adr/0033-mcp-server.md); webhooks: [ADR 0034](docs/adr/0034-webhooks.md);
+  hooks, where one is asked and what it cannot do: [ADR 0035](docs/adr/0035-hooks.md); webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`
@@ -1277,9 +1331,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook}`,
   `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
-  `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
+  `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
   it needs tests for the failure paths, not just the happy path.
 
@@ -1468,7 +1522,8 @@ apps/api/src/
                       # instance (diagnostics), control-plane (the dashboard's session,
                       # workspaces, projects, environments, the instance audit log),
                       # webhook (endpoints, the delivery worker: a background job, the
-                      # delivery log, test events and sending a delivery again)
+                      # delivery log, test events and sending a delivery again),
+                      # hook (the question asked before a sign-up, and its admin routes)
 ```
 
 ## Common commands

@@ -11,6 +11,7 @@ const ENVIRONMENT = '0199c2f4-7a13-7b66-a4d5-7e2f3c9b0a04'
 const PASSKEY = '0199c2f4-7a14-7c77-95e6-8f3a4d0c1b05'
 const SIGNING_KEY = '0199c2f4-7a15-7d88-86f7-9a4b5e1d2c06'
 const WEBHOOK_ENDPOINT = '0199c2f4-7a18-7abb-99ca-cd7e8b4a5f09'
+const HOOK = '0199c2f4-7a19-7bcc-8adb-de8f9c5b6a10'
 
 const schemaVersion = EVENT_SCHEMA_VERSION
 const occurredAt = '2026-10-08T09:30:00.000Z'
@@ -26,6 +27,7 @@ const aboutSession = { type: 'session', id: SESSION } as const
 const aboutApiKey = { type: 'api_key', id: API_KEY } as const
 const aboutEnvironment = { type: 'environment', id: ENVIRONMENT } as const
 const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } as const
+const aboutHook = { type: 'hook', id: HOOK } as const
 
 /** The id of the `n`th example event. */
 function eventId(n: number): string {
@@ -55,7 +57,7 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: user,
     target: aboutUser,
-    data: { method: 'sign_up', emailVerified: true, passwordless: true },
+    data: { method: 'sign_up', emailVerified: true, passwordless: true, hookBypassed: true },
   },
   'user.email_verified': {
     id: eventId(2),
@@ -344,5 +346,32 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutWebhookEndpoint,
     data: {},
+  },
+  'hook.created': {
+    id: eventId(33),
+    type: 'hook.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutHook,
+    data: { point: 'before_sign_up', enabled: true, failureMode: 'allow', weakened: true },
+  },
+  'hook.updated': {
+    id: eventId(34),
+    type: 'hook.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutHook,
+    data: { point: 'before_sign_up', changed: ['enabled', 'failureMode'], weakened: true },
+  },
+  'hook.deleted': {
+    id: eventId(35),
+    type: 'hook.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutHook,
+    data: { point: 'before_sign_up', weakened: true },
   },
 }

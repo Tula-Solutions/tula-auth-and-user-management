@@ -43,6 +43,11 @@ paths:
 - The server calls an address an operator typed only through `~/lib/outbound`
   (`Outbound.check` when the address is saved, `Outbound.request` to call it), with
   `deps.outbound`. Never `fetch`.
+- A hook (ADR 0035) is asked through `Hooks.beforeSignUp` only, and only where a sign-up is
+  about to create an account for a proven address (after the emailed code in
+  `Flows.verifyEmail`; the new-user row of `OAuth.resolveAccount`). The caller gets `'clear'`
+  or `'bypassed'` and nothing of the answer. Never ask one from a start, from an admin route
+  or on demand.
 - Return flow steps from `@tula/contract` for any sign-in/sign-up interaction. Never return UI
   hints like "show the password form".
 - Throw `AuthError(code, params)` or `ServiceException` subclasses. Add new error codes to

@@ -213,3 +213,20 @@ Every behaviour had its test written and seen to fail before the code, with thes
 - The last test of `real-api.test.ts` (nothing shaped like `whsec_…` in any run's output)
   cannot fail for the redaction alone: no line of the CLI prints a secret unasked with or
   without it. It holds the outcome, not the net.
+
+## Step 2.3, the hook before sign-up (TULA-45, [ADR 0035](../adr/0035-hooks.md))
+
+What was built is tested against a receiver in the test's own process, through the real
+outbound guard in the `local` tier. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| The hook store on a real PostgreSQL server | The shared suite runs on the memory adapter and on PGlite (with every migration, as the runtime role). It is listed in `stores.integration.ts`, which was **not run**: the worktree has no database settings. Two registrations at once meeting the unique index on a real server is therefore unobserved. |
+| The two conformance scenarios against a live server | Run in process only. A containerised target skips them by name (it cannot reach the runner's receiver); they were not run against a server on the same host either. |
+| A real operator endpoint over `https` | Every call in the tests is plain `http` to loopback, which only the `local` tier allows. TLS, a real certificate chain and a real name server on this path are the outbound guard's own tests, not this step's. |
+| Timing | The tests assert on responses and on whether the receiver was called, for an existing and a new address side by side. No test measures how long a request takes beyond "a hook that hangs is given up inside a second and a half with a 100 ms deadline". Nothing equalises the time of a request that asks the hook with one that does not; ADR 0035 says why that difference is only between requests that already answer differently. |
+| The deadline under load | One request at a time. What many sign-ups waiting on a slow endpoint do to the API's own latency (each holds a request open for up to the deadline) was not measured; the ceiling of 600 calls a minute bounds how many can be waiting. |
+| What a denied sign-up looks like in a browser | `@tula/react` was read, not run: the code screen shows the message of `hook.denied` / `hook.unavailable` from `@tula/core`'s table and keeps "start again". No component changed, so no Playwright project was run. |
+| `verifyHook` behind a real framework's body handling | Called with text and with bytes, as `verifyWebhook` was. |
+
+Tests seen to fail first, and the ones that were not, are listed in the step's report.

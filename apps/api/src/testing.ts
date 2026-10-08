@@ -10,6 +10,7 @@ import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-se
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { MemoryFactorStore } from '~/adapters/memory/factors'
 import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
+import { MemoryHookStore } from '~/adapters/memory/hooks'
 import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryJobLock } from '~/adapters/memory/job-lock'
 import { MemoryLockout } from '~/adapters/memory/lockout'
@@ -61,6 +62,7 @@ export interface TestDeps extends Deps {
   controlPlane: MemoryControlPlane
   webhookEndpoints: MemoryWebhookEndpointStore
   webhookDeliveries: MemoryWebhookDeliveryStore
+  hooks: MemoryHookStore
   outbound: FakeOutbound
 }
 
@@ -129,6 +131,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     probes: [],
     diagnostics: new MemoryDiagnostics(clock),
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
+    hooks: new MemoryHookStore(activityLog),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),
     // No spread: a retry is due exactly when the schedule says.

@@ -9,7 +9,7 @@ import { VirtualAuthenticator } from './passkey'
 import type { Scenario, ScenarioRequest, Step } from './scenario'
 import { expandJson, fill } from './template'
 import { base32Decode, totp, wrongTotp } from './totp'
-import { checkDelivery, type ReceivedDelivery, WebhookReceiver } from './webhook'
+import { checkDelivery, checkQuestion, type ReceivedDelivery, WebhookReceiver } from './webhook'
 
 /** Header carrying the publishable key. */
 export const PUBLISHABLE_KEY_HEADER = 'x-tula-publishable-key'
@@ -278,6 +278,10 @@ async function runStep(
     await runPasskey(step, variables)
     return
   }
+  if ('hook' in step) {
+    await runHook(target, step, variables)
+    return
+  }
   if ('webhook' in step) {
     await runWebhook(target, step, variables)
     return
@@ -433,6 +437,58 @@ function stopReceivers(variables: object): void {
     receiver.stop()
   }
   RECEIVERS.delete(variables)
+}
+
+/**
+ * Script a named receiver as a hook's endpoint and store its URL, or check the next question
+ * that reached it (or that none did). The receiver is the `webhook` step's.
+ */
+async function runHook(
+  target: Target,
+  step: Extract<Step, { hook: unknown }>,
+  variables: Record<string, string>
+): Promise<void> {
+  const { webhooks } = target
+  if (!webhooks) {
+    throw new StepFailure(['this target has no webhook receiver the server can reach'])
+  }
+  const named = RECEIVERS.get(variables) ?? new Map<string, WebhookReceiver>()
+  RECEIVERS.set(variables, named)
+  const { hook } = step
+  if (hook.expect === undefined) {
+    const receiver = named.get(hook.receiver) ?? new WebhookReceiver(webhooks.hostname)
+    named.set(hook.receiver, receiver)
+    if (hook.answer !== undefined) {
+      receiver.answerHook(hook.answer)
+    }
+    if (hook.captureUrl !== undefined) {
+      variables[hook.captureUrl] = webhooks.url
+        ? webhooks.url(receiver.port)
+        : `http://${webhooks.hostname}:${receiver.port}/webhooks/tula`
+    }
+    return
+  }
+  const receiver = named.get(hook.receiver)
+  if (!receiver) {
+    throw new StepFailure([`the receiver ${hook.receiver} was not started by an earlier step`])
+  }
+  // A hook is asked inside the request that caused it: what was asked has arrived by now.
+  const question = receiver.take()
+  if ('nothing' in hook.expect) {
+    if (question) {
+      throw new StepFailure(['the hook was asked, and should not have been'])
+    }
+    return
+  }
+  if (!question) {
+    throw new StepFailure(['no question arrived at the receiver: the hook was not asked'])
+  }
+  const expected = fill(hook.expect, variables)
+  const now = target.now ? target.now() : Date.now()
+  const { problems } = await checkQuestion(question, expected.secret, now, expected.body)
+  if (problems.length > 0) {
+    throw new StepFailure(problems)
+  }
 }
 
 /** Start a named receiver and store its URL, or check the next delivery that reached it. */

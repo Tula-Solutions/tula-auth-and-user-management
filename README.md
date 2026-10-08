@@ -27,6 +27,8 @@ and prebuilt UI, first-class native mobile, and data you own.
   ([Standard Webhooks](https://www.standardwebhooks.com/)), retried over a day on a fixed
   schedule, with a delivery log, test events and a verifier in `@tula/admin`
   ([docs/webhooks.md](docs/webhooks.md)).
+- **Hooks**: a signed question your backend answers before a sign-up creates an account:
+  allow, or deny with your own message code ([docs/hooks.md](docs/hooks.md)).
 - **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
   ([docs/self-host.md](docs/self-host.md)).
 - **A conformance suite** that the server passes in process, as two packaged instances, behind
@@ -107,6 +109,7 @@ makes them unreadable.
 | `GET, PUT /v1/admin/settings` | secret key | The environment's settings: app name, password policy, sign-in methods, allowed origins (`If-Match` on the revision) |
 | `GET /v1/admin/audit-logs` | secret key | The record of auth events and admin actions |
 | `GET, POST /v1/admin/webhook-endpoints`, `GET, PATCH, DELETE /v1/admin/webhook-endpoints/:id` | secret key | Where an environment's events are delivered, signed ([docs/webhooks.md](docs/webhooks.md)) |
+| `GET, POST /v1/admin/hooks`, `GET, PATCH, DELETE /v1/admin/hooks/:id` | secret key | The endpoint the server asks before a sign-up creates an account ([docs/hooks.md](docs/hooks.md)) |
 | `GET /v1/client/config` | publishable key | What a sign-in screen needs: app name, sign-in methods, password policy |
 | `GET /v1/client/password-policy` | publishable key | Password rules for the live checklist |
 | `POST /v1/client/sign-ups`, `…/sign-ups/:id/verify-email`, `…/sign-ups/:id/resend-code` | publishable key | Sign up with email and password, verified by an emailed code |
@@ -161,6 +164,8 @@ codes and more providers; Phase 3 organizations, roles, invitations and importer
 
 - [x] Typed, versioned event payloads; the outbound-request guard
 - [x] Webhooks: an endpoint, a signed delivery, `verifyWebhook` ([ADR 0034](docs/adr/0034-webhooks.md))
+- [x] The hook before sign-up: a signed question, allow or deny, `verifyHook` ([ADR 0035](docs/adr/0035-hooks.md))
+- [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
 - [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the
       dashboard screen
 

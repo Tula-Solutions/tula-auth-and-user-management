@@ -48,6 +48,7 @@ export const AUDIT_TARGET_TYPES = [
   'signing_key',
   'environment',
   'webhook_endpoint',
+  'hook',
 ] as const
 
 /**

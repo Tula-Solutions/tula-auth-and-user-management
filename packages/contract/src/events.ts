@@ -8,6 +8,7 @@ import {
   EVENT_TARGET_TYPES,
   type EventTargetType,
 } from './event-types'
+import { HOOK_FAILURE_MODES, HOOK_FIELDS, HOOK_POINTS } from './hook'
 import { OAuthProviderSchema } from './oauth'
 import { SessionClientSchema } from './session'
 import { AUTHENTICATION_METHODS } from './tokens'
@@ -123,6 +124,13 @@ export const EVENT_DATA_SCHEMAS = {
     emailVerified: z.boolean(),
     /** `true` when the account was created without a password; absent otherwise. */
     passwordless: z.boolean().optional(),
+    /**
+     * `true` when the environment's `before_sign_up` hook could not be asked, or did not
+     * answer as the contract says, and the account was created anyway because the hook's
+     * failure mode is `allow`. Absent otherwise: when the hook allowed it, when there is no
+     * hook, and for an account an administrator created (a hook is not asked about those).
+     */
+    hookBypassed: z.boolean().optional(),
   }),
   'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
   'user.banned': data('UserBanned', 'A user was banned; their sessions end.', {}),
@@ -356,6 +364,35 @@ export const EVENT_DATA_SCHEMAS = {
     'An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only.',
     {}
   ),
+  'hook.created': data(
+    'HookCreated',
+    'A hook was registered. Its address and signing secret are not in the event.',
+    {
+      /** When the server asks it. */
+      point: z.enum(HOOK_POINTS),
+      /** Whether it was registered switched on. */
+      enabled: z.boolean(),
+      /** What a failed call does: refuse (`deny`) or let through (`allow`). */
+      failureMode: z.enum(HOOK_FAILURE_MODES),
+      /** `true` when it was registered to let through on failure; absent otherwise. */
+      weakened: z.boolean().optional(),
+    }
+  ),
+  'hook.updated': data('HookUpdated', 'A hook was changed.', {
+    point: z.enum(HOOK_POINTS),
+    /** Which fields changed. Names only: `url` says the address changed, never what it is. */
+    changed: z.array(z.enum(HOOK_FIELDS)).min(1).max(HOOK_FIELDS.length),
+    /**
+     * `true` when the change lets through what the hook used to stop: it was switched off,
+     * or set to let through on failure. Absent otherwise.
+     */
+    weakened: z.boolean().optional(),
+  }),
+  'hook.deleted': data('HookDeleted', 'A hook was removed; it is not asked any more.', {
+    point: z.enum(HOOK_POINTS),
+    /** `true` when the hook was on when it was removed; absent otherwise. */
+    weakened: z.boolean().optional(),
+  }),
 } as const satisfies Record<ActivityType, z.ZodObject>
 
 /**

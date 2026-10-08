@@ -59,6 +59,7 @@ export interface UserCreatedEventData {
   method: UserCreatedEventDataMethod;
   emailVerified: boolean;
   passwordless?: boolean;
+  hookBypassed?: boolean;
 }
 
 export type UserCreatedEventTarget = {
@@ -945,7 +946,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 32
+     * @maximum 35
      */
   eventTypes: number;
   enabled: boolean;
@@ -1136,7 +1137,191 @@ export interface WebhookEndpointPreviousSecretRevokedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent;
+export type HookCreatedEventDataPoint = typeof HookCreatedEventDataPoint[keyof typeof HookCreatedEventDataPoint];
+
+
+export const HookCreatedEventDataPoint = {
+  before_sign_up: 'before_sign_up',
+} as const;
+
+export type HookCreatedEventDataFailureMode = typeof HookCreatedEventDataFailureMode[keyof typeof HookCreatedEventDataFailureMode];
+
+
+export const HookCreatedEventDataFailureMode = {
+  deny: 'deny',
+  allow: 'allow',
+} as const;
+
+/**
+ * A hook was registered. Its address and signing secret are not in the event.
+ */
+export interface HookCreatedEventData {
+  point: HookCreatedEventDataPoint;
+  enabled: boolean;
+  failureMode: HookCreatedEventDataFailureMode;
+  weakened?: boolean;
+}
+
+export type HookCreatedEventTarget = {
+  type: 'hook';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A hook was registered. Its address and signing secret are not in the event.
+ */
+export interface HookCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: HookCreatedEventTarget;
+  data: HookCreatedEventData;
+  test?: true;
+}
+
+export type HookUpdatedEventDataPoint = typeof HookUpdatedEventDataPoint[keyof typeof HookUpdatedEventDataPoint];
+
+
+export const HookUpdatedEventDataPoint = {
+  before_sign_up: 'before_sign_up',
+} as const;
+
+export type HookUpdatedEventDataChangedItem = typeof HookUpdatedEventDataChangedItem[keyof typeof HookUpdatedEventDataChangedItem];
+
+
+export const HookUpdatedEventDataChangedItem = {
+  url: 'url',
+  enabled: 'enabled',
+  deadlineMs: 'deadlineMs',
+  failureMode: 'failureMode',
+} as const;
+
+/**
+ * A hook was changed.
+ */
+export interface HookUpdatedEventData {
+  point: HookUpdatedEventDataPoint;
+  /**
+     * @minItems 1
+     * @maxItems 4
+     */
+  changed: HookUpdatedEventDataChangedItem[];
+  weakened?: boolean;
+}
+
+export type HookUpdatedEventTarget = {
+  type: 'hook';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A hook was changed.
+ */
+export interface HookUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: HookUpdatedEventTarget;
+  data: HookUpdatedEventData;
+  test?: true;
+}
+
+export type HookDeletedEventDataPoint = typeof HookDeletedEventDataPoint[keyof typeof HookDeletedEventDataPoint];
+
+
+export const HookDeletedEventDataPoint = {
+  before_sign_up: 'before_sign_up',
+} as const;
+
+/**
+ * A hook was removed; it is not asked any more.
+ */
+export interface HookDeletedEventData {
+  point: HookDeletedEventDataPoint;
+  weakened?: boolean;
+}
+
+export type HookDeletedEventTarget = {
+  type: 'hook';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A hook was removed; it is not asked any more.
+ */
+export interface HookDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: HookDeletedEventTarget;
+  data: HookDeletedEventData;
+  test?: true;
+}
+
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent;
+
+export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
+
+
+export const HookBeforeSignUpDataMethod = {
+  password: 'password',
+  passwordless: 'passwordless',
+  oauth_google: 'oauth_google',
+  oauth_github: 'oauth_github',
+  oauth_apple: 'oauth_apple',
+} as const;
+
+/**
+ * What a hook is told about a sign-up before the account is created.
+ */
+export interface HookBeforeSignUpData {
+  /**
+     * @minLength 3
+     * @maxLength 320
+     */
+  email: string;
+  method: HookBeforeSignUpDataMethod;
+  client: SessionClient;
+  ipAddress: string | null;
+}
+
+/**
+ * What the server posts, signed, to the hook registered for `before_sign_up`, before it creates an account by a sign-up. Not an event: nothing has happened yet.
+ */
+export interface HookBeforeSignUpQuestion {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.before_sign_up';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  data: HookBeforeSignUpData;
+}
+
+export type HookQuestion = HookBeforeSignUpQuestion;
+
+export type HookAnswer = {
+  decision: 'allow';
+} | {
+  decision: 'deny';
+  /** @pattern ^[a-z0-9_]{1,64}$ */
+  code?: string;
+};
 
 export interface StatusResponse {
   status: 'ok';
@@ -1194,6 +1379,9 @@ export const ErrorCode = {
   webhookurl_not_allowed: 'webhook.url_not_allowed',
   webhookcannot_redeliver: 'webhook.cannot_redeliver',
   webhookrotation_refused: 'webhook.rotation_refused',
+  hookdenied: 'hook.denied',
+  hookunavailable: 'hook.unavailable',
+  hookurl_not_allowed: 'hook.url_not_allowed',
   passkeyregistration_failed: 'passkey.registration_failed',
   passkeyalready_registered: 'passkey.already_registered',
   passkeylimit_reached: 'passkey.limit_reached',
@@ -2058,6 +2246,9 @@ export const ActivityType = {
   webhook_endpointdisabled: 'webhook_endpoint.disabled',
   webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
   webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
 } as const;
 
 export type AuditLogQueryActorType = typeof AuditLogQueryActorType[keyof typeof AuditLogQueryActorType];
@@ -2626,6 +2817,9 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   webhook_endpointdisabled: 'webhook_endpoint.disabled',
   webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
   webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
 } as const;
 
 export interface CreateWebhookEndpointRequest {
@@ -2637,7 +2831,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 32
+     * @maxItems 35
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -2679,6 +2873,9 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   webhook_endpointdisabled: 'webhook_endpoint.disabled',
   webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
   webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
 } as const;
 
 export interface UpdateWebhookEndpointRequest {
@@ -2690,7 +2887,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 32
+     * @maxItems 35
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -2850,6 +3047,9 @@ export const SendTestWebhookRequestEventType = {
   webhook_endpointdisabled: 'webhook_endpoint.disabled',
   webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
   webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
 } as const;
 
 export interface SendTestWebhookRequest {
@@ -2877,6 +3077,110 @@ export interface RotatedWebhookSecret {
   updatedAt: string;
   /** The new signing secret. Store it now: it is shown only once. */
   secret: string;
+}
+
+export interface Hook {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  point: string;
+  url: string;
+  enabled: boolean;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  deadlineMs: number;
+  failureMode: string;
+  lastFailedAt: string | null;
+  /** @nullable */
+  lastFailureReason: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface HookList {
+  data: Hook[];
+}
+
+export interface CreatedHook {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  point: string;
+  url: string;
+  enabled: boolean;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  deadlineMs: number;
+  failureMode: string;
+  lastFailedAt: string | null;
+  /** @nullable */
+  lastFailureReason: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  /** The signing secret. Store it now: it is shown only once. */
+  secret: string;
+}
+
+export type CreateHookRequestPoint = typeof CreateHookRequestPoint[keyof typeof CreateHookRequestPoint];
+
+
+export const CreateHookRequestPoint = {
+  before_sign_up: 'before_sign_up',
+} as const;
+
+export type CreateHookRequestFailureMode = typeof CreateHookRequestFailureMode[keyof typeof CreateHookRequestFailureMode];
+
+
+export const CreateHookRequestFailureMode = {
+  deny: 'deny',
+  allow: 'allow',
+} as const;
+
+export interface CreateHookRequest {
+  point: CreateHookRequestPoint;
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^[^\s\u0000-\u001f\u007f]+$
+     */
+  url: string;
+  enabled?: boolean;
+  /**
+     * @minimum 100
+     * @maximum 5000
+     */
+  deadlineMs?: number;
+  failureMode?: CreateHookRequestFailureMode;
+}
+
+export type UpdateHookRequestFailureMode = typeof UpdateHookRequestFailureMode[keyof typeof UpdateHookRequestFailureMode];
+
+
+export const UpdateHookRequestFailureMode = {
+  deny: 'deny',
+  allow: 'allow',
+} as const;
+
+export interface UpdateHookRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^[^\s\u0000-\u001f\u007f]+$
+     */
+  url?: string;
+  enabled?: boolean;
+  /**
+     * @minimum 100
+     * @maximum 5000
+     */
+  deadlineMs?: number;
+  failureMode?: UpdateHookRequestFailureMode;
 }
 
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
@@ -6520,6 +6824,464 @@ export const useRevokePreviousWebhookSecret = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getRevokePreviousWebhookSecretMutationOptions(options), queryClient);
+    }
+
+export const getListHooksUrl = () => {
+
+
+
+
+  return `/v1/admin/hooks`
+}
+
+/**
+ * The environment’s hooks, oldest first: at most one per point. Each says when a call of it last failed (`lastFailedAt`) and why, in a fixed word (`lastFailureReason`). A signing secret is never returned here: it is shown once, when its hook is registered.
+ * @summary List hooks
+ */
+export const listHooks = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<HookList> => {
+
+  return dashboardFetch<HookList>(getListHooksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListHooksQueryKey = () => {
+    return [
+    `/v1/admin/hooks`
+    ] as const;
+    }
+
+
+export const getListHooksQueryOptions = <TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListHooksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listHooks>>> = ({ signal }) => listHooks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListHooksQueryResult = NonNullable<Awaited<ReturnType<typeof listHooks>>>
+export type ListHooksQueryError = ErrorEnvelope
+
+
+export function useListHooks<TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listHooks>>,
+          TError,
+          Awaited<ReturnType<typeof listHooks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListHooks<TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listHooks>>,
+          TError,
+          Awaited<ReturnType<typeof listHooks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListHooks<TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List hooks
+ */
+
+export function useListHooks<TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListHooksQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateHookUrl = () => {
+
+
+
+
+  return `/v1/admin/hooks`
+}
+
+/**
+ * Registers an address the server asks before it acts at `point`. For `before_sign_up` the question (`HookBeforeSignUpQuestion`) is posted, signed like a webhook delivery (Standard Webhooks: `webhook-id`, `webhook-timestamp`, `webhook-signature`), when a sign-up is about to create an account, and the answer (`HookAnswer`) allows or denies it. It is not asked when an administrator creates a user. The server generates the signing secret (`whsec_…`) and returns it in this response only; it is stored encrypted and cannot be read again. An environment has one hook per point: a second is refused with `resource.conflict` (409). `deadlineMs` is how long the server waits for the answer: 2000 unless given, at least 100 and never more than 5000. Switching a hook off, removing one that is on, and `failureMode: "allow"` (a sign-up is let through when the hook cannot be asked or does not answer as the contract says) each remove a check: the audit entry of such a change carries `weakened: true`. An address the server may not call is refused with `hook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * @summary Register a hook
+ */
+export const createHook = async (createHookRequest: CreateHookRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedHook> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedHook>(getCreateHookUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createHookRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateHookMutationKey = () => ['createHook'] as const;
+
+export const getCreateHookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHook>>, TError,CreateHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createHook>>, TError,CreateHookMutationVariables, TContext> => {
+
+const mutationKey = getCreateHookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createHook>>, CreateHookMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createHook(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateHookMutationResult = NonNullable<Awaited<ReturnType<typeof createHook>>>
+    export type CreateHookMutationBody = CreateHookRequest
+    export type CreateHookMutationError = ErrorEnvelope
+    export type CreateHookMutationVariables = {data: CreateHookRequest}
+
+    /**
+ * @summary Register a hook
+ */
+export const useCreateHook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHook>>, TError,CreateHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createHook>>,
+        TError,
+        CreateHookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateHookMutationOptions(options), queryClient);
+    }
+
+export const getGetHookUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/hooks/${id}`
+}
+
+/**
+ * One hook of the environment. Never its signing secret.
+ * @summary Get a hook
+ */
+export const getHook = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Hook> => {
+
+  return dashboardFetch<Hook>(getGetHookUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHookQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/hooks/${id}`
+    ] as const;
+    }
+
+
+export const getGetHookQueryOptions = <TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHookQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHook>>> = ({ signal }) => getHook(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetHookQueryResult = NonNullable<Awaited<ReturnType<typeof getHook>>>
+export type GetHookQueryError = ErrorEnvelope
+
+
+export function useGetHook<TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHook>>,
+          TError,
+          Awaited<ReturnType<typeof getHook>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHook<TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHook>>,
+          TError,
+          Awaited<ReturnType<typeof getHook>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHook<TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a hook
+ */
+
+export function useGetHook<TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetHookQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateHookUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/hooks/${id}`
+}
+
+/**
+ * Changes the address, the deadline, the failure mode or whether the hook is on; a field left out keeps its value. A hook that is off is not asked: what it guards happens as if there were none. The point and the signing secret cannot be changed here. Recorded in the audit log by the names of the fields that changed, never their values. A hook that someone else changed meanwhile is not written over (`resource.conflict`, 409). `deadlineMs` is how long the server waits for the answer: 2000 unless given, at least 100 and never more than 5000. Switching a hook off, removing one that is on, and `failureMode: "allow"` (a sign-up is let through when the hook cannot be asked or does not answer as the contract says) each remove a check: the audit entry of such a change carries `weakened: true`. An address the server may not call is refused with `hook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * @summary Change a hook
+ */
+export const updateHook = async (id: string,
+    updateHookRequest: UpdateHookRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Hook> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Hook>(getUpdateHookUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateHookRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateHookMutationKey = () => ['updateHook'] as const;
+
+export const getUpdateHookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateHook>>, TError,UpdateHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateHook>>, TError,UpdateHookMutationVariables, TContext> => {
+
+const mutationKey = getUpdateHookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateHook>>, UpdateHookMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateHook(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateHookMutationResult = NonNullable<Awaited<ReturnType<typeof updateHook>>>
+    export type UpdateHookMutationBody = UpdateHookRequest
+    export type UpdateHookMutationError = ErrorEnvelope
+    export type UpdateHookMutationVariables = {id: string;data: UpdateHookRequest}
+
+    /**
+ * @summary Change a hook
+ */
+export const useUpdateHook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateHook>>, TError,UpdateHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateHook>>,
+        TError,
+        UpdateHookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateHookMutationOptions(options), queryClient);
+    }
+
+export const getDeleteHookUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/hooks/${id}`
+}
+
+/**
+ * Removes the hook and its signing secret: it is asked no more, and what it guarded happens as if there had been none. Switching a hook off, removing one that is on, and `failureMode: "allow"` (a sign-up is let through when the hook cannot be asked or does not answer as the contract says) each remove a check: the audit entry of such a change carries `weakened: true`.
+ * @summary Remove a hook
+ */
+export const deleteHook = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteHookUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteHookMutationKey = () => ['deleteHook'] as const;
+
+export const getDeleteHookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteHook>>, TError,DeleteHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteHook>>, TError,DeleteHookMutationVariables, TContext> => {
+
+const mutationKey = getDeleteHookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteHook>>, DeleteHookMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteHook(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteHookMutationResult = NonNullable<Awaited<ReturnType<typeof deleteHook>>>
+
+    export type DeleteHookMutationError = ErrorEnvelope
+    export type DeleteHookMutationVariables = {id: string}
+
+    /**
+ * @summary Remove a hook
+ */
+export const useDeleteHook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteHook>>, TError,DeleteHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteHook>>,
+        TError,
+        DeleteHookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteHookMutationOptions(options), queryClient);
     }
 
 export const getGetInstanceDiagnosticsUrl = () => {
