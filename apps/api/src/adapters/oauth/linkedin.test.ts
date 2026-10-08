@@ -3,7 +3,8 @@ import { exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
 import * as logger from '~/lib/logger'
 import { type OAuthFailure, OAuthProviderError } from '~/ports/oauth-provider'
 import { NONCE_NOT_ECHOED, remoteKeySet, verifyIdToken } from './id-token'
-import { createLinkedInProvider } from './linkedin'
+import { createLinkedInProvider, linkedInProfile } from './linkedin'
+import { MAX_PROFILE_BYTES } from './profile-read'
 
 const REDIRECT_URI = 'https://auth.northline.app/v1/oauth/callback/linkedin'
 const CLIENT_ID = '86abcd1234efgh'
@@ -11,6 +12,8 @@ const SECRET = 'linkedin-client-secret'
 const ACCESS_TOKEN = 'linkedin-access-token-canary'
 const TOKEN_URL = 'https://www.linkedin.com/oauth/v2/accessToken'
 const KEYS_URL = 'https://www.linkedin.com/oauth/openid/jwks'
+const USERINFO_URL = 'https://api.linkedin.com/v2/userinfo'
+const SUBJECT = '782bbtaQ'
 /** The issuer of LinkedIn's discovery document, and the one its guide's table gives. */
 const ISSUER = 'https://www.linkedin.com/oauth'
 const GUIDE_ISSUER = 'https://www.linkedin.com'
@@ -59,15 +62,19 @@ interface TokenOptions {
   claims?: Record<string, unknown>
 }
 
-/** A token with the claims LinkedIn's discovery document lists, and no nonce. */
+/**
+ * A token with the claims LinkedIn's discovery document lists, and no nonce. Its address and
+ * names are not the userinfo answer's: a profile that holds one of them was read from the
+ * wrong place.
+ */
 function idToken(options: TokenOptions = {}): Promise<string> {
   const jwt = new SignJWT({
-    name: 'Maya Okafor',
-    given_name: 'Maya',
-    family_name: 'Okafor',
+    name: 'Token Says',
+    given_name: 'Token',
+    family_name: 'Says',
     picture: 'https://media.licdn.test/picture',
     locale: 'en_US',
-    email: 'maya@northline.app',
+    email: 'the-token-says@elsewhere.test',
     email_verified: true,
     ...options.claims,
   })
@@ -77,7 +84,7 @@ function idToken(options: TokenOptions = {}): Promise<string> {
     .setIssuedAt()
     .setExpirationTime(options.expiresIn ?? '5m')
   if (options.subject !== null) {
-    jwt.setSubject(options.subject ?? '782bbtaQ')
+    jwt.setSubject(options.subject ?? SUBJECT)
   }
   return jwt.sign((options.key ?? linkedinKeys).privateKey)
 }
@@ -94,11 +101,28 @@ interface Call {
   url: string
   body: string
   headers: Headers
+  redirect: RequestInit['redirect']
+  signal: AbortSignal | null | undefined
 }
 
+/** The userinfo answer of LinkedIn's guide, for the member the token is about. */
+const USERINFO = {
+  sub: SUBJECT,
+  name: 'Maya Okafor',
+  given_name: 'Maya',
+  family_name: 'Okafor',
+  picture: 'https://media.licdn.test/picture',
+  locale: 'en-US',
+  email: 'maya@northline.app',
+  email_verified: true,
+}
+const userinfo = (fields: Record<string, unknown> = {}) => ({
+  [USERINFO_URL]: () => jsonResponse({ ...USERINFO, ...fields }),
+})
+
 /**
- * Stand in for LinkedIn: its token endpoint and its key document, by exact address. A request
- * to any other address (the userinfo endpoint among them) fails the test.
+ * Stand in for LinkedIn: its token endpoint, its key document and its userinfo endpoint, by
+ * exact address. A request to any other address fails the test.
  */
 function linkedin(token: string | Promise<string>, overrides: Record<string, Answer> = {}) {
   const calls: Call[] = []
@@ -112,6 +136,7 @@ function linkedin(token: string | Promise<string>, overrides: Record<string, Ans
         id_token: await token,
       }),
     [KEYS_URL]: () => jsonResponse({ keys: [linkedinKeys.jwk] }),
+    ...userinfo(),
     ...overrides,
   }
   spies.push(
@@ -124,6 +149,8 @@ function linkedin(token: string | Promise<string>, overrides: Record<string, Ans
         url,
         body: input instanceof Request ? await input.clone().text() : '',
         headers: input instanceof Request ? input.headers : new Headers(init?.headers),
+        redirect: input instanceof Request ? input.redirect : init?.redirect,
+        signal: input instanceof Request ? input.signal : init?.signal,
       })
       const route = routes[url]
       if (!route) {
@@ -170,17 +197,18 @@ describe('the authorization URL', () => {
 })
 
 describe('the exchange', () => {
-  test('sends the code and the client’s credentials in the body, and reads the profile from the verified ID token', async () => {
+  test('sends the code and the client’s credentials in the body, verifies the ID token, and reads the address and the name from userinfo', async () => {
     const { calls, exchange } = linkedin(idToken())
+    // The token says another address and other names: none of it is in the profile.
     expect(await exchange()).toEqual({
-      subject: '782bbtaQ',
+      subject: SUBJECT,
       email: 'maya@northline.app',
       emailVerified: true,
       givenName: 'Maya',
       familyName: 'Okafor',
     })
-    // The token endpoint and the key document: no userinfo call, nothing sent the access token.
-    expect(calls.map((call) => call.url)).toEqual([TOKEN_URL, KEYS_URL])
+    // In this order: the token is verified before the access token is sent anywhere.
+    expect(calls.map((call) => call.url)).toEqual([TOKEN_URL, KEYS_URL, USERINFO_URL])
     // Exactly the five parameters of LinkedIn's "Exchange Authorization Code" table.
     expect(Object.fromEntries(new URLSearchParams(calls[0]?.body))).toEqual({
       grant_type: 'authorization_code',
@@ -189,10 +217,45 @@ describe('the exchange', () => {
       client_id: CLIENT_ID,
       client_secret: SECRET,
     })
+    // The access token goes to userinfo, in a header, and nowhere else.
     for (const call of calls) {
-      expect(call.headers.get('authorization')).toBeNull()
+      expect(call.headers.get('authorization')).toBe(
+        call.url === USERINFO_URL ? `Bearer ${ACCESS_TOKEN}` : null
+      )
       expect(`${call.url}${call.body}`).not.toContain(ACCESS_TOKEN)
     }
+    const read = calls[2] as Call
+    // A redirect would carry the token to wherever it points.
+    expect(read.redirect).toBe('error')
+    expect(read.signal).toBeInstanceOf(AbortSignal)
+    expect(read.body).toBe('')
+  })
+
+  test('the userinfo answer must be about the member the token is about', async () => {
+    for (const sub of ['someone-else', '', undefined, null, 782, [SUBJECT], `${SUBJECT} `]) {
+      const { exchange } = linkedin(idToken(), userinfo({ sub }))
+      expect(await failureOf(exchange())).toBe('invalid_token')
+      spies.splice(0).forEach((spy) => {
+        spy.mockRestore()
+      })
+    }
+  })
+
+  test('a mismatched sub is refused like an invalid token, with nothing of either in the error', async () => {
+    const { exchange } = linkedin(
+      idToken(),
+      userinfo({ sub: 'canary-subject', email: 'canary@elsewhere.test' })
+    )
+    const error = await exchange().catch((caught: unknown) => caught)
+    expect((error as Error).message).toBe('oauth provider: invalid_token')
+    expect((error as Error).cause).toBeUndefined()
+    expect(`${String(error)}${JSON.stringify(error)}`).not.toContain('canary')
+  })
+
+  test('a token that does not verify is never followed by a userinfo call', async () => {
+    const { calls, exchange } = linkedin(idToken({ audience: 'someone-elses-client' }))
+    expect(await failureOf(exchange())).toBe('invalid_token')
+    expect(calls.map((call) => call.url)).toEqual([TOKEN_URL, KEYS_URL])
   })
 
   test('the profile holds nothing of a token, and nothing is logged', async () => {
@@ -219,29 +282,31 @@ describe('the exchange', () => {
   })
 
   test('both spellings of LinkedIn’s issuer are accepted', async () => {
-    expect((await linkedin(idToken({ issuer: ISSUER })).exchange()).subject).toBe('782bbtaQ')
+    expect((await linkedin(idToken({ issuer: ISSUER })).exchange()).subject).toBe(SUBJECT)
     spies.splice(0).forEach((spy) => {
       spy.mockRestore()
     })
-    expect((await linkedin(idToken({ issuer: GUIDE_ISSUER })).exchange()).subject).toBe('782bbtaQ')
+    expect((await linkedin(idToken({ issuer: GUIDE_ISSUER })).exchange()).subject).toBe(SUBJECT)
   })
 
   test('the account is sub, never the address or a name', async () => {
     const first = await linkedin(
-      idToken({ claims: { email: 'someone-else@elsewhere.test', name: 'Renamed' } })
+      idToken(),
+      userinfo({ email: 'someone-else@elsewhere.test', name: 'Renamed' })
     ).exchange()
-    expect(first.subject).toBe('782bbtaQ')
+    expect(first.subject).toBe(SUBJECT)
   })
 
   test('a token that carries a nonce is judged by the rest: LinkedIn is asked for none', async () => {
     const { exchange } = linkedin(idToken({ claims: { nonce: 'whatever-linkedin-put-there' } }))
-    expect((await exchange()).subject).toBe('782bbtaQ')
+    expect((await exchange()).subject).toBe(SUBJECT)
   })
 })
 
 describe('whether the address is verified', () => {
   // LinkedIn documents `email_verified` as a Boolean and both fields as optional. Only the
-  // JSON boolean `true` beside an address counts; a string is not taken for one.
+  // JSON boolean `true` beside an address counts; a string is not taken for one. These are
+  // fields of the userinfo answer: the token says "verified" in every row and decides none.
   test.each([
     ['email_verified: true and an address', { email_verified: true }, 'maya@northline.app', true],
     ['email_verified: false', { email_verified: false }, 'maya@northline.app', false],
@@ -253,11 +318,147 @@ describe('whether the address is verified', () => {
     ['an address that is not a string', { email: ['maya@northline.app'] }, null, false],
   ] as [string, Record<string, unknown>, string | null, boolean][])(
     '%s',
-    async (_name, claims, email, emailVerified) => {
-      const { exchange } = linkedin(idToken({ claims }))
+    async (_name, fields, email, emailVerified) => {
+      const { exchange } = linkedin(idToken(), userinfo(fields))
       expect(await exchange()).toMatchObject({ email, emailVerified })
     }
   )
+
+  test('a token that says verified beside a userinfo answer with no address proves no address', async () => {
+    const { exchange } = linkedin(
+      idToken({ claims: { email: 'maya@northline.app', email_verified: true } }),
+      userinfo({ email: undefined, email_verified: undefined })
+    )
+    expect(await exchange()).toMatchObject({ email: null, emailVerified: false })
+  })
+
+  test('names come from userinfo and are optional', async () => {
+    const { exchange } = linkedin(idToken(), userinfo({ given_name: undefined, family_name: 7 }))
+    const profile = await exchange()
+    expect(profile.givenName).toBeUndefined()
+    expect(profile.familyName).toBeUndefined()
+  })
+})
+
+describe('the userinfo answer', () => {
+  const big = 'x'.repeat(MAX_PROFILE_BYTES)
+  test.each([
+    [
+      'a refused call',
+      () => jsonResponse({ message: 'canary-in-the-answer', status: 401 }, 401),
+      'unavailable',
+    ],
+    [
+      'a rate-limited call',
+      () => jsonResponse({ message: 'canary-in-the-answer' }, 429),
+      'unavailable',
+    ],
+    ['a server error', () => new Response('canary-in-the-answer', { status: 503 }), 'unavailable'],
+    [
+      'an unreachable API',
+      () => Promise.reject(new TypeError('fetch failed: canary-in-the-answer')),
+      'unavailable',
+    ],
+    [
+      'a redirect, which is not followed',
+      () => Promise.reject(new TypeError('unexpected redirect: canary-in-the-answer')),
+      'unavailable',
+    ],
+    [
+      'an answer that is not JSON',
+      () => new Response('<html>canary-in-the-answer'),
+      'invalid_profile',
+    ],
+    [
+      'a list',
+      () => jsonResponse([{ ...USERINFO, note: 'canary-in-the-answer' }]),
+      'invalid_profile',
+    ],
+    ['null', () => jsonResponse(null), 'invalid_profile'],
+    ['a string', () => jsonResponse('canary-in-the-answer'), 'invalid_profile'],
+    [
+      'an answer over the size cap, though it is a good one',
+      () => jsonResponse({ ...USERINFO, note: `canary-in-the-answer${big}` }),
+      'invalid_profile',
+    ],
+  ] as [string, Answer, OAuthFailure][])(
+    '%s is a failure that carries nothing of it or of the token',
+    async (_name, answer, failure) => {
+      const logged = (['debug', 'info', 'warn', 'error'] as const).map((level) => {
+        const spy = spyOn(logger, level).mockImplementation(() => undefined)
+        spies.push(spy)
+        return spy
+      })
+      const { exchange } = linkedin(idToken(), { [USERINFO_URL]: answer })
+      const error = await exchange().catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(OAuthProviderError)
+      expect((error as Error).message).toBe(`oauth provider: ${failure}`)
+      expect((error as Error).cause).toBeUndefined()
+      expect(`${String(error)}${JSON.stringify(error)}`).not.toContain('canary')
+      for (const spy of logged) {
+        expect(spy).not.toHaveBeenCalled()
+      }
+    }
+  )
+
+  test('an answer exactly at the cap is read', async () => {
+    const padding = MAX_PROFILE_BYTES - JSON.stringify({ ...USERINFO, pad: '' }).length
+    const body = JSON.stringify({ ...USERINFO, pad: 'x'.repeat(padding) })
+    expect(body.length).toBe(MAX_PROFILE_BYTES)
+    const { exchange } = linkedin(idToken(), { [USERINFO_URL]: () => new Response(body) })
+    expect((await exchange()).subject).toBe(SUBJECT)
+  })
+
+  test('an oversized body is not read to its end', async () => {
+    let pulled = 0
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1
+        controller.enqueue(new Uint8Array(16 * 1024).fill(0x20))
+      },
+    })
+    const { exchange } = linkedin(idToken(), { [USERINFO_URL]: () => new Response(endless) })
+    expect(await failureOf(exchange())).toBe('invalid_profile')
+    expect(pulled * 16 * 1024).toBeLessThan(MAX_PROFILE_BYTES * 4)
+  })
+
+  test('a token answer with no access token: nothing is asked of userinfo', async () => {
+    const token = await idToken()
+    const { calls, exchange } = linkedin(token, {
+      [TOKEN_URL]: () => jsonResponse({ id_token: token, token_type: 'Bearer' }),
+    })
+    expect(await failureOf(exchange())).toBe('unavailable')
+    expect(calls.map((call) => call.url)).not.toContain(USERINFO_URL)
+  })
+})
+
+describe('the rule the mock provider shares', () => {
+  test('linkedInProfile judges an answer as the adapter does', () => {
+    expect(linkedInProfile(SUBJECT, USERINFO)).toEqual({
+      subject: SUBJECT,
+      email: 'maya@northline.app',
+      emailVerified: true,
+      givenName: 'Maya',
+      familyName: 'Okafor',
+    })
+    const failure = (work: () => unknown) => {
+      try {
+        work()
+        return 'returned'
+      } catch (error) {
+        return error instanceof OAuthProviderError ? error.failure : 'threw'
+      }
+    }
+    expect(failure(() => linkedInProfile(SUBJECT, { ...USERINFO, sub: 'another' }))).toBe(
+      'invalid_token'
+    )
+    expect(failure(() => linkedInProfile(SUBJECT, undefined))).toBe('invalid_profile')
+    expect(failure(() => linkedInProfile(SUBJECT, [USERINFO]))).toBe('invalid_profile')
+    // An inherited key is not the answer's own `sub`.
+    expect(
+      failure(() => linkedInProfile('constructor', Object.create({ sub: 'constructor' })))
+    ).toBe('invalid_token')
+  })
 })
 
 describe('refusals', () => {
@@ -274,7 +475,7 @@ describe('refusals', () => {
         unsigned({
           iss: ISSUER,
           aud: CLIENT_ID,
-          sub: '782bbtaQ',
+          sub: SUBJECT,
           iat: Math.floor(Date.now() / 1000),
           exp: Math.floor(Date.now() / 1000) + 300,
           email: 'maya@northline.app',
@@ -313,7 +514,7 @@ describe('refusals', () => {
     expect(await failureOf(linkedin(idToken({ subject: null })).exchange())).toBe('invalid_token')
   })
 
-  test('a token response without an ID token is refused, and userinfo is not asked instead', async () => {
+  test('a token response without an ID token is refused, and userinfo is not asked without one', async () => {
     const { calls, exchange } = linkedin('', {
       [TOKEN_URL]: () => jsonResponse({ access_token: ACCESS_TOKEN, expires_in: 5184000 }),
     })
@@ -375,6 +576,7 @@ describe('a LinkedIn that never answers', () => {
   test.each([
     ['the token endpoint', TOKEN_URL],
     ['the key document', KEYS_URL],
+    ['the userinfo endpoint', USERINFO_URL],
   ])('%s hanging is unavailable after the timeout', async (_name, url) => {
     linkedin(idToken(), { [url]: hang })
     const since = performance.now()

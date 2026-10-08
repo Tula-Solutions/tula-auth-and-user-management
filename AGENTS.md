@@ -1131,7 +1131,12 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   and gets neither**: its code is bound by the single-use `state` and the client secret
   alone, which ADR 0026 and `docs/providers/linkedin.md` say in so many words. Whether an
   ID token's nonce is checked is written at every call of `verifyIdToken` (the attempt's
-  nonce, or `NONCE_NOT_ECHOED`): never give that parameter a default. The callback refuses an attempt with no verifier before
+  nonce, or `NONCE_NOT_ECHOED`): never give that parameter a default. **A LinkedIn profile
+  has two sources with one job each**: the verified ID token gives `sub` and nothing else,
+  the userinfo answer (`GET https://api.linkedin.com/v2/userinfo`, read through
+  `readProfile` like Discord's user: a deadline, no redirect, 64 KiB) gives the address,
+  `email_verified` and the name, and its `sub` must be the token's (`linkedInProfile`, which
+  the mock provider uses too). Never fall back from one source to the other. The callback refuses an attempt with no verifier before
   it reaches an adapter, and the mock provider checks the verifier for every provider. A new
   provider sends PKCE unless its documentation rules it out, and the ADR says which.
 - **The mock provider** (`OAUTH_MOCK_PROVIDER=true`) serves every provider from the API

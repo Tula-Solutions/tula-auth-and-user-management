@@ -25,6 +25,8 @@ import * as OAuth from '~/modules/oauth/service'
  *
  * For Microsoft the form asks what a Microsoft token says instead of one account id: the
  * tenant id, the object id, and whether the verified-domain claim (`xms_edov`) is there.
+ * For LinkedIn what the form says becomes a userinfo answer (`sub`, `email`, `email_verified`,
+ * the names) carried in the code, which is where the adapter reads a LinkedIn profile from.
  */
 const router = new Hono<AppEnv>()
 
@@ -216,6 +218,7 @@ router.post('/authorize', async (c) => {
   if (subject === null) {
     return refused(c)
   }
+  const verified = email !== null && consent.unverified === undefined
   callback.searchParams.set(
     'code',
     await issueMockCode(deps.secretBox, deps.clock, {
@@ -227,10 +230,20 @@ router.post('/authorize', async (c) => {
       profile: {
         subject,
         email: email?.email ?? null,
-        emailVerified: email !== null && consent.unverified === undefined,
+        emailVerified: verified,
         ...(consent.given_name && { givenName: consent.given_name }),
         ...(consent.family_name && { familyName: consent.family_name }),
       },
+      // LinkedIn's address and name are its userinfo answer's, in LinkedIn's own field names:
+      // the mock adapter reads them from here and nowhere else, as the real one does.
+      ...(consent.provider === 'linkedin' && {
+        userinfo: {
+          sub: subject,
+          ...(email && { email: email.email, email_verified: verified }),
+          ...(consent.given_name && { given_name: consent.given_name }),
+          ...(consent.family_name && { family_name: consent.family_name }),
+        },
+      }),
     })
   )
   return c.redirect(callback.toString(), 302)

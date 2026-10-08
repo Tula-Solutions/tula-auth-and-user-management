@@ -80,8 +80,9 @@ else. Adapters are stateless; credentials are passed per call.
   Google is in "Microsoft: the tenant, the issuer and the address" below.
 - **Discord** (Phase 2, TULA-13): plain OAuth 2.0 with PKCE, no ID token, on `arctic`'s
   `Discord`; the profile is read from `GET /users/@me`. **LinkedIn** (TULA-13): OIDC with
-  **no PKCE and no nonce**, on `arctic`'s `LinkedIn` and the shared `jose` verifier. Both
-  are in "Discord and LinkedIn" below.
+  **no PKCE and no nonce**, on `arctic`'s `LinkedIn` and the shared `jose` verifier; the
+  ID token gives the account and `GET /v2/userinfo` the address. Both are in "Discord and
+  LinkedIn" below.
 - `arctic` calls the global `fetch` and takes no injected one. The adapters therefore use the
   global `fetch` throughout, looked up at call time, and their tests stub it (`spyOn`) with
   locally generated keys: no test touches the network.
@@ -316,12 +317,14 @@ token), so the shape is GitHub's.
 - **PKCE (S256) is sent.** `arctic` 3.7.0's `Discord.createAuthorizationURL(state,
   codeVerifier, scopes)` adds `code_challenge` for a confidential client and
   `validateAuthorizationCode(code, codeVerifier)` sends the verifier with the client's Basic
-  credentials. **Discord's OAuth2 page does not mention PKCE** (read 2026-10-08): that
-  Discord refuses a wrong verifier is the library's reading of the provider, never observed
-  here. The alternative was Apple's rule (send only what the provider documents). It was not
-  taken because the library the ADR already relies on for protocol details sends it, an
-  authorization server that ignores unknown parameters loses nothing, and one that honours
-  them gains the binding. If Discord ever rejects the parameters, passing `null` as the
+  credentials. The rule is that **a new provider sends PKCE unless its documentation rules
+  it out, and silence does not rule it out**. **Discord's OAuth2 page does not mention
+  PKCE** (read 2026-10-08), neither for nor against: the source for sending it is the client
+  library, not Discord's page, and that Discord accepts the parameters or refuses a wrong
+  verifier was never observed against the real service. Apple and LinkedIn are different
+  cases: each documents the list of its request's parameters, and a challenge is not among
+  them. An authorization server that ignores unknown parameters loses nothing, and one that
+  honours them gains the binding. If Discord ever rejects the parameters, passing `null` as the
   verifier to `arctic` removes them; the mock would then have to stop checking Discord's.
   An exchange with an empty verifier is refused before any request, as GitHub's is.
 - The profile answer is read up to 64 KiB (`DISCORD_MAX_PROFILE_BYTES`) and a longer one is
@@ -331,28 +334,42 @@ token), so the shape is GitHub's.
 is Google's with two things missing.
 
 - Scopes: `openid`, `profile`, `email`.
-- **The profile comes from the verified ID token, not from the userinfo endpoint.** The
-  token is checked by the shared verifier: `RS256`, audience = client id, expiry, and keys
-  from `https://www.linkedin.com/oauth/openid/jwks`. Subject = `sub`, which LinkedIn's
-  discovery document says is pairwise (per application).
+- **The ID token is the identity and nothing else.** It is checked by the shared verifier:
+  `RS256`, audience = client id, expiry, and keys from
+  `https://www.linkedin.com/oauth/openid/jwks`. Subject = `sub`, which LinkedIn's discovery
+  document says is pairwise (per application). No other claim of the token is read.
 - **Two issuers are accepted, exactly**: `https://www.linkedin.com/oauth` and
   `https://www.linkedin.com`. LinkedIn's discovery document
   (`https://www.linkedin.com/oauth/.well-known/openid-configuration`, fetched 2026-10-08)
   says the first; LinkedIn's guide says the second in its table of ID-token claims. Which one
   a real token carries was not observed. Both are LinkedIn's own, under keys only LinkedIn
   publishes, so accepting either admits nobody else.
-- **`emailVerified` only when `email_verified === true`**, the JSON boolean, strictly. The
-  shared `emailClaims` helper accepts Apple's string `"true"`; LinkedIn's adapter does not
-  use it for this claim, because LinkedIn documents a Boolean.
-- **A known risk of reading the token only.** LinkedIn's guide lists `iss`, `sub`, `aud`,
-  `iat` and `exp` for the ID token and documents `email`, `email_verified`, `name`,
-  `given_name`, `family_name` for the userinfo answer; the discovery document lists all of
-  them under `claims_supported` without saying where. If real tokens carry no address,
-  every LinkedIn sign-up is `oauth.email_missing`: it fails closed, and loudly. The
-  alternative is a second request, `GET https://api.linkedin.com/v2/userinfo` with the
-  access token: an answer protected by TLS and not by a signature, as GitHub's and Discord's
-  are. It was not taken first because a signed token needs no further trust and no further
-  call; it is the fix if the first real sign-up shows the token is not enough.
+- **The address, whether it is verified and the name come from the userinfo endpoint, and
+  only from there.** After the token has verified, the adapter reads
+  `GET https://api.linkedin.com/v2/userinfo` with the access token: it is where LinkedIn's
+  guide documents `email`, `email_verified`, `name`, `given_name` and `family_name` (for the
+  ID token it lists `iss`, `sub`, `aud`, `iat` and `exp`). The first version of this adapter
+  read the token only; it was changed before any release, because a sign-up that depends on
+  claims the provider does not document for the token is a guess. There is **one path**, not
+  "the token first, userinfo when it has no address": two sources for one fact are two rules
+  for what "verified" means.
+- **The answer must be about the member the token is about**: its own `sub` must equal the
+  verified token's (`linkedInProfile`), else the exchange fails as an invalid token does
+  (`invalid_token`). The answer is protected by TLS and not by a signature, as GitHub's and
+  Discord's are; the token is what was verified, so it stays the anchor of who signed in.
+- **`emailVerified` only when the answer's `email_verified === true`**, the JSON boolean,
+  strictly (LinkedIn documents a Boolean), beside an address. `"true"`, `1`, `false` and an
+  absent field are unverified.
+- **The read has the bounds of Discord's** (one function, `readProfile` in
+  `adapters/oauth/profile-read.ts`): a fixed address, a deadline, `redirect: 'error'` (a
+  redirect would carry the token along), at most 64 KiB read and the rest cancelled. No
+  answer, a non-2xx (a 401 and a 403 among them, as GitHub's adapter has always treated its
+  profile read) and a body cut off are `unavailable`; an oversized or non-JSON answer, or
+  one that is not an object, is `invalid_profile`. Nothing of the answer or the token is in
+  an error or a log line, and the access token is dropped when the exchange returns.
+- **The mock provider keeps the two sources**: a LinkedIn code carries a userinfo answer
+  beside the "token's" subject, and the profile is made by `linkedInProfile`, the real
+  adapter's own function. The mock still makes no request; its guards are unchanged.
 - **No PKCE.** LinkedIn's authorization-code flow page lists five parameters for the
   authorization request and five for the token request, none of them a challenge or a
   verifier; the discovery document has no `code_challenge_methods_supported`; and `arctic`'s
@@ -433,10 +450,12 @@ production code. The adapters' verifiers are covered by unit tests with local ke
   account in with an unverified address instead is an open product question; it would
   change the linking table for every provider or add a second rule for one.
 - **LinkedIn sign-in has neither PKCE nor a nonce**, because LinkedIn documents neither:
-  its code is bound to the attempt by `state` and the client secret only. And whether a real
-  LinkedIn ID token carries the address at all is not known; if it does not, LinkedIn
-  sign-ups fail (`oauth.email_missing`) until the adapter also reads userinfo.
-- Discord sign-in sends PKCE that Discord's documentation does not mention.
+  its code is bound to the attempt by `state` and the client secret only. Its address comes
+  from the userinfo endpoint: a second outbound call per sign-in, whose answer TLS protects
+  and no signature does. No real answer was seen; if its `sub` were not the token's, every
+  LinkedIn sign-in would be refused.
+- Discord sign-in sends PKCE that Discord's documentation does not mention, on the client
+  library's word: not observed against the real service.
 - A user who signs up through a provider has no password; removing that provider leaves them
   to a password reset. A provider's changed email never changes the Tula address.
 - A sign-in start reads the environment's providers (one indexed read, not cached).

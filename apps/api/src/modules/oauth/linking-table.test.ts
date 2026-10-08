@@ -94,7 +94,7 @@ const TABLE: Record<string, { evidence: string; rows: Row[] }> = {
   },
   linkedin: {
     evidence:
-      'the ID token’s email_verified, the boolean true and nothing else (LinkedIn documents a Boolean)',
+      'email_verified of the userinfo answer, the boolean true and nothing else (LinkedIn documents a Boolean), in an answer whose sub is the verified ID token’s; the token’s own claims decide nothing',
     rows: RULE,
   },
 }

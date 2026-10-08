@@ -105,7 +105,7 @@ reads the switch from its `.env`.
   token without it signs in an account Tula already knows and nothing else: no sign-up, no
   automatic link ([the checklist](../providers/microsoft.md#what-the-address-proves)).
 - With Discord an address counts as verified only when the user object says `verified: true`;
-  with LinkedIn only when the ID token says `email_verified: true`. An account with no
+  with LinkedIn only when its userinfo answer says `email_verified: true`. An account with no
   address, or one the provider does not vouch for, signs in where Tula already knows it and
   nothing else ([Discord](../providers/discord.md#what-the-address-proves),
   [LinkedIn](../providers/linkedin.md#what-the-address-proves)).
@@ -137,8 +137,9 @@ reads the switch from its `.env`.
   issuer must be the one of the tenant the token itself names. Neither was run against
   Microsoft: the checks are tested with tokens the tests sign.
 - A Discord account is its user id (a snowflake), never its username; a LinkedIn account is
-  the `sub` of its ID token, which LinkedIn issues per application. Neither adapter was run
-  against the provider.
+  the `sub` of its ID token, which LinkedIn issues per application; its address is read
+  from LinkedIn's userinfo endpoint, in an answer that must carry the same `sub`. Neither
+  adapter was run against the provider.
 - No provider token is stored. Credentials are sealed with `TULA_MASTER_KEY` and never
   returned.
 - Connecting an account needs a recent sign-in ([step-up](two-step-verification.md)).

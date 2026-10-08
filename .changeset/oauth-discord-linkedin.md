@@ -23,5 +23,6 @@ Sign in with Discord and LinkedIn.
   `clientSecret: env('NAME')`).
 - `@tula/cli`: `tula diff` and `tula apply` manage both.
 
-LinkedIn's sign-in has no PKCE and no nonce (LinkedIn documents neither), and reads the
-address from the ID token only: see `docs/providers/linkedin.md` before offering it.
+LinkedIn's sign-in has no PKCE and no nonce (LinkedIn documents neither). The account is the
+`sub` of the verified ID token; the address and whether it is verified are read from
+LinkedIn's userinfo endpoint. See `docs/providers/linkedin.md` before offering it.

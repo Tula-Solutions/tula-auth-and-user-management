@@ -14,6 +14,7 @@ import {
   type ProviderOptions,
   withDeadline,
 } from './id-token'
+import { MAX_PROFILE_BYTES, readProfile } from './profile-read'
 
 /**
  * What is asked of Discord: `identify` (the user object without its address) and `email` (the
@@ -26,10 +27,10 @@ export const DISCORD_SCOPES = ['identify', 'email']
 const DISCORD_USER_URL = 'https://discord.com/api/v10/users/@me'
 
 /**
- * The longest current-user answer that is read. A user object is a few hundred bytes; an
- * answer beyond this is not one, and is dropped unread instead of being buffered.
+ * The longest current-user answer that is read: the cap every profile read shares
+ * ({@link MAX_PROFILE_BYTES}, 64 KiB).
  */
-export const DISCORD_MAX_PROFILE_BYTES = 64 * 1024
+export const DISCORD_MAX_PROFILE_BYTES = MAX_PROFILE_BYTES
 
 /**
  * A snowflake as Discord's API writes it: a 64-bit unsigned integer in decimal, in a string.
@@ -61,74 +62,6 @@ async function accessTokenOf(
     exchange.codeVerifier
   )
   return tokens.accessToken()
-}
-
-/**
- * Read a response body as text, up to a number of bytes.
- *
- * @returns The text, or `null` when the body is longer: the rest is cancelled, not read.
- */
-async function boundedText(response: Response, maxBytes: number): Promise<string | null> {
-  const reader = response.body?.getReader()
-  if (!reader) {
-    return ''
-  }
-  const decoder = new TextDecoder()
-  let text = ''
-  let size = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) {
-      return text + decoder.decode()
-    }
-    size += value.byteLength
-    if (size > maxBytes) {
-      await reader.cancel().catch(() => undefined)
-      return null
-    }
-    text += decoder.decode(value, { stream: true })
-  }
-}
-
-/**
- * Read the current user. The request is aborted at the timeout (the signal also ends a body
- * that stops arriving); {@link withDeadline} guards a `fetch` that ignores it.
- */
-function currentUser(accessToken: string, timeoutMs: number): Promise<unknown> {
-  return withDeadline(read(accessToken, AbortSignal.timeout(timeoutMs)), timeoutMs)
-}
-
-async function read(accessToken: string, signal: AbortSignal): Promise<unknown> {
-  let response: Response
-  try {
-    response = await globalThis.fetch(DISCORD_USER_URL, {
-      signal,
-      // A redirect would carry the token to wherever it points.
-      redirect: 'error',
-      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
-    })
-  } catch {
-    throw new OAuthProviderError('unavailable')
-  }
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined)
-    throw new OAuthProviderError('unavailable')
-  }
-  let text: string | null
-  try {
-    text = await boundedText(response, DISCORD_MAX_PROFILE_BYTES)
-  } catch {
-    // A body cut off (by the timeout or the connection) is the provider not answering.
-    throw new OAuthProviderError('unavailable')
-  }
-  if (text === null) {
-    throw new OAuthProviderError('invalid_profile')
-  }
-  try {
-    return JSON.parse(text)
-  } catch {
-    throw new OAuthProviderError('invalid_profile')
-  }
 }
 
 /**
@@ -182,7 +115,7 @@ export function createDiscordProvider(options: ProviderOptions = {}): OAuthProvi
       } catch (error) {
         throw exchangeFailure(error)
       }
-      const user = await currentUser(accessToken, timeoutMs)
+      const user = await readProfile(DISCORD_USER_URL, accessToken, timeoutMs)
       if (typeof user !== 'object' || user === null || Array.isArray(user)) {
         throw new OAuthProviderError('invalid_profile')
       }

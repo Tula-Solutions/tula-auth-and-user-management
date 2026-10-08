@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "LinkedIn account linking",
-  "description": "Which account a LinkedIn identity signs in to. An address counts as verified only when the ID token says the address is verified (email_verified: true). Without that, an account that reports a member’s address is connected to nothing and signs nobody in, and the answer is the same as for an address nobody has. With it, and the member’s own address verified, the LinkedIn account is connected and signs the member in; with it and an account whose address was never verified, nothing is connected (oauth.account_exists). A signed-in user connects a LinkedIn account from their profile whatever its address and whether or not it is verified. Uses the server’s mock provider. The provider’s credentials are removed afterwards.",
+  "description": "Which account a LinkedIn identity signs in to. An address counts as verified only when LinkedIn’s userinfo answer says the address is verified (email_verified: true). Without that, an account that reports a member’s address is connected to nothing and signs nobody in, and the answer is the same as for an address nobody has. With it, and the member’s own address verified, the LinkedIn account is connected and signs the member in; with it and an account whose address was never verified, nothing is connected (oauth.account_exists). A signed-in user connects a LinkedIn account from their profile whatever its address and whether or not it is verified. Uses the server’s mock provider. The provider’s credentials are removed afterwards.",
   "needsSecretKey": true,
   "variables": {
     "member": {

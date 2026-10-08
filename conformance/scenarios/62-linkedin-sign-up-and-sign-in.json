@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "LinkedIn sign-up and sign-in",
-  "description": "An environment signs users in with LinkedIn (OpenID Connect) using its own client id and secret. An account is the sub of LinkedIn’s ID token, never an address: the same sub signs the same user in whatever address LinkedIn reports later. An address counts as verified only when the ID token says so (email_verified: true); a new account whose address LinkedIn does not vouch for is refused. Uses the server’s mock provider (OAUTH_MOCK_PROVIDER, local tier only), whose consent form takes the account id, the address and whether LinkedIn has verified it. The provider’s credentials are removed afterwards, even when a step fails.",
+  "description": "An environment signs users in with LinkedIn (OpenID Connect) using its own client id and secret. An account is the sub of LinkedIn’s ID token, never an address: the same sub signs the same user in whatever address LinkedIn reports later. The address is read from LinkedIn’s userinfo answer and counts as verified only when that answer says so (email_verified: true); a new account whose address LinkedIn does not vouch for is refused. Uses the server’s mock provider (OAUTH_MOCK_PROVIDER, local tier only), whose consent form takes the account id, the address and whether LinkedIn has verified it. The provider’s credentials are removed afterwards, even when a step fails.",
   "needsSecretKey": true,
   "variables": {
     "email": {

@@ -1,19 +1,11 @@
 # Sign in with LinkedIn: setup checklist
 
 > **Not verified against the live console.** Nothing in this repository has real credentials
-> for this provider: the flow is tested against the API's built-in mock provider and against
-> ID tokens the tests sign themselves. The redirect URI, the scopes and the token checks below
-> are what the code does; the portal steps are written from LinkedIn's documentation and have
-> not been clicked through.
-
-> **Unknown: whether a real LinkedIn ID token carries `email` and `email_verified`, and as
-> what.** LinkedIn's guide lists five claims for the ID token (`iss`, `sub`, `aud`, `iat`,
-> `exp`) and documents `email` and `email_verified` (a Boolean) for the **userinfo**
-> endpoint. Tula reads the ID token only. If a real token carries no address, every new
-> LinkedIn account is refused with `oauth.email_missing`; if it carries `email_verified` as
-> the string `"true"`, every one is refused with `oauth.email_unverified`. Either way nobody
-> can sign **up** with LinkedIn until that is fixed in Tula. **Try a sign-up with a real
-> LinkedIn account before you offer the button.**
+> for this provider: the flow is tested against the API's built-in mock provider, against ID
+> tokens the tests sign themselves and against userinfo answers the tests write. The redirect
+> URI, the scopes and the checks below are what the code does; the portal steps are written
+> from LinkedIn's documentation and have not been clicked through. **Try a sign-up with a real
+> LinkedIn account before you offer the button** ([Limits](#limits) says what was never seen).
 
 What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)).
 
@@ -34,12 +26,12 @@ What an operator does once per environment ([ADR 0026](../adr/0026-oauth.md)).
    ```
 7. **Allow your app's landing page** in `urls.allowedRedirectUrls`, exactly.
 
-Tula asks for the scopes `openid`, `profile` and `email` and nothing else, and calls no
-LinkedIn API with the access token.
+Tula asks for the scopes `openid`, `profile` and `email` and nothing else. The one LinkedIn
+API it calls with the access token is the userinfo endpoint, once per sign-in.
 
 ## What Tula checks in the token
 
-The profile comes from the **ID token** LinkedIn returns with the code exchange, verified
+The **account** comes from the **ID token** LinkedIn returns with the code exchange, verified
 against LinkedIn's published keys (`https://www.linkedin.com/oauth/openid/jwks`):
 
 - the signature, `RS256` only;
@@ -51,21 +43,42 @@ against LinkedIn's published keys (`https://www.linkedin.com/oauth/openid/jwks`)
 There is **no nonce** to check: LinkedIn's authorization request takes none and its token is
 not documented to carry one.
 
-- **The account is `sub`**, which LinkedIn issues per application: the same member has another
-  `sub` in another app. Never an address.
-- **The address is the token's `email`.**
-- **The name** is `given_name` and `family_name`, display-only.
+**The account is the token's `sub`**, which LinkedIn issues per application: the same member
+has another `sub` in another app. Never an address. Nothing else of the token is used: not
+its `email`, not its names.
+
+## Where the address comes from
+
+Once the token has verified, and not before, Tula reads LinkedIn's userinfo endpoint, where
+LinkedIn documents the address: `GET https://api.linkedin.com/v2/userinfo` with the access
+token.
+
+- **The answer's `sub` must be the token's `sub`.** An answer about anyone else is refused
+  exactly as a token that does not verify is, and nobody is signed in.
+- **The address is the answer's `email`**, and whether it is verified its `email_verified`.
+- **The name** is the answer's `given_name` and `family_name`, display-only.
+- There is one source. The token's own `email`, if it has one, is never used instead.
+
+The read follows no redirect (one would carry the access token along), has a deadline and
+stops at 64 KiB. When LinkedIn does not answer it, answers anything but a 2xx, or answers
+something that is not a JSON object, the sign-in fails and can be tried again; nothing of
+the answer is kept or shown.
+
+The answer is protected by TLS, not by a signature, as GitHub's and Discord's profiles are:
+what ties it to the member is the access token LinkedIn issued for this code and the `sub`
+check above.
 
 Neither LinkedIn's access token nor its ID token is stored, logged or returned.
 
 ## What the address proves
 
-Tula counts a LinkedIn address as verified only when the token says `email_verified: true`,
-the JSON boolean. Absent, `false`, `"true"` or `1` is unverified. Then:
+Tula counts a LinkedIn address as verified only when the userinfo answer says
+`email_verified: true`, the JSON boolean. Absent, `false`, `"true"` or `1` is unverified.
+Then:
 
 - an account Tula already knows by its `sub` signs in, whatever its address says;
 - a new account is refused with `oauth.email_unverified` (or `oauth.email_missing` when the
-  token has no address), no user is created, and no existing user is linked.
+  answer has no address), no user is created, and no existing user is linked.
 
 A signed-in user can connect a LinkedIn account from their profile whatever its address: the
 session is the proof there.
@@ -90,8 +103,13 @@ read the victim's redirect on its way to Tula.
 ## Limits
 
 - Nothing here was run against linkedin.com.
-- Which `iss` a real token carries, and whether it carries `email` and `email_verified`, were
-  not observed (see the note at the top).
+- Which `iss` a real token carries was not observed; Tula accepts the two LinkedIn publishes.
+- No real userinfo answer was seen. Three things rest on LinkedIn's documentation alone:
+  that the answer's `sub` is the same value as the ID token's (if it is not, **every**
+  LinkedIn sign-in is refused), that `email_verified` arrives as a JSON boolean (if it is the
+  string `"true"`, nobody can sign **up** with LinkedIn: `oauth.email_unverified`), and that
+  the token request returns an access token the endpoint accepts with the three scopes
+  above. Each fails closed: nobody is signed in who should not be.
 - LinkedIn publishes this sign-in for apps under its own terms; whether your app qualifies
   for the product is LinkedIn's decision.
 - The button's mark was drawn without LinkedIn's brand page open: check its shape, its colour
