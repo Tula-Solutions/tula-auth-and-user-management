@@ -2631,6 +2631,27 @@ Longest name a user can give a passkey.
 const MAX_PASSKEY_NAME_LENGTH: 64
 ```
 
+### `MAX_PASSWORD_HISTORY`
+
+_constant_, defined in `packages/contract/src/password-policy.ts`
+
+The most passwords `history` may tell a server to remember for a user.
+
+A new password is compared with every one of them, and each comparison is a full argon2id
+verification: about a second and a half of one core for all 24 (ADR 0038 has the
+measurement and the limits that bound how often a caller can cause it). 24 is what the
+strictest common baselines ask for.
+
+```ts
+const MAX_PASSWORD_HISTORY: 24
+```
+
+**Example**
+
+```ts
+policy.history <= MAX_PASSWORD_HISTORY // true for every policy the schema accepts
+```
+
 ### `MAX_PHONE_NUMBER_DIGITS`
 
 _constant_, defined in `packages/contract/src/phone.ts`

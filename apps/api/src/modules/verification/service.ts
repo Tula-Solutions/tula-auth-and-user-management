@@ -227,7 +227,19 @@ export async function issue(
       internalMessage: `verification email could not be sent (${describeMailFailure(error)})`,
     })
   }
+  const { id, expiresAt } = await store(deps, scope, input, destination, code, linkToken)
+  return { id, destination: maskEmail(input.destination.trim()), expiresAt }
+}
 
+/** Store a code's token, replacing the subject's earlier one of the same purpose. */
+async function store(
+  deps: Pick<Deps, 'clock' | 'ids' | 'keyedHash' | 'verificationTokens'>,
+  scope: Scope,
+  input: Omit<IssueInput, 'deliver'>,
+  destination: string,
+  code: string,
+  linkToken: string | null
+): Promise<{ id: string; expiresAt: Date }> {
   // Stamp the token only now. "Newest" is decided by createdAt, so a send that hung in the
   // relay must not store a token that looks older than one issued while it was waiting.
   const now = deps.clock.now()
@@ -250,7 +262,42 @@ export async function issue(
     },
     now
   )
-  return { id, destination: maskEmail(input.destination.trim()), expiresAt }
+  return { id, expiresAt }
+}
+
+/**
+ * Issue a code whose delivery is **not waited for**, and store its token only once the
+ * delivery says the message was taken (a sign-in's texted code, ADR 0037).
+ *
+ * {@link issue} sends, waits, and stores when the send succeeded. A sign-in cannot wait: how
+ * long a provider takes would tell a number that is sent to from one that is not. So `hand`
+ * is given the code and a `store` to call when, and only when, the message was taken. A
+ * message that was not taken stores nothing: its code cannot be guessed against, and the
+ * earlier code keeps working. Nothing is returned: when this resolves the token may not
+ * exist yet, and may never.
+ *
+ * @param deps - Clock, ids, keyed hash and the token store.
+ * @param scope - The project and environment.
+ * @param input - As for {@link issue}; its send limits must be the delivery's own.
+ * @param hand - Starts the delivery. What it throws is thrown to the caller.
+ * @throws InternalError when no subject was given.
+ */
+export async function issueWhenTaken(
+  deps: Pick<Deps, 'clock' | 'ids' | 'keyedHash' | 'verificationTokens'>,
+  scope: Scope,
+  input: Omit<IssueInput, 'deliver' | 'linkUrl' | 'onAllowed' | 'sendLimits'> & {
+    sendLimits: typeof LIMITED_BY_DELIVERY
+  },
+  hand: (delivery: Pick<Delivery, 'code'>, store: () => Promise<void>) => Promise<void>
+): Promise<void> {
+  if (!input.flowAttemptId && !input.userId) {
+    throw new InternalError({ internalMessage: 'verification needs a flow attempt or a user' })
+  }
+  const destination = normalizeEmail(input.destination)
+  const code = randomDigits(CODE_LENGTH)
+  await hand({ code }, async () => {
+    await store(deps, scope, input, destination, code, null)
+  })
 }
 
 /**

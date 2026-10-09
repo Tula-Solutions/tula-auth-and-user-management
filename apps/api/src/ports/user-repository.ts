@@ -111,6 +111,40 @@ export type UnlinkOutcome = 'unlinked' | 'not_found' | 'last_method'
  */
 export type PasswordOutcome = 'created' | 'replaced'
 
+/**
+ * What a password write does to the passwords the user had before (ADR 0038).
+ *
+ * Every write names it, so that no path can store a password and leave the history as it was.
+ */
+export interface PasswordHistoryRule {
+  /**
+   * How many previous passwords the user has after this write: the environment's
+   * `password.history` minus one (the current password counts as one of "the last N"), and 0
+   * where the policy keeps none. The hash that stops being current becomes the newest previous
+   * one when this is at least 1; whatever is then beyond it is deleted in the same transaction.
+   */
+  keep: number
+  /**
+   * Given when the new password was compared with the stored ones: the current hash it was
+   * compared with (`null`: the user had no password). The write then happens only while that
+   * is still the stored hash, so a password is never stored on a comparison with a history
+   * that has since moved. Left out by a write that compares nothing (an administrator's).
+   */
+  ifCurrent?: string | null
+}
+
+/**
+ * A user's current password hash and the ones before it, newest first.
+ *
+ * Hashes only ever leave the store to be verified against: never log, return or record one.
+ */
+export interface StoredPasswords {
+  /** The current argon2id hash, or `null` for a user with no password. */
+  current: string | null
+  /** The previous hashes that were asked for, the most recent first. */
+  previous: string[]
+}
+
 /** Which users to list. */
 export interface UserListCriteria {
   /** Case-insensitive substring of the email or a name. Wildcards are matched literally. */
@@ -223,6 +257,11 @@ export interface UserRepository {
    * they have none (a user who signed up another way setting their first password). One atomic
    * write either way; of two concurrent first passwords exactly one is `created`.
    *
+   * The hash that stops being current is kept as the user's newest previous password, every
+   * older one moves one place back, and what is then beyond `history.keep` is deleted: all in
+   * the transaction that stores the new hash, under a lock on the user, so of two concurrent
+   * writes neither loses a previous password nor keeps one twice (ADR 0038).
+   *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param passwordHash - The new argon2id hash.
@@ -230,21 +269,62 @@ export interface UserRepository {
    * @param activity - Recorded in the same transaction as the write. When the password is the
    *   user's first, the recorded entry's `data` gains `created: true`: only the store knows
    *   which happened at the moment it happens.
-   * @returns What happened, or `null` when the user does not exist in that environment (nothing
-   *   is written or recorded).
+   * @param history - What becomes of the previous passwords, and the current hash the new
+   *   password was compared with, if it was.
+   * @returns What happened; `'stale'` when `history.ifCurrent` is no longer the stored hash;
+   *   or `null` when the user does not exist in that environment. For the last two nothing is
+   *   written or recorded.
    */
   setPasswordHash(
     environmentId: string,
     userId: string,
     passwordHash: string,
     at: Date,
-    activity: Recorded
-  ): Promise<PasswordOutcome | null>
+    activity: Recorded,
+    history: PasswordHistoryRule
+  ): Promise<PasswordOutcome | 'stale' | null>
+
+  /**
+   * The hashes a new password of the user is compared with (ADR 0038): the current one and
+   * the most recent previous ones.
+   *
+   * Not a snapshot: an adapter may read the current hash and the previous ones in two
+   * statements, and a password change can land between them or after both. What covers that
+   * is not this read but the write: {@link setPasswordHash} is told the current hash that was
+   * compared with (`ifCurrent`) and stores nothing when it is no longer the current one.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param previous - How many previous hashes to return at most.
+   * @returns The hashes (a user with no password, or none in that environment: `current` is
+   *   `null` and `previous` is empty).
+   */
+  storedPasswords(environmentId: string, userId: string, previous: number): Promise<StoredPasswords>
+
+  /**
+   * Delete previous passwords that are beyond what the environment now keeps, for the
+   * retention job (ADR 0017): what a lowered `password.history` left with users who have not
+   * changed their password since.
+   *
+   * It never waits for a row a password change holds: such rows are passed over and go in a
+   * later call, so a purge and a user's own change cannot block or deadlock each other. A
+   * return below `limit` therefore does not promise that nothing is left.
+   *
+   * @param environmentId - The environment to purge.
+   * @param keep - How many previous passwords a user may have (`password.history` minus one,
+   *   at least 0).
+   * @param limit - The most rows to delete in this call.
+   * @returns How many rows were deleted.
+   */
+  deletePasswordHistoryBeyond(environmentId: string, keep: number, limit: number): Promise<number>
 
   /**
    * Replace a password hash with a stronger hash **of the same password**, only if the stored
    * hash is still the one that was verified. A plain write here could overwrite a password that
    * was changed between the verify and the upgrade, bringing the old password back.
+   *
+   * It is not a new password, so the previous passwords are left exactly as they are: the old
+   * hash is not kept (the same password would then be there twice).
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
@@ -270,7 +350,9 @@ export interface UserRepository {
    * exists on an account whose address nobody had proven was chosen by whoever made the
    * account, who is not known to be the address's owner, and must not start working the moment
    * the owner verifies it (a pre-hijack; ADR 0024). An address that was already verified
-   * changes nothing and removes nothing.
+   * changes nothing and removes nothing. The account's previous passwords are deleted with
+   * the password, in that transaction: they were chosen by the same stranger, and the owner
+   * must never be refused a password because of them (ADR 0038).
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
@@ -401,7 +483,8 @@ export interface UserRepository {
   ): Promise<boolean>
 
   /**
-   * Delete a user and, by cascade, their identities, credentials, sessions and attempts.
+   * Delete a user and, by cascade, their identities, credentials (with every previous
+   * password kept for them), sessions and attempts.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.

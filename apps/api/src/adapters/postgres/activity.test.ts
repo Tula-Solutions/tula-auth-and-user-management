@@ -22,7 +22,7 @@ import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { cleanOrigin } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import * as Audit from '~/modules/audit/service'
-import type { Activity } from '~/ports/activity-log'
+import type { Activity, Recorded } from '~/ports/activity-log'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
 let testDb: TestDatabase
@@ -174,12 +174,39 @@ describe('atomicity', () => {
     await expect(users.delete(env, user.id, broken(a, user.id))).rejects.toThrow()
     await expect(users.setBanned(env, user.id, now, now, broken(a, user.id))).rejects.toThrow()
     await expect(
-      users.setPasswordHash(env, user.id, '$argon2id$new', now, broken(a, user.id))
+      users.setPasswordHash(env, user.id, '$argon2id$new', now, broken(a, user.id), { keep: 0 })
     ).rejects.toThrow()
     await expect(users.markEmailVerified(env, user.id, now, broken(a, user.id))).rejects.toThrow()
     const found = await users.findByEmailWithPassword(env, user.emailNormalized)
     expect(found?.user).toMatchObject({ id: user.id, bannedAt: null, emailVerifiedAt: null })
     expect(found?.passwordHash).toBe('$argon2id$hash')
+  })
+
+  test('a password change that cannot be recorded leaves the previous passwords as they were', async () => {
+    const users = new PostgresUserRepository(testDb.db)
+    const user = newUser(a)
+    await users.create(user, Audit.none('fixture'))
+    const env = a.environmentId
+    const change = (hash: string, recorded: Recorded = Audit.none('fixture')) =>
+      users.setPasswordHash(env, user.id, hash, now, recorded, { keep: 2 })
+    await change('$argon2id$1')
+    await change('$argon2id$2')
+    const before = await users.storedPasswords(env, user.id, 24)
+    expect(before).toEqual({
+      current: '$argon2id$2',
+      previous: ['$argon2id$1', '$argon2id$hash'],
+    })
+    // The write would move both rows back, delete the older and insert a third: none of it
+    // may outlive the transaction.
+    await expect(change('$argon2id$3', broken(a, user.id))).rejects.toThrow()
+    expect(await users.storedPasswords(env, user.id, 24)).toEqual(before)
+    // Nor does a removal that cannot be recorded delete them.
+    await expect(
+      users.markEmailVerified(env, user.id, now, Audit.none('fixture'), {
+        activity: broken(a, user.id),
+      })
+    ).rejects.toThrow()
+    expect(await users.storedPasswords(env, user.id, 24)).toEqual(before)
   })
 
   test('a session is neither created nor revoked when the record cannot be written', async () => {

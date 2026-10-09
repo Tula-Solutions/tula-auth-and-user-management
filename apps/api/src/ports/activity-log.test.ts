@@ -60,7 +60,9 @@ async function _users(users: UserRepository): Promise<void> {
   // @ts-expect-error
   await users.unlinkIdentity(ENV, 'user', 'identity', allowed)
   // @ts-expect-error
-  await users.setPasswordHash(ENV, 'user', 'hash', AT)
+  await users.setPasswordHash(ENV, 'user', 'hash', AT, { keep: 0 })
+  // @ts-expect-error what becomes of the previous passwords is said by every write too
+  await users.setPasswordHash(ENV, 'user', 'hash', AT, activity)
   // @ts-expect-error
   await users.markEmailVerified(ENV, 'user', AT)
   // @ts-expect-error removing the password is a change of its own, with its own entry

@@ -551,6 +551,80 @@ describe('asking for a code answers the same for every identifier', () => {
     expect(warn.mock.calls.some(([message]) => message === 'text message not sent')).toBe(true)
     expect(JSON.stringify(warn.mock.calls)).not.toContain('4155550142')
     expect(await sentToday()).toBe(kept)
+    // A code that never left is stored nowhere: there is nothing to guess against.
+    expect(await latestToken(attempt)).toBeNull()
+    warn.mockRestore()
+  })
+
+  test.each([
+    ['refuses', true],
+    ['loses the answer', 'unconfirmed'],
+  ] as const)('after a sender that %s the earlier code still signs in', async (_name, failing) => {
+    await seedUser()
+    const attempt = await asked()
+    const earlier = textedCode()
+    const stored = await latestToken(attempt)
+    expect(stored).not.toBeNull()
+
+    // A minute later a new code is asked for, and the sender does not take it.
+    deps.clock.advance('61s')
+    deps.sms.failing = failing
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    expect((await prepare(attempt)).status).toBe(200)
+    await Sms.settled()
+    warn.mockRestore()
+    deps.sms.failing = false
+    expect(deps.sms.outbox).toHaveLength(1)
+    expect((await latestToken(attempt))?.id).toBe(stored?.id)
+
+    const res = await submit(attempt, earlier)
+    expect(res.status).toBe(200)
+    expect((await json<FlowAttempt>(res)).step.status).toBe('complete')
+  })
+
+  test('the code is stored only once the sender has taken the message', async () => {
+    await seedUser()
+    // A sender that takes its time: the request is answered while the message is on its way.
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const send = spyOn(deps.sms, 'send').mockImplementation(async () => {
+      await held
+    })
+    const attempt = await start()
+    expect((await prepare(attempt)).status).toBe(200)
+    expect(await latestToken(attempt)).toBeNull()
+    // The day's message was taken before the answer, not by the send.
+    expect(await sentToday()).toBe(1)
+    release()
+    await Sms.settled()
+    expect(await latestToken(attempt)).toMatchObject({ purpose: 'sms_sign_in' })
+    send.mockRestore()
+  })
+
+  test('a code that cannot be stored is logged by name and reaches nobody', async () => {
+    await seedUser()
+    const replace = spyOn(deps.verificationTokens, 'replace').mockImplementation(async () => {
+      throw new Error(`the store is down for ${NUMBER}`)
+    })
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    const rejections: unknown[] = []
+    const onRejection = (reason: unknown) => rejections.push(reason)
+    process.on('unhandledRejection', onRejection)
+    for (const identifier of [NUMBER, UNKNOWN]) {
+      const res = await prepare(await start(identifier))
+      expect(res.status).toBe(200)
+    }
+    await Sms.settled()
+    // One more turn of the loop: an unhandled rejection is reported after the microtasks.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    process.off('unhandledRejection', onRejection)
+    expect(rejections).toEqual([])
+    const lines = warn.mock.calls.filter(([message]) => message === 'texted code not stored')
+    expect(lines).toHaveLength(2)
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('4155550142')
+    replace.mockRestore()
     warn.mockRestore()
   })
 

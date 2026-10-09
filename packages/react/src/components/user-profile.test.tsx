@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
+import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import type { Session } from '@tula/core'
 import { StrictMode } from 'react'
 import {
@@ -384,5 +385,151 @@ describe('<UserProfile>', () => {
     w.api.on(ROUTE.me, () => json(200, { ...TEST_USER, emailVerifiedAt: null, firstName: null }))
     w.mount(<UserProfile />)
     expect(await screen.findByText('Not verified')).toBeTruthy()
+  })
+})
+
+describe('<UserProfile> the password history rule (ADR 0038)', () => {
+  const REUSED = 'You have used this password recently. Choose a different one.'
+
+  function historyWorld(history: number): World {
+    const w = world({
+      signedIn: true,
+      policy: { ...PASSWORD_POLICY_PRESETS.recommended, preset: 'custom', history },
+    })
+    w.api.on(ROUTE.sessions, () => json(200, { data: [] }))
+    return w
+  }
+
+  /** The history line of the new password's checklist. */
+  const line = async (text: string) => {
+    const list = await screen.findByRole('list', { name: 'Password requirements' })
+    const item = within(list)
+      .getAllByRole('listitem')
+      .find((candidate) => candidate.textContent?.includes(text))
+    if (!item) {
+      throw new Error(`no line says "${text}"`)
+    }
+    return item
+  }
+
+  test('is listed with the policy’s number, waiting for the server, and never as met', async () => {
+    const w = historyWorld(5)
+    w.mount(<UserProfile />)
+    const item = await line('Not one of your last 5 passwords')
+    expect(item.getAttribute('data-state')).toBe('pending')
+    // The state in words, for a reader who cannot see the icon.
+    expect(item.textContent).toBe(
+      'Checked when you save: Not one of your last 5 passwords (Checked when you save)'
+    )
+    // Every rule the browser can judge is met; this one still is not drawn as met.
+    await w.user.type(screen.getByLabelText('New password'), 'quiet-Heron-wades-17-rivers')
+    const list = screen.getByRole('list', { name: 'Password requirements' })
+    const met = within(list)
+      .getAllByRole('listitem')
+      .filter((candidate) => candidate.getAttribute('data-met') === 'true')
+    expect(met.length).toBeGreaterThan(0)
+    expect(item.getAttribute('data-met')).toBe('false')
+    expect(item.className).not.toContain('tula-is-met')
+    expect(item.getAttribute('data-state')).toBe('pending')
+    // It is not one of the requirements the summary counts as met or unmet.
+    expect(list.parentElement?.querySelector('output')?.textContent).toBe(
+      `${met.length} of ${met.length} password requirements met`
+    )
+    // The field is described by the list the line is in.
+    const described = screen.getByLabelText('New password').getAttribute('aria-describedby') ?? ''
+    expect(described.split(' ')).toContain(list.parentElement?.id ?? 'no id')
+  })
+
+  test('a history of one names the current password', async () => {
+    historyWorld(1).mount(<UserProfile />)
+    const item = await line('Not your current password')
+    expect(item.getAttribute('data-state')).toBe('pending')
+  })
+
+  test('a history of zero lists nothing', async () => {
+    const w = historyWorld(0)
+    w.mount(<UserProfile />)
+    await screen.findByRole('list', { name: 'Password requirements' })
+    expectAbsent(screen.queryByText(/Checked when you save/))
+    expectAbsent(screen.queryByText(/current password$/))
+  })
+
+  test.each([
+    [
+      'as the error’s own code',
+      failure(422, 'password.reused', {
+        params: { history: 5 },
+        errors: [
+          { field: 'password', code: 'password.reused', message: REUSED, params: { history: 5 } },
+        ],
+      }),
+    ],
+    [
+      'among other refused rules',
+      failure(422, 'password.too_short', {
+        errors: [
+          { field: 'password', code: 'password.too_short', message: 'Password is too short.' },
+          { field: 'password', code: 'password.reused', message: REUSED },
+        ],
+      }),
+    ],
+  ] as [string, Response][])(
+    'a password the server refuses as reused (%s) fails the line, with the server’s message',
+    async (_name, response) => {
+      const w = historyWorld(5)
+      w.api.on(ROUTE.changePassword, () => response)
+      w.mount(<UserProfile />)
+      await w.user.type(await screen.findByLabelText('Current password'), 'old-password-123')
+      const field = screen.getByLabelText('New password') as HTMLInputElement
+      await w.user.type(field, 'quiet-Heron-wades-17-rivers')
+      await w.user.click(screen.getByRole('button', { name: 'Update password' }))
+
+      // Announced: the server's message, on the field.
+      expect((await screen.findByRole('alert')).textContent).toContain(REUSED)
+      expect(field.getAttribute('aria-invalid')).toBe('true')
+      await expectFocus(field)
+      const item = await line('Not one of your last 5 passwords')
+      expect(item.getAttribute('data-state')).toBe('failed')
+      expect(item.className).toContain('tula-is-failed')
+      expect(item.className).not.toContain('tula-is-met')
+      // In words too, and no longer "checked when you save".
+      expect(item.textContent).toBe('Not met: Not one of your last 5 passwords')
+
+      // The refusal was about the password that was sent: another one is undecided again.
+      await w.user.type(field, '-2')
+      expect((await line('Not one of your last 5 passwords')).getAttribute('data-state')).toBe(
+        'pending'
+      )
+    }
+  )
+
+  test('another refusal leaves the line waiting', async () => {
+    const w = historyWorld(5)
+    w.api.on(ROUTE.changePassword, () =>
+      failure(422, 'password.breached', {
+        errors: [{ field: 'password', code: 'password.breached', message: 'Breached.' }],
+      })
+    )
+    w.mount(<UserProfile />)
+    await w.user.type(await screen.findByLabelText('Current password'), 'old-password-123')
+    await w.user.type(screen.getByLabelText('New password'), 'quiet-Heron-wades-17-rivers')
+    await w.user.click(screen.getByRole('button', { name: 'Update password' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Breached.')
+    expect((await line('Not one of your last 5 passwords')).getAttribute('data-state')).toBe(
+      'pending'
+    )
+  })
+
+  test('once the change went through the line waits again, and was never drawn as met', async () => {
+    const w = historyWorld(5)
+    w.api.on(ROUTE.changePassword, () => new Response(null, { status: 204 }))
+    w.mount(<UserProfile />)
+    await w.user.type(await screen.findByLabelText('Current password'), 'old-password-123')
+    await w.user.type(screen.getByLabelText('New password'), 'quiet-Heron-wades-17-rivers')
+    await w.user.click(screen.getByRole('button', { name: 'Update password' }))
+    await screen.findByText('Your password was changed. Your other devices were signed out.')
+    const item = await line('Not one of your last 5 passwords')
+    expect(item.getAttribute('data-state')).toBe('pending')
+    expect(item.className).not.toContain('tula-is-met')
   })
 })

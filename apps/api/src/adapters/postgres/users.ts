@@ -1,11 +1,21 @@
 import type { OAuthProvider } from '@tula/contract'
-import { credentials, type Database, identities, passkeys, users, withTenant } from '@tula/db'
+import {
+  credentials,
+  type Database,
+  identities,
+  passkeys,
+  passwordHistory,
+  users,
+  withTenant,
+} from '@tula/db'
 import {
   and,
   asc,
   count,
   desc,
   eq,
+  gt,
+  gte,
   ilike,
   isNotNull,
   isNull,
@@ -24,8 +34,10 @@ import type {
   LinkOutcome,
   NewIdentity,
   NewUser,
+  PasswordHistoryRule,
   PasswordOutcome,
   SignInMeans,
+  StoredPasswords,
   UnlinkOutcome,
   UserListCriteria,
   UserRecord,
@@ -346,8 +358,9 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     passwordHash: string,
     at: Date,
-    recorded: Recorded
-  ): Promise<PasswordOutcome | null> {
+    recorded: Recorded,
+    history: PasswordHistoryRule
+  ): Promise<PasswordOutcome | 'stale' | null> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       // The row lock keeps the user from being deleted between this read and the write below,
@@ -356,14 +369,63 @@ export class PostgresUserRepository implements UserRepository {
       // the row, so it waits for this transaction or this one for it. Without the lock a
       // first password stored during the verification is invisible to its delete and stays
       // (`races.integration.ts` fails for it).
+      //
+      // It is a lock no other password write of the user shares (`NO KEY UPDATE`, where a
+      // shared lock was enough before there was a history): the hash read below is then the
+      // one this transaction replaces, so two concurrent writes each keep the other's hash
+      // once, and neither loses one or keeps one twice. It does not block the foreign-key
+      // checks of rows that point at the user (a session being created).
       const [owner] = await tx
         .select({ projectId: users.projectId })
         .from(users)
         .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
         .limit(1)
-        .for('share')
+        .for('no key update')
       if (!owner) {
         return null
+      }
+      const ownRows = and(
+        eq(passwordHistory.userId, userId),
+        eq(passwordHistory.environmentId, environmentId)
+      )
+      const [stored] = await tx
+        .select({ secret: credentials.secret })
+        .from(credentials)
+        .where(
+          and(
+            eq(credentials.userId, userId),
+            eq(credentials.environmentId, environmentId),
+            eq(credentials.type, 'password')
+          )
+        )
+        .limit(1)
+      const current = stored?.secret ?? null
+      if (history.ifCurrent !== undefined && history.ifCurrent !== current) {
+        return 'stale'
+      }
+      const keep = Math.max(0, history.keep)
+      if (current === null) {
+        // Nothing stops being current, so nothing moves: only what is beyond the policy goes.
+        await tx.delete(passwordHistory).where(and(ownRows, gt(passwordHistory.position, keep)))
+      } else {
+        // Every row moves one place back, so what is at `keep` now would be beyond it.
+        await tx.delete(passwordHistory).where(and(ownRows, gte(passwordHistory.position, keep)))
+        if (keep >= 1) {
+          await tx
+            .update(passwordHistory)
+            .set({ position: sql`${passwordHistory.position} + 1`, updatedAt: at })
+            .where(ownRows)
+          await tx.insert(passwordHistory).values({
+            projectId: owner.projectId,
+            environmentId,
+            userId,
+            // The hash as it stood: never a second, cheaper form of the password.
+            secret: current,
+            position: 1,
+            createdAt: at,
+            updatedAt: at,
+          })
+        }
       }
       // One statement creates or replaces, so two concurrent first passwords cannot both
       // insert: the second lands on the unique (user, type) key and updates instead.
@@ -398,6 +460,79 @@ export class PostgresUserRepository implements UserRepository {
       )
       return outcome
     })
+  }
+
+  /** @inheritdoc */
+  async storedPasswords(
+    environmentId: string,
+    userId: string,
+    previous: number
+  ): Promise<StoredPasswords> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [stored] = await tx
+        .select({ secret: credentials.secret })
+        .from(credentials)
+        .where(
+          and(
+            eq(credentials.userId, userId),
+            eq(credentials.environmentId, environmentId),
+            eq(credentials.type, 'password')
+          )
+        )
+        .limit(1)
+      const rows =
+        previous > 0
+          ? await tx
+              .select({ secret: passwordHistory.secret })
+              .from(passwordHistory)
+              .where(
+                and(
+                  eq(passwordHistory.userId, userId),
+                  eq(passwordHistory.environmentId, environmentId)
+                )
+              )
+              .orderBy(asc(passwordHistory.position), desc(passwordHistory.id))
+              .limit(previous)
+          : []
+      return { current: stored?.secret ?? null, previous: rows.map((row) => row.secret) }
+    })
+  }
+
+  /** @inheritdoc */
+  async deletePasswordHistoryBeyond(
+    environmentId: string,
+    keep: number,
+    limit: number
+  ): Promise<number> {
+    // An indexed range of one environment (`password_history_environment_position_idx`): the
+    // rows a user may keep are never read.
+    const beyond = and(
+      eq(passwordHistory.environmentId, environmentId),
+      gt(passwordHistory.position, Math.max(0, keep))
+    )
+    const rows = await withTenant(this.db, environmentId, (tx) => {
+      // DELETE has no LIMIT in Postgres: pick the batch in a subquery. The batch is locked as
+      // it is picked and a row someone else holds is passed over (`SKIP LOCKED`): a password
+      // change locks its user's rows in its own order, and a purge that waited for them could
+      // deadlock with it, with the user's request as the victim. What is passed over goes in
+      // a later round.
+      const batch = tx
+        .select({ id: passwordHistory.id })
+        .from(passwordHistory)
+        .where(beyond)
+        .limit(limit)
+        .for('update', { skipLocked: true })
+      return (
+        tx
+          .delete(passwordHistory)
+          // `= ANY(ARRAY(…))` and not `IN (…)`: the array is built once, before the delete
+          // runs, so the batch is `limit` rows at most. Written as `IN (…)` the locking
+          // subquery deleted four rows for a limit of three (the shared suite, on PGlite).
+          .where(and(beyond, sql`${passwordHistory.id} = any(array(${batch}))`))
+          .returning({ id: passwordHistory.id })
+      )
+    })
+    return rows.length
   }
 
   /** @inheritdoc */
@@ -468,6 +603,18 @@ export class PostgresUserRepository implements UserRepository {
             .returning({ id: credentials.id })
         : []
       const passwordRemoved = removed.length > 0
+      if (removePassword) {
+        // Whoever chose the password chose the ones before it too: the address's owner is
+        // never refused a password because a stranger used it (ADR 0038).
+        await tx
+          .delete(passwordHistory)
+          .where(
+            and(
+              eq(passwordHistory.userId, userId),
+              eq(passwordHistory.environmentId, environmentId)
+            )
+          )
+      }
       await recordActivity(tx, [
         ...(activity ? [activity] : []),
         ...(passwordRemoved && removal ? [removal] : []),

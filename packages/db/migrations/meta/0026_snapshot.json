@@ -1,6 +1,6 @@
 {
-  "id": "973b0a1d-8db2-481c-a56a-6c667dc2b912",
-  "prevId": "0a02e4f3-d2ad-4665-8834-a980052f8e74",
+  "id": "0a02e4f3-d2ad-4665-8834-a980052f8e74",
+  "prevId": "21291d7d-67e6-4299-b57d-98cc20db4119",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3802,28 +3802,6 @@
         }
       },
       "indexes": {
-        "users_environment_phone_number_idx": {
-          "name": "users_environment_phone_number_idx",
-          "columns": [
-            {
-              "expression": "environment_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "phone_number",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"tula\".\"users\".\"phone_number\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "users_environment_id_idx": {
           "name": "users_environment_id_idx",
           "columns": [

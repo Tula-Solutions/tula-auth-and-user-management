@@ -8,7 +8,7 @@ import {
   type PasswordUserInfo,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, ServiceException } from '~/exceptions'
+import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
 import * as Settings from '~/modules/settings/service'
 import type { UserRecord } from '~/ports/user-repository'
 
@@ -177,6 +177,97 @@ export async function assess(
     throw new ServiceException('password.breached', { errors: [breached] })
   }
   return { warnings: [breached] }
+}
+
+/**
+ * How many times an hour one user's new password may be compared with their previous ones
+ * (ADR 0038). The comparison is one argon2id verification per stored password, up to the 24
+ * the policy may keep (about a second and a half of one core), and it is reached by a caller
+ * who has already proven the account is theirs: a signed-in user from any number of addresses.
+ * The per-IP limit of the route bounds an address, this bounds the account, so one account
+ * cannot be made to cost more than ten comparisons an hour whoever asks. Nobody changes a
+ * password that often, and cycling through passwords to get an old one back is what the
+ * history exists to stop.
+ */
+export const PASSWORD_HISTORY_CHECKS_PER_HOUR = 10
+
+const HOUR_MS = 3_600_000
+
+/**
+ * How many previous passwords an environment keeps for a user: its `password.history` minus
+ * one, because the current password is itself one of "the last N" (ADR 0038).
+ *
+ * @param history - The policy's `history`.
+ * @returns The number of previous hashes to keep and to compare with; 0 for a history of 0 or 1.
+ */
+export function previousKept(history: number): number {
+  return Math.max(0, history - 1)
+}
+
+/**
+ * Refuse a new password that is one of the user's last `history` passwords, the current one
+ * included.
+ *
+ * Call it last: after whatever proves the caller may set the password (the current password,
+ * an emailed code) and after {@link assess}, so that no unauthenticated request reaches it and
+ * a wrong guess is never amplified by it. A user with no password has nothing to be compared
+ * with and nothing is counted for them.
+ *
+ * Every stored hash is verified, one after another, whether or not an earlier one matched: the
+ * time the answer takes says how many passwords are kept, never which one matched. Nothing
+ * else says it either: the error carries the policy's number and no index, and nothing is
+ * logged or recorded.
+ *
+ * @param deps - Users and the rate limiter.
+ * @param tenant - The user's environment.
+ * @param userId - The user.
+ * @param password - The candidate password.
+ * @param history - The policy's `history`, at least 1.
+ * @param counted - Whether to count the comparison against the user's hourly allowance. `false`
+ *   only for a repeat of a comparison already counted (the store reported a stale snapshot).
+ * @returns The current hash the password was compared with (`null` when the user has no
+ *   password), for the store's compare-and-set.
+ * @throws ServiceException `password.reused` (422) with `params.history`.
+ * @throws RateLimitError when the user's allowance of comparisons is used up.
+ */
+export async function assertNotReused(
+  deps: Pick<Deps, 'users' | 'rateLimiter'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  userId: string,
+  password: string,
+  history: number,
+  counted = true
+): Promise<string | null> {
+  const stored = await deps.users.storedPasswords(
+    tenant.environmentId,
+    userId,
+    previousKept(history)
+  )
+  if (stored.current === null) {
+    return null
+  }
+  if (counted) {
+    const decision = await deps.rateLimiter.hit(
+      `password_history:${tenant.environmentId}:${userId}`,
+      PASSWORD_HISTORY_CHECKS_PER_HOUR,
+      HOUR_MS
+    )
+    if (!decision.allowed) {
+      throw new RateLimitError(decision.retryAfterMs)
+    }
+  }
+  let reused = false
+  for (const storedHash of [stored.current, ...stored.previous]) {
+    // No early exit: a match must not answer sooner than no match.
+    reused = (await verify(storedHash, password)) || reused
+  }
+  if (reused) {
+    throw new ServiceException('password.reused', {
+      params: { history },
+      errors: [fieldError('password.reused', { history })],
+    })
+  }
+  return stored.current
 }
 
 /**

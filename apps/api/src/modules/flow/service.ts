@@ -1467,22 +1467,29 @@ async function prepareSmsCode(
   const holder = number === null ? null : await Phone.signInHolder(deps, tenant, number)
   const asker = await Sms.signInAsker(deps, tenant.environmentId, identifier)
   const address = context.ipAddress === null ? null : ipBucket(context.ipAddress)
-  await Verification.issue(deps, tenant, {
-    purpose: Phone.SMS_SIGN_IN_PURPOSE,
-    destination: identifier,
-    flowAttemptId: attempt.id,
-    userId: holder?.id,
-    binding: smsCodeBinding(attempt.id, identifier),
-    sendLimits: Verification.LIMITED_BY_DELIVERY,
-    deliver: ({ code }) =>
+  // The token is stored by the send itself, once the sender took the message (or, for a
+  // decoy, once nothing refused it): never before, so a code that did not leave cannot be
+  // guessed against and the earlier code keeps working. Neither is waited for here.
+  await Verification.issueWhenTaken(
+    deps,
+    tenant,
+    {
+      purpose: Phone.SMS_SIGN_IN_PURPOSE,
+      destination: identifier,
+      flowAttemptId: attempt.id,
+      userId: holder?.id,
+      binding: smsCodeBinding(attempt.id, identifier),
+      sendLimits: Verification.LIMITED_BY_DELIVERY,
+    },
+    ({ code }, store) =>
       Sms.sendCode(
         deps,
         tenant,
         holder !== null && number !== null
-          ? { to: number, code, asker, newNumber: false, address, detached: true }
-          : { decoy: true, identifier, asker, address }
-      ),
-  })
+          ? { to: number, code, asker, newNumber: false, address, detached: true, onTaken: store }
+          : { decoy: true, identifier, asker, address, onTaken: store }
+      )
+  )
   const pending: State = { ...withoutPrepared(state), prepared: 'sms_code' }
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,

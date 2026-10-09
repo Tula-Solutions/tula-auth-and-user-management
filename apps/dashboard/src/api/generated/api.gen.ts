@@ -1504,6 +1504,7 @@ export const ErrorCode = {
   passwordbreached: 'password.breached',
   passwordrepeated_characters: 'password.repeated_characters',
   passwordsequence: 'password.sequence',
+  passwordreused: 'password.reused',
   passwordnot_set: 'password.not_set',
   verificationinvalid_code: 'verification.invalid_code',
   verificationexpired: 'verification.expired',

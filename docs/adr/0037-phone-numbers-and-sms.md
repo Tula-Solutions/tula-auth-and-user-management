@@ -610,7 +610,8 @@ address that asks for a texted code. For it the prepare step:
   `DecoyMessage`: the asker's, the number's, the address's, the prefix's and the
   environment's), and is refused by them the same;
 - stores a verification token whose code nobody is told and which names no user, so a guess
-  that happened to match would still sign nobody in;
+  that happened to match would still sign nobody in (stored after the answer, as a real
+  code's is: below);
 - sends no message.
 
 **The day's count is where the two differ, and this is the argument.** A real message takes
@@ -639,7 +640,23 @@ provider takes, and whether it took the message, would otherwise tell a real num
 unknown one. The cost is that a person signing in is not told when their message could not
 be sent; the screen says "if you can sign in with this number, we texted it a code", and
 the operator's log has the failure. A message the sender refused is counted back out of the
-day as before. One difference in time remains: a real message's take from the day is a
+day as before. **The day's message is taken before the answer**, not by the detached work,
+so a spent day refuses a known and an unknown number in the same request, alike.
+
+**The code is stored only once the sender took the message**
+(`Verification.issueWhenTaken`, `CodeMessage.onTaken`). `Verification.issue` sends, waits
+and then stores; a sign-in cannot wait, so the token is written by the detached send
+itself, after the sender's answer: `failed` and `unconfirmed` store nothing. A code that
+never left cannot be guessed against, and the code texted before it keeps working. A
+decoy's token is written the same way, not waited for, so the request does the same work
+before it answers for either kind of number. Whatever the detached work throws (a sender's
+own error, a store that is down) is caught there and logged with fixed words and the
+error's name, never its message; tests wait for it with `Sms.settled()`. Two costs. For a
+moment after the message is on its way its code is not yet accepted (one write; a person
+cannot type that fast, a script that reads a development inbox can, and is answered the
+generic failure). And a real number whose send failed has no token where an unknown number
+has a decoy's: its guesses are answered the same but touch one row fewer, which an
+attacker could time only while the provider is failing. One difference in time remains: a real message's take from the day is a
 write and a decoy's check is a read, in the same request. It was left: it is one statement
 on a path that makes a dozen, and closing it means a write for every decoy, which is the
 free spending of the day described above.

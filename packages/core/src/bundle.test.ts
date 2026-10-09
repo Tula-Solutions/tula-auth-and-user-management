@@ -23,13 +23,15 @@ import { join } from 'node:path'
  * `user.phone` (ask, confirm, remove), the receipt's guard and four error messages
  * (`phone.invalid`, `sms.disabled`, `sms.country_not_allowed`, `sms.unavailable`); no
  * dependency, and the phone number rules of the contract are not in the bundle (the server
- * judges a number). The budget moved by exactly those 231 bytes, to 15,781. Signing in with
- * a texted code (TULA-27) added one error code with its message
- * (`mfa.enrolment_needs_other_sign_in`) and no code: the strategy is two more members of
- * two parameter types. 23 bytes, from 15,739 to 15,762; the budget moved by exactly those
- * 23 bytes, to 15,804.
+ * judges a number). The budget moved by exactly those 231 bytes, to 15,781. The password
+ * history (ADR 0038) added one error code with its message (`password.reused`) and no code:
+ * 21 bytes, from 15,739 to 15,760. The budget moved by exactly those 21 bytes, to 15,802, so
+ * the 42 bytes of room are what they were. Signing in with a texted code (TULA-27) added
+ * one error code with its message (`mfa.enrolment_needs_other_sign_in`) and no code: the
+ * strategy is two more members of two parameter types. 23 bytes, from 15,760 to 15,783; the
+ * budget moved by exactly those 23 bytes, to 15,825.
  */
-const GZIP_BUDGET_BYTES = 15_804
+const GZIP_BUDGET_BYTES = 15_825
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

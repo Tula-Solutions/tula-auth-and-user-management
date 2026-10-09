@@ -1666,6 +1666,12 @@ export interface TulaLocalization {
     summary: string
     /** One line per rule; `{min}` and `{max}` come from the policy. */
     rules: Record<PasswordRule, string>
+    /** The history rule, which only the server can judge. `{count}`: the policy's number. */
+    history: string
+    /** The history rule where the policy remembers only the current password. */
+    historyCurrent: string
+    /** The state of the history rule before the server has answered. */
+    checkedOnSave: string
   }
   /** Two-step verification: the second factor at sign-in, enrolment, backup codes. */
   mfa: {
@@ -2607,7 +2613,10 @@ _function_, defined in `packages/react/src/hooks/use-password-checklist.ts`
 
 A live password checklist that agrees with the server: the environment's policy, evaluated
 by the same function the server runs. (The breached-password check is server-side only and
-is reported when the password is submitted.)
+is reported when the password is submitted. So is the password history: where
+`policy.history` is at least 1, a password that replaces one must not be one of the user's
+last that many, which only the server can judge. It is not among `checks`; the answer to a
+reused password is the error `password.reused`.)
 
 ```ts
 export function usePasswordChecklist(

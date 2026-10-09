@@ -93,8 +93,19 @@ message; its first field stays an email field.
   with gets the same screens, the same limits and no message. Whether a message could be
   sent is not reported either: a failed send is in the API's log, not on the screen.
 - A code works once, for the attempt and the number it was asked for, and counts against
-  the number's lockout. Every failure is the same `auth.invalid_credentials`, a locked
-  number included.
+  the number's lockout. Every failure is the same `auth.invalid_credentials`.
+- **A locked-out number is told "wrong code", not "wait".** Guesses for a number are
+  counted whoever makes them: five are free, then each failure makes the number wait,
+  from 30 seconds, doubling, up to 15 minutes at a time; the count is forgotten after an
+  hour without a failure and cleared by a success. While the number waits, every code is
+  answered `auth.invalid_credentials`, the right one included. This differs from the
+  password and the emailed code, which answer `rate_limited` with `Retry-After` while
+  locked: here every other failure is the generic one, and "wait" would be the one answer
+  an observer could tell apart. The cost is that the person is not told how long to wait;
+  a new code does not help until the wait is over.
+- **A code is kept only once the message was taken by the provider.** When the send fails,
+  or nothing says whether it went, no code is stored: there is nothing to guess against,
+  and a code texted earlier in the same attempt keeps working.
 - A number is texted at most once a minute and five times an hour, whoever asks; an address
   asks at most twenty times an hour; the [send limits and the daily
   limit](../phone-numbers.md#send-limits-and-the-daily-limit) apply as to every message.
@@ -133,7 +144,7 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 | `sms.disabled` | Text messages are off for the environment, or its country list is empty. |
 | `sms.country_not_allowed` | The number's country is not on the environment's list. This is answered for any number of that country, with or without an account. |
 | `sms.unavailable` | The deployment has no way to send a text message (`SMS_PROVIDER=none`). |
-| `auth.invalid_credentials` | The code did not sign in: wrong, expired, replaced by a newer one, too many guesses, or the number cannot sign in at all (no account, two accounts, proven more than a year ago). The answer never says which. |
+| `auth.invalid_credentials` | The code did not sign in: wrong, expired, replaced by a newer one, too many guesses, the number is locked out for now (up to 15 minutes; unlike the password and the emailed code, which say `rate_limited`), the message was never sent, or the number cannot sign in at all (no account, two accounts, proven more than a year ago). The answer never says which. |
 | `mfa.enrolment_needs_other_sign_in` | Two-step verification is required and the account has not set it up. Sign in with another method. |
 | `auth.user_banned` | The account is banned. Said only after the right code. |
 | `rate_limited` | A code was asked for too soon or too often (for this number, from this address, to this destination, by the whole environment), or the daily limit is reached. Wait for `Retry-After`; the server's log names the limit. |

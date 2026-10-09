@@ -296,6 +296,22 @@ definition of the period.
 **An event and the audit entry of the same id still have separate lives.** Deleting one does
 not delete the other, in either direction.
 
+### Previous passwords beyond the history (added 2026-10-09)
+
+With the password history (TULA-15, [ADR 0038](0038-password-history.md)).
+`password_history` holds, per user, the hashes of the passwords before the current one, as
+many as the environment's `password.history` keeps (the number minus one). A user's own
+password change trims their rows; the rows of users who change nothing after the number was
+lowered are deleted here, per environment, in batches, through
+`UserRepository.deletePasswordHistoryBeyond(environment, keep, limit)`. Like the audit
+period, the number is read past the settings cache (a stale, lower number would delete what
+the operator still wants compared), a stored value that is not an integer from 0 to 24
+deletes nothing, and an environment whose settings cannot be read keeps its rows until the
+next run. The rows have no age at which they end: what ends them is the policy, a password
+change, or their user. The run logs the environment, the number and the count
+(`previous passwords beyond the password history deleted`), and the summary line counts
+them as `passwordHistory`. Not recorded as audit entries: the change of the setting is.
+
 ### Counts of texted codes (added 2026-10-09)
 
 With the SMS send limits (TULA-28, [ADR 0037](0037-phone-numbers-and-sms.md)).

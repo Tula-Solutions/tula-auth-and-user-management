@@ -223,7 +223,7 @@ describe('settings controls', () => {
       ['Maximum length', '200'],
       ['Kinds of character required', '3'],
       ['Longest run of one character', '4'],
-      ['Previous passwords remembered', '5'],
+      ['Passwords remembered', '5'],
       ['Password expires after (days)', '90'],
     ] as const) {
       const field = screen.getByLabelText(label)

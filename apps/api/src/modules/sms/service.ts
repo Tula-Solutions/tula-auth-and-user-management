@@ -149,6 +149,13 @@ export interface CodeMessage {
    * for and its failure is the caller's `sms.unavailable`.
    */
   detached?: boolean
+  /**
+   * For a detached send: run once the sender **took** the message, and not at all when it
+   * did not (`failed`) or nothing says whether it did (`unconfirmed`). A sign-in stores its
+   * code's token here, so a code that never left cannot be guessed against and an earlier
+   * one keeps working. A failure of it is logged with fixed words and reaches nobody.
+   */
+  onTaken?: () => Promise<void>
 }
 
 /**
@@ -172,6 +179,12 @@ export interface DecoyMessage {
   asker: SmsAsker
   /** As {@link CodeMessage.address}. */
   address: string | null
+  /**
+   * Run after every refusal has been passed, **without being waited for**, as
+   * {@link CodeMessage.onTaken} is for a message: a sign-in stores the decoy's token here,
+   * so that the request does the same work before it answers for either kind of number.
+   */
+  onTaken?: () => Promise<void>
 }
 
 /** The limits one daily limit gives an environment. */
@@ -434,7 +447,8 @@ async function takeFromDay(
  * including the day's take happens before this returns, and refuses as above. The message is
  * then handed to the sender and **not waited for**: a failure is logged and counted exactly
  * as above (taken back out of the day for `failed`, kept for `unconfirmed`), and the caller
- * is told nothing of it. A sign-in must answer the same, and as fast, for a number that is
+ * is told nothing of it. {@link CodeMessage.onTaken} runs only after the sender took the
+ * message. A sign-in must answer the same, and as fast, for a number that is
  * sent to and for one that is not, and a provider's latency or refusal would tell the two
  * apart. The cost: the person signing in is not told that the message could not be sent.
  *
@@ -496,6 +510,9 @@ export async function sendCode(
     // Refused by a spent day exactly as a message would be, and counted by nothing: no
     // message goes, so none is taken from the day (see `DecoyMessage`).
     await requireDayNotSpent(deps, tenant, limits.perDay)
+    if (decoy && message.onTaken) {
+      detach(tenant.environmentId, Promise.resolve(), message.onTaken)
+    }
     return
   }
   const day = await takeFromDay(deps, tenant, prefix, limits.perDay)
@@ -508,9 +525,7 @@ export async function sendCode(
   if (message.detached) {
     // Started, never awaited, and it cannot reject: what the sender does with the message
     // is in the log and the counts, not in this caller's answer or its timing.
-    const run = sent.catch(() => undefined)
-    detached.add(run)
-    void run.finally(() => detached.delete(run))
+    detach(tenant.environmentId, sent, message.onTaken)
     return
   }
   await sent
@@ -518,6 +533,39 @@ export async function sendCode(
 
 /** Detached sends still on their way, so that tests can wait for them. */
 const detached = new Set<Promise<void>>()
+
+/**
+ * Let a send finish by itself. The promise kept cannot reject: a send that failed has
+ * logged its fixed words in {@link dispatch} and is done; `onTaken` runs only after one that
+ * did not fail, and whatever it throws is logged by name and goes no further.
+ */
+function detach(
+  environmentId: string,
+  sent: Promise<void>,
+  onTaken: (() => Promise<void>) | undefined
+): void {
+  const run = sent
+    .then(
+      () => true,
+      () => false
+    )
+    .then(async (taken) => {
+      if (!taken || !onTaken) {
+        return
+      }
+      try {
+        await onTaken()
+      } catch (error) {
+        // The error's name and never its message: a store's own text may quote the number.
+        logger.warn('texted code not stored', {
+          environmentId,
+          err: error instanceof Error ? error.name : 'unknown',
+        })
+      }
+    })
+  detached.add(run)
+  void run.finally(() => detached.delete(run))
+}
 
 /**
  * Wait for every detached send that has been started ({@link CodeMessage.detached}).

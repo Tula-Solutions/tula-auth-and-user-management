@@ -1,4 +1,8 @@
-import { MIN_PASSWORD_MIN_LENGTH, PASSWORD_POLICY_PRESETS } from '@tula/contract'
+import {
+  MAX_PASSWORD_HISTORY,
+  MIN_PASSWORD_MIN_LENGTH,
+  PASSWORD_POLICY_PRESETS,
+} from '@tula/contract'
 import type { PasswordPolicy } from '~/api/generated/api.gen'
 import { SelectField, SwitchRow, TextField } from '~/components/field'
 import { Section } from '~/components/page'
@@ -132,15 +136,15 @@ function PolicyFields({ draft, update, errors }: SettingsEditor) {
       <Section title='History and expiry'>
         <div className='grid gap-4 sm:grid-cols-2'>
           <TextField
-            label='Previous passwords remembered'
+            label='Passwords remembered'
             type='number'
             inputMode='numeric'
             min={0}
-            max={24}
+            max={MAX_PASSWORD_HISTORY}
             value={policy.history}
             onChange={(event) => set({ history: wholeNumber(event.target.value) })}
             error={errors['password.history']}
-            hint='A user cannot reuse this many of their last passwords (0 to 24).'
+            hint={`A user cannot set one of their last this many passwords again, the current one included (0 to ${MAX_PASSWORD_HISTORY}; 0 remembers none). Lowering it deletes the older ones for good; raising it cannot bring them back.`}
           />
           <TextField
             label='Password expires after (days)'

@@ -138,13 +138,18 @@ describe('what @tula/react costs a browser bundle', () => {
    * signed-in user may now have no email address (no address line, no badge, no password
    * section): with both it measures 48,885 bytes, 523 more. The budget moved by exactly
    * those bytes, to 49,321, so the 436 bytes of room are still what is left.
+   * The password history (ADR 0038) is one more line of the checklist, in two states
+   * (waiting for the server, refused by it), its three strings, and the rule that decides
+   * between them on the profile's and the reset's password field: with it the bundle
+   * measures 49,173 bytes, 288 more. The budget moved by exactly those bytes, to 49,609, so
+   * the 436 bytes of room are still what is left.
    * Signing in with a texted code (TULA-27) is one more first-factor form (ask, then the
    * code with its resend), the first field that also takes a phone number, their strings,
-   * and one error message in the client: with them it measures 49,594 bytes, 709 more. The
-   * budget moved by exactly those bytes, to 50,030, so the 436 bytes of room are still what
+   * and one error message in the client: with them it measures 49,879 bytes, 706 more. The
+   * budget moved by exactly those bytes, to 50,315, so the 436 bytes of room are still what
    * is left.
    */
-  const GZIP_BUDGET_BYTES = 50_030
+  const GZIP_BUDGET_BYTES = 50_315
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

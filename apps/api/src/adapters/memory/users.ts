@@ -7,8 +7,10 @@ import type {
   LinkOutcome,
   NewIdentity,
   NewUser,
+  PasswordHistoryRule,
   PasswordOutcome,
   SignInMeans,
+  StoredPasswords,
   UnlinkOutcome,
   UserListCriteria,
   UserRecord,
@@ -26,6 +28,8 @@ function withOutcome(activity: Activity, outcome: PasswordOutcome): Activity {
 export class MemoryUserRepository implements UserRepository {
   readonly #users: Map<string, UserRecord>
   readonly #passwords: Map<string, string>
+  /** Each user's previous password hashes, the most recent first. */
+  readonly #history: Map<string, string[]>
   readonly #identities: Map<string, IdentityRecord & { environmentId: string }>
   readonly #activityLog: MemoryActivityLog
   #passkeyCount: (environmentId: string, userId: string) => number
@@ -36,6 +40,7 @@ export class MemoryUserRepository implements UserRepository {
     // initializers as an uncalled function.
     this.#users = new Map()
     this.#passwords = new Map()
+    this.#history = new Map()
     this.#identities = new Map()
     this.#activityLog = activityLog
     this.#passkeyCount = () => 0
@@ -214,17 +219,75 @@ export class MemoryUserRepository implements UserRepository {
     userId: string,
     passwordHash: string,
     _at: Date,
-    recorded: Recorded
-  ): Promise<PasswordOutcome | null> {
+    recorded: Recorded,
+    history: PasswordHistoryRule
+  ): Promise<PasswordOutcome | 'stale' | null> {
     const activity = activityOf(recorded)
     if (!this.#user(environmentId, userId)) {
       return null
     }
-    // Checked and written without an `await` in between, like the database's single upsert.
-    const outcome: PasswordOutcome = this.#passwords.has(userId) ? 'replaced' : 'created'
+    // Checked and written without an `await` in between, like the database's one transaction
+    // under the user's row lock.
+    const current = this.#passwords.get(userId) ?? null
+    if (history.ifCurrent !== undefined && history.ifCurrent !== current) {
+      return 'stale'
+    }
+    const outcome: PasswordOutcome = current === null ? 'created' : 'replaced'
+    const previous = [
+      ...(current === null ? [] : [current]),
+      ...(this.#history.get(userId) ?? []),
+    ].slice(0, Math.max(0, history.keep))
+    if (previous.length > 0) {
+      this.#history.set(userId, previous)
+    } else {
+      this.#history.delete(userId)
+    }
     this.#passwords.set(userId, passwordHash)
     this.#activityLog.record(activity ? [withOutcome(activity, outcome)] : [])
     return outcome
+  }
+
+  /** @inheritdoc */
+  async storedPasswords(
+    environmentId: string,
+    userId: string,
+    previous: number
+  ): Promise<StoredPasswords> {
+    if (!this.#user(environmentId, userId)) {
+      return { current: null, previous: [] }
+    }
+    return {
+      current: this.#passwords.get(userId) ?? null,
+      previous: (this.#history.get(userId) ?? []).slice(0, Math.max(0, previous)),
+    }
+  }
+
+  /** @inheritdoc */
+  async deletePasswordHistoryBeyond(
+    environmentId: string,
+    keep: number,
+    limit: number
+  ): Promise<number> {
+    let deleted = 0
+    for (const [userId, hashes] of this.#history) {
+      if (deleted >= limit) {
+        break
+      }
+      const excess = hashes.length - Math.max(0, keep)
+      if (excess <= 0 || !this.#user(environmentId, userId)) {
+        continue
+      }
+      // The oldest first, as many as the batch still has room for.
+      const removed = Math.min(excess, limit - deleted)
+      const kept = hashes.slice(0, hashes.length - removed)
+      if (kept.length > 0) {
+        this.#history.set(userId, kept)
+      } else {
+        this.#history.delete(userId)
+      }
+      deleted += removed
+    }
+    return deleted
   }
 
   /** @inheritdoc */
@@ -260,6 +323,10 @@ export class MemoryUserRepository implements UserRepository {
     // Checked and written without an `await` in between, like the database's one transaction.
     user.emailVerifiedAt = at
     const passwordRemoved = removePassword !== undefined && this.#passwords.delete(userId)
+    if (removePassword !== undefined) {
+      // Whoever chose the password chose the ones before it too.
+      this.#history.delete(userId)
+    }
     this.#activityLog.record([
       ...(activity ? [activity] : []),
       ...(passwordRemoved && removal ? [removal] : []),
@@ -408,6 +475,7 @@ export class MemoryUserRepository implements UserRepository {
       return false
     }
     this.#passwords.delete(userId)
+    this.#history.delete(userId)
     for (const identity of this.#identitiesOf(environmentId, userId)) {
       this.#identities.delete(identity.id)
     }

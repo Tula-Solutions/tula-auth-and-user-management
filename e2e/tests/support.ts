@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import AxeBuilder from '@axe-core/playwright'
 import { type APIRequestContext, expect, type Page } from '@playwright/test'
+import { phoneNumberCountries } from '../../packages/contract/src/phone'
 
 /** The fixture's API (e2e/server.ts). */
 export const API_URL = 'http://localhost:4318'
@@ -91,6 +92,8 @@ export interface TestSettings {
     }
   }
   signUp?: { password: 'required' | 'optional' }
+  /** Rules of the password policy to change; the rest stays the default policy. */
+  password?: { preset: 'custom'; history: number }
   mfa?: { policy: 'off' | 'optional' | 'required' }
   /** Text messages (ADR 0037). Off, with no country allowed, when left out. */
   sms?: { enabled: boolean; allowedCountries: string[]; dailyMessageLimit?: number }
@@ -118,6 +121,9 @@ export async function useSettings(
   expect(response.ok()).toBe(true)
 }
 
+/** The last three passwords, the current one included, cannot be chosen again (ADR 0038). */
+export const HISTORY_OF_THREE: TestSettings = { password: { preset: 'custom', history: 3 } }
+
 /** Text messages on, to United States numbers only. */
 export const SMS_ON: TestSettings = { sms: { enabled: true, allowedCountries: ['US'] } }
 
@@ -128,10 +134,20 @@ let phoneNumbers = 0
  */
 export function uniquePhoneNumber(): string {
   phoneNumbers += 1
-  const picked = 201 + (Math.floor(Date.now() / 1000) % 700)
-  // Never an N11 service code (211, 311, …): no number has one as its area code.
-  const area = picked % 100 === 11 ? picked + 1 : picked
-  return `+1${area}55501${String(phoneNumbers % 100).padStart(2, '0')}`
+  const last = String(phoneNumbers % 100).padStart(2, '0')
+  let offset = Math.floor(Date.now() / 1000) % 700
+  // `+1` is shared by some twenty-five countries: an area code such as 441 (Bermuda) is
+  // another country's own prefix, and a test that allows the United States alone is then
+  // refused `sms.country_not_allowed`. A draw that is not a number of the United States, or
+  // is an N11 service code (211, 311, …), moves on to the next area code.
+  for (let tries = 0; tries < 700; tries += 1) {
+    const number = `+1${201 + offset}55501${last}`
+    if (offset % 100 !== 10 && phoneNumberCountries(number).includes('US')) {
+      return number
+    }
+    offset = (offset + 1) % 700
+  }
+  throw new Error('no United States area code was found')
 }
 
 /**

@@ -45,6 +45,9 @@ describe('<SignUp>', () => {
     // Nothing typed: every rule unmet, and no bar segment filled.
     expect(checklist().every((line) => line.startsWith('Not met: '))).toBe(true)
     expect(checklist()).toContain('Not met: 12 or more characters')
+    // The strict preset remembers five passwords; a new account has none to be compared with,
+    // so a sign-up never lists the rule.
+    expect(checklist().some((line) => line.includes('last 5 passwords'))).toBe(false)
     expect(
       document.querySelectorAll('[data-tula-element="strengthBar"] [data-filled]')
     ).toHaveLength(0)

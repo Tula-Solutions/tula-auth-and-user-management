@@ -1050,6 +1050,92 @@ describe('a detached send: handed to the sender and not waited for', () => {
     }
   )
 
+  test.each([
+    ['takes the message', false, 1],
+    ['refuses', true, 0],
+    ['loses the answer', 'unconfirmed', 0],
+  ] as const)('a sender that %s: `onTaken` runs %p time(s)', async (_name, failing, times) => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    deps.sms.failing = failing
+    let taken = 0
+    await send(
+      fresh({
+        detached: true,
+        onTaken: async () => {
+          // Only ever after the message is with the sender.
+          expect(deps.sms.outbox).toHaveLength(1)
+          taken += 1
+        },
+      })
+    )
+    await Sms.settled()
+    expect(taken).toBe(times)
+    warn.mockRestore()
+  })
+
+  test('a sender that throws anything at all is caught: logged with fixed words, never unhandled', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    const sender = spyOn(deps.sms, 'send').mockImplementation(async () => {
+      throw new TypeError('socket closed while texting +14155550142')
+    })
+    const rejections: unknown[] = []
+    const onRejection = (reason: unknown) => rejections.push(reason)
+    process.on('unhandledRejection', onRejection)
+    let taken = 0
+    expect(
+      await outcome(
+        fresh({
+          detached: true,
+          onTaken: async () => {
+            taken += 1
+          },
+        })
+      )
+    ).toBe('sent')
+    await Sms.settled()
+    // An unhandled rejection is reported a turn after the microtasks.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    process.off('unhandledRejection', onRejection)
+    sender.mockRestore()
+    expect(rejections).toEqual([])
+    expect(taken).toBe(0)
+    // Not the port's error, so nothing says the message did not go: it stays counted.
+    expect(await sentToday()).toBe(1)
+    expect(warn.mock.calls).toEqual([
+      [
+        'text message not sent',
+        { environmentId: SCOPE.environmentId, reason: 'unconfirmed', count: 'kept' },
+      ],
+    ])
+    warn.mockRestore()
+  })
+
+  test('an `onTaken` that throws is logged by the error’s name and goes no further', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    const rejections: unknown[] = []
+    const onRejection = (reason: unknown) => rejections.push(reason)
+    process.on('unhandledRejection', onRejection)
+    await send(
+      fresh({
+        detached: true,
+        onTaken: async () => {
+          throw new RangeError('could not store the code for +14155550142')
+        },
+      })
+    )
+    await Sms.settled()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    process.off('unhandledRejection', onRejection)
+    expect(rejections).toEqual([])
+    expect(warn.mock.calls).toEqual([
+      ['texted code not stored', { environmentId: SCOPE.environmentId, err: 'RangeError' }],
+    ])
+    // The message went and stays counted.
+    expect(deps.sms.outbox).toHaveLength(1)
+    expect(await sentToday()).toBe(1)
+    warn.mockRestore()
+  })
+
   test('every refusal before the send is still the caller’s', async () => {
     const message = fresh({ detached: true })
     await send(message)

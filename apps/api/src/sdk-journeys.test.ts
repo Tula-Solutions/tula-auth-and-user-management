@@ -856,6 +856,70 @@ describe('SDK journeys against the API in process', () => {
   )
 
   journey(
+    'password history',
+    'password history: a reused password is `password.reused` on a change and on a reset, with the policy’s number and the message; with no history it is accepted again',
+    async () => {
+      const s = await server()
+      /** Replace the policy's `history` through the admin API, as an operator does. */
+      const remember = async (history: number) => {
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          { ...settings, password: { ...settings.password, preset: 'custom', history } },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+      }
+      const { tula, email } = await signUp(s)
+      await remember(3)
+      // What a checklist is drawn from says how many are remembered.
+      expect((await tula.config.get({ force: true })).password.history).toBe(3)
+
+      const refused = (error: TulaError) => {
+        expect(error.code).toBe('password.reused')
+        expect(error.status).toBe(422)
+        expect(error.params).toEqual({ history: 3 })
+        // The message is the SDK's own, by code; nothing says which password it was.
+        expect(error.message).toBe('You have used this password recently. Choose a different one.')
+        expect(error.errors).toEqual([
+          expect.objectContaining({ code: 'password.reused', params: { history: 3 } }),
+        ])
+      }
+
+      // The current password is one of the three.
+      refused(
+        await caught(tula.user.changePassword({ currentPassword: PASSWORD, newPassword: PASSWORD }))
+      )
+      await tula.user.changePassword({ currentPassword: PASSWORD, newPassword: NEW_PASSWORD })
+      // So is the one before it.
+      refused(
+        await caught(
+          tula.user.changePassword({ currentPassword: NEW_PASSWORD, newPassword: PASSWORD })
+        )
+      )
+      // A refused change changed nothing: the session and the password are as they were.
+      expect(tula.state.status).toBe('signed-in')
+
+      // A reset is held to the same rule, and a refusal does not spend its code.
+      s.advance(61_000)
+      const other = s.client('server')
+      const flow = await other.tula.resetPassword.start({ email })
+      const code = s.code(email)
+      refused(await caught(flow.submit({ code, password: PASSWORD })))
+      refused(await caught(flow.submit({ code, password: NEW_PASSWORD })))
+      const third = 'amber-Lynx-skates-63-canals'
+      expect((await flow.submit({ code, password: third })).status).toBe('complete')
+
+      // With the history back at 0 the first password is accepted again.
+      await remember(0)
+      await other.tula.user.changePassword({ currentPassword: third, newPassword: PASSWORD })
+      expect((await signIn(s, email)).step.status).toBe('complete')
+    }
+  )
+
+  journey(
     'environment settings',
     'config: the client sees the app name, methods and password policy an admin sets',
     async () => {

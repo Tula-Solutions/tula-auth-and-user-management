@@ -216,6 +216,15 @@ codes. What it changes about a number on an account:
   sign in with is counted by the hourly limits like a real one, and sends nothing.
 - Switching it on, and adding a country while it is on, is a weakening: the dashboard asks
   first and `tula apply --yes` needs `--allow-weaker`.
+- **A locked-out number is told "wrong code", not "wait".** Guesses for a number are
+  counted whoever makes them: five are free, then each failure makes the number wait,
+  from 30 seconds, doubling, up to 15 minutes at a time; the count is forgotten after an
+  hour without a failure and cleared by a success. While the number waits, every code is
+  answered `auth.invalid_credentials`, the right one included. This differs from the
+  password and the emailed code, which answer `rate_limited` with `Retry-After` while
+  locked: here every other failure is the generic one, and "wait" would be the one answer
+  an observer could tell apart. The cost is that the person is not told how long to wait;
+  a new code does not help until the wait is over.
 
 ## What this does not stop
 
