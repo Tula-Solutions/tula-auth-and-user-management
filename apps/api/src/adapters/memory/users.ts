@@ -38,7 +38,8 @@ export class MemoryUserRepository implements UserRepository {
   readonly #identities: Map<string, IdentityRecord & { environmentId: string }>
   readonly #activityLog: MemoryActivityLog
   #passkeyCount: (environmentId: string, userId: string) => number
-  #confirmedTotp: (environmentId: string, userId: string) => boolean
+  #confirmedTotp: ((environmentId: string, userId: string) => boolean) | null
+  #passkeysReported: boolean
 
   /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
@@ -50,7 +51,8 @@ export class MemoryUserRepository implements UserRepository {
     this.#identities = new Map()
     this.#activityLog = activityLog
     this.#passkeyCount = () => 0
-    this.#confirmedTotp = () => false
+    this.#confirmedTotp = null
+    this.#passkeysReported = false
   }
 
   /**
@@ -71,6 +73,7 @@ export class MemoryUserRepository implements UserRepository {
    */
   countPasskeysWith(count: (environmentId: string, userId: string) => number): void {
     this.#passkeyCount = count
+    this.#passkeysReported = true
   }
 
   /**
@@ -522,13 +525,32 @@ export class MemoryUserRepository implements UserRepository {
     allowed: (held: StrongerFactorsHeld) => boolean,
     recorded: Recorded
   ): Promise<SmsFactorEnableOutcome> {
+    // A repository nobody reports to would answer "no authenticator, no passkey" for every
+    // user and so turn the factor on beside either: the guard this write exists for would
+    // fail open in exactly the tests that build the stores apart. It refuses before anything
+    // else, whatever the user or the rule.
+    const confirmedTotp = this.#confirmedTotp
+    if (confirmedTotp === null) {
+      throw new Error(
+        'MemoryUserRepository.enableSmsFactor: no factor store reports to this repository, so ' +
+          'a confirmed authenticator app could not be seen. Build one on it: ' +
+          '`new MemoryFactorStore(activityLog, users)` (createTestDeps does).'
+      )
+    }
+    if (!this.#passkeysReported) {
+      throw new Error(
+        'MemoryUserRepository.enableSmsFactor: no passkey store reports to this repository, so ' +
+          'a passkey could not be seen. Build one on it: ' +
+          '`new MemoryPasskeyStore(activityLog, users)` (createTestDeps does).'
+      )
+    }
     const user = this.#user(environmentId, userId)
     if (!user || user.phoneNumber !== phoneNumber || user.smsFactorEnabledAt !== null) {
       return 'stale'
     }
     // One synchronous step: nothing can arrive between this read and the write below.
     const held = {
-      confirmedTotp: this.#confirmedTotp(environmentId, userId),
+      confirmedTotp: confirmedTotp(environmentId, userId),
       passkeys: this.#passkeyCount(environmentId, userId),
     }
     if (!allowed(held)) {

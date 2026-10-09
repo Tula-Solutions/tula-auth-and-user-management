@@ -1,4 +1,4 @@
-import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { MemoryUserRepository } from '~/adapters/memory/users'
 import { timingSafeEqual } from '~/lib/crypto'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
@@ -23,25 +23,35 @@ export class MemoryFactorStore implements FactorStore {
   readonly #factors: FactorRecord[]
   readonly #codes: StoredBackupCode[]
   readonly #activityLog: MemoryActivityLog
+  readonly #users: MemoryUserRepository
 
   /**
    * @param activityLog - Where activity is recorded; shared with the other memory stores.
    * @param users - The users the factors belong to. The store registers itself there, so
    *   that turning a texted second factor on sees a confirmed authenticator app (in
-   *   Postgres one transaction reads both tables). Without one, that write sees none.
+   *   Postgres one transaction reads both tables). Required: a factor store that reports
+   *   to no repository would leave that write seeing none.
    */
-  constructor(
-    activityLog: MemoryActivityLog = new MemoryActivityLog(),
-    users: MemoryUserRepository | null = null
-  ) {
+  constructor(activityLog: MemoryActivityLog, users: MemoryUserRepository) {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.#factors = []
     this.#codes = []
     this.#activityLog = activityLog
-    users?.confirmedTotpWith(
+    this.#users = users
+    users.confirmedTotpWith(
       (environmentId, userId) => this.#factor(environmentId, userId)?.confirmedAt != null
     )
+  }
+
+  /**
+   * Whether this store reports to a given user repository.
+   *
+   * @param users - The repository.
+   * @returns `true` when it is the one this store was built on.
+   */
+  belongsTo(users: MemoryUserRepository): boolean {
+    return this.#users === users
   }
 
   /** @inheritdoc */

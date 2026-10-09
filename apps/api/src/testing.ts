@@ -106,7 +106,27 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   const clock = overrides.clock ?? new FixedClock()
   // One log shared by every store, as the Postgres stores share the two activity tables.
   const activityLog = overrides.activityLog ?? new MemoryActivityLog()
-  const users = new MemoryUserRepository(activityLog)
+  // The factor store and the passkey store report to the user repository (what a user
+  // holds decides whether a texted second factor may be turned on, and what their last way
+  // to sign in is). An override of one of the three is wired to the others here, or refused.
+  // A store of another adapter handed in under a cast (a test that puts a Postgres store
+  // beside memory ones) cannot report to a memory repository at all: it is taken as it is,
+  // and the repository then has nobody reporting to it, so its `enableSmsFactor` throws.
+  const users = overrides.users ?? new MemoryUserRepository(activityLog)
+  const factors = overrides.factors ?? new MemoryFactorStore(activityLog, users)
+  const passkeys = overrides.passkeys ?? new MemoryPasskeyStore(activityLog, users)
+  if (factors instanceof MemoryFactorStore && !factors.belongsTo(users)) {
+    throw new Error(
+      'createTestDeps: the `factors` override does not report to the `users` of these deps. ' +
+        'Build it as `new MemoryFactorStore(activityLog, users)` and pass that `users` too.'
+    )
+  }
+  if (passkeys instanceof MemoryPasskeyStore && !passkeys.belongsTo(users)) {
+    throw new Error(
+      'createTestDeps: the `passkeys` override does not report to the `users` of these deps. ' +
+        'Build it as `new MemoryPasskeyStore(activityLog, users)` and pass that `users` too.'
+    )
+  }
   // Shared with the control plane, so an environment created through it resolves everywhere.
   const environments = overrides.environments ?? new MemoryEnvironmentRepository()
   // Shared with the delivery store, which refuses a delivery of an endpoint that is gone.
@@ -121,8 +141,8 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     verificationTokens: new MemoryVerificationTokenStore(),
     sessions: new MemorySessionStore(activityLog),
     users,
-    factors: new MemoryFactorStore(activityLog, users),
-    passkeys: new MemoryPasskeyStore(activityLog, users),
+    factors,
+    passkeys,
     flowAttempts: new MemoryFlowAttemptStore(),
     oauthProviders: new MemoryOAuthProviderStore(activityLog),
     oauth: fakeOAuthProviders(),
