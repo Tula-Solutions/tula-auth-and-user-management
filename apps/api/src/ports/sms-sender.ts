@@ -13,9 +13,11 @@ export interface SmsMessage {
  * - `not_configured`: the deployment has no SMS sender (`SMS_PROVIDER=none`). Nothing was
  *   asked of anyone.
  * - `failed`: the sender was asked and **said no**. The message did not go, and that is
- *   known: an adapter says this only on an answer that refuses.
+ *   known: an adapter says this only on an answer that refuses (over HTTP, a 4xx).
  * - `unconfirmed`: the sender was asked and **no answer says the message was refused**: a
- *   deadline, a connection that died. The message may have gone out, and may be billed.
+ *   deadline, a connection that died, or an answer that is the provider's own failure (over
+ *   HTTP, any 5xx: a gateway can answer one for a request the service behind it took). The
+ *   message may have gone out, and may be billed.
  *
  * The difference is the caller's to act on (`Sms.sendCode`): a message that is known not to
  * have gone is taken back out of the day's count, and one that may have gone stays counted.

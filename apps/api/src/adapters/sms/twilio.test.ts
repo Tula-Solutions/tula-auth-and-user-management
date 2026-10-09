@@ -398,9 +398,21 @@ describe('what is a failed send: Twilio answered, and refused', () => {
       { reason: 'refused', status: 429 },
     ],
     [
-      'a 500 with no body',
-      async () => new Response(null, { status: 500 }),
-      { reason: 'refused', status: 500 },
+      'a 404',
+      async () =>
+        Response.json({ code: 20404, message: 'Not found', status: 404 }, { status: 404 }),
+      { reason: 'refused', status: 404, twilioCode: 20404, twilioMessage: 'Not found' },
+    ],
+    [
+      // A request Twilio gave up reading: it took no message.
+      'a 408',
+      async () => new Response(null, { status: 408 }),
+      { reason: 'refused', status: 408 },
+    ],
+    [
+      'a 499, the last status that is a refusal',
+      async () => new Response(null, { status: 499 }),
+      { reason: 'refused', status: 499 },
     ],
     [
       'a non-2xx whose body carries a sid: the status decides, whatever the body says',
@@ -408,9 +420,9 @@ describe('what is a failed send: Twilio answered, and refused', () => {
       { reason: 'refused', status: 400 },
     ],
     [
-      'a non-2xx whose body breaks off: the status was read, and it is a refusal',
-      async () => cutOff(503),
-      { reason: 'refused', status: 503 },
+      'a 4xx whose body breaks off: the status was read, and it is a refusal',
+      async () => cutOff(400),
+      { reason: 'refused', status: 400 },
     ],
     [
       'a non-2xx over the size cap',
@@ -450,6 +462,98 @@ describe('what is a failed send: Twilio answered, and refused', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     expect(debug).not.toHaveBeenCalled()
     expect(warn.mock.calls).toEqual([['twilio did not take a text message', logged]])
+  })
+})
+
+/** An answer with a status `fetch` should never hand back, and a `Response` cannot be made with. */
+function withStatus(status: number): Response {
+  const response = new Response(null, { status: 200 })
+  Object.defineProperty(response, 'status', { value: status })
+  Object.defineProperty(response, 'ok', { value: false })
+  return response
+}
+
+// A 5xx is Twilio (or something in front of it) failing, not Twilio refusing: a gateway can
+// answer 502 or 504 for a request the service behind it went on to take. So the message
+// stays counted, and the log line carries the status, which silence has none of.
+describe('what is unconfirmed: an answer that does not say the message was refused', () => {
+  test.each<[string, () => Promise<Response>, Record<string, unknown>]>([
+    [
+      'a 500 with no body',
+      async () => new Response(null, { status: 500 }),
+      { reason: 'server_error', status: 500 },
+    ],
+    [
+      'a 502 from something in front of Twilio',
+      async () => new Response('<html>Bad Gateway</html>', { status: 502 }),
+      { reason: 'server_error', status: 502 },
+    ],
+    [
+      'a 503 with Twilio’s error: whatever its body says',
+      async () =>
+        Response.json(
+          { code: 20503, message: 'Service unavailable', status: 503 },
+          { status: 503 }
+        ),
+      {
+        reason: 'server_error',
+        status: 503,
+        twilioCode: 20503,
+        twilioMessage: 'Service unavailable',
+      },
+    ],
+    [
+      'a 504',
+      async () => new Response('upstream request timeout', { status: 504 }),
+      { reason: 'server_error', status: 504 },
+    ],
+    [
+      'a 503 whose body breaks off',
+      async () => cutOff(503),
+      { reason: 'server_error', status: 503 },
+    ],
+    [
+      'a 5xx over the size cap',
+      async () => new Response(oversized, { status: 500 }),
+      { reason: 'server_error', status: 500 },
+    ],
+    [
+      'a 5xx whose body carries a sid: nothing is read into it',
+      async () => Response.json({ sid: MESSAGE_SID }, { status: 500 }),
+      { reason: 'server_error', status: 500 },
+    ],
+    [
+      'a 599, the last of them',
+      async () => new Response(null, { status: 599 }),
+      { reason: 'server_error', status: 599 },
+    ],
+    [
+      // No final answer is a 1xx. Should a runtime hand one back, nothing was refused.
+      'a 1xx handed back as if it were an answer',
+      async () => withStatus(103),
+      { reason: 'unexpected_status', status: 103 },
+    ],
+    [
+      'a status past every class',
+      async () => withStatus(600),
+      { reason: 'unexpected_status', status: 600 },
+    ],
+  ])('%s', async (_name, answer, logged) => {
+    const warn = quiet('warn')
+    const debug = quiet('debug')
+    const spy = stubFetch(answer)
+    const failure = await createTwilioSmsSender(WITH_API_KEY)
+      .send(MESSAGE)
+      .catch((error) => error)
+    expect(failure).toBeInstanceOf(SmsSendError)
+    expect(failure.reason).toBe('unconfirmed')
+    expect(failure.message).toBe('sms not sent: unconfirmed')
+    // One request, never a second: the first may have been taken.
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(debug).not.toHaveBeenCalled()
+    expect(warn.mock.calls).toEqual([
+      ['twilio answered without saying whether it took a text message', logged],
+    ])
   })
 })
 
@@ -678,6 +782,23 @@ describe('the deadline', () => {
     }
   )
 
+  test.each([true, false])(
+    'a 5xx whose body stops arriving is unconfirmed, with its status (the body obeys the signal: %p)',
+    async (obeys) => {
+      const warn = quiet('warn')
+      stubFetch(stalled(503, obeys))
+      expect(await reasonOf(createTwilioSmsSender({ ...WITH_API_KEY, timeoutMs: 25 }))).toBe(
+        'unconfirmed'
+      )
+      expect(warn.mock.calls).toEqual([
+        [
+          'twilio answered without saying whether it took a text message',
+          { reason: 'server_error', status: 503 },
+        ],
+      ])
+    }
+  )
+
   test('an answer in time leaves no timer behind to fail a later send', async () => {
     quiet('debug')
     const warn = quiet('warn')
@@ -706,6 +827,9 @@ describe('nothing of the request or the answer gets out (canary)', () => {
     '4155550142',
     '415-555-0142',
     '(415) 555 0142',
+    '555/0142',
+    '555 \u{2013} 0142',
+    '555\u{a0}0142',
     ...basicOf(options),
     btoa(basicOf(options).join(':')),
     API_KEY_SID,
@@ -721,7 +845,8 @@ describe('nothing of the request or the answer gets out (canary)', () => {
     const [user, password] = basicOf(options)
     const basic = `${user}:${password}`
     const quoted = [
-      `The number ${TO} is unverified (also 1 415-555-0142, (415) 555 0142, 14155550142).`,
+      `The number ${TO} is unverified (also 1 415-555-0142, (415) 555 0142, 14155550142,`,
+      '415/555/0142, 415 \u{2013} 555 \u{2013} 0142, 415\u{a0}555\u{a0}0142).',
       `Account ${ACCOUNT_SID} key ${API_KEY_SID} service ${SERVICE_SID} from ${FROM_NUMBER}.`,
       `Authorization: Basic ${btoa(basic)} user ${user} password ${password}.`,
       `Body was: ${MESSAGE.text}\u0000\n\u2028 trailing`,
@@ -791,11 +916,35 @@ describe('nothing of the request or the answer gets out (canary)', () => {
     expect(logged).toContain('is unverified')
     expect(logged).toContain('[digits]')
     // No run of four digits survives, however it was written out.
-    expect(logged).not.toMatch(/[0-9](?:[ ().-]{0,2}[0-9]){3}/)
+    expect(logged).not.toMatch(/[0-9](?:[^A-Za-z0-9]{0,3}[0-9]){3}/u)
     // One line, and no longer than the cap.
     // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what must be absent
     expect(logged).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/)
     expect(logged.length).toBeLessThanOrEqual(TWILIO_MAX_LOGGED_MESSAGE)
+  })
+
+  test('a 5xx that quotes everything is masked as a refusal is', async () => {
+    const warn = quiet('warn')
+    stubFetch(async () => hostile(WITH_API_KEY, 503))
+    const failure = await createTwilioSmsSender(WITH_API_KEY)
+      .send(MESSAGE)
+      .catch((error) => error)
+    expect(failure.message).toBe('sms not sent: unconfirmed')
+    expect(Object.keys(failure).sort()).toEqual(['name', 'reason'])
+    expect(warn).toHaveBeenCalledTimes(1)
+    const [text, context] = warn.mock.calls[0] ?? []
+    expect(text).toBe('twilio answered without saying whether it took a text message')
+    expect(Object.keys(context ?? {}).sort()).toEqual([
+      'reason',
+      'status',
+      'twilioCode',
+      'twilioMessage',
+    ])
+    expect(context).toMatchObject({ reason: 'server_error', status: 503, twilioCode: 21608 })
+    const line = JSON.stringify(warn.mock.calls)
+    for (const secret of [...everySecret(WITH_API_KEY), 'Northline']) {
+      expect(line).not.toContain(secret)
+    }
   })
 
   test('a 2xx nobody can read says nothing of its body or its headers', async () => {
@@ -888,6 +1037,23 @@ describe('maskProviderMessage', () => {
     ['a number without its plus', 'number 14155550142.', 'number [digits].'],
     ['a number written out', 'call (415) 555-0142 now', 'call ([digits] now'],
     ['a number with dots', '415.555.0142', '[digits]'],
+    ['a number with slashes', 'To 415/555/0142 failed', 'To [digits] failed'],
+    [
+      'a number with en dashes and spaces',
+      'To 415 \u{2013} 555 \u{2013} 0142 failed',
+      'To [digits] failed',
+    ],
+    [
+      'a number with non-breaking spaces',
+      'To +1\u{a0}415\u{a0}555\u{a0}0142 failed',
+      'To [digits] failed',
+    ],
+    ['a number with narrow no-break spaces', '415\u{202f}555\u{202f}0142', '[digits]'],
+    ['a number with underscores and commas', '415_555,0142', '[digits]'],
+    ['digits with three characters between', '4 - 1 - 5 - 5', '[digits]'],
+    // A gap is bounded: four characters between two digits are not one number.
+    ['digits further apart than a number is written', '12 ---- 34', '12 ---- 34'],
+    ['a letter between digits ends a run', '415x555x014', '415x555x014'],
     ['four digits', 'pin 1234', 'pin [digits]'],
     ['three digits are not a number', 'HTTP 400 and 21 more', 'HTTP 400 and 21 more'],
     [
@@ -920,10 +1086,20 @@ describe('maskProviderMessage', () => {
     expect(masked.endsWith('[redacted]')).toBe(true)
   })
 
-  test('work is bounded: a megabyte of digits and separators is answered at once', () => {
+  test.each([
+    ['digits and spaces', '1 ', '1 2 3 4'],
+    ['digits and slashes', '1/', '1/2/3/4'],
+    ['digits and spaced en dashes', '1 \u{2013} ', '1 \u{2013} 2'],
+    ['digits and non-breaking spaces', '1\u{a0}', '1\u{a0}2'],
+    // Gaps one too long to be joined, so that every digit starts a try that fails.
+    ['digits four separators apart', '1////', '1////2'],
+    ['separators with no digit among them', '\u{2013}/\u{a0}', '\u{2013}/'],
+  ])('work is bounded: a megabyte of %s is answered at once', (_name, unit, known) => {
+    const text = unit.repeat(Math.ceil(1_000_000 / unit.length))
     const started = performance.now()
-    const masked = maskProviderMessage('1 '.repeat(500_000), ['1 2 3 4'])
+    const masked = maskProviderMessage(text, [known])
     expect(performance.now() - started).toBeLessThan(250)
     expect(masked.length).toBeLessThanOrEqual(TWILIO_MAX_LOGGED_MESSAGE)
+    expect(masked).not.toMatch(/[0-9][^A-Za-z0-9]{0,3}[0-9][^A-Za-z0-9]{0,3}[0-9]/u)
   })
 })

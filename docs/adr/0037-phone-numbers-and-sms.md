@@ -406,7 +406,7 @@ The port's error has three fixed words (`SmsFailureReason`):
 | --- | --- | --- |
 | `not_configured` | The deployment has no sender. Nobody was asked. | Never taken (refused before any limit). |
 | `failed` | The provider **answered and refused**. The message did not go. | Taken back out (`recordNotSent`). |
-| `unconfirmed` | The provider was asked and **no answer says it refused**. The message may have gone, and may be billed. | **Kept.** |
+| `unconfirmed` | The provider was asked and **no answer says it refused**: none came, or the one that came is the provider's own failure. The message may have gone, and may be billed. | **Kept.** |
 
 And the Twilio adapter maps what happened to them like this:
 
@@ -414,8 +414,10 @@ And the Twilio adapter maps what happened to them like this:
 | --- | --- | --- |
 | Any 2xx, with a message `sid` in its JSON | **sent** | `debug`: `twilio accepted a text message` (`messageSid`) |
 | Any 2xx whose body broke off or did not arrive in time, is over 64 KiB, is not JSON, or has no `sid` that may be logged | **sent** | `warn`: `twilio accepted a text message, and its answer could not be read` (`body_unread`, `too_large`, `not_json`, `no_sid`, and the status) |
-| A status that is not a 2xx (4xx, 5xx, a 3xx that was handed back), whatever its body, also when the body then broke off or timed out | `failed` | `warn`: `twilio did not take a text message` (`refused`, the status, Twilio's code and masked text) |
+| Any 4xx (400, 401, 404, 408, 429, …) or a 3xx that was handed back, whatever its body, also when the body then broke off or timed out | `failed` | `warn`: `twilio did not take a text message` (`refused`, the status, Twilio's code and masked text) |
 | A redirect the runtime refused to follow | `failed` | the same line (`redirected`) |
+| Any 5xx (500, 502, 503, 504, …), whatever its body, also when the body then broke off or timed out | `unconfirmed` | `warn`: `twilio answered without saying whether it took a text message` (`server_error`, the status, Twilio's code and masked text) |
+| A status that is no final answer (a 1xx, a number outside 100 to 599), should the runtime hand one back | `unconfirmed` | the same line (`unexpected_status`, the status) |
 | No status line within the deadline | `unconfirmed` | `warn`: `twilio gave no answer for a text message` (`timeout`) |
 | The request ended without a status line: the network, DNS, TLS, a connection refused or cut off, anything else `fetch` rejects with | `unconfirmed` | the same line (`no_answer`) |
 
@@ -425,6 +427,21 @@ And the Twilio adapter maps what happened to them like this:
   carries digits of the number or of the text, in which case the line is the warning
   (`no_sid`). Nothing rests on its shape any more, so a real `sid` that differs from the
   documented `SM` + 32 hexadecimal digits breaks nothing.
+- **A 4xx is a refusal; a 5xx is not.** The first review found that every status that is
+  not a 2xx was `failed`, so that a 5xx gave its message back to the day. A 5xx does not
+  say "Twilio answered and refused": it says that Twilio, or a load balancer or gateway in
+  front of it, failed, and a 502 or a 504 is exactly what a gateway answers when the
+  service behind it was slow, which it can be after taking the request. So **any 5xx is
+  `unconfirmed`, whatever its body, a body that breaks off included**: Twilio's own JSON
+  error on a 503 is logged (its number and masked text) and decides nothing. **Any 4xx is
+  `failed`**, 429 and 408 included: a request Twilio would not authenticate, validate,
+  find, wait for or make room for created no message. No documentation was found that a
+  4xx of the Messages resource can follow an accepted message; if one turns up, that
+  status moves to `unconfirmed`. The status alone decides, in one function
+  (`notAccepted`), and the log line of a 5xx is one of its own, with the status, so that
+  an operator can tell "Twilio is failing" from "nothing came back". The cost is the same
+  as for silence, and is stated: **during a Twilio outage that answers 5xx, every try
+  spends one of the day's messages** and most likely sends nothing.
 - **A redirect is a refusal, and how it shows is Bun's.** The request is made with
   `redirect: 'error'`. Bun 1.4.2, asked against a local server: a 301, 302, 303, 307 or 308
   makes `fetch` reject with a `TypeError` whose `code` is `UnexpectedRedirect`, with or
@@ -442,7 +459,7 @@ And the Twilio adapter maps what happened to them like this:
   stated: **while Twilio cannot be reached, every try spends one of the day's messages**
   and sends nothing. The per-asker and per-number limits bound how fast, and an outage
   that spends the day stops sending for the rest of it, which is the direction a ceiling
-  is meant to fail in. An operator who sees `no_answer` lines and a spent day raises
+  is meant to fail in. An operator who sees `no_answer` or `server_error` lines and a spent day raises
   `sms.dailyMessageLimit` for the day (a weakening, recorded) once the cause is fixed.
 - **`Sms.sendCode` treats anything that is not the port's `failed` or `not_configured` as
   unconfirmed**, an error of another class thrown by an adapter included: only a sender

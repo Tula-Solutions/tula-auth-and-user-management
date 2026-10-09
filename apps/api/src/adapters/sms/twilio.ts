@@ -23,7 +23,8 @@ export const TWILIO_MAX_LOGGED_MESSAGE = 300
  * Why a send is **failed**: an answer says Twilio did not take the message. Fixed words for
  * the operator's log:
  *
- * - `refused`: an answer whose status is not a 2xx, whatever its body (a 3xx included);
+ * - `refused`: a 4xx, whatever its body (429 and 408 included), or a 3xx that was handed
+ *   back as an answer;
  * - `redirected`: a redirect the runtime refused to follow, which is never followed.
  */
 export type TwilioRefusal = 'refused' | 'redirected'
@@ -35,6 +36,17 @@ export type TwilioRefusal = 'refused' | 'redirected'
  * - `no_answer`: the request ended without one (the network, TLS, a connection cut off).
  */
 export type TwilioSilence = 'timeout' | 'no_answer'
+
+/**
+ * Why a send is **unconfirmed** although an answer came: its status does not say that the
+ * message was refused. Fixed words, logged with the status:
+ *
+ * - `server_error`: a 5xx, whatever its body. Twilio, or something in front of it, failed;
+ *   a gateway can answer so for a request the service behind it went on to take;
+ * - `unexpected_status`: a status that is no final answer at all (a 1xx, or one outside
+ *   100 to 599), should a runtime ever hand one back.
+ */
+export type TwilioUnclearAnswer = 'server_error' | 'unexpected_status'
 
 /**
  * What could not be read of an answer that **accepted** a message (a 2xx). The message is
@@ -84,11 +96,14 @@ const REFUSED_REDIRECT = 'UnexpectedRedirect'
 const ANY_SID = /[A-Z]{2}[0-9a-fA-F]{32}/g
 
 /**
- * Four or more digits, with up to two separators (space, dot, hyphen, bracket) between any
- * two of them and an optional `+` in front: a number however it is written out. Linear: one
- * bounded gap between two digits, nothing nested.
+ * Four or more digits, with up to three characters that are neither an ASCII letter nor a
+ * digit between any two of them, and an optional `+` in front: a number however it is
+ * written out (spaces, dots, hyphens, brackets, slashes, an en dash, a non-breaking space).
+ * The gap is "anything but", not a list: a separator nobody thought of is one all the same.
+ * With the `u` flag a gap character is a code point, never half of one. Linear: one bounded
+ * gap between two digits, which cannot itself match a digit, and nothing nested.
  */
-const DIGIT_RUN = /\+?[0-9](?:[ ().-]{0,2}[0-9]){3,}/g
+const DIGIT_RUN = /\+?[0-9](?:[^A-Za-z0-9]{0,3}[0-9]){3,}/gu
 
 /** What a log line must not carry raw: control characters, and the line and paragraph separators. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed
@@ -174,13 +189,27 @@ function parsed(text: string | null): unknown {
 
 /**
  * What one request came to. Three outcomes, told apart by what is **known**:
- * `sent` (a 2xx), `failed` (an answer that refuses), `unconfirmed` (no answer either way).
+ * `sent` (a 2xx), `failed` (an answer that refuses: a 4xx, a redirect), `unconfirmed`
+ * (no answer, or one that does not say: a 5xx).
  */
 type Outcome =
   | { kind: 'sent'; status: number; sid: string }
   | { kind: 'sent'; status: number; unread: TwilioUnreadAnswer }
   | { kind: 'failed'; reason: TwilioRefusal; status?: number; code?: number; message?: string }
   | { kind: 'unconfirmed'; reason: TwilioSilence }
+  | {
+      kind: 'unconfirmed'
+      reason: TwilioUnclearAnswer
+      status: number
+      code?: number
+      message?: string
+    }
+
+/** Twilio's own number and text of an error, read for the log only. */
+interface TwilioSaid {
+  code?: number
+  message?: string
+}
 
 /**
  * Whether `fetch` rejected because the answer was a redirect it was told not to follow.
@@ -195,11 +224,29 @@ function isRefusedRedirect(error: unknown): boolean {
   )
 }
 
+/**
+ * What a status that is not a 2xx says. The one place that decides it, whatever was or was
+ * not read of the body:
+ *
+ * - a 3xx or a 4xx is a refusal: Twilio answered, and did not take the message;
+ * - a 5xx is not. It says that Twilio, or something in front of it, failed, and a gateway's
+ *   502 or 504 can follow a request the service behind it accepted. Unknown, so
+ *   `unconfirmed`: the caller keeps the message counted;
+ * - anything else (a 1xx, a number outside every class) is no final answer, and unknown too.
+ */
+function notAccepted(status: number, said: TwilioSaid = {}): Outcome {
+  if (status >= 300 && status < 500) {
+    return { kind: 'failed', reason: 'refused', status, ...said }
+  }
+  const reason = status >= 500 && status < 600 ? 'server_error' : 'unexpected_status'
+  return { kind: 'unconfirmed', reason, status, ...said }
+}
+
 /** What a status line alone says, when nothing of the body was read. */
 function byStatus(status: number): Outcome {
   return status >= 200 && status < 300
     ? { kind: 'sent', status, unread: 'body_unread' }
-    : { kind: 'failed', reason: 'refused', status }
+    : notAccepted(status)
 }
 
 /**
@@ -210,14 +257,18 @@ function byStatus(status: number): Outcome {
  *   (the message's identifier); a 2xx whose body is missing, cut off, too large or not what
  *   is documented is a warning ({@link TwilioUnreadAnswer}) and still a sent message.
  *   Accepted is not delivered: no delivery receipt is asked for or read.
- * - **Failed means Twilio answered and refused** ({@link TwilioRefusal}): a status that is
- *   not a 2xx, or a redirect, which is never followed. The port's `failed`.
- * - **Everything else is unconfirmed** ({@link TwilioSilence}): no status line in time, or a
- *   request that ended without one. The message may have been taken and billed, so the
- *   port's `unconfirmed`, and `Sms.sendCode` keeps it counted. The adapter does not try to
- *   tell an error from before the first byte (a refused connection, a failed lookup) from
- *   one after it: what a runtime reports for each is not a contract, and a wrong guess
- *   would un-count a message that went out.
+ * - **Failed means Twilio answered and refused** ({@link TwilioRefusal}): a 4xx (429 and
+ *   408 among them), a 3xx handed back, or a redirect, which is never followed. The port's
+ *   `failed`.
+ * - **Everything else is unconfirmed**: no status line in time or a request that ended
+ *   without one ({@link TwilioSilence}), and **any 5xx, whatever its body**
+ *   ({@link TwilioUnclearAnswer}): a server's own failure does not say the message was not
+ *   taken. The message may have been taken and billed, so the port's `unconfirmed`, and
+ *   `Sms.sendCode` keeps it counted; during an outage that answers 5xx every try spends
+ *   one of the day's messages. The adapter does not try to tell an error from before the
+ *   first byte (a refused connection, a failed lookup) from one after it: what a runtime
+ *   reports for each is not a contract, and a wrong guess would un-count a message that
+ *   went out.
  * - **One request, never a second**: a retry could send twice, and the limits of
  *   `Sms.sendCode` count one.
  * - **The message is the caller's, unchanged**: `To`, `Body` and the sender, and no option
@@ -326,19 +377,17 @@ export function createTwilioSmsSender(options: TwilioSmsOptions): SmsSender {
       return byStatus(status)
     }
     const body = parsed(text)
-    if (!response.ok) {
-      // Of an error only its number and its text are read, and only for the log.
+    if (status < 200 || status >= 300) {
+      // Of an error only its number and its text are read, and only for the log: the status
+      // alone decides what the send came to.
       const code = isRecord(body) && Number.isSafeInteger(body.code) ? (body.code as number) : null
       const said = isRecord(body) && typeof body.message === 'string' ? body.message : null
-      return {
-        kind: 'failed',
-        reason: 'refused',
-        status,
+      return notAccepted(status, {
         ...(code !== null && { code }),
         ...(said !== null && {
           message: maskProviderMessage(said, [...configured, message.to, message.text]),
         }),
-      }
+      })
     }
     // A 2xx: Twilio has the message. What follows only decides what the log can say.
     if (text === null) {
@@ -393,17 +442,25 @@ export function createTwilioSmsSender(options: TwilioSmsOptions): SmsSender {
         }
         return
       }
-      if (outcome.kind === 'unconfirmed') {
+      if (outcome.kind === 'unconfirmed' && !('status' in outcome)) {
         logger.warn('twilio gave no answer for a text message', { reason: outcome.reason })
         throw new SmsSendError('unconfirmed')
       }
-      logger.warn('twilio did not take a text message', {
+      // The status and Twilio's number are fields of their own, and numbers: nothing of
+      // them goes through the mask, which is for Twilio's text.
+      const context = {
         reason: outcome.reason,
         ...(outcome.status !== undefined && { status: outcome.status }),
         // Not under `code` or `message`: the logger censors the first by name.
         ...(outcome.code !== undefined && { twilioCode: outcome.code }),
         ...(outcome.message !== undefined && { twilioMessage: outcome.message }),
-      })
+      }
+      if (outcome.kind === 'unconfirmed') {
+        // An answer, and not a refusal: told apart from silence by its line and its status.
+        logger.warn('twilio answered without saying whether it took a text message', context)
+        throw new SmsSendError('unconfirmed')
+      }
+      logger.warn('twilio did not take a text message', context)
       throw new SmsSendError('failed')
     },
   }

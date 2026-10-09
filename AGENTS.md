@@ -719,9 +719,14 @@ signs in with one (TULA-27), and it is **not unique**.
     path configurable.
   - **Sent means accepted: any 2xx.** The body is read for the log only (a `sid`, taken
     leniently); a 2xx whose body is missing, cut off, too large or unexpected is a warning,
-    never a failed send. **Failed means Twilio answered and refused** (a status that is not
-    a 2xx, a redirect), and everything else (a timeout, a connection that died, any other
-    rejection of `fetch`) is the port's `unconfirmed`. Never make the `sid`'s shape, or
+    never a failed send. **Failed means Twilio answered and refused: any 4xx** (429 and 408
+    included), a 3xx handed back, or a redirect. **Any 5xx is `unconfirmed`, whatever its
+    body** (`server_error`, logged with its status: a server's own failure, a gateway's 502
+    or 504 above all, does not say the message was not taken), and so is everything else (a
+    timeout, a connection that died, any other rejection of `fetch`, a status that is no
+    final answer). The status alone decides, in one function (`notAccepted`): never move a
+    5xx to `failed` to spare the day's count during an outage, and never read a body to
+    decide. Never make the `sid`'s shape, or
     anything else of a 2xx's body, decide the outcome, and never guess that "nothing was
     sent" from an error's code or text: the one code read is Bun's `UnexpectedRedirect`
     (a test asks the runtime on every run). **Nothing is retried**, a timeout and a 429
@@ -729,7 +734,9 @@ signs in with one (TULA-27), and it is **not unique**.
     receipt; never word a message Twilio accepted as delivered.
   - **Twilio's own words go to the log only, masked** (`maskProviderMessage`: the configured
     values, the recipient and the text, any Twilio identifier, every run of four or more
-    digits however it is spaced, control characters, a cap), under `twilioCode` and
+    digits however it is spaced (up to three characters that are not ASCII letters or digits
+    between two of them: the gap is "anything but", never a list of separators), control
+    characters, a cap), under `twilioCode` and
     `twilioMessage` (the logger censors `code`). Never the request's body, the `To` number
     or a header, and nothing of an answer in the error. A new field of the log line, and a
     new pattern in the mask (linear: no quantifier inside another), keeps the canary test in
@@ -738,7 +745,8 @@ signs in with one (TULA-27), and it is **not unique**.
     adapter.
 - **A send whose outcome is unknown stays counted.** The port's error has three words
   (`SmsFailureReason`): `not_configured`, `failed` (the provider answered and refused) and
-  `unconfirmed` (no answer says it refused: the message may have gone and be billed).
+  `unconfirmed` (no answer says it refused, a 5xx included: the message may have gone and
+  be billed).
   `Sms.sendCode` takes the message back out of the day's count and of `sent` **only** for
   `failed`; for `unconfirmed`, and for anything an adapter throws that is not the port's
   error, the count is kept (`count: 'kept'` in the log) and the caller gets the same

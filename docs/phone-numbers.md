@@ -101,11 +101,11 @@ has a fixed maximum cost: **`sms.dailyMessageLimit` messages a day**, whatever e
   tries come back by themselves, within the minute, the hour and the day.
 - The per-address limit counts the address the API sees. Behind a proxy that needs
   `TRUST_PROXY=true`, or every user shares the proxy's address and its 20 an hour.
-- A send the provider **refused** is counted by the hourly limits and not by the day. A
-  send that ended with **no answer** from the provider (a timeout, a connection that
-  failed) is counted by both: the message may have gone out and been billed, and the daily
+- A send the provider **refused** (with Twilio, a 4xx) is counted by the hourly limits
+  and not by the day. A send whose outcome is **unknown** (a timeout, a connection that
+  failed, or the provider's own error: with Twilio, any 5xx) is counted by both: the message may have gone out and been billed, and the daily
   limit counts what may have been spent. The user is told `sms.unavailable` either way.
-  So while the provider cannot be reached, every try uses one of the day's messages
+  So while the provider cannot be reached, or answers with errors of its own, every try uses one of the day's messages
   ([what the log says](providers/twilio.md#when-twilio-does-not-take-a-message)).
 
 **Raising `sms.dailyMessageLimit` is a weakening**, like a weaker password policy: the audit
@@ -237,7 +237,7 @@ it:
 | `phone.invalid` | 422 | Not a number with a country code (`+` and 8 to 15 digits). |
 | `sms.disabled` | 403 | The environment's `sms.enabled` is off, or its country list is empty. |
 | `sms.country_not_allowed` | 422 | The number's country is not on the environment's list. Nothing was sent. |
-| `sms.unavailable` | 503 | The message could not be sent: the deployment has no sender (`SMS_PROVIDER=none`), the provider refused it, or the provider gave no answer (the message may then arrive all the same; its code is not accepted). An earlier code still works. The answer says no more than that; the API's log has the provider's reason (`twilio did not take a text message`: [what the fields mean](providers/twilio.md#when-twilio-does-not-take-a-message)). |
+| `sms.unavailable` | 503 | The message could not be sent: the deployment has no sender (`SMS_PROVIDER=none`), the provider refused it, or the provider gave no answer or failed itself (the message may then arrive all the same; its code is not accepted). An earlier code still works. The answer says no more than that; the API's log has the provider's reason (`twilio did not take a text message`: [what the fields mean](providers/twilio.md#when-twilio-does-not-take-a-message)). |
 | `auth.step_up_required` | 403 | The session's last authentication is too old: step up, then repeat the call. |
 | `verification.invalid_code` | 422 | A wrong code. |
 | `verification.expired` | 410 | No code is pending, or it expired, was used or was replaced by a newer one. |

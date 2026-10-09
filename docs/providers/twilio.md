@@ -170,14 +170,16 @@ A send ends in one of three ways, and the difference is what happens to your
 | What happened | For the user | The day's count |
 | --- | --- | --- |
 | **Sent**: Twilio answered a 2xx. | The code is on its way (as far as Twilio's queue). | Counted. |
-| **Refused**: Twilio answered, and not with a 2xx (or with a redirect, which is never followed). | `sms.unavailable` (503) | **Taken back.** The message did not go. |
-| **No answer**: nothing came back within ten seconds, or the connection failed. | `sms.unavailable` (503) | **Kept.** Twilio may have taken the message, and may bill it. |
+| **Refused**: Twilio answered a 4xx (a 429 and a 408 included), or a redirect, which is never followed. | `sms.unavailable` (503) | **Taken back.** The message did not go. |
+| **Unknown**: Twilio answered a 5xx (500, 502, 503, 504, …), nothing came back within ten seconds, or the connection failed. | `sms.unavailable` (503) | **Kept.** Twilio may have taken the message, and may bill it. |
 
 The user's answer never holds anything of Twilio's. Nothing is retried: a retry could send
-twice. After "no answer" a message may still arrive; its code was never stored, so it is
-not accepted, and the user asks again. **The limit counts what may have been spent, not only
-what is known to have been**: while Twilio cannot be reached, every try uses one of the
-day's messages, and a long outage can use the day up. Raise `sms.dailyMessageLimit` for the
+twice. After an unknown outcome a message may still arrive; its code was never stored, so
+it is not accepted, and the user asks again. A 5xx is unknown and not a refusal because it
+is a server failing, not a server saying no: a gateway answers 502 or 504 for a request
+the service behind it may have taken. **The limit counts what may have been spent, not only
+what is known to have been**: while Twilio cannot be reached, or answers 5xx, every try
+uses one of the day's messages, and a long outage can use the day up. Raise `sms.dailyMessageLimit` for the
 day once the cause is fixed if that happens.
 
 The API's log has one line from the adapter and one from the send path (JSON lines; the
@@ -189,18 +191,24 @@ fields that matter are shown):
 
 {"level":40,"msg":"twilio gave no answer for a text message","reason":"timeout"}
 {"level":40,"msg":"text message not sent","environmentId":"…","reason":"unconfirmed","count":"kept"}
+
+{"level":40,"msg":"twilio answered without saying whether it took a text message","reason":"server_error","status":503,"twilioCode":20503,"twilioMessage":"Service unavailable"}
+{"level":40,"msg":"text message not sent","environmentId":"…","reason":"unconfirmed","count":"kept"}
 ```
 
 | Adapter's line | `reason` | |
 | --- | --- | --- |
-| `twilio did not take a text message` | `refused` | Twilio answered, and not with a 2xx. `status`, and Twilio's `twilioCode` and `twilioMessage` when it sent them. |
+| `twilio did not take a text message` | `refused` | Twilio answered a 4xx (or a 3xx that is no redirect to follow). `status`, and Twilio's `twilioCode` and `twilioMessage` when it sent them. The message is given back to the day. |
 | | `redirected` | The answer was a redirect. It is not followed: it would carry the credentials wherever it points. Something between the server and Twilio (a proxy, a captive network) is the usual cause. |
 | `twilio gave no answer for a text message` | `timeout` | No answer within ten seconds. |
 | | `no_answer` | The request ended without one: DNS, the network, TLS, a connection refused or cut off. |
+| `twilio answered without saying whether it took a text message` | `server_error` | Twilio, or something in front of it, answered a 5xx. `status`, and `twilioCode` and `twilioMessage` when they came. The message stays in the day's count. Look at [Twilio's status page](https://status.twilio.com/). |
+| | `unexpected_status` | An answer whose status is no final answer at all (a 1xx, a number outside 100 to 599). Not expected of any runtime; kept counted like the rest. |
 | `twilio accepted a text message, and its answer could not be read` | `body_unread`, `too_large`, `not_json`, `no_sid` | **The message was sent.** Twilio answered a 2xx, and its body broke off, was over 64 KB, was not JSON or held no message SID that could be logged. Only the log is poorer: find the message in Twilio's log by its time. |
 
 `twilioMessage` is Twilio's own sentence with the recipient, the credentials, every Twilio
-identifier and every run of four or more digits taken out, cut to 300 characters. The
+identifier and every run of four or more digits (however they are separated: spaces,
+dots, slashes, dashes of any kind, non-breaking spaces) taken out, cut to 300 characters. The
 number is never logged, and neither is the text.
 
 | `twilioCode` | Usually means |

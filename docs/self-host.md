@@ -379,11 +379,13 @@ What to know before relying on it:
   The reason is in the API's log (`twilio did not take a text message`: a fixed word, the
   HTTP status, Twilio's error number and its text with numbers and credentials taken out).
   Nothing is retried.
-- **A send Twilio did not answer stays in the day's count.** A message Twilio refused is
-  given back to the [daily limit](phone-numbers.md#send-limits-and-the-daily-limit); one
-  that timed out, or whose connection failed, is not, because Twilio may have taken and
-  billed it (`twilio gave no answer for a text message` in the log). While Twilio cannot be
-  reached, every try uses one of the day's messages.
+- **A send Twilio did not refuse stays in the day's count.** A message Twilio refused (a
+  4xx) is given back to the [daily limit](phone-numbers.md#send-limits-and-the-daily-limit);
+  one that timed out, whose connection failed, or that Twilio answered with a 5xx is not,
+  because Twilio may have taken and billed it (`twilio gave no answer for a text message`,
+  or `twilio answered without saying whether it took a text message` with the status, in
+  the log). While Twilio cannot be reached, or answers 5xx, every try uses one of the
+  day's messages.
 - **The credentials are the API's alone.** They are never logged, returned or put in an
   error, and the [webhook worker](#the-webhook-worker-as-its-own-service) is not given them.
 - **`staging` and `prod` refuse to start with `SMS_PROVIDER=dev`** (and so does `dev`): the

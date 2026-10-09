@@ -156,6 +156,35 @@ describe('Sms.sendCode through Twilio', () => {
     expect(JSON.stringify(warn.mock.calls)).not.toContain('canary-in-a-header')
   })
 
+  // What the day's count is held to rests on this: only an answer that refuses gives a
+  // message back. A 4xx is one; a 5xx is Twilio failing, and may follow a message it took.
+  test.each([
+    [400, 'failed', 0],
+    [429, 'failed', 0],
+    [503, 'unconfirmed', 1],
+    [502, 'unconfirmed', 1],
+  ] as const)(
+    'after a %d the send is %s and the day’s count is %d',
+    async (status, reason, counted) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+      spies.push(warn)
+      answer = () => Response.json({ code: 20000 + status, message: 'no', status }, { status })
+      const failure = await Sms.sendCode(deps, SCOPE, message()).catch((error) => error)
+      // The same answer to the caller either way.
+      expect(failure).toMatchObject({ code: 'sms.unavailable', status: 503 })
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      expect(await deps.smsUsage.sentOn(SCOPE.environmentId, TODAY)).toBe(counted)
+      expect(warn.mock.calls.at(-1)).toEqual([
+        'text message not sent',
+        {
+          environmentId: SCOPE.environmentId,
+          reason,
+          ...(reason === 'unconfirmed' && { count: 'kept' }),
+        },
+      ])
+    }
+  )
+
   test('a number the settings do not allow never reaches Twilio', async () => {
     const refused = await Sms.sendCode(deps, SCOPE, { ...message(), to: '+4915112345678' }).catch(
       (error) => error

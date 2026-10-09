@@ -348,7 +348,7 @@ async function takeFromDay(
  * word and the environment, never the number, the code or the text.
  *
  * **A send whose outcome is unknown stays counted.** When the sender says `unconfirmed` (no
- * answer says the provider refused: a deadline, a connection that died), or throws anything
+ * answer says the provider refused: a deadline, a connection that died, a 5xx), or throws anything
  * that is not the port's error, the message may have gone out and been billed. The caller
  * gets the same `sms.unavailable`, and the day's count and the codes sent are **not** taken
  * back (the log line says `count: 'kept'`). Only `failed` and `not_configured`, which say
