@@ -69,6 +69,10 @@ describe('conformance scenarios, in process', () => {
       'Microsoft sign-up and sign-in',
       'Microsoft account linking',
       'phone number on an account',
+      'Discord sign-up and sign-in',
+      'Discord account linking',
+      'LinkedIn sign-up and sign-in',
+      'LinkedIn account linking',
     ])
   })
 

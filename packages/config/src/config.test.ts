@@ -9,6 +9,7 @@ import {
   isConfigError,
   isSecretRef,
   loadConfig,
+  providerSecret,
   requiredSecrets,
   resolveSecret,
   secretKeyMatchesKind,
@@ -194,6 +195,62 @@ describe('defineConfig', () => {
       'environments.dev.providers.microsoft.clientSecret',
     ])
     expect(JSON.stringify([error.message, error.issues])).not.toContain(literal)
+  })
+
+  describe.each(['discord', 'linkedin'] as const)('%s', (provider) => {
+    test('takes a client id and a secret reference, and is on unless the file says otherwise', () => {
+      const config = defineConfig({
+        environments: {
+          dev: { providers: { [provider]: { clientId: ' c ', clientSecret: env('THE_SECRET') } } },
+        },
+      })
+      const dev = selectEnvironment(config, 'dev')
+      expect(dev.providers[provider]).toEqual({
+        clientId: 'c',
+        clientSecret: { $env: 'THE_SECRET' },
+        enabled: true,
+      })
+      expect(requiredSecrets(dev.providers)).toEqual({ [provider]: 'THE_SECRET' })
+      expect(providerSecret(dev.providers, provider)).toEqual({ $env: 'THE_SECRET' })
+    })
+
+    test('a literal secret is refused without repeating it', () => {
+      const literal = 'literal-provider-secret-123'
+      const error = refusal(() =>
+        defineConfig(
+          untyped({
+            environments: {
+              dev: { providers: { [provider]: { clientId: 'c', clientSecret: literal } } },
+            },
+          })
+        )
+      )
+      expect(error.issues.map((issue) => issue.path)).toEqual([
+        `environments.dev.providers.${provider}.clientSecret`,
+      ])
+      expect(JSON.stringify([error.message, error.issues])).not.toContain(literal)
+    })
+
+    test.each([
+      ['Microsoft’s tenant', { tenant: 'common' }],
+      ['Apple’s team id', { teamId: 'TEAM123456' }],
+      ['a field nobody has', { scopes: ['guilds'] }],
+    ])('%s is not a field of it', (_name, extra) => {
+      const error = refusal(() =>
+        defineConfig(
+          untyped({
+            environments: {
+              dev: {
+                providers: { [provider]: { clientId: 'c', clientSecret: { $env: 'S' }, ...extra } },
+              },
+            },
+          })
+        )
+      )
+      expect(error.issues.map((issue) => issue.path)).toEqual([
+        `environments.dev.providers.${provider}.${Object.keys(extra)[0]}`,
+      ])
+    })
   })
 
   test('a literal secret is a type error and a run-time error that does not repeat it', () => {
@@ -463,8 +520,10 @@ describe('the example config', () => {
     expect(prod.settings.mfa.policy).toBe('required')
     expect(requiredSecrets(prod.providers)).toEqual({
       apple: 'APPLE_PRIVATE_KEY',
+      discord: 'DISCORD_CLIENT_SECRET',
       github: 'GITHUB_CLIENT_SECRET',
       google: 'GOOGLE_CLIENT_SECRET',
+      linkedin: 'LINKEDIN_CLIENT_SECRET',
       microsoft: 'MICROSOFT_CLIENT_SECRET',
     })
     // The dev entry leaves the password policy to the deployment.

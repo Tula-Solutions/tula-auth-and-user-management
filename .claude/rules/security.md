@@ -158,6 +158,23 @@ Before finishing any change here, confirm each item holds and has a test:
     (one organization to `organizations` or `common`) is **not** a recorded weakening
     (`diff.test.ts` pins it): it admits accounts from more directories, though a sign-up
     still needs the verified-domain claim, so say so when a change touches it.
+    **Whether an ID token's nonce is checked is said at every call** of `verifyIdToken`:
+    the attempt's nonce, or `NONCE_NOT_ECHOED` for a provider that documents no nonce
+    (LinkedIn only, which has no PKCE either: ADR 0026 says what binds its code). Never
+    give the parameter a default, and never pass the symbol for a provider that echoes one.
+    **Discord** (`adapters/oauth/discord.ts`): the account is the user id, accepted only
+    through `isSnowflake`; the address is verified only with `verified === true`.
+    **LinkedIn** (`adapters/oauth/linkedin.ts`): the ID token is verified for `sub` (only
+    the two issuers of `LINKEDIN_ISSUERS`) and nothing else of it is read; the address,
+    `email_verified === true` (the boolean) and the name come from the userinfo answer
+    alone, whose `sub` must equal the token's (`linkedInProfile`, shared with the mock;
+    a mismatch is `invalid_token`). Test `"true"`, `1` and an absent field for both, and
+    for LinkedIn a mismatched and a missing `sub` and a token that says verified beside an
+    answer that does not. **A profile read with an access token** (Discord's user,
+    LinkedIn's userinfo) goes through `readProfile` (`adapters/oauth/profile-read.ts`): a
+    fixed address, a deadline, `redirect: 'error'`, 64 KiB. Each adapter tests a redirect
+    that is not followed, the cap and the timeout, and that a failure carries nothing of
+    the answer or the token.
 30. **The mock provider** exists only with `ENVIRONMENT=local` and `OAUTH_MOCK_PROVIDER=true`:
     `env.ts` refuses it elsewhere, and with a `PUBLIC_URL` that is not loopback; the container
     logs a warning at boot while it is on; the routes are not mounted otherwise; and the consent

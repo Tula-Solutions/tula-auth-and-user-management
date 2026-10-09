@@ -4,7 +4,14 @@ import { tenantColumns, tenantConstraints } from '../tenant-columns'
 import { tula } from './pg-schema'
 
 /** The OAuth providers an environment can configure (ADR 0026). */
-export const OAUTH_PROVIDERS = ['google', 'github', 'apple', 'microsoft'] as const
+export const OAUTH_PROVIDERS = [
+  'google',
+  'github',
+  'apple',
+  'microsoft',
+  'discord',
+  'linkedin',
+] as const
 
 /** What a provider needs besides a client id and a secret. Never a secret itself. */
 export interface OAuthProviderConfig {

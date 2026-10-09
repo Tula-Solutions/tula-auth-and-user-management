@@ -1,4 +1,6 @@
 import type { OAuthProvider as OAuthProviderName } from '@tula/contract'
+import { isSnowflake } from '~/adapters/oauth/discord'
+import { linkedInProfile } from '~/adapters/oauth/linkedin'
 import { tenantAccepts } from '~/adapters/oauth/microsoft'
 import { timingSafeEqual } from '~/lib/crypto'
 import type { SecretBox } from '~/lib/secret-box'
@@ -29,6 +31,13 @@ export interface MockGrant {
   /** The S256 challenge the authorization URL carried. */
   codeChallenge: string
   profile: OAuthProfile
+  /**
+   * LinkedIn only: the userinfo answer the mock serves for this code. The real adapter takes
+   * the account from the ID token (`profile.subject` here) and the address, whether it is
+   * verified and the name from userinfo alone; so does the mock, and a LinkedIn code without
+   * this is refused.
+   */
+  userinfo?: unknown
 }
 
 /**
@@ -76,6 +85,15 @@ export function issueMockCode(
  * only exchanged with the PKCE verifier matching the challenge the authorization URL carried.
  * For Microsoft it also keeps the tenant rule: an account of a tenant the environment's
  * `tenant` does not accept is refused, as the real adapter refuses its token.
+ * For Discord it keeps the shape of an id: an account id that is not a snowflake is refused, as
+ * the real adapter refuses such a user object.
+ * For LinkedIn it keeps the two sources: the code carries a userinfo answer beside the "ID
+ * token's" subject, and the profile is made of the two by the real adapter's own function
+ * (`linkedInProfile`: the answer's `sub` must be the token's, `email_verified` must be the
+ * boolean `true`). The mock makes no request: what it shares with the real adapter is that
+ * rule, not the call to LinkedIn. It checks a PKCE verifier and a nonce for LinkedIn as for
+ * every provider, which the real adapter cannot (LinkedIn takes neither: ADR 0026): a
+ * scenario that passes here is no evidence that LinkedIn's code is bound by them.
  *
  * @param provider - The provider this instance stands in for.
  * @param deps - Secret box, clock and the API's public URL.
@@ -131,6 +149,12 @@ export function createMockProvider(
       ) {
         throw new OAuthProviderError('invalid_token')
       }
+      if (provider === 'discord' && !isSnowflake(grant.profile.subject)) {
+        throw new OAuthProviderError('invalid_profile')
+      }
+      if (provider === 'linkedin') {
+        return linkedInProfile(grant.profile.subject, grant.userinfo)
+      }
       return grant.profile
     },
   }
@@ -152,5 +176,7 @@ export function mockOAuthProviders(deps: {
     github: createMockProvider('github', deps),
     apple: createMockProvider('apple', deps),
     microsoft: createMockProvider('microsoft', deps),
+    discord: createMockProvider('discord', deps),
+    linkedin: createMockProvider('linkedin', deps),
   }
 }

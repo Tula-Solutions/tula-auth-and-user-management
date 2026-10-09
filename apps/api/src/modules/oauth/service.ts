@@ -227,6 +227,8 @@ const PROVIDER_FIELDS = {
   apple: { secret: 'privateKey', config: ['teamId', 'keyId'] },
   // `tenant` has no default: which Microsoft accounts may sign in is the operator's decision.
   microsoft: { secret: 'clientSecret', config: ['tenant'] },
+  discord: { secret: 'clientSecret', config: [] },
+  linkedin: { secret: 'clientSecret', config: [] },
 } as const satisfies Record<
   OAuthProvider,
   { secret: keyof SecretMaterial; config: readonly ('teamId' | 'keyId' | 'tenant')[] }

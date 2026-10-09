@@ -1,6 +1,6 @@
-# Google, GitHub, Apple and Microsoft (OAuth)
+# Google, GitHub, Apple, Microsoft, Discord and LinkedIn (OAuth)
 
-"Continue with Google", GitHub, Apple or Microsoft, and connecting or disconnecting those accounts in
+"Continue with Google", GitHub, Apple, Microsoft, Discord or LinkedIn, and connecting or disconnecting those accounts in
 the account page. Each environment uses its own credentials; none ship with Tula.
 The reasoning (the callback, the ticket, when accounts are linked) is in
 [ADR 0026](../adr/0026-oauth.md).
@@ -19,7 +19,8 @@ Three things per provider, in this order:
    `https://auth.example.com/v1/oauth/callback/google`. `GET /v1/admin/oauth-providers` lists
    it as `callbackUrl`. Checklists: [Google](../providers/google.md),
    [GitHub](../providers/github.md), [Apple](../providers/apple.md),
-   [Microsoft](../providers/microsoft.md).
+   [Microsoft](../providers/microsoft.md), [Discord](../providers/discord.md),
+   [LinkedIn](../providers/linkedin.md).
 2. **Give Tula the credentials.**
 3. **Allow your app's landing page** (the page that renders `<OAuthCallback>`) in
    `urls.allowedRedirectUrls`, exactly.
@@ -30,10 +31,12 @@ Three things per provider, in this order:
 | GitHub | `PUBLIC_URL/v1/oauth/callback/github` | `read:user`, `user:email` | client id, client secret |
 | Apple | `PUBLIC_URL/v1/oauth/callback/apple` (https and a real domain; not `localhost`) | name and email | Services ID, team id, key id, the `.p8` key |
 | Microsoft | `PUBLIC_URL/v1/oauth/callback/microsoft` | `openid`, `profile`, `email` | client id, client secret, the tenant (`common`, `organizations`, `consumers` or a tenant id) |
+| Discord | `PUBLIC_URL/v1/oauth/callback/discord` | `identify`, `email` | client id, client secret |
+| LinkedIn | `PUBLIC_URL/v1/oauth/callback/linkedin` | `openid`, `profile`, `email` | client id, client secret |
 
 | Where | How |
 | --- | --- |
-| Dashboard | **Sign-in methods**: configure Google, GitHub, Apple and Microsoft. A saved secret is write-only. |
+| Dashboard | **Sign-in methods**: configure Google, GitHub, Apple, Microsoft, Discord and LinkedIn. A saved secret is write-only. |
 | `tula.config.ts` | `providers`, with every secret as `env('NAME')`, then `tula apply`. |
 | Admin API | `PUT /v1/admin/oauth-providers/<provider>`. |
 
@@ -58,6 +61,11 @@ providers: {
     // Which accounts may sign in: 'common', 'organizations', 'consumers' or a tenant id.
     tenant: 'organizations',
   },
+  discord: {
+    clientId: '1198765432101234567',
+    clientSecret: env('DISCORD_CLIENT_SECRET'),
+  },
+  linkedin: { clientId: '86abcdefgh1234', clientSecret: env('LINKEDIN_CLIENT_SECRET') },
 },
 ```
 <!-- /snippet -->
@@ -96,6 +104,11 @@ reads the switch from its `.env`.
   verified-domain claim (`xms_edov`), which the operator adds to the app registration. A
   token without it signs in an account Tula already knows and nothing else: no sign-up, no
   automatic link ([the checklist](../providers/microsoft.md#what-the-address-proves)).
+- With Discord an address counts as verified only when the user object says `verified: true`;
+  with LinkedIn only when its userinfo answer says `email_verified: true`. An account with no
+  address, or one the provider does not vouch for, signs in where Tula already knows it and
+  nothing else ([Discord](../providers/discord.md#what-the-address-proves),
+  [LinkedIn](../providers/linkedin.md#what-the-address-proves)).
 
 ## Security properties and limits
 
@@ -105,17 +118,28 @@ reads the switch from its `.env`.
   tab's `sessionStorage` (`tula.oauth.<attempt id>`; not a token). This is what stops a
   sign-in being planted in someone else's browser.
 - The provider's authorization code is bound to the sign-in that asked for it. With Google,
-  GitHub and Microsoft that is PKCE (an S256 `code_challenge` on the way out, the
+  GitHub, Microsoft and Discord that is PKCE (an S256 `code_challenge` on the way out, the
   `code_verifier` with the token request; the verifier never leaves the server); with Google,
   Apple and Microsoft it is also the `nonce` in the signed ID token. Apple documents no PKCE and gets none. GitHub's PKCE
   was tested against the built-in mock provider and the requests the adapter builds, not
-  against github.com.
+  against github.com. Discord's OAuth2 page does not mention PKCE: the adapter sends it
+  because the client library it uses does, and whether Discord refuses a wrong verifier was
+  never observed.
+- **LinkedIn has neither.** Its authorization request takes five parameters and none of them
+  is a PKCE challenge or a nonce, and its ID token is not documented to carry a nonce. A
+  LinkedIn code is bound to the sign-in only by the single-use `state` and by the client
+  secret, which is the weakest binding of the six providers
+  ([why](../adr/0026-oauth.md#discord-and-linkedin)).
 - A provider sign-in is a **first** factor: a user with two-step verification is still asked
   for the second step.
 - A provider address that the provider does not assert as verified is refused.
 - A Microsoft account is its tenant id and object id, never its address, and its token's
   issuer must be the one of the tenant the token itself names. Neither was run against
   Microsoft: the checks are tested with tokens the tests sign.
+- A Discord account is its user id (a snowflake), never its username; a LinkedIn account is
+  the `sub` of its ID token, which LinkedIn issues per application; its address is read
+  from LinkedIn's userinfo endpoint, in an answer that must carry the same `sub`. Neither
+  adapter was run against the provider.
 - No provider token is stored. Credentials are sealed with `TULA_MASTER_KEY` and never
   returned.
 - Connecting an account needs a recent sign-in ([step-up](two-step-verification.md)).

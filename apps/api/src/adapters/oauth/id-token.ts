@@ -100,14 +100,32 @@ export function remoteKeySet(jwksUrl: string, timeoutMs: number): ProviderKeySet
 export type ExpectedIssuers = readonly string[] | 'caller-verifies'
 
 /**
+ * In place of an attempt's nonce: the provider is sent none and its ID tokens carry none.
+ *
+ * For a provider whose documentation names no `nonce` parameter and no `nonce` claim
+ * (LinkedIn): there is nothing to compare, and asking for an undocumented echo would prove
+ * nothing. Such a token is tied to the attempt only by how it was obtained (the code exchange
+ * of this attempt's callback, over TLS, with the client's secret), never by its contents.
+ */
+export const NONCE_NOT_ECHOED: unique symbol = Symbol('nonce-not-echoed')
+
+/**
+ * What ties an ID token to the attempt: the nonce the attempt put in the authorization
+ * request, or {@link NONCE_NOT_ECHOED}. The choice has no default, so that leaving it out
+ * cannot turn the check off unnoticed.
+ */
+export type ExpectedNonce = string | typeof NONCE_NOT_ECHOED
+
+/**
  * Verify an ID token against a key set: the signature, `RS256` only, the audience, the expiry
- * and the attempt's nonce, and the issuer unless the caller says it judges that itself
- * ({@link ExpectedIssuers}).
+ * and the attempt's nonce (unless the provider echoes none: {@link ExpectedNonce}), and the
+ * issuer unless the caller says it judges that itself ({@link ExpectedIssuers}).
  *
  * @param keys - The provider's key set.
  * @param idToken - The token.
  * @param expected - The client id, the attempt's nonce and who judges the issuer. A value for
- *   `issuers` that is neither a list nor `'caller-verifies'` refuses every token.
+ *   `issuers` that is neither a list nor `'caller-verifies'` refuses every token, and so does
+ *   a `nonce` that is neither a non-empty string nor {@link NONCE_NOT_ECHOED}.
  * @param timeoutMs - How long the key-set fetch may take.
  * @returns The verified claims and the token's protected header.
  * @throws OAuthProviderError `invalid_token`, `invalid_profile` (no `sub`) or `unavailable`
@@ -116,10 +134,14 @@ export type ExpectedIssuers = readonly string[] | 'caller-verifies'
 export async function verifyIdToken(
   keys: ProviderKeySet,
   idToken: string,
-  expected: { audience: string; nonce: string; issuers: ExpectedIssuers },
+  expected: { audience: string; nonce: ExpectedNonce; issuers: ExpectedIssuers },
   timeoutMs: number
 ): Promise<JWTVerifyResult> {
-  const { issuers } = expected
+  const { issuers, nonce } = expected
+  // As for `issuers` below: for a caller the compiler did not see.
+  if (nonce !== NONCE_NOT_ECHOED && (typeof nonce !== 'string' || nonce === '')) {
+    throw new OAuthProviderError('invalid_token')
+  }
   // The type says the same; this is for a caller the compiler did not see. An empty list is
   // passed on as a list: it accepts no issuer.
   if (issuers !== 'caller-verifies' && !Array.isArray(issuers)) {
@@ -149,7 +171,10 @@ export async function verifyIdToken(
     )
   }
   const { payload } = verified
-  if (typeof payload.nonce !== 'string' || !timingSafeEqual(payload.nonce, expected.nonce)) {
+  if (
+    nonce !== NONCE_NOT_ECHOED &&
+    (typeof payload.nonce !== 'string' || !timingSafeEqual(payload.nonce, nonce))
+  ) {
     throw new OAuthProviderError('invalid_token')
   }
   if (typeof payload.sub !== 'string' || payload.sub === '') {

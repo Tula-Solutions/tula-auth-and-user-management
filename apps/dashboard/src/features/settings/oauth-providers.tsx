@@ -19,12 +19,20 @@ import { NativeSelectOption } from '~/components/ui/native-select'
 import { Textarea } from '~/components/ui/textarea'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
+import { own } from '~/lib/own'
 
+/**
+ * The providers this version has a card for. Typed by the contract's union, so that a provider
+ * added there must be named here; read by the server's name through `own()`, so that a name
+ * this version does not know (or one every object has, like `constructor`) is not a card.
+ */
 const PROVIDER_NAME: Record<OAuthProviderSettings['provider'], string> = {
   google: 'Google',
   github: 'GitHub',
   apple: 'Apple',
   microsoft: 'Microsoft',
+  discord: 'Discord',
+  linkedin: 'LinkedIn',
 }
 
 /**
@@ -57,9 +65,8 @@ function audienceOf(tenant: string | null | undefined): MicrosoftAudience {
  * it, so the form never shows one. A configured provider keeps its secret unless "Replace
  * secret" is chosen; what is typed is dropped from state as soon as it is saved.
  */
-function ProviderCard({ provider }: { provider: OAuthProviderSettings }) {
+function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; name: string }) {
   const queryClient = useQueryClient()
-  const name = PROVIDER_NAME[provider.provider]
   const apple = provider.provider === 'apple'
   const microsoft = provider.provider === 'microsoft'
   // `gcTime: 0` and the `reset()` after a save: a mutation's variables hold the secret.
@@ -309,19 +316,25 @@ export function OAuthProviders() {
   return (
     <Section
       title='OAuth providers'
-      description='Sign-in with Google, GitHub, Apple and Microsoft. Each provider is saved separately from the settings above.'
+      description='Sign-in with Google, GitHub, Apple, Microsoft, Discord and LinkedIn. Each provider is saved separately from the settings above.'
     >
       <QueryState query={providers} label='Loading providers'>
         {(list) => (
           <ul className='grid gap-4 xl:grid-cols-2'>
-            {list.data.map((provider) => (
-              <ProviderCard
-                // The environment is part of the key: a card holds a typed secret, and
-                // two environments' unconfigured providers are otherwise the same key.
-                key={`${environment.id}:${provider.provider}:${provider.updatedAt ?? ''}`}
-                provider={provider}
-              />
-            ))}
+            {list.data.map((provider) => {
+              // A provider of a later server has fields this version cannot know: no card,
+              // rather than a form that guesses them.
+              const name = own(PROVIDER_NAME, provider.provider)
+              return name === undefined ? null : (
+                <ProviderCard
+                  // The environment is part of the key: a card holds a typed secret, and
+                  // two environments' unconfigured providers are otherwise the same key.
+                  key={`${environment.id}:${provider.provider}:${provider.updatedAt ?? ''}`}
+                  provider={provider}
+                  name={name}
+                />
+              )
+            })}
           </ul>
         )}
       </QueryState>

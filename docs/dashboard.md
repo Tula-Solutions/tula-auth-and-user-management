@@ -47,7 +47,7 @@ deletes a workspace, project or environment yet.
 | --- | --- |
 | Users | Search by email or name; create a user; open one. |
 | A user | Profile and state, the phone number and when it was verified; how they sign in (password, verified address, linked accounts, two-step verification and backup codes left, passkeys: never a secret); active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
-| Sign-in methods | Switch password, emailed code, emailed link and passkeys on or off; set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub, Apple and Microsoft. |
+| Sign-in methods | Switch password, emailed code, emailed link and passkeys on or off; set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub, Apple, Microsoft, Discord and LinkedIn. |
 | Password policy | A preset or custom rules. |
 | Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. **JWT templates** ([docs](jwt-templates.md)): add a template and its claims (a source or a fixed value each), see how large it can get against the 1,024-byte cap and which profiles use it, and choose a template on a profile's card. A reserved or malformed claim name and the caps are refused in the form; a template a profile uses cannot be taken out until the profile lets go of it; a save that takes claims away from a profile's sessions asks first. |
 | API keys | List (prefix and last four characters only), create, revoke. |

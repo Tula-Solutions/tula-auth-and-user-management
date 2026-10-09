@@ -47,6 +47,11 @@ const FIRST_FACTORS: readonly FirstFactor[] = [
     strategy: 'oauth_microsoft',
     enabled: (_settings, providers) => providers.includes('microsoft'),
   },
+  { strategy: 'oauth_discord', enabled: (_settings, providers) => providers.includes('discord') },
+  {
+    strategy: 'oauth_linkedin',
+    enabled: (_settings, providers) => providers.includes('linkedin'),
+  },
 ]
 
 /**

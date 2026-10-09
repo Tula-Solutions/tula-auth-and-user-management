@@ -131,8 +131,11 @@ describe('what @tula/react costs a browser bundle', () => {
    * button (TULA-12, about 0.1 kB, which landed without a change to the budget) it measures
    * 47,475 bytes, and the budget moved by those 111 bytes, to 47,911, so the room left is
    * what it was.
+   * Discord's and LinkedIn's buttons (TULA-13) are two more marks, each one path, and two
+   * names: with them it measures 48,362 bytes, 887 more. The budget moved by exactly those
+   * bytes, to 48,798, so the 436 bytes of room there were are what is left.
    */
-  const GZIP_BUDGET_BYTES = 47_911
+  const GZIP_BUDGET_BYTES = 48_798
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.
