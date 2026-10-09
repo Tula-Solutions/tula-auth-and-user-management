@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { phoneNumberCountries } from '@tula/contract'
 import {
   exitCode,
+  fictionalPhoneNumber,
   formatResult,
   nextOrigin,
   PUBLISHABLE_KEY_HEADER,
@@ -743,6 +745,23 @@ describe('runScenario', () => {
     )
     expect(result.status).toBe('failed')
     expect(JSON.stringify(result)).not.toContain('482919')
+  })
+
+  test('a generated phone number is one the United States is a country of, whatever was drawn', () => {
+    // +1 is shared: an area code such as 242 (the Bahamas) or 876 (Jamaica) is another
+    // country's own prefix, and a scenario that allows the United States alone is then
+    // refused `sms.country_not_allowed`, about one run in thirty.
+    for (let first = 0; first < 8; first += 1) {
+      for (let rest = 0; rest < 100; rest += 1) {
+        const number = fictionalPhoneNumber([first, rest, 7])
+        expect(number).toMatch(/^\+1[2-9][0-9]{2}55501[0-9]{2}$/)
+        expect(number.slice(3, 5)).not.toBe('11')
+        expect({ number, countries: phoneNumberCountries(number).includes('US') }).toEqual({
+          number,
+          countries: true,
+        })
+      }
+    }
   })
 
   test('a generated phone number is a fictional United States number, fresh for each run', async () => {
