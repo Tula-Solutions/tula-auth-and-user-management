@@ -206,7 +206,7 @@ A save with a template that breaks one of these is refused with 422, the field n
 | A line break or a control character | A template is one line. |
 | A character a reader cannot see (a zero-width space, a text-direction control) | What is sent is what you saw when you saved it. |
 | A brace that is not part of a placeholder, or a placeholder this kind does not have | The language is `{{name}}` and nothing else. |
-| A letter or a digit directly beside a placeholder (`code{{code}}`) | The code stands alone, for a reader and for a phone. |
+| A letter, a digit or a combining mark (an accent that draws on the character before it) directly beside a placeholder (`code{{code}}`), also when a character that draws nothing stands between them | The code stands alone, for a reader and for a phone. |
 | Four or more digits in a row | Only the code looks like a code. `Call 0800 1234` is refused too. |
 | A word that starts with `@` or `#` | That is how the last line is recognised: `@other-host #123456` would offer the code on another site. `Ask @support` is refused too. |
 | Something that reads as a link, an address or a domain name | A phone turns it into a link, beside a sign-in code. The rule is the [emails' own](email-templates.md#no-link-of-your-own). |

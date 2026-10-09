@@ -20,7 +20,7 @@ Text message wording and a preview of any message (`sms.templates` in the settin
   The server still adds the last line (`@host #code`) itself. A template is refused when
   saved if it lacks the code, is over 140 characters, holds a line break, a hidden
   character, four digits in a row, a word that starts with `@` or `#`, something that
-  reads as a link, or text directly beside a placeholder, or does not start with a letter.
+  reads as a link, or a letter, a digit or a combining mark directly beside a placeholder, or does not start with a letter.
 - `@tula/config` accepts `settings.sms.templates`, validated when the file is loaded. A
   file with no wording hashes as before.
 - `tula diff` shows `sms.templates.<kind>.text` as one line, and `tula apply` removes the

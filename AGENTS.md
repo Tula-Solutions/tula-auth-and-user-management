@@ -808,7 +808,8 @@ it ("Signing in with a texted code", at the end of this section).
   (`readStoredSmsTemplates`) and again before every send. **The last line is the server's
   and a template has no field for it.** Never loosen what keeps a second code or a second
   such line out: `{{code}}` exactly once, no placeholder twice, nothing but a space or
-  punctuation beside a placeholder, no run of four digits, no word that starts with `@` or
+  punctuation beside a placeholder (no letter, digit or combining mark, judged with the
+  invisible characters removed), no run of four digits, no word that starts with `@` or
   `#` (compared after NFKC), nothing that `readsAsLink`, a text that starts with a letter
   of its own. A new placeholder or kind is a decision in ADR 0042, with the cap's sum.
 - **The cap is `MAX_SMS_TEMPLATE_LENGTH` (140) and its sum is written beside it**: with the

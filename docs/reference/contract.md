@@ -4911,8 +4911,9 @@ Why a text message's template is refused, as a fixed word.
 - `unknown_placeholder`: a name this kind does not have.
 - `missing_placeholder`: the text lacks `{{code}}`.
 - `repeated_placeholder`: a placeholder is named twice.
-- `placeholder_touches_text`: a letter, a digit or another placeholder directly before or
-  after a placeholder. A code must stand alone to be read, by a person and by a phone.
+- `placeholder_touches_text`: a letter, a digit, a combining mark or another placeholder
+  directly before or after a placeholder, judged on the text without the characters that
+  draw nothing. A code must stand alone to be read, by a person and by a phone.
 - `digit_run`: four or more digits in a row, which could be read as the code.
 - `imitates_code_line`: an `@` or a `#` at the start of a word, which is how the
   origin-bound line the server writes is recognised.

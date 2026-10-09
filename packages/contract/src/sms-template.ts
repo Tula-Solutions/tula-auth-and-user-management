@@ -111,8 +111,9 @@ export type SmsTemplates = { [Kind in SmsTemplateKind]?: SmsTemplate | undefined
  * - `unknown_placeholder`: a name this kind does not have.
  * - `missing_placeholder`: the text lacks `{{code}}`.
  * - `repeated_placeholder`: a placeholder is named twice.
- * - `placeholder_touches_text`: a letter, a digit or another placeholder directly before or
- *   after a placeholder. A code must stand alone to be read, by a person and by a phone.
+ * - `placeholder_touches_text`: a letter, a digit, a combining mark or another placeholder
+ *   directly before or after a placeholder, judged on the text without the characters that
+ *   draw nothing. A code must stand alone to be read, by a person and by a phone.
  * - `digit_run`: four or more digits in a row, which could be read as the code.
  * - `imitates_code_line`: an `@` or a `#` at the start of a word, which is how the
  *   origin-bound line the server writes is recognised.
@@ -154,7 +155,10 @@ const UNPRINTABLE = /[\p{Cc}\p{Zl}\p{Zp}]/u
 const DIGIT_RUN = /\p{Nd}{4}/u
 // `@` or `#` where a word starts. One optional character before one class: linear.
 const CODE_LINE_MARK = /(?:^|[^\p{L}\p{N}])[@#]/u
-const WORD_CHARACTER = /[\p{L}\p{N}]/u
+// What may not stand directly beside a placeholder: a letter, a digit, or a combining mark
+// (which draws on the character before it, so after `{{code}}` it is an accent on the
+// code's last digit). One class: linear.
+const WORD_CHARACTER = /[\p{L}\p{N}\p{M}]/u
 const LETTER = /^\p{L}/u
 
 /** How much of an unknown placeholder's name a problem repeats. */
@@ -269,7 +273,7 @@ export function smsTemplateProblems(
     problems.push(
       problem(
         'placeholder_touches_text',
-        'a placeholder must stand alone: no letter, digit or other placeholder directly before or after it'
+        'a placeholder must stand alone: no letter, digit, combining mark or other placeholder directly before or after it'
       )
     )
   }

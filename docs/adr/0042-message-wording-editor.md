@@ -73,7 +73,7 @@ schema, by the tolerant read and again before every send.
 | A brace that is not part of `{{name}}`, or an unknown name | The grammar. |
 | No `{{code}}` | The message exists to carry it. |
 | A placeholder written twice | A second `{{code}}` is a second code in the text; a second `{{appName}}` breaks the bound on the length. |
-| A letter, a digit or another placeholder directly beside a placeholder | A code must stand alone to be read, by a person and by a phone's code detection. |
+| A letter, a digit, a combining mark or another placeholder directly beside a placeholder | A code must stand alone to be read, by a person and by a phone's code detection. A combining mark draws on what stands before it: after `{{code}}` it is an accent on the code's last digit (review round 1). Checked on the text without the characters that draw nothing, so a joiner or a variation selector between the two changes nothing. |
 | Four or more digits in a row, of any script | Only the code may look like a code. Checked on the text without the characters that draw nothing, so a zero-width joiner cannot split a run. |
 | An `@` or a `#` at the start of a word | It is how the origin-bound line is recognised. A template that writes `@other-host #123456` would bind the code to a host the operator chose. Compared after NFKC, so the full-width forms are refused too. |
 | Something that reads as a link (`readsAsLink`, the email rule) | A phone turns it into one, next to a sign-in code. |

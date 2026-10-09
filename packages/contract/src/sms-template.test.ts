@@ -85,6 +85,41 @@ describe('what a template may say', () => {
       'placeholder_touches_text',
     ],
     ['a digit against the app', 'Your {{appName}}2 code is {{code}}.', 'placeholder_touches_text'],
+    // A combining mark draws on what stands before it: after the code it is an accent on the
+    // code's last digit. Refused on either side, for both placeholders.
+    ['a combining mark after the code', 'Code {{code}}\u{301} ok', 'placeholder_touches_text'],
+    ['a combining mark before the code', 'Code \u{301}{{code}} ok', 'placeholder_touches_text'],
+    [
+      'a combining mark after the app',
+      'For {{appName}}\u{301} use {{code}}',
+      'placeholder_touches_text',
+    ],
+    ['an enclosing mark after the code', 'Code {{code}}\u{20DD} ok', 'placeholder_touches_text'],
+    [
+      'a mark behind a joiner after the code',
+      'Code {{code}}\u{200D}\u{301} ok',
+      'placeholder_touches_text',
+    ],
+    [
+      'a mark behind a variation selector after the code',
+      'Code {{code}}\u{FE0F}\u{301} ok',
+      'placeholder_touches_text',
+    ],
+    [
+      'a letter behind a variation selector after the code',
+      'Code {{code}}\u{FE0F}x ok',
+      'placeholder_touches_text',
+    ],
+    [
+      'a letter behind a non-joiner before the code',
+      'Code x\u{200C}{{code}} ok',
+      'placeholder_touches_text',
+    ],
+    [
+      'a digit behind a variation selector before the app',
+      'For 7\u{FE0E}{{appName}} use {{code}}',
+      'placeholder_touches_text',
+    ],
     ['four digits in a row', 'Call 5550 if {{code}} was not asked for.', 'digit_run'],
     ['six digits that read as a code', 'Not 123456 but {{code}}.', 'digit_run'],
     ['digits split by a joiner', 'Not 12\u{200D}34 but {{code}}.', 'digit_run'],
