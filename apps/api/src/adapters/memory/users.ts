@@ -255,7 +255,14 @@ export class MemoryUserRepository implements UserRepository {
       this.#history.delete(userId)
     }
     this.#passwords.set(userId, passwordHash)
-    this.#passwordsChangedAt.set(userId, new Date(at))
+    // A replacement is always newer than what it replaces, by a millisecond when the
+    // writer's clock says otherwise: the time is how a sign-in waiting to replace an expired
+    // password tells a replacement from a hash upgrade (ADR 0041).
+    const replaced = this.#passwordsChangedAt.get(userId)
+    this.#passwordsChangedAt.set(
+      userId,
+      new Date(replaced ? Math.max(at.getTime(), replaced.getTime() + 1) : at.getTime())
+    )
     this.#activityLog.record(activity ? [withOutcome(activity, outcome)] : [])
     return outcome
   }

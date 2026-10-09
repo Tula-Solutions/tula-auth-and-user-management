@@ -450,7 +450,14 @@ export class PostgresUserRepository implements UserRepository {
         .onConflictDoUpdate({
           target: [credentials.userId, credentials.type],
           // A different password from here on: its age is counted from this write (ADR 0041).
-          set: { secret: passwordHash, secretChangedAt: at, updatedAt: at },
+          // Always later than the time it replaces, by a millisecond when the writer's clock
+          // says otherwise: that time is how a sign-in waiting to replace an expired password
+          // tells a replacement from a hash upgrade, which leaves it alone.
+          set: {
+            secret: passwordHash,
+            secretChangedAt: sql`GREATEST(excluded.secret_changed_at, ${credentials.secretChangedAt} + interval '1 millisecond')`,
+            updatedAt: at,
+          },
         })
         // `xmax` is 0 on a row this statement inserted and the updating transaction's id on
         // one it updated: the standard way to tell the two apart in an upsert.

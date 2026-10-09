@@ -1122,7 +1122,10 @@ new one is stored. `null` is off.
   when a password is created or stored over another (`users.create`, `setPasswordHash`) and
   **never by `upgradePasswordHash`**: a re-hash is the same password. Never read
   `updated_at` for an age, and never write the column from a path that does not store a new
-  password. The shared store suite holds it in both adapters.
+  password. **A replacement always moves it**: `setPasswordHash` stores the later of the
+  writer's time and the stored time plus a millisecond, so the same time means the same
+  password whatever a clock does. Never write the writer's time over it unconditionally.
+  The shared store suite holds both in both adapters.
 - **Whether a password has expired is asked in one place, `Flows.submitPassword`, after the
   password is verified** (and after the ban check and the hash upgrade), through
   `Passwords.expired`. Never before the verification, never for a wrong password, an unknown
@@ -1145,11 +1148,15 @@ new one is stored. `null` is off.
   one it does not know.
 - **`Flows.replaceExpiredPassword` stores nothing unless the stored password is still the
   one the attempt proved**: the credential's changed-at equals the attempt's
-  `expiredPasswordSetAt`, `Passwords.assertNotReused` gets the hash that was read (`proven`)
-  and refuses **before anything is counted or verified** when the stored hash is another,
-  and the write is a compare-and-set on it. Otherwise `flow.invalid_step`. Never drop one of
-  the three: an attempt parked by whoever knew the old password must not overwrite a
-  password the owner set meanwhile, nor ask whether a candidate is the new one. It also
+  `expiredPasswordSetAt`, `Passwords.assertNotReused` gets the hash read with that time
+  (`proven`) and refuses **before anything is counted or verified** when the stored hash is
+  another, and the write is a compare-and-set on it. Otherwise `flow.invalid_step`. Never
+  drop one of the three: an attempt parked by whoever knew the old password must not
+  overwrite a password the owner set meanwhile, nor ask whether a candidate is the new one.
+  **The time says which password it is, the hash that nothing moved since it was read**: a
+  hash that moved (another tab's sign-in upgrading it) is asked about again by the time,
+  never taken for a replacement and never waved through (`compare` in
+  `Users.replacePassword`; at most `PASSWORD_STORE_ATTEMPTS` passes, counted once). It also
   refuses a banned user and an attempt whose user confirmed a second factor it never proved.
 - **The expired password is never its own replacement**, whatever `password.history` says:
   the comparison is made for `max(history, 1)` and `password.reused` carries that number.
@@ -1158,6 +1165,16 @@ new one is stored. `null` is off.
   `method: 'self'`): the policy, the history, the hourly allowance, the notice. Every session
   of the user ends **after** the store, never before it (the loser of two requests at once
   must not end the winner's new session). A refusal leaves the attempt on its step.
+- **A sweep that fails after the store is tried three times, then said, and nothing
+  remembers it** (`EXPIRED_PASSWORD_SWEEP_ATTEMPTS`, 20 and 40 ms apart). Then: 503
+  `service.unavailable`, nobody signed in, the password is the new one, the sessions made
+  under the old one alive until they end or an administrator ends them
+  (`DELETE /v1/admin/users/:userId/sessions`), and an error logged with fixed words, the
+  environment and the user id. That line is the only trace: never drop or quieten it, and
+  never put the failure's own text in it. A retry answers `flow.invalid_step`; the user
+  signs in again with the new password. The same holds, with the sessions ended, when
+  `finish` fails after the store (a hook that refuses, a session limit). A stored "sweep
+  owed" marker was decided against (ADR 0041); adding one is a decision. Tests pin the cost.
 - **The step calls `requireProvenMethod`** like every parked step, and the hooks are asked
   where they always are (`finish`, `Sessions.create`): after the password is stored.
 - **`expiryDays` is not a weakening**, set, shortened or removed (`settingsWeakenings`).

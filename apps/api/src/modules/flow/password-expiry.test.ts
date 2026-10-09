@@ -6,14 +6,17 @@ import {
   type FlowStep,
 } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
-import { RateLimitError, ServiceException } from '~/exceptions'
+import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
+import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'
 import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/service'
+import * as Hooks from '~/modules/hook/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
+import * as Sessions from '~/modules/session/service'
 import * as Users from '~/modules/user/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
@@ -472,7 +475,9 @@ describe('setting the new password', () => {
     // The user has had two passwords before the current one.
     await Users.setPassword(deps, tenant, userId, NEW_PASSWORD, TEST_ACTOR)
     await Users.setPassword(deps, tenant, userId, THIRD_PASSWORD, TEST_ACTOR)
-    deps.clock.advance(90 * DAY)
+    // A day over: the two replacements at one instant of the test clock are stamped a
+    // millisecond apart (a replacement is always newer than what it replaces).
+    deps.clock.advance(91 * DAY)
     const { attempt } = await signIn(THIRD_PASSWORD)
     for (const old of [PASSWORD, NEW_PASSWORD, THIRD_PASSWORD]) {
       const refused = await rejection(renew(attempt, old))
@@ -827,6 +832,113 @@ describe('the password must still be the one the attempt proved', () => {
     expect(await liveSessions(userId)).toEqual([])
   })
 
+  /** Hash the stored password again, as another tab's sign-in does (same password, new hash). */
+  async function upgradeHash(userId: string): Promise<string> {
+    const upgraded = await Passwords.hash(PASSWORD)
+    expect(
+      await deps.users.upgradePasswordHash(
+        tenant.environmentId,
+        userId,
+        PASSWORD_HASH,
+        upgraded,
+        deps.clock.now()
+      )
+    ).toBe(true)
+    return upgraded
+  }
+
+  /** Run `land` once, before or after the first read of the history, as a writer racing the step. */
+  function racing(when: 'before the comparison' | 'after it', land: () => Promise<unknown>) {
+    const read = deps.users.storedPasswords.bind(deps.users)
+    let landed = false
+    const spy = spyOn(deps.users, 'storedPasswords').mockImplementation(async (...args) => {
+      if (landed) {
+        return read(...args)
+      }
+      landed = true
+      if (when === 'before the comparison') {
+        await land()
+        return read(...args)
+      }
+      const result = await read(...args)
+      await land()
+      return result
+    })
+    spies.push(spy)
+  }
+
+  test.each(['before the comparison', 'after it'] as const)(
+    'a hash upgrade that lands %s is the same password: the attempt completes',
+    async (when) => {
+      const userId = await seedAged(90)
+      const { attempt } = await signIn()
+      racing(when, () => upgradeHash(userId))
+      const done = await renew(attempt)
+      expect(done.attempt.step.status).toBe('complete')
+      expect(await Passwords.verify(await storedHash(), NEW_PASSWORD)).toBe(true)
+      expect(await liveSessions(userId)).toHaveLength(1)
+      // The comparison was counted once, however many times it was made.
+      expect(
+        (await deps.rateLimiter.hit(`password_history:${tenant.environmentId}:${userId}`, 99, DAY))
+          .remaining
+      ).toBe(97)
+    }
+  )
+
+  test('replaced after the comparison, before the write: refused, and the other password stands', async () => {
+    const userId = await seedAged(90)
+    const { attempt } = await signIn()
+    racing('after it', async () =>
+      deps.users.setPasswordHash(
+        tenant.environmentId,
+        userId,
+        await Passwords.hash(THIRD_PASSWORD),
+        deps.clock.now(),
+        Audit.none('fixture'),
+        { keep: 0 }
+      )
+    )
+    expect((await rejection(renew(attempt))).code).toBe('flow.invalid_step')
+    expect(await Passwords.verify(await storedHash(), THIRD_PASSWORD)).toBe(true)
+    expect(await liveSessions(userId)).toEqual([])
+  })
+
+  test.each(['before the step', 'before the comparison', 'after it'] as const)(
+    'replaced %s by a write stamped with the very instant the expired password was set: still refused',
+    async (when) => {
+      const userId = await seedAged(90)
+      const { attempt } = await signIn()
+      const setAt = (await deps.users.findByEmailWithPassword(tenant.environmentId, EMAIL))
+        ?.passwordChangedAt as Date
+      const theirs = await Passwords.hash(THIRD_PASSWORD)
+      // A writer whose clock reads what it read when the expired password was set (a clock
+      // put back): the time alone would not tell its password from the one the attempt proved.
+      const replace = () =>
+        deps.users.setPasswordHash(
+          tenant.environmentId,
+          userId,
+          theirs,
+          new Date(setAt),
+          Audit.none('fixture'),
+          { keep: 0 }
+        )
+      if (when === 'before the step') {
+        await replace()
+      } else {
+        racing(when, replace)
+      }
+      const verify = spyOn(Bun.password, 'verify')
+      spies.push(verify)
+      expect((await rejection(renew(attempt, THIRD_PASSWORD))).code).toBe('flow.invalid_step')
+      if (when !== 'after it') {
+        // Nothing was compared: the attempt cannot ask whether its candidate is that password.
+        expect(verify).not.toHaveBeenCalled()
+      }
+      expect(await storedHash()).toBe(theirs)
+      expect(await liveSessions(userId)).toEqual([])
+    }
+  )
+
   test('a user deleted meanwhile, or moved to another address, is not given a password', async () => {
     const userId = await seedAged(90)
     const { attempt } = await signIn()
@@ -840,6 +952,99 @@ describe('the password must still be the one the attempt proved', () => {
     await Users.ban(deps, tenant, userId, TEST_ACTOR)
     expect((await rejection(renew(attempt))).code).toBe('auth.user_banned')
     expect(await storedHash()).toBe(PASSWORD_HASH)
+  })
+})
+
+describe('ending the earlier sessions after the password is stored', () => {
+  /** A user with one live session whose password has since expired, at the new-password step. */
+  async function parked() {
+    configure({ expiryDays: 1 })
+    const userId = await seedUser()
+    const earlier = (await signIn()).result.tokens?.sessionId as string
+    deps.clock.advance(DAY)
+    const { attempt } = await signIn()
+    return { userId, earlier, attempt }
+  }
+
+  /** Make the sweep fail `times` times, then work. */
+  function failingSweep(times: number) {
+    const sweep = Sessions.revokeAllForUser
+    let failures = 0
+    const spy = spyOn(Sessions, 'revokeAllForUser').mockImplementation(async (...args) => {
+      if (failures < times) {
+        failures += 1
+        throw new Error('canary-sweep-failure the session store is away')
+      }
+      return sweep(...args)
+    })
+    spies.push(spy)
+    return spy
+  }
+
+  test.each([1, 2])(
+    'a sweep that fails %p time(s) is tried again: the sign-in completes and the sessions end',
+    async (times) => {
+      const { userId, earlier, attempt } = await parked()
+      const sweep = failingSweep(times)
+      const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+      spies.push(logged)
+      const done = await renew(attempt)
+      expect(done.attempt.step.status).toBe('complete')
+      expect(sweep).toHaveBeenCalledTimes(times + 1)
+      expect((await liveSessions(userId)).map((session) => session.id)).toEqual([
+        done.tokens?.sessionId as string,
+      ])
+      expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(true)
+      expect(logged).not.toHaveBeenCalled()
+    }
+  )
+
+  test('a sweep that fails every time: 503, said in the log, the password changed and the earlier sessions alive', async () => {
+    const { userId, earlier, attempt } = await parked()
+    const sweep = failingSweep(Number.POSITIVE_INFINITY)
+    const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+    spies.push(logged)
+    const error = await rejection(renew(attempt))
+    expect(error.code).toBe('service.unavailable')
+    expect(error.status).toBe(503)
+    // Three tries, and no more.
+    expect(sweep).toHaveBeenCalledTimes(3)
+    // Fixed words, the environment and the user's id; nothing of the failure or the request.
+    expect(logged.mock.calls).toEqual([
+      [
+        'a password that replaced an expired one was stored, and the user’s earlier sessions could not be ended',
+        { environmentId: tenant.environmentId, userId },
+      ],
+    ])
+    expect(JSON.stringify(error)).not.toContain('canary-sweep-failure')
+    // The stated cost (ADR 0041), pinned: the new password is stored and announced, the
+    // sessions made under the old one are still alive, and nobody was signed in.
+    expect(await Passwords.verify(await storedHash(), NEW_PASSWORD)).toBe(true)
+    expect(passwordChanges()).toHaveLength(1)
+    expect((await liveSessions(userId)).map((session) => session.id)).toEqual([earlier])
+    expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(false)
+    expect(deps.activityLog.ofType('session.created')).toHaveLength(1)
+    // The attempt has proven nothing about the password the account has now.
+    expect((await rejection(renew(attempt, THIRD_PASSWORD))).code).toBe('flow.invalid_step')
+    // The user signs in with the new password, which is not expired.
+    for (const spy of spies.splice(0)) {
+      spy.mockRestore()
+    }
+    expect((await signIn(NEW_PASSWORD)).result.attempt.step.status).toBe('complete')
+  })
+
+  test('a hook that refuses the session after the store: the password is the new one, the earlier sessions are gone, nobody is signed in', async () => {
+    const { userId, earlier, attempt } = await parked()
+    const refusing = spyOn(Hooks, 'beforeSession').mockRejectedValue(
+      new AuthError('hook.denied', { code: 'not_now' })
+    )
+    spies.push(refusing)
+    expect((await rejection(renew(attempt))).code).toBe('hook.denied')
+    expect(await Passwords.verify(await storedHash(), NEW_PASSWORD)).toBe(true)
+    expect(await liveSessions(userId)).toEqual([])
+    expect(await deps.revokedSessions.has(earlier, deps.clock.now())).toBe(true)
+    refusing.mockRestore()
+    expect((await signIn(NEW_PASSWORD)).result.attempt.step.status).toBe('complete')
   })
 })
 

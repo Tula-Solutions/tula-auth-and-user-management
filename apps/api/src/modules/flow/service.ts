@@ -2731,8 +2731,17 @@ export async function resetPassword(
  * ended, the owner is told, and the attempt completes through {@link finish} like any other
  * (so `before_session` is asked there, and only there).
  *
- * Two requests at once may each store a password (the second is compared with the first);
- * the attempt's compare-and-set lets one of them create the session.
+ * Of two requests at once one stores its password and gets the session. The other finds the
+ * stored password is no longer the one the attempt proved and is refused
+ * (`flow.invalid_step`), with nothing stored and no session ended.
+ *
+ * **After the password is stored the request can still fail, and the password stays.** The
+ * user's earlier sessions are ended next (tried three times); if that fails the answer is
+ * `service.unavailable`, nobody is signed in and those sessions live on until they end or an
+ * administrator ends them. Then {@link finish}: a hook that refuses, a session limit or a
+ * store that is away leaves the new password, the earlier sessions ended and no session.
+ * Either way the attempt is over (`flow.invalid_step` for a retry: the password it proved
+ * is gone) and the user signs in again with the new password.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -2746,6 +2755,8 @@ export async function resetPassword(
  * @throws ServiceException a `password.*` code when the new password fails the policy, or is
  *   one the user may not set again (`password.reused`).
  * @throws RateLimitError when the user's allowance of history comparisons is used up.
+ * @throws ServiceUnavailableError when the password was stored and the user's earlier
+ *   sessions could not be ended.
  */
 export async function replaceExpiredPassword(
   deps: Deps,
@@ -2789,7 +2800,7 @@ export async function replaceExpiredPassword(
     throw new AuthError('flow.invalid_step')
   }
   const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
-  await Users.replaceExpiredPassword(deps, tenant, found.user, password, actor, found.passwordHash)
+  await Users.replaceExpiredPassword(deps, tenant, found.user, password, actor, setAt)
   return finish(deps, tenant, attempt, rest, userId, context)
 }
 

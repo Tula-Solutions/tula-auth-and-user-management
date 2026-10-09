@@ -284,7 +284,11 @@ export interface UserRepository {
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param passwordHash - The new argon2id hash.
-   * @param at - Update time, and from now on the time the user's password was set.
+   * @param at - Update time, and from now on the time the user's password was set. **A
+   *   replacement is always newer than the password it replaces**: where `at` is not later
+   *   than the time stored, the store sets that time plus one millisecond. A sign-in waiting
+   *   to replace an expired password tells a replacement from a hash upgrade by this time
+   *   (ADR 0041), so it must move whatever the writer's clock says.
    * @param activity - Recorded in the same transaction as the write. When the password is the
    *   user's first, the recorded entry's `data` gains `created: true`: only the store knows
    *   which happened at the moment it happens.

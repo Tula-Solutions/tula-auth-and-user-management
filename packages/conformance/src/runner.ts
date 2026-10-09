@@ -147,7 +147,6 @@ function changesSettings(request: ScenarioRequest): boolean {
 /** Why a scenario marked `needsWebhookReceiver` is skipped by a target that offers none. */
 export const WEBHOOK_RECEIVER_SKIP_REASON = 'needs a webhook receiver the server can reach'
 
-/** Why a scenario marked `needsSmsInbox` is skipped by a target that offers none. */
 /** Why a scenario marked `needsTestClock` is skipped by a target whose `wait` is a real sleep. */
 export const TEST_CLOCK_SKIP_REASON = 'needs a clock the runner can move'
 
@@ -157,6 +156,7 @@ export const SMS_NEW_CODE_TIMEOUT_MS = 5_000
 /** How often such a step looks again. */
 const SMS_NEW_CODE_POLL_MS = 50
 
+/** Why a scenario marked `needsSmsInbox` is skipped by a target that offers none. */
 export const SMS_INBOX_SKIP_REASON = 'needs a development SMS inbox the runner can read'
 
 /** How one step went. */

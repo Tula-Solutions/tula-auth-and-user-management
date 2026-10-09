@@ -379,6 +379,24 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         expect(await changedAt(input)).toEqual(later(90_000))
       })
 
+      test('a replacement stamped with the instant the password before it was set is still newer', async () => {
+        // What the expired-password step rests on (ADR 0041): a hash upgrade leaves the time
+        // alone and a replacement always moves it, also when the writer's clock was put back.
+        const input = user(ctx.a, { passwordHash: '$argon2id$first' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        const before = (await changedAt(input)) as Date
+        for (const [hash, at] of [
+          ['$argon2id$second', new Date(before)],
+          ['$argon2id$third', new Date(before.getTime() - 86_400_000)],
+        ] as const) {
+          const earlier = (await changedAt(input)) as Date
+          await ctx.users.setPasswordHash(env(), input.id, hash, at, Audit.none('fixture'), {
+            keep: 0,
+          })
+          expect(((await changedAt(input)) as Date).getTime()).toBe(earlier.getTime() + 1)
+        }
+      })
+
       test('a first password is as old as the write that created it', async () => {
         const input = user(ctx.a, { passwordHash: null })
         await ctx.users.create(input, Audit.none('fixture'))

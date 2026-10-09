@@ -231,7 +231,18 @@ describe('<SignIn> first factors and steps it does not know', () => {
     ['a second-factor step with no options', { status: 'needs_second_factor' }],
     ['an enrolment of a method this version cannot enrol', { status: 'needs_factor_enrolment' }],
     ['a status from a newer server', { status: 'needs_retina_scan' }],
-    ['needs_new_password in a sign-in', NEW_PASSWORD_STEP],
+    // A sign-in draws a new-password screen for the one reason it knows (`expired`), never
+    // for the step as such: with no reason it is a reset's step, and a reason from a newer
+    // server is not this version's to guess at.
+    ['needs_new_password in a sign-in, with no reason', NEW_PASSWORD_STEP],
+    [
+      'needs_new_password in a sign-in, with no reason and nothing to send with it',
+      { status: 'needs_new_password', destination: 'm***@example.com', strategies: [] },
+    ],
+    [
+      'needs_new_password in a sign-in, for a reason from a newer server',
+      { ...EXPIRED_PASSWORD_STEP, reason: 'future' },
+    ],
   ] as [string, { status: string }][])(
     '%s renders the unsupported state, never a blank card',
     async (_name, step) => {
@@ -244,6 +255,8 @@ describe('<SignIn> first factors and steps it does not know', () => {
       expect(
         await screen.findByRole('heading', { name: 'This step is not supported' })
       ).toBeTruthy()
+      expectAbsent(screen.queryByRole('heading', { name: 'Your password has expired' }))
+      expectAbsent(screen.queryByLabelText('New password'))
       expect(w.client.state.status).toBe('signed-out')
     }
   )

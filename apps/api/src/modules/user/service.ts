@@ -372,6 +372,19 @@ type PasswordDeps = RevocationDeps &
  */
 const PASSWORD_STORE_ATTEMPTS = 3
 
+/**
+ * How many times the sessions of a user are tried to be ended after an expired password was
+ * replaced, before the request gives up with a 503 (ADR 0041).
+ */
+const EXPIRED_PASSWORD_SWEEP_ATTEMPTS = 3
+
+/**
+ * The pause before the second try of that sweep, in milliseconds; the one before the third is
+ * twice as long. Short on purpose: the user is waiting, and a store that is away for longer
+ * than a blink is not waited out by a request.
+ */
+const EXPIRED_PASSWORD_SWEEP_PAUSE_MS = 20
+
 /** How a password notice names each way a password is stored. */
 const CHANGED_BY = { admin_reset: 'admin', self: 'self', reset: 'reset' } as const
 
@@ -395,9 +408,9 @@ const CHANGED_BY = { admin_reset: 'admin', self: 'self', reset: 'reset' } as con
  * stores the new one (ADR 0038).
  *
  * @param expired - Given when the password replaces one that has expired, by a sign-in that
- *   proved it (`proven`: the hash it proved). The expired password is then refused as its
- *   own replacement whatever the history says, and nothing is compared or stored once the
- *   stored password is no longer that one (`flow.invalid_step`).
+ *   proved it (`setAt`: when the password it proved was set). The expired password is then
+ *   refused as its own replacement whatever the history says, and nothing is compared or
+ *   stored once the stored password is no longer that one (`flow.invalid_step`).
  */
 async function replacePassword(
   deps: PasswordDeps,
@@ -407,7 +420,7 @@ async function replacePassword(
   actor: Actor,
   method: 'admin_reset' | 'self' | 'reset',
   beforeStore?: () => Promise<void>,
-  expired?: { proven: string }
+  expired?: { setAt: number }
 ): Promise<void> {
   const { email, emailNormalized } = user
   if (email === null || emailNormalized === null) {
@@ -431,19 +444,54 @@ async function replacePassword(
   // An administrator's password is kept in the history and never refused by it: they do not
   // know the user's old passwords, and a refusal would tell them a candidate is one of them.
   const compared = refused > 0 && method !== 'admin_reset'
+  /**
+   * Compare the new password with the stored ones, and return the hash it was judged against.
+   *
+   * For an expired password the comparison is made only while the stored password is still
+   * the one the sign-in proved, and that is asked again before every comparison: by when the
+   * password was set, which a replacement always moves (the store sees to it, whatever the
+   * writer's clock says) and a hash upgrade never does. So a hash upgrade that lands
+   * meanwhile (another tab signing in) costs a pass and nothing else, and a replacement ends
+   * in `flow.invalid_step` before anything is counted or verified. The hash read with that
+   * time is handed on as `proven`, and the write is a compare-and-set on it: a change between
+   * this read and either of those is seen there, and asked about again here.
+   */
+  async function compare(counted: boolean): Promise<string | null> {
+    if (!expired) {
+      return Passwords.assertNotReused(deps, scope, user.id, password, refused, counted)
+    }
+    for (let pass = 1; ; pass++) {
+      const found = await Passwords.ofUser(deps, scope.environmentId, user)
+      if (
+        !found ||
+        found.passwordHash === null ||
+        found.passwordChangedAt?.getTime() !== expired.setAt
+      ) {
+        throw new AuthError('flow.invalid_step')
+      }
+      try {
+        return await Passwords.assertNotReused(
+          deps,
+          scope,
+          user.id,
+          password,
+          refused,
+          counted,
+          found.passwordHash
+        )
+      } catch (error) {
+        // `flow.invalid_step` from there means the hash moved after the read above, and
+        // nothing was counted or verified: read again and let the time say which it was.
+        const moved = error instanceof AuthError && error.code === 'flow.invalid_step'
+        if (!moved || pass >= PASSWORD_STORE_ATTEMPTS) {
+          throw error
+        }
+      }
+    }
+  }
   // Last of the checks, and only here: whoever reaches it has proven the account is theirs
   // and offered a password the policy accepts (ADR 0038).
-  let judgedAgainst = compared
-    ? await Passwords.assertNotReused(
-        deps,
-        scope,
-        user.id,
-        password,
-        refused,
-        true,
-        expired?.proven
-      )
-    : undefined
+  let judgedAgainst = compared ? await compare(true) : undefined
   // Hash first: a failure here must leave whatever `beforeStore` spends untouched.
   const passwordHash = await Passwords.hash(password)
   await beforeStore?.()
@@ -453,15 +501,7 @@ async function replacePassword(
     if (pass > 0) {
       // The password changed between the comparison and the write (another change, or a hash
       // upgrade at sign-in): compare again with what is stored now. Not counted twice.
-      judgedAgainst = await Passwords.assertNotReused(
-        deps,
-        scope,
-        user.id,
-        password,
-        refused,
-        false,
-        expired?.proven
-      )
+      judgedAgainst = await compare(false)
     }
     outcome = await deps.users.setPasswordHash(
       scope.environmentId,
@@ -600,17 +640,27 @@ export async function resetPassword(
  * after this returns. They end **after** the password is stored, as for a user's own change
  * and unlike a reset: of two requests at once only the one whose password was stored ends
  * anything, so the one that lost cannot end the session the other's sign-in has just been
- * given. The cost is the one a change has too: a failure between the store and the sweep
- * leaves the earlier sessions alive under the new password (ADR 0041).
+ * given.
+ *
+ * **A sweep that fails is tried again, and then said.** The password is stored by then and
+ * cannot be taken back, so the sweep is tried `EXPIRED_PASSWORD_SWEEP_ATTEMPTS` times, a few
+ * tens of milliseconds apart. If none works the answer is `service.unavailable` (503), nobody
+ * is signed in, and an error is logged with the environment and the user's id: the password
+ * is the new one, and the sessions made under the old one live on until they end by
+ * themselves or an administrator ends them (`DELETE /v1/admin/users/:userId/sessions`).
+ * Nothing remembers that the sweep is owed (ADR 0041).
  *
  * @param deps - Users, password policy, sessions, denylist, mailer, limiter, ids and clock.
  * @param scope - The project and environment.
  * @param user - The user, as the sign-in loaded them.
  * @param password - The new password; must meet the policy.
  * @param actor - The user themselves, with the request's origin, for the audit log.
- * @param proven - The hash of the expired password the sign-in proved. Nothing is compared
- *   or stored unless it is still the stored hash.
- * @throws AuthError `flow.invalid_step` when the stored password is no longer `proven`.
+ * @param setAt - When the expired password the sign-in proved was set, in milliseconds.
+ *   Nothing is compared or stored unless the stored password is still that one.
+ * @throws AuthError `flow.invalid_step` when the stored password is no longer the one the
+ *   sign-in proved.
+ * @throws ServiceUnavailableError when the password was stored and the user's earlier
+ *   sessions could not be ended.
  * @throws NotFoundError, or a `password.*` ServiceException with per-field `errors`
  *   (`password.reused` among them).
  * @throws RateLimitError when the user's allowance of history comparisons is used up.
@@ -621,10 +671,29 @@ export async function replaceExpiredPassword(
   user: UserRecord,
   password: string,
   actor: Actor,
-  proven: string
+  setAt: number
 ): Promise<void> {
-  await replacePassword(deps, scope, user, password, actor, 'self', undefined, { proven })
-  await Sessions.revokeAllForUser(deps, scope, user.id, 'password_changed', actor)
+  await replacePassword(deps, scope, user, password, actor, 'self', undefined, { setAt })
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await Sessions.revokeAllForUser(deps, scope, user.id, 'password_changed', actor)
+      return
+    } catch {
+      if (attempt >= EXPIRED_PASSWORD_SWEEP_ATTEMPTS) {
+        break
+      }
+      await Bun.sleep(EXPIRED_PASSWORD_SWEEP_PAUSE_MS * attempt)
+    }
+  }
+  // Fixed words and two ids: nothing of the failure, which may hold a connection string. This
+  // line is the only trace that the sessions are still to be ended: never drop or quieten it.
+  logger.error(
+    'a password that replaced an expired one was stored, and the user’s earlier sessions could not be ended',
+    { environmentId: scope.environmentId, userId: user.id }
+  )
+  throw new ServiceUnavailableError({
+    internalMessage: 'sessions not ended after an expired password was replaced',
+  })
 }
 
 /**

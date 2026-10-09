@@ -568,4 +568,12 @@ Before finishing any change here, confirm each item holds and has a test:
     while the attempt waits; a hash upgrade leaving the password expired; a reset, an
     administrator's set-password and a signed-in change each clearing the expiry; the other
     sign-in methods not stopped; two requests at once ending in one session; and every
-    earlier session ended after the store.
+    earlier session ended after the store. A hash upgrade that lands before the comparison
+    and one that lands between it and the write (the attempt completes, counted once); a
+    replacement in each of those places (refused); a replacement stamped with the very
+    instant the expired password was set, before the step and in both places (refused: the
+    store moves the time by a millisecond, tested in the store suite for both adapters). The
+    sweep failing once and twice (completes, sessions ended) and every time (503 after
+    exactly three tries, the fixed log line with two ids and nothing of the failure, the
+    new password stored, the earlier sessions alive: pinned, not fixed), and a hook that
+    refuses after the store.

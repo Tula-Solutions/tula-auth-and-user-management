@@ -17,6 +17,11 @@ older than the period is asked for a new one at their next sign-in with it. Nobo
 out and no email is sent. Only a sign-in with the password is affected: an emailed or texted
 code, a link, a passkey and a provider sign in whatever the password's age.
 
+**Upgrade clients before the server.** An app built on a `@tula/react` or `@tula/core` older
+than this release shows "This step is not supported" where the new password is asked for,
+so a user with an expired password cannot sign in through it. Or set `expiryDays` to `null`
+until every client is upgraded.
+
 - `@tula/contract`: the `needs_new_password` step gains an optional `reason`
   (`NewPasswordReasonSchema`: `expired`). With a reason its `strategies` is empty; a
   password reset's step is unchanged. A new operation,

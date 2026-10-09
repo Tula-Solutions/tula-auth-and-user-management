@@ -185,6 +185,19 @@ A password that is set, reset or changed is announced to the owner by email
     count from the last time their row was written ([upgrading](../self-host.md#upgrading)).
   - If the account's password is replaced some other way while the attempt waits (a reset,
     an administrator), the attempt ends with `flow.invalid_step`: start the sign-in again.
+  - **The new password can be stored and the sign-in still fail.** After the password is
+    stored the server ends the user's earlier sessions (three tries), then asks the
+    `before_session` hook and creates the session. If the sessions cannot be ended the
+    answer is `service.unavailable` (503): the password is the new one, the sessions made
+    under the old one stay alive until they end or are ended, and the server logs an error
+    with the environment's and the user's id. End them with
+    `DELETE /v1/admin/users/{userId}/sessions`. If a hook refuses, or the session cannot be
+    created, the password is the new one and the earlier sessions have ended. Either way the
+    user signs in again with the new password; sending the request again answers
+    `flow.invalid_step`.
+  - **Clients older than this feature do not know the step**: an older `@tula/react` shows
+    "This step is not supported", so a user with an expired password cannot sign in through
+    it. Upgrade the clients before setting `expiryDays`.
   - There is no warning before a password expires and no grace period.
 - Sign-in failures are always `auth.invalid_credentials`: nothing says whether the address has
   an account.
@@ -310,7 +323,8 @@ Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/re
 | `password.too_short` | One of the `password.*` codes: the new password breaks a rule of the policy. The response's `errors` list names each broken rule. |
 | `password.breached` | The password is in a known breach (or the common-password list). Choose another. |
 | `password.reused` | The new password is the user's current one or one of the last `params.history` they had (`password.history` in the policy). Choose one that was not used before. Nothing says which one matched. A password that replaces an expired one gets it for the expired password itself, whatever the history. |
-| `flow.invalid_step` | On `…/new-password`: the sign-in is not waiting for a new password, or the account's password was replaced some other way since the attempt proved it. Start the sign-in again. |
+| `flow.invalid_step` | On `…/new-password`: the sign-in is not waiting for a new password, or the account's password was replaced some other way since the attempt proved it (also by this attempt's own earlier request, whose answer was an error after the password was stored). Start the sign-in again. |
+| `service.unavailable` | On `…/new-password`, among its other causes: the new password was stored and the user's earlier sessions could not be ended. Nobody was signed in. Sign in again with the new password; an administrator ends the earlier sessions (`DELETE /v1/admin/users/{userId}/sessions`). |
 | `password.not_set` | The account has no password (it signed up without one or with a provider). "Forgot password" gives it one. |
 | `verification.invalid_code` | Wrong emailed code; `params` says how many attempts are left. |
 | `verification.too_many_attempts` | The code is spent. Ask for a new one. |

@@ -29,6 +29,14 @@ A password's age is counted from `credentials.secret_changed_at`, a column of it
   parameters after a sign-in. That is the same password, and `updated_at`, which it does
   move, is why `updated_at` could not be used.
 
+**A replacement always moves it.** `setPasswordHash` stores the later of the writer's time
+and the stored time plus one millisecond, in both adapters (the shared store suite holds
+it). So "set at the same time" means "the same password" whatever a clock does: two writes
+inside one millisecond, a clock put back, the fixed clock of a test. The step that replaces
+an expired password rests on this (below). The price is that a password stored by a writer
+whose clock is behind the stored time is stamped a millisecond after its predecessor, not
+with the writer's time.
+
 The column was added by migration `0028`. For the rows that existed, the true time was not
 recorded anywhere, so the migration copies `updated_at`: the last time the row was written,
 which is the last change **or** the last hash upgrade, whichever was later. So a backfilled
@@ -102,13 +110,25 @@ browser attempt), the step, `requireProvenMethod` (the password method still on)
 environment's ceiling, then:
 
 1. **The stored password is still the one the attempt proved.** The credential's
-   `secret_changed_at` must equal `expiredPasswordSetAt`, `Passwords.assertNotReused` is
-   handed the hash that was read (`proven`) and refuses, before anything is counted or
-   verified, when the stored hash is another, and the write is a compare-and-set on it.
-   Otherwise `flow.invalid_step` (409): the attempt has proven nothing about the password
-   the account has now. Without this an attempt left on the step by whoever knew the old
-   password could, for the ten minutes it lives, overwrite a password the owner set
+   `secret_changed_at` must equal `expiredPasswordSetAt`; the hash read with that time is
+   handed to `Passwords.assertNotReused` (`proven`), which refuses, before anything is
+   counted or verified, when the stored hash is another; and the write is a compare-and-set
+   on it. Otherwise `flow.invalid_step` (409): the attempt has proven nothing about the
+   password the account has now. Without this an attempt left on the step by whoever knew
+   the old password could, for the ten minutes it lives, overwrite a password the owner set
    meanwhile by reset, or ask through `password.reused` whether a candidate is the new one.
+
+   **The time says which password; the hash says nothing moved since it was read.** The
+   hash of one password changes (the upgrade after a sign-in in another tab), so a hash
+   that moved is not by itself a replacement. When either hash check misses, the time is
+   read again with the hash: still the attempt's time means the same password under a new
+   hash, and the step carries on with that hash (at most three passes, the comparison
+   counted once); any other time is a replacement and ends in `flow.invalid_step`. The
+   time alone would not be enough (a replacement could land between its read and the
+   write), and neither would the hash alone (it cannot tell an upgrade from a
+   replacement): each pass needs the time to be the attempt's **and** the store's
+   compare-and-set on the hash read with it to hold. That the time cannot be the same for
+   another password is the store's rule above, not an assumption about clocks.
 2. The user is not banned (`auth.user_banned`), and has not confirmed a second factor since
    the attempt passed that point (`flow.invalid_step`: the attempt would otherwise get a
    session past a factor it never proved).
@@ -132,13 +152,38 @@ page. An operator who wants that closed sets a history; the docs say so.
 **Every session of the user ends, after the password is stored.** Not "every other": the
 sign-in that asked has none yet. After, not before as a reset does: of two requests at once
 only the one whose password was stored ends anything, so the loser cannot end the session
-the winner's sign-in was just given. The cost is a change's own: a failure between the store
-and the sweep leaves earlier sessions alive under the new password.
+the winner's sign-in was just given.
 
-`before_session` and `before_token` are asked where they always are, in `finish` and
-`Sessions.create`: after the password is stored. A hook that then refuses leaves the new
-password in place and no session; the user signs in again with it. That is the same shape as
-a reset refused by a hook.
+### When the request fails after the password is stored
+
+The store cannot be taken back, and two things still follow it.
+
+**The sweep.** If ending the sessions fails it is tried again: three tries in all, 20 ms
+and then 40 ms apart (60 ms of waiting at most; a user is waiting, and a session store that
+is away for longer is not waited out by a request). If the third fails:
+
+- the answer is `service.unavailable` (503) and nobody is signed in;
+- the password **is** the new one, recorded and announced;
+- the sessions made under the old password are still alive, and stay so until they end by
+  their profile's limits, the user signs out of them, or an administrator ends them;
+- an error is logged, with fixed words, the environment's id and the user's id and nothing
+  else: "a password that replaced an expired one was stored, and the user's earlier
+  sessions could not be ended". An operator who sees it ends that user's sessions with
+  `DELETE /v1/admin/users/{userId}/sessions`.
+
+Nothing remembers that the sweep is owed: no marker is stored and no later sign-in does it.
+A marker would be a second piece of state to keep true for a failure that needs the session
+store to be away for three tries right after the user store answered; the log line and the
+503 were preferred. A retry of the request does not do it either: the attempt proved the
+old password, the account has the new one, and the answer is `flow.invalid_step`.
+
+**The session.** `finish` then spends the attempt, asks `before_session` and creates the
+session (`before_token` inside it). A hook that refuses or fails, a session limit that
+refuses the newest, or a store that is away leaves the new password in place, the earlier
+sessions ended and no session.
+
+In both cases the user signs in again with the new password, which is not expired. That is
+the same shape as a reset refused by a hook.
 
 ### What clears an expiry
 
@@ -173,9 +218,13 @@ The row this ADR adds to the table of [ADR 0038](0038-password-history.md):
   password expires go on: expiry is a rule about signing in, not about being signed in.
 - `expiryDays` has no upper bound in the contract. This ADR did not add one.
 - Of two requests at once on one attempt, one stores its password and gets the session.
-  The other's write misses the compare-and-set on the hash, is compared again, finds the
+  The other's write misses the compare-and-set on the hash, reads the time again, finds the
   stored password is no longer the one the attempt proved and is refused
   (`flow.invalid_step`) with nothing stored and no session ended.
+- **A client older than this release cannot finish a sign-in with an expired password.** An
+  older `@tula/react` shows "This step is not supported" for the step, and an app on an
+  older `@tula/core` has no call for it. Upgrade the clients before the server, or keep
+  `expiryDays` at `null` until they are.
 - The conformance scenario "password expiry" needs a day to pass, and a live server's clock
   cannot be moved over HTTP. The scenario format gained `needsTestClock`: a scenario with a
   `wait` longer than ten minutes must set it, and a target whose `wait` is a real sleep
