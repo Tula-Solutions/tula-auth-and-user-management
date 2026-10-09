@@ -89,6 +89,8 @@ export interface TestSettings {
     }
   }
   signUp?: { password: 'required' | 'optional' }
+  /** Rules of the password policy to change; the rest stays the default policy. */
+  password?: { preset: 'custom'; history: number }
   mfa?: { policy: 'off' | 'optional' | 'required' }
   /** Text messages (ADR 0037). Off, with no country allowed, when left out. */
   sms?: { enabled: boolean; allowedCountries: string[]; dailyMessageLimit?: number }
@@ -115,6 +117,9 @@ export async function useSettings(
   const response = await request.post(`${API_URL}/__test/settings`, { data: settings })
   expect(response.ok()).toBe(true)
 }
+
+/** The last three passwords, the current one included, cannot be chosen again (ADR 0038). */
+export const HISTORY_OF_THREE: TestSettings = { password: { preset: 'custom', history: 3 } }
 
 /** Text messages on, to United States numbers only. */
 export const SMS_ON: TestSettings = { sms: { enabled: true, allowedCountries: ['US'] } }

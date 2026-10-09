@@ -39,6 +39,7 @@ import {
   FormError,
   type HeadingLevel,
   PasswordField,
+  passwordHistoryRule,
   Root,
   Status,
   useScreenChanged,
@@ -699,6 +700,8 @@ function NewPasswordScreen(props: {
   const [local, setLocal] = useState<{ code?: string; password?: string } | null>(null)
   const [resent, setResent] = useState(false)
   const [action, setAction] = useState<'submit' | 'resend' | null>(null)
+  // Whether the password was retyped since the last answer: a refusal is about what was sent.
+  const [edited, setEdited] = useState(false)
   const checklist = usePasswordChecklist(password, { email })
   const limits = useRetryAfter<'submit' | 'resend'>(reset.error)
   const placed = placeErrors(reset.error, fieldResolver(['code', 'password']))
@@ -715,6 +718,7 @@ function NewPasswordScreen(props: {
       return
     }
     setLocal(null)
+    setEdited(false)
     limits.mark('submit')
     setAction('submit')
     const next = await reset.submit({ code, password })
@@ -772,9 +776,11 @@ function NewPasswordScreen(props: {
           onValue={(value) => {
             setPassword(value)
             setLocal(null)
+            setEdited(true)
           }}
           errors={local?.password ? [local.password] : local ? [] : placed.fields.password}
           checks={checklist.checks}
+          history={passwordHistoryRule(checklist.policy, reset.error, edited)}
           required
         />
         <Button

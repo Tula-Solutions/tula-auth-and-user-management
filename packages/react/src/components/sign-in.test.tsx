@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { render, screen, waitFor } from '@testing-library/react'
+import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import { Activity } from 'react'
 import { TulaProvider } from '../context'
 import {
@@ -453,6 +454,46 @@ describe('<SignIn> forgotten password', () => {
     expect(await screen.findByRole('heading', { name: 'This step is not supported' })).toBeTruthy()
     await w.user.click(screen.getByRole('button', { name: 'Start again' }))
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
+  })
+
+  test('reset: the history rule waits for the server, fails on `password.reused`, and waits again', async () => {
+    const reused = 'You have used this password recently. Choose a different one.'
+    const w = world({
+      policy: { ...PASSWORD_POLICY_PRESETS.recommended, preset: 'custom', history: 3 },
+    })
+    w.mount(<SignIn />)
+    await toReset(w)
+    w.api.on(ROUTE.reset, () => started('password_reset', NEW_PASSWORD_STEP))
+    await w.user.click(screen.getByRole('button', { name: 'Send code' }))
+    const password = (await screen.findByLabelText('New password')) as HTMLInputElement
+    const line = () => {
+      const item = screen.getByText('Not one of your last 3 passwords', { exact: false })
+      return item.closest('li') as HTMLElement
+    }
+    await waitFor(() => expect(line().getAttribute('data-state')).toBe('pending'))
+    expect(line().textContent).toBe(
+      'Checked when you save: Not one of your last 3 passwords (Checked when you save)'
+    )
+
+    w.api.on(ROUTE.resetSubmit, () =>
+      failure(422, 'password.reused', {
+        params: { history: 3 },
+        errors: [
+          { field: 'password', code: 'password.reused', message: reused, params: { history: 3 } },
+        ],
+      })
+    )
+    await w.user.type(screen.getByLabelText('Verification code'), '123456')
+    await w.user.type(password, PASSWORD)
+    expect(line().className).not.toContain('tula-is-met')
+    await w.user.click(screen.getByRole('button', { name: 'Reset password' }))
+    expect((await screen.findByRole('alert')).textContent).toContain(reused)
+    expect(line().getAttribute('data-state')).toBe('failed')
+    expect(line().textContent).toBe('Not met: Not one of your last 3 passwords')
+    await expectFocus(password)
+    // The code is still good: another password can be tried with it.
+    await w.user.type(password, '-again')
+    expect(line().getAttribute('data-state')).toBe('pending')
   })
 
   test('"Back to sign in" leaves the reset; an empty email is refused locally', async () => {

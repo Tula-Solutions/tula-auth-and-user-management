@@ -16,6 +16,7 @@ import {
   InvalidEmailError,
   NotFoundError,
   RateLimitError,
+  ServiceUnavailableError,
 } from '~/exceptions'
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
@@ -29,7 +30,7 @@ import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import type { UserRecord } from '~/ports/user-repository'
+import type { PasswordOutcome, UserRecord } from '~/ports/user-repository'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
@@ -364,6 +365,13 @@ export async function remove(
 type PasswordDeps = RevocationDeps &
   Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter'>
 
+/**
+ * How often storing a password is tried when the stored password moved between the comparison
+ * with the user's previous passwords and the write (ADR 0038). Each pass needs another password
+ * change, or a hash upgrade at sign-in, of the same user to land inside it.
+ */
+const PASSWORD_STORE_ATTEMPTS = 3
+
 /** How a password notice names each way a password is stored. */
 const CHANGED_BY = { admin_reset: 'admin', self: 'self', reset: 'reset' } as const
 
@@ -379,6 +387,12 @@ const CHANGED_BY = { admin_reset: 'admin', self: 'self', reset: 'reset' } as con
  * still does, so no path stores a password without it and a later failure (ending the other
  * sessions, clearing the lockout) cannot leave a changed password unannounced. The notice is
  * sent in the background and cannot fail or delay the change.
+ *
+ * Where the environment's `password.history` is at least 1, a user's own password (a change, a
+ * reset) is refused with `password.reused` when it is one of their last that many, the current
+ * one included; an administrator's is not compared. Either way the store keeps the hash that
+ * stops being current and deletes what the policy no longer keeps, in the transaction that
+ * stores the new one (ADR 0038).
  */
 async function replacePassword(
   deps: PasswordDeps,
@@ -403,22 +417,56 @@ async function replacePassword(
     firstName: user.firstName ?? undefined,
     lastName: user.lastName ?? undefined,
   })
+  const { history } = await Passwords.policy(deps, scope)
+  // An administrator's password is kept in the history and never refused by it: they do not
+  // know the user's old passwords, and a refusal would tell them a candidate is one of them.
+  const compared = history > 0 && method !== 'admin_reset'
+  // Last of the checks, and only here: whoever reaches it has proven the account is theirs
+  // and offered a password the policy accepts (ADR 0038).
+  let judgedAgainst = compared
+    ? await Passwords.assertNotReused(deps, scope, user.id, password, history)
+    : undefined
   // Hash first: a failure here must leave whatever `beforeStore` spends untouched.
   const passwordHash = await Passwords.hash(password)
   await beforeStore?.()
   const now = deps.clock.now()
-  const outcome = await deps.users.setPasswordHash(
-    scope.environmentId,
-    user.id,
-    passwordHash,
-    now,
-    Audit.entry(deps, scope, {
-      type: 'user.password_changed',
-      actor,
-      target: { type: 'user', id: user.id },
-      data: { method },
+  let outcome: PasswordOutcome | 'stale' | null = 'stale'
+  for (let pass = 0; pass < PASSWORD_STORE_ATTEMPTS && outcome === 'stale'; pass++) {
+    if (pass > 0) {
+      // The password changed between the comparison and the write (another change, or a hash
+      // upgrade at sign-in): compare again with what is stored now. Not counted twice.
+      judgedAgainst = await Passwords.assertNotReused(
+        deps,
+        scope,
+        user.id,
+        password,
+        history,
+        false
+      )
+    }
+    outcome = await deps.users.setPasswordHash(
+      scope.environmentId,
+      user.id,
+      passwordHash,
+      now,
+      Audit.entry(deps, scope, {
+        type: 'user.password_changed',
+        actor,
+        target: { type: 'user', id: user.id },
+        data: { method },
+      }),
+      {
+        keep: Passwords.previousKept(history),
+        ...(compared && { ifCurrent: judgedAgainst ?? null }),
+      }
+    )
+  }
+  if (outcome === 'stale') {
+    // Nothing was stored. Never store a password on a comparison that no longer holds.
+    throw new ServiceUnavailableError({
+      internalMessage: 'the password kept changing while its history was being compared',
     })
-  )
+  }
   if (outcome === null) {
     // The user was deleted after the caller loaded them. Never report success for a password
     // that was not stored.

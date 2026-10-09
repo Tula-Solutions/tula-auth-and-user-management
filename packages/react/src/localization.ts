@@ -229,6 +229,12 @@ export interface TulaLocalization {
     summary: string
     /** One line per rule; `{min}` and `{max}` come from the policy. */
     rules: Record<PasswordRule, string>
+    /** The history rule, which only the server can judge. `{count}`: the policy's number. */
+    history: string
+    /** The history rule where the policy remembers only the current password. */
+    historyCurrent: string
+    /** The state of the history rule before the server has answered. */
+    checkedOnSave: string
   }
   /** Two-step verification: the second factor at sign-in, enrolment, backup codes. */
   mfa: {
@@ -612,6 +618,9 @@ export const EN_LOCALIZATION: TulaLocalization = {
       repeated_characters: 'No more than {max} repeated characters in a row',
       sequence: 'No sequences like "abcd" or "1234"',
     },
+    history: 'Not one of your last {count} passwords',
+    historyCurrent: 'Not your current password',
+    checkedOnSave: 'Checked when you save',
   },
   mfa: {
     secondFactorTitle: 'Two-step verification',

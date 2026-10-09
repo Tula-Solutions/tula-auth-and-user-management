@@ -261,7 +261,8 @@ export function describeActivityLog(
           user.id,
           '$argon2id$new',
           later(1),
-          activity(ctx.a, 'user.password_changed', target, { data: { method: 'reset' } })
+          activity(ctx.a, 'user.password_changed', target, { data: { method: 'reset' } }),
+          { keep: 0 }
         )
       expect(await change()).toBe('created')
       expect(await change()).toBe('replaced')
@@ -286,7 +287,8 @@ export function describeActivityLog(
           userId,
           '$argon2id$new',
           later(1),
-          activity(tenant, 'user.password_changed', target)
+          activity(tenant, 'user.password_changed', target),
+          { keep: 0 }
         )
       expect(await change(ctx.a)).toBe('replaced')
       // Unknown in the other environment: nothing replaced, nothing recorded.

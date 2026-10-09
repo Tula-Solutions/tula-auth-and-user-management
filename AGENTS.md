@@ -876,6 +876,70 @@ signs in with one (TULA-27), and it is **not unique**.
   not only that it was not skipped: a new one is added to those lines of
   `.github/workflows/ci.yml`.
 
+### Password history (`modules/password`, see ADR 0038)
+
+`password.history: N` refuses, as a user's new password, their current one and the N − 1
+before it; `0` is off. The server keeps `Passwords.previousKept(N)` previous hashes per user
+in `password_history`.
+
+- **One place compares and one place writes.** `Users.replacePassword` is the only caller of
+  `Passwords.assertNotReused` and of `users.setPasswordHash`. A user's own password (a
+  change, a reset) is compared; **an administrator's is recorded and never refused** (a
+  refusal would tell them a candidate is one of the user's old passwords). A first password
+  is compared with nothing and keeps nothing. A new path that stores a password over another
+  goes through `replacePassword` and gets a row in ADR 0038's table.
+- **The comparison is the last check**: after the caller proved what its route asks for (the
+  current password for a change, the emailed code for a reset) and after `Passwords.assess`,
+  before the hash and before a reset's code is spent. Never move it earlier (an
+  unauthenticated request must not reach N verifications) or later (a refusal must not spend
+  the proof).
+- **A reset's proof is the inbox alone, and that is accepted.** A reset stores its password
+  before a second factor is asked for, so the holder of only the inbox of an account with a
+  second factor reaches the comparison and learns from `password.reused` that a candidate is
+  one of the last N. What bounds it: ten comparisons an hour per user, and a candidate that
+  is not refused really replaces the password (every session ends, the owner is told).
+  Never skip the comparison for users with a second factor (they alone could then reuse a
+  password through a reset); ADR 0038 has the argument and a test pins it.
+- **What a reset spends and ends happens once, before the first write** (`beforeStore`: the
+  code, every session). A refusal on a later pass and the 503 leave the code spent and the
+  sessions ended with the password unchanged: stated in ADR 0038, asserted by the tests of
+  "a password that moved while it was being compared". Never move either after the write.
+- **Every stored hash is verified, one after another, with no early exit**, and the
+  verifications are never run side by side (each holds 64 MiB). They are not padded to N.
+- **`password.reused` carries the policy's number and nothing else.** Never which password
+  matched, how many did or an index: not in the error, a log line, an audit entry or an
+  event. A refused change is not recorded.
+- **The comparison is counted per user** (`PASSWORD_HISTORY_CHECKS_PER_HOUR`, just before
+  the verifications, only for a user who has a password). It is what bounds the cost of a
+  history of `MAX_PASSWORD_HISTORY` (24): the routes' own limits are per address. Never
+  raise the ceiling or drop the limit without measuring again (ADR 0038 has the numbers).
+- **The store keeps the old hash and trims in the transaction that stores the new one**
+  (`setPasswordHash`'s `history.keep`), under the user's row lock (`FOR NO KEY UPDATE`), and
+  the write is a compare-and-set on the hash the comparison was made against (`ifCurrent`):
+  on `'stale'` the service compares again, uncounted, and after `PASSWORD_STORE_ATTEMPTS`
+  answers 503 with nothing stored. Never store a password on a comparison that no longer
+  holds.
+- **`upgradePasswordHash` adds no history row** (it is the same password), **and
+  `markEmailVerified` with `removePassword` deletes the user's history** in its transaction
+  (the removed password was never the owner's). Rows go with their user by cascade.
+- **A user has one row at a position, and the database says so**
+  (`password_history_user_position_unique`, `DEFERRABLE INITIALLY IMMEDIATE`, hand-written
+  in migration 0026 because Drizzle cannot declare it). Never replace it with a plain unique
+  index: the shift `position = position + 1` is one statement and a plain index refuses it.
+- **The purge never waits for a row a password change holds** (`FOR UPDATE SKIP LOCKED`, the
+  batch built once as an array): rows it passes over go in a later round, so a return below
+  the limit does not mean nothing is left. `storedPasswords` is two reads and no snapshot;
+  the compare-and-set of the write is what covers a change between them.
+- **A row is its `position`** (1 is the password before the current one). The purge of what
+  a lowered number no longer keeps is `users.deletePasswordHistoryBeyond(environment, keep,
+  limit)`, called from the retention job only, with the number read **past the settings
+  cache**; a stored number that is not an integer from 0 to 24 deletes nothing. Raising the
+  number brings nothing back, and the docs say so.
+- **The React checklist never draws the rule as met** (`passwordHistoryRule`,
+  `PasswordField`'s `history`): waiting for the server, or refused by it, on the account
+  page and the reset; not at a sign-up. A refusal is about the password that was sent: the
+  line waits again once the field is edited.
+
 ### React SDK (see ADR 0022)
 
 - **Dialogs that must outlive a page belong to the provider.** The step-up dialog and the
@@ -1498,7 +1562,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   from `events` to it. The database bounds both deletes itself (`events_retention_floor`:
   settled and more than a day old; `webhook_deliveries_retention_floor`: not `pending` and
   more than a week old). And the counts of texted codes (`sms_code_counts`) 90 days after
-  their day (`SMS_COUNT_RETENTION`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)).
+  their day (`SMS_COUNT_RETENTION`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)),
+  and the hashes of previous passwords beyond what an environment's `password.history`
+  keeps ([ADR 0038](docs/adr/0038-password-history.md)).
 - **An environment's audit entries are deleted only by the retention job, and only past the
   period the environment set** (`audit.retentionDays`, 1 to 3650 days; `null`, the default,
   keeps them for ever; [ADR 0012](docs/adr/0012-events-and-audit-log.md),
@@ -1597,7 +1663,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   JWT templates, the `ext` namespace, reserved claims and the size cap:
   [ADR 0036](docs/adr/0036-jwt-templates.md); a phone number on an account, the SMS sender
   and its development inbox, and the `sms` settings:
-  [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md); webhooks (endpoints, the signing secret, the
+  [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md); the password history, what is
+  compared with it and what it costs: [ADR 0038](docs/adr/0038-password-history.md);
+  webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
 - **A WebAuthn response is verified against the request's own origin.** `Passkeys.relyingParty`

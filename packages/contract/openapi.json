@@ -3504,6 +3504,7 @@
           "password.breached",
           "password.repeated_characters",
           "password.sequence",
+          "password.reused",
           "password.not_set",
           "verification.invalid_code",
           "verification.expired",
