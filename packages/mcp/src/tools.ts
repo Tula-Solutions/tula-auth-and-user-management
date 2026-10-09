@@ -193,8 +193,12 @@ const SETTINGS = S.object({
       identityChanged: S.boolean,
     }),
     mfa: S.object({ policy: S.string(20) }),
-    // Two-letter country codes, at most as many as there are countries.
-    sms: S.object({ enabled: S.boolean, allowedCountries: S.array(S.string(2), 100) }),
+    // Two-letter country codes, at most as many as there are countries; the most messages a day.
+    sms: S.object({
+      enabled: S.boolean,
+      allowedCountries: S.array(S.string(2), 100),
+      dailyMessageLimit: S.number,
+    }),
     passkeys: S.object({ rpId: S.string(253) }),
     sessions: S.object({
       profiles: S.record(SESSION_PROFILE, 20),

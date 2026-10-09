@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from './password-policy'
-import { isSmsCountry, SMS_COUNTRIES } from './phone'
+import {
+  DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
+  isSmsCountry,
+  MAX_SMS_DAILY_MESSAGE_LIMIT,
+  SMS_COUNTRIES,
+} from './phone'
 import { SessionSettingsSchema, StoredSessionSettingsSchema } from './session-profile'
 
 /** App name used until an environment sets its own. Emails and prebuilt screens show it. */
@@ -369,6 +374,20 @@ const Sms = z.object({
    * Canadian numbers (ADR 0037).
    */
   allowedCountries: SmsCountries.default([]),
+  /**
+   * The most text messages the server sends for this environment in one day (UTC, from
+   * midnight). Once it is reached nothing more is sent until the next day: it is the fixed
+   * maximum an attack on the environment can cost (ADR 0037). On by default
+   * ({@link DEFAULT_SMS_DAILY_MESSAGE_LIMIT}), and there is no value that switches it off.
+   * The hourly limits per environment and per destination prefix are shares of it, so this
+   * one number scales them all.
+   */
+  dailyMessageLimit: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_SMS_DAILY_MESSAGE_LIMIT)
+    .default(DEFAULT_SMS_DAILY_MESSAGE_LIMIT),
 })
 
 const password = PasswordPolicySchema.default(PASSWORD_POLICY_PRESETS.recommended)
@@ -422,8 +441,9 @@ const minLengthFloor = {
  * - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
  * - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
  *   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
- * - `sms`: whether text messages are sent (`enabled`, off by default) and to which countries
- *   (`allowedCountries`, empty by default, which sends nothing). See ADR 0037.
+ * - `sms`: whether text messages are sent (`enabled`, off by default), to which countries
+ *   (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
+ *   most (`dailyMessageLimit`, 500 by default). See ADR 0037.
  */
 export const EnvironmentSettingsSchema = z
   .strictObject({

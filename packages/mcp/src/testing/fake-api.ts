@@ -121,7 +121,7 @@ export function defaultAnswers(): Answers {
         audit: { retentionDays: 90 },
         notifications: { passwordChanged: true, newSignIn: true },
         mfa: { policy: 'optional' },
-        sms: { enabled: true, allowedCountries: ['US', 'DE'] },
+        sms: { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 500 },
         passkeys: { rpId: null },
         sessions: { profiles: { web: { type: 'hybrid', accessTokenTtl: '60s' } }, maxPerUser: 5 },
       },

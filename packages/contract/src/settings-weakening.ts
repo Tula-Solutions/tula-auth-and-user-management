@@ -169,8 +169,19 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
 }
 
 /**
- * Where replacing `before` with `after` makes an account easier to take over, or a takeover
- * harder to notice or to look into afterwards. It is the one definition of "weakened": the server's audit entry carries
+ * Where the `sms` section lets text messages cost more than before (ADR 0037):
+ * `sms.dailyMessageLimit` is raised. It is the most an attack on the environment can make it
+ * send in a day, and no value removes it. Lowering it is not listed, and neither is the
+ * switch or the country list: the limit holds wherever messages go.
+ */
+function smsWeakenings(before: EnvironmentSettings['sms'], after: EnvironmentSettings['sms']) {
+  return after.dailyMessageLimit > before.dailyMessageLimit ? ['sms.dailyMessageLimit'] : []
+}
+
+/**
+ * Where replacing `before` with `after` makes an account easier to take over, a takeover
+ * harder to notice or to look into afterwards, or an attack on the environment dearer for
+ * its operator. It is the one definition of "weakened": the server's audit entry carries
  * `weakened: true` exactly when this is not empty, and `tula diff` warns with these paths
  * before anything is applied.
  *
@@ -191,14 +202,17 @@ function sessionWeakenings(before: SessionSettings, after: SessionSettings): str
  * - `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or
  *   one of their claims changes its source or its constant (ADR 0036). It is listed because
  *   an application decides on those claims: taking one away can lock users out, and opens up
- *   an application that reads a missing claim as permission.
+ *   an application that reads a missing claim as permission;
+ * - `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
+ *   account easier to take: it enlarges what someone abusing the environment's SMS can make
+ *   its operator pay, which is why a change that does it is asked about like the others.
  *
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
  * measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
- * weakening. Nor is any change to `sms`: a phone number is contact data that no account is
- * signed in to or recovered with (ADR 0037), so neither switching SMS on or off nor a wider
- * or narrower country list makes an account easier to take.
+ * weakening. Nor is switching SMS on or off, or a wider or narrower country list: a phone
+ * number is contact data that no account is signed in to or recovered with (ADR 0037), and
+ * the daily limit bounds what the messages can cost wherever they go.
  *
  * @param before - The settings being replaced.
  * @param after - The new settings.
@@ -226,5 +240,6 @@ export function settingsWeakenings(
     paths.push('mfa.policy')
   }
   paths.push(...sessionWeakenings(before.sessions, after.sessions))
+  paths.push(...smsWeakenings(before.sms, after.sms))
   return paths
 }

@@ -21,6 +21,7 @@ import {
   WebOriginSchema,
 } from './environment-settings'
 import { PASSWORD_POLICY_PRESETS } from './password-policy'
+import { DEFAULT_SMS_DAILY_MESSAGE_LIMIT, MAX_SMS_DAILY_MESSAGE_LIMIT } from './phone'
 
 const accepts = (input: unknown) => EnvironmentSettingsSchema.safeParse(input).success
 
@@ -74,7 +75,7 @@ describe('EnvironmentSettingsSchema', () => {
       mfa: { policy: 'optional' },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
-      sms: { enabled: false, allowedCountries: [] },
+      sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -359,7 +360,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       mfa: { policy: 'optional' },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
-      sms: { enabled: false, allowedCountries: [] },
+      sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -653,10 +654,15 @@ describe('passkeys', () => {
 
 describe('sms', () => {
   test('is off and allows no country until an environment says otherwise', () => {
-    expect(DEFAULT_ENVIRONMENT_SETTINGS.sms).toEqual({ enabled: false, allowedCountries: [] })
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.sms).toEqual({
+      enabled: false,
+      allowedCountries: [],
+      dailyMessageLimit: DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
+    })
     expect(parseStoredEnvironmentSettings({ app: { name: 'Acme' } }).sms).toEqual({
       enabled: false,
       allowedCountries: [],
+      dailyMessageLimit: 500,
     })
   })
 
@@ -667,6 +673,7 @@ describe('sms', () => {
     expect(schema.parse({ sms: { enabled: true, allowedCountries: ['DE', 'US'] } }).sms).toEqual({
       enabled: true,
       allowedCountries: ['DE', 'US'],
+      dailyMessageLimit: 500,
     })
     for (const allowedCountries of [
       ['de'],
@@ -692,7 +699,11 @@ describe('sms', () => {
     const { settings, dropped } = readStoredEnvironmentSettings({
       sms: { enabled: true, allowedCountries: ['DE', 'de', 'ZZ', 'DE', 'US', 7], sender: 'x' },
     })
-    expect(settings.sms).toEqual({ enabled: true, allowedCountries: ['DE', 'US'] })
+    expect(settings.sms).toEqual({
+      enabled: true,
+      allowedCountries: ['DE', 'US'],
+      dailyMessageLimit: 500,
+    })
     expect(dropped).toBe(4)
     expect(readStoredEnvironmentSettings({ sms: null })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
@@ -702,6 +713,32 @@ describe('sms', () => {
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 1,
     })
+  })
+
+  test.each([
+    ['strict', EnvironmentSettingsSchema],
+    ['input', EnvironmentSettingsInputSchema],
+  ] as const)(
+    'the %s schema holds the daily limit to a whole number in its range',
+    (_name, schema) => {
+      for (const dailyMessageLimit of [1, 500, MAX_SMS_DAILY_MESSAGE_LIMIT]) {
+        expect(schema.parse({ sms: { dailyMessageLimit } }).sms.dailyMessageLimit).toBe(
+          dailyMessageLimit
+        )
+      }
+      // No value switches the limit off: not zero, not null, not a number past the maximum.
+      for (const dailyMessageLimit of [0, -1, 1.5, MAX_SMS_DAILY_MESSAGE_LIMIT + 1, null, '500']) {
+        const result = schema.safeParse({ sms: { dailyMessageLimit } })
+        expect(result.success).toBe(false)
+        expect(result.error?.issues[0]?.path).toEqual(['sms', 'dailyMessageLimit'])
+      }
+    }
+  )
+
+  test('a document stored before the daily limit existed has the default one', () => {
+    expect(
+      parseStoredEnvironmentSettings({ sms: { enabled: true, allowedCountries: ['DE'] } }).sms
+    ).toEqual({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 })
   })
 
   test('the client config has a place for whether a phone number can be added', () => {
