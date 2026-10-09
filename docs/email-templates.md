@@ -137,6 +137,8 @@ Which of them are sent at all is the environment's `notifications` setting.
 | `mfa_reset_by_admin` | An administrator reset two-step verification. | `appName`, `time` |
 | `backup_codes_regenerated` | New backup codes replaced the old ones. | `appName`, `time` |
 | `backup_code_used` | A backup code was used to sign in. | `appName`, `time`, `backupCodesLeft` |
+| `sms_factor_enabled` | A texted code became the account's second step. | `appName`, `time` |
+| `sms_factor_removed` | A texted code stopped being the account's second step (turned off, reset by an administrator, or its phone number removed or replaced). | `appName`, `time` |
 | `passkey_added` | A passkey was added. | `appName`, `time` |
 | `passkey_removed` | A passkey was removed. | `appName`, `time` |
 | `identity_linked` | A provider account was connected. | `appName`, `time`, `provider` |

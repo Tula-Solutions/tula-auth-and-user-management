@@ -177,6 +177,13 @@ paths:
   the screen asks with a button. The words never claim a message was sent ("if you can
   sign in with this number…"), and `auth.invalid_credentials` on this screen is said about
   the code, not about a password.
+- A texted code as the second step (`sms_code`, ADR 0025): the second-factor screen, the
+  step-up dialog and the account page ask for the message with a button and draw the code
+  field only after a send of that screen succeeded. **Nothing is texted on arrival**, also
+  where it is the only option. `@tula/core` never asks by itself
+  (`flow.prepareSecondFactor`, `session.prepareStepUp`, `mfa.startSms`). The account page
+  offers it only where `Factors.sms.available`, and says in words when an enrolled one is
+  not in use beside a stronger factor.
 - A passkey is listed among a screen's other ways only once the browser is known to have
   WebAuthn (`usePasskeySupport() === true`), on the first-factor, second-factor and step-up
   screens alike: "not ruled out yet" is for the screen itself, never for a link. The accepted

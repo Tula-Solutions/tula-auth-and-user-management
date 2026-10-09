@@ -506,11 +506,19 @@ Changes pending. Run `tula apply` to make them.
   every setting the file leaves out. A template of a kind this version of `tula` does not
   know is an unknown setting (`--allow-unknown`). Changing a template is not flagged as
   weakening security. A file with no template hashes as it did before templates existed.
+- `mfa.smsCode` left out of the file is the default, off: where the server has it on, the
+  plan switches it off, as for every setting the file leaves out. **Users whose second step
+  is a texted code then cannot sign in** until it is back on or an administrator resets
+  them ([two-step verification](methods/two-step-verification.md)); the plan does not flag
+  it, because nothing gets weaker. A file that leaves it out, or writes it off, hashes as
+  it did before the setting existed.
 - A secret is never shown. A provider line says `secret set from $NAME` or
   `stored secret kept`. `diff` does not even read the variable.
 - `! weakens security` uses the server's own definition (the one behind the audit log's
   `weakened` flag): a weaker password policy, a security notice switched off, an MFA policy
-  moved towards `off`, sessions that live longer, custom claims taken away from a profile's
+  moved towards `off`, a texted code switched on as the second step where the policy is
+  `required` after the change (`mfa.smsCode`: the policy can then be met with a text
+  message; under `optional` or `off`, and switched off, it is an ordinary change), sessions that live longer, custom claims taken away from a profile's
   sessions or redefined (`sessions.profiles.<name>.jwtTemplate`: a backend reads a missing
   claim as "no"; adding a template or a claim, and editing a template no profile uses, are
   ordinary changes), an audit retention period set or shortened, a higher daily limit of

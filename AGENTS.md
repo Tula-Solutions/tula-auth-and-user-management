@@ -978,7 +978,7 @@ keyed by kind). The layout is the server's.
   `renderTemplate`. A new rule goes there and nowhere else, with a row in
   `packages/contract/src/email-template.test.ts`.
 - **The only link in any email is the server's own `{{link}}`: nothing an operator writes
-  may read as one, in the subject or the body of any of the 24 kinds** (`readsAsLink`:
+  may read as one, in the subject or the body of any of the 26 kinds** (`readsAsLink`:
   `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
   `www.`, a letter or digit, a full stop and two letters with nothing between, or four
   groups of digits with full stops; combining marks are passed over wherever a letter may
@@ -2020,7 +2020,36 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   an error. Check codes only through `Mfa.verifyTotp` / `Mfa.verifyBackupCode`: they enforce
   "confirmed factors only" and the replay rule (a TOTP time step is accepted once, as a
   compare-and-set on `last_used_step`). A pending enrolment never counts as a factor.
-- **Every route that checks a TOTP or backup code counts the guess** under the one per-user key
+- **A texted code is the weakest second factor, and one function says so**
+  (`Mfa.isStrongSecondFactor`, with `Mfa.meetsSecondFactor` built on it; ADR 0025, "a texted
+  code as the second factor"). Never compare a method with `'sms_code'` anywhere else to
+  decide what a user is asked for. `Mfa.secondFactors` lists `sms_code` **alone or not at
+  all**: beside an authenticator app or a passkey in force it is dormant, neither offered
+  nor accepted, at a sign-in, a reset and a step-up. A texted code records `sms` in `amr`
+  and **never `mfa`**; where it is a user's only second factor a session must hold `sms`
+  and something that is not `sms` (two texted codes are one phone). It never removes or
+  resets a factor and is never a recovery path; the admin reset removes it too.
+- **`mfa.smsCode` is off by default and is asked on every step that sends or accepts such a
+  code** (`Mfa.requireSmsFactor`: the switch, then `Settings.requireSms`, then
+  `Sms.requireSender`), before anything is counted, spent or sent. **Off means refused,
+  never skipped**: `secondFactors` keeps listing an enrolled texted code when the switch,
+  text messages or the number's country go away, so its user is locked out rather than let
+  in with one factor. Switching it on is a weakening only where the policy is `required`
+  after the change (`settingsWeakenings`: `mfa.smsCode`).
+- **A texted second-factor code is issued in one place, `Mfa.textSecondFactorCode`**, for
+  its three purposes (`sms_factor_enrolment`, `sms_second_factor`, `sms_step_up`): through
+  `Sms.sendCode` with the asker `second_factor`, `Verification.LIMITED_BY_DELIVERY`, a
+  keyed hash that covers what asked (the session or the attempt) and the number, the send
+  awaited, and no token stored for a message that was not taken. Nothing texts a code by
+  arriving at a step: a client asks (`second-factor/prepare`, `step-up/sms-code`,
+  `me/factors/sms`). Keep the cross-purpose tests in `modules/mfa/sms-factor.test.ts`.
+- **The texted factor is the account's proven number and nothing else**
+  (`users.sms_factor_enabled_at`, on only with a number: `users_sms_factor_needs_number`).
+  No request names a number for it, and `setPhoneNumber` / `removePhoneNumber` clear it in
+  their own transaction with its activity (`user.sms_factor_removed`). It is enrolled only
+  by a signed-in user with no strong factor, after a step-up, never inside a sign-in
+  (`ENROLMENT_METHODS` stays `['totp']`).
+- **Every route that checks a TOTP, backup or texted second-factor code counts the guess** under the one per-user key
   `Mfa.secondFactorLockKey` (`CREDENTIAL_LOCKOUT`), before the check, and clears it on success.
 - **Sensitive account changes need a recent authentication.** Put `requireRecentAuth()`
   (`~/middleware/recent-auth`) after `sessionAuth()` on any route that changes how an account
