@@ -508,7 +508,7 @@ nothing an operator would not put on that screen.
 
 - `app.supportEmail` is included because a sign-in screen links to it ("Need help?") and every
   email already shows it. It is `null` when none is set.
-- `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`), for
+- `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`), for
   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
 - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`). It
   is an array of plain strings, not an enum, so a client built against this version keeps
@@ -2925,7 +2925,7 @@ _constant_, defined in `packages/contract/src/oauth.ts`
 The OAuth providers an environment can configure with its own credentials (ADR 0026).
 
 ```ts
-const OAUTH_PROVIDERS: readonly ["google", "github", "apple", "microsoft"]
+const OAUTH_PROVIDERS: readonly ["google", "github", "apple", "microsoft", "discord", "linkedin"]
 ```
 
 ### `OAUTH_TICKET_PARAM`
@@ -3049,7 +3049,7 @@ _constant_, defined in `packages/contract/src/oauth.ts`
 
 Set a provider's credentials and whether sign-in offers it.
 
-- Google and GitHub: `clientId` and `clientSecret`.
+- Google, GitHub, Discord and LinkedIn: `clientId` and `clientSecret`.
 - Apple: `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file's
   contents, PKCS#8 PEM).
 - Microsoft: `clientId` (the application id), `clientSecret` and `tenant`

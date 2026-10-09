@@ -162,6 +162,8 @@ export interface EnvironmentConfig {
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
     microsoft?: Required<MicrosoftProviderConfig>
+    discord?: Required<OAuthClientConfig>
+    linkedin?: Required<OAuthClientConfig>
   }
   /**
    * The webhook endpoints, when the file manages them: each address once, its event types
@@ -365,7 +367,8 @@ const microsoft: MicrosoftProviderConfig = {
 
 _interface_, defined in `packages/config/src/config.ts`
 
-Google's or GitHub's credentials for one environment.
+The credentials of a provider that takes a client id and a client secret and nothing else
+(Google, GitHub, Discord, LinkedIn), for one environment.
 
 ```ts
 export interface OAuthClientConfig {
@@ -401,6 +404,10 @@ export interface ProvidersConfig {
   apple?: AppleProviderConfig
   /** Microsoft (Entra ID and personal accounts). */
   microsoft?: MicrosoftProviderConfig
+  /** Discord. */
+  discord?: OAuthClientConfig
+  /** LinkedIn (Sign In with LinkedIn using OpenID Connect). */
+  linkedin?: OAuthClientConfig
 }
 ```
 
@@ -739,8 +746,8 @@ export function providerSecret(
 
 **Returns**
 
-Its `clientSecret` (Google, GitHub, Microsoft) or `privateKey` (Apple), or `undefined` when the
-file does not configure the provider.
+Its `privateKey` (Apple) or `clientSecret` (every other provider), or `undefined`
+when the file does not configure the provider.
 
 **Example**
 

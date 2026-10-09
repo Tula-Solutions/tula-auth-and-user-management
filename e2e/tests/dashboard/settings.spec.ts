@@ -250,6 +250,38 @@ test('sign-in methods: toggles, the last-method refusal, and a provider whose se
   await expect(google.getByText('Not configured')).toBeVisible()
 })
 
+for (const [provider, name] of [
+  ['discord', 'Discord'],
+  ['linkedin', 'LinkedIn'],
+] as const) {
+  test(`${name}: a client id and a secret, saved once and never shown again`, async ({ page }) => {
+    await open(page, `${ENVIRONMENT_PATH}/sign-in-methods`, 'Sign-in methods')
+    const card = page
+      .getByRole('listitem')
+      .filter({ has: page.getByRole('heading', { name, exact: true }) })
+    await expect(card.locator('code').first()).toContainText(`${API_URL}/v1/`)
+    await expect(card.locator('code').first()).toContainText(provider)
+    // Nothing but the two: no tenant, no team, no key.
+    await expect(card.getByLabel('Who can sign in')).toHaveCount(0)
+    const secret = `dashboard-e2e-${uniqueEmail(`${provider}-secret`)}`
+    await card.getByLabel('Client ID').fill(`dashboard-e2e-${provider}-client`)
+    await card.getByLabel('Client secret').fill(secret)
+    await card.getByRole('button', { name: `Save ${name}` }).click()
+    await expect(page.getByText(`${name} saved`)).toBeVisible()
+    await expect(card.getByText(/A client secret is saved/)).toBeVisible()
+    await expect(card.getByLabel('Client secret')).toHaveCount(0)
+    await expectNoSecretKept(page, [secret])
+    await expectScreenAccessible(page, `sign-in methods, ${name} configured`)
+
+    await card.getByRole('button', { name: `Remove ${name}` }).click()
+    await dialog(page)
+      .getByRole('button', { name: `Remove ${name}` })
+      .click()
+    await expect(page.getByText(`${name} removed`)).toBeVisible()
+    await expect(card.getByText('Not configured')).toBeVisible()
+  })
+}
+
 test('Microsoft: who can sign in is asked, has no default, and one organization is its tenant id', async ({
   page,
 }) => {

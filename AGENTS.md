@@ -1214,7 +1214,8 @@ nothing.
 
 ### OAuth providers
 
-Sign-in with Google, GitHub, Apple and Microsoft ([ADR 0026](docs/adr/0026-oauth.md)) lives in
+Sign-in with Google, GitHub, Apple, Microsoft, Discord and LinkedIn
+([ADR 0026](docs/adr/0026-oauth.md)) lives in
 `modules/oauth` (provider credentials, account resolution and linking, the callback and
 identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchangeOAuth`).
 
@@ -1227,11 +1228,19 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   `adapters/oauth/` (`arctic` + `jose`). An adapter returns a profile and nothing else: no
   provider token leaves it or is stored. Unit tests use `FakeOAuthProvider`
   (`createTestDeps().oauth.google.profile = …`).
-- **A provider's code is bound to the attempt.** Google, GitHub and Microsoft send PKCE (the
-  S256 challenge of the attempt's `codeVerifier` on the authorization URL, the verifier on
-  the token request); Google, Apple and Microsoft check the attempt's `nonce` in the ID
-  token. Apple
-  documents no PKCE and is sent none. The callback refuses an attempt with no verifier before
+- **A provider's code is bound to the attempt.** Google, GitHub, Microsoft and Discord send
+  PKCE (the S256 challenge of the attempt's `codeVerifier` on the authorization URL, the
+  verifier on the token request); Google, Apple and Microsoft check the attempt's `nonce`
+  in the ID token. Apple documents no PKCE and is sent none. **LinkedIn documents neither
+  and gets neither**: its code is bound by the single-use `state` and the client secret
+  alone, which ADR 0026 and `docs/providers/linkedin.md` say in so many words. Whether an
+  ID token's nonce is checked is written at every call of `verifyIdToken` (the attempt's
+  nonce, or `NONCE_NOT_ECHOED`): never give that parameter a default. **A LinkedIn profile
+  has two sources with one job each**: the verified ID token gives `sub` and nothing else,
+  the userinfo answer (`GET https://api.linkedin.com/v2/userinfo`, read through
+  `readProfile` like Discord's user: a deadline, no redirect, 64 KiB) gives the address,
+  `email_verified` and the name, and its `sub` must be the token's (`linkedInProfile`, which
+  the mock provider uses too). Never fall back from one source to the other. The callback refuses an attempt with no verifier before
   it reaches an adapter, and the mock provider checks the verifier for every provider. A new
   provider sends PKCE unless its documentation rules it out, and the ADR says which.
 - **The mock provider** (`OAUTH_MOCK_PROVIDER=true`) serves every provider from the API
@@ -1262,6 +1271,15 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   method", so never count providers by `enabled` alone. A new refusal
   gets a row in the table of `adapters/oauth/microsoft.test.ts`, with a token the test
   signs.
+- **Discord and LinkedIn report an address as verified only on the provider's own word, a
+  JSON boolean**: Discord's `verified === true` on the user object, LinkedIn's
+  `email_verified === true` in the userinfo answer, and only in an answer whose `sub` is
+  the verified ID token's (`linkedInProfile`; never the string Apple sends, and never the
+  token's own `email` claims, which are not read). A
+  Discord account is its user id, taken only through `isSnowflake` (one decimal spelling
+  per id), never the username; a LinkedIn account is the verified ID token's `sub`, under
+  one of the two issuers of `LINKEDIN_ISSUERS`. Each provider's access token is read with
+  once, at its profile endpoint, and dropped.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider
   routes enforce it, not the settings schema.
 

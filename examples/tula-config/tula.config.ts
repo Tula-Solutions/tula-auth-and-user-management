@@ -121,6 +121,11 @@ export default defineConfig({
           // Which accounts may sign in: 'common', 'organizations', 'consumers' or a tenant id.
           tenant: 'organizations',
         },
+        discord: {
+          clientId: '1198765432101234567',
+          clientSecret: env('DISCORD_CLIENT_SECRET'),
+        },
+        linkedin: { clientId: '86abcdefgh1234', clientSecret: env('LINKEDIN_CLIENT_SECRET') },
       },
       // #endregion
       // #region webhooks

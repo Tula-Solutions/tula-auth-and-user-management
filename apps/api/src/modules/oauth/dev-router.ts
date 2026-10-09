@@ -25,6 +25,8 @@ import * as OAuth from '~/modules/oauth/service'
  *
  * For Microsoft the form asks what a Microsoft token says instead of one account id: the
  * tenant id, the object id, and whether the verified-domain claim (`xms_edov`) is there.
+ * For LinkedIn what the form says becomes a userinfo answer (`sub`, `email`, `email_verified`,
+ * the names) carried in the code, which is where the adapter reads a LinkedIn profile from.
  */
 const router = new Hono<AppEnv>()
 
@@ -55,6 +57,8 @@ const NAMES = {
   github: 'GitHub',
   apple: 'Apple',
   microsoft: 'Microsoft',
+  discord: 'Discord',
+  linkedin: 'LinkedIn',
 } as const
 
 /** The organization the mock's Microsoft accounts are in when nothing else is said. */
@@ -78,6 +82,17 @@ function guidOf(seed: string): string {
     hex.slice(16, 20),
     hex.slice(20, 32),
   ].join('-')
+}
+
+/**
+ * The account id of an address when none is typed. Discord's is a snowflake (decimal digits,
+ * here sixty bits of the address's hash), as the real adapter accepts nothing else.
+ */
+function derivedSubject(provider: string, normalizedEmail: string): string {
+  const hex = sha256Hex(normalizedEmail)
+  return provider === 'discord'
+    ? String(BigInt(`0x${hex.slice(0, 15)}`) + 1n)
+    : `mock-${hex.slice(0, 24)}`
 }
 
 const ACCOUNT_FIELDS =
@@ -199,10 +214,11 @@ router.post('/authorize', async (c) => {
             consent.object_id || guidOf(email?.normalized ?? '')
           )
         : null
-      : consent.subject || (email ? `mock-${sha256Hex(email.normalized).slice(0, 24)}` : null)
+      : consent.subject || (email ? derivedSubject(consent.provider, email.normalized) : null)
   if (subject === null) {
     return refused(c)
   }
+  const verified = email !== null && consent.unverified === undefined
   callback.searchParams.set(
     'code',
     await issueMockCode(deps.secretBox, deps.clock, {
@@ -214,10 +230,20 @@ router.post('/authorize', async (c) => {
       profile: {
         subject,
         email: email?.email ?? null,
-        emailVerified: email !== null && consent.unverified === undefined,
+        emailVerified: verified,
         ...(consent.given_name && { givenName: consent.given_name }),
         ...(consent.family_name && { familyName: consent.family_name }),
       },
+      // LinkedIn's address and name are its userinfo answer's, in LinkedIn's own field names:
+      // the mock adapter reads them from here and nowhere else, as the real one does.
+      ...(consent.provider === 'linkedin' && {
+        userinfo: {
+          sub: subject,
+          ...(email && { email: email.email, email_verified: verified }),
+          ...(consent.given_name && { given_name: consent.given_name }),
+          ...(consent.family_name && { family_name: consent.family_name }),
+        },
+      }),
     })
   )
   return c.redirect(callback.toString(), 302)

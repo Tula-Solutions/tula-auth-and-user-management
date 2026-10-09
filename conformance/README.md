@@ -149,7 +149,8 @@ included: use `attempt`).
 
 - **Variables.** `{{name}}` in any string is replaced by a variable: a literal from `variables`,
   a generated value (`email`: a unique address; `password`: a long random password that passes
-  every built-in policy; `uuid`: a random GUID, for an id a provider would supply; `phone`: a
+  every built-in policy; `uuid`: a random GUID, for an id a provider would supply;
+  `snowflake`: a random decimal number in a string, for a Discord user id; `phone`: a
   United States number in E.164 form that nobody has, from the `555-01XX` range kept for
   fiction), or a value an earlier step captured.
 - **Request steps.** `auth` is `publishable` (the default), `secret` or `none`; `accessToken`
@@ -316,17 +317,18 @@ what an email does not contain.
 
 ### OAuth scenarios need the mock provider
 
-Scenarios 25 to 28, 57 and 58 sign in through an OAuth provider (28 to get a user with no password; 57 and 58 through Microsoft). They use the server's **mock provider**:
+Scenarios 25 to 28, 57, 58 and 60 to 63 sign in through an OAuth provider (28 to get a user with no password; 57 and 58 through Microsoft, 60 and 61 through Discord, 62 and 63 through LinkedIn). They use the server's **mock provider**:
 start the server with `OAUTH_MOCK_PROVIDER=true` (accepted only with `ENVIRONMENT=local`). An
 `oauth` step plays the user at the provider: it posts the consent form to the path of the
 `authorizationUrl` a start answered (`email`, `subject`, `unverified`, `deny`; for Microsoft
 `tenantId` and `objectId` in place of `subject`, and `unverified` leaves the verified-domain
-claim out), calls the
+claim out; for Discord a `subject` is a snowflake, a decimal number in a string), calls the
 callback the answer redirects to, and reads the ticket (`captureTicket`, `captureAttempt`) or
 the error (`expectError`) from the fragment of the URL the callback redirects to. Nothing is
 followed automatically, and every request goes to the target's base URL. `captureCallback`
 keeps the callback's path so a later step can replay it (`callback`). The scenarios set the
-`google` provider's credentials (57 and 58 the `microsoft` provider's) at the start and
+`google` provider's credentials (57 and 58 the `microsoft` provider's, 60 and 61 the
+`discord` provider's, 62 and 63 the `linkedin` provider's) at the start and
 remove them in `cleanup`: do not run them against an environment whose credentials for that
 provider you want to keep. They add about 95 seconds
 (a 61-second wait for a ticket to expire and a 31-second one for the next authenticator code).

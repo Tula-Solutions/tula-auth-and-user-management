@@ -62,6 +62,8 @@ describe('FlowStep', () => {
       'oauth_github',
       'oauth_apple',
       'oauth_microsoft',
+      'oauth_discord',
+      'oauth_linkedin',
     ])
   })
 

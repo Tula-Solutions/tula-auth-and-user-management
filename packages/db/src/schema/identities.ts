@@ -5,7 +5,15 @@ import { tula } from './pg-schema'
 import { users } from './users'
 
 /** Identity providers: the email address itself, and the OAuth providers (ADR 0026). */
-export const IDENTITY_PROVIDERS = ['email', 'google', 'apple', 'github', 'microsoft'] as const
+export const IDENTITY_PROVIDERS = [
+  'email',
+  'google',
+  'apple',
+  'github',
+  'microsoft',
+  'discord',
+  'linkedin',
+] as const
 
 /** How a user proves who they are: one row per provider account (email address, Google sub…). */
 export const identities = tula.table(

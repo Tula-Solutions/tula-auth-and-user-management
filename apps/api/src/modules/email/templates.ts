@@ -1,4 +1,4 @@
-import { DEFAULT_APP_NAME, MAX_APP_NAME_LENGTH } from '@tula/contract'
+import { DEFAULT_APP_NAME, MAX_APP_NAME_LENGTH, type OAuthProvider } from '@tula/contract'
 import type { MailMessage } from '~/ports/mailer'
 
 /** Who an email is from, as far as the reader is concerned: the environment's `app` settings. */
@@ -87,7 +87,7 @@ export interface MfaChangedMessage {
 }
 
 /**
- * Tells an account's owner that a provider account (Google, GitHub, Apple, Microsoft) was connected to it
+ * Tells an account's owner that a provider account (Google, GitHub, Apple, Microsoft, Discord, LinkedIn) was connected to it
  * or disconnected from it (ADR 0026). Never carries anything of the provider account itself.
  */
 export interface IdentityChangedMessage {
@@ -95,7 +95,7 @@ export interface IdentityChangedMessage {
   /** Connected, or disconnected. */
   change: 'linked' | 'unlinked'
   /** Which provider. One of a fixed set of names, never text from the provider. */
-  provider: 'google' | 'github' | 'apple' | 'microsoft'
+  provider: OAuthProvider
   /** When it happened. */
   at: Date
 }
@@ -292,6 +292,8 @@ const PROVIDER_NAMES: Record<IdentityChangedMessage['provider'], string> = {
   github: 'GitHub',
   apple: 'Apple',
   microsoft: 'Microsoft',
+  discord: 'Discord',
+  linkedin: 'LinkedIn',
 }
 
 /** The copy of a connected-account notice. */

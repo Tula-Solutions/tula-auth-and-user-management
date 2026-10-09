@@ -1,4 +1,4 @@
-# ADR 0026 — OAuth sign-in: Google, GitHub, Apple, Microsoft
+# ADR 0026 — OAuth sign-in: Google, GitHub, Apple, Microsoft, Discord, LinkedIn
 
 - Status: accepted
 - Date: 2026-10-03
@@ -78,6 +78,11 @@ else. Adapters are stateless; credentials are passed per call.
 - **Microsoft** (Phase 2, TULA-12): OIDC with PKCE and a nonce, on `arctic`'s
   `MicrosoftEntraId` and the shared `jose` verifier. Everything about it that differs from
   Google is in "Microsoft: the tenant, the issuer and the address" below.
+- **Discord** (Phase 2, TULA-13): plain OAuth 2.0 with PKCE, no ID token, on `arctic`'s
+  `Discord`; the profile is read from `GET /users/@me`. **LinkedIn** (TULA-13): OIDC with
+  **no PKCE and no nonce**, on `arctic`'s `LinkedIn` and the shared `jose` verifier; the
+  ID token gives the account and `GET /v2/userinfo` the address. Both are in "Discord and
+  LinkedIn" below.
 - `arctic` calls the global `fetch` and takes no injected one. The adapters therefore use the
   global `fetch` throughout, looked up at call time, and their tests stub it (`spyOn`) with
   locally generated keys: no test touches the network.
@@ -286,13 +291,122 @@ Phase 2 (TULA-12). Scopes `openid profile email` and nothing else; no Graph call
   shows it. That `xms_edov` arrives as a JSON boolean, that every key carries `issuer`, and
   what the portal calls each step are read from the documentation, not observed.
 
+### Discord and LinkedIn
+
+Added in Phase 2 (TULA-13). Each takes a client id and a client secret and nothing else; the
+linking table, the callback, the ticket and the exchange are unchanged, and
+`OAuth.resolveAccount` was not touched.
+
+**Discord** is plain OAuth 2.0 (its documentation describes no OpenID Connect and no ID
+token), so the shape is GitHub's.
+
+- Scopes: `identify` and `email`, and nothing else.
+- After the exchange the adapter reads `GET https://discord.com/api/v10/users/@me` with the
+  access token (Discord's "Get Current User"). **Subject = `id`**, a snowflake, accepted only
+  as a decimal string of one to twenty digits with no sign and no leading zero (`isSnowflake`):
+  one spelling per id, so two spellings can never be two accounts. Never the username.
+- **`emailVerified` only when `verified === true`** (the JSON boolean; Discord documents
+  `verified` as "whether the email on this account has been verified", with the `email`
+  scope) and an address is present. `email` is nullable: an account without one is
+  `oauth.email_missing` for a sign-up, by the existing rule.
+- The access token is dropped when the adapter returns and is **not revoked**. Discord has a
+  revocation endpoint; GitHub's adapter revokes nothing either, and a second outbound call
+  that can fail after the profile was read would need an answer for "the profile is good and
+  the revocation timed out". The token grants reading the same profile again and nothing
+  else was asked for.
+- **PKCE (S256) is sent.** `arctic` 3.7.0's `Discord.createAuthorizationURL(state,
+  codeVerifier, scopes)` adds `code_challenge` for a confidential client and
+  `validateAuthorizationCode(code, codeVerifier)` sends the verifier with the client's Basic
+  credentials. The rule is that **a new provider sends PKCE unless its documentation rules
+  it out, and silence does not rule it out**. **Discord's OAuth2 page does not mention
+  PKCE** (read 2026-10-08), neither for nor against: the source for sending it is the client
+  library, not Discord's page, and that Discord accepts the parameters or refuses a wrong
+  verifier was never observed against the real service. Apple and LinkedIn are different
+  cases: each documents the list of its request's parameters, and a challenge is not among
+  them. An authorization server that ignores unknown parameters loses nothing, and one that
+  honours them gains the binding. If Discord ever rejects the parameters, passing `null` as the
+  verifier to `arctic` removes them; the mock would then have to stop checking Discord's.
+  An exchange with an empty verifier is refused before any request, as GitHub's is.
+- The profile answer is read up to 64 KiB (`DISCORD_MAX_PROFILE_BYTES`) and a longer one is
+  cancelled, not buffered; the request follows no redirect (it would carry the token along).
+
+**LinkedIn** is OpenID Connect ("Sign In with LinkedIn using OpenID Connect"), so the shape
+is Google's with two things missing.
+
+- Scopes: `openid`, `profile`, `email`.
+- **The ID token is the identity and nothing else.** It is checked by the shared verifier:
+  `RS256`, audience = client id, expiry, and keys from
+  `https://www.linkedin.com/oauth/openid/jwks`. Subject = `sub`, which LinkedIn's discovery
+  document says is pairwise (per application). No other claim of the token is read.
+- **Two issuers are accepted, exactly**: `https://www.linkedin.com/oauth` and
+  `https://www.linkedin.com`. LinkedIn's discovery document
+  (`https://www.linkedin.com/oauth/.well-known/openid-configuration`, fetched 2026-10-08)
+  says the first; LinkedIn's guide says the second in its table of ID-token claims. Which one
+  a real token carries was not observed. Both are LinkedIn's own, under keys only LinkedIn
+  publishes, so accepting either admits nobody else.
+- **The address, whether it is verified and the name come from the userinfo endpoint, and
+  only from there.** After the token has verified, the adapter reads
+  `GET https://api.linkedin.com/v2/userinfo` with the access token: it is where LinkedIn's
+  guide documents `email`, `email_verified`, `name`, `given_name` and `family_name` (for the
+  ID token it lists `iss`, `sub`, `aud`, `iat` and `exp`). The first version of this adapter
+  read the token only; it was changed before any release, because a sign-up that depends on
+  claims the provider does not document for the token is a guess. There is **one path**, not
+  "the token first, userinfo when it has no address": two sources for one fact are two rules
+  for what "verified" means.
+- **The answer must be about the member the token is about**: its own `sub` must equal the
+  verified token's (`linkedInProfile`), else the exchange fails as an invalid token does
+  (`invalid_token`). The answer is protected by TLS and not by a signature, as GitHub's and
+  Discord's are; the token is what was verified, so it stays the anchor of who signed in.
+- **`emailVerified` only when the answer's `email_verified === true`**, the JSON boolean,
+  strictly (LinkedIn documents a Boolean), beside an address. `"true"`, `1`, `false` and an
+  absent field are unverified.
+- **The read has the bounds of Discord's** (one function, `readProfile` in
+  `adapters/oauth/profile-read.ts`): a fixed address, a deadline, `redirect: 'error'` (a
+  redirect would carry the token along), at most 64 KiB read and the rest cancelled. No
+  answer, a non-2xx (a 401 and a 403 among them, as GitHub's adapter has always treated its
+  profile read) and a body cut off are `unavailable`; an oversized or non-JSON answer, or
+  one that is not an object, is `invalid_profile`. Nothing of the answer or the token is in
+  an error or a log line, and the access token is dropped when the exchange returns.
+- **The mock provider keeps the two sources**: a LinkedIn code carries a userinfo answer
+  beside the "token's" subject, and the profile is made by `linkedInProfile`, the real
+  adapter's own function. The mock still makes no request; its guards are unchanged.
+- **No PKCE.** LinkedIn's authorization-code flow page lists five parameters for the
+  authorization request and five for the token request, none of them a challenge or a
+  verifier; the discovery document has no `code_challenge_methods_supported`; and `arctic`'s
+  `LinkedIn.createAuthorizationURL(state, scopes)` takes no verifier. As with Apple, nothing
+  undocumented is sent. LinkedIn does document PKCE, but as a flow of its own for native
+  clients ("Authenticating with OAuth 2.0 for Native Clients", read 2026-10-09): another
+  authorization endpoint (`/oauth/native-pkce/authorization`), a loopback redirect address
+  only, no client secret in the token request, and switched on for one app at a time by
+  LinkedIn on request. It is not something a server that exchanges a code with a secret
+  can send, so it is not an alternative here.
+- **No nonce.** The same request takes none, the discovery document does not list `nonce`
+  among `claims_supported`, and the guide's ID token has none. `verifyIdToken` used to
+  require the attempt's nonce; it now takes `nonce: string | typeof NONCE_NOT_ECHOED`, with
+  no default, so that leaving the check out is written at the call and cannot happen by
+  forgetting an argument. An empty string is refused there. Only LinkedIn's adapter passes
+  the symbol.
+- **So LinkedIn's code is bound to the attempt by the single-use `state` and the client
+  secret alone**: the weakest binding of the six providers (Google and Microsoft have PKCE
+  and a nonce, GitHub and Discord PKCE, Apple a nonce). Someone who can read another user's
+  redirect to the callback, and has an unused `state` of their own, could present that
+  user's code under their own attempt. The exact, registered redirect URI and the code's
+  short life at LinkedIn are what stand in the way. This is LinkedIn's protocol, accepted,
+  and stated in `docs/providers/linkedin.md`.
+
+**Read by server-supplied name.** Both the dashboard's cards and its sign-in summary look a
+provider up by the name the server sent; they now do it by own key (`own()`), and a provider
+this build has no name for gets no card (settings) or is shown as the server's word (the
+user's sign-in summary) instead of a property of `Object.prototype`.
+
 ### The mock provider
 
 `OAUTH_MOCK_PROVIDER=true` serves every provider from a built-in adapter whose "consent page"
 (`/v1/dev/oauth/authorize`, on the API) asks which address the provider should report. Its
 code is the grant sealed with the secret box (stateless, so two instances work), bound to the
 client id and redirect URI, expiring in a minute, and exchanged only with the matching PKCE
-verifier and nonce. The real callback, ticket, exchange and linking code run behind it in the
+verifier and nonce (for every provider, also the two whose real adapters send no PKCE; for
+Discord its account id must be a snowflake, as the adapter requires). The real callback, ticket, exchange and linking code run behind it in the
 browser tests, the conformance scenarios and local development.
 
 Guards: `env.ts` refuses to boot with the variable in any tier but `local` (including `dev`),
@@ -331,7 +445,7 @@ production code. The adapters' verifiers are covered by unit tests with local ke
 
 - An environment's first OAuth sign-in needs set-up outside Tula: an app at the provider with
   the callback URL registered (`docs/providers/`), and the app's landing URL on the allow-list.
-- **Real Google, GitHub, Apple and Microsoft were not exercised**: there are no credentials. Everything
+- **Real Google, GitHub, Apple, Microsoft, Discord and LinkedIn were not exercised**: there are no credentials. Everything
   up to the provider's endpoints is covered against the mock and with stubbed HTTP.
 - GitHub sign-in sends PKCE, and that was checked against the mock provider and stubbed
   HTTP only: nothing here has seen github.com refuse a wrong verifier. Apple sign-in has no
@@ -340,6 +454,13 @@ production code. The adapters' verifiers are covered by unit tests with local ke
   without it every new Microsoft account is `oauth.email_unverified`. Whether to let such an
   account in with an unverified address instead is an open product question; it would
   change the linking table for every provider or add a second rule for one.
+- **LinkedIn sign-in has neither PKCE nor a nonce**, because LinkedIn documents neither:
+  its code is bound to the attempt by `state` and the client secret only. Its address comes
+  from the userinfo endpoint: a second outbound call per sign-in, whose answer TLS protects
+  and no signature does. No real answer was seen; if its `sub` were not the token's, every
+  LinkedIn sign-in would be refused.
+- Discord sign-in sends PKCE that Discord's documentation does not mention, on the client
+  library's word: not observed against the real service.
 - A user who signs up through a provider has no password; removing that provider leaves them
   to a password reset. A provider's changed email never changes the Tula address.
 - A sign-in start reads the environment's providers (one indexed read, not cached).
@@ -367,6 +488,11 @@ production code. The adapters' verifiers are covered by unit tests with local ke
   administrator.
 - `@tula/core` grew from about 11.0 kB to 12.5 kB gzip (budget 12 → 13 kB) and `@tula/react`
   from 32.7 kB to 38 kB (budget 35 → 39 kB).
+- Discord and LinkedIn (TULA-13) left `@tula/core` at 15,504 bytes and took `@tula/react`
+  from 45,985 to 46,846 bytes (two marks and two names; budget 46,000 → 46,861, its fifteen
+  bytes of room kept). The conformance format gained a variable generator, `snowflake`, and
+  four scenarios (60 to 63) with their SDK journeys. No migration: the provider columns are
+  text and their set of values lives in TypeScript.
 - The conformance format gained an `oauth` step; three scenarios (25 to 27) and their SDK
   journeys were added. A live run is about 95 seconds longer (a 61-second and a 31-second wait).
 

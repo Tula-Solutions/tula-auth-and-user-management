@@ -125,6 +125,8 @@ const Providers = z.strictObject({
   github: ClientProvider.optional(),
   apple: AppleProvider.optional(),
   microsoft: MicrosoftProvider.optional(),
+  discord: ClientProvider.optional(),
+  linkedin: ClientProvider.optional(),
 })
 
 // An endpoint's fields are the admin API's own (`POST` and `PATCH
@@ -237,7 +239,8 @@ const Config = z.strictObject({
 })
 
 /**
- * Google's or GitHub's credentials for one environment.
+ * The credentials of a provider that takes a client id and a client secret and nothing else
+ * (Google, GitHub, Discord, LinkedIn), for one environment.
  *
  * @example
  * ```ts
@@ -324,6 +327,10 @@ export interface ProvidersConfig {
   apple?: AppleProviderConfig
   /** Microsoft (Entra ID and personal accounts). */
   microsoft?: MicrosoftProviderConfig
+  /** Discord. */
+  discord?: OAuthClientConfig
+  /** LinkedIn (Sign In with LinkedIn using OpenID Connect). */
+  linkedin?: OAuthClientConfig
 }
 
 /**
@@ -489,6 +496,8 @@ export interface EnvironmentConfig {
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
     microsoft?: Required<MicrosoftProviderConfig>
+    discord?: Required<OAuthClientConfig>
+    linkedin?: Required<OAuthClientConfig>
   }
   /**
    * The webhook endpoints, when the file manages them: each address once, its event types
@@ -679,8 +688,8 @@ export function requiredSecrets(
  *
  * @param providers - The providers of one environment.
  * @param provider - The provider.
- * @returns Its `clientSecret` (Google, GitHub, Microsoft) or `privateKey` (Apple), or `undefined` when the
- *   file does not configure the provider.
+ * @returns Its `privateKey` (Apple) or `clientSecret` (every other provider), or `undefined`
+ *   when the file does not configure the provider.
  *
  * @example
  * ```ts

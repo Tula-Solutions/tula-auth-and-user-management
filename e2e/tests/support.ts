@@ -436,7 +436,7 @@ export async function expectAccessible(page: Page, state: string): Promise<void>
  */
 export async function useProviders(
   request: APIRequestContext,
-  providers: ('google' | 'github' | 'apple' | 'microsoft')[] = []
+  providers: ('google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin')[] = []
 ): Promise<void> {
   const response = await request.post(`${API_URL}/__test/oauth`, { data: { providers } })
   expect(response.ok()).toBe(true)

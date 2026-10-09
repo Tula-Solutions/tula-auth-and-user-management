@@ -23,9 +23,10 @@ import { inProcessTarget } from '~/testing/in-process-target'
  * In every canary address, password and GUID; never in anything the server makes. A canary
  * GUID (a Microsoft tenant id or object id, which a provider supplies) ends in twelve fixed
  * hex digits: the tap takes anything GUID-shaped for one of the server's own ids and does not
- * look for it, so the marker is the only thing that finds one.
+ * look for it, so the marker is the only thing that finds one. A canary snowflake (a Discord
+ * user id: digits only) ends in twelve fixed digits.
  */
-const MARKERS = /canary|s3cretpass|c0ffeec0ffee/i
+const MARKERS = /canary|s3cretpass|c0ffeec0ffee|424242424242/i
 
 /** What every canary phone number starts with: a fictional United States number. */
 const CANARY_PHONE_PREFIX = '+12025550'
@@ -43,6 +44,9 @@ function withCanaries(scenario: Scenario): Scenario {
     }
     if (value.generate === 'uuid') {
       return [name, `${index.toString(16).padStart(8, '0')}-c0de-4c0d-8c0d-c0ffeec0ffee`]
+    }
+    if (value.generate === 'snowflake') {
+      return [name, `${index + 1}424242424242`]
     }
     return [
       name,

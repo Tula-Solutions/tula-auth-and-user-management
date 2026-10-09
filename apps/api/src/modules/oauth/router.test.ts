@@ -5,6 +5,7 @@ import {
   type FlowAttempt,
   type Identity,
   type IdentityLinkStart,
+  OAUTH_PROVIDERS,
   type OAuthProvider,
   type OAuthProviderSettings,
   type OAuthStart,
@@ -260,7 +261,7 @@ describe('starting an OAuth sign-in', () => {
 
   // A bug in an adapter is not a provider that is off: it stays the logged 500 it always
   // was. What changed is only that the URL is built before the attempt is stored.
-  test.each(['google', 'github', 'apple', 'microsoft'] as const)(
+  test.each([...OAUTH_PROVIDERS])(
     '%s: an adapter that throws something of its own while building the URL is a 500, with no attempt stored',
     async (provider) => {
       const bodies = {
@@ -273,6 +274,8 @@ describe('starting an OAuth sign-in', () => {
           privateKey: await applePrivateKey(),
         },
         microsoft: { tenant: 'common' },
+        discord: {},
+        linkedin: {},
       }
       expect((await configure(provider, bodies[provider])).status).toBe(200)
       const built = spyOn(deps.oauth[provider], 'authorizationUrl').mockImplementation(() => {
@@ -1174,6 +1177,16 @@ describe('admin: provider credentials', () => {
         configured: false,
         tenant: null,
         callbackUrl: 'http://localhost:3003/v1/oauth/callback/microsoft',
+      }),
+      expect.objectContaining({
+        provider: 'discord',
+        configured: false,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/discord',
+      }),
+      expect.objectContaining({
+        provider: 'linkedin',
+        configured: false,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/linkedin',
       }),
     ])
   })

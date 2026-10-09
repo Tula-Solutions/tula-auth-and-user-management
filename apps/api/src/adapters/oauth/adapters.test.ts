@@ -616,7 +616,8 @@ describe('the mock provider', () => {
     redirectUri: REDIRECT_URI,
     nonce: NONCE,
     codeChallenge: s256('the-verifier'),
-    profile: { subject: 'mock-1', email: 'maya@northline.app', emailVerified: true },
+    // Digits: an id every provider the mock stands in for can have (Discord's are snowflakes).
+    profile: { subject: '4815162342', email: 'maya@northline.app', emailVerified: true },
   }
 
   test('sends the browser to the consent page on the API with the standard parameters', () => {
@@ -664,7 +665,7 @@ describe('the mock provider', () => {
 
   // The conformance scenarios and SDK journeys sign in with GitHub through this adapter: the
   // verifier is checked for every provider it stands in for, not only Google.
-  test.each(['google', 'github', 'apple'] as const)(
+  test.each(['google', 'github', 'apple', 'discord', 'linkedin'] as const)(
     'standing in for %s: the URL carries the S256 challenge and only its verifier redeems the code',
     async (name) => {
       const standIn = createMockProvider(name, {
@@ -684,7 +685,15 @@ describe('the mock provider', () => {
       const codeChallenge = url.searchParams.get('code_challenge') as string
       expect(codeChallenge).toBe(s256('the-verifier'))
       const code = () =>
-        issueMockCode(secretBox, clock, { ...grant, provider: name, codeChallenge })
+        issueMockCode(secretBox, clock, {
+          ...grant,
+          provider: name,
+          codeChallenge,
+          // LinkedIn's profile is its userinfo answer, here one that says what the grant says.
+          ...(name === 'linkedin' && {
+            userinfo: { sub: '4815162342', email: 'maya@northline.app', email_verified: true },
+          }),
+        })
       expect(await standIn.exchange(credentials, { ...exchangeInput, code: await code() })).toEqual(
         grant.profile
       )
@@ -697,6 +706,71 @@ describe('the mock provider', () => {
       }
     }
   )
+
+  describe('standing in for LinkedIn', () => {
+    const linkedin = () =>
+      createMockProvider('linkedin', { secretBox, clock, publicUrl: 'http://localhost:3003' })
+    const redeem = async (userinfo: unknown) =>
+      linkedin().exchange(credentials, {
+        ...exchangeInput,
+        code: await issueMockCode(secretBox, clock, {
+          ...grant,
+          provider: 'linkedin',
+          // What the "ID token" says beside its subject is never the profile.
+          profile: {
+            subject: 'member-1',
+            email: 'the-token-says@elsewhere.test',
+            emailVerified: true,
+          },
+          ...(userinfo !== undefined && { userinfo }),
+        }),
+      })
+
+    test('the profile is the userinfo answer, judged by the real adapter’s rule', async () => {
+      expect(
+        await redeem({
+          sub: 'member-1',
+          email: 'maya@northline.app',
+          email_verified: true,
+          given_name: 'Maya',
+          family_name: 'Okafor',
+        })
+      ).toEqual({
+        subject: 'member-1',
+        email: 'maya@northline.app',
+        emailVerified: true,
+        givenName: 'Maya',
+        familyName: 'Okafor',
+      })
+    })
+
+    test.each([
+      ['email_verified: false', { email_verified: false }],
+      ['no email_verified', {}],
+      ['the string "true"', { email_verified: 'true' }],
+      ['the number 1', { email_verified: 1 }],
+    ] as [string, Record<string, unknown>][])('%s is unverified', async (_name, fields) => {
+      expect(
+        await redeem({ sub: 'member-1', email: 'maya@northline.app', ...fields })
+      ).toMatchObject({ email: 'maya@northline.app', emailVerified: false })
+    })
+
+    test('an answer with no address proves none, whatever the grant’s profile says', async () => {
+      expect(await redeem({ sub: 'member-1' })).toMatchObject({ email: null, emailVerified: false })
+    })
+
+    test('an answer about another member is refused like an invalid token', async () => {
+      expect(
+        await failureOf(
+          redeem({ sub: 'member-2', email: 'maya@northline.app', email_verified: true })
+        )
+      ).toBe('invalid_token')
+    })
+
+    test('a code with no userinfo answer is refused: there is no other source', async () => {
+      expect(await failureOf(redeem(undefined))).toBe('invalid_profile')
+    })
+  })
 
   test('refuses a code after a minute, a forged code, and another provider’s code', async () => {
     const code = await issueMockCode(secretBox, clock, grant)

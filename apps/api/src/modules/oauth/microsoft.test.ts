@@ -186,6 +186,8 @@ describe('the credentials', () => {
       ['github', null],
       ['apple', null],
       ['microsoft', null],
+      ['discord', null],
+      ['linkedin', null],
     ])
   })
 
