@@ -667,11 +667,23 @@ address is not verified is sent a code there before the session (`needs_email_ve
 That email is sent after the texted code and its holder were checked (a request that proved
 nothing causes no email) and **before** the texted code is spent, as a password's is before
 its attempt moves: an email that is refused (its cooldown, a relay that is down) leaves the
-texted code usable, and the user is not made to pay for a second message. Two right
-submissions at once may each send that email (the newer code replaces the older; the
-emailed code's own cooldown usually refuses the second); only the one that spends the
-texted code moves the attempt, and the other is `auth.invalid_credentials`, like every
-other failure of the step.
+texted code unspent, and the user is not made to pay for a second message.
+
+**Unspent is not untouched: the code is usable for the tries it has left.**
+`Verification.verifyCode` counts a submission before it compares (five in all, the rule
+for every code, and not changed here), so a right code whose email then fails is one try
+poorer. A retry inside the emailed code's minute is refused `rate_limited` by that
+cooldown and costs another; five submissions and the right code is dead, and the user does
+pay for a second text. The answers say to wait (`Retry-After` on the 429) and the
+documentation says why. Counting only after the email went would mean comparing before
+counting, which is the thing the rule exists to rule out.
+
+Two right submissions at once, for an unverified address: the second to ask for the email
+is normally refused by its cooldown, `rate_limited` (after a right code, so it tells an
+observer nothing they did not prove). Where both emails go (the newer code replaces the
+older), only the request that spends the texted code moves the attempt and the other is
+`auth.invalid_credentials`. For a verified address there is no email, and the loser is
+always `auth.invalid_credentials`.
 
 **Who asks.** Every other send has a signed-in user as its asker. Here anyone asks. An
 asker that is the attempt's id would be minted freely (a start is one request), so the

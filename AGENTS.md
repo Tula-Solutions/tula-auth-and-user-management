@@ -927,10 +927,14 @@ it ("Signing in with a texted code", at the end of this section).
   `Phone.signInLockKey` (a keyed hash of the number; `CREDENTIAL_LOCKOUT`), and **every
   failure is `auth.invalid_credentials`**: wrong, expired, a decoy's, a holder that
   changed since the code was texted, a locked number (never `rate_limited` here: for uniformity only, it
-  hides nothing, and its cost is that nobody is told to wait: ADR 0011), and the loser of
-  two right submissions at once. The code is spent only when the attempt can go on, and
-  **after** the email an unverified address needs: an email that is refused leaves the
-  texted code usable.
+  hides nothing, and its cost is that nobody is told to wait: ADR 0011), and the request that
+  loses the spending of a code two right submissions presented at once. The code is spent
+  only when the attempt can go on, and **after** the email an unverified address needs.
+  Two things follow, both in ADR 0037: an email that is refused leaves the texted code
+  **usable for the tries it has left** (every submission is one of five, counted before
+  the comparison, right code or not: never change that to spare one); and for an
+  unverified address the second of two right submissions at once is normally
+  `rate_limited` by the emailed code's cooldown, before it reaches the spending.
 - **A session proven by a phone number alone says `amr: ['sms']`, is never a recent
   authentication and never satisfies `mfa`** (`Mfa.requireRecentAuthentication`), and SMS
   is not a step-up method. Where `mfa.policy` is `required` and the account has no factor,

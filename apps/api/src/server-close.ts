@@ -28,15 +28,20 @@ export interface ApiProcess {
  *
  * A send has the provider's deadline (`PROVIDER_TIMEOUT_MS`), which is **as long as** the
  * shutdown timeout (`SHUTDOWN_TIMEOUT_MS`), not shorter: one that runs to its deadline is
- * cut off by the shutdown timer. That loses nothing but a log line, since a send with no
- * answer is `unconfirmed` anyway (the count kept, no code stored), which is what a process
- * that was killed leaves behind.
+ * cut off by the shutdown timer, as is one whose answer came too late for the write after
+ * it. What that leaves is what a killed process leaves, and both ways it errs the safe way:
+ * the day's count may be one higher than what was sent (a refusal that never reached
+ * `recordNotSent`), and a text may have been delivered whose code was never stored (it
+ * signs nobody in; the user asks for another).
  *
  * @param running - The jobs, the listener and the container of this process.
  */
 export async function closeApi(running: ApiProcess): Promise<void> {
   running.jobs.stopTimers()
   // Stop accepting connections and let in-flight requests finish before closing the pool.
+  // With no argument: Bun's `stop()` then "does not cancel in-flight requests", and "the
+  // returned promise resolves once every connection is closed". So nothing a request starts
+  // (a notice, a text message) can begin after the two waits below; never `stop(true)`.
   await running.server.stop()
   // Security notices are sent after the response; let the ones under way reach the relay.
   await Notices.settled()

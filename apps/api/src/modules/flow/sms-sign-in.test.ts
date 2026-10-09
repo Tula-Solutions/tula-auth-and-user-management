@@ -426,6 +426,42 @@ describe('signing in with a texted code', () => {
     }
   )
 
+  // The code is left unspent by a refused email, but each submission is one of its five
+  // tries (`Verification.verifyCode` counts before it compares, right code or not).
+  test.each([
+    [5, 401, 'auth.invalid_credentials'],
+    [4, 200, undefined],
+  ] as const)(
+    'the right code %i times while the email cannot be sent: then it answers %i',
+    async (tries, status, code) => {
+      await seedUser({ emailVerified: false })
+      const attempt = await asked()
+      const texted = textedCode()
+      const error = spyOn(logger, 'error').mockImplementation(() => undefined)
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      deps.mailer.failing = true
+      for (let i = 0; i < tries; i += 1) {
+        // The first is the relay's failure; the rest, inside the minute, the email's cooldown.
+        const res = await submit(attempt, texted)
+        expect(res.status).not.toBe(200)
+        expect(res.status).not.toBe(401)
+      }
+      deps.mailer.failing = false
+      error.mockRestore()
+      warn.mockRestore()
+      deps.clock.advance('61s')
+      const last = await submit(attempt, texted)
+      expect(last.status).toBe(status)
+      const body = await json<{ code?: string; step?: { status: string } }>(last)
+      expect(body.code).toBe(code)
+      if (status === 200) {
+        expect(body.step?.status).toBe('needs_email_verification')
+      }
+      // Either way one text message was sent; after five tries the user needs another.
+      expect(deps.sms.outbox).toHaveLength(1)
+    }
+  )
+
   test('the same right code twice at once: one signs in, the other is a failed sign-in', async () => {
     await seedUser()
     const attempt = await asked()

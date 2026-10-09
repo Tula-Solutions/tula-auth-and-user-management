@@ -216,6 +216,13 @@ codes. What it changes about a number on an account:
   sign in with is counted by the hourly limits like a real one, and sends nothing.
 - Switching it on, and adding a country while it is on, is a weakening: the dashboard asks
   first and `tula apply --yes` needs `--allow-weaker`.
+- **A code has five tries, and a right one that could not go on still uses one.** Every
+  submission is counted before the code is compared. Where the account's email address is
+  not verified, a code is emailed there after the texted one was found right; if that
+  email cannot be sent (the relay is down: an error) or was asked for less than a minute
+  ago (`rate_limited`, with the time to wait), the texted code is **not** spent, but that
+  try is. Wait out the minute before submitting it again: five submissions and the code is
+  dead, right or not, and a new one has to be texted.
 - **A locked-out number is told "wrong code", not "wait".** Guesses for a number are
   counted whoever makes them: five are free, then each failure makes the number wait,
   from 30 seconds, doubling, up to 15 minutes at a time; the count is forgotten after an

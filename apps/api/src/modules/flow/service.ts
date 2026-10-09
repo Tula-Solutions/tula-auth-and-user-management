@@ -1530,9 +1530,11 @@ async function prepareSmsCode(
  *    factor to take from someone (a swapped SIM, a recycled number); it must not be what
  *    chooses the account's second factor;
  * 7. where the user's email address is not verified, a code is emailed to it, **before** the
- *    texted code is spent: an email that cannot be sent leaves the texted code usable;
+ *    texted code is spent: an email that cannot be sent leaves the texted code unspent,
+ *    and usable for the tries it has left (this submission was one of its five);
  * 8. the code is spent, counted as used, and the number's proof is moved to now. The same
- *    code presented twice at once is spent by one request; the other is the failed sign-in.
+ *    code presented twice at once is spent by one request; the other is the failed sign-in
+ *    (or, for an unverified address, refused earlier by the emailed code's cooldown).
  *
  * A user who has a second factor gets `needs_second_factor` and no tokens. One whose email
  * address is not verified waits at `needs_email_verification`, as after a passkey; a user
@@ -1616,7 +1618,7 @@ async function attemptSmsCode(
     const waiting = { ...attempt, status: next, userId: user.id }
     // Sent before the texted code is spent, as a password's is before its attempt moves:
     // an email that is refused (its cooldown, a relay that is down) leaves the texted code
-    // usable, so the user is not made to pay for a second message. Only here, after the code
+    // unspent (one try poorer), so the user is not made to pay for a second message. Only here, after the code
     // and its holder were checked: a request that proved nothing causes no email.
     await issueCode(deps, tenant, waiting, pending, { userId: user.id })
     parked = { waiting, pending }

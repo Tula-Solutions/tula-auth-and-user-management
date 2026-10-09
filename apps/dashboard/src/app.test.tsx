@@ -688,6 +688,54 @@ describe('settings', () => {
     }
   )
 
+  test('a texted sign-in code cannot be the only way in: the row says so, and the server’s refusal is shown', async () => {
+    const api = installFakeApi()
+    const before = structuredClone(api.state.settings.settings)
+    const puts: unknown[] = []
+    api.override('PUT', /^\/v1\/admin\/settings$/, (call) => {
+      puts.push(call.body)
+      return failure(422, 'validation.failed', 'Invalid settings.', [
+        {
+          field: 'signIn.methods',
+          code: 'validation.failed',
+          message: 'at least one sign-in method must stay enabled',
+        },
+      ])
+    })
+    const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+    const toggle = await screen.findByRole('switch', { name: 'Texted code' })
+    // Said before the save, at the switch.
+    expect((toggle.closest('div.border-b') as HTMLElement).textContent).toContain(
+      'It cannot be the only way to sign in'
+    )
+    // Everything else off, the texted code on.
+    for (const name of ['Email and password', 'Emailed code', 'Emailed link', 'Passkeys']) {
+      const other = screen.getByRole('switch', { name })
+      if (other.getAttribute('aria-checked') === 'true') {
+        await user.click(other)
+      }
+    }
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    if (openDialogs() > 0) {
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Save anyway' })
+      )
+    }
+    const refusal = await screen.findByText(/Keep one method or one OAuth provider enabled/)
+    expect(refusal.textContent).toContain('at least one sign-in method must stay enabled')
+    expect(refusal.textContent).toContain('A texted code does not count')
+    expect(refusal.getAttribute('role')).toBe('alert')
+    // What was sent had only the texted code on, and nothing of it was kept.
+    expect(puts).toHaveLength(1)
+    expect((puts[0] as typeof before).signIn.methods).toMatchObject({
+      password: { enabled: false },
+      emailCode: { enabled: false },
+      smsCode: { enabled: true },
+    })
+    expect(api.state.settings.settings).toEqual(before)
+  })
+
   test('text messages: lowering the daily limit saves at once, raising it asks first', async () => {
     const { user, api } = start(`${DEV_PATH}/settings`)
     const limit = await screen.findByRole('spinbutton', { name: 'Most text messages in a day' })

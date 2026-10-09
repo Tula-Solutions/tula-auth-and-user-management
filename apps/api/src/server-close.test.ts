@@ -72,8 +72,10 @@ describe('closeApi', () => {
         },
       },
       server: {
-        stop: async () => {
-          order.push('server stopped')
+        // Bun's `stop()` resolves "once every connection is closed", and lets requests in
+        // flight finish, only when it is not told to close them: never `stop(true)`.
+        stop: async (...args: unknown[]) => {
+          order.push(args.length === 0 ? 'server stopped' : 'server stopped abruptly')
         },
       },
       container: {
@@ -147,9 +149,10 @@ describe('closeApi', () => {
   })
 
   // The two numbers are equal, so a send that runs to its own deadline is not waited out:
-  // the shutdown timer ends the process first. Such a send is `unconfirmed` either way (the
-  // day's count kept, no code stored), which is the state a killed process leaves. A longer
-  // send deadline would change that for sends that do get an answer.
+  // the shutdown timer ends the process first. What that leaves is what a killed process
+  // leaves: possibly a day's count one higher than what was sent, possibly a delivered text
+  // whose code was never stored. Both err the safe way. A send deadline longer than the
+  // shutdown timeout would make that the outcome of sends that do get an answer in time.
   test('the deadline of a send is not longer than the shutdown timeout', () => {
     expect(PROVIDER_TIMEOUT_MS).toBeLessThanOrEqual(SHUTDOWN_TIMEOUT_MS)
   })

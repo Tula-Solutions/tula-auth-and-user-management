@@ -30,7 +30,7 @@ const METHODS: readonly { name: MethodName; label: string; description: string }
     name: 'smsCode',
     label: 'Texted code',
     description:
-      'A six-digit code texted to a phone number, for the one account that has proven it. Whoever receives a number’s messages can enter that account. Needs three things: text messages switched on, at least one country they may go to (both under Settings), and an SMS sender in the deployment (SMS_PROVIDER; the diagnostics say whether there is one).',
+      'A six-digit code texted to a phone number, for the one account that has proven it. Whoever receives a number’s messages can enter that account. It cannot be the only way to sign in (nobody can sign up with one): keep another method or an OAuth provider on. Needs three things: text messages switched on, at least one country they may go to (both under Settings), and an SMS sender in the deployment (SMS_PROVIDER; the diagnostics say whether there is one).',
   },
 ]
 
@@ -84,7 +84,7 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
         {refusal ? (
           <p role='alert' className='text-sm font-medium text-destructive'>
             Not saved: {refusal}. Keep one method or one OAuth provider enabled, or nobody could
-            sign in.
+            sign in. A texted code does not count: nobody can sign up with one.
           </p>
         ) : null}
         <TextField
