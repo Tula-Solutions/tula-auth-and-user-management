@@ -2118,7 +2118,7 @@ describe('SDK journeys: OAuth', () => {
     options: {
       cookies?: Map<string, string>
       browserTab?: ReturnType<typeof tab>
-      provider?: 'google' | 'microsoft' | 'discord' | 'linkedin'
+      provider?: 'google' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
     } = {}
   ) {
     const browserTab = options.browserTab ?? tab()
@@ -2585,6 +2585,118 @@ describe('SDK journeys: OAuth', () => {
         expect(back.landing.tula.state).toMatchObject({
           user: { email: colleagueEmail },
         })
+      }
+    )
+  }
+
+  // X and Facebook are asked for no email address: an account made through either has none,
+  // and nothing they say connects one to an account that has. The SDK is given a user whose
+  // `email` is `null`, and outcomes.
+  for (const { provider, name } of [
+    { provider: 'x', name: 'X' },
+    { provider: 'facebook', name: 'Facebook' },
+  ] as const) {
+    const providerServer = async (): Promise<Server> => {
+      const s = await oauthServer()
+      const saved = await s.admin('PUT', `/v1/admin/oauth-providers/${provider}`, {
+        clientId: `journey-${provider}-client`,
+        clientSecret: `journey-${provider}-secret`,
+      })
+      expect(saved.status).toBe(200)
+      return s
+    }
+    const withProvider = (s: Server, consent: Record<string, string>) =>
+      continueWithGoogle(s, consent, { provider })
+    const signedInAs = (client: { tula: { state: { status: string; user?: unknown } } }) =>
+      client.tula.state.status === 'signed-in'
+        ? (client.tula.state.user as { id: string; email: string | null } | null)
+        : null
+
+    journey(
+      `${name} sign-up and sign-in`,
+      `${name}: a sign-up comes back signed in to an account with no email address, the same id signs it in again, and an address on the consent form is never read`,
+      async () => {
+        const s = await providerServer()
+        const subject = snowflake()
+        expect((await s.client('web').tula.config.get()).signIn.oauth).toEqual(['google', provider])
+        const first = await withProvider(s, { subject })
+        expect(first.outcome.status).toBe('complete')
+        const user = signedInAs(first.landing)
+        expect(user).toMatchObject({ email: null, emailVerifiedAt: null, hasPassword: false })
+        expect(first.location.href).toBe(CALLBACK_PAGE)
+        expect(first.browserTab.entries.size).toBe(0)
+        expect(await first.landing.tula.user.identities.list()).toMatchObject([{ provider }])
+        await first.landing.tula.session.signOut()
+
+        const again = await withProvider(s, { subject })
+        expect(again.outcome.status).toBe('complete')
+        expect(signedInAs(again.landing)).toMatchObject({ id: user?.id, email: null })
+        await again.landing.tula.session.signOut()
+
+        // Another person, whose consent form names an address: a second account, and the
+        // address in nothing the SDK was sent.
+        const reported = freshEmail()
+        const other = await withProvider(s, { subject: snowflake(), email: reported })
+        expect(other.outcome.status).toBe('complete')
+        expect(signedInAs(other.landing)).toMatchObject({ email: null })
+        expect(signedInAs(other.landing)?.id).not.toBe(user?.id)
+        for (const sent of s.exchanges) {
+          expect(sent.responseBody).not.toContain(reported)
+        }
+      }
+    )
+
+    journey(
+      `${name} never links by address`,
+      `${name}: a consent form that names a member’s address makes a new account and touches nobody’s; its only identity cannot be removed; a profile still connects one`,
+      async () => {
+        const s = await providerServer()
+        const member = freshEmail()
+        const created = await s.admin('POST', '/v1/admin/users', {
+          email: member,
+          password: PASSWORD,
+          emailVerified: true,
+        })
+        const memberId = ((await created.json()) as { id: string }).id
+
+        const stranger = await withProvider(s, { subject: snowflake(), email: member })
+        expect(stranger.outcome.status).toBe('complete')
+        const made = signedInAs(stranger.landing)
+        expect(made).toMatchObject({ email: null })
+        expect(made?.id).not.toBe(memberId)
+        // Its only way to sign in stays: the refusal is an error with a contract code.
+        const [only] = await stranger.landing.tula.user.identities.list()
+        expect(only).toMatchObject({ provider })
+        await expect(
+          stranger.landing.tula.user.identities.unlink({ identityId: only?.id ?? '' })
+        ).rejects.toMatchObject({ code: 'identity.last_sign_in_method', status: 409 })
+        expect(await stranger.landing.tula.user.identities.list()).toHaveLength(1)
+
+        // From a profile the session is the proof, and that account then signs the member in.
+        const browser = s.client('web')
+        const signIn = await browser.tula.signIn.start({ identifier: member })
+        await signIn.submitPassword({ password: PASSWORD })
+        const profileTab = tab()
+        profileTab.open(`${APP_ORIGIN}/account`)
+        const profile = s.client('web', { cookies: browser.cookies })
+        await profile.tula.load()
+        expect(await profile.tula.user.identities.list()).toEqual([])
+        const { url } = await profile.tula.user.identities.link({
+          provider,
+          redirectUrl: CALLBACK_PAGE,
+        })
+        const subject = snowflake()
+        profileTab.open(await atProvider(s, url, { subject }))
+        const landing = s.client('web', { cookies: profile.cookies })
+        await landing.tula.load()
+        expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
+          status: 'linked',
+          identity: { provider },
+        })
+        await landing.tula.session.signOut()
+        const back = await withProvider(s, { subject })
+        expect(back.outcome.status).toBe('complete')
+        expect(signedInAs(back.landing)).toMatchObject({ id: memberId, email: member })
       }
     )
   }

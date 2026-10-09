@@ -24,7 +24,7 @@ by error code. Their code samples are copied from files of this repository by
 | [Password](methods/password.md) | Sign-up, sign-in, reset, the password policy. |
 | [Emailed code](methods/email-code.md) | A 6-digit code; sign-up without a password. |
 | [Emailed link](methods/email-link.md) | A link that works in the browser that asked for it. |
-| [Google, GitHub, Apple, Microsoft, Discord, LinkedIn](methods/oauth.md) | OAuth sign-in and connected accounts. Setup checklists: [Google](providers/google.md), [GitHub](providers/github.md), [Apple](providers/apple.md), [Microsoft](providers/microsoft.md), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md). |
+| [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook](methods/oauth.md) | OAuth sign-in and connected accounts. Setup checklists: [Google](providers/google.md), [GitHub](providers/github.md), [Apple](providers/apple.md), [Microsoft](providers/microsoft.md), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md), [X](providers/x.md), [Facebook](providers/facebook.md). |
 | [Passkeys](methods/passkeys.md) | WebAuthn: sign-in, second step, step-up. |
 | [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
 | [Sessions](methods/sessions.md) | Profiles, devices, the concurrent-session limit, what your server sees. |

@@ -80,10 +80,26 @@ every level) and an example (`HOOK_QUESTION_FIXTURES`).
 
 | Field | Why it is there |
 | --- | --- |
-| `email` | The address the account would be created for, normalised (the form an account is unique by). It is what a sign-up validator exists to judge. |
+| `email` | The address the account would be created for, normalised (the form an account is unique by). It is what a sign-up validator exists to judge. **`null` for a first sign-in with X or Facebook** (added 2026-10-09, TULA-14, below). |
 | `method` | `password`, `passwordless` or `oauth_<provider>`: a closed list. An operator may trust a provider's verified address more than an emailed code. |
 | `client` | The kind of client the sign-up started from (`web`, `ios`, …): a closed list. |
 | `ipAddress` | The address the request that would create the account came from, as the server knows it, or `null`. Fraud and abuse checks (a rate of their own, a country rule, a known-bad range) are the second thing a validator is for. |
+
+**A sign-up with no address (added 2026-10-09, TULA-14).** X and Facebook are asked for no
+email address ([ADR 0026](0026-oauth.md), "X and Facebook: providers without an address"),
+and their first sign-in creates an account with none. The hook is still asked, at the same
+point, because an operator's validator is also for the IP address, the client and the
+method. The question's `email` is then `null`. The alternatives were to leave the key out
+(a receiver that reads `data.email` then gets `undefined`, which a strict schema of its own
+refuses, and the field's absence would mean two things), to invent a placeholder (a lie a
+receiver would store), or to pass an address the provider was never asked for (there is
+none). So the schema's `email` became `string | null`, the key always present: the smallest
+change that says what is true. **It is a change to what a receiver may be sent**: one that
+calls a string method on `email` without a check fails for these sign-ups, and by the rule
+above a failed hook is `hook.unavailable` under `deny`, so with such a receiver nobody
+signs up through X or Facebook until it is fixed. It fails closed. `verifyHook`'s examples
+and `docs/hooks.md` show the check. Nothing else of the question changed, and the two later
+points never held an address.
 
 **Why an email address and an IP address here, when an event payload never holds either**
 ([ADR 0012](0012-events-and-audit-log.md)). The rule about event payloads exists because an
@@ -164,7 +180,7 @@ caller has proven**, which is where the flow already answers differently.
 | --- | --- | --- | --- |
 | Sign-up with a password | `Flows.verifyEmail`, after `Verification.verifyCode` accepted the emailed code and after the decoy check, immediately before `users.create` | An attempt for an existing address is a decoy: its code is one nobody knows, so no request for it ever gets past `verifyCode`. Whoever gets here holds the inbox, and the inbox of an existing address was already told "you have an account". A wrong code, a missing attempt secret, a foreign origin and a switched-off method are all refused earlier, identically for both kinds of address, with nothing asked. | Each call spends one emailed code: the `signUp` ceiling (600 emails a minute per environment), the per-address send limits and cooldown, the per-IP limit of the route, the `verify` ceiling (3,000 a minute). |
 | Sign-up without a password | The same statement: it is the same step | The same. | The same. |
-| First sign-in with a provider | `OAuth.resolveAccount`, on the row "no identity, a verified provider address, no user has that address", immediately before `users.create`; once per call even when the insert loses a race | The exchange has already checked the ticket and the browser's binding, and the provider has proven the address. The rows beside this one already answer differently (`oauth.account_exists`, a link, a sign-in), so being asked or not says nothing new. A known identity, an unverified or missing address, and an address that has an account never ask. | Each call spends one provider round trip and one ticket: the `oauth` and `verify` ceilings (3,000 a minute each) and the per-IP limits of the start, the callback and the exchange. |
+| First sign-in with a provider | `OAuth.resolveAccount`, on the row "no identity, a verified provider address, no user has that address" (for X and Facebook, which give no address: the row "the identity is nobody's"), immediately before `users.create`; once per call even when the insert loses a race | The exchange has already checked the ticket and the browser's binding, and the provider has proven the address. The rows beside this one already answer differently (`oauth.account_exists`, a link, a sign-in), so being asked or not says nothing new. A known identity, an unverified or missing address, and an address that has an account never ask. | Each call spends one provider round trip and one ticket: the `oauth` and `verify` ceilings (3,000 a minute each) and the per-IP limits of the start, the callback and the exchange. |
 | An administrator creating a user | Never | It is the operator's own act; the validator is the operator's too. | — |
 
 On top of those, **every environment has a ceiling on hook calls of its own**:

@@ -26,6 +26,23 @@ export function fullName(user: { firstName: string | null; lastName: string | nu
 }
 
 /**
+ * What a user is called in a heading, a link or a dialog's title: the email address, else
+ * the name, else the id. An account made through X or Facebook has no address, and may have
+ * no name either; a link and a title must still say something.
+ *
+ * @param user - The user.
+ * @returns The address, the name, or `User <id>`.
+ */
+export function userLabel(user: {
+  id: string
+  email: string | null
+  firstName: string | null
+  lastName: string | null
+}): string {
+  return user.email ?? (fullName(user) || `User ${user.id}`)
+}
+
+/**
  * Whether a URL from the server may be made a link: absolute `https:` only.
  *
  * @param value - The URL as text.

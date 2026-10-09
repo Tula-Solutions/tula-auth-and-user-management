@@ -36,7 +36,10 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       ctx = await setup()
     })
 
-    function user(tenant: UserSuiteTenant, overrides: Partial<NewUser> = {}): NewUser {
+    /** A user with an address: what every test here means unless it says otherwise. */
+    type Addressed = NewUser & { email: string; emailNormalized: string }
+
+    function user(tenant: UserSuiteTenant, overrides: Partial<Addressed> = {}): Addressed {
       const id = Bun.randomUUIDv7()
       return {
         id,
@@ -426,7 +429,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
     })
 
     describe('verifying an address nobody had proven, with the password removed', () => {
-      const hashOf = async (input: NewUser) =>
+      const hashOf = async (input: Addressed) =>
         (await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized))
           ?.passwordHash
 
@@ -1051,6 +1054,154 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         )
         expect(outcomes.sort()).toEqual(['last_method', 'unlinked'])
         expect(await ctx.users.listIdentities(ctx.a.environmentId, maya.id)).toHaveLength(1)
+      })
+
+      describe('a user with no email address (made through X or Facebook)', () => {
+        /** A provider's id nobody has yet: the suite's tenants are shared between tests. */
+        const freshSubject = () =>
+          String(BigInt(`0x${Bun.randomUUIDv7().replaceAll('-', '').slice(-15)}`) + 1n)
+        let SUBJECT: string
+
+        beforeEach(() => {
+          SUBJECT = freshSubject()
+        })
+
+        function addressless(overrides: Partial<NewUser> = {}): NewUser {
+          return {
+            ...user(ctx.a),
+            email: null,
+            emailNormalized: null,
+            emailVerifiedAt: null,
+            passwordHash: null,
+            oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'x', subject: SUBJECT },
+            ...overrides,
+          }
+        }
+
+        test('is created with its provider identity and nothing else, and found by it', async () => {
+          const nelly = addressless()
+          expect(await ctx.users.create(nelly, activity(ctx.a, 'user.created', nelly.id))).toBe(
+            true
+          )
+          const found = await ctx.users.findByIdentity(ctx.a.environmentId, 'x', SUBJECT)
+          expect(found).toMatchObject({
+            id: nelly.id,
+            email: null,
+            emailNormalized: null,
+            emailVerifiedAt: null,
+          })
+          expect(await ctx.users.findById(ctx.a.environmentId, nelly.id)).toEqual(found)
+          expect(
+            (await ctx.users.listIdentities(ctx.a.environmentId, nelly.id)).map(
+              (entry) => entry.provider
+            )
+          ).toEqual(['x'])
+          expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.created'])
+          // No address finds it: not an empty one, not the word.
+          for (const address of ['', 'null', 'undefined']) {
+            expect(await ctx.users.findByEmail(ctx.a.environmentId, address)).toBeNull()
+            expect(await ctx.users.findByEmailWithPassword(ctx.a.environmentId, address)).toBeNull()
+          }
+        })
+
+        test('any number of them coexist: having no address is not a conflict', async () => {
+          const one = addressless()
+          const two = addressless({
+            id: Bun.randomUUIDv7(),
+            oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'facebook', subject: SUBJECT },
+          })
+          const three = addressless({
+            id: Bun.randomUUIDv7(),
+            oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'x', subject: freshSubject() },
+          })
+          for (const input of [one, two, three]) {
+            expect(await ctx.users.create(input, Audit.none('fixture'))).toBe(true)
+            expect((await ctx.users.findById(ctx.a.environmentId, input.id))?.email).toBeNull()
+          }
+        })
+
+        test('two creations for one new provider account at once make one user', async () => {
+          const outcomes = await Promise.all(
+            [0, 1, 2].map(() =>
+              ctx.users.create(addressless({ id: Bun.randomUUIDv7() }), Audit.none('fixture'))
+            )
+          )
+          expect(outcomes.filter(Boolean)).toHaveLength(1)
+          expect(await ctx.users.findByIdentity(ctx.a.environmentId, 'x', SUBJECT)).not.toBeNull()
+        })
+
+        test('sorts after every address both ways, and a search by address passes it by', async () => {
+          // A family name only these two have: the suite's tenants are shared between tests.
+          const family = `Fam${SUBJECT}`
+          const nelly = addressless({ firstName: `Nelly${SUBJECT}`, lastName: family })
+          const maya = user(ctx.a, { lastName: family })
+          await ctx.users.create(nelly, Audit.none('fixture'))
+          await ctx.users.create(maya, Audit.none('fixture'))
+          const ids = async (q: string, sort: 'email' | '-email' = 'email') =>
+            (await ctx.users.list(ctx.a.environmentId, { q, page: 1, size: 10, sort })).users.map(
+              (entry) => entry.id
+            )
+          expect(await ids(family, 'email')).toEqual([maya.id, nelly.id])
+          expect(await ids(family, '-email')).toEqual([maya.id, nelly.id])
+          expect(await ids(maya.emailNormalized)).toEqual([maya.id])
+          expect(await ids(`nelly${SUBJECT}`)).toEqual([nelly.id])
+        })
+
+        test('has no address to verify: verifying changes nothing and records nothing', async () => {
+          const nelly = addressless()
+          await ctx.users.create(nelly, Audit.none('fixture'))
+          expect(
+            await ctx.users.markEmailVerified(
+              ctx.a.environmentId,
+              nelly.id,
+              later(1),
+              activity(ctx.a, 'user.email_verified', nelly.id),
+              { activity: activity(ctx.a, 'user.password_changed', nelly.id) }
+            )
+          ).toEqual({ passwordRemoved: false })
+          expect(
+            (await ctx.users.findById(ctx.a.environmentId, nelly.id))?.emailVerifiedAt
+          ).toBeNull()
+          expect(await auditOf(ctx.a, nelly.id)).toEqual([])
+        })
+
+        test('is never the target of an automatic link, whatever the guard says', async () => {
+          const nelly = addressless()
+          await ctx.users.create(nelly, Audit.none('fixture'))
+          for (const emailNormalized of ['', 'null', 'maya@northline.app']) {
+            expect(
+              await ctx.users.linkIdentity(identity(ctx.a, nelly.id), Audit.none('fixture'), {
+                emailNormalized,
+              })
+            ).toBe('user_changed')
+          }
+        })
+
+        test('removing its only identity is asked about with nothing left, and refused', async () => {
+          const nelly = addressless()
+          await ctx.users.create(nelly, Audit.none('fixture'))
+          const seen: unknown[] = []
+          const outcome = await ctx.users.unlinkIdentity(
+            ctx.a.environmentId,
+            nelly.id,
+            nelly.oauthIdentity?.id ?? '',
+            (remaining) => {
+              seen.push(remaining)
+              return (
+                remaining.hasPassword ||
+                remaining.emailVerified ||
+                remaining.providers.length > 0 ||
+                remaining.passkeys > 0
+              )
+            },
+            Audit.none('fixture')
+          )
+          expect(outcome).toBe('last_method')
+          expect(seen).toEqual([
+            { hasPassword: false, emailVerified: false, providers: [], passkeys: 0 },
+          ])
+          expect(await ctx.users.listIdentities(ctx.a.environmentId, nelly.id)).toHaveLength(1)
+        })
       })
 
       test('deleting a user frees their provider accounts', async () => {

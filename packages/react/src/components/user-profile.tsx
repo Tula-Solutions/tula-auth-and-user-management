@@ -74,12 +74,16 @@ function ProfileSection(props: { user: User }) {
         </span>
         <div className='tula-profile-text'>
           {name ? <p className='tula-profile-name'>{name}</p> : null}
-          <p className='tula-profile-email'>
-            <span>{user.email}</span>{' '}
-            <span {...el('badge', user.emailVerifiedAt ? 'tula-is-positive' : undefined)}>
-              {user.emailVerifiedAt ? t.userProfile.emailVerified : t.userProfile.emailUnverified}
-            </span>
-          </p>
+          {/* No address (an account made through X or Facebook): no line, and no badge
+              that would call an address nobody gave "not verified". */}
+          {user.email === null ? null : (
+            <p className='tula-profile-email'>
+              <span>{user.email}</span>{' '}
+              <span {...el('badge', user.emailVerifiedAt ? 'tula-is-positive' : undefined)}>
+                {user.emailVerifiedAt ? t.userProfile.emailVerified : t.userProfile.emailUnverified}
+              </span>
+            </p>
+          )}
         </div>
       </div>
     </section>
@@ -107,7 +111,24 @@ function NoPasswordSection() {
   )
 }
 
-function PasswordSection(props: { user: User; onChanged(): void }) {
+/**
+ * The password section a user gets. None at all for an account with no email address (one
+ * made through X or Facebook): a password signs in beside an address, the server refuses
+ * one for such an account, and "Forgot password?" would have nowhere to send its email.
+ */
+function passwordSection(user: User, sessionId: string | null, onChanged: () => void) {
+  if (user.email === null) {
+    return null
+  }
+  if (user.hasPassword === false) {
+    return <NoPasswordSection />
+  }
+  // Keyed by the session: half-typed passwords, a pending change and its messages belong to
+  // whoever was signed in when they began, and go with them.
+  return <PasswordSection key={sessionId} user={user} email={user.email} onChanged={onChanged} />
+}
+
+function PasswordSection(props: { user: User; email: string; onChanged(): void }) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
   const withStepUp = useStepUp()
@@ -122,7 +143,7 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
   )
   const [changed, setChanged] = useState(false)
   const checklist = usePasswordChecklist(newPassword, {
-    email: user.email,
+    email: props.email,
     firstName: user.firstName ?? undefined,
     lastName: user.lastName ?? undefined,
   })
@@ -196,7 +217,7 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
           type='text'
           name='username'
           autoComplete='username'
-          value={user.email}
+          value={props.email}
           readOnly
           tabIndex={-1}
           aria-hidden='true'
@@ -534,15 +555,7 @@ export function UserProfileSections(props: {
           <ProfileSection user={user} />
           {/* Keyed by the session: half-typed passwords, a pending change and its messages
               belong to whoever was signed in when they began, and go with them. */}
-          {user.hasPassword === false ? (
-            <NoPasswordSection />
-          ) : (
-            <PasswordSection
-              key={state.sessionId}
-              user={user}
-              onChanged={() => void sessions.reload()}
-            />
-          )}
+          {passwordSection(user, state.sessionId, () => void sessions.reload())}
           <PhoneSection key={`phone:${state.sessionId}`} user={user} />
         </>
       ) : (

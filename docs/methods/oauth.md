@@ -1,7 +1,7 @@
-# Google, GitHub, Apple, Microsoft, Discord and LinkedIn (OAuth)
+# Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (OAuth)
 
-"Continue with Google", GitHub, Apple, Microsoft, Discord or LinkedIn, and connecting or disconnecting those accounts in
-the account page. Each environment uses its own credentials; none ship with Tula.
+"Continue with Google", GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook, and connecting or
+disconnecting those accounts in the account page. Each environment uses its own credentials; none ship with Tula.
 The reasoning (the callback, the ticket, when accounts are linked) is in
 [ADR 0026](../adr/0026-oauth.md).
 
@@ -20,7 +20,8 @@ Three things per provider, in this order:
    it as `callbackUrl`. Checklists: [Google](../providers/google.md),
    [GitHub](../providers/github.md), [Apple](../providers/apple.md),
    [Microsoft](../providers/microsoft.md), [Discord](../providers/discord.md),
-   [LinkedIn](../providers/linkedin.md).
+   [LinkedIn](../providers/linkedin.md), [X](../providers/x.md),
+   [Facebook](../providers/facebook.md).
 2. **Give Tula the credentials.**
 3. **Allow your app's landing page** (the page that renders `<OAuthCallback>`) in
    `urls.allowedRedirectUrls`, exactly.
@@ -33,10 +34,12 @@ Three things per provider, in this order:
 | Microsoft | `PUBLIC_URL/v1/oauth/callback/microsoft` | `openid`, `profile`, `email` | client id, client secret, the tenant (`common`, `organizations`, `consumers` or a tenant id) |
 | Discord | `PUBLIC_URL/v1/oauth/callback/discord` | `identify`, `email` | client id, client secret |
 | LinkedIn | `PUBLIC_URL/v1/oauth/callback/linkedin` | `openid`, `profile`, `email` | client id, client secret |
+| X | `PUBLIC_URL/v1/oauth/callback/x` | `users.read`, `tweet.read` (no email) | OAuth 2.0 client id, client secret |
+| Facebook | `PUBLIC_URL/v1/oauth/callback/facebook` | `public_profile` (no email) | app id (as `clientId`), app secret (as `clientSecret`) |
 
 | Where | How |
 | --- | --- |
-| Dashboard | **Sign-in methods**: configure Google, GitHub, Apple, Microsoft, Discord and LinkedIn. A saved secret is write-only. |
+| Dashboard | **Sign-in methods**: configure Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook. A saved secret is write-only. |
 | `tula.config.ts` | `providers`, with every secret as `env('NAME')`, then `tula apply`. |
 | Admin API | `PUT /v1/admin/oauth-providers/<provider>`. |
 
@@ -66,6 +69,11 @@ providers: {
     clientSecret: env('DISCORD_CLIENT_SECRET'),
   },
   linkedin: { clientId: '86abcdefgh1234', clientSecret: env('LINKEDIN_CLIENT_SECRET') },
+  // X and Facebook are asked for no email address: an account made through either has
+  // none, and is never joined to an account with one.
+  x: { clientId: 'bEx4bXBsZUNsaWVudElk', clientSecret: env('X_CLIENT_SECRET') },
+  // Facebook calls them the app id and the app secret.
+  facebook: { clientId: '1234567890123456', clientSecret: env('FACEBOOK_APP_SECRET') },
 },
 ```
 <!-- /snippet -->
@@ -109,6 +117,14 @@ reads the switch from its `.env`.
   address, or one the provider does not vouch for, signs in where Tula already knows it and
   nothing else ([Discord](../providers/discord.md#what-the-address-proves),
   [LinkedIn](../providers/linkedin.md#what-the-address-proves)).
+- **With X and Facebook there is no address at all.** Neither is asked for one. A first
+  sign-in makes an account with **no email address**, which is never joined to an account
+  that has one: someone who already has an account and chooses "Continue with X" gets a
+  second one, unless they connect X from their account page instead. Such an account's
+  page shows no address and no password section, it gets no security emails, and its
+  provider account cannot be disconnected until it has a passkey
+  ([X](../providers/x.md#no-email-address),
+  [Facebook](../providers/facebook.md#no-email-address)).
 
 ## Security properties and limits
 
@@ -128,11 +144,25 @@ reads the switch from its `.env`.
 - **LinkedIn has neither.** Its authorization request takes five parameters and none of them
   is a PKCE challenge or a nonce, and its ID token is not documented to carry a nonce. A
   LinkedIn code is bound to the sign-in only by the single-use `state` and by the client
-  secret, which is the weakest binding of the six providers
-  ([why](../adr/0026-oauth.md#discord-and-linkedin)).
+  secret ([why](../adr/0026-oauth.md#discord-and-linkedin)).
+- **X has PKCE; Facebook has neither PKCE nor a nonce** in the flow used here (Meta documents
+  them only for its OpenID Connect flow). A Facebook code is bound to the sign-in by the
+  single-use `state`, the app secret and the exact redirect URI, as LinkedIn's is: the
+  weakest binding of the eight providers
+  ([why](../adr/0026-oauth.md#x-and-facebook-providers-without-an-address)).
 - A provider sign-in is a **first** factor: a user with two-step verification is still asked
   for the second step.
 - A provider address that the provider does not assert as verified is refused.
+- **An account made through X or Facebook has no email address**, and there is no way to
+  add one today. It receives no security notice (a new device, a changed factor), cannot
+  sign in by emailed code or link, cannot have a password, and cannot step up once the
+  window after its sign-in has passed unless it has a passkey or an authenticator app. Its
+  `email` is `null` in the API, in `useUser()` and in the `before_sign_up` hook's question.
+- An X account is its numeric user id, never its username; a Facebook account is the
+  app-scoped user id, which is another value in another Facebook app. Neither adapter was
+  run against the provider, and **what X charges for the API call a sign-in makes was not
+  confirmed** ([X: limits](../providers/x.md#limits)). Facebook's profile is read on a
+  pinned Graph API version that has to be raised before Meta retires it.
 - A Microsoft account is its tenant id and object id, never its address, and its token's
   issuer must be the one of the tenant the token itself names. Neither was run against
   Microsoft: the checks are tested with tokens the tests sign.

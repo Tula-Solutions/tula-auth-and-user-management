@@ -423,6 +423,8 @@ describe('tula diff / tula apply against the API', () => {
   test.each([
     ['discord', 'DISCORD_CLIENT_SECRET'],
     ['linkedin', 'LINKEDIN_CLIENT_SECRET'],
+    ['x', 'X_CLIENT_SECRET'],
+    ['facebook', 'FACEBOOK_APP_SECRET'],
   ] as const)(
     '%s is created from a client id and a secret, which a second run finds unchanged',
     async (provider, variable) => {

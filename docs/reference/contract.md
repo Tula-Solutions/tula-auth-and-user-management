@@ -508,7 +508,7 @@ nothing an operator would not put on that screen.
 
 - `app.supportEmail` is included because a sign-in screen links to it ("Need help?") and every
   email already shows it. It is `null` when none is set.
-- `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`), for
+- `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
 - `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`). It
   is an array of plain strings, not an enum, so a client built against this version keeps
@@ -1841,7 +1841,7 @@ const HOOK_QUESTION_TYPES: Record<any, `hook.${any}`>
 
 ```ts
 if (question.type === HOOK_QUESTION_TYPES.before_sign_up) {
-  // question.data.email is the address being signed up
+  // question.data.email is the address being signed up, or null when there is none
 }
 ```
 
@@ -1956,7 +1956,10 @@ question by being passed along.
 
 - `email`: the address the account would be created for, normalised (lower case): the form
   an account is unique by. The address has been **proven** by the time the question is
-  asked (an emailed code, or a provider that asserts it verified).
+  asked (an emailed code, or a provider that asserts it verified). **`null` when the
+  account would have no address**: a first sign-in with a provider Tula takes none from
+  (`oauth_x`, `oauth_facebook`; ADR 0026). The key is always there; a receiver that
+  decides by the address decides what an account without one gets.
 - `method`: one of {@link HOOK_SIGN_UP_METHODS}.
 - `client`: the kind of client the sign-up was started from.
 - `ipAddress`: the address the request that would create the account came from, as the
@@ -2291,7 +2294,8 @@ said.
 
 - `user.email`: the user's address in its normalised form (trimmed, ASCII letters
   lowercased), which is the form Tula matches addresses by. A string.
-- `user.email_verified`: whether that address has been proven. A boolean.
+- `user.email_verified`: whether that address has been proven. A boolean. A user with no
+  address has no value for it, as for `user.email`: the key is left out, never `false`.
 - `user.created_at`: when the account was created, in seconds since the epoch. A number.
 - `session.client`: the kind of client the session was started from (`web`, `ios`,
   `android`, `server`). A string.
@@ -2925,7 +2929,33 @@ _constant_, defined in `packages/contract/src/oauth.ts`
 The OAuth providers an environment can configure with its own credentials (ADR 0026).
 
 ```ts
-const OAUTH_PROVIDERS: readonly ["google", "github", "apple", "microsoft", "discord", "linkedin"]
+const OAUTH_PROVIDERS: readonly ["google", "github", "apple", "microsoft", "discord", "linkedin", "x", "facebook"]
+```
+
+### `OAUTH_PROVIDERS_WITHOUT_ADDRESS`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The providers Tula takes **no email address** from, as a fact about the provider and not a
+setting: X and Facebook (ADR 0026, "Providers without an address").
+
+Neither asserts an address verified in a way a sign-in can rest on, so their adapters ask
+for none and report none. A first sign-in with one creates an account **with no email
+address**, and such an identity is never connected to an existing account by an address.
+Every other provider is the opposite: no address, no account (`oauth.email_missing`).
+
+A closed list in the contract, read by the server's account resolution and by the screens
+that tell an operator what enabling the provider means. Nothing a request or an
+environment's settings say moves a provider in or out of it.
+
+```ts
+const OAUTH_PROVIDERS_WITHOUT_ADDRESS: ["x", "facebook"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITHOUT_ADDRESS.includes('x') // true
 ```
 
 ### `OAUTH_TICKET_PARAM`
@@ -3049,7 +3079,7 @@ _constant_, defined in `packages/contract/src/oauth.ts`
 
 Set a provider's credentials and whether sign-in offers it.
 
-- Google, GitHub, Discord and LinkedIn: `clientId` and `clientSecret`.
+- Google, GitHub, Discord, LinkedIn, X and Facebook: `clientId` and `clientSecret`.
 - Apple: `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file's
   contents, PKCS#8 PEM).
 - Microsoft: `clientId` (the application id), `clientSecret` and `tenant`
@@ -5468,6 +5498,30 @@ export function formatWebhookSecret(key: Uint8Array): string
 
 ```ts
 const secret = formatWebhookSecret(crypto.getRandomValues(new Uint8Array(32)))
+```
+
+### `givesNoAddress`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Whether a provider is one Tula takes no email address from
+({@link OAUTH_PROVIDERS_WITHOUT_ADDRESS}).
+
+```ts
+export function givesNoAddress(provider: string): boolean
+```
+
+**Parameters**
+
+- `provider`: A provider's name.
+
+**Returns** `true` for X and Facebook.
+
+**Example**
+
+```ts
+givesNoAddress('facebook') // true
+givesNoAddress('google') // false
 ```
 
 ### `hasEnabledSignInMethod`

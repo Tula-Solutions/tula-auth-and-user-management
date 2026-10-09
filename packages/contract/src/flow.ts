@@ -24,6 +24,8 @@ export const FirstFactorStrategySchema = z
     'oauth_microsoft',
     'oauth_discord',
     'oauth_linkedin',
+    'oauth_x',
+    'oauth_facebook',
   ])
   .meta({ ref: 'FirstFactorStrategy' })
 

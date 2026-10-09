@@ -197,7 +197,7 @@ describe('defineConfig', () => {
     expect(JSON.stringify([error.message, error.issues])).not.toContain(literal)
   })
 
-  describe.each(['discord', 'linkedin'] as const)('%s', (provider) => {
+  describe.each(['discord', 'linkedin', 'x', 'facebook'] as const)('%s', (provider) => {
     test('takes a client id and a secret reference, and is on unless the file says otherwise', () => {
       const config = defineConfig({
         environments: {
@@ -306,8 +306,8 @@ describe('defineConfig', () => {
     ],
     [
       'an unknown provider',
-      { environments: { dev: { providers: { facebook: { clientId: 'x' } } } } },
-      'environments.dev.providers.facebook',
+      { environments: { dev: { providers: { twitch: { clientId: 'x' } } } } },
+      'environments.dev.providers.twitch',
       'unknown key',
     ],
     [
@@ -521,10 +521,12 @@ describe('the example config', () => {
     expect(requiredSecrets(prod.providers)).toEqual({
       apple: 'APPLE_PRIVATE_KEY',
       discord: 'DISCORD_CLIENT_SECRET',
+      facebook: 'FACEBOOK_APP_SECRET',
       github: 'GITHUB_CLIENT_SECRET',
       google: 'GOOGLE_CLIENT_SECRET',
       linkedin: 'LINKEDIN_CLIENT_SECRET',
       microsoft: 'MICROSOFT_CLIENT_SECRET',
+      x: 'X_CLIENT_SECRET',
     })
     // The dev entry leaves the password policy to the deployment.
     expect(selectEnvironment(config, 'dev').settings.password).toBeUndefined()

@@ -47,7 +47,7 @@ deletes a workspace, project or environment yet.
 | --- | --- |
 | Users | Search by email or name; create a user; open one. |
 | A user | Profile and state, the phone number and when it was verified; how they sign in (password, verified address, linked accounts, two-step verification and backup codes left, passkeys: never a secret); active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
-| Sign-in methods | Switch password, emailed code, emailed link and passkeys on or off; set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub, Apple, Microsoft, Discord and LinkedIn. |
+| Sign-in methods | Switch password, emailed code, emailed link and passkeys on or off; set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (the last two say on their cards that an account made through them has no email address). |
 | Password policy | A preset or custom rules. |
 | Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. **JWT templates** ([docs](jwt-templates.md)): add a template and its claims (a source or a fixed value each), see how large it can get against the 1,024-byte cap and which profiles use it, and choose a template on a profile's card. A reserved or malformed claim name and the caps are refused in the form; a template a profile uses cannot be taken out until the profile lets go of it; a save that takes claims away from a profile's sessions asks first. |
 | API keys | List (prefix and last four characters only), create, revoke. |
@@ -78,6 +78,13 @@ deletes a workspace, project or environment yet.
   yet, so a second rotation within ten minutes is refused.
 - **At least one sign-in method must stay on.** Switching off the last one (counting enabled
   providers) is refused by the server, and the dashboard says so.
+- **Switching off X or Facebook can lock people out, and the dashboard does not warn.** The
+  rule above is about the environment, not about a user. An account made by signing in with
+  X or Facebook has no email address, so it has no password, cannot be given one and cannot
+  reset one: with its provider off or removed it has no way in until you configure the
+  provider again (unless it added a passkey or connected another provider). The account
+  itself stays and is still listed. See [X](providers/x.md#before-you-switch-it-off) and
+  [Facebook](providers/facebook.md#before-you-switch-it-off).
 - **A webhook signing secret is shown once**, when the endpoint is added and when its secret
   is rotated. Copy it from the dialog; closing the dialog discards it, and the API cannot
   show it again. If it is lost, rotate. While the request is under way the dialog cannot be

@@ -18,7 +18,8 @@ import type { SessionProfile, SessionSettings } from './session-profile'
  *
  * - `user.email`: the user's address in its normalised form (trimmed, ASCII letters
  *   lowercased), which is the form Tula matches addresses by. A string.
- * - `user.email_verified`: whether that address has been proven. A boolean.
+ * - `user.email_verified`: whether that address has been proven. A boolean. A user with no
+ *   address has no value for it, as for `user.email`: the key is left out, never `false`.
  * - `user.created_at`: when the account was created, in seconds since the epoch. A number.
  * - `session.client`: the kind of client the session was started from (`web`, `ios`,
  *   `android`, `server`). A string.
@@ -61,7 +62,7 @@ const MAX_EMAIL_LENGTH = 320
  */
 export const MAX_EMAIL_CLAIM_BYTES = 2 * MAX_EMAIL_LENGTH + 2
 
-/** `false`. */
+/** `false`. A source with no value for a user (no address) adds no key, which is less. */
 const MAX_BOOLEAN_BYTES = 5
 /** The digits of the largest integer a JSON number holds exactly; a time in seconds is far shorter. */
 const MAX_TIME_BYTES = String(Number.MAX_SAFE_INTEGER).length

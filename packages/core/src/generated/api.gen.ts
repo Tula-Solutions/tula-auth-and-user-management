@@ -32,7 +32,7 @@ export interface Schemas {
   }
   CurrentUser: {
     id: string
-    email: string
+    email: string | null
     emailVerifiedAt: string | null
     firstName: string | null
     lastName: string | null
@@ -89,7 +89,7 @@ export interface Schemas {
     strategy: Schemas['EmailVerificationStrategy']
     redirectUrl?: string
   }
-  FirstFactorStrategy: 'password' | 'email_code' | 'email_link' | 'passkey' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin'
+  FirstFactorStrategy: 'password' | 'email_code' | 'email_link' | 'passkey' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
   FlowAttempt: {
     id: string
     kind: Schemas['FlowKind']
@@ -152,7 +152,7 @@ export interface Schemas {
     attemptId: string
     binding?: string
   }
-  OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin'
+  OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
   OAuthStart: {
     attempt: Schemas['FlowAttempt']
     authorizationUrl: string

@@ -23,8 +23,8 @@ import { inProcessTarget } from '~/testing/in-process-target'
  * In every canary address, password and GUID; never in anything the server makes. A canary
  * GUID (a Microsoft tenant id or object id, which a provider supplies) ends in twelve fixed
  * hex digits: the tap takes anything GUID-shaped for one of the server's own ids and does not
- * look for it, so the marker is the only thing that finds one. A canary snowflake (a Discord
- * user id: digits only) ends in twelve fixed digits.
+ * look for it, so the marker is the only thing that finds one. A canary snowflake (a Discord,
+ * X or Facebook user id: digits only) ends in twelve fixed digits.
  */
 const MARKERS = /canary|s3cretpass|c0ffeec0ffee|424242424242/i
 

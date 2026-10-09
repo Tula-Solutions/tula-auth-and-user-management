@@ -98,10 +98,12 @@ describe('@tula/admin against the API', () => {
     expect(before.data.data.map((provider) => provider.provider).sort()).toEqual([
       'apple',
       'discord',
+      'facebook',
       'github',
       'google',
       'linkedin',
       'microsoft',
+      'x',
     ])
     const secret = 'in-process-client-secret-value'
     const set = await admin.call('updateOAuthProvider', {
@@ -141,10 +143,12 @@ describe('@tula/admin against the API', () => {
       [
         ['apple', null],
         ['discord', null],
+        ['facebook', null],
         ['github', null],
         ['google', null],
         ['linkedin', null],
         ['microsoft', '72f988bf-86f1-41af-91ab-2d7cd011db47'],
+        ['x', null],
       ]
     )
   })

@@ -101,7 +101,8 @@ export interface FakeState extends FakeWebhookState, FakeHookState {
   }[]
   users: {
     id: string
-    email: string
+    /** `null` for an account made through X or Facebook. */
+    email: string | null
     emailVerifiedAt: string | null
     phoneNumber?: string | null
     phoneNumberVerifiedAt?: string | null
@@ -370,7 +371,7 @@ export function installFakeApi() {
       /^\/v1\/admin\/users$/,
       (call) => {
         const q = call.search.get('q')?.toLowerCase() ?? ''
-        return page(state.users.filter((user) => user.email.includes(q)))
+        return page(state.users.filter((user) => (user.email ?? '').includes(q)))
       },
     ],
     [
@@ -560,19 +561,28 @@ export function installFakeApi() {
       'GET',
       /^\/v1\/admin\/oauth-providers$/,
       () => ({
-        data: (['google', 'github', 'apple', 'microsoft', 'discord', 'linkedin'] as const).map(
-          (provider) => ({
-            provider,
-            configured: false,
-            enabled: false,
-            clientId: null,
-            teamId: null,
-            keyId: null,
-            tenant: null,
-            callbackUrl: `http://localhost:3003/v1/client/oauth/${provider}/callback`,
-            updatedAt: null,
-          })
-        ),
+        data: (
+          [
+            'google',
+            'github',
+            'apple',
+            'microsoft',
+            'discord',
+            'linkedin',
+            'x',
+            'facebook',
+          ] as const
+        ).map((provider) => ({
+          provider,
+          configured: false,
+          enabled: false,
+          clientId: null,
+          teamId: null,
+          keyId: null,
+          tenant: null,
+          callbackUrl: `http://localhost:3003/v1/client/oauth/${provider}/callback`,
+          updatedAt: null,
+        })),
       }),
     ],
   ]

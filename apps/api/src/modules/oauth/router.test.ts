@@ -276,6 +276,8 @@ describe('starting an OAuth sign-in', () => {
         microsoft: { tenant: 'common' },
         discord: {},
         linkedin: {},
+        x: {},
+        facebook: {},
       }
       expect((await configure(provider, bodies[provider])).status).toBe(200)
       const built = spyOn(deps.oauth[provider], 'authorizationUrl').mockImplementation(() => {
@@ -1187,6 +1189,16 @@ describe('admin: provider credentials', () => {
         provider: 'linkedin',
         configured: false,
         callbackUrl: 'http://localhost:3003/v1/oauth/callback/linkedin',
+      }),
+      expect.objectContaining({
+        provider: 'x',
+        configured: false,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/x',
+      }),
+      expect.objectContaining({
+        provider: 'facebook',
+        configured: false,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/facebook',
       }),
     ])
   })

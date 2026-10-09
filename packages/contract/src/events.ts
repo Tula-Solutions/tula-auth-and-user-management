@@ -128,8 +128,14 @@ export const EVENT_DATA_SCHEMAS = {
       'oauth_microsoft',
       'oauth_discord',
       'oauth_linkedin',
+      'oauth_x',
+      'oauth_facebook',
     ]),
-    /** Whether the account's email address was proven when it was created. */
+    /**
+     * Whether the account's email address was proven when it was created. `false` also for
+     * an account created with no address at all (a first sign-in with X or Facebook): read
+     * the user to tell the two apart (`email` is `null`).
+     */
     emailVerified: z.boolean(),
     /** `true` when the account was created without a password; absent otherwise. */
     passwordless: z.boolean().optional(),

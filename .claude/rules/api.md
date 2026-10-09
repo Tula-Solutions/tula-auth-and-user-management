@@ -55,8 +55,11 @@ paths:
   for its number; its words are in `modules/sms/templates.ts`. A user's phone number is
   written only by `users.setPhoneNumber` / `removePhoneNumber`, each with its `Activity`.
 - A hook (ADR 0035) is asked through `Hooks.beforeSignUp` only, and only where a sign-up is
-  about to create an account for a proven address (after the emailed code in
-  `Flows.verifyEmail`; the new-user row of `OAuth.resolveAccount`). The caller gets `'clear'`
+  about to create an account: for a proven address (after the emailed code in
+  `Flows.verifyEmail`; the new-user row of `OAuth.resolveAccount`), or at the first sign-in
+  with a provider of `OAUTH_PROVIDERS_WITHOUT_ADDRESS` (the "identity is nobody's" branch of
+  `OAuth.resolveAccount`, reached only from the exchange), where the question's `email` is
+  `null`. The caller gets `'clear'`
   or `'bypassed'` and nothing of the answer. Never ask one from a start, from an admin route
   or on demand. `Hooks.beforeSession` is called from the flow service's `finish` only
   (after the attempt's move to `complete`, before `Sessions.create`), and

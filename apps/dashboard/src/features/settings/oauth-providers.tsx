@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
+import { givesNoAddress } from '@tula/contract'
 import { type FormEvent, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
 import {
@@ -33,6 +34,8 @@ const PROVIDER_NAME: Record<OAuthProviderSettings['provider'], string> = {
   microsoft: 'Microsoft',
   discord: 'Discord',
   linkedin: 'LinkedIn',
+  x: 'X',
+  facebook: 'Facebook',
 }
 
 /**
@@ -141,6 +144,13 @@ function ProviderCard({ provider, name }: { provider: OAuthProviderSettings; nam
         </code>
         <CopyButton value={provider.callbackUrl} label='Copy redirect URI' />
       </div>
+      {givesNoAddress(provider.provider) ? (
+        <p className='text-sm text-muted-foreground'>
+          {name} is asked for no email address. An account made by signing in with {name} has none:
+          it is never joined to an account that has one, gets no security emails and cannot sign in
+          by email or reset a password.
+        </p>
+      ) : null}
       <form onSubmit={submit} className='flex flex-col gap-4' noValidate>
         <TextField
           label={
@@ -316,7 +326,7 @@ export function OAuthProviders() {
   return (
     <Section
       title='OAuth providers'
-      description='Sign-in with Google, GitHub, Apple, Microsoft, Discord and LinkedIn. Each provider is saved separately from the settings above.'
+      description='Sign-in with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook. Each provider is saved separately from the settings above.'
     >
       <QueryState query={providers} label='Loading providers'>
         {(list) => (

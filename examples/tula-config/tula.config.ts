@@ -126,6 +126,11 @@ export default defineConfig({
           clientSecret: env('DISCORD_CLIENT_SECRET'),
         },
         linkedin: { clientId: '86abcdefgh1234', clientSecret: env('LINKEDIN_CLIENT_SECRET') },
+        // X and Facebook are asked for no email address: an account made through either has
+        // none, and is never joined to an account with one.
+        x: { clientId: 'bEx4bXBsZUNsaWVudElk', clientSecret: env('X_CLIENT_SECRET') },
+        // Facebook calls them the app id and the app secret.
+        facebook: { clientId: '1234567890123456', clientSecret: env('FACEBOOK_APP_SECRET') },
       },
       // #endregion
       // #region webhooks

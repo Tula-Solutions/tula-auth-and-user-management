@@ -91,7 +91,7 @@ A claim has **exactly one** source. There is no expression, no concatenation and
 | Source | Value |
 | --- | --- |
 | `{ from: 'user.email' }` | The user's address, in the form Tula matches addresses by (trimmed, ASCII letters lowercased). A string. |
-| `{ from: 'user.email_verified' }` | Whether that address has been proven. A boolean. |
+| `{ from: 'user.email_verified' }` | Whether that address has been proven. A boolean. Left out, like `user.email`, for a user who has no address (an account made by signing in with X or Facebook); `false` means an address that is there and not proven. |
 | `{ from: 'user.created_at' }` | When the account was created, in seconds since the epoch. A number. |
 | `{ from: 'session.client' }` | The kind of client the session was started from: `web`, `ios`, `android` or `server`. |
 | `{ from: 'session.created_at' }` | When the session was signed in to, in seconds since the epoch. A step-up does not move it (`auth_time` is the claim that moves). |

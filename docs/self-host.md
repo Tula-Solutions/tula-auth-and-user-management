@@ -4,7 +4,7 @@ Tula's API is one container image, a PostgreSQL database and, for more than one 
 Redis. This guide covers trying it locally with Docker Compose, and what to change for a real
 deployment.
 
-Phase 1 status: passwords, emailed codes and links, Google, GitHub, Apple, Microsoft, Discord and LinkedIn, passkeys,
+Phase 1 status: passwords, emailed codes and links, Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook, passkeys,
 two-step verification, session profiles, user administration and the audit log (one page per
 method under [methods/](README.md#sign-in-methods)). Administration is through the dashboard at
 `/dashboard` ([dashboard.md](dashboard.md)), settings as code (`tula apply`,
@@ -326,7 +326,9 @@ redirect URI `GET /v1/admin/oauth-providers` lists as `callbackUrl`
 `urls.allowedRedirectUrls`. Step-by-step: [Google](providers/google.md),
 [GitHub](providers/github.md), [Apple](providers/apple.md),
 [Microsoft](providers/microsoft.md) (which also takes a `tenant`: which Microsoft accounts
-may sign in), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md). The secret is stored encrypted
+may sign in), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md), [X](providers/x.md),
+[Facebook](providers/facebook.md) (an account made through either of the last two has no
+email address). The secret is stored encrypted
 with `TULA_MASTER_KEY` and never returned; no provider token is stored at all.
 `DELETE /v1/admin/oauth-providers/<provider>` removes the credentials (users keep their
 connected accounts). To try the flow without credentials, see `OAUTH_MOCK_PROVIDER` above.

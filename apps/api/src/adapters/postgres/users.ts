@@ -136,14 +136,17 @@ export class PostgresUserRepository implements UserRepository {
     try {
       await withTenant(this.db, user.environmentId, async (tx) => {
         await tx.insert(users).values({ ...record, updatedAt: user.createdAt })
-        await tx.insert(identities).values({
-          id: identityId,
-          ...scope,
-          userId: user.id,
-          provider: 'email',
-          providerSubject: user.emailNormalized,
-          ...stamps,
-        })
+        // An account with no address has no `email` identity: there is nothing to name it by.
+        if (user.emailNormalized !== null) {
+          await tx.insert(identities).values({
+            id: identityId,
+            ...scope,
+            userId: user.id,
+            provider: 'email',
+            providerSubject: user.emailNormalized,
+            ...stamps,
+          })
+        }
         if (oauthIdentity) {
           await tx.insert(identities).values({
             id: oauthIdentity.id,
@@ -442,6 +445,8 @@ export class PostgresUserRepository implements UserRepository {
           and(
             eq(users.id, userId),
             eq(users.environmentId, environmentId),
+            // An account with no address has none to verify (`users_email_whole`).
+            isNotNull(users.email),
             isNull(users.emailVerifiedAt)
           )
         )

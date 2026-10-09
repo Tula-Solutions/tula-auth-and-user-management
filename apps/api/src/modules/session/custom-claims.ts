@@ -45,9 +45,13 @@ function claimValue(claim: JwtTemplateClaim, facts: ClaimFacts): CustomClaimValu
   // newer server wrote) has no value: nothing is guessed from its name.
   switch (claim.from) {
     case 'user.email':
-      return user?.emailNormalized
+      // No address, no value, and so no key (an account made through X or Facebook).
+      return user?.emailNormalized ?? undefined
     case 'user.email_verified':
-      return user ? user.emailVerifiedAt !== null : undefined
+      // About the address, so without one it has no value either: `false` would say "has an
+      // address that is not proven", and a reader that asks for the key to be present and
+      // true is refused the same by an absent key.
+      return user && user.emailNormalized !== null ? user.emailVerifiedAt !== null : undefined
     case 'user.created_at':
       return user ? seconds(user.createdAt) : undefined
     case 'session.client':

@@ -42,7 +42,7 @@ export type HookPoint = (typeof HOOK_POINTS)[number]
  * @example
  * ```ts
  * if (question.type === HOOK_QUESTION_TYPES.before_sign_up) {
- *   // question.data.email is the address being signed up
+ *   // question.data.email is the address being signed up, or null when there is none
  * }
  * ```
  */
@@ -303,7 +303,10 @@ export const HOOK_SIGN_UP_METHODS = [
  *
  * - `email`: the address the account would be created for, normalised (lower case): the form
  *   an account is unique by. The address has been **proven** by the time the question is
- *   asked (an emailed code, or a provider that asserts it verified).
+ *   asked (an emailed code, or a provider that asserts it verified). **`null` when the
+ *   account would have no address**: a first sign-in with a provider Tula takes none from
+ *   (`oauth_x`, `oauth_facebook`; ADR 0026). The key is always there; a receiver that
+ *   decides by the address decides what an account without one gets.
  * - `method`: one of {@link HOOK_SIGN_UP_METHODS}.
  * - `client`: the kind of client the sign-up was started from.
  * - `ipAddress`: the address the request that would create the account came from, as the
@@ -314,7 +317,7 @@ export const HOOK_SIGN_UP_METHODS = [
  */
 export const HookBeforeSignUpDataSchema = z
   .strictObject({
-    email: z.string().min(3).max(320),
+    email: z.string().min(3).max(320).nullable(),
     method: z.enum(HOOK_SIGN_UP_METHODS),
     client: SessionClientSchema,
     ipAddress: z.string().max(64).nullable(),

@@ -197,7 +197,7 @@ describe('an emailed sign-in verifies an address while a password is being set',
     )
     const found = await users
       .first()
-      .findByEmailWithPassword(tenant.environmentId, user.emailNormalized)
+      .findByEmailWithPassword(tenant.environmentId, user.emailNormalized ?? '')
     return {
       verification,
       outcome,

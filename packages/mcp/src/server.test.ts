@@ -252,6 +252,20 @@ describe('the read tools', () => {
     })
   })
 
+  test('get_user: an account with no email address (made through X or Facebook) has a null one', async () => {
+    const answers = defaultAnswers()
+    const path = `GET /v1/admin/users/${TEST_USER_ID}`
+    answers[path] = { ...(answers[path] as object), email: null, emailVerifiedAt: null }
+    const { client } = await world(answers)
+    const result = await callTool(client, 'get_user', SAMPLE_ARGS.get_user)
+    expect(result.structured.user).toMatchObject({
+      id: TEST_USER_ID,
+      email: null,
+      emailVerifiedAt: null,
+      firstName: 'Maya',
+    })
+  })
+
   test('list_user_sessions: sessions with their address and user agent', async () => {
     const { client } = await world()
     const result = await callTool(client, 'list_user_sessions', SAMPLE_ARGS.list_user_sessions)

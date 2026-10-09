@@ -104,7 +104,7 @@ export interface TulaLocalization {
     /** The link back to `<SignIn>`. */
     signIn: string
   }
-  /** Signing in with a provider (Google, GitHub, Apple, Microsoft, Discord, LinkedIn), and the page it returns to. */
+  /** Signing in with a provider (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook), and the page it returns to. */
   oauth: {
     /** `{provider}` is the provider's name. */
     continueWith: string

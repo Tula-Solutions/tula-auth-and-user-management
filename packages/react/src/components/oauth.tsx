@@ -12,10 +12,12 @@ import { SignedInNotice, useCompletion, useEnrolmentCompletion } from './flow-sc
 import {
   AppleMark,
   DiscordMark,
+  FacebookMark,
   GitHubMark,
   GoogleMark,
   LinkedInMark,
   MicrosoftMark,
+  XMark,
 } from './icons'
 import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
 import { SwitchLink } from './sign-in'
@@ -39,6 +41,8 @@ const PROVIDERS = {
   microsoft: { name: 'Microsoft', mark: <MicrosoftMark /> },
   discord: { name: 'Discord', mark: <DiscordMark /> },
   linkedin: { name: 'LinkedIn', mark: <LinkedInMark /> },
+  x: { name: 'X', mark: <XMark /> },
+  facebook: { name: 'Facebook', mark: <FacebookMark /> },
 } as const satisfies Record<string, { name: string; mark: ReactNode }>
 
 type KnownProvider = keyof typeof PROVIDERS
@@ -77,8 +81,8 @@ function resolveCallbackUrl(url: string | undefined): string | null {
 }
 
 /**
- * "Continue with Google / GitHub / Apple / Microsoft / Discord / LinkedIn": one button per
- * provider the environment offers.
+ * "Continue with Google / GitHub / Apple / Microsoft / Discord / LinkedIn / X / Facebook": one
+ * button per provider the environment offers.
  *
  * Each is a neutral button with the provider's mark and its name as text, so the name is what
  * a screen reader announces. Choosing one asks the API for the provider's page and sends the
@@ -97,7 +101,9 @@ function resolveCallbackUrl(url: string | undefined): string | null {
  * surface and the type of the theme, as the other providers' do. **Discord's and LinkedIn's
  * marks were drawn without their brand pages open**: neither their shapes, their colours nor
  * the clear space around them were checked against Discord's or LinkedIn's brand guidelines,
- * so check both before you ship.
+ * so check both before you ship. **The same holds for X's and Facebook's marks** (X's in the
+ * text colour, Facebook's "f" in its blue): neither was checked against X's or Meta's brand
+ * guidelines, and Meta has rules of its own for a "Continue with Facebook" button.
  *
  * @param props.callbackUrl - The page that renders `<OAuthCallback>`.
  * @param props.placement - Whether the divider is drawn `before` or `after` the buttons.

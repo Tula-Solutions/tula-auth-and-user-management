@@ -6,10 +6,19 @@ export interface UserRecord {
   id: string
   projectId: string
   environmentId: string
-  /** Email as entered (for display and for sending mail). */
-  email: string
-  /** Lowercased, trimmed email used for lookups and uniqueness. */
-  emailNormalized: string
+  /**
+   * Email as entered (for display and for sending mail), or `null` for an account that has
+   * none: one created by a first sign-in with a provider Tula takes no address from
+   * (`OAUTH_PROVIDERS_WITHOUT_ADDRESS`; ADR 0026). Such an account is sent nothing, is found
+   * by no address, has no `email` identity and no password.
+   */
+  email: string | null
+  /**
+   * Lowercased, trimmed email used for lookups and uniqueness; `null` exactly when
+   * {@link UserRecord.email} is. Any number of accounts may have none.
+   */
+  emailNormalized: string | null
+  /** When the address was verified. Always `null` for an account with no address. */
   emailVerifiedAt: Date | null
   firstName: string | null
   lastName: string | null
@@ -27,7 +36,11 @@ export interface UserRecord {
   phoneNumberVerifiedAt: Date | null
 }
 
-/** A user to create together with their email identity and, if they have one, their password. */
+/**
+ * A user to create together with their email identity and, if they have one, their password.
+ * A user with no address gets no email identity, and must come with an `oauthIdentity` and no
+ * password: it is the only thing they sign in with.
+ */
 export interface NewUser
   extends Omit<UserRecord, 'bannedAt' | 'lastSignInAt' | 'phoneNumber' | 'phoneNumberVerifiedAt'> {
   /** Id for the `email` identity row. */

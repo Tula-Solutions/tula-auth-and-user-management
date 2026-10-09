@@ -1,7 +1,9 @@
-import type { OAuthProvider as OAuthProviderName } from '@tula/contract'
+import { givesNoAddress, type OAuthProvider as OAuthProviderName } from '@tula/contract'
 import { isSnowflake } from '~/adapters/oauth/discord'
+import { isFacebookUserId } from '~/adapters/oauth/facebook'
 import { linkedInProfile } from '~/adapters/oauth/linkedin'
 import { tenantAccepts } from '~/adapters/oauth/microsoft'
+import { isXUserId } from '~/adapters/oauth/x'
 import { timingSafeEqual } from '~/lib/crypto'
 import type { SecretBox } from '~/lib/secret-box'
 import type { Clock } from '~/ports/clock'
@@ -94,6 +96,12 @@ export function issueMockCode(
  * rule, not the call to LinkedIn. It checks a PKCE verifier and a nonce for LinkedIn as for
  * every provider, which the real adapter cannot (LinkedIn takes neither: ADR 0026): a
  * scenario that passes here is no evidence that LinkedIn's code is bound by them.
+ * For X and Facebook it keeps the two things their adapters do with a user object: an account
+ * id that is not a decimal id as the real adapter takes one is refused, and **whatever
+ * address the code carries is dropped** (`email: null`, unverified), as the real adapters
+ * read none. So a scenario can have the "provider" report someone's address and see that it
+ * reaches nothing. It checks a PKCE verifier for Facebook too, which the real adapter cannot
+ * (Facebook's manual flow documents none: ADR 0026).
  *
  * @param provider - The provider this instance stands in for.
  * @param deps - Secret box, clock and the API's public URL.
@@ -155,6 +163,15 @@ export function createMockProvider(
       if (provider === 'linkedin') {
         return linkedInProfile(grant.profile.subject, grant.userinfo)
       }
+      if (
+        (provider === 'x' && !isXUserId(grant.profile.subject)) ||
+        (provider === 'facebook' && !isFacebookUserId(grant.profile.subject))
+      ) {
+        throw new OAuthProviderError('invalid_profile')
+      }
+      if (givesNoAddress(provider)) {
+        return { ...grant.profile, email: null, emailVerified: false }
+      }
       return grant.profile
     },
   }
@@ -178,5 +195,7 @@ export function mockOAuthProviders(deps: {
     microsoft: createMockProvider('microsoft', deps),
     discord: createMockProvider('discord', deps),
     linkedin: createMockProvider('linkedin', deps),
+    x: createMockProvider('x', deps),
+    facebook: createMockProvider('facebook', deps),
   }
 }

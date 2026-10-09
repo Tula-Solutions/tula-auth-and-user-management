@@ -13,7 +13,7 @@ and prebuilt UI, first-class native mobile, and data you own.
 
 - **Sign-in methods**, each switched on per environment: [password](docs/methods/password.md)
   (sign-up, reset, policy), [emailed code](docs/methods/email-code.md) and
-  [emailed link](docs/methods/email-link.md), [Google, GitHub, Apple, Microsoft, Discord and LinkedIn](docs/methods/oauth.md),
+  [emailed link](docs/methods/email-link.md), [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook](docs/methods/oauth.md),
   [passkeys](docs/methods/passkeys.md), and
   [two-step verification](docs/methods/two-step-verification.md) (authenticator app, backup
   codes, step-up).
@@ -153,7 +153,7 @@ Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
 - [x] `@tula/core`, `@tula/react`, `@tula/nextjs`
 - [x] Emailed codes and same-browser links; sign-up without a password
 - [x] Two-step verification: authenticator app, backup codes, step-up
-- [x] Google, GitHub, Apple, Microsoft, Discord and LinkedIn (tested against a mock provider only)
+- [x] Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (tested against a mock provider only)
 - [x] Passkeys (tested against a virtual authenticator only)
 - [x] Session profiles, stateful sessions, the concurrent-session limit
 - [x] Settings as code, the CLI, `create-tula`, the dashboard, the MCP server
