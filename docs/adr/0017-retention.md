@@ -296,6 +296,18 @@ definition of the period.
 **An event and the audit entry of the same id still have separate lives.** Deleting one does
 not delete the other, in either direction.
 
+### Counts of texted codes (added 2026-10-09)
+
+With the SMS send limits (TULA-28, [ADR 0037](0037-phone-numbers-and-sms.md)).
+`sms_code_counts` has one row per environment, UTC day and destination prefix. Rows of days
+more than `SMS_COUNT_RETENTION` (90 days) ago are deleted per environment, in batches,
+through `SmsUsageStore.deleteBefore(environment, day, limit)`. Ninety days is three times
+what the admin API reads back (30), so that a month can be compared with the ones before
+it by whoever keeps the answers. The rows hold counts and a calling prefix, no number and
+nothing about a user; the period is about the table's size, not about personal data. The
+day a row is of is never today's, so the purge cannot touch the count the daily limit is
+held against.
+
 ## Consequences
 
 - The lock is a session-level advisory lock, so `DATABASE_URL` must be a direct connection or a

@@ -404,3 +404,12 @@ Before finishing any change here, confirm each item holds and has a test:
     the send and the confirmation, another user's code, a code for a number that was
     replaced, a wrong, used and expired code, the lockout, a failed send leaving the earlier
     code working, no recent authentication, and the inbox route in every other tier.
+    Every send limit is in `Sms.sendCode`, after `requireSms` and `requireSender` and
+    narrowest first; the daily limit (`sms.dailyMessageLimit`) is counted in
+    `sms_code_counts` under the `sms_daily` environment lock before the send, never in the
+    rate limiter; all of it fails closed and answers the one `rate_limited`. Limiter keys
+    hold keyed hashes of the number, the address and the prefix; counts are by calling
+    prefix (at most four digits), never by number. Test: each limit alone, a refused send
+    counted by no wider limit, the limiter failing at each key, the count failing to read
+    and to write, two sends at once for the day's last message, a failed send counted back
+    out, and no number, prefix or address in a key, a log line or the usage answer.
