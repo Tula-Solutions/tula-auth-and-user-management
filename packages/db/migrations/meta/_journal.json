@@ -169,6 +169,13 @@
       "when": 1791492133736,
       "tag": "0023_phone_number",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791554859205,
+      "tag": "0024_sms_code_counts",
+      "breakpoints": true
     }
   ]
 }
