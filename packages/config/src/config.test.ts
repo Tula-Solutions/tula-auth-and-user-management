@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import {
+  type AndroidAppConfig,
   type ConfigError,
   defineConfig,
   type EnvironmentSettingsConfig,
@@ -1075,5 +1076,173 @@ describe('hooks', () => {
       'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
     )
     expect(await hash({ environments: { dev: { hooks: {} } } })).not.toBe(unmanaged)
+  })
+})
+
+describe('native apps', () => {
+  const FP_A = Array.from({ length: 32 }, () => 'AA').join(':')
+  const FP_B = Array.from({ length: 32 }, () => 'BB').join(':')
+  const ios = { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' } as const
+  const android: AndroidAppConfig = {
+    platform: 'android',
+    packageName: 'app.northline.android',
+    sha256CertFingerprints: [FP_A],
+  }
+
+  function appsOf(input: TulaConfigInput) {
+    return defineConfig(input).environments.dev?.nativeApps
+  }
+
+  const hash = async (input: TulaConfigInput) => {
+    const dev = defineConfig(input).environments.dev
+    if (!dev) {
+      throw new Error('fixture')
+    }
+    return hashEnvironmentConfig(dev)
+  }
+
+  test('an environment without the key does not manage native apps: the key stays absent', () => {
+    const dev = defineConfig({ environments: { dev: {} } }).environments.dev
+    expect(dev && Object.hasOwn(dev, 'nativeApps')).toBe(false)
+    expect(appsOf({ environments: { dev: { nativeApps: [] } } })).toEqual([])
+  })
+
+  test('fingerprints are a set in the stored form: case, colons, order and repeats go', () => {
+    expect(
+      appsOf({
+        environments: {
+          dev: {
+            nativeApps: [
+              ios,
+              {
+                ...android,
+                sha256CertFingerprints: [FP_B, 'aa'.repeat(32), FP_B.toLowerCase(), FP_A],
+              },
+            ],
+          },
+        },
+      })
+    ).toEqual([ios, { ...android, sha256CertFingerprints: [FP_A, FP_B] }])
+  })
+
+  test.each<[string, unknown, string]>([
+    ['a team id in lower case', { ...ios, teamId: 'a1b2c3d4e5' }, 'nativeApps.0.teamId'],
+    ['a bundle id of one segment', { ...ios, bundleId: 'northline' }, 'nativeApps.0.bundleId'],
+    [
+      'a bundle id with a wildcard',
+      { ...ios, bundleId: 'app.northline.*' },
+      'nativeApps.0.bundleId',
+    ],
+    [
+      'a package name whose segment starts with a digit',
+      { ...android, packageName: 'app.1northline' },
+      'nativeApps.0.packageName',
+    ],
+    [
+      'a fingerprint that is not 32 bytes',
+      { ...android, sha256CertFingerprints: ['AA:BB'] },
+      'nativeApps.0.sha256CertFingerprints.0',
+    ],
+    [
+      'no fingerprint',
+      { ...android, sha256CertFingerprints: [] },
+      'nativeApps.0.sha256CertFingerprints',
+    ],
+    [
+      'an iOS app with fingerprints',
+      { ...ios, sha256CertFingerprints: [FP_A] },
+      'nativeApps.0.sha256CertFingerprints',
+    ],
+    ['an Android app with a team', { ...android, teamId: 'A1B2C3D4E5' }, 'nativeApps.0.teamId'],
+    [
+      'a relation of its own',
+      { ...android, relation: ['delegate_permission/common.handle_all_urls'] },
+      'nativeApps.0.relation',
+    ],
+    ['a platform that is not one', { ...ios, platform: 'windows' }, 'nativeApps.0.platform'],
+  ])('refuses %s', (_label, app, path) => {
+    const error = refusal(() =>
+      defineConfig(untyped({ environments: { dev: { nativeApps: [app] } } }))
+    )
+    expect(error.issues.map((issue) => issue.path)).toEqual([`environments.dev.${path}`])
+  })
+
+  test('more fingerprints than an app may have are refused', () => {
+    const many = Array.from({ length: 11 }, (_, index) =>
+      Array.from({ length: 32 }, () => index.toString(16).padStart(2, '0')).join(':')
+    )
+    const error = refusal(() =>
+      defineConfig({
+        environments: { dev: { nativeApps: [{ ...android, sha256CertFingerprints: many }] } },
+      })
+    )
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      'environments.dev.nativeApps.0.sha256CertFingerprints',
+    ])
+  })
+
+  test('the same app twice is refused; the same name on the other platform is another app', () => {
+    const error = refusal(() =>
+      defineConfig({
+        environments: {
+          dev: { nativeApps: [ios, android, { ...ios, teamId: 'ZZZZZZZZZZ' }] },
+        },
+      })
+    )
+    expect(error.issues).toEqual([
+      {
+        path: 'environments.dev.nativeApps.2.bundleId',
+        message:
+          'the same app as nativeApps.0: an app is identified by its platform and its bundle id, so each is listed once',
+      },
+    ])
+    expect(
+      appsOf({
+        environments: {
+          dev: {
+            nativeApps: [
+              { ...ios, bundleId: 'app.northline' },
+              { ...android, packageName: 'app.northline' },
+            ],
+          },
+        },
+      })
+    ).toHaveLength(2)
+  })
+
+  test('more apps than an environment may have are refused', () => {
+    const nativeApps = Array.from({ length: 21 }, (_, index) => ({
+      ...ios,
+      bundleId: `app.northline.n${index}`,
+    }))
+    const error = refusal(() => defineConfig({ environments: { dev: { nativeApps } } }))
+    expect(error.issues).toEqual([
+      { path: 'environments.dev.nativeApps', message: 'an environment has at most 20 native apps' },
+    ])
+  })
+
+  test('the fingerprint ignores how fingerprints are written, and an absent key', async () => {
+    const one = await hash({
+      environments: { dev: { nativeApps: [{ ...android, sha256CertFingerprints: [FP_A, FP_B] }] } },
+    })
+    expect(
+      await hash({
+        environments: {
+          dev: {
+            nativeApps: [
+              { ...android, sha256CertFingerprints: ['bb'.repeat(32), FP_A.toLowerCase(), FP_B] },
+            ],
+          },
+        },
+      })
+    ).toBe(one)
+    expect(await hash({ environments: { dev: { nativeApps: [android] } } })).not.toBe(one)
+    // What an empty entry hashed to before native apps could be written: the value the
+    // webhooks' test pins. No environment already applied shows a new version of its file.
+    const unmanaged = await hash({ environments: { dev: {} } })
+    expect(unmanaged).toBe(
+      'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    )
+    expect(await hash({ environments: { dev: { nativeApps: [] } } })).not.toBe(unmanaged)
   })
 })

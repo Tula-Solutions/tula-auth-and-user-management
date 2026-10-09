@@ -1,5 +1,6 @@
 import {
   type ActivityType,
+  AndroidAppIdentitySchema,
   CreateHookRequestSchema,
   CreateWebhookEndpointRequestSchema,
   DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
@@ -7,9 +8,13 @@ import {
   EnvironmentSettingsInputSchema,
   type HookFailureMode,
   type HookPoint,
+  IosAppIdentitySchema,
+  MAX_NATIVE_APPS,
   MAX_WEBHOOK_ENDPOINTS,
   type MicrosoftTenant,
   MicrosoftTenantSchema,
+  nativeAppIdentifier,
+  normalizeCertFingerprints,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   UpdateWebhookEndpointRequestSchema,
@@ -213,12 +218,56 @@ const Hooks = z.strictObject({
   before_token: HookEntry.optional(),
 } satisfies Record<HookPoint, unknown>)
 
+// A native app's fields are the admin API's own (`POST /v1/admin/native-apps`), taken from the
+// contract's schemas by `shape`: an identifier that the API would refuse is refused when the
+// file is loaded. Nothing is declared a second time here.
+const AndroidFingerprints = AndroidAppIdentitySchema.shape.sha256CertFingerprints
+
+const AndroidAppEntry = z.strictObject({
+  platform: AndroidAppIdentitySchema.shape.platform,
+  packageName: AndroidAppIdentitySchema.shape.packageName,
+  // A set: each fingerprint is checked where it was written, then all are put in the form the
+  // server stores (upper case, colons), repeats dropped and the order fixed, so that none of
+  // the three is a difference to `tula diff` or to the config's fingerprint.
+  sha256CertFingerprints: z
+    .array(AndroidFingerprints.element)
+    .transform((fingerprints) => normalizeCertFingerprints(fingerprints))
+    .pipe(AndroidFingerprints),
+})
+
+const NativeApps = z
+  .array(z.discriminatedUnion('platform', [IosAppIdentitySchema, AndroidAppEntry]))
+  .superRefine((apps, context) => {
+    if (apps.length > MAX_NATIVE_APPS) {
+      context.addIssue({
+        code: 'custom',
+        message: `an environment has at most ${MAX_NATIVE_APPS} native apps`,
+      })
+    }
+    const firstAt = new Map<string, number>()
+    apps.forEach((app, index) => {
+      // The platform cannot hold a slash, so the pair has one spelling.
+      const key = `${app.platform}/${nativeAppIdentifier(app)}`
+      const first = firstAt.get(key)
+      if (first === undefined) {
+        firstAt.set(key, index)
+        return
+      }
+      context.addIssue({
+        code: 'custom',
+        path: [index, app.platform === 'ios' ? 'bundleId' : 'packageName'],
+        message: `the same app as nativeApps.${first}: an app is identified by its platform and its ${app.platform === 'ios' ? 'bundle id' : 'package name'}, so each is listed once`,
+      })
+    })
+  })
+
 const Environment = z.strictObject({
   kind: z.enum(['development', 'production']).optional(),
   settings: EnvironmentSettingsInputSchema.prefault({}),
   providers: Providers.prefault({}),
   webhooks: Webhooks.optional(),
   hooks: Hooks.optional(),
+  nativeApps: NativeApps.optional(),
 })
 
 const Config = z.strictObject({
@@ -420,6 +469,64 @@ export interface HookConfig {
 export type HooksConfig = Partial<Record<HookPoint, HookConfig>>
 
 /**
+ * One iOS app of an environment: its bundle id, under the Apple team that signs it.
+ *
+ * An app is named by its **platform and bundle id**, so a changed team is the same app.
+ *
+ * @example
+ * ```ts
+ * const app: IosAppConfig = { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }
+ * ```
+ */
+export interface IosAppConfig {
+  /** The platform: what tells an iOS entry from an Android one. */
+  platform: 'ios'
+  /** The Apple team (the App ID prefix): ten upper-case letters and digits. */
+  teamId: string
+  /** The app's bundle id, e.g. `app.northline.ios`. Compared exactly. */
+  bundleId: string
+}
+
+/**
+ * One Android app of an environment: its package name and the certificates it may be signed
+ * with.
+ *
+ * An app is named by its **platform and package name**, so changed fingerprints are the same
+ * app. Adding a fingerprint is a weakening (whoever holds that certificate's key can sign the
+ * app): `tula diff` flags it and `tula apply --yes` needs `--allow-weaker`.
+ *
+ * @example
+ * ```ts
+ * const app: AndroidAppConfig = {
+ *   platform: 'android',
+ *   packageName: 'app.northline.android',
+ *   sha256CertFingerprints: ['14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5'],
+ * }
+ * ```
+ */
+export interface AndroidAppConfig {
+  /** The platform: what tells an Android entry from an iOS one. */
+  platform: 'android'
+  /** The app's package name, e.g. `app.northline.android`. Compared exactly. */
+  packageName: string
+  /**
+   * SHA-256 fingerprints of the app's signing certificates: a set, so order, case, colons and
+   * repeats mean nothing. One to ten.
+   */
+  sha256CertFingerprints: string[]
+}
+
+/**
+ * One native app of an environment, as a config file writes it.
+ *
+ * @example
+ * ```ts
+ * const apps: NativeAppConfig[] = [{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }]
+ * ```
+ */
+export type NativeAppConfig = IosAppConfig | AndroidAppConfig
+
+/**
  * The settings document of one environment, as it is written in a config file: every field
  * optional. It is the body of `PUT /v1/admin/settings` (`EnvironmentSettingsInput`).
  *
@@ -470,6 +577,13 @@ export interface EnvironmentConfigInput {
    * unmanaged, and `tula apply --prune` removes it.
    */
   hooks?: HooksConfig
+  /**
+   * The native apps whose association files the server serves. Left out, native apps are
+   * **not managed** by the file: `tula` neither reads nor changes them. Written (an empty list
+   * included), the list is what the environment should have; an app the server has and the
+   * list does not is left alone and shown as unmanaged, and `tula apply --prune` removes it.
+   */
+  nativeApps?: NativeAppConfig[]
 }
 
 /**
@@ -523,6 +637,12 @@ export interface EnvironmentConfig {
    * when the file does not mention hooks.
    */
   hooks?: Partial<Record<HookPoint, Required<HookConfig>>>
+  /**
+   * The native apps, when the file manages them: each app once, an Android app's fingerprints
+   * in the stored form (upper case, colons), sorted and without repeats. Absent when the file
+   * does not mention native apps.
+   */
+  nativeApps?: NativeAppConfig[]
 }
 
 /**
@@ -800,11 +920,12 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
  * writes, so the dashboard and a later `tula diff` can say which version of the file is in
  * force.
  *
- * It covers the settings, the providers, the webhook endpoints and the hooks as written, with
- * each secret as the **name** of its variable: no secret value is hashed, so the fingerprint
- * reveals nothing about one. An endpoint's event types count as a set, and an environment
- * that does not mention webhooks or hooks hashes as it did before they could be written (a
- * hook's defaults count as written). So does one
+ * It covers the settings, the providers, the webhook endpoints, the hooks and the native apps
+ * as written, with each secret as the **name** of its variable: no secret value is hashed, so
+ * the fingerprint reveals nothing about one. An endpoint's event types and an Android app's
+ * fingerprints count as sets, and an environment that does not mention webhooks, hooks or
+ * native apps hashes as it did before they could be written (a hook's defaults count as
+ * written). So does one
  * that defines no JWT template and whose profiles name none, and one that leaves text messages
  * (`sms`), or their daily limit, at the default; the order templates and their claims are written in never counts.
  *
