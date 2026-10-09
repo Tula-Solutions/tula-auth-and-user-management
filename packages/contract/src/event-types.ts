@@ -82,6 +82,12 @@ export const ACTIVITY_TYPES = [
   'hook.created',
   'hook.updated',
   'hook.deleted',
+  // A native app's identity registered, changed or removed (ADR 0040). The event says which
+  // platform and, of a change, which fields: never the bundle id, the package name, the team
+  // or a fingerprint. `weakened` says the change widened which app the served files name.
+  'native_app.created',
+  'native_app.updated',
+  'native_app.deleted',
 ] as const
 
 /** A recorded action type: one of {@link ACTIVITY_TYPES}. */
@@ -109,7 +115,7 @@ export const EVENT_SCHEMA_VERSION = 1
  * An event about a user's credentials targets the `user` (the passkey or session concerned
  * is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
  * endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
- * is a hook.
+ * are a hook and a native app.
  *
  * @example
  * ```ts
@@ -154,6 +160,9 @@ export const EVENT_TARGET_TYPES = {
   'hook.created': 'hook',
   'hook.updated': 'hook',
   'hook.deleted': 'hook',
+  'native_app.created': 'native_app',
+  'native_app.updated': 'native_app',
+  'native_app.deleted': 'native_app',
 } as const satisfies Record<ActivityType, AuditTargetType>
 
 /** What an event of type `T` is about. */

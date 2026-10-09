@@ -15,6 +15,7 @@ import type { ApiKeyRepository, NewApiKey } from '~/ports/api-key-repository'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 import type { FactorStore } from '~/ports/factor-store'
 import type { HookRecord, HookStore } from '~/ports/hook-store'
+import type { NativeAppRecord, NativeAppStore } from '~/ports/native-app-store'
 import type { OAuthProviderRecord, OAuthProviderStore } from '~/ports/oauth-provider-store'
 import type { PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
@@ -48,6 +49,7 @@ declare const plan: RotationPlan
 declare const endpoint: WebhookEndpointRecord
 declare const rotation: WebhookSecretRotation
 declare const hook: HookRecord
+declare const nativeApp: NativeAppRecord
 declare const settings: Parameters<EnvironmentSettingsStore['replace']>[2]
 
 async function _users(users: UserRepository): Promise<void> {
@@ -379,6 +381,22 @@ async function _hooks(hooks: HookStore): Promise<void> {
   await hooks.noteFailure(ENV, 'hook', AT, 'timeout')
 }
 
+async function _nativeApps(apps: NativeAppStore): Promise<void> {
+  const read = { teamId: null, sha256CertFingerprints: [] }
+  // @ts-expect-error a registered app is named in the environment's public association files
+  await apps.insert(nativeApp)
+  // @ts-expect-error
+  await apps.insert(nativeApp, undefined)
+  // @ts-expect-error a new team or fingerprint changes which app the files name
+  await apps.update(ENV, 'app', read, { teamId: 'A1B2C3D4E5' }, AT)
+  // @ts-expect-error
+  await apps.update(ENV, 'app', read, { sha256CertFingerprints: [] }, AT, undefined)
+  // @ts-expect-error
+  await apps.delete(ENV, 'app')
+  // @ts-expect-error
+  await apps.delete(ENV, 'app', undefined)
+}
+
 describe('what a store is told about the audit entry of a write', () => {
   test('the type-level assertions above are compiled, not run', () => {
     for (const unused of [
@@ -389,6 +407,7 @@ describe('what a store is told about the audit entry of a write', () => {
       _keysAndSettings,
       _webhookEndpoints,
       _hooks,
+      _nativeApps,
       _memoryAdapters,
       _reasons,
     ]) {

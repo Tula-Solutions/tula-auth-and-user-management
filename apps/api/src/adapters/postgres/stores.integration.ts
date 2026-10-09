@@ -6,6 +6,7 @@ import { describeEnvironmentSettingsStore } from '~/adapters/environment-setting
 import { describeFactorStore } from '~/adapters/factor-store.suite'
 import { describeFlowAttemptStore } from '~/adapters/flow-attempt-store.suite'
 import { describeHookStore } from '~/adapters/hook-store.suite'
+import { describeNativeAppStore } from '~/adapters/native-app-store.suite'
 import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
 import { describePasskeyStore } from '~/adapters/passkey-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
@@ -18,6 +19,7 @@ import {
   type IntegrationTenant,
   openIntegrationDatabase,
 } from '~/adapters/postgres/integration-support'
+import { PostgresNativeAppStore } from '~/adapters/postgres/native-apps'
 import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
@@ -141,6 +143,21 @@ describeHookStore('Postgres on a real server', async () => {
   const [a, b] = [await database.tenant(), await database.tenant('production')]
   return {
     store: new PostgresHookStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+// Fresh tenants per test: an environment has one app per platform and identifier, and on a
+// real server two registrations at once meet at the unique index.
+describeNativeAppStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresNativeAppStore(db),
     recorded: async () =>
       (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
         .map((entry) => entry.type)

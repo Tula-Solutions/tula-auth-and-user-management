@@ -20,6 +20,7 @@ import type { IdGenerator } from '~/ports/id-generator'
 import type { JobLock } from '~/ports/job-lock'
 import type { Lockout } from '~/ports/lockout'
 import type { Mailer } from '~/ports/mailer'
+import type { NativeAppStore } from '~/ports/native-app-store'
 import type { OAuthProviders } from '~/ports/oauth-provider'
 import type { OAuthProviderStore } from '~/ports/oauth-provider-store'
 import type { PasskeyStore } from '~/ports/passkey-store'
@@ -153,6 +154,8 @@ export interface Deps {
   webhookDeliveries: WebhookDeliveryStore
   /** The questions an environment has the server ask before it acts, and their sealed secrets. */
   hooks: HookStore
+  /** The native apps an environment says are its own: what its association files are built from. */
+  nativeApps: NativeAppStore
   /**
    * What the outbound guard (`~/lib/outbound`) judges an operator's address by: the tier, and
    * in tests a resolver. Pass it to `Outbound.check` and `Outbound.request`; never build one

@@ -69,6 +69,11 @@ const SERVER_ONLY: Record<string, string> = {
     'the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment ' +
     'header, the origin checks) concern the operator’s browser and a server’s secret key; ' +
     '`@tula/core` talks to `/v1/client/*` only and sends neither header.',
+  'native app identity':
+    'an environment’s native apps are registered on the admin API with a secret key or a ' +
+    'dashboard session, and the two association files are fetched by Apple and Android from ' +
+    'the app’s own domain, not by an SDK: no client SDK calls either. What a native client ' +
+    'does with a registered identity (a passkey, an app link) arrives with those features.',
   'settings managed by a config file':
     'the marker is set and read on the admin API with a secret key, which a client SDK never ' +
     'holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ ' +

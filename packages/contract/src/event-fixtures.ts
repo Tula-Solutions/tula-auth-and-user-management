@@ -12,6 +12,7 @@ const PASSKEY = '0199c2f4-7a14-7c77-95e6-8f3a4d0c1b05'
 const SIGNING_KEY = '0199c2f4-7a15-7d88-86f7-9a4b5e1d2c06'
 const WEBHOOK_ENDPOINT = '0199c2f4-7a18-7abb-99ca-cd7e8b4a5f09'
 const HOOK = '0199c2f4-7a19-7bcc-8adb-de8f9c5b6a10'
+const NATIVE_APP = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b11'
 
 const schemaVersion = EVENT_SCHEMA_VERSION
 const occurredAt = '2026-10-08T09:30:00.000Z'
@@ -28,6 +29,7 @@ const aboutApiKey = { type: 'api_key', id: API_KEY } as const
 const aboutEnvironment = { type: 'environment', id: ENVIRONMENT } as const
 const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } as const
 const aboutHook = { type: 'hook', id: HOOK } as const
+const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
 
 /** The id of the `n`th example event. */
 function eventId(n: number): string {
@@ -391,5 +393,37 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutHook,
     data: { point: 'before_sign_up', weakened: true },
+  },
+  'native_app.created': {
+    id: eventId(36),
+    type: 'native_app.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutNativeApp,
+    data: { platform: 'android', fingerprints: 1, weakened: true },
+  },
+  'native_app.updated': {
+    id: eventId(37),
+    type: 'native_app.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutNativeApp,
+    data: {
+      platform: 'android',
+      changed: ['sha256CertFingerprints'],
+      fingerprints: 2,
+      weakened: true,
+    },
+  },
+  'native_app.deleted': {
+    id: eventId(38),
+    type: 'native_app.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutNativeApp,
+    data: { platform: 'android' },
   },
 }
