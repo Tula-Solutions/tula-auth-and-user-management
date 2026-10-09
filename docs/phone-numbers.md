@@ -162,9 +162,105 @@ can text a code, or when the user already has a number:
 Adding, changing and removing ask for a recent authentication first
 ([step-up](methods/two-step-verification.md)): the dialog appears by itself.
 
-The message reads `Your <app name> verification code is 123456.` The code is valid for ten
+The message reads `Your <app name> verification code is 123456.` unless the environment
+has [its own wording](#your-own-wording). The code is valid for ten
 minutes and has five guesses; a new code can be asked for after a minute, five times an
 hour, for at most three different numbers a day.
+
+## Your own wording
+
+An environment can write the sentence of each text message itself: `sms.templates` in the
+settings, keyed by the kind of message. The dashboard's **Messages** screen edits it with
+a preview ([dashboard](dashboard.md)); the admin API and `tula.config.ts` take the same
+document.
+
+```json
+{
+  "sms": {
+    "templates": {
+      "phone_verification": { "text": "Welcome to {{appName}}. Your code is {{code}}" },
+      "sign_in": { "text": "Use {{code}} to sign in to {{appName}}" }
+    }
+  }
+}
+```
+
+| Kind | Sent when | Must contain | May contain |
+| --- | --- | --- | --- |
+| `phone_verification` | A signed-in user adds or changes their number. | `{{code}}` | `{{appName}}` |
+| `sign_in` | A sign-in by texted code was asked for a number that signs in. | `{{code}}` | `{{appName}}` |
+| `second_factor` | A user whose [second step is a texted code](#the-number-as-the-second-step) turns it on, signs in, resets a password or confirms it is them before a change. One wording for all of these: do not write "sign in" into it. | `{{code}}` | `{{appName}}` |
+
+A kind with no template is sent in the built-in words. A template is **one sentence**:
+the server adds the last line (`@your-host #123456`) itself, after a blank line, exactly
+as it does for the built-in text, and a template cannot write or replace that line.
+
+### What a template is refused for
+
+A save with a template that breaks one of these is refused with 422, the field named
+(`sms.templates.<kind>.text`), and nothing is stored.
+
+| Refused | Why |
+| --- | --- |
+| No `{{code}}`, or `{{code}}` or `{{appName}}` written twice | The message carries one code. |
+| More than 140 characters | What a message can cost (below). |
+| A line break or a control character | A template is one line. |
+| A character a reader cannot see (a zero-width space, a text-direction control) | What is sent is what you saw when you saved it. |
+| A brace that is not part of a placeholder, or a placeholder this kind does not have | The language is `{{name}}` and nothing else. |
+| A letter, a digit or a combining mark (an accent that draws on the character before it) directly beside a placeholder (`code{{code}}`), also when a character that draws nothing stands between them | The code stands alone, for a reader and for a phone. |
+| Four or more digits in a row | Only the code looks like a code. `Call 0800 1234` is refused too. |
+| A word that starts with `@` or `#` | That is how the last line is recognised: `@other-host #123456` would offer the code on another site. `Ask @support` is refused too. |
+| Something that reads as a link, an address or a domain name | A phone turns it into a link, beside a sign-in code. The rule is the [emails' own](email-templates.md#no-link-of-your-own). |
+| A text that does not start with a letter of its own | A message starts with a word, never with the code or with the app's name. |
+
+The rules judge the template's own text. The app's name is put in as it is, so one more
+check runs when a message is made: if the last six digits of the finished message would
+not be the code (an app named `Acme 123456`, in an environment with no allowed origin),
+the **built-in text is sent instead** and the API's log says so, with the kind and the
+word `code_not_last`. A template is never the reason a message is not sent.
+
+### Length and cost
+
+A text message is billed by the segment: 160 characters of the GSM alphabet in one, 153
+each when it takes several. The 140-character cap is chosen so that the whole message
+(your sentence with the longest app name, a blank line, the last line with the longest
+host) is at most **three segments**, and at most two with a host of up to 102 characters.
+The built-in message with a short name and host is one.
+
+One character outside the GSM alphabet (Cyrillic, Arabic, an emoji, a curly quote), in
+the template or in the app's name, makes a carrier send the whole message as Unicode: 70
+characters in one segment, 67 each in several, and the same worst case is seven segments.
+The preview states the segments of its sample. That number is an estimate from the
+standard alphabet; a carrier may count one more at a boundary.
+
+`sms.dailyMessageLimit` counts messages, not segments.
+
+### Seeing a wording before it is saved
+
+`POST /v1/admin/message-preview` returns the text the server would send for a draft, with
+sample values (the code `123456`) and the environment's saved app name and first allowed
+origin. It stores nothing, sends nothing and records nothing.
+
+```json
+{ "channel": "sms", "kind": "sign_in", "template": { "text": "Use {{code}} to sign in." } }
+```
+
+The answer holds `text`, `segments` (`encoding`, `units`, `segments`) and `unused`, which
+names a part the server would replace with the built-in wording and why. A draft that a
+save would refuse is refused here the same way, the field under `template.`. Without
+`template` the answer is the built-in wording. The route previews an email too
+(`"channel": "email"`, with `subject` and the text part): see
+[email templates](email-templates.md#seeing-a-template-before-it-is-saved). It is limited
+to 120 calls a minute per environment.
+
+### What is recorded, and who writes it
+
+A change is recorded as the key `sms.templates.<kind>.text`, never the words. A change of
+wording takes effect within the settings cache's 5 to 30 seconds on other instances.
+Changing a template is not treated as a weakening and is not asked about: what it can say
+is bounded by the table above. It remains true that whoever can change the settings
+writes the sentence your users read beside their code. A template can say something
+false; the rules judge its form, not its meaning.
 
 ## With `@tula/core`
 
@@ -315,6 +411,10 @@ it:
 - Delivery receipts: nothing reads whether a message Twilio accepted reached a phone.
 - A limit in money: the daily limit counts messages, and becomes a spend ceiling when a
   provider brings prices.
-- Editing the message's text.
+- A template for the message's last line, a template per language, and how long the code
+  lasts as a placeholder.
+- Sending a draft to a number to try it.
+- No message in an environment's own words was sent to a real phone while this was built:
+  that a phone still offers the code from one was not seen. The last line is unchanged.
 - An email to the owner when a number is added or removed, or when their number stops
   signing in because another account proved it.

@@ -817,6 +817,9 @@ export async function textSecondFactorCode(
     sendLimits: Verification.LIMITED_BY_DELIVERY,
     deliver: ({ code }) =>
       Sms.sendCode(deps, scope, {
+        // One wording for the three purposes (ADR 0042): never "sign in" or "verify your
+        // number", which a user at a step-up would read wrongly.
+        kind: 'second_factor',
         to: input.phoneNumber,
         code,
         asker: { type: 'second_factor', id: input.userId },

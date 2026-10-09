@@ -132,7 +132,13 @@ describe('firstFactors', () => {
       signIn: {
         methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, smsCode: { enabled: smsCode } },
       },
-      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, ...sms },
+      sms: {
+        enabled: true,
+        allowedCountries: ['US'],
+        dailyMessageLimit: 500,
+        templates: {},
+        ...sms,
+      },
     })
     const sender = { smsSender: true }
 

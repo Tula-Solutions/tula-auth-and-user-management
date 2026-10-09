@@ -1331,3 +1331,58 @@ describe('email templates', () => {
     expect(new Set([none, one, other]).size).toBe(3)
   })
 })
+
+describe('text message templates', () => {
+  const hash = async (settings: EnvironmentSettingsConfig) => {
+    const dev = defineConfig({ environments: { dev: { settings } } }).environments.dev
+    if (!dev) {
+      throw new Error('fixture')
+    }
+    return hashEnvironmentConfig(dev)
+  }
+  const signIn = (text: string) => ({ sms: { templates: { sign_in: { text } } } })
+
+  test('a template is read from the file as written', () => {
+    const dev = defineConfig({
+      environments: { dev: { settings: signIn('Use {{code}} to sign in.') } },
+    }).environments.dev
+    expect(dev?.settings.sms.templates).toEqual({ sign_in: { text: 'Use {{code}} to sign in.' } })
+  })
+
+  test.each<[string, unknown]>([
+    ['a template without its code', { sign_in: { text: 'Welcome.' } }],
+    ['a second code line', { sign_in: { text: 'Code {{code}} @evil.example #x' } }],
+    ['a link', { sign_in: { text: 'Code {{code}}. See https://example.com/x' } }],
+    ['a kind that does not exist', { welcome: { text: 'Code {{code}}' } }],
+    ['a placeholder that does not exist', { sign_in: { text: 'Code {{code}} {{name}}' } }],
+    ['a field for the last line', { sign_in: { text: 'Code {{code}}', lastLine: '@x #1' } }],
+  ])('refused when the file is loaded: %s', (_name, templates) => {
+    let thrown: unknown
+    try {
+      defineConfig({ environments: { dev: { settings: { sms: { templates } } as never } } })
+    } catch (error) {
+      thrown = error
+    }
+    expect(isConfigError(thrown)).toBe(true)
+  })
+
+  // As for `sms.dailyMessageLimit`: the templates arrived with a default in every document
+  // (ADR 0042), and an environment that words nothing keeps the fingerprint it had.
+  test('an environment without text message templates hashes as it did before they existed', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    expect(await hash({})).toBe(before)
+    expect(await hash({ sms: {} })).toBe(before)
+    expect(await hash({ sms: { templates: {} } })).toBe(before)
+    // And an environment that texts, with no wording of its own, as it did before too.
+    const texting = { sms: { enabled: true, allowedCountries: ['DE'] } }
+    expect(await hash({ sms: { ...texting.sms, templates: {} } })).toBe(await hash(texting))
+    expect(await hash(texting)).not.toBe(before)
+  })
+
+  test('a template, and each change to one, changes the fingerprint', async () => {
+    const none = await hash({})
+    const one = await hash(signIn('Use {{code}} to sign in.'))
+    const other = await hash(signIn('Code: {{code}}'))
+    expect(new Set([none, one, other]).size).toBe(3)
+  })
+})

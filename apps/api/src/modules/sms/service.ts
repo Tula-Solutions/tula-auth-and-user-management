@@ -3,6 +3,7 @@ import {
   parsePhoneNumber,
   phoneNumberPrefix,
   SMS_USAGE_MAX_PREFIXES,
+  type SmsTemplateKind,
   type SmsUsage,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
@@ -11,7 +12,7 @@ import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import * as Settings from '~/modules/settings/service'
 import { type SmsFailureReason, SmsSendError } from '~/ports/sms-sender'
-import { codeText } from './templates'
+import { renderCodeText } from './templates'
 
 // The one path a text message takes (ADR 0037). A message costs the operator money, and an
 // endpoint that sends one to a number of the caller's choosing is what SMS pumping abuses:
@@ -128,6 +129,12 @@ export async function signInAsker(
 
 /** What a code message needs, and what its limits are counted by. */
 export interface CodeMessage {
+  /**
+   * Which message this is: the kind the environment's own wording is saved under
+   * (`sms.templates`, ADR 0042). It chooses words and nothing else: no limit, no count and
+   * no decision of {@link sendCode} reads it.
+   */
+  kind: SmsTemplateKind
   /** Recipient, in E.164 form. */
   to: string
   /** The code. */
@@ -520,11 +527,23 @@ export async function sendCode(
     return
   }
   const day = await takeFromDay(deps, tenant, prefix, limits.perDay)
-  const text = codeText({
-    appName: app.name,
-    allowedOrigins: urls.allowedOrigins,
-    code: message.code,
-  })
+  // Own keys only: a kind is one of a fixed list, but the map came from storage.
+  const template = Object.hasOwn(sms.templates, message.kind)
+    ? sms.templates[message.kind]
+    : undefined
+  const { text, unused } = renderCodeText(
+    message.kind,
+    { appName: app.name, allowedOrigins: urls.allowedOrigins, code: message.code },
+    template
+  )
+  if (unused !== null) {
+    // The environment, the kind and a fixed word: never the wording, the name or the code.
+    logger.warn('text message template not used: the built-in text was sent', {
+      environmentId: tenant.environmentId,
+      kind: message.kind,
+      reason: unused,
+    })
+  }
   const sent = dispatch(deps, tenant, { to: message.to, prefix, text, day })
   if (message.detached) {
     // Started, never awaited, and it cannot reject: what the sender does with the message

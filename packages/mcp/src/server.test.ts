@@ -334,6 +334,17 @@ describe('the read tools', () => {
     expect(result.raw).not.toContain('Wording-canary')
   })
 
+  // A text message's wording (ADR 0042) likewise: the `sms` projection names the switch,
+  // the countries and the limit, and not `templates`.
+  test('get_settings: the environment’s text message templates are not returned', async () => {
+    const { client } = await world()
+    const result = await callTool(client, 'get_settings')
+    const { sms } = result.structured.settings as { sms: object }
+    expect(Object.keys(sms).sort()).toEqual(['allowedCountries', 'dailyMessageLimit', 'enabled'])
+    expect(JSON.stringify(result.structured)).not.toContain('Texted-wording-canary')
+    expect(result.raw).not.toContain('Texted-wording-canary')
+  })
+
   test('list_oauth_providers: what is configured, never a secret', async () => {
     const { client } = await world()
     const result = await callTool(client, 'list_oauth_providers')

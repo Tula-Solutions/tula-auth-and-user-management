@@ -390,7 +390,27 @@ const INVISIBLE = /[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}
  * ```
  */
 export function visibleEmailText(text: string): string {
-  return text.replace(INVISIBLE, '').trim()
+  return withoutInvisibleCharacters(text).trim()
+}
+
+/**
+ * Text without the characters that draw nothing (format characters, the joiners among them,
+ * variation selectors, and whatever else is ignorable by default), its white space kept.
+ *
+ * The one definition of "invisible" for every check that asks what a reader sees, in an
+ * email template and in a text message's ({@link visibleEmailText} is this and a trim).
+ * Only ever for a check: what is stored and sent keeps every character it was given.
+ *
+ * @param text - Any text.
+ * @returns The text without what is invisible.
+ *
+ * @example
+ * ```ts
+ * withoutInvisibleCharacters('12\u{200D}34 ') // '1234 '
+ * ```
+ */
+export function withoutInvisibleCharacters(text: string): string {
+  return text.replace(INVISIBLE, '')
 }
 
 /**

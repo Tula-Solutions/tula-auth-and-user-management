@@ -193,6 +193,15 @@ export const SmsCodeStepSchema = z
         captureWrong: z.string().optional(),
         /** A code the newest message must no longer hold: an earlier one to the number. */
         not: z.string().optional(),
+        /**
+         * Strings the message's text must contain, each of them: for an environment's own
+         * wording of a text message. Checked after the code is captured, so one can name
+         * it (`{{<capture>}}`). The server's own last line names a host only the server
+         * knows, which is why a scenario holds the sentence and not the whole text.
+         */
+        textContains: z.array(z.string().min(1)).optional(),
+        /** Strings the message's text must not contain. */
+        textExcludes: z.array(z.string().min(1)).optional(),
       })
       .strict(),
   })

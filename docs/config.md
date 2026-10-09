@@ -506,6 +506,11 @@ Changes pending. Run `tula apply` to make them.
   every setting the file leaves out. A template of a kind this version of `tula` does not
   know is an unknown setting (`--allow-unknown`). Changing a template is not flagged as
   weakening security. A file with no template hashes as it did before templates existed.
+- [Text message wording](phone-numbers.md#your-own-wording) (`sms.templates`) is a set by
+  kind, one line a kind: `sms.templates.<kind>.text`, printed like an email template's
+  text. A kind the file leaves out is removed and the built-in text is sent (the line says
+  so); a kind this version of `tula` does not know is an unknown setting. A file with no
+  wording hashes as it did before.
 - `mfa.smsCode` left out of the file is the default, off: where the server has it on, the
   plan switches it off, as for every setting the file leaves out. **Users whose second step
   is a texted code then cannot sign in** until it is back on or an administrator resets

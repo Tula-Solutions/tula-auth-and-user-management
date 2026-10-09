@@ -1,4 +1,11 @@
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import {
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  type EmailTemplateKind,
+  emailTemplateProblems,
+  type SmsTemplateKind,
+  smsSegments,
+  smsTemplateProblems,
+} from '@tula/contract'
 import { type FakeHookState, hookRoutes } from './fake-hooks'
 import { type FakeNativeAppState, nativeAppRoutes } from './fake-native-apps'
 import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
@@ -76,6 +83,96 @@ export function failure(
     ...(params ? { params } : {}),
     ...(errors ? { errors } : {}),
   })
+}
+
+/** The sample values the fake's preview fills a wording with, as the server's are. */
+const SAMPLE_VALUES: Record<string, string> = {
+  code: '123456',
+  link: 'https://app.example/sign-in#sample-link',
+  expiresInMinutes: '10',
+  time: '2026-01-15 14:05 UTC',
+  device: 'Chrome on Windows',
+  provider: 'Google',
+  backupCodesLeft: '7',
+}
+
+function filled(text: string, appName: string): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (_whole, name: string) =>
+    name === 'appName' ? appName : (SAMPLE_VALUES[name] ?? '')
+  )
+}
+
+type Problem = { field: string; message: string }
+
+function refusal(prefix: string, problems: readonly Problem[]): Response {
+  return failure(
+    422,
+    'validation.failed',
+    'Invalid wording.',
+    problems.map((problem) => ({
+      field: `${prefix}.${problem.field}`,
+      code: 'validation.failed',
+      message: problem.message,
+    }))
+  )
+}
+
+/**
+ * What the fake answers for a preview: the draft with sample values in it, or a stand-in
+ * for the built-in text (the real copy is the server's; the browser tests show it).
+ */
+function previewOf(body: unknown, appName: string): Response | unknown {
+  const request = body as
+    | { channel: 'email'; kind: EmailTemplateKind; template?: { subject?: string; body?: string } }
+    | { channel: 'sms'; kind: SmsTemplateKind; template?: { text: string } }
+  if (request.channel === 'sms') {
+    const problems = request.template ? smsTemplateProblems(request.kind, request.template) : []
+    if (problems.length > 0) {
+      return refusal('template', problems)
+    }
+    const sentence = filled(
+      request.template?.text ?? 'Built-in text of {{appName}}: {{code}}.',
+      appName
+    )
+    const text = `${sentence}\n\n@app.example #123456`
+    return {
+      channel: 'sms',
+      kind: request.kind,
+      subject: null,
+      text,
+      unused: [],
+      segments: smsSegments(text),
+    }
+  }
+  const problems = request.template ? emailTemplateProblems(request.kind, request.template) : []
+  if (problems.length > 0) {
+    return refusal('template', problems)
+  }
+  return {
+    channel: 'email',
+    kind: request.kind,
+    subject: filled(request.template?.subject ?? `Built-in subject of ${request.kind}`, appName),
+    text: filled(request.template?.body ?? `Built-in body of ${request.kind}.`, appName),
+    unused: [],
+    segments: null,
+  }
+}
+
+/** The field errors a save of these settings gets for its wording, as the server names them. */
+function wordingProblems(settings: typeof DEFAULT_ENVIRONMENT_SETTINGS): Problem[] {
+  const emails = Object.entries(settings.emails?.templates ?? {}).flatMap(([kind, template]) =>
+    emailTemplateProblems(kind as EmailTemplateKind, template ?? {}).map((problem) => ({
+      field: `emails.templates.${kind}.${problem.field}`,
+      message: problem.message,
+    }))
+  )
+  const texts = Object.entries(settings.sms?.templates ?? {}).flatMap(([kind, template]) =>
+    smsTemplateProblems(kind as SmsTemplateKind, template ?? { text: '' }).map((problem) => ({
+      field: `sms.templates.${kind}.${problem.field}`,
+      message: problem.message,
+    }))
+  )
+  return [...emails, ...texts]
 }
 
 function page<T>(rows: T[]) {
@@ -551,6 +648,15 @@ export function installFakeApi() {
             },
           ])
         }
+        const wording = wordingProblems(body)
+        if (wording.length > 0) {
+          return failure(
+            422,
+            'validation.failed',
+            'Invalid settings.',
+            wording.map((problem) => ({ ...problem, code: 'validation.failed' }))
+          )
+        }
         state.settings = {
           revision: state.settings.revision + 1,
           settings: body,
@@ -560,6 +666,11 @@ export function installFakeApi() {
         }
         return structuredClone(state.settings)
       },
+    ],
+    [
+      'POST',
+      /^\/v1\/admin\/message-preview$/,
+      (call) => previewOf(call.body, state.settings.settings.app.name),
     ],
     [
       'GET',

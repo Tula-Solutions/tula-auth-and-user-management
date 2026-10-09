@@ -30,7 +30,7 @@ function settings(sms: { enabled: boolean; allowedCountries: string[] }) {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
       app: { ...DEFAULT_ENVIRONMENT_SETTINGS.app, name: 'Zürich Café' },
       urls: { ...DEFAULT_ENVIRONMENT_SETTINGS.urls, allowedOrigins: ['https://app.example.com'] },
-      sms: { ...sms, dailyMessageLimit: 500 },
+      sms: { ...sms, dailyMessageLimit: 500, templates: {} },
     },
   })
 }
@@ -70,6 +70,7 @@ const message = (): Sms.CodeMessage => ({
   to: TO,
   code: CODE,
   asker: { type: 'user', id: 'user-1' },
+  kind: 'phone_verification',
   newNumber: true,
   address: '198.51.100.7',
 })

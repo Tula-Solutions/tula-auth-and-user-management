@@ -3389,13 +3389,23 @@ describe('SDK journeys: session profiles and rules', () => {
         'sms.disabled'
       )
       // On with no country allowed is still off.
-      await setSms(s, { enabled: true, allowedCountries: [], dailyMessageLimit: 500 })
+      await setSms(s, {
+        enabled: true,
+        allowedCountries: [],
+        dailyMessageLimit: 500,
+        templates: {},
+      })
       expect((await caught(tula.user.phone.request({ phoneNumber: NUMBER }))).code).toBe(
         'sms.disabled'
       )
       expect(s.deps.sms.outbox).toHaveLength(0)
 
-      await setSms(s, { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 })
+      await setSms(s, {
+        enabled: true,
+        allowedCountries: ['US'],
+        dailyMessageLimit: 500,
+        templates: {},
+      })
       // A client made after the change reads the config as it is now, and not which countries.
       const config = await s.client('server').tula.config.get()
       expect(config.phone).toEqual({ enabled: true })
@@ -3441,11 +3451,21 @@ describe('SDK journeys: session profiles and rules', () => {
       // honoured after.
       await other.tula.user.phone.request({ phoneNumber: '+12025550143' })
       const pending = textedCode(s, '+12025550143')
-      await setSms(s, { enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 })
+      await setSms(s, {
+        enabled: true,
+        allowedCountries: ['DE'],
+        dailyMessageLimit: 500,
+        templates: {},
+      })
       expect((await caught(other.tula.user.phone.verify({ code: pending }))).code).toBe(
         'sms.country_not_allowed'
       )
-      await setSms(s, { enabled: false, allowedCountries: ['DE'], dailyMessageLimit: 500 })
+      await setSms(s, {
+        enabled: false,
+        allowedCountries: ['DE'],
+        dailyMessageLimit: 500,
+        templates: {},
+      })
       expect((await caught(other.tula.user.phone.verify({ code: pending }))).code).toBe(
         'sms.disabled'
       )
@@ -3475,7 +3495,12 @@ describe('SDK journeys: session profiles and rules', () => {
     'a phone number change past the step-up window asks for a step-up, and works after it',
     async () => {
       const s = await server()
-      await setSms(s, { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 })
+      await setSms(s, {
+        enabled: true,
+        allowedCountries: ['US'],
+        dailyMessageLimit: 500,
+        templates: {},
+      })
       const { tula } = await signUp(s)
       s.advance(11 * 60_000)
       const error = await caught(tula.user.phone.request({ phoneNumber: '+12025550142' }))
@@ -3495,7 +3520,12 @@ describe('SDK journeys: session profiles and rules', () => {
     'a number outside the country list is a code the app can show, however often it is asked, and costs the user nothing',
     async () => {
       const s = await server()
-      await setSms(s, { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 })
+      await setSms(s, {
+        enabled: true,
+        allowedCountries: ['US'],
+        dailyMessageLimit: 500,
+        templates: {},
+      })
       const { tula } = await signUp(s)
       for (const phoneNumber of [
         '+37120000042',
@@ -3523,14 +3553,24 @@ describe('SDK journeys: session profiles and rules', () => {
     'past the environment’s daily limit a request is rate limited, with a wait that ends with the day',
     async () => {
       const s = await server()
-      await setSms(s, { enabled: true, allowedCountries: ['US', 'GB'], dailyMessageLimit: 500 })
+      await setSms(s, {
+        enabled: true,
+        allowedCountries: ['US', 'GB'],
+        dailyMessageLimit: 500,
+        templates: {},
+      })
       const { tula } = await signUp(s)
       const other = await signUp(s)
       await tula.user.phone.request({ phoneNumber: '+12025550142' })
       const code = textedCode(s, '+12025550142')
       // The day is spent from here on. An hour later the hourly limits are open again, so
       // what refuses is the day's own count.
-      await setSms(s, { enabled: true, allowedCountries: ['US', 'GB'], dailyMessageLimit: 1 })
+      await setSms(s, {
+        enabled: true,
+        allowedCountries: ['US', 'GB'],
+        dailyMessageLimit: 1,
+        templates: {},
+      })
       s.advance(61 * 60_000)
       await other.tula.session.stepUp({ method: 'password', password: PASSWORD })
       const now = s.deps.clock.now().getTime()
@@ -3597,6 +3637,32 @@ describe('SDK journeys: session profiles and rules', () => {
     }
   )
 
+  journey(
+    'text message wording',
+    'text message wording: a phone number is proven with the code from a text in the environment’s own words, and nothing of the built-in text',
+    async () => {
+      const s = await server()
+      const NUMBER = '+12025550142'
+      await setSms(s, {
+        enabled: true,
+        allowedCountries: ['US'],
+        dailyMessageLimit: 500,
+        templates: { phone_verification: { text: 'Welcome to {{appName}}. Use {{code}} now' } },
+      })
+      const { tula } = await signUp(s)
+      await tula.user.phone.request({ phoneNumber: NUMBER })
+
+      // Nothing of the SDK reads a message: the code is the last run of six digits, whatever
+      // the environment wrote around it.
+      const code = textedCode(s, NUMBER)
+      const text = s.deps.sms.messages(NUMBER).at(-1)?.text ?? ''
+      // This environment has no origin, so there is no last line and the sentence is all.
+      expect(text).toBe(`Welcome to Tula. Use ${code} now`)
+
+      expect((await tula.user.phone.verify({ code })).phoneNumber).toBe(NUMBER)
+    }
+  )
+
   /** Switch the texted sign-in code on or off, with the given `sms` settings. */
   async function setSmsSignIn(
     s: Server,
@@ -3619,6 +3685,7 @@ describe('SDK journeys: session profiles and rules', () => {
     enabled: true,
     allowedCountries: ['US'],
     dailyMessageLimit: 500,
+    templates: {},
   }
 
   /** A user with a proven phone number, a minute after its code was texted. */

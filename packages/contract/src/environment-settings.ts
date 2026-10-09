@@ -13,6 +13,8 @@ import {
   SMS_COUNTRIES,
 } from './phone'
 import { SessionSettingsSchema, StoredSessionSettingsSchema } from './session-profile'
+import { readStoredSmsTemplates, type SmsTemplateKind } from './sms-template'
+import { SmsTemplatesSchema } from './sms-template-schema'
 
 /** App name used until an environment sets its own. Emails and prebuilt screens show it. */
 export const DEFAULT_APP_NAME = 'Tula'
@@ -442,6 +444,12 @@ const Sms = z.object({
     .min(1)
     .max(MAX_SMS_DAILY_MESSAGE_LIMIT)
     .default(DEFAULT_SMS_DAILY_MESSAGE_LIMIT),
+  /**
+   * The environment's own sentence for each kind of text message (`SmsTemplates`, ADR 0042),
+   * as plain text on one line with `{{name}}` placeholders. Empty by default: every message
+   * is the built-in text. The origin-bound last line is the server's and is in no template.
+   */
+  templates: SmsTemplatesSchema.default({}),
 })
 
 const password = PasswordPolicySchema.default(PASSWORD_POLICY_PRESETS.recommended)
@@ -504,7 +512,9 @@ const minLengthFloor = {
  *   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
  * - `sms`: whether text messages are sent (`enabled`, off by default), to which countries
  *   (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
- *   most (`dailyMessageLimit`, 500 by default). See ADR 0037.
+ *   most (`dailyMessageLimit`, 500 by default). See ADR 0037. `sms.templates` is the
+ *   environment's own sentence for each kind of text message (`SmsTemplates`, ADR 0042);
+ *   empty by default: every message is the built-in text.
  * - `emails.templates`: the environment's own subject and body for each kind of email, as
  *   plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
  *   message is the built-in copy. See ADR 0039.
@@ -638,6 +648,13 @@ export interface StoredEnvironmentSettingsRead {
   droppedEmailTemplates: EmailTemplateKind[]
   /** How many stored email templates were under a kind this version does not know. */
   unknownEmailTemplates: number
+  /**
+   * The kinds whose stored text message template was left out because it no longer passes;
+   * their messages are the built-in text.
+   */
+  droppedSmsTemplates: SmsTemplateKind[]
+  /** How many stored text message templates were under a kind this version does not know. */
+  unknownSmsTemplates: number
 }
 
 interface ListRule {
@@ -685,7 +702,8 @@ function usable(list: unknown, rule: ListRule): { kept: string[]; dropped: numbe
  *   beyond the list's limit) is left out rather than failing the read. Leaving an entry out
  *   of an allow-list only ever allows less;
  * - an email template (`emails.templates`) of a kind this version does not know, or one that
- *   no longer passes its kind's rules, is left out whole: its message is the built-in copy.
+ *   no longer passes its kind's rules, is left out whole: its message is the built-in copy;
+ * - a text message template (`sms.templates`) likewise: its message is the built-in text.
  *
  * @param stored - The stored document.
  * @returns The settings, and how many list entries were left out.
@@ -705,6 +723,8 @@ export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmen
       dropped: 0,
       droppedEmailTemplates: [],
       unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
     }
   }
   const emails = readStoredEmailTemplates(
@@ -730,11 +750,20 @@ export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmen
     }
     sections[name] = { ...section, ...lists }
   }
+  // The `sms` section as the list rules left it, with its templates read the tolerant way.
+  // A section that is no section was read as a missing one above, and stays one.
+  const smsSection = sections.sms as Record<string, unknown> | undefined
+  const sms = readStoredSmsTemplates(smsSection?.templates)
+  if (smsSection !== undefined) {
+    sections.sms = { ...smsSection, templates: sms.templates }
+  }
   return {
     settings: Stored.parse({ ...stored, ...sections, emails: { templates: emails.templates } }),
     dropped,
     droppedEmailTemplates: emails.dropped,
     unknownEmailTemplates: emails.unknown,
+    droppedSmsTemplates: sms.dropped,
+    unknownSmsTemplates: sms.unknown,
   }
 }
 

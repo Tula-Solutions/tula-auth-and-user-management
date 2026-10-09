@@ -6669,6 +6669,35 @@
       "SmsCountry": {
         "type": "string"
       },
+      "SmsTemplate": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 140
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "SmsTemplates": {
+        "default": {},
+        "type": "object",
+        "properties": {
+          "phone_verification": {
+            "$ref": "#/components/schemas/SmsTemplate"
+          },
+          "sign_in": {
+            "$ref": "#/components/schemas/SmsTemplate"
+          },
+          "second_factor": {
+            "$ref": "#/components/schemas/SmsTemplate"
+          }
+        },
+        "additionalProperties": false
+      },
       "EmailTemplate": {
         "type": "object",
         "properties": {
@@ -7060,6 +7089,9 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 1000000
+                  },
+                  "templates": {
+                    "$ref": "#/components/schemas/SmsTemplates"
                   }
                 },
                 "additionalProperties": false
@@ -7339,6 +7371,9 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 1000000
+              },
+              "templates": {
+                "$ref": "#/components/schemas/SmsTemplates"
               }
             },
             "additionalProperties": false
@@ -9290,6 +9325,194 @@
           "unused",
           "prefixes",
           "truncated"
+        ]
+      },
+      "MessagePreview": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "sms"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "unused": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "part": {
+                  "type": "string",
+                  "enum": [
+                    "subject",
+                    "body",
+                    "text"
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "invalid",
+                    "missing_value",
+                    "leading_digit",
+                    "empty",
+                    "too_long",
+                    "code_not_last"
+                  ]
+                }
+              },
+              "required": [
+                "part",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "segments": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "encoding": {
+                    "type": "string",
+                    "enum": [
+                      "gsm7",
+                      "ucs2"
+                    ]
+                  },
+                  "units": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "segments": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "encoding",
+                  "units",
+                  "segments"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "channel",
+          "kind",
+          "subject",
+          "text",
+          "unused",
+          "segments"
+        ],
+        "additionalProperties": false
+      },
+      "MessagePreviewRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "channel": {
+                "type": "string",
+                "const": "email"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "email_verification",
+                  "password_reset",
+                  "sign_in",
+                  "step_up",
+                  "account_exists",
+                  "no_account",
+                  "no_account_sign_in",
+                  "password_changed",
+                  "password_added",
+                  "password_reset_completed",
+                  "password_added_by_reset",
+                  "password_set_by_admin",
+                  "password_added_by_admin",
+                  "password_removed",
+                  "new_sign_in",
+                  "mfa_enabled",
+                  "mfa_disabled",
+                  "mfa_reset_by_admin",
+                  "backup_codes_regenerated",
+                  "backup_code_used",
+                  "sms_factor_enabled",
+                  "sms_factor_removed",
+                  "passkey_added",
+                  "passkey_removed",
+                  "identity_linked",
+                  "identity_unlinked"
+                ]
+              },
+              "template": {
+                "type": "object",
+                "properties": {
+                  "subject": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "channel",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "channel": {
+                "type": "string",
+                "const": "sms"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "phone_verification",
+                  "sign_in",
+                  "second_factor"
+                ]
+              },
+              "template": {
+                "$ref": "#/components/schemas/SmsTemplate"
+              }
+            },
+            "required": [
+              "channel",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
         ]
       },
       "DiagnosticStatus": {
@@ -24663,6 +24886,136 @@
             }
           }
         ]
+      }
+    },
+    "/v1/admin/message-preview": {
+      "post": {
+        "operationId": "previewMessage",
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Preview an email or a text message in a draft wording",
+        "description": "Draws one kind of email (`channel: \"email\"`) or text message (`channel: \"sms\"`) as the server would word it, from fixed sample values (the code is always `123456`), with the environment’s saved app name, support address and first allowed origin. `template` is a draft: it is held to exactly the rules a saved template is and refused the same way (422, under `template.<field>`), and it is not saved. Without one the answer is the built-in copy. The answer is **text**: an email’s subject and plain-text part, or the whole text message with the server’s own last line; never HTML. A part of the draft the server would not use for this message is listed in `unused` and drawn as the built-in copy. Nothing is sent, stored or recorded. Limited to 120 previews a minute per environment.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagePreviewRequest"
+              }
+            }
+          }
+        }
       }
     },
     "/v1/instance/diagnostics": {

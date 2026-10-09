@@ -2827,6 +2827,17 @@ export interface SessionSettings {
 
 export type SmsCountry = string;
 
+export interface SmsTemplate {
+  /** @maxLength 140 */
+  text: string;
+}
+
+export interface SmsTemplates {
+  phone_verification?: SmsTemplate;
+  sign_in?: SmsTemplate;
+  second_factor?: SmsTemplate;
+}
+
 export interface EmailTemplate {
   /** @maxLength 200 */
   subject?: string;
@@ -2966,6 +2977,7 @@ export type EnvironmentSettingsStateSettingsSms = {
      * @maximum 1000000
      */
   dailyMessageLimit?: number;
+  templates?: SmsTemplates;
 };
 
 export type EnvironmentSettingsStateSettings = {
@@ -3090,6 +3102,7 @@ export type EnvironmentSettingsInputSms = {
      * @maximum 1000000
      */
   dailyMessageLimit?: number;
+  templates?: SmsTemplates;
 };
 
 export interface EnvironmentSettingsInput {
@@ -3942,6 +3955,87 @@ export interface SmsUsage {
   prefixes: SmsPrefixUsage[];
   truncated: boolean;
 }
+
+export type MessagePreviewChannel = typeof MessagePreviewChannel[keyof typeof MessagePreviewChannel];
+
+
+export const MessagePreviewChannel = {
+  email: 'email',
+  sms: 'sms',
+} as const;
+
+export type MessagePreviewUnusedItemPart = typeof MessagePreviewUnusedItemPart[keyof typeof MessagePreviewUnusedItemPart];
+
+
+export const MessagePreviewUnusedItemPart = {
+  subject: 'subject',
+  body: 'body',
+  text: 'text',
+} as const;
+
+export type MessagePreviewUnusedItemReason = typeof MessagePreviewUnusedItemReason[keyof typeof MessagePreviewUnusedItemReason];
+
+
+export const MessagePreviewUnusedItemReason = {
+  invalid: 'invalid',
+  missing_value: 'missing_value',
+  leading_digit: 'leading_digit',
+  empty: 'empty',
+  too_long: 'too_long',
+  code_not_last: 'code_not_last',
+} as const;
+
+export type MessagePreviewUnusedItem = {
+  part: MessagePreviewUnusedItemPart;
+  reason: MessagePreviewUnusedItemReason;
+};
+
+export type MessagePreviewSegmentsEncoding = typeof MessagePreviewSegmentsEncoding[keyof typeof MessagePreviewSegmentsEncoding];
+
+
+export const MessagePreviewSegmentsEncoding = {
+  gsm7: 'gsm7',
+  ucs2: 'ucs2',
+} as const;
+
+export type MessagePreviewSegments = {
+  encoding: MessagePreviewSegmentsEncoding;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  units: number;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  segments: number;
+} | null;
+
+export interface MessagePreview {
+  channel: MessagePreviewChannel;
+  kind: string;
+  /** @nullable */
+  subject: string | null;
+  text: string;
+  unused: MessagePreviewUnusedItem[];
+  segments: MessagePreviewSegments;
+}
+
+export type MessagePreviewRequest = {
+  channel: 'email';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked';
+  template?: {
+  /** @maxLength 200 */
+  subject?: string;
+  /** @maxLength 2000 */
+  body?: string;
+};
+} | {
+  channel: 'sms';
+  kind: 'phone_verification' | 'sign_in' | 'second_factor';
+  template?: SmsTemplate;
+};
 
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
 
@@ -8618,6 +8712,95 @@ export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, 
 
 
 
+
+export const getPreviewMessageUrl = () => {
+
+
+
+
+  return `/v1/admin/message-preview`
+}
+
+/**
+ * Draws one kind of email (`channel: "email"`) or text message (`channel: "sms"`) as the server would word it, from fixed sample values (the code is always `123456`), with the environment’s saved app name, support address and first allowed origin. `template` is a draft: it is held to exactly the rules a saved template is and refused the same way (422, under `template.<field>`), and it is not saved. Without one the answer is the built-in copy. The answer is **text**: an email’s subject and plain-text part, or the whole text message with the server’s own last line; never HTML. A part of the draft the server would not use for this message is listed in `unused` and drawn as the built-in copy. Nothing is sent, stored or recorded. Limited to 120 previews a minute per environment.
+ * @summary Preview an email or a text message in a draft wording
+ */
+export const previewMessage = async (messagePreviewRequest: MessagePreviewRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<MessagePreview> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<MessagePreview>(getPreviewMessageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(messagePreviewRequest)
+  }
+);}
+
+
+
+
+
+export const getPreviewMessageMutationKey = () => ['previewMessage'] as const;
+
+export const getPreviewMessageMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewMessage>>, TError,PreviewMessageMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewMessage>>, TError,PreviewMessageMutationVariables, TContext> => {
+
+const mutationKey = getPreviewMessageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewMessage>>, PreviewMessageMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewMessage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewMessageMutationResult = NonNullable<Awaited<ReturnType<typeof previewMessage>>>
+    export type PreviewMessageMutationBody = MessagePreviewRequest
+    export type PreviewMessageMutationError = ErrorEnvelope
+    export type PreviewMessageMutationVariables = {data: MessagePreviewRequest}
+
+    /**
+ * @summary Preview an email or a text message in a draft wording
+ */
+export const usePreviewMessage = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewMessage>>, TError,PreviewMessageMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof previewMessage>>,
+        TError,
+        PreviewMessageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPreviewMessageMutationOptions(options), queryClient);
+    }
 
 export const getGetInstanceDiagnosticsUrl = () => {
 

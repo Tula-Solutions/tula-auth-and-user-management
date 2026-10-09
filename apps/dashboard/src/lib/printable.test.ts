@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { printable } from './printable'
+import { printable, unseenCodePoints } from './printable'
 
 test.each([
   ['plain text is left as it is', 'https://api.example.com/webhooks/tula?a=1&b=%20', null],
@@ -80,4 +80,23 @@ test('what is written out can be read back to the one text it came from', () => 
   ]) {
     expect(back(printable(text))).toBe(text)
   }
+})
+
+test.each<[string, string, string[]]>([
+  ['a sentence with spaces, a line break and an accent', 'Caf\u{E9} code:\n123 456', []],
+  ['a decomposed accent, which is drawn', 'Cafe\u{301}', []],
+  ['a zero-width space', 'Your\u{200B} code', ['U+200B']],
+  [
+    'a joiner and a variation selector, each once',
+    'a\u{200D}b\u{FE0F}c\u{200D}',
+    ['U+200D', 'U+FE0F'],
+  ],
+  ['a right-to-left override', 'a\u{202E}b', ['U+202E']],
+  ['a control character and a tab', 'a\u{7}b\tc', ['U+0007', 'U+0009']],
+  ['a line and a paragraph separator', 'a\u{2028}b\u{2029}', ['U+2028', 'U+2029']],
+  ['a private-use and an unassigned character', '\u{E000}\u{378}', ['U+E000', 'U+0378']],
+  ['a lone surrogate', 'a\u{D800}b', ['U+D800']],
+  ['a tag character beyond the basic plane', 'a\u{E0041}b', ['U+E0041']],
+])('unseenCodePoints: %s', (_name, text, expected) => {
+  expect(unseenCodePoints(text)).toEqual(expected)
 })

@@ -266,6 +266,8 @@ export interface Operations {
   listWebhookDeliveries: { params: { id: string }; query: { state?: 'pending' | 'delivered' | 'failed'; eventType?: Schemas['ActivityType']; page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['WebhookDeliveryList'] }
   /** List webhook endpoints (`GET /v1/admin/webhook-endpoints`). */
   listWebhookEndpoints: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookEndpointList'] }
+  /** Preview an email or a text message in a draft wording (`POST /v1/admin/message-preview`). */
+  previewMessage: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['MessagePreviewRequest']; response: Schemas['MessagePreview'] }
   /** Send a delivery again (`POST /v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}/redeliver`). */
   redeliverWebhook: { params: { id: string; deliveryId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookSendResult'] }
   /** Replace the environment’s settings (`PUT /v1/admin/settings`). */
@@ -622,6 +624,7 @@ export interface Schemas {
       enabled?: boolean
       allowedCountries?: Schemas['SmsCountry'][]
       dailyMessageLimit?: number
+      templates?: Schemas['SmsTemplates']
     }
     emails?: Schemas['EmailSettings']
   }
@@ -683,6 +686,7 @@ export interface Schemas {
         enabled?: boolean
         allowedCountries?: Schemas['SmsCountry'][]
         dailyMessageLimit?: number
+        templates?: Schemas['SmsTemplates']
       }
       emails?: Schemas['EmailSettings']
     }
@@ -892,6 +896,33 @@ export interface Schemas {
     value: string | number | boolean
   }
   JwtTemplateSource: 'user.email' | 'user.email_verified' | 'user.created_at' | 'session.client' | 'session.created_at'
+  MessagePreview: {
+    channel: 'email' | 'sms'
+    kind: string
+    subject: string | null
+    text: string
+    unused: ({
+      part: 'subject' | 'body' | 'text'
+      reason: 'invalid' | 'missing_value' | 'leading_digit' | 'empty' | 'too_long' | 'code_not_last'
+    })[]
+    segments: {
+      encoding: 'gsm7' | 'ucs2'
+      units: number
+      segments: number
+    } | null
+  }
+  MessagePreviewRequest: {
+    channel: 'email'
+    kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked'
+    template?: {
+      subject?: string
+      body?: string
+    }
+  } | {
+    channel: 'sms'
+    kind: 'phone_verification' | 'sign_in' | 'second_factor'
+    template?: Schemas['SmsTemplate']
+  }
   MfaPolicy: 'off' | 'optional' | 'required'
   MicrosoftTenant: string
   NativeApp: Schemas['IosApp'] | Schemas['AndroidApp']
@@ -1230,6 +1261,14 @@ export interface Schemas {
     sent: number
     used: number
     unused: number
+  }
+  SmsTemplate: {
+    text: string
+  }
+  SmsTemplates: {
+    phone_verification?: Schemas['SmsTemplate']
+    sign_in?: Schemas['SmsTemplate']
+    second_factor?: Schemas['SmsTemplate']
   }
   SmsUsage: {
     since: string

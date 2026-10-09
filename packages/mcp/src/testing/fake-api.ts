@@ -127,7 +127,12 @@ export function defaultAnswers(): Answers {
         audit: { retentionDays: 90 },
         notifications: { passwordChanged: true, newSignIn: true },
         mfa: { policy: 'optional', smsCode: { enabled: false } },
-        sms: { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 500 },
+        sms: {
+          enabled: true,
+          allowedCountries: ['US', 'DE'],
+          dailyMessageLimit: 500,
+          templates: { sign_in: { text: 'Texted-wording-canary: your code is {{code}}' } },
+        },
         emails: {
           templates: {
             email_verification: {

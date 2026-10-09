@@ -10,6 +10,7 @@ import {
   hasEnabledSignInMethod,
   hookWeakenings,
   isEmailTemplateKind,
+  isSmsTemplateKind,
   MAX_NATIVE_APPS,
   MAX_WEBHOOK_ENDPOINTS,
   NATIVE_APP_PLATFORMS,
@@ -45,6 +46,32 @@ export const MANAGING_TOOL = 'tula-apply'
 export const EMAIL_TEMPLATES_PATH = 'emails.templates'
 
 /**
+ * Where an environment's text message templates are in the settings document, by kind.
+ *
+ * @example
+ * ```ts
+ * change.path.startsWith(`${SMS_TEMPLATES_PATH}.`) // a template's text
+ * ```
+ */
+export const SMS_TEMPLATES_PATH = 'sms.templates'
+
+/**
+ * Whether a path is inside a template of either kind of message: free text an operator
+ * wrote, which a plan prints through `printable()` and says the built-in copy replaces.
+ *
+ * @param path - A change's path.
+ * @returns `true` for a path under `emails.templates` or `sms.templates`.
+ *
+ * @example
+ * ```ts
+ * isTemplatePath('sms.templates.sign_in.text') // true
+ * ```
+ */
+export function isTemplatePath(path: string): boolean {
+  return path.startsWith(`${EMAIL_TEMPLATES_PATH}.`) || path.startsWith(`${SMS_TEMPLATES_PATH}.`)
+}
+
+/**
  * Lists in the settings document that are **sets**: their order means nothing to the server
  * (an origin is allowed or it is not, a country is texted or it is not), so a reordering is
  * not a change, and a change is shown as the entries added and removed. Every other list is
@@ -64,18 +91,21 @@ export const SET_PATHS: readonly string[] = [
 /**
  * Maps whose entries are whole things with a name (a session profile, a JWT template and,
  * inside one, its claims by key; an email template by its kind, and inside one its subject
- * and its body): one that appears or disappears is shown as added or removed. Everywhere
+ * and its body; a text message template by its kind, and inside one its text): one that
+ * appears or disappears is shown as added or removed. Everywhere
  * else a key the server has and the file's schema does not is a setting this version of the
  * CLI does not know.
  *
  * An email template the file leaves out is therefore **removed**, not unmanaged: the
  * settings document is replaced whole, and a kind without a template sends the built-in
- * copy. A kind this version does not know is still reported as unknown (`unknownEmailKind`).
+ * copy. A kind this version does not know is still reported as unknown (`unknownTemplateKind`).
+ * A text message template follows the same rules in every respect.
  */
 const NAMED_ENTRY_PATHS: readonly string[] = [
   'sessions.profiles',
   'sessions.jwtTemplates',
   EMAIL_TEMPLATES_PATH,
+  SMS_TEMPLATES_PATH,
 ]
 
 /**
@@ -111,8 +141,8 @@ export interface Change {
   removed?: unknown[]
 }
 
-/** The path of one email template: `emails.templates.<kind>`. */
-const EMAIL_TEMPLATE_PATH = /^emails\.templates\.[^.]+$/
+/** The path of one template: `emails.templates.<kind>` or `sms.templates.<kind>`. */
+const TEMPLATE_PATH = /^(?:emails|sms)\.templates\.[^.]+$/
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -148,9 +178,9 @@ function diffAt(
   if (before === undefined && after === undefined) {
     return []
   }
-  // An email template that only one side has is still shown field by field: its subject
-  // and its body are each a line of their own, so that each is printed as text.
-  if (EMAIL_TEMPLATE_PATH.test(path) && isPlainObject(before ?? after)) {
+  // A template that only one side has is still shown field by field: an email's subject
+  // and body, and a text message's text, are each a line of their own, printed as text.
+  if (TEMPLATE_PATH.test(path) && isPlainObject(before ?? after)) {
     const [had, has] = [before ?? {}, after ?? {}]
     if (isPlainObject(had) && isPlainObject(has)) {
       const keys = [...new Set([...Object.keys(has), ...Object.keys(had)])]
@@ -183,7 +213,7 @@ function diffAt(
  * every scalar, by value. A key set to `undefined` counts as absent. JWT templates are a set
  * by name and a template's claims a set by key (maps, so their order never counts); one claim
  * is compared as a whole value. An email template is compared by its subject and its body,
- * also when only one side has it.
+ * and a text message template by its text, also when only one side has it.
  *
  * @param before - What the server has.
  * @param after - What the config says.
@@ -1189,16 +1219,21 @@ function planMarker(remote: RemoteState, configHash: string): MarkerPlan {
 }
 
 /**
- * Whether a path is an email template of a kind this version does not know: a later server
- * has it, and replacing the document from this file would remove it without this version
- * knowing what it was.
+ * Whether a path is a template (an email's or a text message's) of a kind this version does
+ * not know: a later server has it, and replacing the document from this file would remove
+ * it without this version knowing what it was.
  */
-function unknownEmailKind(path: string): boolean {
-  if (!path.startsWith(`${EMAIL_TEMPLATES_PATH}.`)) {
-    return false
+function unknownTemplateKind(path: string): boolean {
+  for (const [prefix, known] of [
+    [EMAIL_TEMPLATES_PATH, isEmailTemplateKind],
+    [SMS_TEMPLATES_PATH, isSmsTemplateKind],
+  ] as const) {
+    if (path.startsWith(`${prefix}.`)) {
+      const [kind = ''] = path.slice(prefix.length + 1).split('.')
+      return !known(kind)
+    }
   }
-  const [kind = ''] = path.slice(EMAIL_TEMPLATES_PATH.length + 1).split('.')
-  return !isEmailTemplateKind(kind)
+  return false
 }
 
 function weakenings(before: unknown, after: unknown): string[] {
@@ -1253,7 +1288,7 @@ export function buildPlan(
       (change) =>
         change.kind === 'removed' &&
         (!NAMED_ENTRY_PATHS.some((prefix) => change.path.startsWith(`${prefix}.`)) ||
-          unknownEmailKind(change.path))
+          unknownTemplateKind(change.path))
     )
     .map((change) => change.path)
   const providers = planProviders(remote.providers, environment.providers, options)

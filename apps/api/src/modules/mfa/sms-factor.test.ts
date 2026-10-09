@@ -73,7 +73,13 @@ function configure(switches: Switches = {}) {
         smsCode: { enabled: switches.smsFactor ?? true },
       },
       urls: { allowedOrigins: [ORIGIN], allowedRedirectUrls: [] },
-      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, ...switches.sms },
+      sms: {
+        enabled: true,
+        allowedCountries: ['US'],
+        dailyMessageLimit: 500,
+        templates: {},
+        ...switches.sms,
+      },
     },
   })
 }

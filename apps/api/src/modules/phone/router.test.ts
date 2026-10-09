@@ -40,6 +40,7 @@ function configure(
     enabled: true,
     allowedCountries: ['US', 'DE'],
     dailyMessageLimit: 500,
+    templates: {},
   },
   environmentId: string = TEST_TENANT.environmentId
 ) {
@@ -341,19 +342,19 @@ describe('what the environment allows', () => {
     ['off (the default)', DEFAULT_ENVIRONMENT_SETTINGS.sms, 403, 'sms.disabled'],
     [
       'off with countries listed',
-      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 },
+      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
       403,
       'sms.disabled',
     ],
     [
       'on with no country',
-      { enabled: true, allowedCountries: [], dailyMessageLimit: 500 },
+      { enabled: true, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
       403,
       'sms.disabled',
     ],
     [
       'on for another country',
-      { enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 },
+      { enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500, templates: {} },
       422,
       'sms.country_not_allowed',
     ],
@@ -363,6 +364,7 @@ describe('what the environment allows', () => {
       enabled: sms.enabled,
       allowedCountries: [...sms.allowedCountries],
       dailyMessageLimit: 500,
+      templates: {},
     })
     const hit = spyOn(deps.rateLimiter, 'hit')
     const before = hit.mock.calls.length
@@ -397,7 +399,7 @@ describe('what the environment allows', () => {
 
   test('with SMS off, confirming says so even when nothing is pending', async () => {
     const session = await signUp()
-    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 })
+    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} })
     expect(await errorOf(await confirm(session.accessToken, '123456'))).toMatchObject({
       status: 403,
       code: 'sms.disabled',
@@ -408,7 +410,7 @@ describe('what the environment allows', () => {
     const session = await signUp()
     await ask(session.accessToken)
     const code = textedCode()
-    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 })
+    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} })
     const attempt = spyOn(deps.lockout, 'attempt')
     expect(await errorOf(await confirm(session.accessToken, code))).toMatchObject({
       status: 403,
@@ -426,7 +428,7 @@ describe('what the environment allows', () => {
     const session = await signUp()
     await ask(session.accessToken)
     const code = textedCode()
-    configure({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 })
+    configure({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500, templates: {} })
     const attempt = spyOn(deps.lockout, 'attempt')
     expect(await errorOf(await confirm(session.accessToken, code))).toMatchObject({
       status: 422,
@@ -443,9 +445,9 @@ describe('what the environment allows', () => {
     const config = async () => json<ClientConfig>(await call('GET', '/config'))
     expect((await config()).phone).toEqual({ enabled: true })
     expect(JSON.stringify(await config())).not.toContain('allowedCountries')
-    configure({ enabled: true, allowedCountries: [], dailyMessageLimit: 500 })
+    configure({ enabled: true, allowedCountries: [], dailyMessageLimit: 500, templates: {} })
     expect((await config()).phone).toEqual({ enabled: false })
-    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 })
+    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} })
     expect((await config()).phone).toEqual({ enabled: false })
   })
 })
@@ -915,7 +917,7 @@ describe('sending', () => {
         revision: 1,
         settings: {
           ...DEFAULT_ENVIRONMENT_SETTINGS,
-          sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 },
+          sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
         },
       })
       await expect(
@@ -952,7 +954,12 @@ describe('what bounds the cost of sending', () => {
     )
 
   test('past the environment’s daily limit nothing is sent, to any number, by anyone', async () => {
-    configure({ enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 1 })
+    configure({
+      enabled: true,
+      allowedCountries: ['US', 'DE'],
+      dailyMessageLimit: 1,
+      templates: {},
+    })
     const maya = await signUp()
     const sam = await signUp(OTHER_EMAIL)
     expect((await ask(maya.accessToken)).status).toBe(200)
@@ -969,7 +976,12 @@ describe('what bounds the cost of sending', () => {
 
   test('a destination prefix whose hour is spent gets nothing more, whoever asks', async () => {
     // Ten a day: one message an hour for a prefix, three for the environment.
-    configure({ enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 10 })
+    configure({
+      enabled: true,
+      allowedCountries: ['US', 'DE'],
+      dailyMessageLimit: 10,
+      templates: {},
+    })
     const maya = await signUp()
     const sam = await signUp(OTHER_EMAIL)
     const kim = await signUp('kim@northline.app')
@@ -1271,7 +1283,7 @@ describe('the number and the code stay where they belong', () => {
       const mailsBefore = deps.mailer.outbox.length
       // Refusals first: a malformed number, then a country that is not allowed.
       await failed(await ask(session.accessToken, `${NUMBER}x`))
-      configure({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 })
+      configure({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500, templates: {} })
       await failed(await ask(session.accessToken))
       configure()
       // A send that fails.

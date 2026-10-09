@@ -66,6 +66,7 @@ function configure(switches: Switches = {}) {
         enabled: true,
         allowedCountries: ['US', 'DE'],
         dailyMessageLimit: 500,
+        templates: {},
         ...switches.sms,
       },
     },
