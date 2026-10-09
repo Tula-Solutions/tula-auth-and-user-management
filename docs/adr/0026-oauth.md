@@ -374,7 +374,12 @@ is Google's with two things missing.
   authorization request and five for the token request, none of them a challenge or a
   verifier; the discovery document has no `code_challenge_methods_supported`; and `arctic`'s
   `LinkedIn.createAuthorizationURL(state, scopes)` takes no verifier. As with Apple, nothing
-  undocumented is sent.
+  undocumented is sent. LinkedIn does document PKCE, but as a flow of its own for native
+  clients ("Authenticating with OAuth 2.0 for Native Clients", read 2026-10-09): another
+  authorization endpoint (`/oauth/native-pkce/authorization`), a loopback redirect address
+  only, no client secret in the token request, and switched on for one app at a time by
+  LinkedIn on request. It is not something a server that exchanges a code with a secret
+  can send, so it is not an alternative here.
 - **No nonce.** The same request takes none, the discovery document does not list `nonce`
   among `claims_supported`, and the guide's ID token has none. `verifyIdToken` used to
   require the attempt's nonce; it now takes `nonce: string | typeof NONCE_NOT_ECHOED`, with

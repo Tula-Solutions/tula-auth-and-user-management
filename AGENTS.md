@@ -1226,10 +1226,13 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   signs.
 - **Discord and LinkedIn report an address as verified only on the provider's own word, a
   JSON boolean**: Discord's `verified === true` on the user object, LinkedIn's
-  `email_verified === true` in the verified ID token (never the string Apple sends). A
+  `email_verified === true` in the userinfo answer, and only in an answer whose `sub` is
+  the verified ID token's (`linkedInProfile`; never the string Apple sends, and never the
+  token's own `email` claims, which are not read). A
   Discord account is its user id, taken only through `isSnowflake` (one decimal spelling
-  per id), never the username; a LinkedIn account is the token's `sub`, under one of the
-  two issuers of `LINKEDIN_ISSUERS`. Discord's access token is read with once and dropped.
+  per id), never the username; a LinkedIn account is the verified ID token's `sub`, under
+  one of the two issuers of `LINKEDIN_ISSUERS`. Each provider's access token is read with
+  once, at its profile endpoint, and dropped.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider
   routes enforce it, not the settings schema.
 

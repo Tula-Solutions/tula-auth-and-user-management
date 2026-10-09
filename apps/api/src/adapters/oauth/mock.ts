@@ -91,7 +91,9 @@ export function issueMockCode(
  * token's" subject, and the profile is made of the two by the real adapter's own function
  * (`linkedInProfile`: the answer's `sub` must be the token's, `email_verified` must be the
  * boolean `true`). The mock makes no request: what it shares with the real adapter is that
- * rule, not the call to LinkedIn.
+ * rule, not the call to LinkedIn. It checks a PKCE verifier and a nonce for LinkedIn as for
+ * every provider, which the real adapter cannot (LinkedIn takes neither: ADR 0026): a
+ * scenario that passes here is no evidence that LinkedIn's code is bound by them.
  *
  * @param provider - The provider this instance stands in for.
  * @param deps - Secret box, clock and the API's public URL.
