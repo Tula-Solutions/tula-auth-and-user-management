@@ -16,10 +16,20 @@ one, and the **environment** allows it.
 | Value | |
 | --- | --- |
 | `none` (default) | There is no sender. No phone number is offered (`phone.enabled` is `false` whatever the environment's settings say), and a request that would send a message is answered `sms.unavailable`, with no send limit used. |
-| `dev` | **Development and tests only.** Nothing is sent; messages are kept in the development SMS inbox (below). Accepted only with `ENVIRONMENT=local` and a loopback `PUBLIC_URL`. |
+| `dev` | **Development and tests only.** Nothing is sent; messages are kept in the development SMS inbox (below). Accepted only with `ENVIRONMENT=local` and a loopback `PUBLIC_URL`: the server refuses to start with it in `dev`, `staging` and `prod`. |
+| `twilio` | Messages are really sent, through Twilio. Needs the `TWILIO_*` variables: an account, one way to authenticate and one sender. Allowed in every tier. |
 
-There is no adapter for a real provider yet: outside development, no message can be sent.
-See [self-hosting](self-host.md#settings).
+Twilio is the one real provider. Before a message reaches a phone the sender has to be
+registered with Twilio, Twilio has to be allowed to send to the country, and the account has
+to be more than a trial: the [Twilio checklist](providers/twilio.md) has the steps, and
+[self-hosting](self-host.md#text-messages-with-twilio) the variables.
+
+**"Sent" means the provider accepted the message, not that it arrived.** No delivery
+receipt is read. A message a carrier drops after Twilio took it is a sent message here, and
+its code is one that is never used.
+
+`tula doctor` says when the two halves disagree: its `sms_sender` line warns when an
+environment has text messages on and the deployment has no sender.
 
 ### The environment: the `sms` setting
 
@@ -211,6 +221,9 @@ it:
 - The number is returned to its owner and to an administrator (the dashboard's user screen,
   `/v1/admin/users`). It is in no log line, audit entry, event or webhook payload: the events
   `user.phone_number_added` and `user.phone_number_removed` say only which user.
+- With `SMS_PROVIDER=twilio` the number and the message's text, code included, go to Twilio,
+  which keeps them in its own message log. That is outside Tula: how long Twilio keeps a
+  message is set in Twilio.
 
 ## Troubleshooting
 
@@ -219,7 +232,7 @@ it:
 | `phone.invalid` | 422 | Not a number with a country code (`+` and 8 to 15 digits). |
 | `sms.disabled` | 403 | The environment's `sms.enabled` is off, or its country list is empty. |
 | `sms.country_not_allowed` | 422 | The number's country is not on the environment's list. Nothing was sent. |
-| `sms.unavailable` | 503 | The message could not be sent: the deployment has no sender (`SMS_PROVIDER=none`), or it failed. An earlier code still works. |
+| `sms.unavailable` | 503 | The message could not be sent: the deployment has no sender (`SMS_PROVIDER=none`), or the provider did not take it. An earlier code still works. The answer says no more than that; the API's log has the provider's reason (`twilio did not take a text message`: [what the fields mean](providers/twilio.md#when-twilio-does-not-take-a-message)). |
 | `auth.step_up_required` | 403 | The session's last authentication is too old: step up, then repeat the call. |
 | `verification.invalid_code` | 422 | A wrong code. |
 | `verification.expired` | 410 | No code is pending, or it expired, was used or was replaced by a newer one. |
@@ -230,7 +243,8 @@ it:
 ## Not built yet
 
 - Signing in with a texted code.
-- A real SMS provider.
+- A second provider: Twilio is the only one.
+- Delivery receipts: nothing reads whether a message Twilio accepted reached a phone.
 - A limit in money: the daily limit counts messages, and becomes a spend ceiling when a
   provider brings prices.
 - Editing the message's text.

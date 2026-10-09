@@ -52,7 +52,10 @@ paths:
   (`Outbound.check` when the address is saved, `Outbound.request` to call it), with
   `deps.outbound`. Never `fetch`.
 - A text message (ADR 0037) is sent through `Sms.sendCode` only, after `Settings.requireSms`
-  for its number; its words are in `modules/sms/templates.ts`. A user's phone number is
+  for its number; its words are in `modules/sms/templates.ts`. An SMS adapter
+  (`adapters/sms/`) sends what it is given, unchanged, with one request and no retry, runs
+  `smsSenderSuite`, throws only the port's `SmsSendError`, and logs a provider's own text
+  only through `maskProviderMessage`: never a number, a credential or the message. A user's phone number is
   written only by `users.setPhoneNumber` / `removePhoneNumber`, each with its `Activity`.
 - A hook (ADR 0035) is asked through `Hooks.beforeSignUp` only, and only where a sign-up is
   about to create an account for a proven address (after the emailed code in

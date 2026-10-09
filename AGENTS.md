@@ -689,10 +689,46 @@ signs in with one (TULA-27), and it is **not unique**.
 - **Text messages go through the `SmsSender` port and fail closed.** `SMS_PROVIDER=none` (the
   default) is an adapter whose every send throws; a message that could not be sent is
   `sms.unavailable` (503), never treated as sent, and no adapter falls back to another. A real
-  provider is a new adapter and a new value of `SMS_PROVIDER`, nothing else. A sender says
+  provider is a new adapter and a new value of `SMS_PROVIDER`, nothing else; it runs
+  `smsSenderSuite` (`adapters/sms-sender.suite.ts`), as every sender does. A sender says
   whether the deployment has one (`configured`): without one `phone.enabled` in the client
   config is `false`, and `Sms.requireSender` refuses after `Settings.requireSms` and **before
   any send limit is counted**. Keep that order.
+- **Twilio is the one sender that really sends** (`SMS_PROVIDER=twilio`,
+  `adapters/sms/twilio.ts`; ADR 0037, "Twilio"). Its variables (`TWILIO_ACCOUNT_SID`; an API
+  key's SID and secret **or** the auth token; a Messaging Service **or** one number) are
+  judged by `env.ts` **only when it is chosen**, and are ignored otherwise: with it, both of
+  a pair, neither, or a value that is not of Twilio's shape stops the boot with a message
+  that names the variable and never a value. `container.ts` asks again. The credentials
+  live in the adapter's closure: never a property, `deps.config`, a log line or an error,
+  and the Compose `worker` service is not given them (`compose.test.ts`'s `API_ONLY`).
+  - **One request per message, to a host that is a constant** (`TWILIO_API_ORIGIN`), with
+    `To`, the sender and `Body` and nothing else: no option that alters content or routing,
+    no Twilio SDK. It is not an operator's address, so it uses `fetch` like the OAuth
+    adapters and not `~/lib/outbound`: one deadline (`PROVIDER_TIMEOUT_MS`, as a signal and
+    as a timer), `redirect: 'error'`, `tls: { rejectUnauthorized: true }` (the credentials
+    are in every request; keep it, `NODE_TLS_REJECT_UNAUTHORIZED=0` would otherwise apply),
+    and at most `TWILIO_MAX_RESPONSE_BYTES` of the answer read. Never make the host or the
+    path configurable.
+  - **Sent means accepted**: a 2xx whose JSON carries a message `sid`. Anything else is the
+    port's `failed`, and **nothing is retried**, a timeout and a 429 included: a retry could
+    send twice and the limits count one. There is no delivery receipt; never word a message
+    Twilio accepted as delivered.
+  - **Twilio's own words go to the log only, masked** (`maskProviderMessage`: the configured
+    values, the recipient and the text, any Twilio identifier, every run of four or more
+    digits however it is spaced, control characters, a cap), under `twilioCode` and
+    `twilioMessage` (the logger censors `code`). Never the request's body, the `To` number
+    or a header, and nothing of an answer in the error. A new field of the log line, and a
+    new pattern in the mask (linear: no quantifier inside another), keeps the canary test in
+    `adapters/sms/twilio.test.ts` and the "work is bounded" one.
+  - **No test makes a request to Twilio**: `fetch` is a stub in every test that builds the
+    adapter.
+- **The diagnostics say when an environment has text messages on and the deployment has no
+  sender** (`sms_sender`, ADR 0031): a count, read inside the one bounded scan
+  `master_key` makes (never a second scan), only where there is no sender, `warn` until a
+  texted code can sign someone in. With a sender it is `ok` and says that nothing was sent
+  and the provider was not asked: never reword it to claim the credentials work. A boot
+  never reads an environment's settings.
 - **The development inbox hands every code to whoever asks, and is gated like the mock OAuth
   provider.** `SMS_PROVIDER=dev` needs `ENVIRONMENT=local` **and** a loopback `PUBLIC_URL`
   (`env.ts` refuses to boot otherwise), `container.ts` builds the inbox in that tier only and
@@ -1741,7 +1777,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   whose subject leads with one, not from the newest email.
 - Treat every change under
   `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms}`,
-  `adapters/oauth/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
+  `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
   it needs tests for the failure paths, not just the happy path.
@@ -1921,7 +1957,7 @@ apps/api/src/
 │                     # event-payload (an activity's typed, allow-listed event)
 ├── ports/            # interfaces the domain depends on
 ├── adapters/         # memory/, postgres/, redis/, system/, cache/, breach/, mail/, oauth/,
-│                     # sms/ (the development inbox, and the sender that refuses)
+│                     # sms/ (the development inbox, the sender that refuses, Twilio)
 ├── middleware/       # publishable-key, secret-key, session-auth, recent-auth, rate-limit, cors,
 │                     # request-log, instance-admin (TULA_ADMIN_TOKEN, for /v1/instance/*),
 │                     # dashboard-session (the dashboard's cookie and its CSRF rules)
