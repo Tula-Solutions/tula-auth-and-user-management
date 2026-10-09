@@ -68,9 +68,20 @@ x-api: &api
     # Development and tests only: serves every OAuth provider from the built-in mock provider
     # (ADR 0026). The API refuses to start with it unless ENVIRONMENT is `local`.
     OAUTH_MOCK_PROVIDER: ${OAUTH_MOCK_PROVIDER:-false}
-    # Development and tests only: `dev` keeps text messages in a development inbox instead of
-    # sending them (ADR 0037). The API refuses to start with it unless ENVIRONMENT is `local`.
+    # `dev` (development and tests only) keeps text messages in a development inbox instead
+    # of sending them; the API refuses to start with it unless ENVIRONMENT is `local`.
+    # `twilio` sends them through Twilio, with the variables below (ADR 0037,
+    # docs/providers/twilio.md). They are read only then, and are the API's alone: the worker
+    # sends no text message and is given none of them.
     SMS_PROVIDER: ${SMS_PROVIDER:-none}
+    TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+    # One way to authenticate: an API key and its secret (preferred), or the auth token.
+    TWILIO_API_KEY_SID: ${TWILIO_API_KEY_SID:-}
+    TWILIO_API_KEY_SECRET: ${TWILIO_API_KEY_SECRET:-}
+    TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+    # One sender: a Messaging Service, or one number.
+    TWILIO_MESSAGING_SERVICE_SID: ${TWILIO_MESSAGING_SERVICE_SID:-}
+    TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
   depends_on:
     postgres:
       condition: service_healthy
@@ -141,7 +152,8 @@ services:
 
   # The webhook worker as a container of its own (docs/self-host.md, "The webhook worker as its
   # own service"): the same image as the API, another command, and of the API's settings only
-  # what a process needs to start: not the admin token, not the mock provider. Optional:
+  # what a process needs to start: not the admin token, not the mock provider, not Twilio's
+  # credentials. Optional:
   #   WEBHOOK_WORKER=separate docker compose --profile app --profile worker up -d
   # With `separate` the two API instances make no delivery, so the worker must be running;
   # without it the worker refuses to start, because the instances already deliver.

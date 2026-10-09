@@ -13,8 +13,12 @@ export class MemorySmsSender implements SmsSender, SmsInbox {
   readonly outbox: ReceivedSms[]
   /** `false` simulates a deployment with no sender (`SMS_PROVIDER=none`). */
   configured: boolean
-  /** Simulates the sender being down (`send` rejects with `failed`). */
-  failing: boolean
+  /**
+   * Simulates a send that does not go through: `true` for a sender that refuses (`send`
+   * rejects with `failed`), `'unconfirmed'` for one whose answer is lost (the message may
+   * have gone out). Nothing is kept either way.
+   */
+  failing: boolean | 'unconfirmed'
   private readonly clock: Clock
 
   /**
@@ -32,7 +36,7 @@ export class MemorySmsSender implements SmsSender, SmsInbox {
   /** @inheritdoc */
   async send(message: SmsMessage): Promise<void> {
     if (this.failing) {
-      throw new SmsSendError('failed')
+      throw new SmsSendError(this.failing === true ? 'failed' : 'unconfirmed')
     }
     this.outbox.push({ to: message.to, text: message.text, sentAt: this.clock.now() })
   }
