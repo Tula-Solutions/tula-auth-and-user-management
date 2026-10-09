@@ -157,8 +157,15 @@ describe('what @tula/react costs a browser bundle', () => {
    * lines for it, eleven strings, and 290 bytes in the client: with them it measures 51,645
    * bytes, 1,445 more. The budget moved by exactly those bytes, to 52,081, so the 436 bytes
    * of room are still what is left.
+   * Its review (TULA-46) added what a user is told: that a passkey replaces a texted code
+   * and has no backup codes, that a texted code set aside comes back, the form that takes
+   * its controls away when the app has switched the method off, and "Add a passkey" held
+   * until the second step has been read (four strings, one changed). The first three landed
+   * inside the room there was; with the fourth the bundle measures 52,272 bytes, 627 more
+   * than before the review. The budget moved by exactly those bytes, to 52,708, so the 436
+   * bytes of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 52_081
+  const GZIP_BUDGET_BYTES = 52_708
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

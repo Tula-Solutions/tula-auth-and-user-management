@@ -34,7 +34,9 @@ second step whose only option is a texted code.
   (`smsSubtitle`, `smsSend`, `smsOffer`, `smsTurnOn`, `smsStatusOn`, `smsNotInUse`,
   `smsWeaker`, `smsTurnOff`, `smsTurnedOn`, `smsTurnedOff`), `stepUp` (`smsSubtitle`) and
   `passkey` (`replacesTextedCode`: shown above "Add a passkey" to a user whose second step
-  is a texted code, which the passkey replaces and which has no backup codes). A texted
+  is a texted code, which the passkey replaces and which has no backup codes; `addChecking`
+  and `addUnchecked`: read with that button, which is unavailable until the account's
+  second step has been read, and stays so when the read fails). A texted
   code set aside by a stronger factor is said to come back when that factor is removed.
   Where the app has switched texted codes, text messages or the number's country off, the
   texted-code form shows the message of that refusal (`auth.method_disabled`,

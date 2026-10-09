@@ -20,7 +20,7 @@ import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { BackupCodesPanel, EnrolmentConfirmForm, TextedCodeForm } from './mfa'
 import { ConnectedAccountsSection } from './oauth'
-import { PasskeysSection } from './passkey'
+import { PasskeysSection, type SecondStepRead } from './passkey'
 import { PhoneSection } from './phone'
 import {
   Button,
@@ -277,12 +277,13 @@ function TwoStepSection(props: {
   /** Changes when something outside this section changed what the server would answer. */
   revision: number
   onChanged(): void
-  /** Told whether a code by text message is the second step in use, whenever that is read. */
-  onTextedCodeInUse(inUse: boolean): void
+  /** Told what is known of the second step in use, from the first render on. */
+  onSecondStep(read: SecondStepRead): void
 }) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
-  const policy = useClientConfig()?.mfa?.policy
+  const config = useClientConfig()
+  const policy = config?.mfa?.policy
   const withStepUp = useStepUp()
   const titleId = useId()
   const [factors, setFactors] = useState<Factors | null>(null)
@@ -295,6 +296,8 @@ function TwoStepSection(props: {
   >(null)
   const [error, setError] = useState<TulaError | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  /** Whether the last read of the factors failed. */
+  const [unread, setUnread] = useState(false)
   const mounted = useRef(true)
 
   const load = useCallback(async () => {
@@ -302,10 +305,12 @@ function TwoStepSection(props: {
       const next = await client.mfa.get()
       if (mounted.current) {
         setFactors(next)
+        setUnread(false)
       }
     } catch (caught) {
       if (mounted.current) {
         setError(toTulaError(caught))
+        setUnread(true)
       }
     }
   }, [client])
@@ -333,11 +338,23 @@ function TwoStepSection(props: {
       }
     }
   }, [props.phoneNumber, props.revision, policy, load])
-  const textedCodeInUse = factors?.sms?.inUse === true
-  const { onTextedCodeInUse } = props
+  // What the passkeys section may act on. Factors that were read once stay what is known
+  // when a later read fails; a configuration that names no two-step verification is an app
+  // without any, so there is nothing to read and nothing a passkey could replace.
+  const secondStep: SecondStepRead =
+    factors !== null
+      ? factors.sms?.inUse === true
+        ? 'texted_code'
+        : 'other'
+      : unread
+        ? 'unchecked'
+        : config !== null && policy === undefined
+          ? 'other'
+          : 'checking'
+  const { onSecondStep } = props
   useEffect(() => {
-    onTextedCodeInUse(textedCodeInUse)
-  }, [textedCodeInUse, onTextedCodeInUse])
+    onSecondStep(secondStep)
+  }, [secondStep, onSecondStep])
 
   /** Run one action; a step-up the user declined is their choice, not an error to show. */
   const run = async (name: NonNullable<typeof busy>, work: () => Promise<void>) => {
@@ -663,10 +680,18 @@ export function UserProfileSections(props: {
   const signOutTitleId = useId()
   const [signingOut, setSigningOut] = useState(false)
   // What the two-step section read, for the passkeys section's warning; and a count of the
-  // passkey changes, for the two-step section to read again. Neither is kept across users:
-  // the sections are keyed by the session and report afresh.
-  const [textedCodeInUse, setTextedCodeInUse] = useState(false)
+  // passkey changes, for the two-step section to read again. What was read belongs to the
+  // session it was read for: until that session's own section has reported, a passkey
+  // cannot be added (`checking`), so one user's answer is never another's.
+  const [secondStep, setSecondStep] = useState<{ sessionId: string; read: SecondStepRead } | null>(
+    null
+  )
   const [passkeyChanges, setPasskeyChanges] = useState(0)
+  const sessionId = state.status === 'signed-in' ? state.sessionId : null
+  const reportSecondStep = useCallback(
+    (read: SecondStepRead) => setSecondStep(sessionId === null ? null : { sessionId, read }),
+    [sessionId]
+  )
 
   if (state.status !== 'signed-in') {
     return null
@@ -701,11 +726,11 @@ export function UserProfileSections(props: {
         phoneNumber={user?.phoneNumber ?? null}
         revision={passkeyChanges}
         onChanged={() => void sessions.reload()}
-        onTextedCodeInUse={setTextedCodeInUse}
+        onSecondStep={reportSecondStep}
       />
       <PasskeysSection
         key={`passkeys:${state.sessionId}`}
-        replacesTextedCode={textedCodeInUse}
+        secondStep={secondStep?.sessionId === state.sessionId ? secondStep.read : 'checking'}
         onChanged={() => setPasskeyChanges((count) => count + 1)}
       />
       <ConnectedAccountsSection

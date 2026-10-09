@@ -1596,6 +1596,13 @@ export interface TulaLocalization {
      * passkey takes that step over, and it has no backup codes.
      */
     replacesTextedCode: string
+    /**
+     * Read with "Add a passkey" while the account's second step is still being read: the
+     * button is unavailable until it is known whether a passkey would replace a texted code.
+     */
+    addChecking: string
+    /** Read with "Add a passkey" when that read failed: the button stays unavailable. */
+    addUnchecked: string
     /** In place of "Add a passkey" in a browser without WebAuthn. */
     addUnsupported: string
     /**

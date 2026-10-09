@@ -183,6 +183,13 @@ export interface TulaLocalization {
      * passkey takes that step over, and it has no backup codes.
      */
     replacesTextedCode: string
+    /**
+     * Read with "Add a passkey" while the account's second step is still being read: the
+     * button is unavailable until it is known whether a passkey would replace a texted code.
+     */
+    addChecking: string
+    /** Read with "Add a passkey" when that read failed: the button stays unavailable. */
+    addUnchecked: string
     /** In place of "Add a passkey" in a browser without WebAuthn. */
     addUnsupported: string
     /**
@@ -623,6 +630,9 @@ export const EN_LOCALIZATION: TulaLocalization = {
     added: 'Your passkey was added.',
     replacesTextedCode:
       'Once you add a passkey, it replaces the code by text message as your second step. A passkey has no backup codes: if you lose it, only an administrator of this app can let you back in.',
+    addChecking: 'Checking your second step before a passkey can be added…',
+    addUnchecked:
+      'Your second step could not be checked, so a passkey cannot be added right now. Reload the page to try again.',
     addUnsupported:
       'This browser cannot create passkeys. You can still rename or remove the ones you have.',
     addUnavailable:

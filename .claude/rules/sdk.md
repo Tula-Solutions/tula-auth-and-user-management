@@ -214,10 +214,15 @@ paths:
   own controls (send, field, resend): never leave a button that can only be refused again.
   `sms.unavailable` keeps the button. `<UserProfile>`
   says a dormant texted code is "not asked for while … and … your second step again"
-  (`mfa.smsNotInUse`), and `PasskeysSection` with `replacesTextedCode` writes
+  (`mfa.smsNotInUse`), and `PasskeysSection` with `secondStep: 'texted_code'` writes
   `passkey.replacesTextedCode` above "Add a passkey" as the button's description, before
-  any ceremony. The two sections tell each other what changed through `UserProfileSections`
-  (`onTextedCodeInUse`, `revision`), never through a second request of their own.
+  any ceremony. **"Add a passkey" is unavailable until the two-step section has read the
+  account's factors** (`secondStep: 'checking'`, said with `passkey.addChecking`), and
+  stays so when that read failed (`'unchecked'`, `passkey.addUnchecked`, no retry control:
+  the two-step section says its failed read the same way): focusable, `aria-disabled`,
+  described by the reason. What was read belongs to the session it was read for. The two
+  sections tell each other what changed through `UserProfileSections` (`onSecondStep`,
+  `revision`), never through a second request of their own.
 - Two-step verification (ADR 0025): `needs_second_factor` and `needs_factor_enrolment` have
   screens (`components/mfa.tsx`); an option this version does not know is left out, never
   guessed. The setup key, its QR code and backup codes are state only while their screen is
