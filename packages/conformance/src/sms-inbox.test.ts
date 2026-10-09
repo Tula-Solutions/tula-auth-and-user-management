@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { devSmsCodes, SMS_INBOX_TIMEOUT_MS, smsCodeIn } from './sms-inbox'
+import { devSmsCodes, devSmsTexts, SMS_INBOX_TIMEOUT_MS, smsCodeIn } from './sms-inbox'
 
 const NUMBER = '+12025550142'
 
@@ -119,4 +119,30 @@ describe('devSmsCodes', () => {
       expect(urls).toEqual([])
     }
   )
+})
+
+describe('devSmsTexts', () => {
+  const inbox = (messages: { to: string; text: string; sentAt: string }[]) =>
+    devSmsTexts(['http://one.test'], {
+      fetch: (async () => Response.json({ messages })) as unknown as typeof fetch,
+      sleep: async () => undefined,
+    })
+
+  test('returns the whole text of the newest message to the number, its last line included', async () => {
+    const text = 'Welcome to Acme. Use 482913 now\n@app.example #482913'
+    const smsText = inbox([
+      { to: NUMBER, text: 'Your Acme verification code is 111111.', sentAt: at(1) },
+      { to: NUMBER, text, sentAt: at(2) },
+    ])
+    expect(await smsText(NUMBER)).toBe(text)
+  })
+
+  test('a message that carries no code is not one it returns', async () => {
+    const smsText = inbox([{ to: NUMBER, text: 'Welcome to Acme.', sentAt: at(1) }])
+    await expect(smsText(NUMBER)).rejects.toThrow('no text message with a code arrived')
+  })
+
+  test('refuses to look for something that is not a number', async () => {
+    await expect(inbox([])('+1 202')).rejects.toThrow('not a phone number the runner can look for')
+  })
 })

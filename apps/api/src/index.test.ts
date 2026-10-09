@@ -271,6 +271,7 @@ describe('documentation routes', () => {
       '/v1/admin/native-apps',
       '/v1/admin/native-apps/{id}',
       '/v1/admin/sms/usage',
+      '/v1/admin/message-preview',
       '/v1/instance/diagnostics',
       '/v1/instance/session',
       '/v1/instance/workspaces',

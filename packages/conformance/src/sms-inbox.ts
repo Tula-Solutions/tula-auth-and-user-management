@@ -57,6 +57,30 @@ export function devSmsCodes(
   baseUrls: readonly string[],
   options: { fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}
 ): (to: string) => Promise<string> {
+  const text = devSmsTexts(baseUrls, options)
+  // The text holds a code, or `devSmsTexts` would not have returned it.
+  return async (to) => smsCodeIn(await text(to)) as string
+}
+
+/**
+ * Read whole text messages from the development SMS inbox of a live server: the text of the
+ * newest message to a number that carries a code. As {@link devSmsCodes}, which is this and
+ * the code read out of it.
+ *
+ * @param baseUrls - The origin of each instance.
+ * @param options - Injectable `fetch` and `sleep`, for tests.
+ * @returns A function that returns the newest such message's text.
+ *
+ * @example
+ * ```ts
+ * const smsText = devSmsTexts(['http://localhost:3003'])
+ * const text = await smsText('+12025550142')
+ * ```
+ */
+export function devSmsTexts(
+  baseUrls: readonly string[],
+  options: { fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}
+): (to: string) => Promise<string> {
   const send = options.fetch ?? fetch
   const sleep = options.sleep ?? Bun.sleep
   return async (to) => {
@@ -87,9 +111,8 @@ export function devSmsCodes(
           }
         }
       }
-      const code = newest && smsCodeIn(newest.text)
-      if (code) {
-        return code
+      if (newest && smsCodeIn(newest.text)) {
+        return newest.text
       }
       await sleep(100)
     }

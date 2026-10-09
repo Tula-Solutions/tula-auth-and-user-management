@@ -319,6 +319,9 @@ jobs:
           grep -Eq '(^|: )PASSED sign in with a texted code$' conformance.log
           grep -Eq '(^|: )PASSED a texted sign-in code for an unknown number$' conformance.log
           grep -Eq '(^|: )PASSED a texted sign-in code after the method is switched off$' conformance.log
+          # An environment's own words for a text message (ADR 0042): the message is read
+          # whole from the inbox, not only its code.
+          grep -Eq '(^|: )PASSED text message wording$' conformance.log
           if [ "${{ matrix.mode }}" = two-ports ]; then
             # The cross-instance scenario must have run against two instances: without the
             # second URL its steps would all go to one server and prove nothing about sharing.

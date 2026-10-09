@@ -238,6 +238,7 @@ export async function request(
     sendLimits: Verification.LIMITED_BY_DELIVERY,
     deliver: ({ code }) =>
       Sms.sendCode(deps, scope, {
+        kind: 'phone_verification',
         to: phoneNumber,
         code,
         asker: { type: 'user', id: self.userId },

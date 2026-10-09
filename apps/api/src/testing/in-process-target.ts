@@ -100,6 +100,14 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
       }
       return code
     },
+    smsText: async (to) => {
+      await Sms.settled()
+      const text = deps.sms.messages(to).at(-1)?.text
+      if (text === undefined) {
+        throw new Error('no text message was sent to that number')
+      }
+      return text
+    },
     wait: async (ms) => {
       deps.clock.advance(ms)
     },

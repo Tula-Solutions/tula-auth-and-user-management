@@ -443,3 +443,10 @@ abuse is aimed at the users and reads like the application speaking.
 - An announcement to anyone when a template changes, beyond the audit entry and the event.
 - A contract entry point of its own for the template module: it is Zod-free but exported
   from the index only, and no SDK needs it at run time yet.
+
+## Later
+
+[ADR 0042](0042-message-wording-editor.md) (TULA-30) built three of the things this ADR
+left out: a wording for text messages, a preview (`POST /v1/admin/message-preview`, which
+answers the text part and never HTML) and the dashboard's Messages screen. The rules of an
+email template did not change.

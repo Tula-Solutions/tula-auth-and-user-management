@@ -810,10 +810,37 @@ it ("Signing in with a texted code", at the end of this section).
   here with their own phone.
 - **The three routes (`/v1/client/me/phone`) are behind `requireRecentAuth()`.** Removing
   needs no SMS and works with SMS off.
-- **A message's words are written in `modules/sms/templates.ts` and nowhere else**: the app
-  name through `smsAppName`, a text that starts with a word, and the origin-bound last line
-  (`@host #code`) whose host is the environment's first allowed origin, never a request's.
-  The code is the last run of six digits (the conformance runner and the tests read it so).
+- **A message is made in `modules/sms/templates.ts` and nowhere else**: the built-in
+  sentence of each kind, the rendering of an environment's own (`renderCodeText`), the app
+  name through `smsAppName`, and the origin-bound last line (`@host #code`) whose host is
+  the environment's first allowed origin, never a request's. The code is the last run of
+  six digits (the conformance runner and the tests read it so).
+- **What an environment may write is the contract's, and it is one sentence**
+  ([ADR 0042](docs/adr/0042-message-wording-editor.md)): `sms.templates.<kind>.text`,
+  kinds `SMS_TEMPLATE_KINDS`, judged only by `smsTemplateProblems`
+  (`packages/contract/src/sms-template.ts`, Zod-free) at save, on the tolerant read
+  (`readStoredSmsTemplates`) and again before every send. **The last line is the server's
+  and a template has no field for it.** Never loosen what keeps a second code or a second
+  such line out: `{{code}}` exactly once, no placeholder twice, nothing but a space or
+  punctuation beside a placeholder (no letter, digit or combining mark, judged with the
+  invisible characters removed), no run of four digits, no word that starts with `@` or
+  `#` (compared after NFKC), nothing that `readsAsLink`, a text that starts with a letter
+  of its own. A new placeholder or kind is a decision in ADR 0042, with the cap's sum.
+- **The cap is `MAX_SMS_TEMPLATE_LENGTH` (140) and its sum is written beside it**: with the
+  longest app name and host a message is at most 457 characters, three GSM 7-bit segments.
+  Raise it, or let a placeholder repeat, only with that sum done again, in the constant's
+  comment, ADR 0042 and `docs/phone-numbers.md`. The daily limit still counts messages.
+- **The code is checked again on the finished message.** `renderCodeText` takes the last
+  run of exactly six digits of what it made and, if that is not the code (the app's name
+  is a value and may hold six digits, and an environment with no allowed origin has no
+  last line), sends the **built-in text** and logs the kind and the fixed word
+  (`code_not_last`; `invalid` for a template that no longer passes), never the text. A
+  template that cannot be used is never a failed send. Keep both tests in
+  `modules/sms/wording.test.ts`.
+- **`Sms.sendCode`'s caller names the kind, which chooses words and nothing else**: no
+  limit, order or count reads a template. A change is the key `sms.templates.<kind>.text`
+  in the audit entry and the event, never the words; it is not a weakening (a test pins
+  it); `@tula/mcp`'s settings projection does not name `templates` (a test holds it).
 - **Switching SMS on, or a wider country list, is a weakening exactly where it lets a
   texted code sign someone in** (`settingsWeakenings`): `signIn.methods.smsCode` when a
   texted code can sign in after the change and could not before (the method switched on
@@ -1061,6 +1088,32 @@ keyed by kind). The layout is the server's.
   conformance `emailMessage` step). The older email steps find a code by a subject that
   leads with one: a scenario that saves a template for a code message keeps the code first
   in its subject or uses the new step.
+
+### The message preview (`modules/message-preview`, see ADR 0042)
+
+`POST /v1/admin/message-preview` answers what the server would send for a draft of an
+email or a text message, with sample values. It is what the dashboard's Messages screen
+draws.
+
+- **It answers text and never HTML**: `subject` and `text` (an email's text part). Never
+  add the HTML part to the answer; the dashboard's Content-Security-Policy is not to be
+  asked for anything, and nothing an operator typed may have something to run as.
+- **It renders with the code that sends**: `renderTemplate` and `renderCodeText`, never a
+  second renderer and never the contract. A draft is judged by the validators a save uses,
+  and a problem is a 422 with the field under `template.`.
+- **It reads the settings and writes nothing**: no store write, no message, no audit
+  entry, `Cache-Control: no-store`. It is not "send me a test" and must not become one: a
+  route that sends a draft sends operator-written text to anyone.
+- **No request value reaches the text but the draft.** The sample values are the service's
+  constants (`SAMPLE_CODE`, `SAMPLE_EMAILS`); the app's name, the support address and the
+  first allowed origin are the environment's saved ones.
+- **A text message is rendered with two codes**, so that an app name that happens to hold
+  the sample code cannot hide a `code_not_last`. Keep the test.
+- **Its limit is its own** (`MESSAGE_PREVIEW_RATE_LIMIT`, per environment, after
+  `secretKey()`), and may pass when the limiter cannot count: a render is string work over
+  a capped draft. Anything costlier added to the route takes that exemption away.
+- A scenario that previews does not ask for the kind whose template it then saves: the
+  event canary would find the request's string in `changed`. Never loosen the canary for it.
 
 ### Password history (`modules/password`, see ADR 0038)
 
@@ -1402,6 +1455,19 @@ them. Nothing else is built on an app yet (TULA-31 to TULA-35).
 - **Destructive actions name what they act on** and, in a production environment, ask for it
   to be typed (`ConfirmDialog`'s `requireText`). Server text is rendered as text; a link is
   an app route or a validated `https:` URL.
+- **The Messages screen** (`features/messages`, [ADR 0042](docs/adr/0042-message-wording-editor.md))
+  is a `SettingsFrame` over `emails.templates` and `sms.templates`: no save path of its
+  own. **The preview is the server's answer, drawn as text nodes** (`<p>` and `<pre>`):
+  never `dangerouslySetInnerHTML`, an `iframe`, `srcdoc` or a renderer in the browser.
+  **Why a wording would be refused is the contract's validator** (`problemsOf`), never a
+  rule of the screen's; a draft with a problem is not sent to the preview. The kinds come
+  from the contract's two lists (a kind without a label does not compile), the placeholder
+  buttons from its rules. An empty part is a key left out, so that an untouched draft is
+  byte for byte what was loaded. A preview's answer is shown only for the message and the
+  environment it was asked for. Wording is prose: what cannot be seen in it is named with
+  `unseenCodePoints` (`src/lib/printable.ts`), not written out with `printable()`, which
+  escapes every space. The chosen message is state, not a search parameter (a
+  `validateSearch` would run before Zod's switch).
 - **The hooks screen** (`features/hooks`, [ADR 0035](docs/adr/0035-hooks.md), last
   section) draws the points, not a list, so a point with no hook is said. **Which changes
   are asked about first is the contract's `hookWeakenings`** (`weakeningSentences`), never
@@ -1638,7 +1704,7 @@ app name and support address, password policy, enabled sign-in methods (`passwor
 a sign-up needs a password (`signUp.password`), allowed origins and redirect URLs, audit
 retention, which security notices are emailed (`notifications`), whether text messages are
 sent, to which countries and how many in a day at most (`sms`, [ADR 0037](docs/adr/0037-phone-numbers-and-sms.md)), the environment's own
-wording of its emails (`emails.templates`, [ADR 0039](docs/adr/0039-email-templates.md)), whether two-step
+wording of its emails (`emails.templates`, [ADR 0039](docs/adr/0039-email-templates.md)) and of its text messages (`sms.templates`, [ADR 0042](docs/adr/0042-message-wording-editor.md)), whether two-step
 verification is `off`, `optional` or `required` (`mfa.policy`), and the session profiles and
 the concurrent-session rule (`sessions`, [ADR 0028](docs/adr/0028-session-profiles.md)). **Read it through
 `~/modules/settings/service`** (`Settings.current(deps, tenant)`), never from `deps.config`:
@@ -1984,6 +2050,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   app is taken to be: [ADR 0040](docs/adr/0040-native-app-identity.md);
   password expiry, where it is decided and what a sign-in with an expired password can do:
   [ADR 0041](docs/adr/0041-password-expiry.md);
+  the wording of a text message, the message preview and the dashboard's Messages screen:
+  [ADR 0042](docs/adr/0042-message-wording-editor.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).
@@ -2223,7 +2291,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   whose subject leads with one, not from the newest email.
 - Treat every change under
   `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app}`,
-  `modules/email/templates.ts`, `packages/contract/src/email-template.ts`,
+  `modules/email/templates.ts`, `modules/message-preview`, `packages/contract/src/{email-template,sms-template}.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
   security-sensitive:
@@ -2427,7 +2495,8 @@ apps/api/src/
                       # its sending and every send limit; the admin route that reads the
                       # counts by destination prefix; the dev-only inbox route),
                       # native-app (an environment's iOS and Android apps, and the two
-                      # association files built from them)
+                      # association files built from them),
+                      # message-preview (what the server would send for a draft wording)
 ```
 
 ## Common commands

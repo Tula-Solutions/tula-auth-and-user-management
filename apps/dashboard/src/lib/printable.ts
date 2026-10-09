@@ -36,3 +36,30 @@ export function printable(text: string): string {
     return `\\u{${point.toString(16).toUpperCase()}}`
   })
 }
+
+// What cannot be seen in a sentence, where spaces, line breaks and accents are ordinary:
+// control characters other than the line break, format characters, private-use and
+// unassigned code points, lone surrogates, the line and paragraph separators, and what
+// Unicode says is not drawn by default. Classes, for the reason above.
+const UNSEEN_IN_PROSE = /[^\P{C}\n]|[\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu
+
+/**
+ * The characters of a sentence that a reader cannot see, as code points: for text that is
+ * shown as it is (a message's wording, its preview) and so cannot be written out the way
+ * {@link printable} writes an address out. `printable` escapes every space and every
+ * combining mark, which is right for an address and unreadable for prose; this names what
+ * is hidden and leaves the text alone.
+ *
+ * @param text - The text as it is.
+ * @returns Each such character once, in the order it first appears, as `U+XXXX`.
+ * @example
+ * unseenCodePoints('Your\u{200B} code') // ['U+200B']
+ */
+export function unseenCodePoints(text: string): string[] {
+  const found = new Set<string>()
+  for (const character of text.match(UNSEEN_IN_PROSE) ?? []) {
+    const point = character.codePointAt(0) ?? 0
+    found.add(`U+${point.toString(16).toUpperCase().padStart(4, '0')}`)
+  }
+  return [...found]
+}

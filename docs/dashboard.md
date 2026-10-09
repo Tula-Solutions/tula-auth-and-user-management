@@ -50,6 +50,7 @@ deletes a workspace, project or environment yet.
 | Sign-in methods | Switch password, emailed code, emailed link, passkeys and the texted code on or off (the texted code's row says what it needs: text messages on, a country, an SMS sender in the deployment, and what the environment has of the first two; switching it on where it lets people in asks first); set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (the last two say on their cards that an account made through them has no email address). |
 | Password policy | A preset or custom rules, among them how many passwords are remembered (`password.history`); lowering that number is a weaker policy and is asked about first. "Password expires after (days)" is `password.expiryDays`: a user who signs in with an older password sets a new one first. Changing it is not asked about (rotation is not a strength measure). |
 | Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. **JWT templates** ([docs](jwt-templates.md)): add a template and its claims (a source or a fixed value each), see how large it can get against the 1,024-byte cap and which profiles use it, and choose a template on a profile's card. A reserved or malformed claim name and the caps are refused in the form; a template a profile uses cannot be taken out until the profile lets go of it; a save that takes claims away from a profile's sessions asks first. |
+| Messages | Every email and text message the server sends, in four groups, each marked as built-in or in your own wording. Edit a subject, a body or a text message's sentence, with a button for each placeholder the message has; see why a wording would be refused as you type; see the message as the server would write it, with sample values, and how many segments a text message is; reset a message to the built-in wording. ([Email templates](email-templates.md), [text message wording](phone-numbers.md#your-own-wording).) |
 | API keys | List (prefix and last four characters only), create, revoke. |
 | Signing keys | List with status; rotate. |
 | Webhooks | List an environment's webhook endpoints with how each is doing; add one (its signing secret is shown once), change its address and event types, switch it off and on, rotate its secret, send a test event, delete it. |
@@ -183,6 +184,25 @@ Every settings screen works the same way: change the form, then **Save changes**
   ([config.md](config.md)), a banner says so on every settings screen. You can still edit
   them, after a confirmation; the change is then reported as drift, and the next
   `tula apply` puts the file's values back.
+
+### The Messages screen
+
+Messages is a settings screen like the others: the wording is part of the settings, so it
+is saved with **Save changes**, refused when the settings changed elsewhere, and asked
+about when a config file manages them. A change of wording is not a weakening and is not
+asked about for itself.
+
+- **The preview is the server's.** It is asked for a moment after you stop typing and
+  shows what would be sent with sample values (the code is always `123456`). It is text:
+  markup you type is shown as you typed it, in the preview and in the email. An email's
+  preview is its text part; the HTML part has the same words inside the server's layout.
+- **A wording that would be refused is not previewed**, and the field says why. Saving it
+  anyway is refused by the server, and the message is marked "Refused" in the list.
+- **An empty field means the built-in wording** for that part. "Reset to built-in" empties
+  the whole message.
+- **A character you cannot see is named** under the field and under the preview
+  (`U+200B`), since the text itself cannot show it.
+- **The message you were looking at is not in the address**: a reload opens the first one.
 
 ## Audit
 

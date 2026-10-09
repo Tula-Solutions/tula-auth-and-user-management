@@ -77,7 +77,7 @@ describe('EnvironmentSettingsSchema', () => {
       mfa: { policy: 'optional' },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
-      sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
+      sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
       emails: { templates: {} },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
@@ -388,6 +388,8 @@ describe('reading a stored document never fails over a list entry', () => {
       dropped: 1,
       droppedEmailTemplates: [],
       unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
     })
     expect(readStoredEnvironmentSettings({ urls: null }).dropped).toBe(0)
     expect(readStoredEnvironmentSettings(DEFAULT_ENVIRONMENT_SETTINGS)).toEqual({
@@ -395,6 +397,8 @@ describe('reading a stored document never fails over a list entry', () => {
       dropped: 0,
       droppedEmailTemplates: [],
       unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
     })
   })
 })
@@ -425,7 +429,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       mfa: { policy: 'optional' },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
-      sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500 },
+      sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
       emails: { templates: {} },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
@@ -725,11 +729,13 @@ describe('sms', () => {
       enabled: false,
       allowedCountries: [],
       dailyMessageLimit: DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
+      templates: {},
     })
     expect(parseStoredEnvironmentSettings({ app: { name: 'Acme' } }).sms).toEqual({
       enabled: false,
       allowedCountries: [],
       dailyMessageLimit: 500,
+      templates: {},
     })
   })
 
@@ -741,6 +747,7 @@ describe('sms', () => {
       enabled: true,
       allowedCountries: ['DE', 'US'],
       dailyMessageLimit: 500,
+      templates: {},
     })
     for (const allowedCountries of [
       ['de'],
@@ -770,6 +777,7 @@ describe('sms', () => {
       enabled: true,
       allowedCountries: ['DE', 'US'],
       dailyMessageLimit: 500,
+      templates: {},
     })
     expect(dropped).toBe(4)
     expect(readStoredEnvironmentSettings({ sms: null })).toEqual({
@@ -777,12 +785,16 @@ describe('sms', () => {
       dropped: 0,
       droppedEmailTemplates: [],
       unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
     })
     expect(readStoredEnvironmentSettings({ sms: { allowedCountries: 'DE' } })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 1,
       droppedEmailTemplates: [],
       unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
     })
   })
 
@@ -809,7 +821,7 @@ describe('sms', () => {
   test('a document stored before the daily limit existed has the default one', () => {
     expect(
       parseStoredEnvironmentSettings({ sms: { enabled: true, allowedCountries: ['DE'] } }).sms
-    ).toEqual({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 })
+    ).toEqual({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500, templates: {} })
   })
 
   test('the client config has a place for whether a phone number can be added', () => {

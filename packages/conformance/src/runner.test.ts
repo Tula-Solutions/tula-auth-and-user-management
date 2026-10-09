@@ -725,6 +725,79 @@ describe('runScenario', () => {
     expect(requests[0]?.body).toEqual({ code: '731204' })
   })
 
+  describe('what a text message must hold', () => {
+    const TEXT = 'Welcome to Acme. Use 482919 now\n@app.example #482919'
+    const read = (smsCode: Record<string, unknown>) =>
+      scenario([{ name: 'read', smsCode: { to: '+12025550142', capture: 'code', ...smsCode } }], {
+        needsSmsInbox: true,
+      })
+    const texting = (text: string) =>
+      fakeTarget(() => ({ status: 200 }), {
+        smsCode: async () => '482919',
+        smsText: async () => text,
+      }).target
+
+    test('passes when the text holds every part, filled after the code is captured, and none it must not', async () => {
+      const result = await runScenario(
+        read({
+          textContains: ['Welcome to Acme', 'Use {{code}} now', ' #{{code}}'],
+          textExcludes: ['verification code is'],
+        }),
+        texting(TEXT)
+      )
+      expect(result.status).toBe('passed')
+    })
+
+    test.each<[string, Record<string, unknown>, string[]]>([
+      [
+        'a part that is missing',
+        { textContains: ['Welcome to Acme', 'Your Acme verification code'] },
+        ['the text does not contain textContains[1]'],
+      ],
+      [
+        'a part that must not be there',
+        { textExcludes: ['Use {{code}} now'] },
+        ['the text contains textExcludes[0]'],
+      ],
+      [
+        'both at once, each said',
+        { textContains: ['nowhere'], textExcludes: ['Acme'] },
+        ['the text does not contain textContains[0]', 'the text contains textExcludes[0]'],
+      ],
+    ])(
+      'fails for %s, and the problem holds nothing of the message',
+      async (_name, smsCode, problems) => {
+        const result = await runScenario(read(smsCode), texting(TEXT))
+        expect(result).toMatchObject({ status: 'failed', steps: [{ ok: false, problems }] })
+        const said = JSON.stringify(result)
+        expect(said).not.toContain('482919')
+        expect(said).not.toContain('Welcome')
+        expect(said).not.toContain('app.example')
+      }
+    )
+
+    test('a target that reads codes and not texts fails the step rather than passing it', async () => {
+      const { target } = fakeTarget(() => ({ status: 200 }), { smsCode: async () => '482919' })
+      expect(await runScenario(read({ textExcludes: ['x'] }), target)).toMatchObject({
+        status: 'failed',
+        steps: [{ ok: false, problems: ['this target cannot read the text of text messages'] }],
+      })
+    })
+
+    test('a step that says nothing about the text never asks for it', async () => {
+      let asked = 0
+      const { target } = fakeTarget(() => ({ status: 200 }), {
+        smsCode: async () => '482919',
+        smsText: async () => {
+          asked += 1
+          return TEXT
+        },
+      })
+      expect((await runScenario(read({}), target)).status).toBe('passed')
+      expect(asked).toBe(0)
+    })
+  })
+
   test('a scenario that needs an SMS inbox is skipped, with the reason, by a target without one', async () => {
     const { target, requests } = fakeTarget(() => ({ status: 200 }))
     const result = await runScenario(

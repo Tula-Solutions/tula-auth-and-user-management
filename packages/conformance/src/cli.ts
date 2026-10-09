@@ -1,7 +1,7 @@
 import { loadScenarios } from './load'
 import { mailpitCodes, mailpitLinks, mailpitMessages } from './mailpit'
 import { exitCode, formatResult, runScenario, type Target } from './runner'
-import { devSmsCodes } from './sms-inbox'
+import { devSmsCodes, devSmsTexts } from './sms-inbox'
 
 /**
  * Run every scenario against a live server: `bun run conformance`.
@@ -78,6 +78,7 @@ const target: Target = {
   emailLink: mailpitLinks(mailpit),
   emailMessage: mailpitMessages(mailpit),
   smsCode: smsInboxUrls.length > 0 ? devSmsCodes(smsInboxUrls) : undefined,
+  smsText: smsInboxUrls.length > 0 ? devSmsTexts(smsInboxUrls) : undefined,
   wait: (ms) => Bun.sleep(ms),
   settleMs: settleMs > 0 ? settleMs : undefined,
   // Authenticator codes are computed for the wall clock, which is the server's clock too.

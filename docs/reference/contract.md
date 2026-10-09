@@ -1728,7 +1728,9 @@ otherwise silently reset the password policy to its default.
   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
 - `sms`: whether text messages are sent (`enabled`, off by default), to which countries
   (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
-  most (`dailyMessageLimit`, 500 by default). See ADR 0037.
+  most (`dailyMessageLimit`, 500 by default). See ADR 0037. `sms.templates` is the
+  environment's own sentence for each kind of text message (`SmsTemplates`, ADR 0042);
+  empty by default: every message is the built-in text.
 - `emails.templates`: the environment's own subject and body for each kind of email, as
   plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
   message is the built-in copy. See ADR 0039.
@@ -3383,6 +3385,27 @@ The most `sms.dailyMessageLimit` can be set to. There is no value that means "no
 const MAX_SMS_DAILY_MESSAGE_LIMIT: 1000000
 ```
 
+### `MAX_SMS_TEMPLATE_LENGTH`
+
+_constant_, defined in `packages/contract/src/sms-template.ts`
+
+Longest template of a text message, in characters (UTF-16 code units).
+
+A message is billed by the segment, so the cap is what bounds an environment's cost per
+message. A template names the app at most once: with the longest name the settings accept
+(64 characters, in place of the 11 of `{{appName}}`) the sentence is at most 193
+characters, and the server's own last line adds 11 and the host of the environment's
+first allowed origin (at most 253). So a message is **at most three segments** in the
+GSM 7-bit alphabet whatever the host (457 of 459 characters), and at most two with a host
+of up to 102 characters. One character outside that alphabet, in the template or in the
+app's name, makes a carrier send the whole message as UCS-2, where a segment holds 67
+characters instead of 153: the same worst case is then seven segments.
+{@link smsSegments} counts them for a given text.
+
+```ts
+const MAX_SMS_TEMPLATE_LENGTH: 140
+```
+
 ### `MAX_STEP_UP_AFTER`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -4695,6 +4718,67 @@ The most digits a destination prefix has ({@link phoneNumberPrefix}): the longes
 const SMS_PREFIX_MAX_DIGITS: 4
 ```
 
+### `SMS_TEMPLATE_KINDS`
+
+_constant_, defined in `packages/contract/src/sms-template.ts`
+
+Every text message whose wording an environment can change (ADR 0042): one kind per
+reason the server texts a code.
+
+- `phone_verification`: the code that proves a phone number being added to an account.
+- `sign_in`: the code that signs someone in with a number their account has proven.
+
+A closed list. Later servers may add kinds: additive.
+
+```ts
+const SMS_TEMPLATE_KINDS: readonly ["phone_verification", "sign_in"]
+```
+
+**Example**
+
+```ts
+SMS_TEMPLATE_KINDS.includes('sign_in') // true
+```
+
+### `SMS_TEMPLATE_PLACEHOLDERS`
+
+_constant_, defined in `packages/contract/src/sms-template.ts`
+
+Every placeholder a text message's template can name, as `{{name}}`.
+
+- `appName`: the environment's app name, cleaned onto one line.
+- `code`: the 6-digit code.
+
+Deliberately absent: a phone number, an address of any kind, a host (the origin-bound last
+line is the server's to write) and anything a request said.
+
+```ts
+const SMS_TEMPLATE_PLACEHOLDERS: readonly ["appName", "code"]
+```
+
+**Example**
+
+```ts
+SMS_TEMPLATE_PLACEHOLDERS.includes('code') // true
+```
+
+### `SMS_TEMPLATE_RULES`
+
+_constant_, defined in `packages/contract/src/sms-template.ts`
+
+What each kind's template must and may name. Plain data: an editor draws its list of
+placeholders from it, and the server validates against the same table.
+
+```ts
+const SMS_TEMPLATE_RULES: Readonly<Record<SmsTemplateKind, SmsTemplateRules>>
+```
+
+**Example**
+
+```ts
+SMS_TEMPLATE_RULES.sign_in.required // ['code']
+```
+
 ### `SMS_USAGE_DEFAULT_DAYS`
 
 _constant_, defined in `packages/contract/src/sms.ts`
@@ -5175,6 +5259,177 @@ The codes texted to the numbers of one destination prefix, and how many of them 
 const SmsPrefixUsageSchema
 ```
 
+### `SmsSegments`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+How a carrier would encode and split a text message.
+
+```ts
+export interface SmsSegments {
+  /** `gsm7` when every character is in the GSM 7-bit alphabet, else `ucs2`. */
+  encoding: 'gsm7' | 'ucs2'
+  /** Septets (`gsm7`) or UTF-16 code units (`ucs2`) the text takes. */
+  units: number
+  /** How many segments it is sent, and billed, as. */
+  segments: number
+}
+```
+
+### `SmsTemplate`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+One environment's wording of one kind of text message.
+
+```ts
+export interface SmsTemplate {
+  /**
+   * The sentence, on one line. The server puts its origin-bound last line (`@host #code`)
+   * after it; a template never holds that line.
+   */
+  text: string
+}
+```
+
+### `SmsTemplateKind`
+
+_type_, defined in `packages/contract/src/sms-template.ts`
+
+One of {@link SMS_TEMPLATE_KINDS}.
+
+```ts
+export type SmsTemplateKind = (typeof SMS_TEMPLATE_KINDS)[number]
+```
+
+### `SmsTemplatePlaceholder`
+
+_type_, defined in `packages/contract/src/sms-template.ts`
+
+One of {@link SMS_TEMPLATE_PLACEHOLDERS}.
+
+```ts
+export type SmsTemplatePlaceholder = (typeof SMS_TEMPLATE_PLACEHOLDERS)[number]
+```
+
+### `SmsTemplateProblem`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+One reason a text message's template is refused.
+
+```ts
+export interface SmsTemplateProblem {
+  /** Which part: a template has one. */
+  field: 'text'
+  /** Why, as a fixed word. */
+  code: SmsTemplateProblemCode
+  /** The placeholder's name, where the reason is about one. */
+  placeholder?: string
+  /** The reason in words. It names a placeholder at most, never the template's text. */
+  message: string
+}
+```
+
+### `SmsTemplateProblemCode`
+
+_type_, defined in `packages/contract/src/sms-template.ts`
+
+Why a text message's template is refused, as a fixed word.
+
+- `empty`: nothing but white space and characters that draw nothing.
+- `too_long`: over {@link MAX_SMS_TEMPLATE_LENGTH}.
+- `control_character`: a control character or a line break. A template is one line.
+- `hidden_character`: what no email template may hold either (`hasHiddenCharacter`).
+- `malformed_braces`: a `{` or `}` that is not part of a `{{name}}`.
+- `unknown_placeholder`: a name this kind does not have.
+- `missing_placeholder`: the text lacks `{{code}}`.
+- `repeated_placeholder`: a placeholder is named twice.
+- `placeholder_touches_text`: a letter, a digit, a combining mark or another placeholder
+  directly before or after a placeholder, judged on the text without the characters that
+  draw nothing. A code must stand alone to be read, by a person and by a phone.
+- `digit_run`: four or more digits in a row, which could be read as the code.
+- `imitates_code_line`: an `@` or a `#` at the start of a word, which is how the
+  origin-bound line the server writes is recognised.
+- `reads_as_link`: something a phone would turn into a link (`readsAsLink`).
+- `leading_non_letter`: the text does not start with a letter of its own (a placeholder
+  first would let a code, or an app name that starts with a digit, lead the message).
+
+```ts
+export type SmsTemplateProblemCode =
+| 'empty'
+| 'too_long'
+| 'control_character'
+| 'hidden_character'
+| 'malformed_braces'
+| 'unknown_placeholder'
+| 'missing_placeholder'
+| 'repeated_placeholder'
+| 'placeholder_touches_text'
+| 'digit_run'
+| 'imitates_code_line'
+| 'reads_as_link'
+| 'leading_non_letter'
+```
+
+### `SmsTemplateRules`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+The rules of one kind's template.
+
+```ts
+export interface SmsTemplateRules {
+  /** Placeholders the text must name, exactly once. */
+  required: readonly SmsTemplatePlaceholder[]
+  /** Placeholders the text may name besides, at most once each. */
+  optional: readonly SmsTemplatePlaceholder[]
+}
+```
+
+### `SmsTemplateSchema`
+
+_constant_, defined in `packages/contract/src/sms-template-schema.ts`
+
+An environment's wording for one kind of text message (ADR 0042): the sentence that
+carries the code.
+
+**Plain text on one line, with `{{name}}` placeholders and nothing else**, at most
+{@link MAX_SMS_TEMPLATE_LENGTH} characters. The origin-bound last line (`@host #code`) is
+the server's: it is added after the sentence and is never part of a template.
+
+```ts
+const SmsTemplateSchema: z.ZodObject<{ text: z.ZodString; }, z.core.$strict>
+```
+
+### `SmsTemplates`
+
+_type_, defined in `packages/contract/src/sms-template.ts`
+
+An environment's text message templates, by kind. A kind left out sends the built-in text.
+
+```ts
+export type SmsTemplates = { [Kind in SmsTemplateKind]?: SmsTemplate | undefined }
+```
+
+### `SmsTemplatesSchema`
+
+_constant_, defined in `packages/contract/src/sms-template-schema.ts`
+
+An environment's text message templates, by kind (`SMS_TEMPLATE_KINDS`). A kind left out
+sends the built-in text; a kind the server does not know is refused.
+
+A template is refused, with the path of its text, when it lacks `{{code}}` or names it
+(or the app) twice, names a placeholder its kind does not have, has a brace that is not
+part of a `{{name}}`, lets a letter, a digit or another placeholder touch a placeholder,
+holds four or more digits in a row, starts a word with `@` or `#`, does not start with a
+letter of its own, or holds a line break, a control character, a hidden character,
+nothing a reader can see, or anything that reads as a link, an address or a domain name.
+
+```ts
+const SmsTemplatesSchema
+```
+
 ### `SmsUsage`
 
 _type_, defined in `packages/contract/src/sms.ts`
@@ -5311,6 +5566,13 @@ export interface StoredEnvironmentSettingsRead {
   droppedEmailTemplates: EmailTemplateKind[]
   /** How many stored email templates were under a kind this version does not know. */
   unknownEmailTemplates: number
+  /**
+   * The kinds whose stored text message template was left out because it no longer passes;
+   * their messages are the built-in text.
+   */
+  droppedSmsTemplates: SmsTemplateKind[]
+  /** How many stored text message templates were under a kind this version does not know. */
+  unknownSmsTemplates: number
 }
 ```
 
@@ -5324,6 +5586,23 @@ that is not there is read as stored and gets no custom claims (`jwtTemplateOfPro
 
 ```ts
 const StoredSessionSettingsSchema
+```
+
+### `StoredSmsTemplatesRead`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+Stored text message templates as read back.
+
+```ts
+export interface StoredSmsTemplatesRead {
+  /** The templates this version can send. */
+  templates: SmsTemplates
+  /** The known kinds whose stored template was left out: it no longer passes. */
+  dropped: SmsTemplateKind[]
+  /** How many entries were under a kind this version does not know. */
+  unknown: number
+}
 ```
 
 ### `THEME_TOKENS`
@@ -6843,6 +7122,29 @@ isSmsCountry('DE') // true
 isSmsCountry('de') // false
 ```
 
+### `isSmsTemplateKind`
+
+_function_, defined in `packages/contract/src/sms-template.ts`
+
+Whether a string is one of {@link SMS_TEMPLATE_KINDS}.
+
+```ts
+export function isSmsTemplateKind(value: string): value is SmsTemplateKind
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a kind this version knows.
+
+**Example**
+
+```ts
+isSmsTemplateKind('sign_in') // true
+isSmsTemplateKind('constructor') // false
+```
+
 ### `isValidThemeValue`
 
 _function_, defined in `packages/contract/src/theme.ts`
@@ -7433,7 +7735,8 @@ environment down:
   beyond the list's limit) is left out rather than failing the read. Leaving an entry out
   of an allow-list only ever allows less;
 - an email template (`emails.templates`) of a kind this version does not know, or one that
-  no longer passes its kind's rules, is left out whole: its message is the built-in copy.
+  no longer passes its kind's rules, is left out whole: its message is the built-in copy;
+- a text message template (`sms.templates`) likewise: its message is the built-in text.
 
 ```ts
 export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmentSettingsRead
@@ -7483,6 +7786,35 @@ export function readStoredJwtTemplate(stored: unknown): JwtTemplate | null
 ```ts
 readStoredJwtTemplate({ claims: { a: { value: 1 }, b: { from: 'later.source' } } })
 // { claims: { a: { value: 1 } } }
+```
+
+### `readStoredSmsTemplates`
+
+_function_, defined in `packages/contract/src/sms-template.ts`
+
+Read stored text message templates, leaving out what this version would not accept.
+
+Settings are read on the request path, so a stored document must never fail a read, and a
+template must never fail a send: a kind this version does not know is dropped, and one
+that no longer passes {@link smsTemplateProblems} is dropped whole, so its message is the
+built-in text. What is left out here is absent from every read, the admin API's included,
+so the next save of the settings removes it for good.
+
+```ts
+export function readStoredSmsTemplates(stored: unknown): StoredSmsTemplatesRead
+```
+
+**Parameters**
+
+- `stored`: The stored `sms.templates` value.
+
+**Returns** The usable templates and what was left out.
+
+**Example**
+
+```ts
+readStoredSmsTemplates({ sign_in: { text: 'No code here.' } })
+// { templates: {}, dropped: ['sign_in'], unknown: 0 }
 ```
 
 ### `readsAsLink`
@@ -7651,6 +7983,69 @@ const signature = await signWebhook(key, event.id, Math.floor(Date.now() / 1000)
 // 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='
 ```
 
+### `smsSegments`
+
+_function_, defined in `packages/contract/src/sms-template.ts`
+
+How many segments a text takes: an estimate of what a carrier bills.
+
+One segment holds 160 characters of the GSM 7-bit alphabet (its extension characters
+count two), and 153 each once the text is split. A single character outside that alphabet
+makes the whole text UCS-2: 70 UTF-16 code units in one segment, 67 each once split. A
+provider may count differently at the edges (it does not split a two-septet character or
+a surrogate pair across segments), so this can be one short for a text at a boundary.
+
+```ts
+export function smsSegments(text: string): SmsSegments
+```
+
+**Parameters**
+
+- `text`: The whole message.
+
+**Returns** The encoding, the units and the segments.
+
+**Example**
+
+```ts
+smsSegments('Your Acme verification code is 123456.') // { encoding: 'gsm7', units: 38, segments: 1 }
+```
+
+### `smsTemplateProblems`
+
+_function_, defined in `packages/contract/src/sms-template.ts`
+
+Everything that makes a template unusable for its kind. Empty means it can be saved and
+sent.
+
+The one definition: the settings schema refuses a document with a problem, the tolerant
+read leaves such a template out, and the server asks again before every send.
+
+The checks that are about what is read (the digits, the first letter, what touches a
+placeholder) are made on the text without the characters that draw nothing, so that a
+zero-width joiner cannot split a run of digits or stand in front of the first letter.
+
+```ts
+export function smsTemplateProblems(
+  kind: SmsTemplateKind,
+  template: SmsTemplate
+): SmsTemplateProblem[]
+```
+
+**Parameters**
+
+- `kind`: The kind of message.
+- `template`: The text as written.
+
+**Returns** The problems. Their messages name a placeholder at most.
+
+**Example**
+
+```ts
+smsTemplateProblems('sign_in', { text: 'Your sign-in code.' })
+// [{ field: 'text', code: 'missing_placeholder', placeholder: 'code', message: … }]
+```
+
 ### `stepUpWindowSeconds`
 
 _function_, defined in `packages/contract/src/session-profile.ts`
@@ -7784,6 +8179,33 @@ every other character are kept.
 
 ```ts
 withoutHiddenCharacters('Acme\u{202E}moc') // 'Acmemoc'
+```
+
+### `withoutInvisibleCharacters`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Text without the characters that draw nothing (format characters, the joiners among them,
+variation selectors, and whatever else is ignorable by default), its white space kept.
+
+The one definition of "invisible" for every check that asks what a reader sees, in an
+email template and in a text message's ({@link visibleEmailText} is this and a trim).
+Only ever for a check: what is stored and sent keeps every character it was given.
+
+```ts
+export function withoutInvisibleCharacters(text: string): string
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** The text without what is invisible.
+
+**Example**
+
+```ts
+withoutInvisibleCharacters('12\u{200D}34 ') // '1234 '
 ```
 
 ## `@tula/contract/custom-claims`
