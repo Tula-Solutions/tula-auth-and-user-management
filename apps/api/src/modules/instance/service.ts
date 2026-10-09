@@ -5,6 +5,7 @@ import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import * as Jwks from '~/modules/jwks/service'
 import * as OAuth from '~/modules/oauth/service'
+import * as Settings from '~/modules/settings/service'
 import type { DatabaseDiagnosis } from '~/ports/diagnostics'
 import { version } from '../../../package.json'
 import { WEBHOOK_WAITING_TOO_LONG_MS } from './constants'
@@ -42,6 +43,9 @@ type DiagnosticsDeps = Pick<
   | 'oauthProviders'
   | 'secretBox'
   | 'webhookDeliveries'
+  | 'environmentSettings'
+  | 'sms'
+  | 'smsInbox'
 >
 
 /** The database's answer, with the API's own clock at the moment it arrived. */
@@ -66,6 +70,13 @@ interface Stored {
    * could not be read.
    */
   overdue: number | null
+  /**
+   * Of the environments checked, those whose settings have text messages on (`sms.enabled`
+   * with at least one allowed country: what `Settings.requireSms` lets through); `null` when
+   * the settings could not be read. Counted only in a deployment without an SMS sender, where
+   * it is what the `sms_sender` check is about: with a sender it stays 0 and nothing is read.
+   */
+  smsOn: number | null
 }
 
 /**
@@ -199,6 +210,7 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     providerCredentials: 0,
     enabledProviders: [],
     overdue: 0,
+    smsOn: 0,
   }
   for (const environment of environments) {
     signal.throwIfAborted()
@@ -231,8 +243,36 @@ async function readStored(deps: DiagnosticsDeps, signal: AbortSignal): Promise<S
     if (stored.overdue !== null) {
       stored.overdue = await overdueAfter(deps, environment.id, stored.overdue)
     }
+    // Only where the answer decides something: a deployment that has a sender is not asked
+    // which of its environments use it.
+    if (stored.smsOn !== null && !deps.sms.configured) {
+      stored.smsOn = await smsOnAfter(deps, environment.id, stored.smsOn)
+    }
   }
   return stored
+}
+
+/**
+ * Count an environment in when its settings have text messages on. Two fields of its
+ * settings are looked at and a number comes back: no setting leaves this function.
+ *
+ * Read through the settings cache, like every request: a count a few seconds old is right
+ * for a diagnosis, and nothing is deleted or sent on it. A failure is logged, the count
+ * becomes `null` (the `sms_sender` check then says it could not look) and the rest of the
+ * scan goes on.
+ */
+async function smsOnAfter(
+  deps: DiagnosticsDeps,
+  environmentId: string,
+  on: number
+): Promise<number | null> {
+  try {
+    const { sms } = await Settings.current(deps, { environmentId })
+    return on + (sms.enabled && sms.allowedCountries.length > 0 ? 1 : 0)
+  } catch (error) {
+    logger.warn('diagnostic check failed', { check: 'sms_sender', reason: errorReason(error) })
+    return null
+  }
 }
 
 /**
@@ -484,10 +524,86 @@ function webhookWorkerCheck(
 }
 
 /**
+ * Whether the deployment can send the text messages its environments were told to send
+ * (ADR 0037, "Twilio"; ADR 0031).
+ *
+ * "SMS on" is an environment's setting and the sender is the deployment's (`SMS_PROVIDER`):
+ * the boot cannot see the first, so the two are compared here. An environment with text
+ * messages on in a deployment without a sender sends nothing, and says so only to whoever
+ * asks for a code (`sms.unavailable`). It is a warning and not a failure: nobody signs in
+ * with a texted code, and the client configuration already hides the phone number where
+ * there is no sender, so nothing a user can reach is broken. It becomes a failure with
+ * sign-in by SMS (TULA-27).
+ *
+ * With a sender it says that one is configured and nothing more: no message is sent and the
+ * provider is not asked, so it never claims the credentials work. Counts only: never an
+ * environment's id, a number or a country.
+ */
+function smsSenderCheck(
+  deps: Pick<DiagnosticsDeps, 'sms' | 'smsInbox'>,
+  stored: { value: Stored } | null
+): DiagnosticCheck {
+  const id = 'sms_sender'
+  if (deps.smsInbox !== null) {
+    return {
+      id,
+      status: 'ok',
+      summary:
+        'SMS_PROVIDER is `dev`: text messages are kept in the development inbox and reach no phone. Local development only.',
+    }
+  }
+  if (deps.sms.configured) {
+    return {
+      id,
+      status: 'ok',
+      summary:
+        'The deployment has a sender for text messages (SMS_PROVIDER). No message was sent and the provider was not asked: this does not show that its credentials or its sender work.',
+    }
+  }
+  const on = stored?.value.smsOn ?? null
+  if (!stored || on === null) {
+    return {
+      id,
+      status: 'skipped',
+      summary: 'Not checked: the environments’ settings could not be read from the database.',
+    }
+  }
+  const { environments, checked } = stored.value
+  const truncated = checked < environments
+  const scope = `the first ${checked} of ${environments}`
+  const configure =
+    'Set SMS_PROVIDER=twilio and the TWILIO_* variables on every API instance and restart them (docs/self-host.md, “Text messages with Twilio”).'
+  if (on > 0) {
+    return {
+      id,
+      status: 'warn',
+      summary: `SMS_PROVIDER is \`none\`, and ${plural(on, 'environment')}${truncated ? ` of ${scope}` : ''} ${on === 1 ? 'has' : 'have'} text messages switched on: no message is sent, and a request that would send one is answered \`sms.unavailable\`.`,
+      fix: `${configure} Or switch text messages off in the settings of the environments that have them on.`,
+    }
+  }
+  if (truncated) {
+    const rest = environments - checked
+    return {
+      id,
+      status: 'warn',
+      summary: `SMS_PROVIDER is \`none\`. Only ${scope} environments were looked at: none of them has text messages switched on. The other ${rest} ${rest === 1 ? 'was' : 'were'} not read.`,
+      fix: `One run reads the settings of the ${MAX_ENVIRONMENTS_CHECKED} oldest environments only. If a newer environment has text messages on, its requests for a code are answered \`sms.unavailable\`: ${configure}`,
+    }
+  }
+  return {
+    id,
+    status: 'skipped',
+    summary:
+      'The deployment has no sender for text messages (SMS_PROVIDER is `none`), and no environment has them switched on.',
+  }
+}
+
+/**
  * Check what actually goes wrong in a deployment: the database and its migrations, the master
  * key against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, the
- * redirect URI each enabled OAuth provider must have registered, and whether events are
- * waiting for a webhook worker that is not taking them.
+ * redirect URI each enabled OAuth provider must have registered, whether events are waiting
+ * for a webhook worker that is not taking them, and whether an environment was told to send
+ * text messages in a deployment that has nothing to send them with.
  *
  * Every check runs at once and is cut off after `timeoutMs`; the scan of stored secrets stops
  * at its deadline and is never started while an earlier one is still running. Callers that
@@ -496,8 +612,8 @@ function webhookWorkerCheck(
  * changed and no email is sent. A check's text is fixed: the reason a probe failed goes to the log only, because a
  * driver's message can name hosts, users and credentials.
  *
- * @param deps - The diagnostics probes, the stores the stored secrets are read from, the secret
- *   box, the configuration and the clock.
+ * @param deps - The diagnostics probes, the stores the stored secrets and the settings are
+ *   read from, the secret box, the SMS sender, the configuration and the clock.
  * @param timeoutMs - Per-check timeout (default {@link CHECK_TIMEOUT_MS}). A caller that joins
  *   a run in flight gets that run, with the timeout it was started with.
  * @returns The checks, in a stable order, with the API's version, tier, clock and `PUBLIC_URL`.
@@ -561,6 +677,7 @@ async function run(deps: DiagnosticsDeps, timeoutMs: number): Promise<InstanceDi
       publicUrlCheck(loopback, publicUrl),
       redirectUriCheck(config, stored),
       webhookWorkerCheck(config, stored),
+      smsSenderCheck(deps, stored),
     ],
   }
 }

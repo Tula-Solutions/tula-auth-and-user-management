@@ -1,11 +1,18 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { FixedClock } from '~/adapters/memory/clock'
-import { smsInboxSuite } from '~/adapters/sms-sender.suite'
+import { smsInboxSuite, smsSenderSuite } from '~/adapters/sms-sender.suite'
 import { SmsSendError } from '~/ports/sms-sender'
 import { DEV_SMS_INBOX_SIZE, DevSmsSender } from './dev'
 import { unconfiguredSmsSender } from './unconfigured'
 
 smsInboxSuite('DevSmsSender', (clock) => new DevSmsSender(clock))
+// The inbox cannot fail: it has nothing to be refused by.
+smsSenderSuite('DevSmsSender', () => ({ sender: new DevSmsSender(new FixedClock()) }), {
+  configured: true,
+})
+smsSenderSuite('unconfiguredSmsSender', () => ({ sender: unconfiguredSmsSender }), {
+  configured: false,
+})
 
 describe('DevSmsSender', () => {
   test('keeps the newest fifty and drops the oldest', async () => {

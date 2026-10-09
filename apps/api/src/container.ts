@@ -42,6 +42,7 @@ import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
 import { RedisVersions } from '~/adapters/redis/versions'
 import { DevSmsSender } from '~/adapters/sms/dev'
+import { createTwilioSmsSender } from '~/adapters/sms/twilio'
 import { unconfiguredSmsSender } from '~/adapters/sms/unconfigured'
 import { systemClock } from '~/adapters/system/clock'
 import { createDiagnostics } from '~/adapters/system/diagnostics'
@@ -53,6 +54,7 @@ import { findDashboardDir } from '~/lib/dashboard-files'
 import { createKeyedHash } from '~/lib/keyed-hash'
 import * as logger from '~/lib/logger'
 import { createSecretBox } from '~/lib/secret-box'
+import type { SmsSender } from '~/ports/sms-sender'
 import { type ProcessPlan, type ProcessRole, planProcess } from '~/process'
 
 /** How long verification keys are cached per instance. See the rotation invariant. */
@@ -79,6 +81,44 @@ export const ENVIRONMENT_SETTINGS_VERSION_CHECK_MS = 5_000
 
 /** Second key segment of the settings change markers in Redis: `tula:es:<environment id>`. */
 export const ENVIRONMENT_SETTINGS_VERSION_SEGMENT = 'es'
+
+/**
+ * The Twilio sender of a deployment with `SMS_PROVIDER=twilio`.
+ *
+ * `env.ts` has already required the account, exactly one way to authenticate and exactly one
+ * sender; asked again here, so that an environment object that did not come through
+ * `parseEnv` cannot build a sender that would fail at its first message, or one whose
+ * credentials are a guess. The error names no value.
+ */
+function twilioSender(env: Env): SmsSender {
+  const credentials =
+    env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET && !env.TWILIO_AUTH_TOKEN
+      ? ({
+          kind: 'api_key',
+          sid: env.TWILIO_API_KEY_SID,
+          secret: env.TWILIO_API_KEY_SECRET,
+        } as const)
+      : env.TWILIO_AUTH_TOKEN && !env.TWILIO_API_KEY_SID && !env.TWILIO_API_KEY_SECRET
+        ? ({ kind: 'auth_token', token: env.TWILIO_AUTH_TOKEN } as const)
+        : null
+  const sender =
+    env.TWILIO_MESSAGING_SERVICE_SID && !env.TWILIO_FROM_NUMBER
+      ? ({ kind: 'messaging_service', sid: env.TWILIO_MESSAGING_SERVICE_SID } as const)
+      : env.TWILIO_FROM_NUMBER && !env.TWILIO_MESSAGING_SERVICE_SID
+        ? ({ kind: 'number', number: env.TWILIO_FROM_NUMBER } as const)
+        : null
+  if (!env.TWILIO_ACCOUNT_SID || !credentials || !sender) {
+    throw new Error(
+      'SMS_PROVIDER is twilio, and the TWILIO_* variables do not name one account, one way to authenticate and one sender'
+    )
+  }
+  // Which of the two ways, never a value: an operator reading the log sees what is in use.
+  logger.info('SMS_PROVIDER is twilio: text messages are sent through Twilio', {
+    authentication: credentials.kind,
+    sender: sender.kind,
+  })
+  return createTwilioSmsSender({ accountSid: env.TWILIO_ACCOUNT_SID, credentials, sender })
+}
 
 /** Production dependencies plus the function that releases their resources. */
 export interface Container {
@@ -135,6 +175,10 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
       'SMS_PROVIDER is dev: text messages are not sent. They are kept in memory and readable by anyone who can reach this API at /v1/dev/sms/messages. It must never be used outside local development.'
     )
   }
+  // The one sender that really sends, in any tier. Nothing falls back from it: a message
+  // Twilio does not take is a message that was not sent.
+  const sms: SmsSender =
+    smsInbox ?? (env.SMS_PROVIDER === 'twilio' ? twilioSender(env) : unconfiguredSmsSender)
   const deps: Deps = {
     config: {
       tier: env.ENVIRONMENT,
@@ -195,7 +239,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
       ? new RedisRevokedSessions(redis, clock)
       : new MemoryRevokedSessions(clock),
     mailer,
-    sms: smsInbox ?? unconfiguredSmsSender,
+    sms,
     smsInbox,
     smsUsage: new PostgresSmsUsageStore(database.db),
     secretBox,

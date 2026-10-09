@@ -239,6 +239,175 @@ describe('the SMS sender', () => {
     }
   })
 
+  describe('Twilio', () => {
+    const ACCOUNT = `AC${'0a1b2c3d'.repeat(4)}`
+    const KEY = `SK${'9f8e7d6c'.repeat(4)}`
+    const SERVICE = `MG${'1122aabb'.repeat(4)}`
+    const SECRET = 'KeySecret-canary-Zq7Lm2Xw9Rt4Vb6Ny8Pd'
+    const TOKEN = 'authtoken-canary-5f3a9c1e7b2d4f6a8c0e'
+    const NUMBER = '+15005550006'
+    const NOTHING_OF_THEM = /canary|AC0a1b|SK9f8e|MG1122|5005550006/
+    const accepted = () =>
+      Response.json({ sid: `SM${'abcdef01'.repeat(4)}`, status: 'queued' }, { status: 201 })
+    const live = {
+      ...base,
+      ENVIRONMENT: 'prod',
+      SMTP_URL: 'smtps://relay.example.com:465',
+      MAIL_FROM: 'Example <no-reply@example.com>',
+      BREACH_CHECK: 'hibp',
+      PUBLIC_URL: 'https://auth.example.com',
+      REDIS_URL: 'rediss://cache.example.com:6380',
+      SMS_PROVIDER: 'twilio',
+      TWILIO_ACCOUNT_SID: ACCOUNT,
+    }
+    const ways: [
+      string,
+      Record<string, string>,
+      string,
+      [string, string],
+      { authentication: string; sender: string },
+    ][] = [
+      [
+        'an API key and a Messaging Service',
+        {
+          TWILIO_API_KEY_SID: KEY,
+          TWILIO_API_KEY_SECRET: SECRET,
+          TWILIO_MESSAGING_SERVICE_SID: SERVICE,
+        },
+        btoa(`${KEY}:${SECRET}`),
+        ['MessagingServiceSid', SERVICE],
+        { authentication: 'api_key', sender: 'messaging_service' },
+      ],
+      [
+        'the auth token and one number',
+        { TWILIO_AUTH_TOKEN: TOKEN, TWILIO_FROM_NUMBER: NUMBER },
+        btoa(`${ACCOUNT}:${TOKEN}`),
+        ['From', NUMBER],
+        { authentication: 'auth_token', sender: 'number' },
+      ],
+    ]
+
+    test.each(ways)(
+      'SMS_PROVIDER=twilio sends through Twilio with %s',
+      async (_name, variables, basic, field, said) => {
+        const info = spyOn(logger, 'info').mockImplementation(() => {})
+        const debug = spyOn(logger, 'debug').mockImplementation(() => {})
+        // No request leaves this test: `fetch` is the stub.
+        const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((async () =>
+          accepted()) as unknown as typeof fetch)
+        try {
+          const { deps, close } = createContainer(parseEnv({ ...live, ...variables }))
+          // A real sender, and no inbox to read its messages from.
+          expect(deps.sms.configured).toBe(true)
+          expect(deps.smsInbox).toBeNull()
+          // Said at boot: which way, never a value.
+          expect(info.mock.calls).toEqual([
+            ['SMS_PROVIDER is twilio: text messages are sent through Twilio', said],
+          ])
+          // Building the container sends nothing and asks Twilio nothing.
+          expect(fetchSpy).not.toHaveBeenCalled()
+
+          await deps.sms.send(message)
+          expect(fetchSpy).toHaveBeenCalledTimes(1)
+          const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
+          expect(url).toBe(`https://api.twilio.com/2010-04-01/Accounts/${ACCOUNT}/Messages.json`)
+          expect(new Headers(init.headers).get('authorization')).toBe(`Basic ${basic}`)
+          const form = new URLSearchParams(String(init.body))
+          expect(form.get(field[0])).toBe(field[1])
+          expect(form.get('To')).toBe(message.to)
+          expect(form.get('Body')).toBe(message.text)
+
+          // The credentials are the adapter's alone: nothing of them is in the dependencies.
+          const visible = Bun.inspect(deps, { depth: 6 })
+          for (const secret of [SECRET, TOKEN, basic]) {
+            expect(visible).not.toContain(secret)
+          }
+          expect(JSON.stringify(info.mock.calls)).not.toMatch(NOTHING_OF_THEM)
+          await close()
+        } finally {
+          fetchSpy.mockRestore()
+          info.mockRestore()
+          debug.mockRestore()
+        }
+      }
+    )
+
+    // Behind `env.ts`, as for the inbox: an environment object that did not come through
+    // `parseEnv` gets no sender built from half a configuration, or from a choice of two.
+    const incomplete: [string, Record<string, string>][] = [
+      [
+        'no account',
+        { TWILIO_API_KEY_SID: KEY, TWILIO_API_KEY_SECRET: SECRET, TWILIO_FROM_NUMBER: NUMBER },
+      ],
+      ['no credentials', { TWILIO_ACCOUNT_SID: ACCOUNT, TWILIO_FROM_NUMBER: NUMBER }],
+      [
+        'half an API key',
+        { TWILIO_ACCOUNT_SID: ACCOUNT, TWILIO_API_KEY_SID: KEY, TWILIO_FROM_NUMBER: NUMBER },
+      ],
+      [
+        'both ways to authenticate',
+        {
+          TWILIO_ACCOUNT_SID: ACCOUNT,
+          TWILIO_API_KEY_SID: KEY,
+          TWILIO_API_KEY_SECRET: SECRET,
+          TWILIO_AUTH_TOKEN: TOKEN,
+          TWILIO_FROM_NUMBER: NUMBER,
+        },
+      ],
+      ['no sender', { TWILIO_ACCOUNT_SID: ACCOUNT, TWILIO_AUTH_TOKEN: TOKEN }],
+      [
+        'both senders',
+        {
+          TWILIO_ACCOUNT_SID: ACCOUNT,
+          TWILIO_AUTH_TOKEN: TOKEN,
+          TWILIO_MESSAGING_SERVICE_SID: SERVICE,
+          TWILIO_FROM_NUMBER: NUMBER,
+        },
+      ],
+    ]
+
+    test.each(incomplete)(
+      'refuses to build a sender with %s, and says no value',
+      (_name, variables) => {
+        const info = spyOn(logger, 'info').mockImplementation(() => {})
+        try {
+          const env = { ...parseEnv(local), SMS_PROVIDER: 'twilio' as const, ...variables }
+          let thrown: unknown
+          try {
+            createContainer(env)
+          } catch (error) {
+            thrown = error
+          }
+          expect(thrown).toBeInstanceOf(Error)
+          expect(String(thrown)).toMatch(/SMS_PROVIDER is twilio/)
+          expect(String(thrown)).not.toMatch(NOTHING_OF_THEM)
+          expect(info).not.toHaveBeenCalled()
+        } finally {
+          info.mockRestore()
+        }
+      }
+    )
+
+    test('with another provider the Twilio variables build nothing', async () => {
+      const info = spyOn(logger, 'info').mockImplementation(() => {})
+      try {
+        const { deps, close } = createContainer(
+          parseEnv({
+            ...local,
+            TWILIO_ACCOUNT_SID: ACCOUNT,
+            TWILIO_AUTH_TOKEN: TOKEN,
+            TWILIO_FROM_NUMBER: NUMBER,
+          })
+        )
+        expect(deps.sms.configured).toBe(false)
+        expect(info).not.toHaveBeenCalled()
+        await close()
+      } finally {
+        info.mockRestore()
+      }
+    })
+  })
+
   // The tier is checked again in the container, behind `env.ts`: an environment object that
   // did not come through `parseEnv` must not get an inbox either.
   test.each(['dev', 'staging', 'prod'] as const)(

@@ -1,6 +1,109 @@
 import { describe, expect, test } from 'bun:test'
 import { FixedClock } from '~/adapters/memory/clock'
-import type { SmsInbox, SmsSender } from '~/ports/sms-sender'
+import { type SmsInbox, SmsSendError, type SmsSender } from '~/ports/sms-sender'
+
+/** One sender under test, and how the suite makes it take or refuse a message. */
+export interface SmsSenderHarness {
+  sender: SmsSender
+  /**
+   * Make every later send fail the way this adapter fails (the provider refusing, the
+   * sender being down). Left out for an adapter that cannot fail, and for the one that
+   * always does.
+   */
+  fail?: () => void
+  /** Undo whatever the harness stubbed. Called after every test. */
+  cleanup?: () => void
+}
+
+/** What a sender does with a message, which the suite cannot find out by asking it. */
+export interface SmsSenderTraits {
+  /** What `configured` says: whether the deployment has a sender at all. */
+  configured: boolean
+}
+
+const MESSAGE = { to: '+14155550142', text: 'Your Northline verification code is 739204.' }
+
+/** Everything an error carries that could be printed, logged or serialized. */
+function everythingIn(error: unknown): string {
+  const own = error instanceof Error ? { ...error } : {}
+  return [
+    String(error),
+    error instanceof Error ? error.message : '',
+    error instanceof Error ? (error.stack ?? '') : '',
+    JSON.stringify(own),
+    JSON.stringify(error instanceof Error ? (error.cause ?? null) : null),
+  ].join('\n')
+}
+
+/**
+ * Behaviour every SMS sender must have, whatever it does with a message: the memory adapter,
+ * the development inbox, the sender of a deployment without one, and Twilio.
+ *
+ * @param name - Adapter name for the test output.
+ * @param create - Builds a fresh sender, with what the suite needs to make it fail.
+ * @param traits - What this adapter says of itself.
+ */
+export function smsSenderSuite(
+  name: string,
+  create: () => SmsSenderHarness,
+  traits: SmsSenderTraits
+): void {
+  describe(`${name} (SmsSender)`, () => {
+    function withSender<T>(run: (harness: SmsSenderHarness) => Promise<T>): Promise<T> {
+      const harness = create()
+      return run(harness).finally(() => harness.cleanup?.())
+    }
+
+    test(`says the deployment ${traits.configured ? 'has' : 'has no'} sender`, () =>
+      withSender(async ({ sender }) => {
+        expect(sender.configured).toBe(traits.configured)
+      }))
+
+    test.skipIf(!traits.configured)('a message it takes resolves with nothing', () =>
+      withSender(async ({ sender }) => {
+        expect(await sender.send(MESSAGE)).toBeUndefined()
+      })
+    )
+
+    test.skipIf(traits.configured)('a deployment without a sender refuses every message', () =>
+      withSender(async ({ sender }) => {
+        const failure = await sender.send(MESSAGE).catch((error) => error)
+        expect(failure).toBeInstanceOf(SmsSendError)
+        expect(failure.reason).toBe('not_configured')
+      })
+    )
+
+    test('a message it does not take is the port’s failure: a fixed word, nothing of the message', () =>
+      withSender(async ({ sender, fail }) => {
+        if (traits.configured && !fail) {
+          // An adapter that cannot fail has nothing to show here.
+          return
+        }
+        fail?.()
+        const failure = await sender.send(MESSAGE).catch((error) => error)
+        expect(failure).toBeInstanceOf(SmsSendError)
+        expect(['not_configured', 'failed']).toContain(failure.reason)
+        expect(failure.reason).toBe(traits.configured ? 'failed' : 'not_configured')
+        expect(failure.message).toBe(`sms not sent: ${failure.reason}`)
+        const printed = everythingIn(failure)
+        // Not the number, not its digits, not the code, not a word of the text.
+        for (const part of [MESSAGE.to, '4155550142', '739204', 'Northline']) {
+          expect(printed).not.toContain(part)
+        }
+      }))
+
+    test('it fails closed: once it stops taking messages none is reported as sent', () =>
+      withSender(async ({ sender, fail }) => {
+        if (!fail) {
+          return
+        }
+        expect(await sender.send(MESSAGE)).toBeUndefined()
+        fail()
+        await expect(sender.send(MESSAGE)).rejects.toBeInstanceOf(SmsSendError)
+        await expect(sender.send(MESSAGE)).rejects.toBeInstanceOf(SmsSendError)
+      }))
+  })
+}
 
 /**
  * Behaviour every SMS sender that keeps its messages must have (the memory adapter and the

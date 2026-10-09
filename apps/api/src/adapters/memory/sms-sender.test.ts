@@ -1,10 +1,23 @@
 import { describe, expect, test } from 'bun:test'
 import { FixedClock } from '~/adapters/memory/clock'
-import { smsInboxSuite } from '~/adapters/sms-sender.suite'
+import { smsInboxSuite, smsSenderSuite } from '~/adapters/sms-sender.suite'
 import { SmsSendError } from '~/ports/sms-sender'
 import { MemorySmsSender } from './sms-sender'
 
 smsInboxSuite('MemorySmsSender', (clock) => new MemorySmsSender(clock))
+smsSenderSuite(
+  'MemorySmsSender',
+  () => {
+    const sender = new MemorySmsSender(new FixedClock())
+    return {
+      sender,
+      fail: () => {
+        sender.failing = true
+      },
+    }
+  },
+  { configured: true }
+)
 
 describe('MemorySmsSender', () => {
   test('says it is configured, until a test says otherwise', () => {

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import type { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
+import { unconfiguredSmsSender } from '~/adapters/sms/unconfigured'
 import { createSecretBox } from '~/lib/secret-box'
 import * as Audit from '~/modules/audit/service'
 import * as Instance from '~/modules/instance/service'
@@ -63,8 +65,11 @@ describe('Instance.diagnostics', () => {
       'public_url',
       'oauth_redirect_uris',
       'webhook_worker',
+      'sms_sender',
     ])
     expect(byId(result.checks, 'webhook_worker').status).toBe('ok')
+    // The test deployment has a sender (the memory one).
+    expect(byId(result.checks, 'sms_sender').status).toBe('ok')
     expect(byId(result.checks, 'database').status).toBe('ok')
     expect(byId(result.checks, 'migrations').status).toBe('ok')
     expect(byId(result.checks, 'master_key').status).toBe('ok')
@@ -641,6 +646,216 @@ describe('the webhook_worker check', () => {
     expect(byId((await Instance.diagnostics(stuckDeps, 50)).checks, 'webhook_worker').status).toBe(
       'skipped'
     )
+    expect(calls).toBe(1)
+  })
+})
+
+// TULA-29. "SMS on" is an environment's setting and the sender is the deployment's: the boot
+// sees only the second, so the diagnostics compare the two.
+describe('the sms_sender check', () => {
+  const NO_SENDER = { sms: unconfiguredSmsSender } as unknown as Partial<TestDeps>
+  const check = async (deps: Parameters<typeof Instance.diagnostics>[0]) =>
+    byId((await Instance.diagnostics(deps)).checks, 'sms_sender')
+
+  function switchOn(
+    deps: TestDeps,
+    environmentId: string = TEST_TENANT.environmentId,
+    sms = { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 }
+  ) {
+    deps.environmentSettings.seed(environmentId, {
+      revision: 1,
+      settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, sms },
+    })
+  }
+
+  function addEnvironments(deps: TestDeps, count: number): string[] {
+    const ids: string[] = []
+    for (let index = 1; index <= count; index += 1) {
+      const id = `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`
+      ids.push(id)
+      deps.environments.add({
+        id,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(deps.clock.now().getTime() + index),
+      })
+    }
+    return ids
+  }
+
+  test('no sender and no environment with text messages on: skipped, and it says both', async () => {
+    const { deps } = await setup(NO_SENDER)
+    expect(await check(deps)).toEqual({
+      id: 'sms_sender',
+      status: 'skipped',
+      summary:
+        'The deployment has no sender for text messages (SMS_PROVIDER is `none`), and no environment has them switched on.',
+    })
+  })
+
+  test('no sender and an environment with text messages on: a warning, with what to do', async () => {
+    const { deps } = await setup(NO_SENDER)
+    switchOn(deps)
+    expect(await check(deps)).toEqual({
+      id: 'sms_sender',
+      status: 'warn',
+      summary:
+        'SMS_PROVIDER is `none`, and 1 environment has text messages switched on: no message is sent, and a request that would send one is answered `sms.unavailable`.',
+      fix: 'Set SMS_PROVIDER=twilio and the TWILIO_* variables on every API instance and restart them (docs/self-host.md, “Text messages with Twilio”). Or switch text messages off in the settings of the environments that have them on.',
+    })
+  })
+
+  test('counts environments, and names none of them', async () => {
+    const { deps } = await setup(NO_SENDER)
+    const [second, third] = addEnvironments(deps, 3)
+    switchOn(deps)
+    switchOn(deps, second)
+    switchOn(deps, third)
+    const result = await Instance.diagnostics(deps)
+    const found = byId(result.checks, 'sms_sender')
+    expect(found.status).toBe('warn')
+    expect(found.summary).toStartWith(
+      'SMS_PROVIDER is `none`, and 3 environments have text messages switched on'
+    )
+    const said = JSON.stringify(found)
+    for (const id of [TEST_TENANT.environmentId, second, third]) {
+      expect(said).not.toContain(String(id))
+    }
+    // Not a country either: which destinations an environment texts is its own business.
+    expect(said).not.toMatch(/\bUS\b/)
+    expect(found.values).toBeUndefined()
+  })
+
+  // What `Settings.requireSms` refuses is not "on": such an environment sends nothing with
+  // any sender, so the missing sender changes nothing for it.
+  test.each([
+    [
+      'switched off, with countries',
+      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 },
+    ],
+    [
+      'switched on, with no country',
+      { enabled: true, allowedCountries: [], dailyMessageLimit: 500 },
+    ],
+  ])('an environment with text messages %s is not counted', async (_name, sms) => {
+    const { deps } = await setup(NO_SENDER)
+    switchOn(deps, TEST_TENANT.environmentId, sms)
+    expect((await check(deps)).status).toBe('skipped')
+  })
+
+  test('with a sender it is ok, says what it did not ask, and reads no settings', async () => {
+    const { deps } = await setup()
+    switchOn(deps)
+    let read = 0
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    deps.environmentSettings.get = async (...args) => {
+      read += 1
+      return get(...args)
+    }
+    expect(await check(deps)).toEqual({
+      id: 'sms_sender',
+      status: 'ok',
+      summary:
+        'The deployment has a sender for text messages (SMS_PROVIDER). No message was sent and the provider was not asked: this does not show that its credentials or its sender work.',
+    })
+    expect(read).toBe(0)
+    // And it sent nothing to find out.
+    expect(deps.sms.outbox).toEqual([])
+  })
+
+  test('the development inbox is said for what it is', async () => {
+    const { deps } = await setup()
+    expect(await check({ ...deps, smsInbox: deps.sms })).toEqual({
+      id: 'sms_sender',
+      status: 'ok',
+      summary:
+        'SMS_PROVIDER is `dev`: text messages are kept in the development inbox and reach no phone. Local development only.',
+    })
+  })
+
+  test('settings that cannot be read: skipped, the reason stays out of the answer, the other checks stand', async () => {
+    const { deps } = await setup(NO_SENDER)
+    switchOn(deps)
+    deps.environmentSettings.get = async () => {
+      throw new Error(`could not read settings: ${CANARIES[0]} CANARY-internal-message`)
+    }
+    const result = await Instance.diagnostics(deps)
+    expect(byId(result.checks, 'sms_sender')).toEqual({
+      id: 'sms_sender',
+      status: 'skipped',
+      summary: 'Not checked: the environments’ settings could not be read from the database.',
+    })
+    // The settings' failure is not the stored secrets' nor the outbox's.
+    expect(byId(result.checks, 'master_key').status).toBe('ok')
+    expect(byId(result.checks, 'webhook_worker').status).toBe('ok')
+    expectNoCanary(result)
+  })
+
+  test('after one failed read it asks no further environment', async () => {
+    const { deps } = await setup(NO_SENDER)
+    addEnvironments(deps, 5)
+    let read = 0
+    deps.environmentSettings.get = async () => {
+      read += 1
+      throw new Error('CANARY-internal-message')
+    }
+    expect((await check(deps)).status).toBe('skipped')
+    expect(read).toBe(1)
+  })
+
+  test('more environments than one run reads: one read each, of those it says it looked at', async () => {
+    const { deps } = await setup(NO_SENDER)
+    const ids = addEnvironments(deps, Instance.MAX_ENVIRONMENTS_CHECKED)
+    const asked: string[] = []
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    deps.environmentSettings.get = async (environmentId, ...rest) => {
+      asked.push(environmentId)
+      return get(environmentId, ...rest)
+    }
+    // The newest environment, past the 200th, has text messages on: it is not read, and the
+    // check does not say "none".
+    switchOn(deps, ids.at(-1))
+    const none = await check(deps)
+    expect(none.status).toBe('warn')
+    expect(none.summary).toBe(
+      'SMS_PROVIDER is `none`. Only the first 200 of 201 environments were looked at: none of them has text messages switched on. The other 1 was not read.'
+    )
+    expect(none.fix).toBeDefined()
+    expect(asked).toHaveLength(Instance.MAX_ENVIRONMENTS_CHECKED)
+    expect(new Set(asked).size).toBe(Instance.MAX_ENVIRONMENTS_CHECKED)
+    expect(asked).not.toContain(ids.at(-1))
+
+    switchOn(deps)
+    expect((await check(deps)).summary).toBe(
+      'SMS_PROVIDER is `none`, and 1 environment of the first 200 of 201 has text messages switched on: no message is sent, and a request that would send one is answered `sms.unavailable`.'
+    )
+  })
+
+  test('a scan cut off by the timeout reads no further environment’s settings', async () => {
+    const { deps } = await setup(NO_SENDER)
+    addEnvironments(deps, 5)
+    let calls = 0
+    deps.environmentSettings.get = async () => {
+      calls += 1
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      return null
+    }
+    const result = await Instance.diagnostics(deps, 50)
+    expect(byId(result.checks, 'sms_sender').status).toBe('skipped')
+    expect(calls).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(calls).toBe(1)
+  })
+
+  test('settings that never answer: later runs do not read them again on top of it', async () => {
+    const { deps } = await setup(NO_SENDER)
+    let calls = 0
+    deps.environmentSettings.get = () => {
+      calls += 1
+      return new Promise<never>(() => {})
+    }
+    expect((await Instance.diagnostics(deps, 50)).checks.at(-1)?.status).toBe('skipped')
+    expect((await Instance.diagnostics(deps, 50)).checks.at(-1)?.status).toBe('skipped')
     expect(calls).toBe(1)
   })
 })
