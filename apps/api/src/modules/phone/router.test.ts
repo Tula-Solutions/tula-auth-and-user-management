@@ -7,6 +7,7 @@ import {
   type FlowAttempt,
   type PhoneCodeSent,
   type HybridSessionTokens as SessionTokens,
+  type SmsUsage,
   type User,
 } from '@tula/contract'
 import { createApp } from '~/index'
@@ -35,7 +36,11 @@ let app: ReturnType<typeof createApp>
 let revision = 0
 
 function configure(
-  sms: EnvironmentSettings['sms'] = { enabled: true, allowedCountries: ['US', 'DE'] },
+  sms: EnvironmentSettings['sms'] = {
+    enabled: true,
+    allowedCountries: ['US', 'DE'],
+    dailyMessageLimit: 500,
+  },
   environmentId: string = TEST_TENANT.environmentId
 ) {
   revision += 1
@@ -335,20 +340,29 @@ describe('what the environment allows', () => {
     ['off (the default)', DEFAULT_ENVIRONMENT_SETTINGS.sms, 403, 'sms.disabled'],
     [
       'off with countries listed',
-      { enabled: false, allowedCountries: ['US'] },
+      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 },
       403,
       'sms.disabled',
     ],
-    ['on with no country', { enabled: true, allowedCountries: [] }, 403, 'sms.disabled'],
+    [
+      'on with no country',
+      { enabled: true, allowedCountries: [], dailyMessageLimit: 500 },
+      403,
+      'sms.disabled',
+    ],
     [
       'on for another country',
-      { enabled: true, allowedCountries: ['DE'] },
+      { enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 },
       422,
       'sms.country_not_allowed',
     ],
   ] as const)('SMS %s: nothing is sent, stored or counted', async (_name, sms, status, code) => {
     const session = await signUp()
-    configure({ enabled: sms.enabled, allowedCountries: [...sms.allowedCountries] })
+    configure({
+      enabled: sms.enabled,
+      allowedCountries: [...sms.allowedCountries],
+      dailyMessageLimit: 500,
+    })
     const hit = spyOn(deps.rateLimiter, 'hit')
     const before = hit.mock.calls.length
     expect(await errorOf(await ask(session.accessToken))).toMatchObject({ status, code })
@@ -382,7 +396,7 @@ describe('what the environment allows', () => {
 
   test('with SMS off, confirming says so even when nothing is pending', async () => {
     const session = await signUp()
-    configure({ enabled: false, allowedCountries: ['US'] })
+    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 })
     expect(await errorOf(await confirm(session.accessToken, '123456'))).toMatchObject({
       status: 403,
       code: 'sms.disabled',
@@ -393,7 +407,7 @@ describe('what the environment allows', () => {
     const session = await signUp()
     await ask(session.accessToken)
     const code = textedCode()
-    configure({ enabled: false, allowedCountries: ['US'] })
+    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 })
     const attempt = spyOn(deps.lockout, 'attempt')
     expect(await errorOf(await confirm(session.accessToken, code))).toMatchObject({
       status: 403,
@@ -411,7 +425,7 @@ describe('what the environment allows', () => {
     const session = await signUp()
     await ask(session.accessToken)
     const code = textedCode()
-    configure({ enabled: true, allowedCountries: ['DE'] })
+    configure({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 })
     const attempt = spyOn(deps.lockout, 'attempt')
     expect(await errorOf(await confirm(session.accessToken, code))).toMatchObject({
       status: 422,
@@ -428,9 +442,9 @@ describe('what the environment allows', () => {
     const config = async () => json<ClientConfig>(await call('GET', '/config'))
     expect((await config()).phone).toEqual({ enabled: true })
     expect(JSON.stringify(await config())).not.toContain('allowedCountries')
-    configure({ enabled: true, allowedCountries: [] })
+    configure({ enabled: true, allowedCountries: [], dailyMessageLimit: 500 })
     expect((await config()).phone).toEqual({ enabled: false })
-    configure({ enabled: false, allowedCountries: ['US'] })
+    configure({ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500 })
     expect((await config()).phone).toEqual({ enabled: false })
   })
 })
@@ -729,7 +743,9 @@ describe('sending', () => {
     await ask(session.accessToken)
     await confirm(session.accessToken, wrong(textedCode()))
     const keys = [...hit.mock.calls.map(([key]) => key), ...attempt.mock.calls.map(([key]) => key)]
-    expect(keys.some((key) => key.startsWith('phone_code_number:'))).toBe(true)
+    for (const limit of ['sms_number:', 'sms_address:', 'sms_prefix:', 'sms_environment:']) {
+      expect(keys.some((key) => key.startsWith(limit))).toBe(true)
+    }
     for (const key of keys) {
       expect(key).not.toContain('4155550142')
       expect(key).not.toContain(sha256Hex(NUMBER))
@@ -737,10 +753,24 @@ describe('sending', () => {
   })
 
   test('a limiter that cannot count refuses the send: nothing is texted or stored', async () => {
-    const session = await signUp()
     const hit = deps.rateLimiter.hit.bind(deps.rateLimiter)
     const { ServiceUnavailableError } = await import('~/exceptions')
-    for (const failing of ['phone_code_cooldown:', 'phone_code_number_cooldown:']) {
+    const sessions: { userId: string }[] = []
+    for (const failing of [
+      'sms_asker_cooldown:',
+      'sms_asker:',
+      'sms_asker_new_number:',
+      'sms_number_cooldown:',
+      'sms_number:',
+      'sms_address:',
+      'sms_prefix:',
+      'sms_environment:',
+    ]) {
+      // A user of their own each time, and past the number's minute: a try that failed at a
+      // later counter has been counted by the earlier ones.
+      deps.clock.advance('2m')
+      const session = await signUp(`user-${sessions.length}@northline.app`)
+      sessions.push(session)
       const spy = spyOn(deps.rateLimiter, 'hit').mockImplementation(async (key, ...rest) => {
         if (key.startsWith(failing)) {
           throw new ServiceUnavailableError()
@@ -754,7 +784,10 @@ describe('sending', () => {
       spy.mockRestore()
     }
     expect(deps.sms.outbox).toEqual([])
-    expect(await latestToken(session.userId)).toBeNull()
+    expect(sessions).toHaveLength(8)
+    for (const session of sessions) {
+      expect(await latestToken(session.userId)).toBeNull()
+    }
   })
 
   test('a lockout that cannot count refuses the guess: the code is not looked at', async () => {
@@ -813,7 +846,9 @@ describe('sending', () => {
     })
     // The route's own per-IP limit is counted, as for every request; no send limit is.
     expect(
-      hit.mock.calls.map(([key]) => key).filter((key) => key.startsWith('phone_code'))
+      hit.mock.calls
+        .map(([key]) => key)
+        .filter((key) => key.startsWith('phone_code') || key.startsWith('sms_'))
     ).toEqual(['phone_code_request:ip:unknown'])
     hit.mockRestore()
     expect(await latestToken(session.userId)).toBeNull()
@@ -847,7 +882,7 @@ describe('sending', () => {
         revision: 1,
         settings: {
           ...DEFAULT_ENVIRONMENT_SETTINGS,
-          sms: { enabled: true, allowedCountries: ['US'] },
+          sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500 },
         },
       })
       await expect(
@@ -870,6 +905,205 @@ describe('sending', () => {
         spy.mockRestore()
       }
     }
+  })
+})
+
+describe('what bounds the cost of sending', () => {
+  /** A United States number: the destination prefix `+1`. */
+  const inRange = (line: number) => `+1415555${String(line).padStart(4, '0')}`
+  const usage = async (days = 1) =>
+    json<SmsUsage>(
+      await app.request(`/v1/admin/sms/usage?days=${days}`, {
+        headers: { authorization: `Bearer ${SK}` },
+      })
+    )
+
+  test('past the environment’s daily limit nothing is sent, to any number, by anyone', async () => {
+    configure({ enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 1 })
+    const maya = await signUp()
+    const sam = await signUp(OTHER_EMAIL)
+    expect((await ask(maya.accessToken)).status).toBe(200)
+    // Another user, another number, another country: the day is spent for all of them.
+    const refused = await errorOf(await ask(sam.accessToken, GERMAN))
+    expect(refused).toMatchObject({ status: 429, code: 'rate_limited' })
+    // The answer is the one every limit gives: it says how long, and not which limit.
+    expect(Object.keys(refused.params ?? {})).toEqual(['retryAfter'])
+    expect(deps.sms.outbox.map((message) => message.to)).toEqual([NUMBER])
+    expect(await latestToken(sam.userId)).toBeNull()
+    // The code that was sent before the limit was reached still confirms its number.
+    expect((await confirm(maya.accessToken, textedCode())).status).toBe(200)
+  })
+
+  test('a destination prefix whose hour is spent gets nothing more, whoever asks', async () => {
+    // Ten a day: one message an hour for a prefix, three for the environment.
+    configure({ enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 10 })
+    const maya = await signUp()
+    const sam = await signUp(OTHER_EMAIL)
+    const kim = await signUp('kim@northline.app')
+    expect((await ask(maya.accessToken, inRange(1))).status).toBe(200)
+    // Another account, and a number of the destination that was never texted.
+    expect(await errorOf(await ask(sam.accessToken, inRange(2)))).toMatchObject({
+      status: 429,
+      code: 'rate_limited',
+    })
+    expect(deps.sms.messages(inRange(2))).toEqual([])
+    expect(await latestToken(sam.userId)).toBeNull()
+    // A number of another destination still goes through: it was the prefix.
+    expect((await ask(kim.accessToken, GERMAN)).status).toBe(200)
+    expect(deps.sms.outbox.map((message) => message.to)).toEqual([inRange(1), GERMAN])
+  })
+
+  test('a number of a country that is not allowed is never sent to, and counted nowhere', async () => {
+    const session = await signUp()
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    for (let i = 0; i < 3; i += 1) {
+      expect(await codeOf(await ask(session.accessToken, '+33123456789'))).toBe(
+        'sms.country_not_allowed'
+      )
+    }
+    expect(hit.mock.calls.map(([key]) => key).filter((key) => key.startsWith('sms_'))).toEqual([])
+    hit.mockRestore()
+    expect(deps.sms.outbox).toEqual([])
+    expect((await usage()).sent).toBe(0)
+    // Nothing was spent by the refusals: the user's first allowed number goes out at once.
+    expect((await ask(session.accessToken)).status).toBe(200)
+  })
+
+  test('one account cannot work through other people’s numbers: three new ones a day', async () => {
+    const session = await signUp()
+    let token = session.accessToken
+    let refreshToken = session.refreshToken
+    const later = async () => {
+      // Past the cooldown and the hour, with a session that is still recently authenticated.
+      deps.clock.advance('2m')
+      const next = await json<SessionTokens>(await post('/sessions/refresh', { refreshToken }))
+      token = next.accessToken
+      refreshToken = next.refreshToken
+      const stepped = await json<SessionTokens>(
+        await post('/sessions/step-up', { method: 'password', password: PASSWORD }, { token })
+      )
+      token = stepped.accessToken
+    }
+    for (const line of [1, 2, 3]) {
+      expect((await ask(token, `+1202555${String(line).padStart(4, '0')}`)).status).toBe(200)
+      await later()
+    }
+    // A fourth number.
+    expect(await codeOf(await ask(token, '+13125550104'))).toBe('rate_limited')
+    expect(deps.sms.messages('+13125550104')).toEqual([])
+    await later()
+    // Still refused when asked again: nothing was sent to it, so it is still new.
+    expect(await codeOf(await ask(token, '+13125550104'))).toBe('rate_limited')
+    // The next hour (the refused tries used the account's own five an hour).
+    deps.clock.advance('1h')
+    await later()
+    // The number that is pending is not a new one: its code can be asked for again.
+    expect((await ask(token, '+12025550003')).status).toBe(200)
+    expect(deps.sms.outbox).toHaveLength(4)
+  })
+
+  test('the request’s address is counted, as a keyed hash, and a call with none is not', async () => {
+    const session = await signUp()
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    await ask(session.accessToken)
+    const viaRoute = hit.mock.calls.map(([key]) => key).filter((key) => key.startsWith('sms_'))
+    expect(viaRoute.filter((key) => key.startsWith('sms_address:'))).toHaveLength(1)
+    expect(viaRoute.join(' ')).not.toContain('unknown')
+    hit.mockClear()
+    await Phone.request(
+      deps,
+      { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId },
+      { userId: 'someone-else' },
+      { phoneNumber: GERMAN }
+    )
+    const direct = hit.mock.calls.map(([key]) => key)
+    expect(direct.some((key) => key.startsWith('sms_address:'))).toBe(false)
+    // Every other limit is still counted for it.
+    expect(direct.map((key) => key.slice(0, key.indexOf(':')))).toEqual([
+      'sms_asker_cooldown',
+      'sms_asker',
+      'sms_asker_new_number',
+      'sms_number_cooldown',
+      'sms_number',
+      'sms_prefix',
+      'sms_environment',
+    ])
+    hit.mockRestore()
+  })
+})
+
+describe('codes sent and never used, by prefix', () => {
+  const read = (query = '', headers: Record<string, string> = { authorization: `Bearer ${SK}` }) =>
+    app.request(`/v1/admin/sms/usage${query}`, { headers })
+
+  test('the operator reads sent and used codes by prefix, with no number in the answer', async () => {
+    const maya = await signUp()
+    const sam = await signUp(OTHER_EMAIL)
+    await ask(maya.accessToken)
+    await confirm(maya.accessToken, textedCode())
+    await ask(sam.accessToken, GERMAN)
+    // A wrong code uses nothing.
+    await confirm(sam.accessToken, wrong(textedCode(GERMAN)))
+    const res = await read()
+    expect(res.status).toBe(200)
+    const body = await res.text()
+    expect(JSON.parse(body)).toEqual({
+      since: '2025-12-26',
+      days: 7,
+      sent: 2,
+      used: 1,
+      unused: 1,
+      prefixes: [
+        { prefix: '+49', sent: 1, used: 0, unused: 1 },
+        { prefix: '+1', sent: 1, used: 1, unused: 0 },
+      ],
+      truncated: false,
+    })
+    for (const secret of [NUMBER, GERMAN, '4155550142', '15112345678', maya.userId, sam.userId]) {
+      expect(body).not.toContain(secret)
+    }
+  })
+
+  test('a send that was refused, or that the sender did not take, is not a code sent', async () => {
+    const session = await signUp()
+    await ask(session.accessToken)
+    // Within the minute: refused by the user's own limit.
+    await ask(session.accessToken)
+    deps.clock.advance('2m')
+    const fresh = await json<SessionTokens>(
+      await post('/sessions/refresh', { refreshToken: session.refreshToken })
+    )
+    deps.sms.failing = true
+    expect(await codeOf(await ask(fresh.accessToken))).toBe('sms.unavailable')
+    expect(await json<SmsUsage>(await read('?days=1'))).toMatchObject({ sent: 1, used: 0 })
+  })
+
+  test('it reads thirty days back at most, and only whole days', async () => {
+    expect((await json<SmsUsage>(await read('?days=30'))).days).toBe(30)
+    expect((await json<SmsUsage>(await read('?days=1'))).since).toBe('2026-01-01')
+    for (const days of ['0', '31', '-1', '1.5', 'week', '']) {
+      const res = await read(`?days=${days}`)
+      expect(res.status).toBe(422)
+    }
+    expect((await read('?days=7&prefix=%2B1')).status).toBe(422)
+  })
+
+  test('another environment’s counts are not in it', async () => {
+    const session = await signUp()
+    await ask(session.accessToken)
+    await seedApiKey(deps, 'tula_sk_dev_secretb00000000000000000000000', TENANT_B)
+    const theirs = await json<SmsUsage>(
+      await read('', { authorization: 'Bearer tula_sk_dev_secretb00000000000000000000000' })
+    )
+    expect(theirs).toMatchObject({ sent: 0, prefixes: [] })
+  })
+
+  test('it needs a secret key: a publishable key, a session and nothing at all are refused', async () => {
+    const session = await signUp()
+    expect((await read('', {})).status).toBe(401)
+    expect((await read('', { 'x-tula-publishable-key': PK })).status).toBe(401)
+    expect((await read('', { authorization: `Bearer ${session.accessToken}` })).status).toBe(401)
+    expect((await read('', { authorization: `Bearer ${PK}` })).status).toBe(401)
   })
 })
 
@@ -1004,7 +1238,7 @@ describe('the number and the code stay where they belong', () => {
       const mailsBefore = deps.mailer.outbox.length
       // Refusals first: a malformed number, then a country that is not allowed.
       await failed(await ask(session.accessToken, `${NUMBER}x`))
-      configure({ enabled: true, allowedCountries: ['DE'] })
+      configure({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500 })
       await failed(await ask(session.accessToken))
       configure()
       // A send that fails.

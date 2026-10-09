@@ -24,6 +24,7 @@ import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { MemorySmsSender } from '~/adapters/memory/sms-sender'
+import { MemorySmsUsageStore } from '~/adapters/memory/sms-usage'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
 import { MemoryWebhookDeliveryStore } from '~/adapters/memory/webhook-deliveries'
@@ -56,6 +57,7 @@ export interface TestDeps extends Deps {
   revokedSessions: MemoryRevokedSessions
   mailer: MemoryMailer
   sms: MemorySmsSender
+  smsUsage: MemorySmsUsageStore
   rateLimiter: MemoryRateLimiter
   lockout: MemoryLockout
   breachChecker: MemoryBreachChecker
@@ -127,6 +129,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     sms: new MemorySmsSender(clock),
     // No inbox route unless a test asks for one (`smsInbox: deps.sms`).
     smsInbox: null,
+    smsUsage: new MemorySmsUsageStore(),
     rateLimiter: new MemoryRateLimiter(clock),
     lockout: new MemoryLockout(clock),
     breachChecker: new MemoryBreachChecker(),

@@ -91,7 +91,7 @@ export interface TestSettings {
   signUp?: { password: 'required' | 'optional' }
   mfa?: { policy: 'off' | 'optional' | 'required' }
   /** Text messages (ADR 0037). Off, with no country allowed, when left out. */
-  sms?: { enabled: boolean; allowedCountries: string[] }
+  sms?: { enabled: boolean; allowedCountries: string[]; dailyMessageLimit?: number }
   /** Session profiles and the concurrent-session rule (ADR 0028). */
   sessions?: {
     profiles?: Record<

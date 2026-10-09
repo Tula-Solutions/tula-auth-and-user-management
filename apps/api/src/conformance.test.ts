@@ -69,6 +69,8 @@ describe('conformance scenarios, in process', () => {
       'Microsoft sign-up and sign-in',
       'Microsoft account linking',
       'phone number on an account',
+      'text messages to a blocked destination',
+      'text messages past the daily limit',
     ])
   })
 

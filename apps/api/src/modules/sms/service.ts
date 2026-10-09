@@ -1,17 +1,148 @@
+import {
+  durationToMs,
+  phoneNumberPrefix,
+  SMS_USAGE_MAX_PREFIXES,
+  type SmsUsage,
+} from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError } from '~/exceptions'
+import { AuthError, RateLimitError, ServiceException, ServiceUnavailableError } from '~/exceptions'
 import * as logger from '~/lib/logger'
+import { errorReason } from '~/lib/safe-error'
 import * as Settings from '~/modules/settings/service'
 import { type SmsFailureReason, SmsSendError } from '~/ports/sms-sender'
 import { codeText } from './templates'
 
-/** What a code message needs. */
+// The one path a text message takes (ADR 0037). A message costs the operator money, and an
+// endpoint that sends one to a number of the caller's choosing is what SMS pumping abuses:
+// so everything that decides whether a message goes, and everything that counts it, is here
+// and nowhere else. A caller says who asks and where to; it brings no limit of its own.
+
+/** The gap between two codes for one asker, and between two codes to one number. */
+export const SMS_COOLDOWN = '1m'
+
+/** Codes one asker may be texted in an hour, in one environment. */
+export const SMS_ASKER_PER_HOUR = 5
+
+/**
+ * Numbers **new to them** one asker may have a code texted to in 24 hours, in one
+ * environment. A number is new when it is not the one the asker was last being texted at
+ * (the caller says: {@link CodeMessage.newNumber}).
+ *
+ * This is what keeps one account from working through other people's numbers: without it an
+ * account could text {@link SMS_ASKER_PER_HOUR} strangers an hour, each of whom is then
+ * closer to their own number's hourly limit.
+ */
+export const SMS_NEW_NUMBERS_PER_DAY = 3
+
+/** Codes one number may be texted in an hour, in one environment, whoever asks. */
+export const SMS_NUMBER_PER_HOUR = 5
+
+/**
+ * Codes that may be asked for from one address (as the per-IP request limits read it: the
+ * address for IPv4, the /64 for IPv6) in an hour, in one environment, whoever asks and
+ * whatever the number. Above one asker's hourly allowance, because an office or a carrier
+ * shares an address.
+ */
+export const SMS_ADDRESS_PER_HOUR = 20
+
+/**
+ * What share of the day's limit one destination prefix (the contract's `phoneNumberPrefix`:
+ * a country calling prefix) may take in an hour: a tenth. Numbers bought to be texted are
+ * numbers of one destination, and one destination must not be able to spend the day in less
+ * than ten hours. In an environment that texts one country this is the hourly limit that
+ * binds.
+ */
+export const SMS_PREFIX_HOURLY_SHARE = 10
+
+/**
+ * What share of the day's limit the whole environment may send in an hour: a quarter. A day's
+ * allowance then takes at least four hours to spend, which is time to notice.
+ */
+export const SMS_ENVIRONMENT_HOURLY_SHARE = 4
+
+/** Keyed-hash purpose of the limiter keys that would otherwise hold a number or an address. */
+export const SMS_LIMIT_HASH_PURPOSE = 'sms-send-limits'
+
+/**
+ * Which limit refused a message. A fixed word for the operator's log; the caller is told
+ * `rate_limited` and how long to wait, and never which.
+ */
+export type SmsLimit =
+  | 'asker'
+  | 'new_number'
+  | 'number'
+  | 'address'
+  | 'prefix'
+  | 'environment'
+  | 'daily'
+
+/** The limits whose refusals an operator should see without looking for them. */
+const COST_LIMITS: ReadonlySet<SmsLimit> = new Set(['prefix', 'environment', 'daily'])
+
+/**
+ * Who asked for a code: an id the server made, never anything a request chose. Today a
+ * signed-in user; a sign-in by SMS adds its attempt (TULA-27).
+ */
+export interface SmsAsker {
+  type: 'user'
+  id: string
+}
+
+/** What a code message needs, and what its limits are counted by. */
 export interface CodeMessage {
   /** Recipient, in E.164 form. */
   to: string
   /** The code. */
   code: string
+  /** Who asked. */
+  asker: SmsAsker
+  /**
+   * Whether `to` is a number this asker was **not** already being texted at: the caller
+   * knows (its pending code is for another number, or there is none). Such a send is also
+   * counted under {@link SMS_NEW_NUMBERS_PER_DAY}.
+   */
+  newNumber: boolean
+  /**
+   * The address the request came from, as `ipBucket(clientIp(c, …))` gives it, or `null` for
+   * a send no request asked for. `null` leaves out the per-address limit and nothing else.
+   */
+  address: string | null
 }
+
+/** The limits one daily limit gives an environment. */
+export interface SmsCostLimits {
+  /** Messages an hour to the numbers of one destination prefix. */
+  prefixPerHour: number
+  /** Messages an hour, whatever the destination. */
+  environmentPerHour: number
+  /** Messages in one UTC day: the environment's `sms.dailyMessageLimit`. */
+  perDay: number
+}
+
+/**
+ * The limits that bound what an environment's SMS can cost, from its one setting.
+ *
+ * @param dailyMessageLimit - The environment's `sms.dailyMessageLimit`.
+ * @returns The hourly limits per prefix and per environment (shares of the day's, rounded
+ *   up, never below one) and the day's. A value that is not a whole number of at least one
+ *   (nothing the API stores) reads as one: a broken setting must send less, never more.
+ */
+export function limitsOf(dailyMessageLimit: number): SmsCostLimits {
+  const perDay =
+    Number.isInteger(dailyMessageLimit) && dailyMessageLimit >= 1 ? dailyMessageLimit : 1
+  return {
+    prefixPerHour: Math.ceil(perDay / SMS_PREFIX_HOURLY_SHARE),
+    environmentPerHour: Math.ceil(perDay / SMS_ENVIRONMENT_HOURLY_SHARE),
+    perDay,
+  }
+}
+
+/** The UTC day of an instant, as `YYYY-MM-DD`. */
+function utcDay(at: Date): string {
+  return at.toISOString().slice(0, 10)
+}
+
+const DAY_MS = 86_400_000
 
 /**
  * Refuse a request that would send a message from a deployment that has no sender.
@@ -37,34 +168,225 @@ export function requireSender(
   }
 }
 
+type LimitDeps = Pick<Deps, 'rateLimiter' | 'keyedHash'>
+
+/** One counter of the limiter: its key, how many it allows and for how long. */
+interface Counter {
+  limit: SmsLimit
+  key: string
+  allowed: number
+  window: string
+}
+
 /**
- * Text a verification code to a number, in the words and with the app name of the
- * environment it is for.
+ * Say in the operator's log that a limit refused a message: which limit, and for which
+ * environment. Never the number, its prefix or the address. A limit that bounds cost is a
+ * warning: it may be an attack.
+ */
+function logRefusal(environmentId: string, limit: SmsLimit): void {
+  const log = COST_LIMITS.has(limit) ? logger.warn : logger.info
+  log('text message not sent', { environmentId, reason: 'limit', limit })
+}
+
+/**
+ * Count one message against every limit the rate limiter keeps, from the narrowest to the
+ * widest, and refuse it at the first that is spent.
  *
- * Every text message goes through here, so none can be sent that does not say which app it
- * is from. **It does not decide whether the message may be sent**: the caller has already
- * asked `Settings.requireSms` for this number, before anything was counted.
+ * Narrowest first, so that a send one asker's or one number's limit refuses is never counted
+ * against the environment's hour: whoever hammers one number cannot spend everybody's
+ * allowance with tries that send nothing. A limiter that cannot count throws
+ * (`service.unavailable`), and nothing is sent.
+ */
+async function enforceLimits(
+  deps: LimitDeps,
+  environmentId: string,
+  message: CodeMessage,
+  prefix: string,
+  limits: SmsCostLimits
+): Promise<void> {
+  // Keyed hashes: limiter keys may live in Redis, a number is personal data, an address too,
+  // and a prefix beside the other keys of one send would narrow a number down. Each covers
+  // the environment, so no value can be followed from one environment to another.
+  const hashed = (kind: string, value: string) =>
+    deps.keyedHash.hmac(SMS_LIMIT_HASH_PURPOSE, `${environmentId}:${kind}:${value}`)
+  const asker = `${environmentId}:${message.asker.type}:${message.asker.id}`
+  const number = `${environmentId}:${await hashed('number', message.to)}`
+  const counters: Counter[] = [
+    { limit: 'asker', key: `sms_asker_cooldown:${asker}`, allowed: 1, window: SMS_COOLDOWN },
+    { limit: 'asker', key: `sms_asker:${asker}`, allowed: SMS_ASKER_PER_HOUR, window: '1h' },
+  ]
+  if (message.newNumber) {
+    counters.push({
+      limit: 'new_number',
+      key: `sms_asker_new_number:${asker}`,
+      allowed: SMS_NEW_NUMBERS_PER_DAY,
+      window: '24h',
+    })
+  }
+  counters.push(
+    { limit: 'number', key: `sms_number_cooldown:${number}`, allowed: 1, window: SMS_COOLDOWN },
+    { limit: 'number', key: `sms_number:${number}`, allowed: SMS_NUMBER_PER_HOUR, window: '1h' }
+  )
+  if (message.address !== null) {
+    counters.push({
+      limit: 'address',
+      key: `sms_address:${environmentId}:${await hashed('address', message.address)}`,
+      allowed: SMS_ADDRESS_PER_HOUR,
+      window: '1h',
+    })
+  }
+  counters.push(
+    {
+      limit: 'prefix',
+      key: `sms_prefix:${environmentId}:${await hashed('prefix', prefix)}`,
+      allowed: limits.prefixPerHour,
+      window: '1h',
+    },
+    {
+      limit: 'environment',
+      key: `sms_environment:${environmentId}`,
+      allowed: limits.environmentPerHour,
+      window: '1h',
+    }
+  )
+  for (const counter of counters) {
+    const decision = await deps.rateLimiter.hit(
+      counter.key,
+      counter.allowed,
+      durationToMs(counter.window)
+    )
+    if (!decision.allowed) {
+      logRefusal(environmentId, counter.limit)
+      // For the caller: the one answer every limit gives.
+      throw new RateLimitError(decision.retryAfterMs)
+    }
+  }
+}
+
+/**
+ * Take one message of the environment's day, or refuse it when the day is spent.
  *
- * A message that could not be sent is `sms.unavailable` (503) for the caller and one log
- * line for the operator, with the sender's fixed word and the environment: never the number,
- * the code or the text.
+ * The day's count is the one the usage store keeps (`sms_code_counts`), not the rate
+ * limiter's: it is in the database, so every instance counts on it with or without Redis and
+ * a restart forgets nothing. Reading it and adding to it take turns per environment
+ * (`deps.environmentLock`, scope `sms_daily`), so two sends at once cannot both take the
+ * day's last message. **A count that cannot be read or written sends nothing.**
  *
- * @param deps - SMS sender, settings store and config.
+ * @returns The UTC day the message was counted on.
+ */
+async function takeFromDay(
+  deps: Pick<Deps, 'smsUsage' | 'environmentLock' | 'clock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  prefix: string,
+  perDay: number
+): Promise<string> {
+  const now = deps.clock.now()
+  const day = utcDay(now)
+  let taken: boolean
+  try {
+    taken = await deps.environmentLock.runExclusive(tenant.environmentId, 'sms_daily', async () => {
+      if ((await deps.smsUsage.sentOn(tenant.environmentId, day)) >= perDay) {
+        return false
+      }
+      await deps.smsUsage.recordSent(
+        { projectId: tenant.projectId, environmentId: tenant.environmentId },
+        day,
+        prefix,
+        now
+      )
+      return true
+    })
+  } catch (error) {
+    if (error instanceof ServiceException) {
+      throw error
+    }
+    logger.warn('text message not sent', {
+      environmentId: tenant.environmentId,
+      reason: 'not_counted',
+      err: errorReason(error),
+    })
+    throw new ServiceUnavailableError({ internalMessage: 'the SMS counts could not be written' })
+  }
+  if (!taken) {
+    logRefusal(tenant.environmentId, 'daily')
+    // The day ends at midnight UTC, whenever its first message was sent.
+    throw new RateLimitError(DAY_MS - (now.getTime() % DAY_MS))
+  }
+  return day
+}
+
+/**
+ * Text a verification code to a number: the **one** way a text message leaves the server.
+ *
+ * In this order, and a message refused at one step is counted by none of the later ones:
+ *
+ * 1. the environment's settings (`Settings.requireSms`): SMS on, and the number's country
+ *    on the allow-list. Nothing is counted for a number that is never sent to;
+ * 2. the deployment has a sender ({@link requireSender});
+ * 3. the send limits the rate limiter keeps, narrowest first: per asker (one a minute,
+ *    {@link SMS_ASKER_PER_HOUR} an hour, {@link SMS_NEW_NUMBERS_PER_DAY} new numbers a day),
+ *    per number (one a minute, {@link SMS_NUMBER_PER_HOUR} an hour), per address
+ *    ({@link SMS_ADDRESS_PER_HOUR} an hour), per destination prefix and per environment
+ *    (hourly shares of the day's limit: {@link limitsOf});
+ * 4. the environment's daily limit (`sms.dailyMessageLimit`, per UTC day), counted in the
+ *    database with the codes sent to the prefix;
+ * 5. the send, in the words and with the app name of the environment
+ *    (`modules/sms/templates.ts`).
+ *
+ * Every limit answers the same `rate_limited`; which one it was is in the operator's log.
+ * **A limiter or a count that cannot count sends nothing** (`service.unavailable`): no limit
+ * on this path lets a message through uncounted. A message the sender did not take stays
+ * counted by the limiter (the provider needs the breathing room, and a send that fails for
+ * one number must not be a free retry loop), is taken back out of the day and of the codes
+ * sent, and is `sms.unavailable` (503) for the caller, with one log line: the sender's fixed
+ * word and the environment, never the number, the code or the text.
+ *
+ * @param deps - Settings, the SMS sender, the limiter, the keyed hash, the counts, the
+ *   environment lock and the clock.
  * @param tenant - The environment the code is for.
- * @param message - The recipient and the code.
- * @throws AuthError `sms.unavailable` when the sender did not take the message.
+ * @param message - The recipient, the code, and who asked from where.
+ * @throws AuthError `sms.disabled` or `sms.country_not_allowed` (the settings),
+ *   `sms.unavailable` (no sender, or the sender did not take the message).
+ * @throws RateLimitError when a limit, or the daily limit, is spent.
+ * @throws ServiceUnavailableError when the limiter or the counts cannot count.
  *
  * @example
  * ```ts
- * await Sms.sendCode(deps, tenant, { to: '+14155550100', code: '123456' })
+ * await Sms.sendCode(deps, tenant, {
+ *   to: '+14155550100',
+ *   code: '123456',
+ *   asker: { type: 'user', id: userId },
+ *   newNumber: true,
+ *   address: ipBucket(clientIp(c, deps.config.trustProxy)),
+ * })
  * ```
  */
 export async function sendCode(
-  deps: Pick<Deps, 'sms' | 'environmentSettings' | 'config'>,
-  tenant: Pick<Tenant, 'environmentId'>,
+  deps: Pick<
+    Deps,
+    | 'sms'
+    | 'smsUsage'
+    | 'environmentLock'
+    | 'rateLimiter'
+    | 'keyedHash'
+    | 'clock'
+    | 'environmentSettings'
+    | 'config'
+  >,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   message: CodeMessage
 ): Promise<void> {
-  const { app, urls } = await Settings.current(deps, tenant)
+  await Settings.requireSms(deps, tenant, message.to)
+  requireSender(deps, tenant)
+  const prefix = phoneNumberPrefix(message.to)
+  if (prefix === null) {
+    // What `requireSms` has refused already: a number of no destination is never sent to.
+    throw new AuthError('sms.country_not_allowed')
+  }
+  const { app, urls, sms } = await Settings.current(deps, tenant)
+  const limits = limitsOf(sms.dailyMessageLimit)
+  await enforceLimits(deps, tenant.environmentId, message, prefix, limits)
+  const day = await takeFromDay(deps, tenant, prefix, limits.perDay)
   const text = codeText({
     appName: app.name,
     allowedOrigins: urls.allowedOrigins,
@@ -79,6 +401,77 @@ export async function sendCode(
       // provider's own message can quote the number.
       reason: error instanceof SmsSendError ? error.reason : 'failed',
     })
+    // Not sent: not a code sent, and not a message of the day. When this cannot be written
+    // the counts stay one too high, which errs on the side of sending less.
+    await counted(tenant.environmentId, () =>
+      deps.smsUsage.recordNotSent(tenant.environmentId, day, prefix, deps.clock.now())
+    )
     throw new AuthError('sms.unavailable')
+  }
+}
+
+/**
+ * Write a count, and let what it describes stand when the write fails: the message was not
+ * taken by the sender, or the code was confirmed, and neither is undone for the sake of a
+ * statistic. Never for the count of a message about to be sent: that one fails closed.
+ */
+async function counted(environmentId: string, write: () => Promise<void>): Promise<void> {
+  try {
+    await write()
+  } catch (error) {
+    logger.warn('text message not counted', { environmentId, err: errorReason(error) })
+  }
+}
+
+/**
+ * Count a texted code as used: the step that accepted it calls this once the code has done
+ * what it was for.
+ *
+ * It is counted against the day the code was **sent** on, so that every used code pairs with
+ * its own send. A count that cannot be written is logged and never fails the caller.
+ *
+ * @param deps - The counts and the clock.
+ * @param tenant - The environment.
+ * @param code - The number the code was texted to, and when.
+ */
+export async function recordUsed(
+  deps: Pick<Deps, 'smsUsage' | 'clock'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  code: { to: string; sentAt: Date }
+): Promise<void> {
+  const prefix = phoneNumberPrefix(code.to)
+  if (prefix === null) {
+    return
+  }
+  await counted(tenant.environmentId, () =>
+    deps.smsUsage.recordUsed(tenant.environmentId, utcDay(code.sentAt), prefix, deps.clock.now())
+  )
+}
+
+/**
+ * The codes an environment texted in the last days, by destination prefix: what an operator
+ * reads to spot SMS pumping (codes sent and never used).
+ *
+ * @param deps - The counts and the clock.
+ * @param tenant - The environment.
+ * @param query - How many days back to read, today included.
+ * @returns The totals, and the prefixes with the most unused codes first (at most
+ *   `SMS_USAGE_MAX_PREFIXES`). Counts only: no number, and nothing about who asked.
+ */
+export async function usage(
+  deps: Pick<Deps, 'smsUsage' | 'clock'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  query: { days: number }
+): Promise<SmsUsage> {
+  const since = utcDay(new Date(deps.clock.now().getTime() - (query.days - 1) * DAY_MS))
+  const summary = await deps.smsUsage.summary(tenant.environmentId, since, SMS_USAGE_MAX_PREFIXES)
+  return {
+    since,
+    days: query.days,
+    sent: summary.sent,
+    used: summary.used,
+    unused: summary.sent - summary.used,
+    prefixes: summary.prefixes.map((count) => ({ ...count, unused: count.sent - count.used })),
+    truncated: summary.truncated,
   }
 }

@@ -28,6 +28,7 @@ import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
+import { PostgresSmsUsageStore } from '~/adapters/postgres/sms-usage'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { PostgresVerificationTokenStore } from '~/adapters/postgres/verification-tokens'
 import { PostgresWebhookDeliveryStore } from '~/adapters/postgres/webhook-deliveries'
@@ -192,6 +193,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     mailer,
     sms: smsInbox ?? unconfiguredSmsSender,
     smsInbox,
+    smsUsage: new PostgresSmsUsageStore(database.db),
     secretBox,
     keyedHash,
     // On Postgres even when Redis is configured: the jobs it guards are database work.

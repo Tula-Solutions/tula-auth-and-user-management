@@ -6279,6 +6279,12 @@
                     "items": {
                       "$ref": "#/components/schemas/SmsCountry"
                     }
+                  },
+                  "dailyMessageLimit": {
+                    "default": 500,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000
                   }
                 },
                 "additionalProperties": false
@@ -6527,6 +6533,12 @@
                 "items": {
                   "$ref": "#/components/schemas/SmsCountry"
                 }
+              },
+              "dailyMessageLimit": {
+                "default": 500,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
               }
             },
             "additionalProperties": false
@@ -8125,6 +8137,85 @@
           }
         },
         "additionalProperties": false
+      },
+      "SmsPrefixUsage": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "pattern": "^\\+[0-9]{1,4}$"
+          },
+          "sent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "used": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "unused": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "prefix",
+          "sent",
+          "used",
+          "unused"
+        ]
+      },
+      "SmsUsage": {
+        "type": "object",
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          },
+          "sent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "used": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "unused": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "prefixes": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SmsPrefixUsage"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "since",
+          "days",
+          "sent",
+          "used",
+          "unused",
+          "prefixes",
+          "truncated"
+        ]
       },
       "DiagnosticStatus": {
         "type": "string",
@@ -21595,6 +21686,128 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
             },
             "required": true
+          }
+        ]
+      }
+    },
+    "/v1/admin/sms/usage": {
+      "get": {
+        "operationId": "getSmsUsage",
+        "tags": [
+          "SMS"
+        ],
+        "summary": "Codes texted and used, by destination prefix",
+        "description": "How many verification codes the environment texted in the last `days` days (UTC, today included; 7 unless given, at most 30), and how many of them were then entered correctly, by **destination prefix**: the country calling prefix of the numbers (`+49`, or `+1242` where countries share a calling code), never more of a number. A prefix where nearly every code goes unused is what SMS pumping looks like. `prefixes` lists those with the most unused codes first, at most 100 (`truncated` says when there are more); `sent`, `used` and `unused` are the totals over every prefix. A send that a limit refused, or that the sender did not take, is not a code sent. The answer holds counts only: no phone number, and nothing about who asked.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmsUsage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "schema": {
+              "default": 7,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30
+            }
           }
         ]
       }
