@@ -1,5 +1,5 @@
 import { loadScenarios } from './load'
-import { mailpitCodes, mailpitLinks } from './mailpit'
+import { mailpitCodes, mailpitLinks, mailpitMessages } from './mailpit'
 import { exitCode, formatResult, runScenario, type Target } from './runner'
 import { devSmsCodes } from './sms-inbox'
 
@@ -76,6 +76,7 @@ const target: Target = {
   fetch: (request) => fetch(request),
   emailCode: mailpitCodes(mailpit),
   emailLink: mailpitLinks(mailpit),
+  emailMessage: mailpitMessages(mailpit),
   smsCode: smsInboxUrls.length > 0 ? devSmsCodes(smsInboxUrls) : undefined,
   wait: (ms) => Bun.sleep(ms),
   settleMs: settleMs > 0 ? settleMs : undefined,

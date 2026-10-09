@@ -137,3 +137,17 @@ describe('boundHost', () => {
     expect(boundHost(origins)).toBe(expected)
   })
 })
+
+// A name stored before the settings refused such characters (ADR 0039) reaches a text
+// message cleaned as well.
+describe('an app name stored with a text-direction control', () => {
+  test('is in no text message', () => {
+    const text = codeText({
+      appName: 'Acme\u{202E}moc',
+      allowedOrigins: ['https://app.northline.app'],
+      code: '123456',
+    })
+    expect(text).toBe('Your Acmemoc verification code is 123456.\n\n@app.northline.app #123456')
+    expect(text).not.toContain('\u{202E}')
+  })
+})

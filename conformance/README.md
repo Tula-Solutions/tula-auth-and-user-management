@@ -204,6 +204,21 @@ included: use `attempt`).
   has nothing in its query. Against a live server the link is read from Mailpit (the one
   message is fetched, since a link is not in a subject). A runner for another language needs a
   way to read an email's text to run these steps.
+- **Email-message steps** (`emailMessage: { to, subjectContains, captureCode?, subject?,
+  textContains?, textExcludes? }`) read one email as its reader would: the newest email to
+  the address whose subject contains `subjectContains`. In this order: `captureCode` stores
+  the one run of exactly six digits in the text (the step fails for none, or for two
+  different ones); `subject` is what the subject must be, exactly; every entry of
+  `textContains` must be in the plain-text part and none of `textExcludes`. The later checks
+  can name the captured code. They exist for what a subject cannot say: an environment's own
+  wording of a message ([docs/email-templates.md](../docs/email-templates.md)), where the
+  code need not lead the subject, and a notice, which carries no code. The other email
+  steps still find a code by a subject that leads with one, so a scenario that saves a
+  template for a code message keeps the code first in its subject or reads it with this
+  step. A scenario's own `{{name}}` is filled in before a request is sent: to send a
+  template's placeholder, keep it in a literal variable (`"codeField": "{{code}}"`), which
+  is not filled again. Against a live server the message is fetched from Mailpit; a target
+  that cannot read an email's text fails these steps.
 - **TOTP steps** (`totp: { secret, capture, captureWrong? }`) compute the 6-digit code an
   authenticator app shows **now** for a Base32 secret the API returned (RFC 6238: HMAC-SHA-1,
   30-second steps), e.g. `{ "name": "compute the code", "totp": { "secret": "{{secret}}",
@@ -293,6 +308,7 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `43-settings-managed-by-config` | A replace that names its tool and config fingerprint (`x-tula-managed-by`, `x-tula-config-hash`) is recorded as the settings' manager; a later replace without them keeps the record and shows as `drifted`; one header without the other is refused. Cleanup restores the settings and removes the record. |
 | `59-phone-number` | A signed-in user adds a phone number and proves it with a texted 6-digit code. Nothing is sent while text messages are off or no country is allowed, and only to a country on the list; the client config says only whether a number can be added. The receipt holds neither the code nor the number; asking again within the minute is rate limited; another user's code, a wrong code and a used code confirm nothing; a code asked for before its country was removed or text messages were switched off is not honoured after. Adding and removing are in the audit log without the number (needs a secret key and the development SMS inbox). |
 | `70-password-history` | With `password.history` at 3, a signed-in user's change to the current password or to the one before it is refused with `password.reused` (422, `params.history`, a field error, nothing about which password matched), and so is a reset to either; the refused reset has not spent its code, and a password the user never had is accepted both ways. With the history back at 0 the first password is accepted again. Cleanup restores the settings. Waits 61 seconds (needs a secret key). |
+| `71-email-wording` | A template whose body lacks the code its message needs is refused when saved (422, the field named), and so are a security notice given a code and any message, one that carries a code included, given something that reads as a link; nothing is stored. With a template saved for the verification code and one for the notice of a password set by an administrator, the sign-up's email has the environment's subject and words in the server's layout, the code read from its text completes the sign-up, and the notice has the environment's words followed by the server's own line of when it happened and its own sentence of what to do if it was not expected, with no link. Cleanup restores the settings. Reads whole emails (the `emailMessage` step), so the target must be able to (needs a secret key). |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs

@@ -1,6 +1,7 @@
 import { smsCodeIn, type Target } from '@tula/conformance'
 import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { createApp } from '~/index'
+import * as Notices from '~/modules/notice/service'
 import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -76,6 +77,17 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
         throw new Error(`no email with a link was sent to ${to}`)
       }
       return link
+    },
+    emailMessage: async (to, subjectContains) => {
+      // A security notice is sent after its request was answered (ADR 0023): wait for it.
+      await Notices.settled()
+      const message = deps.mailer.outbox.findLast(
+        (sent) => sent.to === to && sent.subject.includes(subjectContains)
+      )
+      if (!message) {
+        throw new Error(`no email with that subject was sent to ${to}`)
+      }
+      return { subject: message.subject, text: message.text }
     },
     smsCode: async (to) => {
       // The memory sender is the inbox here: no route is involved, as for the emails.

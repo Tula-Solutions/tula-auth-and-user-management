@@ -9,6 +9,7 @@ import {
   type HookStrength,
   hasEnabledSignInMethod,
   hookWeakenings,
+  isEmailTemplateKind,
   MAX_WEBHOOK_ENDPOINTS,
   OAUTH_PROVIDERS,
   type OAuthProvider,
@@ -26,6 +27,16 @@ import {
  * ```
  */
 export const MANAGING_TOOL = 'tula-apply'
+
+/**
+ * Where an environment's email templates are in the settings document, by kind.
+ *
+ * @example
+ * ```ts
+ * change.path.startsWith(`${EMAIL_TEMPLATES_PATH}.`) // a template's subject or body
+ * ```
+ */
+export const EMAIL_TEMPLATES_PATH = 'emails.templates'
 
 /**
  * Lists in the settings document that are **sets**: their order means nothing to the server
@@ -46,11 +57,20 @@ export const SET_PATHS: readonly string[] = [
 
 /**
  * Maps whose entries are whole things with a name (a session profile, a JWT template and,
- * inside one, its claims by key): one that appears or disappears is shown as added or removed.
- * Everywhere else a key the server has and the file's schema does not is a setting this
- * version of the CLI does not know.
+ * inside one, its claims by key; an email template by its kind, and inside one its subject
+ * and its body): one that appears or disappears is shown as added or removed. Everywhere
+ * else a key the server has and the file's schema does not is a setting this version of the
+ * CLI does not know.
+ *
+ * An email template the file leaves out is therefore **removed**, not unmanaged: the
+ * settings document is replaced whole, and a kind without a template sends the built-in
+ * copy. A kind this version does not know is still reported as unknown (`unknownEmailKind`).
  */
-const NAMED_ENTRY_PATHS: readonly string[] = ['sessions.profiles', 'sessions.jwtTemplates']
+const NAMED_ENTRY_PATHS: readonly string[] = [
+  'sessions.profiles',
+  'sessions.jwtTemplates',
+  EMAIL_TEMPLATES_PATH,
+]
 
 /**
  * A JWT template's claim (`sessions.jwtTemplates.<name>.claims.<key>`) is one value: where the
@@ -84,6 +104,9 @@ export interface Change {
   /** For a list that is a set: the entries the config removes. */
   removed?: unknown[]
 }
+
+/** The path of one email template: `emails.templates.<kind>`. */
+const EMAIL_TEMPLATE_PATH = /^emails\.templates\.[^.]+$/
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -119,6 +142,15 @@ function diffAt(
   if (before === undefined && after === undefined) {
     return []
   }
+  // An email template that only one side has is still shown field by field: its subject
+  // and its body are each a line of their own, so that each is printed as text.
+  if (EMAIL_TEMPLATE_PATH.test(path) && isPlainObject(before ?? after)) {
+    const [had, has] = [before ?? {}, after ?? {}]
+    if (isPlainObject(had) && isPlainObject(has)) {
+      const keys = [...new Set([...Object.keys(has), ...Object.keys(had)])]
+      return keys.flatMap((key) => diffAt(`${path}.${key}`, had[key], has[key], setPaths))
+    }
+  }
   if (before === undefined) {
     return [{ path, kind: 'added', after }]
   }
@@ -144,7 +176,8 @@ function diffAt(
  * `removed` as a whole. A list on one of `setPaths` is compared as a set; any other list, and
  * every scalar, by value. A key set to `undefined` counts as absent. JWT templates are a set
  * by name and a template's claims a set by key (maps, so their order never counts); one claim
- * is compared as a whole value.
+ * is compared as a whole value. An email template is compared by its subject and its body,
+ * also when only one side has it.
  *
  * @param before - What the server has.
  * @param after - What the config says.
@@ -879,6 +912,19 @@ function planMarker(remote: RemoteState, configHash: string): MarkerPlan {
   return { supported: true, pending: reason !== 'none', reason, current, configHash }
 }
 
+/**
+ * Whether a path is an email template of a kind this version does not know: a later server
+ * has it, and replacing the document from this file would remove it without this version
+ * knowing what it was.
+ */
+function unknownEmailKind(path: string): boolean {
+  if (!path.startsWith(`${EMAIL_TEMPLATES_PATH}.`)) {
+    return false
+  }
+  const [kind = ''] = path.slice(EMAIL_TEMPLATES_PATH.length + 1).split('.')
+  return !isEmailTemplateKind(kind)
+}
+
 function weakenings(before: unknown, after: unknown): string[] {
   try {
     return settingsWeakenings(
@@ -930,7 +976,8 @@ export function buildPlan(
     .filter(
       (change) =>
         change.kind === 'removed' &&
-        !NAMED_ENTRY_PATHS.some((prefix) => change.path.startsWith(`${prefix}.`))
+        (!NAMED_ENTRY_PATHS.some((prefix) => change.path.startsWith(`${prefix}.`)) ||
+          unknownEmailKind(change.path))
     )
     .map((change) => change.path)
   const providers = planProviders(remote.providers, environment.providers, options)

@@ -436,3 +436,17 @@ Twilio from this code, from a test or by hand.** Not verified:
 | **`sms_sender` on a real server** | Unit-tested on memory adapters, with a canary and a stuck store. Not run against PostgreSQL, not with more than 200 environments on one, and `tula doctor` was not run against a server that reports the row: the CLI and `@tula/mcp` print whatever rows the server sends, and no test of either names this one. |
 | **The Compose stack with `SMS_PROVIDER=twilio`** | `compose.test.ts` holds that the API services pass the six variables through and the worker gets none. The stack was not started with them. `bun run test:integration` was not run in this work. |
 | **The conformance scenarios** | Unchanged: they use the development inbox. No scenario can show a Twilio send, and none tries. |
+
+## Step 2.7, email templates (TULA-17, [ADR 0039](../adr/0039-email-templates.md))
+
+The renderer, the rules and the settings are unit-tested; scenario `71-email-wording` runs
+in process, under the event canary and as an SDK journey. Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **Scenario 71 against a live server** | Not run. In process the `emailMessage` step reads the memory outbox; against a live server it reads Mailpit (`mailpitMessages`), which is tested with `fetch` stubbed from Mailpit's API as the other readers use it, not against a running Mailpit. Through one address in front of two instances it depends, like every scenario that changes settings, on `CONFORMANCE_SETTLE_MS`: without it the other instance may send the built-in wording for the settings cache's 5 seconds, and the step fails on its subject marker. The self-host jobs of CI have not run it yet; they will on the pull request. |
+| **How a mail client shows a template** | Nothing. The HTML part is the built-in layout with escaped text in it; no client (Gmail, Outlook, Apple Mail) was opened. Whether a given client turns something the link rule lets through into a link (a telephone number, an address written with spaces) was not tried: the rule was written from what clients are known to link, not observed. |
+| **The link rule against real text** | `readsAsLink` has a table of what it refuses and what it lets through. It was not run over a corpus of real notices in other languages; how often it refuses an innocent sentence (an abbreviation with full stops and no spaces, a file name) is unmeasured. |
+| **A 40 KiB settings document on PostgreSQL** | The cap is tested on the memory adapter and the schema. `bun run test:integration` was not run in this work: the Postgres adapter's read of a full section, and the cost of the all-environments origin scan with large rows, were not measured. |
+| **Right-to-left and combining text in a template** | Accepted as any text, with the text-direction controls refused at save and the joiners delivered unchanged (tested as strings). Not looked at in a mail client: how a right-to-left body reads beside the server's English facts and last sentence, and whether a client shapes a joiner sequence as written, were not seen. Which code points the runtime calls unassigned is its Unicode version's; a character newer than Bun's tables would be refused, and none was tried. |
+| **The browser tests** | They read codes by the built-in subjects and save no template; unchanged. No browser test words an email. |
