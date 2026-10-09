@@ -207,9 +207,11 @@ fields that matter are shown):
 | `twilio accepted a text message, and its answer could not be read` | `body_unread`, `too_large`, `not_json`, `no_sid` | **The message was sent.** Twilio answered a 2xx, and its body broke off, was over 64 KB, was not JSON or held no message SID that could be logged. Only the log is poorer: find the message in Twilio's log by its time. |
 
 `twilioMessage` is Twilio's own sentence with the recipient, the credentials, every Twilio
-identifier and every run of four or more digits (however they are separated: spaces,
-dots, slashes, dashes of any kind, non-breaking spaces) taken out, cut to 300 characters. The
-number is never logged, and neither is the text.
+identifier and every run of four or more digits (with up to three characters that are
+neither a letter nor a digit between one digit and the next: spaces, dots, slashes, dashes
+of any kind, non-breaking spaces) taken out, cut to 300 characters. The number as it was
+sent is never logged, and neither is the text; a copy of a number that Twilio wrote with
+wider gaps than that, or in digits other than 0 to 9, would not be recognised.
 
 | `twilioCode` | Usually means |
 | --- | --- |
