@@ -141,6 +141,14 @@ Before finishing any change here, confirm each item holds and has a test:
     a 500. Removing the last way to sign in is refused inside the store's transaction.
     The table is stated once per provider in `modules/oauth/linking-table.test.ts`: a new
     provider adds its rows (the test fails for one that has none).
+    **X and Facebook** (`OAUTH_PROVIDERS_WITHOUT_ADDRESS`, the one place that says so) are
+    never linked by address and never refused for lacking one: an unknown identity makes a
+    user with **no email address**. Test that an address on the provider's side, verified
+    or not, connects nothing to the account that has it and appears in no answer; that two
+    callbacks for one new identity make one user; that such a user's only identity cannot
+    be removed (`identity.last_sign_in_method`), that it cannot be given a password and is
+    sent no email; and that every other provider with no address is still
+    `oauth.email_missing`.
 28. **OAuth first factor:** the exchange goes through `Factors.requiredFor` like every first
     factor. Test that a user with a second factor gets `needs_second_factor` and no tokens.
 29. **Provider credentials and tokens:** client secrets and Apple keys are sealed
@@ -170,8 +178,14 @@ Before finishing any change here, confirm each item holds and has a test:
     alone, whose `sub` must equal the token's (`linkedInProfile`, shared with the mock;
     a mismatch is `invalid_token`). Test `"true"`, `1` and an absent field for both, and
     for LinkedIn a mismatched and a missing `sub` and a token that says verified beside an
-    answer that does not. **A profile read with an access token** (Discord's user,
-    LinkedIn's userinfo) goes through `readProfile` (`adapters/oauth/profile-read.ts`): a
+    answer that does not. **X** (`adapters/oauth/x.ts`) and **Facebook**
+    (`adapters/oauth/facebook.ts`): the account is the numeric id (`isXUserId`,
+    `isFacebookUserId`: digits only, no sign, no leading zero), never a username or a
+    name; the profile's `email` is `null` whatever the answer holds (test an answer that
+    carries an address, and that no email scope or field is asked for). X sends PKCE;
+    Facebook has none and sends `appsecret_proof` (test its value against a known HMAC and
+    that it is in no error). **A profile read with an access token** (Discord's user,
+    LinkedIn's userinfo, X's `/2/users/me`, Facebook's `/me`) goes through `readProfile` (`adapters/oauth/profile-read.ts`): a
     fixed address, a deadline, `redirect: 'error'`, 64 KiB. Each adapter tests a redirect
     that is not followed, the cap and the timeout, and that a failure carries nothing of
     the answer or the token.

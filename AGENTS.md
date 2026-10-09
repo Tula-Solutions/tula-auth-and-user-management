@@ -554,7 +554,8 @@ for `before_sign_up` and hold for all three unless they name it.
 - **The secret and the signature are the webhooks' own code** (`~/lib/signing-secret`:
   `newSigningSecret`, `openSigningSecret`, `signedHeaders`), under a purpose of its own
   (`hook-secrets`, bound to environment and hook id). Never a second place that signs.
-- **The question is an allow-list and is never stored**: the address, the method, the client
+- **The question is an allow-list and is never stored**: the address (`null`, the key still
+  there, for a first sign-in with X or Facebook, which give none), the method, the client
   kind and the IP address (`HookBeforeSignUpDataSchema`, strict), named field by field where
   the body is built. Never in the outbox, the audit log or a log line; the rule that an
   event payload holds no email or IP address is unchanged. Of an answer only the decision
@@ -1167,7 +1168,7 @@ nothing.
 
 ### OAuth providers
 
-Sign-in with Google, GitHub, Apple, Microsoft, Discord and LinkedIn
+Sign-in with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook
 ([ADR 0026](docs/adr/0026-oauth.md)) lives in
 `modules/oauth` (provider credentials, account resolution and linking, the callback and
 identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchangeOAuth`).
@@ -1181,12 +1182,15 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   `adapters/oauth/` (`arctic` + `jose`). An adapter returns a profile and nothing else: no
   provider token leaves it or is stored. Unit tests use `FakeOAuthProvider`
   (`createTestDeps().oauth.google.profile = …`).
-- **A provider's code is bound to the attempt.** Google, GitHub, Microsoft and Discord send
+- **A provider's code is bound to the attempt.** Google, GitHub, Microsoft, Discord and X send
   PKCE (the S256 challenge of the attempt's `codeVerifier` on the authorization URL, the
   verifier on the token request); Google, Apple and Microsoft check the attempt's `nonce`
   in the ID token. Apple documents no PKCE and is sent none. **LinkedIn documents neither
   and gets neither**: its code is bound by the single-use `state` and the client secret
-  alone, which ADR 0026 and `docs/providers/linkedin.md` say in so many words. Whether an
+  alone, which ADR 0026 and `docs/providers/linkedin.md` say in so many words. **Facebook's
+  flow documents neither as well** (Meta has them only in its OpenID Connect flow, which is
+  not used) and is sent neither: `state`, the app secret and the exact redirect URI bind
+  its code. Whether an
   ID token's nonce is checked is written at every call of `verifyIdToken` (the attempt's
   nonce, or `NONCE_NOT_ECHOED`): never give that parameter a default. **A LinkedIn profile
   has two sources with one job each**: the verified ID token gives `sub` and nothing else,
@@ -1208,6 +1212,29 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   stated per provider** in `modules/oauth/linking-table.test.ts`, which fails for an entry
   of `OAUTH_PROVIDERS` with no rows: a new provider adds its rows and what its "verified"
   rests on, never a rule of its own.
+- **X and Facebook give no address, and that is declared in one place**: the contract's
+  `OAUTH_PROVIDERS_WITHOUT_ADDRESS`, read through `givesNoAddress(provider)`. Their adapters
+  ask for no email scope or field and return `email: null`, `emailVerified: false` always;
+  never read an address from either, and never make the list something a request, a
+  setting or a stored row can change. For a provider on it `OAuth.resolveAccount` has one
+  row after "a known identity is its user": a new user with the identity and **no email
+  address**, with nothing looked up or linked by address. Every other provider keeps the
+  table, where a profile with no address is still `oauth.email_missing`. The linking-table
+  test states which of the two rules each provider has; there is no third. An X account is
+  `data.id` of `GET /2/users/me` (`isXUserId`: digits, one spelling, never the username); a
+  Facebook account is the app-scoped `id` of the Graph API's `/me` (`isFacebookUserId`),
+  read on the pinned `FACEBOOK_GRAPH_VERSION` with `appsecret_proof`, both through
+  `readProfile`.
+- **A user may have no email address** (`users.email` and `email_normalized` are null
+  together: `users_email_whole`). Only `OAuth.resolveAccount` makes one, and only for a
+  provider on that list. Code that reads `user.email` handles `null`: such a user has no
+  `email` identity row, no password (`Passwords.ofUser` is the lookup; setting one is
+  refused), gets no notice (`Notices` returns before the limiter and logs the skip by id),
+  has no step-up method until a passkey or an authenticator exists, and is named by
+  `accountLabel` (`~/lib/account-label`) where a label is needed. Never write the string
+  `null`, an empty string or a placeholder where an address would go, and never send mail
+  to one. There is no route that gives such a user an address yet; adding one is a
+  decision (ADR 0026).
 - **A Microsoft account is `<tid>:<oid>`, its issuer is its own tenant's, and its address is
   verified only by `xms_edov`** (`adapters/oauth/microsoft.ts`). Never identify one by
   `sub`, `email`, `preferred_username` or `upn`. `iss` must equal

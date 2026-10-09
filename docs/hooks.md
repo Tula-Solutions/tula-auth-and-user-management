@@ -105,8 +105,8 @@ it is never stored: not in the outbox, not in the audit log.
 
 | Field of `data` | |
 | --- | --- |
-| `email` | The address the account would be created for, in lower case. It has been **proven** by the time you are asked: by an emailed code, or by a provider that asserts it verified. |
-| `method` | How the sign-up is made: `password`, `passwordless`, or `oauth_google`, `oauth_github`, `oauth_apple`, `oauth_microsoft`, `oauth_discord`, `oauth_linkedin`. |
+| `email` | The address the account would be created for, in lower case, or **`null`**. It has been **proven** by the time you are asked: by an emailed code, or by a provider that asserts it verified. It is `null` for a first sign-in with X or Facebook, which are asked for no address: that account has none. Check for `null` before you call anything on it; a receiver that throws is a failed hook, and under `deny` nobody then signs up through those two. |
+| `method` | How the sign-up is made: `password`, `passwordless`, or `oauth_google`, `oauth_github`, `oauth_apple`, `oauth_microsoft`, `oauth_discord`, `oauth_linkedin`, `oauth_x`, `oauth_facebook`. |
 | `client` | The kind of client the sign-up started from (`web`, `ios`, `android`, …). |
 | `ipAddress` | The address the request came from, as the server knows it, or `null`. Behind a proxy this is right only where the deployment says how the address is known ([self-host.md](self-host.md)). |
 
@@ -238,10 +238,13 @@ export async function beforeSignUp(request: Request): Promise<Response> {
   }
   // `question.data` is the address being signed up, how (`password`, `passwordless`,
   // `oauth_google`, …), the kind of client and the IP address the request came from.
-  const answer: TulaHookAnswer = isDisposable(question.data.email)
-    ? // Your own code, for your app to turn into words: lower-case letters, digits, `_`.
-      { decision: 'deny', code: 'disposable_email' }
-    : { decision: 'allow' }
+  // The address is `null` for a sign-up through X or Facebook, which are asked for none.
+  const { email } = question.data
+  const answer: TulaHookAnswer =
+    email !== null && isDisposable(email)
+      ? // Your own code, for your app to turn into words: lower-case letters, digits, `_`.
+        { decision: 'deny', code: 'disposable_email' }
+      : { decision: 'allow' }
   // A 200 with exactly this body. Anything else is a failed call, not an answer.
   return Response.json(answer)
 }
@@ -409,7 +412,8 @@ endpoint really needs.
 
 - a sign-up with a password, after the emailed code was accepted;
 - a sign-up without a password, at the same step;
-- a first sign-in with Google, GitHub, Apple, Microsoft, Discord or LinkedIn that would create an account.
+- a first sign-in with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook that would
+  create an account (for X and Facebook with `email: null`).
 
 **Not asked:**
 
