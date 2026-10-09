@@ -539,6 +539,48 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
       expect(uri).not.toContain(accountId)
     })
 
+    test('it adds and confirms a phone number, and the send limits are keyed by its id', async () => {
+      deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+        revision: 1,
+        settings: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS,
+          urls: { allowedOrigins: ['https://app.northline.test'], allowedRedirectUrls: [REDIRECT] },
+          sms: { ...DEFAULT_ENVIRONMENT_SETTINGS.sms, enabled: true, allowedCountries: ['US'] },
+        },
+      })
+      const limited = spyOn(deps.rateLimiter, 'hit')
+      const hashed = spyOn(deps.keyedHash, 'hmac')
+      const token = session.accessToken as string
+      const userId = session.userId as string
+
+      const asked = await me('POST', '/phone', token, { phoneNumber: '+1 (415) 555-0142' })
+      expect(asked.status).toBe(200)
+      const text = deps.sms.messages('+14155550142').at(-1)?.text ?? ''
+      const code = /(\d{6})\D*$/.exec(text)?.[1] as string
+      expect(code).toMatch(/^\d{6}$/)
+
+      // Per asker means per user id: there is no address to key anything by, and nothing
+      // was keyed by a missing one.
+      const keys = limited.mock.calls.map(([key]) => String(key))
+      expect(keys.some((key) => key.endsWith(`:user:${userId}`))).toBe(true)
+      const inputs = JSON.stringify([keys, hashed.mock.calls])
+      expect(inputs).not.toContain('null')
+      expect(inputs).not.toContain('undefined')
+
+      const confirmed = await me('POST', '/phone/verify', token, { code })
+      expect(confirmed.status).toBe(200)
+      const profile = (await (await me('GET', '', token)).json()) as CurrentUser
+      expect(profile).toMatchObject({ id: userId, email: null, phoneNumber: '+14155550142' })
+      expect(typeof profile.phoneNumberVerifiedAt).toBe('string')
+      // Still nothing to email, and the number is no way to sign in.
+      await Notices.settled()
+      expect(deps.mailer.outbox).toEqual([])
+      const means = (await (
+        await admin('GET', `/users/${userId}/authentication`)
+      ).json()) as UserAuthentication
+      expect(means).toMatchObject({ hasPassword: false, emailVerified: false })
+    })
+
     test('a connected-account notice has nowhere to go and fails nothing', async () => {
       const user = await deps.users.findById(TEST_TENANT.environmentId, session.userId as string)
       Notices.identityChanged(deps, tenant, user as NonNullable<typeof user>, {
